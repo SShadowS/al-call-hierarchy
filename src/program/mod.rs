@@ -4,6 +4,8 @@
 pub mod abi_ingest;
 pub mod build;
 pub mod graph;
+pub mod graphify_export;
+pub mod integration_report;
 pub mod l3_mint;
 pub mod node;
 pub mod node_extract;

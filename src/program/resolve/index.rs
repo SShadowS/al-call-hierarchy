@@ -255,7 +255,16 @@ impl ResolveIndex {
                     .iter()
                     .filter_map(|&i| {
                         let r = &graph.routines[i];
-                        (r.id.params_count >= sub_params && r.publisher_kind.is_some())
+                        // Sender-tolerant arity bound: an `[IntegrationEvent(
+                        // IncludeSender=true, …)]` (also Business/Internal) prepends an
+                        // implicit `Sender` parameter that a subscriber may capture, so
+                        // a valid subscriber's arity is at most the publisher's EXPLICIT
+                        // arity + 1. The pre-fix `params_count >= sub_params` dropped
+                        // every IncludeSender subscriber (publisher explicit arity 0 vs
+                        // subscriber arity 1) — a large orphan class. `sub_params <=
+                        // params_count + 1` never rejects a valid subscriber; the
+                        // disambiguation below still prefers an exact-arity match.
+                        (sub_params <= r.id.params_count + 1 && r.publisher_kind.is_some())
                             .then(|| r.id.clone())
                     })
                     .collect();
@@ -270,14 +279,27 @@ impl ResolveIndex {
                             .push(build_entry(sub_routine, args));
                     }
                     _ => {
-                        // MORE THAN ONE: check for exactly one strict arity match.
-                        let strict: Vec<&RoutineNodeId> = candidates
+                        // MORE THAN ONE: prefer exactly one EXACT-arity match; else fall
+                        // back to exactly one Sender-arity (`+1`) match. Only genuine
+                        // ambiguity (0 or >1 at the chosen precision) is recorded.
+                        let exact: Vec<&RoutineNodeId> = candidates
                             .iter()
                             .filter(|rid| rid.params_count == sub_params)
                             .collect();
-                        if strict.len() == 1 {
+                        let chosen: Option<&RoutineNodeId> = if exact.len() == 1 {
+                            Some(exact[0])
+                        } else if exact.is_empty() {
+                            let sender: Vec<&RoutineNodeId> = candidates
+                                .iter()
+                                .filter(|rid| rid.params_count + 1 == sub_params)
+                                .collect();
+                            (sender.len() == 1).then(|| sender[0])
+                        } else {
+                            None
+                        };
+                        if let Some(rid) = chosen {
                             subscribers_map
-                                .entry(strict[0].clone())
+                                .entry(rid.clone())
                                 .or_default()
                                 .push(build_entry(sub_routine, args));
                         } else {
@@ -1519,6 +1541,54 @@ mod tests {
         assert!(idx.subscribers_of(&pub_onafterx_2param_id).is_empty());
         assert_eq!(idx.ambiguous_subscriptions().len(), 1);
         assert_eq!(idx.ambiguous_subscriptions()[0].candidate_count, 2);
+    }
+
+    // (e0) IncludeSender: publisher explicit arity 0, subscriber arity 1 (captures
+    // the implicit `Sender`) — the single candidate must bind. Pre-fix, the
+    // `params_count >= sub_params` filter dropped it (`0 >= 1` false), orphaning a
+    // large class of real subscribers (e.g. `OnRegisterManualSetup`).
+    #[test]
+    fn subscribers_of_include_sender_publisher_binds_arity_one_subscriber() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_arity0 = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id.clone(),
+                "OnAfterX",
+                0,
+                PublisherKind::Integration,
+            )],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                1,
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+        let idx = ResolveIndex::build(&graph);
+        assert_eq!(
+            idx.subscribers_of(&pub_arity0).len(),
+            1,
+            "arity-1 (Sender) subscriber must bind to arity-0 IncludeSender publisher"
+        );
+        assert!(idx.ambiguous_subscriptions().is_empty());
     }
 
     // (e) Unresolvable publisher — no panic ----------------------------------

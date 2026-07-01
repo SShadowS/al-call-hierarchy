@@ -147,6 +147,92 @@ pub enum PublisherKind {
     Integration,
     Business,
     Internal,
+    /// A platform-generated table event (`OnAfter*Event` / `OnBefore*Event` +
+    /// field validate) with NO publisher routine in source. Carried by a
+    /// SYNTHETIC publisher routine injected on the table so that subscribers to
+    /// the platform's implicit DB-trigger / validate events (a large class of
+    /// real integration wiring) resolve instead of orphaning. See
+    /// [`is_platform_table_event`] and `build::inject_platform_event_publishers`.
+    Platform,
+}
+
+/// True when `name_lc` is a platform-generated TABLE event that AL raises
+/// implicitly on a DB operation (insert/modify/delete/rename) or a field
+/// validate. These have NO publisher routine in source — a `[EventSubscriber(
+/// ObjectType::Table, Database::X, 'OnAfterDeleteEvent', …)]` targeting one binds
+/// to a synthetic [`PublisherKind::Platform`] publisher on the table.
+pub fn is_platform_table_event(name_lc: &str) -> bool {
+    matches!(
+        name_lc,
+        "onbeforeinsertevent"
+            | "onafterinsertevent"
+            | "onbeforemodifyevent"
+            | "onaftermodifyevent"
+            | "onbeforedeleteevent"
+            | "onafterdeleteevent"
+            | "onbeforerenameevent"
+            | "onafterrenameevent"
+            | "onbeforevalidateevent"
+            | "onaftervalidateevent"
+    )
+}
+
+/// True when `name_lc` is a platform-generated PAGE event that AL raises
+/// implicitly (page lifecycle, record navigation, page-level record CRUD, field
+/// validate, or action). These have NO publisher routine in source — a
+/// `[EventSubscriber(ObjectType::Page, Page::X, 'OnOpenPageEvent'/
+/// 'OnModifyRecordEvent'/'OnAfterValidateEvent'/'OnAfterActionEvent'/…)]` binds
+/// to a synthetic [`PublisherKind::Platform`] publisher on the page.
+pub fn is_platform_page_event(name_lc: &str) -> bool {
+    matches!(
+        name_lc,
+        "onopenpageevent"
+            | "onclosepageevent"
+            | "onqueryclosepageevent"
+            | "onaftergetrecordevent"
+            | "onaftergetcurrrecordevent"
+            | "onnewrecordevent"
+            | "oninsertrecordevent"
+            | "onmodifyrecordevent"
+            | "ondeleterecordevent"
+            | "onbeforevalidateevent"
+            | "onaftervalidateevent"
+            | "onbeforeactionevent"
+            | "onafteractionevent"
+    )
+}
+
+/// Canonical PascalCase display name for a platform table/page event; `name_lc`
+/// must satisfy [`is_platform_table_event`] or [`is_platform_page_event`]. Falls
+/// back to a generic label otherwise.
+pub fn platform_event_display_name(name_lc: &str) -> &'static str {
+    match name_lc {
+        // Table DB triggers.
+        "onbeforeinsertevent" => "OnBeforeInsertEvent",
+        "onafterinsertevent" => "OnAfterInsertEvent",
+        "onbeforemodifyevent" => "OnBeforeModifyEvent",
+        "onaftermodifyevent" => "OnAfterModifyEvent",
+        "onbeforedeleteevent" => "OnBeforeDeleteEvent",
+        "onafterdeleteevent" => "OnAfterDeleteEvent",
+        "onbeforerenameevent" => "OnBeforeRenameEvent",
+        "onafterrenameevent" => "OnAfterRenameEvent",
+        // Shared table/page field validate.
+        "onbeforevalidateevent" => "OnBeforeValidateEvent",
+        "onaftervalidateevent" => "OnAfterValidateEvent",
+        // Page lifecycle / record / action.
+        "onopenpageevent" => "OnOpenPageEvent",
+        "onclosepageevent" => "OnClosePageEvent",
+        "onqueryclosepageevent" => "OnQueryClosePageEvent",
+        "onaftergetrecordevent" => "OnAfterGetRecordEvent",
+        "onaftergetcurrrecordevent" => "OnAfterGetCurrRecordEvent",
+        "onnewrecordevent" => "OnNewRecordEvent",
+        "oninsertrecordevent" => "OnInsertRecordEvent",
+        "onmodifyrecordevent" => "OnModifyRecordEvent",
+        "ondeleterecordevent" => "OnDeleteRecordEvent",
+        "onbeforeactionevent" => "OnBeforeActionEvent",
+        "onafteractionevent" => "OnAfterActionEvent",
+        _ => "PlatformEvent",
+    }
 }
 
 /// Classify a routine as an event publisher from its lowercased `attributes`

@@ -339,6 +339,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `route_applicability_zero_violations` total_routes=17646).
 
 ### Added
+- **(export) incremental graphify fragments + content-hash manifest — `aldump --graphify-export-fragments` (P3)**
+  (`src/program/graphify_export.rs`, `src/bin/aldump.rs`) — partitions the graphify
+  document into one fragment per AL object (`{nodes, edges, hyperedges}`: the
+  object node + its routines + `contains` + the edges/hyperedges ORIGINATING from
+  it) plus a `shared` fragment for cross-fragment target nodes (builtin / external
+  / dynamic / unresolved) so nothing dangles when graphify `build_merge`s them.
+  `manifest[objectId]` is a stable FNV-1a content hash of the fragment; a
+  downstream consumer (Obsidian vault, embeddings) diffs the manifest across runs
+  to re-process ONLY the objects whose output changed — the incremental primitive
+  that matters for AL (whole-program resolution is already cheap, so the win is
+  skipping downstream vault/vector work, not extraction). Verified: manifest is
+  run-stable (unit test); editing a fixture leaves unchanged objects hash-identical
+  and surfaces the new object as ADDED; scales to the real workspace (11,718
+  fragments + manifest, partition totals reconcile with the flat document). New
+  test `fragments_partition_by_object_with_stable_manifest`. 812 lib tests.
+- **(export) integration-points report — `aldump --integration-points` + `program::integration_report`**
+  (`src/program/integration_report.rs`, `src/bin/aldump.rs`) — a dedicated
+  "who-reacts-to-what" projection of the resolved event wiring, scoped to the
+  workspace app's **integration surface**: **inbound** (workspace subscribes to an
+  external/platform event — "what external changes my app hooks into"),
+  **outbound** (an external app subscribes to a workspace event — "what extension
+  points my app exposes, and who uses them"), and **internal**. Each event lists
+  its publisher (app / object / event / kind) and every bound subscriber (app /
+  object / procedure / conditions / cross-app), with whole-program totals in the
+  summary. Measured on DocumentOutput/Cloud: 25,440 events / 3,404 subscriptions /
+  395 cross-app whole-program; **68-event workspace surface** (53 inbound, 20
+  outbound, 2 internal) — e.g. the app hooks Base App `Customer.OnAfterDeleteEvent`
+  / `Purch.-Post.OnAfterProcessPurchLines`, and exposes `"CDO Events".
+  OnAfterCreateDocument` consumed by 2 apps. Completes P2 (event hyperedges +
+  integration-points view). New test `inbound_workspace_subscription_reported`.
+- **(export) graphify hyperedges — event neighbourhoods + interface families (P2)**
+  (`src/program/graphify_export.rs`) — the graphify adapter now populates
+  `hyperedges` (previously always empty) with the non-pairwise integration
+  structure: (1) **event groups** — one publisher event + all its ≥2 subscribers
+  (`{id, label, kind:"event_group", nodes:[pub, sub1, …]}`), and (2) **interface
+  families** — one interface + its ≥2 implementers (`kind:"interface_group"`).
+  graphify renders each as a shaded region and preserves them in `graph.json`.
+  Measured on DocumentOutput/Cloud: **529 hyperedges** (453 event groups, sizes
+  3–27, mean 4.6; 76 interface families), zero dangling node refs, all 529
+  round-trip through graphify `attach_hyperedges`. New test
+  `event_with_multiple_subscribers_emits_hyperedge`.
+- **(resolve) platform PAGE-event subscriber wiring (extends the table-event synthesis)**
+  (`src/program/resolve/event.rs`, `src/program/build.rs`) — extends synthetic
+  `PublisherKind::Platform` publishers to PAGE platform events (`OnOpenPageEvent`,
+  `OnClosePageEvent`, `OnQueryClosePageEvent`, `OnAfterGetRecordEvent`,
+  `OnAfterGetCurrRecordEvent`, `OnNewRecordEvent`, `On{Insert,Modify,Delete}
+  RecordEvent`, `On{Before,After}ValidateEvent`, `On{Before,After}ActionEvent`),
+  routed by the subscriber's `ObjectType::Page`. Page record/lifecycle/action
+  subscriptions were the dominant residual after the table-event + `Sender` fixes.
+  Measured on DocumentOutput/Cloud: orphaned subscribers **142 → 6** (99.8% of all
+  3410 subscribers now wired); the residual 6 are individual Base App / test-lib
+  edge cases. Coverage holds; real-unknown unchanged. 809 lib tests (new
+  `platform_page_event_subscriber_wires_via_synthetic_publisher`).
+
+### Fixed
+- **(resolve) event subscriber–publisher arity match ignored the implicit `Sender` param**
+  (`src/program/resolve/index.rs`) — `ResolveIndex`'s candidate filter used
+  `publisher.params_count >= sub_params`, but an `[IntegrationEvent(IncludeSender=
+  true, …)]` (also Business/Internal) prepends an implicit `Sender` parameter that
+  a subscriber captures, so a subscriber to a 0-explicit-param publisher legally
+  declares arity 1 (`procedure OnRegisterManualSetup(var Sender: Codeunit …)`).
+  `0 >= 1` is false, so every `IncludeSender` subscriber was dropped and its
+  integration edge lost. The bound is now the AL-correct Sender-tolerant
+  `sub_params <= params_count + 1` (never rejects a valid subscriber); overload
+  disambiguation prefers an exact-arity match and only falls back to the `+1`
+  (Sender) match, so genuine ambiguity is still recorded. Measured on
+  DocumentOutput/Cloud: orphaned subscribers **342 → 142** (+200 wired), **all
+  workspace-app subscribers now bound (0 orphans)**; residual 142 are
+  base-application-internal. Coverage holds; real-unknown unchanged. 808 lib tests
+  (new `subscribers_of_include_sender_publisher_binds_arity_one_subscriber`).
+
+### Added
+- **(resolve) platform table-event subscriber wiring — synthetic `PublisherKind::Platform` publishers**
+  (`src/program/resolve/event.rs`, `src/program/build.rs`,
+  `src/program/graphify_export.rs`) — `[EventSubscriber(ObjectType::Table,
+  Database::X, 'OnAfterDeleteEvent'/'OnAfterValidateEvent'/…)]` targets a
+  platform-generated table event (implicit DB-trigger / field-validate) that has
+  **no publisher routine in source**, so the resolve index (which binds a
+  subscriber to a `publisher_kind`-bearing routine) found no candidate and the
+  subscriber **orphaned** — its integration edge ("this fires when X is deleted",
+  the charter's data-is-control-flow wiring) silently lost. On a real BC app this
+  orphaned ~27% of all subscribers (946/3410). `build_program_graph` now injects a
+  synthetic `PublisherKind::Platform` publisher routine on the table for each
+  subscribed `(table, event)` (the 8 CRUD `OnBefore/After{Insert,Modify,Delete,
+  Rename}Event` + `OnBefore/AfterValidateEvent`), collapsing per-field granularity
+  so the index's `(object, name)` candidate model binds each to exactly one
+  publisher; never shadows a real source publisher. Everything downstream — index
+  match, `emit_event_flow_edges`, obligation coverage, graphify export (new
+  `platform_event` routine kind) — flows through the existing publisher machinery
+  unchanged. Measured on DocumentOutput/Cloud (+ Continia/MS deps): orphaned
+  subscribers **946 → 342**, real publisher→subscriber wiring **2,464 → 3,068**
+  (+604), 436 platform publishers injected, obligation coverage still holds,
+  real-unknown unchanged (0.81%). Residual 342 are a distinct category (Codeunit
+  integration-event matching misses), not table events. 807 lib + 65 harness tests
+  green.
+- **(export) graphify adapter — `aldump --graphify-export <workspace>` + `program::graphify_export`**
+  (`src/program/graphify_export.rs`, `src/program/resolve/full.rs`,
+  `src/bin/aldump.rs`) — projects the whole-program **resolved** call graph into a
+  [graphify](https://github.com/safishamsi/graphify) node-link extraction document
+  (`{ nodes, edges, hyperedges }`) consumed by graphify's `build_from_json`, so
+  graphify's clustering / Obsidian-vault / HTML / Neo4j / MCP-query stack runs on
+  engine-resolved AL edges instead of graphify's generic name-matching AST resolver
+  (which has no AL parser and cannot resolve AL dispatch). One node per AL object +
+  routine (+ synthetic builtin/external/dynamic/unresolved targets so no edge
+  dangles); one edge per resolved route. The honest obligation taxonomy is bridged
+  to graphify's `EXTRACTED`/`INFERRED`/`AMBIGUOUS` confidence tiers **without
+  laundering** — `Source`/`Catalog`/`Abi` → `EXTRACTED`, `HonestDynamic`/
+  `HonestEmpty` → `INFERRED`, `Unknown` (the one true failure) → `AMBIGUOUS` — with
+  the full classification preserved verbatim in `obligation`/`evidence`/
+  `dispatch_shape` edge attributes. `EdgeKind` maps to `calls`/`calls_builtin`/
+  `calls_external`/`runs`/`triggers`/`raises_event`. Node ids are keyed on the
+  resolved app **name** (never the run-order-dependent interned `AppRef`). Verified
+  end-to-end: the emitted document round-trips through graphify's real
+  `build_from_json` with zero dangling edges, and the graphify confidence histogram
+  reproduces the engine's `--program-call-graph-stats` obligation histogram
+  (anti-laundering). `resolve_full_program` refactored to share a `build_context`
+  helper with the new `resolve_full_program_for_export` (behaviour-preserving; the
+  65-test program-resolve harness is unchanged). Mapping spec: `U:\Git\graphify\adapter.md`.
 - **(resolve) `resolve_bare` Step 3 — bare implicit-`Rec` dispatch, `with`-guarded + builtin-collision-fail-closed, visibility-scoped (follow-up plan v2.1 Task 3)**
   (`src/program/resolve/resolver.rs`, `src/program/resolve/extract.rs`,
   `src/program/resolve/receiver.rs`) — implements `resolve_bare`'s Step 3,
