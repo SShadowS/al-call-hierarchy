@@ -603,14 +603,36 @@ pub fn resolve_bare(
         return vec![route];
     }
 
-    // 2. Extension base.
+    // 2. Extension base (Task 1.5 — access-filtered). `resolve_in_object`
+    // itself does ZERO access filtering, so gate it behind the SAME
+    // caller-identity-aware visibility check Task 1 established
+    // (`object_has_visible_member_candidate`): the calling object is the
+    // extension (`from_object`), the candidate object is the resolved base
+    // (`base_id`). Per the Task-1 rule: base `Local` is NEVER visible to a
+    // bare call from an extension (base-self only, even though the caller IS
+    // a direct extension); cross-app `Internal` requires the same app;
+    // `Protected` is visible (the caller is by construction a direct,
+    // kind-compatible extension of `base_id`, so the self-or-extends check
+    // trivially holds — incidentally safe, not accidentally permissive);
+    // `Public` is always visible. When the base member is not visible, Step 2
+    // declines entirely (no `resolve_in_object` call) and falls through to
+    // Step 3/4/5, exactly like the pre-existing "no candidate at all"
+    // fallthrough shape.
     if let Some(base_kind) = extension_base_kind(from_object.id.kind)
         && let Some(extends_target) = from_object.extends_target.as_deref()
         && let Some(base_obj) = graph.resolve_object(from_object.id.app, base_kind, extends_target)
     {
         let base_id = base_obj.id.clone();
         let base_tier = base_obj.tier;
-        if let Some(route) =
+        if object_has_visible_member_candidate(
+            &base_id,
+            base_tier,
+            name_lc,
+            arity,
+            &from_object.id,
+            graph,
+            index,
+        ) && let Some(route) =
             resolve_in_object(&base_id, base_tier, name_lc, arity, graph, index, body_map)
         {
             return vec![route];
@@ -1820,6 +1842,311 @@ table 50000 Customer
             "resolved routine must live in AppB (the base table's app)"
         );
         assert_eq!(rid.name_lc, "init");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 1.5 — resolve_bare Step 2 ("extension base") access filtering.
+    //
+    // Step 2 resolves a bare call against the caller's extended BASE object
+    // via `resolve_in_object`, which does ZERO access filtering (unlike
+    // `resolve_in_table_scope`, Task 1's caller-identity-aware path). Pre-fix,
+    // ANY base member — regardless of declared `Access` — false-resolved to
+    // `Source`. These fixtures pin the exact pre-fix wrong route (Source to
+    // the inaccessible base member) and the post-fix honest `Unknown`, plus
+    // two controls proving Step 2 still works for `Public`/`Protected` (the
+    // extension trivially extends its own base, so `Protected` is visible).
+    // -----------------------------------------------------------------------
+
+    // (a) TableExtension `ExtA extends Base` bare-calls a `local procedure
+    // L()` declared on `Base`. AL `local` is OBJECT-scoped — visible only to
+    // `Base` itself, never to ANY of its extensions (even a direct one) — so
+    // this must decline to `Unknown`. Pre-fix: false `Source` to `Base.L`.
+    #[test]
+    fn bare_extension_base_local_method_excluded() {
+        let src_base: &'static str = r#"
+table 52900 "Base"
+{
+    local procedure L()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52901 "ExtA" extends Base
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_base = make_unit(app_id.clone(), "Base.al", src_base);
+        let unit_ext = make_unit(app_id, "ExtA.al", src_ext);
+        let units = [unit_base, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ExtA");
+        assert_eq!(from_obj.id.kind, ObjectKind::TableExtension);
+
+        let routes = resolve_bare(
+            from_obj,
+            "l",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a base table's `local` procedure must NOT be visible to a bare \
+             call from ANY of its extensions (base-self only); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (b) CONTROL: same shape as (a), but `Base` declares a `Public`
+    // (default-visibility) `procedure Pub()` — Step 2 must still resolve this
+    // to `Source`, unchanged by the access filter.
+    #[test]
+    fn bare_extension_base_public_method_control_resolves_to_source() {
+        let src_base: &'static str = r#"
+table 52902 "Base"
+{
+    procedure Pub()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52903 "ExtA" extends Base
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_base = make_unit(app_id.clone(), "Base.al", src_base);
+        let unit_ext = make_unit(app_id, "ExtA.al", src_ext);
+        let units = [unit_base, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ExtA");
+        let routes = resolve_bare(
+            from_obj,
+            "pub",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a base table's `Public` procedure must still resolve via Step \
+             2; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (c) cross-app `internal`: `ExtA` (App A) bare-calls an `internal
+    // procedure I()` declared on `Base` (App B, a dependency of App A —
+    // App A extends a base object it does not own). `internal` is app-scoped;
+    // cross-app must decline to `Unknown`. Pre-fix: false `Source` to `Base.I`.
+    #[test]
+    fn bare_extension_base_cross_app_internal_method_excluded() {
+        let src_base: &'static str = r#"
+table 52904 "Base"
+{
+    internal procedure I()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52905 "ExtA" extends Base
+{
+}
+"#;
+        let app_a = make_app_id("AppA");
+        let app_b = make_app_id("AppB");
+        let unit_base = make_unit(app_b, "Base.al", src_base);
+        let unit_ext = make_unit(app_a, "ExtA.al", src_ext);
+        let units = [unit_base, unit_ext];
+        let graph = build_graph(&units, Some(("AppA", "AppB")));
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ExtA");
+        let routes = resolve_bare(
+            from_obj,
+            "i",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a cross-app `internal` base method must NOT be visible to a \
+             bare call from an extension in a DIFFERENT app; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (d) CONTROL: `ExtA` bare-calls a `protected procedure P()` on `Base` —
+    // the extension DOES see the base's `protected` member (Step 2's caller
+    // is by construction a direct, kind-compatible extension of the base, so
+    // the self-or-extends check always holds — confirms this incidentally-
+    // safe path stays correct after the access filter is added).
+    #[test]
+    fn bare_extension_base_protected_method_control_resolves_to_source() {
+        let src_base: &'static str = r#"
+table 52906 "Base"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52907 "ExtA" extends Base
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_base = make_unit(app_id.clone(), "Base.al", src_base);
+        let unit_ext = make_unit(app_id, "ExtA.al", src_ext);
+        let units = [unit_base, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ExtA");
+        let routes = resolve_bare(
+            from_obj,
+            "p",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a base table's `protected` procedure must be visible to a bare \
+             call from its own extension; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (e) PageExtension→base-Page variant of (a): same `local`-excluded rule
+    // generalized to a non-Table extension kind.
+    #[test]
+    fn bare_pageextension_base_local_method_excluded() {
+        let src_page: &'static str = r#"
+page 52908 "BasePage"
+{
+    local procedure L()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 52909 "ExtA" extends BasePage
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "BasePage.al", src_page);
+        let unit_ext = make_unit(app_id, "ExtA.al", src_ext);
+        let units = [unit_page, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ExtA");
+        assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
+
+        let routes = resolve_bare(
+            from_obj,
+            "l",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a base Page's `local` procedure must NOT be visible to a bare \
+             call from ANY of its PageExtensions; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (f) PageExtension→base-Page variant of (b) CONTROL: `Public` still
+    // resolves via Step 2.
+    #[test]
+    fn bare_pageextension_base_public_method_control_resolves_to_source() {
+        let src_page: &'static str = r#"
+page 52910 "BasePage"
+{
+    procedure Pub()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 52911 "ExtA" extends BasePage
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "BasePage.al", src_page);
+        let unit_ext = make_unit(app_id, "ExtA.al", src_ext);
+        let units = [unit_page, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ExtA");
+        let routes = resolve_bare(
+            from_obj,
+            "pub",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a base Page's `Public` procedure must still resolve via Step 2; \
+             got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
     }
 
     // -----------------------------------------------------------------------

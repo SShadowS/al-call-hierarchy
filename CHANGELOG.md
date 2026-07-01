@@ -34,6 +34,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`CDO_WS`): `genuine_wrong` stays 0; `real_unknown_rate` unchanged at 1.91% (346 unknown) —
   this soundness fix has zero measurable footprint on the CDO corpus (the affected pattern is
   rare/absent there), consistent with the task brief's prediction.
+- **soundness-completion plan Task 1.5: access-filter `resolve_bare`'s Step 2
+  ("extension base") — closes a false-`Source` `resolve_in_object` left unfiltered**
+  (`src/program/resolve/resolver.rs`). Task 1 made `resolve_in_table_scope` (the Rec-member +
+  bare-Rec paths) caller-identity-aware, but `resolve_bare`'s Step 2 — resolving a bare call
+  against a `*Extension`'s BASE object — is a separate path through `resolve_in_object`, which
+  does zero access filtering. A bare call from a `TableExtension`/`PageExtension`/… to a base
+  object's `local` procedure, or to a CROSS-APP `internal` procedure, previously false-resolved
+  to `Source`. Step 2 now gates on the SAME Task-1 rule via `object_has_visible_member_candidate`
+  (the extension is the caller, the base is the candidate): base `Local` is NEVER visible to a
+  bare call from an extension (base-self only); cross-app `Internal` requires the same app;
+  `Protected` stays visible (Step 2's caller is by construction a direct extension of the base,
+  so self-or-extends trivially holds — confirmed still correct, not accidentally permissive);
+  `Public` stays visible. Not-visible declines Step 2 entirely (no `resolve_in_object` call),
+  falling through to Step 3/4/5 exactly like the pre-existing "no candidate" shape. Minor
+  cleanup: `ResolveIndex::object_extends`'s object lookup switched from an O(n)
+  `graph.objects.iter().find` to a `binary_search_by`, mirroring `lookup_routine_access`
+  (`graph.objects` is sorted by `ObjectNodeId` at construction). 6 new unit tests in
+  `resolver.rs` (TableExtension `local`-excluded + `Public`/`Protected` controls, cross-app
+  `internal`-excluded, PageExtension `local`-excluded + `Public` control), TDD-verified against
+  the pre-fix code (temporarily reverted, confirmed the exact wrong routes — false `Source` to
+  the base's `local`/cross-app-`internal` member — then restored). CDO (`CDO_WS`):
+  `genuine_wrong` stays 0; primary/whole-program `unknown` rose 346→356 (+10, rate 1.91%→1.97%,
+  still under the 0.021 ceiling) — spot-check VERIFIED as a genuine correction, not an
+  over-decline: every +10 edge is a bare call in `CDOConnecteCandidates.PageExt.al`
+  (PageExtension in app "Continia Document Output") to an `internal procedure`
+  (`GetIsSingleConnect`/`GeteCandidatesFiltered`/`GetIsVendor`) declared on the base Page in app
+  "Continia Delivery Network" — a genuinely different app (confirmed via `app.json` dependency
+  GUIDs and by extracting that dependency's embedded ShowMyCode source directly). The `unknown`
+  COUNT ceilings raised 355→365 (soundness beats the metric; the `<= 0.021` rate ceiling was not
+  tripped, left unchanged).
 
 ### Added
 - **follow-up plan v2.1 Task 4 (FINAL, CAPSTONE): the fail-closed object-resolution +

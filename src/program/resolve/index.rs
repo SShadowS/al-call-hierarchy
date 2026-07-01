@@ -538,7 +538,16 @@ impl ResolveIndex {
         if !from.kind.is_extension_kind() || from.kind.extension_base_kind() != Some(target.kind) {
             return false;
         }
-        let Some(from_obj) = graph.objects.iter().find(|o| &o.id == from) else {
+        // `graph.objects` is sorted by `ObjectNodeId` at construction
+        // (`build_program_graph` Step 4 / every in-memory test fixture) —
+        // binary-searchable, mirroring `lookup_routine_access`'s identical
+        // `graph.routines.binary_search_by` lookup pattern (resolver.rs).
+        let Some(from_obj) = graph
+            .objects
+            .binary_search_by(|probe| probe.id.cmp(from))
+            .ok()
+            .map(|i| &graph.objects[i])
+        else {
             return false;
         };
         let Some(extends) = from_obj.extends_target.as_deref() else {

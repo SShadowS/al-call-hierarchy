@@ -1287,24 +1287,47 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `unknown`=346: every current `Unknown` route happens to originate from
     // a workspace (primary) routine; a dependency-internal `Unknown` would
     // inflate whole-program above primary without this count catching it,
-    // hence the separate whole-program ceiling below. 355 gives a tiny margin.
+    // hence the separate whole-program ceiling below.
+    //
+    // RAISED 2026-07-01 (soundness completion plan v2.1, Task 1.5): 346→356
+    // (+10), a SOUNDNESS CORRECTION, not a regression — the ratchet must not
+    // block a false-`Source`→honest-`Unknown` fix (plan: "soundness beats the
+    // metric"). Task 1.5 access-filters `resolve_bare`'s Step 2
+    // ("extension base") the same way Task 1 filtered `resolve_in_table_scope`;
+    // pre-fix, Step 2 had ZERO access filtering. All +10 were spot-check
+    // VERIFIED on CDO: every one is a bare call from
+    // `Al/Extensions/eCandidates/CDOConnecteCandidates.PageExt.al`
+    // (PageExtension 6175296, app "Continia Document Output") to
+    // `internal procedure` `GetIsSingleConnect`/`GeteCandidatesFiltered`/
+    // `GetIsVendor`, all declared on the base Page `"CTS-CDN Connect
+    // eCandidates"` (id 6252183) in app "Continia Delivery Network"
+    // (GUID `0745e76d-...`, a genuinely DIFFERENT app from CDO's
+    // `f4b69b55-...`, per `app.json`'s `dependencies`) — confirmed by
+    // extracting that dependency's embedded ShowMyCode source directly (the
+    // 3 procedures ARE `internal`, cross-app, was false `Source` pre-fix).
+    // 365 keeps the same ~9-count deterministic margin the prior ceiling used.
     assert!(
-        ph.unknown <= 355,
-        "primary unknown count {} exceeds ceiling 355 (recorded 2026-07-01 post \
-         follow-up plan v2.1 Task 4: 346, was 508 pre-follow-up) — \
-         engine regressed; investigate before raising the ceiling",
+        ph.unknown <= 365,
+        "primary unknown count {} exceeds ceiling 365 (recorded 2026-07-01 post \
+         soundness completion plan v2.1 Task 1.5: 356 — a verified soundness \
+         correction, was 346 post follow-up plan v2.1 Task 4, 508 \
+         pre-follow-up) — engine regressed; investigate before raising the \
+         ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
     // future regression lands in a dependency-internal (non-primary) routine
     // — the primary-scoped count above would not catch that on its own.
-    // Re-confirmed 2026-07-01: whole-program `unknown`=346 (same value as
-    // primary today — see comment above); 355 gives the same tiny margin.
+    // RAISED 2026-07-01 alongside the primary ceiling above (same Task 1.5
+    // soundness correction; whole-program `unknown`=356, same value as
+    // primary today — see comment above); 365 gives the same tiny margin.
     assert!(
-        h.unknown <= 355,
-        "whole-program unknown count {} exceeds ceiling 355 (recorded 2026-07-01 post \
-         follow-up plan v2.1 Task 4: 346, was 508 pre-follow-up) — \
-         engine regressed; investigate before raising the ceiling",
+        h.unknown <= 365,
+        "whole-program unknown count {} exceeds ceiling 365 (recorded 2026-07-01 \
+         post soundness completion plan v2.1 Task 1.5: 356 — a verified \
+         soundness correction, was 346 post follow-up plan v2.1 Task 4, 508 \
+         pre-follow-up) — engine regressed; investigate before raising the \
+         ceiling",
         h.unknown,
     );
 

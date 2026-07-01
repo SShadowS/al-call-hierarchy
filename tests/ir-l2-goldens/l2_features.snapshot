@@ -7,6 +7,12 @@ ws-argument-bindings/src/Codeunit.al::0::HelperLocalRecord	e10bd60c73655cbe
 ws-argument-bindings/src/Codeunit.al::0::HelperLiteral	233ea62584b2523d
 ws-argument-bindings/src/Codeunit.al::0::HelperExpression	e1ff94bd44bca26a
 ws-argument-bindings/src/Codeunit.al::0::HelperImplicitRec	759203342bd6aca7
+ws-bare-extbase-visibility/a_local_excluded/Base.Table.al::0::L	11f643705008e708
+ws-bare-extbase-visibility/b_public_control/Base.Table.al::0::Pub	4fa70f1a715663ef
+ws-bare-extbase-visibility/c_internal_cross_app/dep/Base.Table.al::0::I	d3f530412bffcdc7
+ws-bare-extbase-visibility/d_protected_control/Base.Table.al::0::P	2255eae3a7baef53
+ws-bare-extbase-visibility/e_pageext_local_excluded/BasePage.Page.al::0::L	1181af18ff0d5014
+ws-bare-extbase-visibility/f_pageext_public_control/BasePage.Page.al::0::Pub	c4ba837c6b0199d4
 ws-bare-implicit-rec/IRBuiltinCollideTable.Table.al::0::StrLen	12b16f5dccc9dfc0
 ws-bare-implicit-rec/IRNoTableCU.Codeunit.al::0::OnRun	c80b6dbdfd999752
 ws-bare-implicit-rec/IRPageA.Page.al::0::OnOpenPage	2a02239a5909c11a

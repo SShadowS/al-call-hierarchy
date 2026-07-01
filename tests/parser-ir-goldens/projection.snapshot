@@ -1,5 +1,17 @@
 ws-api-page/src/api.al	b7b226f0f41a5ba9
 ws-argument-bindings/src/Codeunit.al	8fcbbe97c59a972c
+ws-bare-extbase-visibility/a_local_excluded/Base.Table.al	42dbffa92dbb3043
+ws-bare-extbase-visibility/a_local_excluded/ExtA.TableExt.al	07b6ce642ec567f5
+ws-bare-extbase-visibility/b_public_control/Base.Table.al	af7f1899cc418382
+ws-bare-extbase-visibility/b_public_control/ExtA.TableExt.al	07b6ce642ec567f5
+ws-bare-extbase-visibility/c_internal_cross_app/dep/Base.Table.al	7d467546ca2717d4
+ws-bare-extbase-visibility/c_internal_cross_app/primary/ExtA.TableExt.al	07b6ce642ec567f5
+ws-bare-extbase-visibility/d_protected_control/Base.Table.al	c7da52c651c83621
+ws-bare-extbase-visibility/d_protected_control/ExtA.TableExt.al	07b6ce642ec567f5
+ws-bare-extbase-visibility/e_pageext_local_excluded/BasePage.Page.al	f5073b7de76f6855
+ws-bare-extbase-visibility/e_pageext_local_excluded/ExtA.PageExt.al	4bfa42ea72090282
+ws-bare-extbase-visibility/f_pageext_public_control/BasePage.Page.al	6ed3e3c194de8538
+ws-bare-extbase-visibility/f_pageext_public_control/ExtA.PageExt.al	4bfa42ea72090282
 ws-bare-implicit-rec/IRBuiltinCollideTable.Table.al	424dbe4995fd904c
 ws-bare-implicit-rec/IRNoTableCU.Codeunit.al	b5ab4609b0d80e70
 ws-bare-implicit-rec/IRPageA.Page.al	ce03f7695d6819ab
