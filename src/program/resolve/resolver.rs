@@ -307,55 +307,76 @@ fn lookup_routine_access(graph: &ProgramGraph, rid: &RoutineNodeId) -> Option<Ac
 }
 
 /// Like [`object_has_member_candidate`], but additionally excludes a
-/// candidate whose declaring app DIFFERS from `from_app` and whose access
-/// modifier is `Local` or `Internal` — a routine not visible outside its own
-/// app (beyond-1B.3b Task 2 soundness fix; a same-app candidate, or a
-/// `Public`/`Protected` cross-app candidate, is unaffected).
+/// candidate whose declared [`Access`] is not visible from the CALLING
+/// object's identity `from_object` — the caller-identity-aware visibility
+/// check (beyond-1B.3b Task 1, superseding the app-scoped Task 2 version).
 ///
 /// # Why this is additive, not a behavior change, for SymbolOnly candidates
 ///
 /// SymbolOnly (ABI-ingested `.app` dependency) objects already drop
 /// `is_local`/`is_internal` routines entirely at ingestion time
-/// (`abi_ingest::extract_abi_nodes`), so `object_has_member_candidate`'s
-/// existing SymbolOnly short-circuit (any name match counts) already never
-/// sees a Local/Internal ABI routine — this function's access check is a
-/// no-op for that tier. The additive effect is limited to SOURCE-tier
-/// cross-app objects: a multi-app workspace where a dependency's own source
-/// (not just its ABI) is loaded (`EmbeddedSource`/`LocalSource*`), where
-/// `Access` is parsed from real AL modifiers (`node_extract::Access::
-/// from_modifier`) and was previously never checked against the caller's app.
+/// (`abi_ingest::extract_abi_nodes`) and hardcode every surviving routine's
+/// `Access` to `Public` (`abi_ingest.rs:283`) — so `object_has_member_
+/// candidate`'s existing SymbolOnly short-circuit (any name match counts)
+/// already never sees a non-Public ABI routine; this function's access check
+/// is a no-op for that tier and is skipped entirely for it (avoids a lookup
+/// against ABI routine data that was never populated with real modifiers).
 ///
-/// `Access::Protected` is intentionally left unfiltered here — OUT OF SCOPE
-/// for Task 2 (the brief names only Internal/Local); a documented gap, not
-/// an oversight.
+/// # SOURCE-tier per-candidate `Access` rule (RESOLVED OBJECT IDENTITY, never
+/// a lowercased-name comparison — every branch below compares
+/// [`ObjectNodeId`]s or [`AppRef`]s, both derived from `graph`/`index`
+/// identity, never from `Origin`/source text)
+///
+/// - [`Access::Public`] → always visible.
+/// - [`Access::Local`] → visible ONLY when `obj_id == from_object` (the
+///   candidate's declaring object IS the calling object itself — AL's
+///   `local` is OBJECT-scoped, not app-scoped; this was the first latent
+///   false-`Source` this task closes: the pre-fix code treated ANY same-app
+///   candidate as visible, so a same-app but DIFFERENT object's `local`
+///   procedure false-resolved to `Source`).
+/// - [`Access::Internal`] → visible when `obj_id.app == from_object.app`
+///   (app-scoped; unaffected by this task). Cross-app `internal` fails
+///   closed to `Unknown` — AL's `InternalsVisibleTo`/friend-app exception is
+///   OUT OF SCOPE here (a documented recall cost, not a soundness hole: a
+///   false `Unknown` is never the cardinal sin a false `Source` is).
+/// - [`Access::Protected`] → visible when `obj_id == from_object` (self) OR
+///   `index.object_extends(graph, from_object, obj_id)` is `true` — `from_object`
+///   is a DIRECT, kind-compatible extension of the candidate's declaring
+///   object (see [`ResolveIndex::object_extends`] for the full DIRECT +
+///   KIND-COMPATIBLE + never-reverse + never-peer contract). This closes the
+///   second latent false-`Source`: the pre-fix code left `Protected`
+///   completely unfiltered for any same-app candidate, including a
+///   same-app-but-unrelated object AND a PEER extension of the same base
+///   (the sibling-bleed case — the single biggest false-`Source` this task
+///   closes).
+/// - Lookup miss (`None`) → fails closed (excluded), never assumed visible.
 fn object_has_visible_member_candidate(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
     method_lc: &str,
     arity: usize,
-    from_app: AppRef,
+    from_object: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> bool {
     if !object_has_member_candidate(obj_id, obj_tier, method_lc, arity, index) {
         return false;
     }
-    if obj_tier == TrustTier::SymbolOnly || obj_id.app == from_app {
+    if obj_tier == TrustTier::SymbolOnly {
         return true;
     }
-    // Cross-app source-tier object: `object_has_member_candidate` already
-    // proved at least one arity-matched overload exists; require at least
-    // one whose access modifier is visible outside its declaring app. A
-    // lookup miss (`None`) fails closed (excluded), never assumed visible.
     index
         .routines_in_object(obj_id, method_lc)
         .iter()
         .filter(|rid| rid.params_count == arity)
-        .any(|rid| {
-            !matches!(
-                lookup_routine_access(graph, rid),
-                None | Some(Access::Local) | Some(Access::Internal)
-            )
+        .any(|rid| match lookup_routine_access(graph, rid) {
+            Some(Access::Public) => true,
+            Some(Access::Local) => obj_id == from_object,
+            Some(Access::Internal) => obj_id.app == from_object.app,
+            Some(Access::Protected) => {
+                obj_id == from_object || index.object_extends(graph, from_object, obj_id)
+            }
+            None => false,
         })
 }
 
@@ -385,12 +406,15 @@ fn object_has_visible_member_candidate(
 ///    produced it — see `receiver::resolve_source_table_ref` — but
 ///    re-checking here makes this helper safe to call independent of that
 ///    upstream guarantee).
-/// 2. **Access filter.** A candidate procedure declared in a DIFFERENT app
-///    than `from_object`, marked `Access::Local` or `Access::Internal`, is
-///    excluded from the candidate count — see
-///    [`object_has_visible_member_candidate`] for the full rationale
-///    (including why this is a no-op for SymbolOnly/ABI candidates and
-///    additive only for source-tier cross-app objects).
+/// 2. **Access filter.** A candidate procedure whose declared [`Access`] is
+///    not visible from `from_object`'s identity is excluded from the
+///    candidate count — `Local` requires `from_object` to BE the candidate's
+///    declaring object, `Internal` requires the same app, `Protected`
+///    requires self OR a direct kind-compatible extension relationship (see
+///    [`object_has_visible_member_candidate`] for the full per-access
+///    rationale, including why this is a no-op for SymbolOnly/ABI candidates
+///    — beyond-1B.3b Task 1, superseding the earlier app-scoped-only Task 2
+///    version of this filter).
 ///
 /// # Cardinality (unchanged from the pre-extraction Record arm)
 ///
@@ -453,7 +477,7 @@ fn resolve_in_table_scope(
             *tier,
             name_lc,
             arity,
-            from_object.id.app,
+            &from_object.id,
             graph,
             index,
         )
@@ -516,6 +540,23 @@ fn implicit_rec_table_id(
 /// between "the implicit-Rec table's own procedure" and "the platform
 /// intrinsic" — with no compiler-verified precedence rule captured here,
 /// fail-closed to `Unknown` on any such collision rather than pick a side.
+///
+/// # Why this checks `Global`/`Framework(PageInstance)` only, never `Record`
+/// (beyond-1B.3b Task 1, Item 4 — NOT a bug, do not "fix" by adding a
+/// `Record` branch here)
+///
+/// `resolve_member`'s `Record` arm (see the comment there) deliberately lets
+/// a visible source/ABI table candidate SHADOW a same-named `Record` catalog
+/// builtin with NO collision guard — that is corpus-validated correct AL
+/// precedence (42 real CDO `builtin-catalog-fp-collision` instances, e.g.
+/// `Record::fieldno`, `Record::setrecfilter`; see
+/// `resolve_member_record_source_proc_shadows_same_named_builtin`). This
+/// function's collision set is exactly the TWO catalogs (`Global`,
+/// `Framework(PageInstance)`) where the reverse holds — Step 3's own
+/// table-scope candidate has NO compiler-verified precedence over those, so
+/// it fails closed instead. Adding `Record` here would regress the
+/// beyond-1B.3b Task 1 source-shadows-catalog fix back into a false
+/// `Unknown`.
 fn is_bare_builtin_or_page_intrinsic(name_lc: &str) -> bool {
     global_builtin_id(name_lc).is_some()
         || member_builtin(
@@ -1001,6 +1042,10 @@ pub fn resolve_member(
 ) -> (DispatchShape, Vec<Route>) {
     match receiver {
         ReceiverType::RecordRef => {
+            // Catalog-only by construction (Item 4 — see the `Record` arm's
+            // comment below): `RecordRef` carries no table identity (unlike
+            // `Record { table }`), so there is no source candidate to shadow
+            // the catalog and no collision guard is needed OR possible here.
             if let Some(bid) = member_builtin_id(MemberCatalogKind::RecordRef, method_lc) {
                 member_catalog_route(bid)
             } else {
@@ -1029,16 +1074,27 @@ pub fn resolve_member(
             }
         }
         ReceiverType::Record { table } => {
-            // Source-before-catalog (beyond-1B.3b Task 1): AL semantics say a
-            // visible source/ABI table method of matching name+arity SHADOWS a
-            // same-named platform-intrinsic Record method (Catalog). Gather
-            // every visible source/ABI candidate across the base table AND its
-            // TableExtensions FIRST — visibility-scoped to `from_object`'s app
-            // dependency closure, with Local/Internal cross-app candidates
-            // excluded (beyond-1B.3b Task 2; see `resolve_in_table_scope`) —
-            // only consult the catalog when that scope has ZERO candidates (or
-            // the table itself is unresolved/not visible — builtins still
-            // resolve table-independently in that case).
+            // Source-before-catalog (beyond-1B.3b Task 1 / Item 4 — see
+            // `is_bare_builtin_or_page_intrinsic`'s doc for the mirror-image
+            // rationale): AL semantics say a visible source/ABI table method
+            // of matching name+arity SHADOWS a same-named platform-intrinsic
+            // Record method (Catalog), and this arm is DELIBERATELY NOT
+            // collision-guarded the way Step 3's bare-call probe is —
+            // same-receiver Source-shadows-Catalog is corpus-validated
+            // correct AL precedence (42 real CDO `builtin-catalog-fp-
+            // collision` instances; see
+            // `resolve_member_record_source_proc_shadows_same_named_builtin`).
+            // Adding a collision guard here would regress that fix back into
+            // a false `Unknown` — do not "fix" this. Gather every visible
+            // source/ABI candidate across the base table AND its
+            // TableExtensions FIRST — visibility-scoped to `from_object`'s
+            // app dependency closure, with `Local`/`Internal`/`Protected`
+            // candidates excluded per `from_object`'s CALLER IDENTITY
+            // (beyond-1B.3b Task 1, caller-identity-aware; see
+            // `object_has_visible_member_candidate`) — only consult the
+            // catalog when that scope has ZERO candidates (or the table
+            // itself is unresolved/not visible — builtins still resolve
+            // table-independently in that case).
             //
             // Cardinality (gpt round-2): exactly one candidate object → resolve
             // it (Source/Abi/Opaque); more than one → honest ambiguous Unknown
@@ -3668,6 +3724,817 @@ codeunit 52422 "PubCallerA"
             unreachable!()
         };
         assert_eq!(rid.object.kind, ObjectKind::TableExtension);
+    }
+
+    // -----------------------------------------------------------------------
+    // beyond-1B.3b Task 1 — caller-identity-aware visibility: same-app
+    // `local` is OBJECT-scoped (not app-scoped), cross-app `Protected` is
+    // filtered via identity `object_extends`. The full access matrix from
+    // the task brief, lettered (a)-(l); (e) and (l) (cross-app `local`/
+    // `internal` exclusion) were ALREADY covered by the beyond-1B.3b Task 2
+    // tests above (`resolve_member_record_cross_app_extension_local_method_
+    // excluded`, `resolve_member_record_cross_app_base_table_internal_
+    // method_excluded`, `resolve_member_record_cross_app_extension_internal_
+    // method_excluded`) and are re-asserted green by this task's refactor,
+    // not re-duplicated here. See `tests/r0-corpus/ws-visibility-local-
+    // protected/COMPILER_PROOF.md` for the AL-compiler semantics backing
+    // every lettered case.
+    // -----------------------------------------------------------------------
+
+    // (a) SELF: an object's OWN `local procedure`, called via a `Record`
+    // variable of the object's OWN type (`Rec.DoWork()` from inside the same
+    // table) — `Access::Local` visible to self.
+    #[test]
+    fn resolve_member_record_local_self_call_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52600 "LocSelfFoo"
+{
+    procedure Wrapper()
+    var
+        R: Record LocSelfFoo;
+    begin
+        R.DoWork();
+    end;
+
+    local procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id, "LocSelfFoo.al", src_table);
+        let units = [unit_table];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "LocSelfFoo");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        // The CALLING object IS the table itself — the self case.
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, table_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "an object's own `local` procedure must be visible to ITSELF; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (b) same-app DIFFERENT object: `Table Foo` (no `DoWork`) + a
+    // `TableExtension FooExtB` (SAME app) declaring `local procedure
+    // DoWork()`; a same-app but DIFFERENT `Codeunit CallerA` calls
+    // `R.DoWork()` — AL `local` is OBJECT-scoped, so this must decline. THE
+    // pre-fix bug: `object_has_visible_member_candidate`'s same-app branch
+    // used to return `true` unconditionally, false-resolving this to
+    // `Source` targeting `FooExtB.DoWork` (verified against unfixed code
+    // during this task's TDD Step 2 — see the task report).
+    #[test]
+    fn resolve_member_record_same_app_extension_local_method_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52610 "Foo"
+{
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52611 "FooExtB" extends Foo
+{
+    local procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 52612 "CallerA"
+{
+    procedure Test()
+    var
+        R: Record Foo;
+    begin
+        R.DoWork();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Foo.al", src_table);
+        let unit_ext = make_unit(app_id.clone(), "FooExtB.al", src_ext);
+        let unit_caller = make_unit(app_id, "CallerA.al", src_caller);
+        let units = [unit_table, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Foo");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "CallerA");
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a same-app but DIFFERENT object's `local` TableExtension method \
+             must be excluded (AL `local` is OBJECT-scoped, not app-scoped); \
+             got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (c) TableExtension `local` SELF-call: the extension declares its own
+    // `local procedure` and calls it via `Rec.DoWork()` where `Rec` is typed
+    // to the BASE table (the only way to reference a TableExtension's own
+    // members) — the calling object (the extension) equals the candidate's
+    // declaring object, so this is self, not the app-scoped case.
+    #[test]
+    fn resolve_member_record_tableext_local_self_call_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52620 "Foo"
+{
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52621 "FooExtC" extends Foo
+{
+    procedure Wrapper()
+    var
+        R: Record Foo;
+    begin
+        R.DoWork();
+    end;
+
+    local procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Foo.al", src_table);
+        let unit_ext = make_unit(app_id, "FooExtC.al", src_ext);
+        let units = [unit_table, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Foo");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "FooExtC");
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a TableExtension's own `local` procedure must be visible to \
+             ITSELF; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.object.kind, ObjectKind::TableExtension);
+    }
+
+    // (d) PEER-extension: `FooExtA` declares `local procedure DoWork()`;
+    // sibling `FooExtB` (same base, same app) calls `R.DoWork()` — NOT self
+    // (the calling object is FooExtB, the declaring object is FooExtA) — must
+    // decline even though both are same-app AND both extend the same base.
+    #[test]
+    fn resolve_member_record_peer_extension_local_method_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52630 "Foo"
+{
+}
+"#;
+        let src_ext_a: &'static str = r#"
+tableextension 52631 "FooExtA" extends Foo
+{
+    local procedure DoWork()
+    begin
+    end;
+}
+"#;
+        let src_ext_b: &'static str = r#"
+tableextension 52632 "FooExtB" extends Foo
+{
+    procedure Wrapper()
+    var
+        R: Record Foo;
+    begin
+        R.DoWork();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Foo.al", src_table);
+        let unit_ext_a = make_unit(app_id.clone(), "FooExtA.al", src_ext_a);
+        let unit_ext_b = make_unit(app_id, "FooExtB.al", src_ext_b);
+        let units = [unit_table, unit_ext_a, unit_ext_b];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Foo");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "FooExtB");
+        let (shape, routes) =
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a PEER extension's `local` method must never be visible to a \
+             sibling extension; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (f) SELF: the declaring TABLE calls its OWN `protected procedure` via
+    // `Rec.P()` — trivially visible (self), symmetric with (a).
+    #[test]
+    fn resolve_member_record_protected_self_call_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52640 "Bar"
+{
+    procedure Wrapper()
+    var
+        R: Record Bar;
+    begin
+        R.P();
+    end;
+
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id, "Bar.al", src_table);
+        let units = [unit_table];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Bar");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, table_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "an object's own `protected` procedure must be visible to \
+             ITSELF; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (g) same-app NON-extension: `Table Bar` with `protected procedure P()`;
+    // a same-app `Codeunit` — NOT an extension of Bar — calls `R.P()`. THE
+    // pre-fix bug: `Access::Protected` was completely unfiltered for any
+    // same-app candidate, false-resolving this to `Source` targeting
+    // `Bar.P` (verified against unfixed code — see the task report).
+    #[test]
+    fn resolve_member_record_same_app_non_extension_protected_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52650 "Bar"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 52651 "CallerG"
+{
+    procedure Test()
+    var
+        R: Record Bar;
+    begin
+        R.P();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Bar.al", src_table);
+        let unit_caller = make_unit(app_id, "CallerG.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Bar");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "CallerG");
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a same-app NON-extension object must NOT see a table's \
+             `protected` procedure (not an extension of Bar → invisible); \
+             got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (g) supplemental: same shape as above, but the same-app caller is a
+    // PAGE (SourceTable = Bar) rather than a Codeunit — the brief's example
+    // shape. `object_has_visible_member_candidate` gates on the CALLING
+    // object's identity/kind, never the receiver's own kind, so a Page
+    // caller must decline identically to a Codeunit caller.
+    #[test]
+    fn resolve_member_record_same_app_page_non_extension_protected_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52652 "Bar"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_page: &'static str = r#"
+page 52653 "CallerGPage"
+{
+    SourceTable = Bar;
+
+    procedure Test()
+    var
+        R: Record Bar;
+    begin
+        R.P();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Bar.al", src_table);
+        let unit_page = make_unit(app_id, "CallerGPage.al", src_page);
+        let units = [unit_table, unit_page];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Bar");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "CallerGPage");
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a same-app Page whose SourceTable is Bar, but which does NOT \
+             extend Bar, must NOT see Bar's `protected` procedure; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (h) cross-app NON-extension: same shape as (g), but the caller is in a
+    // DIFFERENT app (a dependency relationship, not an extension
+    // relationship) — must decline a fortiori.
+    #[test]
+    fn resolve_member_record_cross_app_non_extension_protected_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52660 "Bar"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 52661 "CallerH"
+{
+    procedure Test()
+    var
+        R: Record Bar;
+    begin
+        R.P();
+    end;
+}
+"#;
+        let app_a = make_app_id("AppA");
+        let app_b = make_app_id("AppB");
+        let unit_table = make_unit(app_b, "Bar.al", src_table);
+        let unit_caller = make_unit(app_a, "CallerH.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Bar");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "CallerH");
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a cross-app NON-extension object must NOT see a dependency \
+             table's `protected` procedure; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (i) valid extension → base protected: a `TableExtension` on `Bar`
+    // calling `Bar`'s `protected P()` — `from_object` DIRECTLY extends the
+    // declaring object, kind-compatible (TableExtension→Table).
+    #[test]
+    fn resolve_member_record_tableext_protected_base_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52670 "Bar"
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52671 "BarExtI" extends Bar
+{
+    procedure Wrapper()
+    var
+        R: Record Bar;
+    begin
+        R.P();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Bar.al", src_table);
+        let unit_ext = make_unit(app_id, "BarExtI.al", src_ext);
+        let units = [unit_table, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Bar");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "BarExtI");
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a TableExtension must see its BASE table's `protected` \
+             procedure; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.object.kind, ObjectKind::Table);
+    }
+
+    // (i) PageExtension→base Page generalization: `ResolveIndex::object_extends`
+    // is DIRECTLY exercised (not via `resolve_member`/`object_has_visible_
+    // member_candidate` — Page member calls never route through
+    // `resolve_in_table_scope`, which is Table/TableExtension-only; see
+    // `ResolveIndex::table_extensions_of`) to prove the identity check is
+    // GENERALIZED across extension kinds, not hardcoded to TableExtension —
+    // the gpt/gemini round-1 convergent fix. A PageExtension of a base Page
+    // is a DIRECT, kind-compatible extension relationship exactly like
+    // TableExtension→Table.
+    #[test]
+    fn object_extends_generalizes_to_pageextension_base_page() {
+        let src_page: &'static str = r#"
+page 52680 "BasePage"
+{
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 52681 "BasePageExtI" extends BasePage
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "BasePage.al", src_page);
+        let unit_ext = make_unit(app_id, "BasePageExtI.al", src_ext);
+        let units = [unit_page, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+
+        let base_page = find_obj(&graph, "BasePage");
+        let page_ext = find_obj(&graph, "BasePageExtI");
+
+        assert!(
+            index.object_extends(&graph, &page_ext.id, &base_page.id),
+            "a PageExtension must be recognized as DIRECTLY extending its \
+             base Page — the kind-generalized object_extends contract"
+        );
+        // Kind-compat guard, exercised from the SAME fixture: the base Page
+        // does not "extend" anything (not an extension kind at all), so the
+        // reverse direction is trivially false — see the dedicated reverse
+        // test below for the full base/extension asymmetry.
+        assert!(!index.object_extends(&graph, &base_page.id, &page_ext.id));
+    }
+
+    // `object_extends` must be kind-compatible: a TableExtension's
+    // `extends_target` resolves to a Table, never to a same-named object of
+    // the WRONG kind. This fixture makes a `Table` and a `Page` share the
+    // literal name `"Shared"` on purpose — a TableExtension naming `Shared`
+    // in its `extends` clause must resolve against the Table, and
+    // `object_extends` against the Page identity must be `false` even though
+    // the raw name matches, proving the kind filter (not just identity) does
+    // the work.
+    #[test]
+    fn object_extends_is_kind_compatible_not_name_only() {
+        let src_table: &'static str = r#"
+table 52690 "Shared"
+{
+}
+"#;
+        let src_page: &'static str = r#"
+page 52691 "Shared"
+{
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52692 "SharedExt" extends Shared
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "SharedTable.al", src_table);
+        let unit_page = make_unit(app_id.clone(), "SharedPage.al", src_page);
+        let unit_ext = make_unit(app_id, "SharedExt.al", src_ext);
+        let units = [unit_table, unit_page, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+
+        let table_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id.kind == ObjectKind::Table && o.name.eq_ignore_ascii_case("Shared"))
+            .expect("table Shared");
+        let page_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id.kind == ObjectKind::Page && o.name.eq_ignore_ascii_case("Shared"))
+            .expect("page Shared");
+        let ext_obj = find_obj(&graph, "SharedExt");
+
+        assert!(
+            index.object_extends(&graph, &ext_obj.id, &table_obj.id),
+            "a TableExtension must extend the SAME-KIND (Table) object"
+        );
+        assert!(
+            !index.object_extends(&graph, &ext_obj.id, &page_obj.id),
+            "a TableExtension must NEVER be considered to extend a \
+             same-NAMED but WRONG-KIND (Page) object"
+        );
+    }
+
+    // `object_extends` must never be reverse: a base object does not
+    // "extend" its own extension, even when the extension's `extends_target`
+    // correctly names the base.
+    #[test]
+    fn object_extends_never_reverse() {
+        let src_table: &'static str = r#"
+table 52693 "RevBase"
+{
+}
+"#;
+        let src_ext: &'static str = r#"
+tableextension 52694 "RevExt" extends RevBase
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "RevBase.al", src_table);
+        let unit_ext = make_unit(app_id, "RevExt.al", src_ext);
+        let units = [unit_table, unit_ext];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+
+        let base_obj = find_obj(&graph, "RevBase");
+        let ext_obj = find_obj(&graph, "RevExt");
+
+        assert!(index.object_extends(&graph, &ext_obj.id, &base_obj.id));
+        assert!(
+            !index.object_extends(&graph, &base_obj.id, &ext_obj.id),
+            "a base object must NEVER be considered to extend its own \
+             extension (the relationship is not symmetric)"
+        );
+    }
+
+    // `object_extends` must never treat sibling extensions of the same base
+    // as extending EACH OTHER — the direct unit-level counterpart of (j)'s
+    // end-to-end peer-bleed regression below.
+    #[test]
+    fn object_extends_never_peer() {
+        let src_table: &'static str = r#"
+table 52695 "PeerBase"
+{
+}
+"#;
+        let src_ext_a: &'static str = r#"
+tableextension 52696 "PeerExtA" extends PeerBase
+{
+}
+"#;
+        let src_ext_b: &'static str = r#"
+tableextension 52697 "PeerExtB" extends PeerBase
+{
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "PeerBase.al", src_table);
+        let unit_ext_a = make_unit(app_id.clone(), "PeerExtA.al", src_ext_a);
+        let unit_ext_b = make_unit(app_id, "PeerExtB.al", src_ext_b);
+        let units = [unit_table, unit_ext_a, unit_ext_b];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+
+        let ext_a = find_obj(&graph, "PeerExtA");
+        let ext_b = find_obj(&graph, "PeerExtB");
+
+        assert!(
+            !index.object_extends(&graph, &ext_b.id, &ext_a.id),
+            "sibling extensions of the same base must NEVER be considered \
+             to extend each other"
+        );
+        assert!(!index.object_extends(&graph, &ext_a.id, &ext_b.id));
+    }
+
+    // (j) PEER-extension `Protected` BLEED — the biggest latent false-`Source`
+    // this task closes: `TableExtension ExtA` declares `protected P()`;
+    // `TableExtension ExtB` (sibling, extends the SAME base) calls `R.P()`.
+    // ExtB extends Bar, NOT ExtA — must decline. THE pre-fix bug: same-app
+    // blanket-true made this false-resolve to `Source` targeting `ExtA.P`
+    // (verified against unfixed code — see the task report).
+    #[test]
+    fn resolve_member_record_peer_extension_protected_bleed_excluded() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52698 "Bar"
+{
+}
+"#;
+        let src_ext_a: &'static str = r#"
+tableextension 52699 "BarExtA" extends Bar
+{
+    protected procedure P()
+    begin
+    end;
+}
+"#;
+        let src_ext_b: &'static str = r#"
+tableextension 52700 "BarExtB" extends Bar
+{
+    procedure Wrapper()
+    var
+        R: Record Bar;
+    begin
+        R.P();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Bar.al", src_table);
+        let unit_ext_a = make_unit(app_id.clone(), "BarExtA.al", src_ext_a);
+        let unit_ext_b = make_unit(app_id, "BarExtB.al", src_ext_b);
+        let units = [unit_table, unit_ext_a, unit_ext_b];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Bar");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "BarExtB");
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a PEER extension's `protected` method must NEVER be visible to \
+             a sibling extension of the same base (ExtB extends Bar, NOT \
+             ExtA) — the sibling-bleed guard; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Unknown);
+    }
+
+    // (k) same-app `internal`: `Table Foo` with `internal procedure P()`; a
+    // same-app but DIFFERENT `Codeunit` calls `R.P()` — `Access::Internal` is
+    // APP-scoped (unaffected by this task's `local`/`protected` fixes), so
+    // this must resolve to `Source` regardless of self/extension status.
+    #[test]
+    fn resolve_member_record_same_app_internal_method_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_table: &'static str = r#"
+table 52701 "Foo"
+{
+    internal procedure P()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 52702 "CallerK"
+{
+    procedure Test()
+    var
+        R: Record Foo;
+    begin
+        R.P();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Foo.al", src_table);
+        let unit_caller = make_unit(app_id, "CallerK.al", src_caller);
+        let units = [unit_table, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let table_obj = find_obj(&graph, "Foo");
+        let receiver = ReceiverType::Record {
+            table: Some(table_obj.id.clone()),
+        };
+        let from_obj = find_obj(&graph, "CallerK");
+        let (shape, routes) =
+            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a same-app `internal` method must resolve to Source regardless \
+             of self/extension status (Internal is app-scoped); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
     }
 
     // -----------------------------------------------------------------------

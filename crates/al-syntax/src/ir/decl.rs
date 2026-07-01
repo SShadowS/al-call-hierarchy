@@ -101,6 +101,35 @@ pub enum ObjectKind {
     Other,
 }
 
+impl ObjectKind {
+    /// True for the four AL extension kinds that carry procedures and can
+    /// therefore reach a base object's `protected` members: `TableExtension`,
+    /// `PageExtension`, `ReportExtension`, `EnumExtension`. `PermissionSetExtension`
+    /// is deliberately excluded — permission sets carry no procedures/`Access`
+    /// modifiers, so kind-compatible `Protected` visibility never applies to it.
+    /// Consumed by the resolve engine's `ResolveIndex::object_extends` identity
+    /// check (`src/program/resolve/index.rs`).
+    #[must_use]
+    pub fn is_extension_kind(self) -> bool {
+        self.extension_base_kind().is_some()
+    }
+
+    /// The base object kind this extension kind extends: `TableExtension` →
+    /// `Table`, `PageExtension` → `Page`, `ReportExtension` → `Report`,
+    /// `EnumExtension` → `Enum`. `None` for a non-extension kind (see
+    /// [`Self::is_extension_kind`]).
+    #[must_use]
+    pub fn extension_base_kind(self) -> Option<ObjectKind> {
+        match self {
+            ObjectKind::TableExtension => Some(ObjectKind::Table),
+            ObjectKind::PageExtension => Some(ObjectKind::Page),
+            ObjectKind::ReportExtension => Some(ObjectKind::Report),
+            ObjectKind::EnumExtension => Some(ObjectKind::Enum),
+            _ => None,
+        }
+    }
+}
+
 pub struct RoutineDecl {
     pub kind: RoutineKind,
     pub name: String,

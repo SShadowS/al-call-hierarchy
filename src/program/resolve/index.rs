@@ -497,6 +497,63 @@ impl ResolveIndex {
             .unwrap_or(&[])
     }
 
+    /// Whether `from` is an extension object that DIRECTLY extends `target`,
+    /// by RESOLVED OBJECT IDENTITY (never a lowercased-name comparison) —
+    /// the visibility test `object_has_visible_member_candidate`
+    /// (`resolver.rs`) uses for `Access::Protected` (beyond-1B.3b Task 1),
+    /// generalized across every AL extension kind (not hardcoded to
+    /// `TableExtension`).
+    ///
+    /// Three independent guards, ALL required:
+    /// 1. **Kind-compatible.** `from.kind.is_extension_kind()` AND
+    ///    `from.kind.extension_base_kind() == Some(target.kind)` — a
+    ///    `TableExtension` can only extend a `Table`, a `PageExtension` only
+    ///    a `Page`, etc. Rules out a same-named-but-wrong-kind object by
+    ///    construction, not by luck.
+    /// 2. **Direct, never transitive.** Only `from`'s OWN `extends_target` is
+    ///    consulted — "extension of an extension" is not an AL construct, so
+    ///    there is nothing to walk transitively.
+    /// 3. **Identity-resolved.** `from`'s `extends_target` (a raw name) is
+    ///    resolved via [`Self::resolve_object_ref`] (fail-closed, dependency-
+    ///    closure-scoped from `from`) and the result must be EXACTLY
+    ///    `target`'s `ObjectNodeId` — `Ambiguous`/`OutOfClosure`/`Unresolved`
+    ///    all decline (`false`), never guessed.
+    ///
+    /// Deliberately **NOT reverse**: a base object does not "extend" its own
+    /// extension, so `object_extends(base, extension)` is always `false` — a
+    /// base object's `Protected` members stay invisible from a caller that is
+    /// itself the extension only via the symmetric self/extends check at the
+    /// visibility call site, never via this function returning `true`
+    /// backwards. And **NEVER peer**: a sibling extension `ExtB`'s
+    /// `extends_target` resolves to the shared BASE, never to a co-extension
+    /// `ExtA` — so `object_extends(ExtB, ExtA)` is always `false`, closing the
+    /// peer-extension `Protected`-bleed gap (the biggest latent false-`Source`
+    /// this task closes).
+    pub fn object_extends(
+        &self,
+        graph: &ProgramGraph,
+        from: &ObjectNodeId,
+        target: &ObjectNodeId,
+    ) -> bool {
+        if !from.kind.is_extension_kind() || from.kind.extension_base_kind() != Some(target.kind) {
+            return false;
+        }
+        let Some(from_obj) = graph.objects.iter().find(|o| &o.id == from) else {
+            return false;
+        };
+        let Some(extends) = from_obj.extends_target.as_deref() else {
+            return false;
+        };
+        let base_ref = ObjectRef::Name {
+            raw: extends.to_string(),
+            normalized_lc: extends.to_ascii_lowercase(),
+        };
+        matches!(
+            self.resolve_object_ref(graph, from.clone(), target.kind, &base_ref),
+            ObjectRefResolution::Unique(id) if &id == target
+        )
+    }
+
     /// All resolved event subscribers of `publisher` — [`WorldMode::AnalyzedSnapshot`].
     ///
     /// Returns a deterministically sorted (by `subscriber` `RoutineNodeId`) slice.

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **soundness-completion plan Task 1: caller-identity-aware member visibility — closes two
+  latent false-`Source` gaps in `object_has_visible_member_candidate`** (its sole caller,
+  `resolve_in_table_scope`, and `ResolveIndex`) — same-app `local` was treated as app-scoped
+  (AL `local` is OBJECT-scoped: visible only to the DECLARING object) and cross-app
+  `Access::Protected` was completely unfiltered. Both are now gated by the CALLER's resolved
+  object identity (`ObjectNodeId`, never a lowercased-name comparison), per access level:
+  `Public` always visible; `Local` only to the declaring object itself (self); `Internal` only
+  same-app (friend-app `InternalsVisibleTo` is out of scope, documented, fails closed to
+  `Unknown`); `Protected` only to self OR a DIRECT, kind-compatible extension of the declaring
+  object, via a new `ResolveIndex::object_extends` (identity-resolved through
+  `resolve_object_ref`, generalized across every AL extension kind — TableExtension→Table,
+  PageExtension→Page, ReportExtension→Report, EnumExtension→Enum — never transitive, never
+  reverse, never peer). The biggest latent bug closed: a `TableExtension`'s `protected`
+  procedure was visible to a SIBLING extension of the same base table (peer-bleed) — now
+  correctly declines to honest `Unknown`. New `ObjectKind::is_extension_kind`/
+  `extension_base_kind` methods (`crates/al-syntax`). 15 new + 3 reused unit tests in
+  `src/program/resolve/resolver.rs` cover the full access matrix (self/same-app-cross-object/
+  peer/cross-app × local/protected/internal); TDD-verified against the pre-fix code (temporarily
+  reverted, confirmed the exact wrong routes the fix corrects, then restored). New fixture
+  matrix + `COMPILER_PROOF.md` under `tests/r0-corpus/ws-visibility-local-protected/`. Also adds
+  the Item-4 explanatory comment (`is_bare_builtin_or_page_intrinsic` + `resolve_member`'s
+  `Record`/`RecordRef` arms): the Record-receiver source-shadows-catalog precedent is
+  deliberately NOT collision-guarded — corpus-validated correct AL precedence, not a bug. CDO
+  (`CDO_WS`): `genuine_wrong` stays 0; `real_unknown_rate` unchanged at 1.91% (346 unknown) —
+  this soundness fix has zero measurable footprint on the CDO corpus (the affected pattern is
+  rare/absent there), consistent with the task brief's prediction.
+
 ### Added
 - **follow-up plan v2.1 Task 4 (FINAL, CAPSTONE): the fail-closed object-resolution +
   bare implicit-`Rec` follow-up arc is closed — re-measured, ratchets tightened to the
