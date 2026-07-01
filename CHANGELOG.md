@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **(resolve) Page/PageExtension implicit `Rec` via `ObjectNode.source_table`,
+  topology-aware fail-closed (beyond-1B.3b Task 5)**
+  (`src/program/resolve/receiver.rs`, `tests/r0-corpus/ws-page-rec/` NEW,
+  `tests/program_resolve_harness.rs`) — `infer_implicit_rec`'s Page arm now
+  resolves the object's own `source_table` through the fail-closed
+  `ResolveIndex::resolve_object_ref` (Task 4): a single unambiguous in-closure
+  match yields `Record{table: Some(id)}`; anything else (no `SourceTable`
+  property, cross-app name ambiguity, out-of-closure) stays `Record{table:
+  None}` — a guessed table would be a false `Source` edge, so this fails
+  closed, never guesses. A PageExtension with no own `SourceTable` inherits by
+  resolving its `extends` target to exactly one in-closure base Page (same
+  fail-closed rule) and reading THAT page's `source_table`; an own
+  `SourceTable` that fails to resolve does NOT fall through to the base page
+  (an explicit override that declines stays declined). Report/ReportExtension
+  are deliberately EXCLUDED — a report's implicit Rec is scoped PER-DATAITEM,
+  not a single object-level `SourceTable`, so they keep returning
+  `Record{table: None}` unconditionally (a future task). Builtins
+  (`FieldCaption`/etc., table-independent per the `ReceiverType::Record` doc)
+  and `record_op_names` calls (`SetRange`/`FindSet`/etc., a separate
+  implicit-trigger dispatch path) are unaffected either way; only a
+  NON-builtin method call on a now-resolved table flips from honest `Unknown`
+  to `Source`. 8 new `receiver.rs` unit tests (own-table unique/ambiguous/
+  out-of-closure, PageExtension inherit/override/dangling-extends, Report
+  exclusion even when a `source_table` is defensively present) + 5 new
+  end-to-end `tests/r0-corpus/ws-page-rec/` fixtures covering the positive
+  case, both negatives (no `SourceTable`; cross-app ambiguous `SourceTable`
+  across two dependency apps sharing a table name), a local-`var`-shadow case,
+  and the Report exclusion. CDO (`CDO_WS`): primary real-`unknown` rate
+  6.62%→6.50% (22 sites flip `Unknown`→`Source`, all hand-verified against the
+  real CDO source incl. one genuine cross-app resolution); the L3 semantic
+  audit's `fresh_missing` drops 191→176 with `genuine_wrong` staying `0` both
+  before and after (soundness backstop unaffected) — deterministic across two
+  runs (`cargo test --workspace`, no `CDO_WS`, stays fully green).
 - **(resolve) Object node fidelity (`SourceTable`/`TableNo`/page-controls/
   `is_temporary`) + `objects_by_id` index + fail-closed `resolve_object_ref`
   (beyond-1B.3b Task 4)** (`src/program/node_extract.rs`,

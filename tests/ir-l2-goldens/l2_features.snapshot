@@ -404,6 +404,13 @@ ws-overload-negatives/src/Target.Codeunit.al::0::I	301d29f40284c83d
 ws-overload-negatives/src/Target.Codeunit.al::0::I	a9be2a6c5f5c81b1
 ws-overload-negatives/src/Target.Codeunit.al::0::O	124155e6016dffd5
 ws-overload-negatives/src/Target.Codeunit.al::0::O	2166bdf6b4b594a0
+ws-page-rec/src/AmbiguousPage.Page.al::0::OnOpenPage	82f606e64573f6ca
+ws-page-rec/src/Customer.Table.al::0::GetDisplayName	33b105c13fd7f47a
+ws-page-rec/src/CustomerCard.Page.al::0::OnOpenPage	b53a45d13e38370e
+ws-page-rec/src/NoSourceTablePage.Page.al::0::OnOpenPage	d20a3e9ce85fa3f3
+ws-page-rec/src/OtherTable.Table.al::0::OtherProc	2e1479de48e4e77b
+ws-page-rec/src/ReportWithDataitem.Report.al::0::OnAfterGetRecord	d75e606300fa62f8
+ws-page-rec/src/ShadowVarPage.Page.al::0::OnOpenPage	0323ddb1bcfbcbe1
 ws-paramfx/src/enricher.al::0::EnrichLine	edbb72d935103cb6
 ws-paramfx/src/enricher.al::0::AdjustLine	dcbc10f7fb883bec
 ws-paramfx/src/enricher.al::0::NoRecordParam	558ddfa33a70fcd7

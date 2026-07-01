@@ -25,9 +25,12 @@
 //!    Customer`; the declared type is used in that case).
 //! 3. **Implicit Rec / xRec** — reached only when no variable named `rec`/`xrec`
 //!    was found in step 2: resolves to the enclosing object's implicit record type
-//!    (Table self-id, TableExtension base, or `Record{None}` for Page/Report where
-//!    the source table is not on `ObjectNode`). Returns `Unknown` for object kinds
-//!    that have no implicit record (e.g. Codeunit).
+//!    (Table self-id, TableExtension base, Page/PageExtension via `SourceTable` —
+//!    topology-aware, fail-closed through `ResolveIndex::resolve_object_ref`, see
+//!    [`infer_implicit_rec`] — or `Record{None}` for Report/ReportExtension, whose
+//!    implicit Rec is per-dataitem scoped rather than object-level and is not yet
+//!    modeled). Returns `Unknown` for object kinds that have no implicit record
+//!    (e.g. Codeunit).
 //! 4. **Static framework type name** — when the receiver name matches a framework
 //!    type name (e.g. `XmlDocument`, `Text`, `File`, `Version`) and no variable was
 //!    found, type it as `Framework(kind)` so Phase B dispatches the static method
@@ -45,8 +48,8 @@ use al_syntax::ir::{ObjectKind, RoutineDecl, VarDecl};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::ObjectNodeId;
-use crate::program::node_extract::ObjectNode;
-use crate::program::resolve::index::ResolveIndex;
+use crate::program::node_extract::{ObjectNode, ObjectRef};
+use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 
 // ---------------------------------------------------------------------------
 // FrameworkKind
@@ -480,15 +483,106 @@ fn infer_implicit_rec(
                 .and_then(|target| resolve_table_id(target, from_app, graph, index));
             ReceiverType::Record { table: table_id }
         }
-        // Page / PageExtension / Report / ReportExtension have an implicit Rec
-        // but the source table is not on ObjectNode — carry None, note the gap.
-        ObjectKind::Page
-        | ObjectKind::PageExtension
-        | ObjectKind::Report
-        | ObjectKind::ReportExtension => ReceiverType::Record { table: None },
+        // A Page's implicit Rec is typed by its own `SourceTable` property
+        // (Task 5). Resolution goes through the fail-closed
+        // `ResolveIndex::resolve_object_ref`: a guessed table is the cardinal
+        // sin (a wrong table produces a false `Source` edge), so anything
+        // short of a single unambiguous in-closure match stays
+        // `Record{table: None}` — builtins (SetRange/FindSet/…) still resolve
+        // table-independently in Phase B; only a non-builtin method call on a
+        // table-less Record becomes the honest `Unknown`.
+        ObjectKind::Page => ReceiverType::Record {
+            table: from_object
+                .source_table
+                .as_ref()
+                .and_then(|r| resolve_source_table_ref(from_object.id.clone(), r, graph, index)),
+        },
+        // A PageExtension may declare its own `SourceTable`; when it does not,
+        // its implicit Rec follows the BASE page's `SourceTable` instead — the
+        // `extends` target is resolved to exactly one in-closure Page first
+        // (same fail-closed rule), then that page's `source_table` is read and
+        // resolved the same way. An own `SourceTable` that fails to resolve
+        // does NOT fall through to the base page — it explicitly overrides the
+        // base, so a failed override stays `None` rather than silently
+        // reverting to inherited behavior.
+        ObjectKind::PageExtension => {
+            let table = if let Some(r) = &from_object.source_table {
+                resolve_source_table_ref(from_object.id.clone(), r, graph, index)
+            } else {
+                resolve_pageext_base_source_table(from_object, graph, index)
+            };
+            ReceiverType::Record { table }
+        }
+        // Report / ReportExtension: EXCLUDED for now. A report's implicit Rec
+        // is scoped PER-DATAITEM (each `dataitem(...)` block sources its own
+        // table; a report can have several, nested), not a single object-level
+        // `SourceTable` the way Page/PageExtension are. Resolving this
+        // correctly needs dataitem-scope tracking (which dataitem encloses the
+        // routine) that the graph does not carry yet — a future task. Until
+        // then this stays the honest `Record{table: None}` rather than
+        // guessing e.g. the outermost dataitem's table.
+        ObjectKind::Report | ObjectKind::ReportExtension => ReceiverType::Record { table: None },
         // All other object kinds have no implicit Rec.
         _ => ReceiverType::Unknown,
     }
+}
+
+/// Resolve an object's `SourceTable` [`ObjectRef`] to a table `ObjectNodeId`,
+/// scoped from `from`'s dependency closure via the fail-closed
+/// [`ResolveIndex::resolve_object_ref`]. Only [`ObjectRefResolution::Unique`]
+/// yields a table; `Ambiguous`/`OutOfClosure`/`Unresolved` all decline to
+/// `None` rather than guess.
+fn resolve_source_table_ref(
+    from: ObjectNodeId,
+    source_table: &ObjectRef,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    match index.resolve_object_ref(graph, from, ObjectKind::Table, source_table) {
+        ObjectRefResolution::Unique(id) => Some(id),
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => None,
+    }
+}
+
+/// Resolve a PageExtension's inherited `SourceTable`: follow `extends_target`
+/// to exactly one in-closure base Page, then read and resolve THAT page's own
+/// `source_table`. Any decline at either hop (ambiguous extends target,
+/// extends target out of closure/unresolved, base page has no `SourceTable`,
+/// or the base page's `SourceTable` itself fails to resolve) yields `None`.
+///
+/// Both hops are scoped from `from_object`'s own closure (the extension's),
+/// consistent with every other lookup in this module keying off the CALLING
+/// object's app — not the base page's.
+fn resolve_pageext_base_source_table(
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    let extends = from_object.extends_target.as_deref()?;
+    let base_ref = ObjectRef::Name {
+        raw: extends.to_string(),
+        normalized_lc: extends.to_ascii_lowercase(),
+    };
+    let base_id = match index.resolve_object_ref(
+        graph,
+        from_object.id.clone(),
+        ObjectKind::Page,
+        &base_ref,
+    ) {
+        ObjectRefResolution::Unique(id) => id,
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => return None,
+    };
+    let base_page = graph.objects.iter().find(|o| o.id == base_id)?;
+    resolve_source_table_ref(
+        from_object.id.clone(),
+        base_page.source_table.as_ref()?,
+        graph,
+        index,
+    )
 }
 
 /// Convert a [`ParsedType`] (pure string parse) to a [`ReceiverType`] by
@@ -1203,12 +1297,236 @@ mod tests {
 
     #[test]
     fn infer_rec_in_page_is_record_none() {
+        // No `SourceTable` property at all (`source_table: None` on ObjectNode)
+        // — `make_object_node` never sets it, matching a Page with no property.
         let (graph, app) = build_test_graph();
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let page_obj = make_object_node(app, ObjectKind::Page, "CustomerCard", Some(21), None);
 
         let result = infer_receiver_type("rec", &routine, &[], &page_obj, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    // -----------------------------------------------------------------------
+    // infer_implicit_rec — Page/PageExtension SourceTable resolution (Task 5)
+    // -----------------------------------------------------------------------
+
+    /// Multi-app fixture for Page/PageExtension `SourceTable` resolution tests:
+    /// - `w` (the `from`/workspace app): Table "Customer" (id 18, own
+    ///   declaration) + Page "CustomerPage" (id 50200, `SourceTable = Customer`).
+    ///   `w` depends on `a` and `b`.
+    /// - `a`, `b`: BOTH declare Table "AmbTable" — a genuine cross-app name
+    ///   collision, neither app is `w` itself, so it is `Ambiguous` from `w`'s
+    ///   perspective.
+    /// - `orphan`: Table "Orphan" (id 900), declared but NOT a dependency of
+    ///   `w` — out of `w`'s closure.
+    fn build_page_rec_fixture() -> (ProgramGraph, AppRef) {
+        let mut apps = crate::program::node::AppRegistry::default();
+        let mk_id = |name: &str| crate::snapshot::AppId {
+            guid: String::new(),
+            name: name.into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let w = apps.intern(&mk_id("PageRecW"));
+        let a = apps.intern(&mk_id("PageRecA"));
+        let b = apps.intern(&mk_id("PageRecB"));
+        let orphan = apps.intern(&mk_id("PageRecOrphan"));
+
+        let mut topology = crate::program::topology::DependencyGraph::default();
+        topology.add_dependency(w, a);
+        topology.add_dependency(w, b);
+        // `orphan` intentionally never wired in as a dependency of `w`.
+
+        let mut customer_page =
+            make_object_node(w, ObjectKind::Page, "CustomerPage", Some(50200), None);
+        customer_page.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        let mut objects = vec![
+            make_object_node(w, ObjectKind::Table, "Customer", Some(18), None),
+            customer_page,
+            make_object_node(a, ObjectKind::Table, "AmbTable", Some(700), None),
+            make_object_node(b, ObjectKind::Table, "AmbTable", Some(701), None),
+            make_object_node(orphan, ObjectKind::Table, "Orphan", Some(900), None),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines: vec![],
+            obj_index,
+        };
+        (graph, w)
+    }
+
+    fn amb_table_ref() -> ObjectRef {
+        ObjectRef::Name {
+            raw: "AmbTable".into(),
+            normalized_lc: "ambtable".into(),
+        }
+    }
+
+    fn orphan_table_ref() -> ObjectRef {
+        ObjectRef::Name {
+            raw: "Orphan".into(),
+            normalized_lc: "orphan".into(),
+        }
+    }
+
+    #[test]
+    fn infer_rec_in_page_resolves_own_source_table_unique() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut page = make_object_node(w, ObjectKind::Page, "CardPage", Some(50201), None);
+        page.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    #[test]
+    fn infer_rec_in_page_ambiguous_source_table_declines_to_none() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut page = make_object_node(w, ObjectKind::Page, "AmbPage", Some(50202), None);
+        page.source_table = Some(amb_table_ref());
+
+        // "AmbTable" is declared in BOTH `a` and `b` (neither is `w`) — must
+        // DECLINE to None, never guess one of the two.
+        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn infer_rec_in_page_out_of_closure_source_table_declines_to_none() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut page = make_object_node(w, ObjectKind::Page, "OrphanPage", Some(50203), None);
+        page.source_table = Some(orphan_table_ref());
+
+        // "Orphan" is declared, but in an app `w` does not depend on.
+        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn infer_rec_in_pageext_with_no_own_source_table_inherits_base_page() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        // Extends "CustomerPage" (SourceTable = Customer) but declares no
+        // SourceTable of its own.
+        let page_ext = make_object_node(
+            w,
+            ObjectKind::PageExtension,
+            "CustomerPageExt",
+            Some(50210),
+            Some("CustomerPage".into()),
+        );
+
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    #[test]
+    fn infer_rec_in_pageext_own_source_table_overrides_base_even_when_it_declines() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        // Extends "CustomerPage" (a page with a perfectly good SourceTable),
+        // but ALSO declares its own (ambiguous) SourceTable — the own
+        // declaration must win and DECLINE, never silently fall back to the
+        // base page's Customer.
+        let mut page_ext = make_object_node(
+            w,
+            ObjectKind::PageExtension,
+            "OverridePageExt",
+            Some(50211),
+            Some("CustomerPage".into()),
+        );
+        page_ext.source_table = Some(amb_table_ref());
+
+        let result = infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn infer_rec_in_pageext_unresolvable_extends_target_declines_to_none() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        // Extends a base page that does not exist anywhere in the snapshot.
+        let page_ext = make_object_node(
+            w,
+            ObjectKind::PageExtension,
+            "DanglingExt",
+            Some(50212),
+            Some("NoSuchBasePage".into()),
+        );
+
+        let result = infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    #[test]
+    fn infer_rec_in_report_stays_none_even_if_source_table_were_present() {
+        // Defensive: Report/ReportExtension are EXCLUDED (Task 5 scope), so
+        // even if a Report ObjectNode somehow carried a `source_table` (real
+        // extraction never sets one from a per-dataitem source — this
+        // constructs it directly to lock in the exclusion regardless of data
+        // presence), the implicit Rec must stay honest `Record{table: None}`.
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50220), None);
+        report.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 

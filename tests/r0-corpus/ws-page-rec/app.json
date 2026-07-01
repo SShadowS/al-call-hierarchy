@@ -1,0 +1,22 @@
+{
+	"id": "aaaa1111-0000-0000-0000-000000000001",
+	"name": "PageRec Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50960, "to": 50999 }],
+	"dependencies": [
+		{
+			"id": "bbbb2222-0000-0000-0000-000000000002",
+			"name": "PageRecLibA",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		},
+		{
+			"id": "cccc3333-0000-0000-0000-000000000003",
+			"name": "PageRecLibB",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		}
+	]
+}

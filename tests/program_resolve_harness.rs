@@ -3509,3 +3509,205 @@ fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
         "the legitimate subscriber must resolve to exactly one entry"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests 22+: beyond-1B.3b Task 5 — Page/PageExtension implicit `Rec` via
+// `ObjectNode.source_table`, end-to-end over `ws-page-rec`.
+//
+// Root fix: `infer_implicit_rec`'s Page/PageExtension arm used to hardcode
+// `Record{table: None}` (the source table was not yet on `ObjectNode`). It now
+// resolves `ObjectNode.source_table` through the fail-closed
+// `ResolveIndex::resolve_object_ref` (Task 4): only a single unambiguous
+// in-closure match yields a table; anything else (no property, ambiguous
+// cross-app name, out-of-closure) stays `None` — a guessed table would be a
+// false `Source` edge, the cardinal sin. Report/ReportExtension are
+// deliberately EXCLUDED (per-dataitem scoping, not object-level) and keep
+// returning `Record{table: None}` unconditionally.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-page-rec` and returns the full
+/// `resolve_full_program` report — shared by Tests 22a-22e below.
+fn ws_page_rec_report() -> ProgramReport {
+    let fixture =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus/ws-page-rec");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-page-rec")
+}
+
+/// All classified `CallSite` edges whose caller routine is `(owning object's
+/// declared numeric id, routine name_lc)`. Object-scoped (unlike
+/// `edges_for_caller` above, which filters by routine name alone) because
+/// this fixture has several distinct pages that all declare an `OnOpenPage`
+/// trigger — filtering by name alone would conflate them.
+fn edges_for_object_routine<'a>(
+    report: &'a ProgramReport,
+    object_id_number: i64,
+    routine_name_lc: &str,
+) -> Vec<&'a ClassifiedEdge> {
+    report
+        .edges
+        .iter()
+        .filter(|ce| match &ce.obligation_id {
+            ObligationId::CallSite { caller, .. } => {
+                caller.object.id_equals_number(object_id_number)
+                    && caller.name_lc == routine_name_lc
+            }
+            ObligationId::Publisher(_) => false,
+        })
+        .collect()
+}
+
+/// Test 22a (fixture a, POSITIVE): `CustomerCard` (Page 50961, `SourceTable =
+/// Customer`) has 3 call obligations in `OnOpenPage`:
+/// - `Rec.GetDisplayName()` — a NON-builtin table procedure — must resolve to
+///   `Customer.GetDisplayName` with `Evidence::Source` and the exact target
+///   id. This is the Task 5 fix: before it, the Page's implicit Rec always
+///   carried `Record{table: None}`, so this call was an honest `Unknown`.
+/// - `Rec.FieldCaption(1)` — a genuine Record-catalog builtin — must STAY
+///   `Evidence::Catalog` (table-independent per the `ReceiverType::Record` doc;
+///   resolving the table must not disturb genuine builtins).
+/// - `Rec.SetRange(...)` — a `record_op_names` call — dispatches through the
+///   SEPARATE implicit-trigger fan-out (`CalleeShape::RecordOp`), not
+///   `resolve_member`'s catalog; `"setrange"` is not one of the
+///   insert/modify/delete/validate/rename triggers that fan-out maps, so it
+///   legitimately produces ZERO routes (`Multicast` + `Partial` completeness)
+///   both BEFORE and AFTER the fix — resolving the table must not
+///   mis-reclassify it as `Source` or `Unknown`.
+#[test]
+fn ws_page_rec_source_table_resolves_non_builtin_and_preserves_builtins() {
+    let report = ws_page_rec_report();
+    let edges = edges_for_object_routine(&report, 50961, "onopenpage");
+    assert_eq!(
+        edges.len(),
+        3,
+        "CustomerCard.OnOpenPage must have 3 call obligations"
+    );
+
+    let call_edges: Vec<&&ClassifiedEdge> = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::Call)
+        .collect();
+    assert_eq!(
+        call_edges.len(),
+        2,
+        "2 Member calls (GetDisplayName, FieldCaption)"
+    );
+
+    let source_edge = call_edges
+        .iter()
+        .find(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Source))
+        .expect("one call edge must be Evidence::Source (GetDisplayName)");
+    assert_eq!(source_edge.edge.routes.len(), 1, "single-dispatch call");
+    let route = &source_edge.edge.routes[0];
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getdisplayname");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert!(
+        rid.object.id_equals_number(50960),
+        "must resolve to the Customer table (id 50960); got {:?}",
+        rid.object
+    );
+    assert!(
+        matches!(route.witness, Witness::SourceSpan { .. }),
+        "witness must be SourceSpan; got {:?}",
+        route.witness
+    );
+
+    let catalog_edge = call_edges
+        .iter()
+        .find(|ce| ce.edge.routes.first().map(|r| &r.evidence) == Some(&Evidence::Catalog))
+        .expect("one call edge must be Evidence::Catalog (FieldCaption)");
+    let croute = &catalog_edge.edge.routes[0];
+    let RouteTarget::Builtin(BuiltinId(ref id)) = croute.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", croute.target);
+    };
+    assert_eq!(id, "Record::fieldcaption");
+
+    let record_op_edges: Vec<&&ClassifiedEdge> = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::ImplicitTrigger)
+        .collect();
+    assert_eq!(record_op_edges.len(), 1, "1 RecordOp call (SetRange)");
+    let ro = record_op_edges[0];
+    assert_eq!(ro.edge.shape, DispatchShape::Multicast);
+    assert!(
+        ro.edge.routes.is_empty(),
+        "SetRange fans out to zero object/field triggers (not in the \
+         insert/modify/delete/validate/rename map) — must stay honest-empty, \
+         NOT reclassified Source or Unknown; got {:?}",
+        ro.edge.routes
+    );
+}
+
+/// Test 22b (fixture b, NEGATIVE): a Page with no `SourceTable` property at
+/// all keeps the implicit Rec at `Record{table: None}` — the non-builtin
+/// `Rec.Foo()` stays honest `Unknown`.
+#[test]
+fn ws_page_rec_no_source_table_stays_unknown() {
+    let report = ws_page_rec_report();
+    let edges = edges_for_object_routine(&report, 50962, "onopenpage");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(route.evidence, Evidence::Unknown);
+}
+
+/// Test 22c (fixture c, NEGATIVE — the soundness backstop): `"Amb Table"` is
+/// declared as a Table in BOTH dependency apps (PageRecLibA and PageRecLibB),
+/// neither of which is this workspace's own app — `resolve_object_ref` must
+/// DECLINE (`Ambiguous`), never guess one of the two. `Rec.Bar()` stays
+/// honest `Unknown`.
+#[test]
+fn ws_page_rec_cross_app_ambiguous_source_table_declines_to_unknown() {
+    let report = ws_page_rec_report();
+    let edges = edges_for_object_routine(&report, 50963, "onopenpage");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "ambiguous cross-app SourceTable must NOT resolve to either dependency's table"
+    );
+    assert_eq!(route.evidence, Evidence::Unknown);
+}
+
+/// Test 22d: a LOCAL `var Rec: Record "Other Table"` in `OnOpenPage` shadows
+/// the implicit Rec (variable lookup, step 2 of `infer_receiver_type`, runs
+/// BEFORE the implicit-Rec/SourceTable step). Even though `ShadowVarPage`'s
+/// own `SourceTable = Customer`, `Rec.OtherProc()` must resolve against the
+/// DECLARED type "Other Table" (id 50964), never against Customer.
+#[test]
+fn ws_page_rec_local_var_shadows_implicit_source_table() {
+    let report = ws_page_rec_report();
+    let edges = edges_for_object_routine(&report, 50965, "onopenpage");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "otherproc");
+    assert!(
+        rid.object.id_equals_number(50964),
+        "must resolve to \"Other Table\" (id 50964), NOT Customer (50960); got {:?}",
+        rid.object
+    );
+}
+
+/// Test 22e (fixture e, NEGATIVE): Report/ReportExtension are EXCLUDED —
+/// `ReportWithDataitem`'s dataitem sources `Customer` (which DOES declare
+/// `GetDisplayName`), but the Report/ReportExtension arm of
+/// `infer_implicit_rec` unconditionally returns `Record{table: None}`
+/// (per-dataitem scoping is a future task), so `Rec.GetDisplayName()` stays
+/// honest `Unknown` — it must NOT resolve just because the same-named
+/// procedure happens to exist on the dataitem's source table.
+#[test]
+fn ws_page_rec_report_dataitem_stays_excluded_and_unknown() {
+    let report = ws_page_rec_report();
+    let edges = edges_for_object_routine(&report, 50966, "onaftergetrecord");
+    assert_eq!(edges.len(), 1);
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(route.evidence, Evidence::Unknown);
+}

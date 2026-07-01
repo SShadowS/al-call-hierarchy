@@ -226,6 +226,13 @@ ws-overload-field-discriminator/src/Target.Codeunit.al	99b08490e7044510
 ws-overload-negatives/src/Caller.Codeunit.al	11a864d2ac2265e7
 ws-overload-negatives/src/INeg.Interface.al	fade07bed57a8c52
 ws-overload-negatives/src/Target.Codeunit.al	fdd0faa05350dfae
+ws-page-rec/src/AmbiguousPage.Page.al	b74fc2521a7f6be7
+ws-page-rec/src/Customer.Table.al	eb081b12693177ea
+ws-page-rec/src/CustomerCard.Page.al	e5840568492d77c3
+ws-page-rec/src/NoSourceTablePage.Page.al	d4791795ae3898e1
+ws-page-rec/src/OtherTable.Table.al	d570942c233e50e1
+ws-page-rec/src/ReportWithDataitem.Report.al	0b69610e3158fed9
+ws-page-rec/src/ShadowVarPage.Page.al	e12258e2f1cdc8c7
 ws-paramfx/src/enricher.al	f60fcb48d285ac70
 ws-paramfx/src/salesline.al	38265ef16e982612
 ws-path-facts/src/Codeunit.al	ed705c5d572bad11
