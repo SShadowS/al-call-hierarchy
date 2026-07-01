@@ -41,6 +41,13 @@ pub struct AppUnit {
     /// dependency-topology-aware resolution. Workspace deps come from app.json;
     /// dependency-app deps from their `.app` NavxManifest.
     pub declared_deps: Vec<crate::dependencies::AppDependency>,
+    /// Friend apps THIS app's manifest grants `internal`-member visibility to
+    /// (`<InternalsVisibleTo><Module .../></InternalsVisibleTo>`, Task 1.5).
+    /// Populated from a dependency `.app`'s NavxManifest; empty for the
+    /// workspace unit (its own `internal`s are never called as a dependency
+    /// within this closed-world snapshot, so a friend list on app.json's side
+    /// is out of scope).
+    pub internals_visible_to: Vec<crate::app_package::FriendApp>,
     /// Parsed `.app` symbol table (None for the workspace itself).
     pub abi: Option<ParsedAppPackage>,
     /// Path to the `.app` file (None for the workspace unit).
@@ -139,6 +146,7 @@ impl SnapshotBuilder {
             source: ws_source,
             compilation: ws_compilation,
             declared_deps: ws_declared_deps,
+            internals_visible_to: Vec::new(),
             abi: None,
             app_path: None,
         };
@@ -217,6 +225,10 @@ impl SnapshotBuilder {
             // (computed before `rd.package` is moved into `abi`).
             let dep_compilation = context_from_metadata(&rd.package.metadata);
             let mut dep_declared = rd.package.metadata.dependencies.clone();
+            // Friend apps THIS dep's own manifest declares (Task 1.5) — e.g.
+            // CTS-CDN's manifest lists CDO as a friend, granting CDO
+            // visibility into CTS-CDN's `internal` members.
+            let dep_friends = rd.package.metadata.internals_visible_to.clone();
             // Implicit Microsoft Application-/Platform-tier deps for THIS dep
             // app too (beyond-1B.3b Task 5.5) — a dependency app (e.g. a
             // Foundation-tier app) can itself implicitly depend on Base
@@ -238,6 +250,7 @@ impl SnapshotBuilder {
                 source,
                 compilation: dep_compilation,
                 declared_deps: dep_declared,
+                internals_visible_to: dep_friends,
                 abi: Some(rd.package),
                 app_path: Some(rd.app_path.clone()),
             });

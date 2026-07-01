@@ -122,6 +122,7 @@ mod tests {
             objects: vec![],
             routines: vec![],
             obj_index: ObjectIndex::build(&[]),
+            ..Default::default()
         }
     }
 

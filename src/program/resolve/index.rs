@@ -804,6 +804,7 @@ mod tests {
                 objects,
                 routines,
                 obj_index,
+                ..Default::default()
             },
             pub_id,
             sub_id,
@@ -870,6 +871,7 @@ mod tests {
                 objects,
                 routines,
                 obj_index,
+                ..Default::default()
             },
             a,
             b,
@@ -956,6 +958,7 @@ mod tests {
                 objects,
                 routines: vec![],
                 obj_index,
+                ..Default::default()
             },
             a,
             b,
@@ -1056,6 +1059,7 @@ mod tests {
                 objects,
                 routines: vec![],
                 obj_index,
+                ..Default::default()
             },
             from,
         )

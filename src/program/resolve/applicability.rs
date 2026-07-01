@@ -359,6 +359,7 @@ mod tests {
             objects: sorted_objects,
             routines: routines.iter().map(RoutineNode::clone).collect(),
             obj_index,
+            ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
         (graph, index)

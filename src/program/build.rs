@@ -1,5 +1,7 @@
 //! Builds a `ProgramGraph` from an `AppSetSnapshot`.
 
+use std::collections::{BTreeSet, HashMap};
+
 use crate::program::abi_ingest::AbiCache;
 use crate::program::graph::{ObjectIndex, ProgramGraph};
 use crate::program::node::{AppRef, AppRegistry};
@@ -16,7 +18,11 @@ use crate::snapshot::{AppSetSnapshot, parse_snapshot};
 ///    `abi_cache` (step 2b).
 /// 3. Wire the real dependency topology from each unit's `declared_deps`
 ///    (GUID-match preferred; name+version fallback; deps absent from the
-///    snapshot are silently skipped — open-world assumption).
+///    snapshot are silently skipped — open-world assumption); then (step 3b)
+///    wire `internalsVisibleTo` friend-app authorizations from each unit's
+///    `internals_visible_to` (Task 1.5) the same way — GUID-match preferred,
+///    name+publisher fallback (a `<Module>` friend entry carries no
+///    version), friends absent from the snapshot silently skipped.
 /// 4. Sort `objects` and `routines` by node-id for determinism.
 /// 5. Build the `ObjectIndex` from the sorted `objects`.
 pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> ProgramGraph {
@@ -90,6 +96,48 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
         }
     }
 
+    // ── Step 3b: wire internalsVisibleTo friend-app authorizations ──────────
+    // AL: a member declared `internal` is visible within its declaring app AND
+    // to any app the declaring app's manifest lists in `<InternalsVisibleTo>`
+    // (a "friend" app) — one-directional per the app EXPOSING the internals,
+    // never the reverse. `friends` is keyed by the exposing app's `AppRef` so
+    // `resolver.rs`'s `Access::Internal` visibility rule can do an O(1)
+    // `friends.get(&declaring_app).is_some_and(|f| f.contains(&caller_app))`
+    // check alongside the existing same-app check (Task 1.5).
+    let mut friends: HashMap<AppRef, BTreeSet<AppRef>> = HashMap::new();
+    for (i, unit) in snap.apps.iter().enumerate() {
+        let exposing_ref = app_refs[i];
+        for friend in &unit.internals_visible_to {
+            // Same GUID-first, name+publisher-fallback resolution as Step 3's
+            // dependency wiring above — a `<Module>` friend entry carries no
+            // version, so the fallback compares publisher instead.
+            let by_guid = (!friend.app_id.is_empty())
+                .then(|| {
+                    snap.apps
+                        .iter()
+                        .zip(app_refs.iter())
+                        .find(|(u, _)| !u.id.guid.is_empty() && u.id.guid == friend.app_id)
+                        .map(|(_, r)| *r)
+                })
+                .flatten();
+            let friend_ref = by_guid.or_else(|| {
+                snap.apps
+                    .iter()
+                    .zip(app_refs.iter())
+                    .find(|(u, _)| {
+                        u.id.name.eq_ignore_ascii_case(&friend.name)
+                            && u.id.publisher.eq_ignore_ascii_case(&friend.publisher)
+                    })
+                    .map(|(_, r)| *r)
+            });
+
+            if let Some(friend_ref) = friend_ref {
+                friends.entry(exposing_ref).or_default().insert(friend_ref);
+            }
+            // Friends not present in the snapshot are silently skipped (open-world).
+        }
+    }
+
     // ── Step 4: sort for determinism, then dedup ─────────────────────────────
     // Same app can appear as both a workspace source and an embedded dep (e.g.
     // sibling apps in a multi-app workspace whose compiled .app lands in
@@ -127,6 +175,7 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
         objects,
         routines,
         obj_index,
+        friends,
     }
 }
 

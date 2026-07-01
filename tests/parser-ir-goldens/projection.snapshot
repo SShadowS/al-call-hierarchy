@@ -210,6 +210,15 @@ ws-event-transitive-exposure/src/Publisher.al	95b6f665a5d58f4e
 ws-event-transitive-exposure/src/Subscriber.al	395777c08eb9d646
 ws-events/src/publisher.al	3cf58b96f1edd25b
 ws-events/src/subscriber.al	8608490ab630e8a8
+ws-friend-app-internal/a1_friend_authorized_cross_app_internal/FriendCaller.al	795a3d144f9367e4
+ws-friend-app-internal/a1_friend_authorized_cross_app_internal/FriendTarget.al	da27b70d983dbc0e
+ws-friend-app-internal/b1_stranger_cross_app_internal_control/StrangerCaller.al	8f06e6169c479d38
+ws-friend-app-internal/b1_stranger_cross_app_internal_control/StrangerTarget.al	25022d8ea4403b9a
+ws-friend-app-internal/c1_directionality_reverse_stays_unknown/DirATarget.al	b9e013f4c1fbfa2b
+ws-friend-app-internal/c1_directionality_reverse_stays_unknown/DirBCaller.al	89d8a00093b7808f
+ws-friend-app-internal/c1_directionality_reverse_stays_unknown/DirBTarget.al	3770216bf72df881
+ws-friend-app-internal/d1_same_app_internal_unaffected/SameAppCaller.al	3a3cf65c2e9e39bf
+ws-friend-app-internal/d1_same_app_internal_unaffected/SameAppTarget.al	94e173b19dbebb59
 ws-implicit-trigger/src/order.al	e9dd9279c5509481
 ws-implicit-trigger/src/processor.al	ff0dd6ce172c9e71
 ws-inline-suppress/src/Rec.Table.al	4b5fdb9e27075fea

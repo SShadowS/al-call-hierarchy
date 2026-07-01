@@ -361,6 +361,15 @@ ws-events/src/publisher.al::0::DoWork	c4301ac69fa5ef91
 ws-events/src/publisher.al::0::OnAfterDoWork	62f43b03dd7723c9
 ws-events/src/subscriber.al::0::HandleAfterDoWork	3717eb495bbe3894
 ws-events/src/subscriber.al::0::HandleBaseAppEvent	62f43b03dd7723c9
+ws-friend-app-internal/a1_friend_authorized_cross_app_internal/FriendCaller.al::0::Trigger	2ea3435949e43996
+ws-friend-app-internal/a1_friend_authorized_cross_app_internal/FriendTarget.al::0::Secret	2ea3435949e43996
+ws-friend-app-internal/b1_stranger_cross_app_internal_control/StrangerCaller.al::0::Trigger	c4ba837c6b0199d4
+ws-friend-app-internal/b1_stranger_cross_app_internal_control/StrangerTarget.al::0::Secret	c4ba837c6b0199d4
+ws-friend-app-internal/c1_directionality_reverse_stays_unknown/DirATarget.al::0::SecretA	c4ba837c6b0199d4
+ws-friend-app-internal/c1_directionality_reverse_stays_unknown/DirBCaller.al::0::Trigger	1181af18ff0d5014
+ws-friend-app-internal/c1_directionality_reverse_stays_unknown/DirBTarget.al::0::SecretB	0b285faaa9fc8662
+ws-friend-app-internal/d1_same_app_internal_unaffected/SameAppCaller.al::0::Trigger	b51bfc03ff8e8ede
+ws-friend-app-internal/d1_same_app_internal_unaffected/SameAppTarget.al::0::DoWork	c4ba837c6b0199d4
 ws-implicit-trigger/src/order.al::0::OnValidate	b3dba850f908fc35
 ws-implicit-trigger/src/processor.al::0::ProcessLines	bb06db5f09344587
 ws-implicit-trigger/src/processor.al::0::ValidateQuantity	b7b9dc16f1a2bb53

@@ -41,14 +41,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-fix code (temporarily neutralized `routine_candidate_is_visible`, confirmed the exact wrong
   `Source` routes the fix corrects, then restored). CDO (`CDO_WS`): `genuine_wrong` stays 0;
   primary/whole `unknown` count rose 356→407 (+51, ALL in the `InternalNotVisible` bucket — every
-  other `unknownByReason` bucket byte-identical), `real_unknown_rate` 1.97%→2.25% — a SOUNDNESS
-  CORRECTION, not a regression (ratchets raised with this justification). Spot-checked against
-  real CDO source (e.g. `Interface "CTS-CDN IPrePostValidator"` fan-out calls and a `Page
+  other `unknownByReason` bucket byte-identical), `real_unknown_rate` 1.97%→2.25%. Spot-checked
+  against real CDO source (e.g. `Interface "CTS-CDN IPrePostValidator"` fan-out calls and a `Page
   "CTS-CDN Connect eCandidates"` Object-receiver call, both targeting the same
-  "Continia Delivery Network" dependency app the Task 1.5 divergence was already traced to). The
-  companion `cdo_l3_semantic_audit_no_fresh_wrong` gate IMPROVED alongside this fix: `matches`
-  against the L3 golden rose 6460→6510 and `fresh_wrong` fell 149→148 (ceiling tightened to match),
-  `fresh_missing` unchanged at 4.
+  "Continia Delivery Network" dependency app). The companion `cdo_l3_semantic_audit_no_fresh_wrong`
+  gate IMPROVED alongside this fix: `matches` against the L3 golden rose 6460→6510 and `fresh_wrong`
+  fell 149→148 (ceiling tightened to match), `fresh_missing` unchanged at 4. **Narrative correction
+  (Task 1.5, below): this +51/2.25% was reported here as an unqualified "soundness correction" —**
+  **that was INCOMPLETE.** It correctly failed closed on cross-app `internal` (no friend exception
+  modeled yet), but every one of the resulting 60 `InternalNotVisible` sites (the +51 here plus 9
+  pre-existing) turned out to be AL-LEGAL calls the declaring app's own manifest explicitly
+  authorizes via `<InternalsVisibleTo>`. See Task 1.5 immediately below for the restoration and the
+  corrected combined story.
+- **uniform-access-and-compound-receiver plan Task 1.5 (inserted after Task 1): model
+  `internalsVisibleTo` friend apps — cross-app `internal` visible to declared friends**
+  (`src/app_package.rs`, `src/snapshot/snapshot.rs`, `src/program/build.rs`, `src/program/graph.rs`,
+  `src/program/resolve/resolver.rs`). AL: an `internal` member is visible within its declaring app
+  AND to any app the declaring app's manifest lists in `<InternalsVisibleTo><Module Id Name
+  Publisher/></...>` (a "friend" app) — a field that was already sitting right next to
+  `<Dependencies>` in every manifest, unread. Measuring CDO's `InternalNotVisible` bucket after Task
+  1 proved 100% of it (60 sites) is CDO calling `internal` members of its CTS-CDN dependency, whose
+  manifest explicitly names CDO a friend — Task 1's strict same-app-only rule was an OVER-DECLINE,
+  not a soundness floor. Four layers, all new: (1) `app_package.rs::parse_manifest_xml` (factored
+  out of `parse_manifest` for unit-testability) now also parses `<InternalsVisibleTo>` into a new
+  `AppMetadata::internals_visible_to: Vec<FriendApp>` (`FriendApp` has no `version` — `<Module>`
+  entries don't carry one). (2) `snapshot.rs` carries it onto a new `AppUnit::internals_visible_to`
+  (dependency units only; the workspace unit is never itself treated as a dependency in this
+  closed-world model, so its own friend list is out of scope). (3) `build_program_graph` gained
+  Step 3b: resolve each friend GUID to an `AppRef` the same guid-first/name+publisher-fallback way
+  Step 3 resolves dependencies, populating a new `ProgramGraph::friends: HashMap<AppRef,
+  BTreeSet<AppRef>>` (key = app EXPOSING internals → its trusted callers; one-directional, per the
+  DECLARING app, never inferred from the reverse). (4) a new `internal_visible_across` helper
+  (`exposing_app == caller_app || friends[exposing_app].contains(caller_app)`) replaces the bare
+  `==` in BOTH `routine_candidate_is_visible` and `object_has_visible_member_candidate`'s
+  `Access::Internal` arms (plus `access_exclusion_reason`'s matching arm, so the diagnostic stays
+  consistent with the visibility predicate). A welcome unplanned side effect: because
+  `object_has_visible_member_candidate` also gates `resolve_bare`'s Step 2 (extension-base), 10
+  further sites that a documented `resolve_bare` reason-overwrite gap had mislabeled
+  `ReceiverOutOfClosure` instead of `InternalNotVisible` now resolve directly too (Step 2 succeeds
+  outright and never reaches the overwrite path). 4 new unit tests in
+  `src/program/resolve/resolver.rs` (friend-authorized resolves; a true-stranger CONTROL still
+  declines; DIRECTIONALITY — A trusting B doesn't imply B trusts A back; same-app unaffected), TDD
+  RED-verified by temporarily hardcoding the same-app-only rule and confirming the exact 2
+  friend-dependent tests fail while the control/same-app tests stay green. New fixtures under
+  `tests/r0-corpus/ws-friend-app-internal/`. CDO (`CDO_WS`): `genuine_wrong` stays 0;
+  `InternalNotVisible` bucket dropped to exactly 0; primary/whole `unknown` 407→340 (a drop of 67 —
+  the 60 originally measured plus the 7-ish `ReceiverOutOfClosure` side effect above),
+  `real_unknown_rate` 2.25%→1.88% — BELOW every prior recorded floor, including the pre-Task-1
+  1.91%, confirming the Task-1-alone number was never the true honest floor. Adjudicated a sample
+  of restored edges against real CDO/CTS-CDN source (both `.app`s extracted directly): the base
+  Page's 3 `internal` procedures, both implementers of `IPrePostValidator.Validate` declaring
+  `internal procedure Validate`, and CTS-CDN's manifest literally listing CDO's real `AppId` as a
+  friend — every sampled edge targets the correct member. `cdo_l3_semantic_audit_no_fresh_wrong`:
+  `fresh_wrong` rose 148→149 (ratchet retightened to the exact measured value) because the retired
+  L3/al-sem TS reference never modeled `InternalsVisibleTo` either, so one of the 67 restored sites
+  now diverges from the (equally naive, frozen) golden rather than matching it — adjudicated
+  `fresh_ahead_dispatch`, not `genuine_wrong`, per this project's "no byte-parity with al-sem, fresh
+  is Rust-owned" charter. `fresh_missing` unchanged at 4.
 - **soundness-completion plan Task 2: shape-preserving object-typed declared-var resolution
   (`ParsedType::Object` → `ObjectRef`) — mirrors I1's `Record` fix for the `Object` sibling**
   (`src/program/resolve/receiver.rs`). `ParsedType::Object { kind, name: String }` collapsed a

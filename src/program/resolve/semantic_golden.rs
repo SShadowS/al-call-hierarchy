@@ -2541,6 +2541,7 @@ mod tests {
             objects: sorted_objects,
             routines,
             obj_index,
+            ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
         (graph, index)
@@ -3110,6 +3111,7 @@ mod tests {
             objects,
             routines,
             obj_index,
+            ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
         (graph, index)

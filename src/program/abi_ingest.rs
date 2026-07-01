@@ -436,6 +436,7 @@ mod tests {
             }),
             compilation: CompilationContext::default(),
             declared_deps: vec![],
+            internals_visible_to: vec![],
             abi: None,
             app_path: None,
         }
@@ -452,6 +453,7 @@ mod tests {
             source: None,
             compilation: CompilationContext::default(),
             declared_deps: vec![],
+            internals_visible_to: vec![],
             abi: None,
             app_path: None,
         }

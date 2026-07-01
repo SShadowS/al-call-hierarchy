@@ -1392,18 +1392,41 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // (it previously did ZERO access filtering): the `ReceiverType::Object`
     // arm (`resolve_member`, gap D) and both `Interface`-impl fan-out
     // delegates (gap F/G) could false-resolve a cross-app `internal` member
-    // to `Source`. Ratchets only ever TIGHTEN in the direction of PRECISION;
-    // this is the documented exception where soundness may raise the count —
-    // see the `unknown` COUNT ceiling below for the verified root cause.
-    // 0.023 gives a tiny deterministic margin above the measured 0.0225.
+    // to `Source`. This was a TRANSIENT over-decline, not the final honest
+    // rate — see the next entry.
+    //
+    // TIGHTENED 2026-07-02 (uniform-access-and-compound-receiver plan,
+    // Task 1.5, inserted immediately after Task 1): 0.023 → 0.020, measured
+    // 0.0188 (1.88%) — BELOW every prior recorded floor, including the
+    // pre-Task-1 1.91%. The combined Task-1+1.5 story: Task 1 correctly
+    // fails closed on cross-app `internal` (no exceptions modeled yet); Task
+    // 1.5 models AL's `InternalsVisibleTo` friend-app exception, so a
+    // cross-app `internal` member is visible when the declaring app's own
+    // manifest lists the caller's app as a friend, in ADDITION to the
+    // same-app case. Measuring CDO's `InternalNotVisible` bucket proved
+    // 100% of it (every site Task 1 declined, cross-app-internal-wise) was
+    // CDO calling `internal` members of its CTS-CDN dependency, whose
+    // manifest explicitly names CDO a friend — i.e. every one of those calls
+    // is AL-LEGAL, and Task 1 alone was an OVER-DECLINE, not a soundness
+    // ceiling. Task 1.5 restores them to `Source`, and — as a documented
+    // side effect of `object_has_visible_member_candidate` being the SAME
+    // shared helper `resolve_bare`'s Step 2 (extension-base) already used
+    // pre-Task-1.5 — also sidesteps a known `resolve_bare` reason-overwrite
+    // imprecision for a further 7 sites that were mislabeled
+    // `ReceiverOutOfClosure` instead of `InternalNotVisible` (see the
+    // `unknown` COUNT ceiling below). Net result: the TRUE honest rate for
+    // this codebase is LOWER than any prior measurement, because the
+    // over-decline was never real soundness — declining an AL-LEGAL friend
+    // call was itself the bug. 0.020 gives a tiny deterministic margin above
+    // the measured 0.0188.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.023,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.023 \
-         (recorded 2026-07-02 post uniform-access-and-compound-receiver Task 1: \
-         2.25%, was 1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% \
-         pre-beyond-1B.3b) — engine regressed; investigate before raising the \
-         ceiling"
+        primary_rate <= 0.020,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.020 \
+         (recorded 2026-07-02 post uniform-access-and-compound-receiver Task \
+         1.5: 1.88%, was 2.25% post-Task-1-only [a transient over-decline], \
+         1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — \
+         engine regressed; investigate before raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1435,53 +1458,87 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // 3 procedures ARE `internal`, cross-app, was false `Source` pre-fix).
     //
     // RAISED AGAIN 2026-07-02 (uniform-access-and-compound-receiver plan,
-    // Task 1): 356→407 (+51), ANOTHER SOUNDNESS CORRECTION — closes the
-    // `resolve_in_object` gap Task 1.5 above deliberately left open (that fix
-    // only access-filtered `resolve_bare`'s Step 2 caller; `resolve_in_object`
-    // ITSELF still did zero filtering for the `ReceiverType::Object` arm and
-    // the `Interface`-impl fan-out). All +51 land in the `InternalNotVisible`
-    // bucket EXCLUSIVELY — every other `unknownByReason` bucket
+    // Task 1): 356→407 (+51). At the time this was recorded as "ANOTHER
+    // SOUNDNESS CORRECTION" — that framing was INCOMPLETE (corrected below):
+    // Task 1 closed a real gap (`resolve_in_object` did zero access
+    // filtering for the `ReceiverType::Object` arm and the `Interface`-impl
+    // fan-out), but ALL +51 landed in `InternalNotVisible` for calls that
+    // turned out to be AL-LEGAL friend calls (see Task 1.5 immediately
+    // below) — so the +51 was a TRANSIENT OVER-DECLINE, not a durable
+    // soundness floor. Every other `unknownByReason` bucket
     // (`CompoundReceiver`=167, `UntrackedReceiver`=91, `OverloadAmbiguous`=56,
-    // `BuiltinPrecedenceCollision`=1, `ReceiverOutOfClosure`=10,
-    // `MemberNotFound`=25) is BYTE-IDENTICAL before/after, confirming the fix
-    // is surgically scoped to cross-app `internal` access exclusion with zero
-    // collateral effect. Spot-check VERIFIED against CDO source (58 distinct
-    // call sites; sampled across `CDO eDoc PrePost Valid.` and `CDO
-    // eCandidates Event Handler`): e.g. `IPrePostValidator.Validate(...)`
-    // (an `Interface "CTS-CDN IPrePostValidator"` fan-out call, gap G) and
-    // `sender.GetReceiverType()` where `sender: Page "CTS-CDN Connect
-    // eCandidates"` (an `Object`-arm call, gap D) — both targeting the SAME
-    // "Continia Delivery Network" (`CTS-CDN`) dependency app already
-    // identified as the source of the Task 1.5 divergence above, whose
-    // members are declared `internal`. The companion `cdo_l3_semantic_audit_
-    // no_fresh_wrong` gate confirms `genuine_wrong` stays 0 and `matches`
-    // against the L3 golden IMPROVED (+50: 6460→6510) with `fresh_wrong`
-    // improving too (149→148) — net a strict soundness gain, not a
-    // regression. 415 keeps the same ~8-count deterministic margin the prior
-    // ceiling used.
+    // `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25) was BYTE-IDENTICAL
+    // before/after Task 1, confirming that fix itself was surgically scoped
+    // to cross-app `internal` access exclusion with zero collateral effect
+    // — the OVER-decline was specifically in the `internal`-access rule
+    // being too strict (same-app-only), not in the per-candidate filtering
+    // mechanism itself.
+    //
+    // TIGHTENED 2026-07-02 (uniform-access-and-compound-receiver plan,
+    // Task 1.5, inserted immediately after Task 1): 407→348. Task 1.5 models
+    // AL's `InternalsVisibleTo` friend-app exception (`internal_visible_
+    // across` in `src/program/resolve/resolver.rs`): a cross-app `internal`
+    // member is visible when the declaring app's manifest lists the
+    // caller's app as a friend, not ONLY same-app. Measured CDO delta:
+    // primary/whole `unknown` 407→340 (a drop of 67, not merely the ~60
+    // `InternalNotVisible` sites originally measured) — the `InternalNotVisible`
+    // bucket dropped to EXACTLY 0 (every real CDO cross-app-internal site was
+    // friend-authorized, none was a true stranger), AND, as a documented side
+    // effect, `ReceiverOutOfClosure` also dropped from 10 to 0: those 10 sites
+    // are the SAME bare `GetIsSingleConnect`/`GeteCandidatesFiltered`/
+    // `GetIsVendor` calls from `CDOConnecteCandidates.PageExt.al` (extending
+    // base Page `"CTS-CDN Connect eCandidates"`, id 6252183, all 3 procedures
+    // declared `internal`) that `resolve_bare`'s Step 2 (extension-base) now
+    // resolves directly via the SAME `object_has_visible_member_candidate`
+    // helper Task 1.5 extended — previously Step 2 declined (access-excluded)
+    // and execution fell through to Step 3's implicit-Rec fallback, which
+    // ALSO failed and OVERWROTE the more-specific `InternalNotVisible` reason
+    // with the generic `ReceiverOutOfClosure` (a known, documented
+    // reason-overwrite imprecision — see the plan's "Out of scope" list); now
+    // that Step 2 succeeds outright, that overwrite path is never reached for
+    // these 10 sites. Spot-check VERIFIED against real CDO/CTS-CDN source
+    // (both `.app`s extracted directly): `CTSCDNConnecteCandidates.Page.al`
+    // (page 6252183) declares `internal procedure GetIsSingleConnect`/
+    // `GeteCandidatesFiltered`/`GetIsVendor`; `IPrePostValidator.Validate`'s
+    // TWO implementers (`CTS-CDN Default PrePost Valid.` id 6225611 and
+    // `CTS-CDN Legacy PrePost Valid.` id 6225586) both declare `internal
+    // procedure Validate`; CTS-CDN's `NavxManifest.xml` `<InternalsVisibleTo>`
+    // explicitly lists `<Module Id="f4b69b55-..." Name="Continia Document
+    // Output" .../>` — every restored edge targets the CORRECT, real
+    // `internal` member its declaring app explicitly authorized CDO to call.
+    // `genuine_wrong` stays 0 (companion gate). The combined Task-1+1.5
+    // story: Task 1 declines cross-app `internal` (fail closed, no exception
+    // modeled yet); Task 1.5 restores the subset that AL itself declares
+    // legal via `InternalsVisibleTo`; only a TRUE stranger (no friend
+    // declaration in either direction) stays `Unknown`. 348 keeps a similar
+    // ~8-count deterministic margin the prior ceiling used, now over the new
+    // measured 340.
     assert!(
-        ph.unknown <= 415,
-        "primary unknown count {} exceeds ceiling 415 (recorded 2026-07-02 post \
-         uniform-access-and-compound-receiver plan Task 1: 407 — a verified \
-         soundness correction, was 356 post soundness completion plan v2.1 \
-         Task 1.5, 346 post follow-up plan v2.1 Task 4, 508 pre-follow-up) — \
-         engine regressed; investigate before raising the ceiling",
+        ph.unknown <= 348,
+        "primary unknown count {} exceeds ceiling 348 (recorded 2026-07-02 post \
+         uniform-access-and-compound-receiver plan Task 1.5: 340 — a verified \
+         soundness correction restoring an over-decline, was 407 post Task 1 \
+         alone [transient over-decline], 356 post soundness completion plan \
+         v2.1 Task 1.5, 346 post follow-up plan v2.1 Task 4, 508 \
+         pre-follow-up) — engine regressed; investigate before raising the \
+         ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
     // future regression lands in a dependency-internal (non-primary) routine
     // — the primary-scoped count above would not catch that on its own.
-    // RAISED 2026-07-02 alongside the primary ceiling above (same Task 1
-    // soundness correction; whole-program `unknown`=407, same value as
-    // primary today — see comment above); 415 gives the same tiny margin.
+    // TIGHTENED 2026-07-02 alongside the primary ceiling above (same Task
+    // 1.5 fix; whole-program `unknown`=340, same value as primary today —
+    // see comment above); 348 gives the same margin.
     assert!(
-        h.unknown <= 415,
-        "whole-program unknown count {} exceeds ceiling 415 (recorded 2026-07-02 \
-         post uniform-access-and-compound-receiver plan Task 1: 407 — a \
-         verified soundness correction, was 356 post soundness completion \
-         plan v2.1 Task 1.5, 346 post follow-up plan v2.1 Task 4, 508 \
-         pre-follow-up) — engine regressed; investigate before raising the \
-         ceiling",
+        h.unknown <= 348,
+        "whole-program unknown count {} exceeds ceiling 348 (recorded \
+         2026-07-02 post uniform-access-and-compound-receiver plan Task 1.5: \
+         340 — a verified soundness correction restoring an over-decline, \
+         was 407 post Task 1 alone [transient over-decline], 356 post \
+         soundness completion plan v2.1 Task 1.5, 346 post follow-up plan \
+         v2.1 Task 4, 508 pre-follow-up) — engine regressed; investigate \
+         before raising the ceiling",
         h.unknown,
     );
 
@@ -2061,19 +2118,39 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // access filter reclassified one former `fresh_wrong` site (fresh
     // resolved to a WRONG target, per the L3 golden) into an honest `Unknown`
     // — which the L3-comparison now counts among `matches` (both sides
-    // agree there's no confident target) rather than a mismatch. All 148
-    // remaining sites stay adjudicated `fresh_ahead_dispatch`, `genuine_wrong`
-    // stays 0.
-    const FRESH_WRONG_CEILING: usize = 148;
+    // agree there's no confident target) rather than a mismatch.
+    //
+    // RAISED 2026-07-02 (uniform-access-and-compound-receiver plan, Task 1.5,
+    // inserted after Task 1): 148→149. Task 1.5 models `internalsVisibleTo`
+    // friend apps, correctly resolving cross-app `internal` calls the
+    // declaring app's manifest explicitly authorizes (CDO→CTS-CDN) to
+    // `Source`. The RETIRED al-sem/L3 TS reference — frozen at golden-mint
+    // time — never modeled `InternalsVisibleTo` either, so it still emits
+    // `Unknown`/no-edge for the SAME 67 sites (60 `InternalNotVisible` +
+    // 7 sites that were mislabeled `ReceiverOutOfClosure` by the
+    // documented `resolve_bare` reason-overwrite gap, see
+    // `cdo_full_program_coverage_and_self_reported_metric`'s comment for the
+    // 407→340 unknown-count drop). This is a case of the retired reference
+    // being WRONG (a known, accepted divergence per this project's charter:
+    // "no byte-to-byte parity with al-sem" — fresh is Rust-owned and
+    // intentionally more accurate) — 1 of those 67 now diverges from L3 as
+    // `fresh_wrong` (fresh: `Source`; L3: something else) rather than falling
+    // into `fresh_missing`/`fresh_extra`/`fresh_novel`; the adjudication
+    // overlay classifies it (and all 148 prior sites) as `fresh_ahead_
+    // dispatch`, confirmed by `genuine_wrong == 0` above. `fresh_missing`
+    // stays unchanged at 4 (verified — see the metric gate). Ratchet raised
+    // to the exact measured value (zero margin, per this ceiling's own
+    // established zero-tolerance philosophy).
+    const FRESH_WRONG_CEILING: usize = 149;
     assert!(
         audit.fresh_wrong_count <= FRESH_WRONG_CEILING,
         "DIVERGENCE REGRESSION: fresh_wrong_count={} exceeds the recorded \
          ceiling {} (recorded 2026-07-02 post uniform-access-and-compound-receiver \
-         Task 1: 148, all fresh_ahead_dispatch, genuine_wrong=0; was 149 post \
-         follow-up plan v2.1 Task 4) — a new site diverged from the \
-         L3-validated golden; investigate (is it a new fresh_ahead_dispatch \
-         refinement, or a genuine_wrong that the adjudication heuristic \
-         mis-classified?) before raising the ceiling.",
+         Task 1.5: 149, all fresh_ahead_dispatch, genuine_wrong=0; was 148 post \
+         Task 1, 149 post follow-up plan v2.1 Task 4) — a new site diverged \
+         from the L3-validated golden; investigate (is it a new \
+         fresh_ahead_dispatch refinement, or a genuine_wrong that the \
+         adjudication heuristic mis-classified?) before raising the ceiling.",
         audit.fresh_wrong_count,
         FRESH_WRONG_CEILING,
     );
@@ -3944,6 +4021,7 @@ codeunit 50971 "Compound Overload Subscriber"
         source: Some(ws_source),
         compilation: CompilationContext::default(),
         declared_deps: vec![],
+        internals_visible_to: vec![],
         abi: None,
         app_path: None,
     };
@@ -3957,6 +4035,7 @@ codeunit 50971 "Compound Overload Subscriber"
         source: Some(dep_source),
         compilation: CompilationContext::default(),
         declared_deps: vec![],
+        internals_visible_to: vec![],
         abi: None,
         app_path: None,
     };

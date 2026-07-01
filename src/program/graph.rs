@@ -1,7 +1,7 @@
 //! The whole-program node graph: app-qualified nodes + topology-scoped lookup.
 
 use al_syntax::ir::ObjectKind;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::program::node::{AppRef, AppRegistry};
 use crate::program::node_extract::{ObjectNode, RoutineNode};
@@ -29,6 +29,7 @@ impl ObjectIndex {
 }
 
 /// The assembled whole-program graph: app-qualified nodes + dependency topology.
+#[derive(Default)]
 pub struct ProgramGraph {
     pub apps: AppRegistry,
     pub topology: DependencyGraph,
@@ -37,6 +38,17 @@ pub struct ProgramGraph {
     /// All routine nodes, sorted by `RoutineNodeId` for determinism.
     pub routines: Vec<RoutineNode>,
     pub obj_index: ObjectIndex,
+    /// `internalsVisibleTo` friend-app authorizations (Task 1.5), keyed by
+    /// the app EXPOSING `internal` members → the set of caller apps its own
+    /// manifest's `<InternalsVisibleTo><Module .../></InternalsVisibleTo>`
+    /// declares as friends. One-directional per the DECLARING (exposing)
+    /// app — `friends[B].contains(A)` means B trusts A, not the reverse.
+    /// Consulted by [`crate::program::resolve::resolver`]'s per-candidate
+    /// `Access::Internal` visibility rule as a cross-app fallback alongside
+    /// the same-app check. Populated in [`crate::program::build::build_program_graph`]
+    /// (Step 3b); empty in every in-memory test fixture that doesn't
+    /// explicitly wire it (`..Default::default()`).
+    pub friends: HashMap<AppRef, BTreeSet<AppRef>>,
 }
 
 impl ProgramGraph {
@@ -178,6 +190,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         }
     }
 
@@ -263,6 +276,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         }
     }
 

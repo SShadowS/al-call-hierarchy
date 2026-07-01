@@ -33,6 +33,27 @@ pub struct AppMetadata {
     /// The app's declared dependencies (`<Dependencies><Dependency .../>`), each
     /// with its real GUID. Drives dependency-topology-aware resolution.
     pub dependencies: Vec<crate::dependencies::AppDependency>,
+    /// Friend apps this app grants `internal`-member visibility to
+    /// (`<InternalsVisibleTo><Module .../></InternalsVisibleTo>`). AL: an
+    /// `internal` member is visible within its declaring app AND to any app
+    /// the declaring app lists here — one-directional, declared BY the app
+    /// exposing the internals, not by the caller (Task 1.5).
+    pub internals_visible_to: Vec<FriendApp>,
+}
+
+/// A friend app declared in this app's manifest `<InternalsVisibleTo>` —
+/// grants that app's callers visibility into THIS app's `internal` members.
+/// Unlike [`crate::dependencies::AppDependency`], a `<Module>` friend entry
+/// carries no version (`Id`/`Name`/`Publisher` only), so friend resolution
+/// falls back to name+publisher (never name+version) when the GUID is absent
+/// or unmatched.
+#[derive(Debug, Clone)]
+pub struct FriendApp {
+    /// The friend app's stable GUID (`Module@Id`). May be empty for a
+    /// malformed/legacy manifest entry.
+    pub app_id: String,
+    pub name: String,
+    pub publisher: String,
 }
 
 /// Kind of method (regular procedure, event publisher, or event subscriber).
@@ -302,8 +323,16 @@ fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Ap
         .read_to_string(&mut content)
         .context("Failed to read NavxManifest.xml")?;
 
+    parse_manifest_xml(&content)
+}
+
+/// Parse an already-read NavxManifest.xml document into `AppMetadata`.
+/// Factored out of [`parse_manifest`] (which needs a live zip archive to read
+/// the file first) so the XML-parsing logic itself is unit-testable against
+/// an inline manifest string, without constructing an in-memory zip.
+fn parse_manifest_xml(content: &str) -> Result<AppMetadata> {
     // Parse XML using roxmltree
-    let doc = roxmltree::Document::parse(&content).context("Failed to parse NavxManifest.xml")?;
+    let doc = roxmltree::Document::parse(content).context("Failed to parse NavxManifest.xml")?;
 
     // Find the App element
     let app_node = doc
@@ -325,6 +354,21 @@ fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Ap
         })
         .collect();
 
+    // Friend apps: <InternalsVisibleTo><Module Id Name Publisher/> — grants
+    // THIS app's `internal` members visibility to each listed app (Task 1.5).
+    // Same whole-document `descendants()` scan pattern as `<Dependency>`
+    // above (verified against a real CTS-CDN manifest: `<Module>` is used
+    // exclusively for this purpose, never elsewhere in NavxManifest.xml).
+    let internals_visible_to = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("Module"))
+        .map(|m| FriendApp {
+            app_id: m.attribute("Id").unwrap_or_default().to_string(),
+            name: m.attribute("Name").unwrap_or_default().to_string(),
+            publisher: m.attribute("Publisher").unwrap_or_default().to_string(),
+        })
+        .collect();
+
     Ok(AppMetadata {
         app_id: attr("Id"),
         name: attr("Name"),
@@ -334,6 +378,7 @@ fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Ap
         platform: attr("Platform"),
         application: attr("Application"),
         dependencies,
+        internals_visible_to,
     })
 }
 
@@ -537,6 +582,58 @@ fn format_type(td: Option<&SymbolTypeDefinition>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // Task 1.5: `<InternalsVisibleTo>` friend-app parsing (`parse_manifest_xml`)
+    // -----------------------------------------------------------------------
+
+    /// Minimal manifest matching the shape confirmed against a real CTS-CDN
+    /// `.app` (`<InternalsVisibleTo><Module Id Name Publisher/></...>`).
+    const MANIFEST_WITH_FRIENDS: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/navx/2015/manifest">
+  <App Id="0745e76d-0b72-4641-87c2-ee45db5d2c32" Name="Continia Delivery Network" Publisher="Continia Software" Version="29.0.0.101335" Runtime="17.0" Platform="28.0.0.0" Application="28.0.0.0" />
+  <Dependencies>
+    <Dependency Id="e4b442d0-e8e3-4210-bfca-f1e66686caa0" Name="Continia System Application" Publisher="Continia Software" MinVersion="29.0.0.0" />
+  </Dependencies>
+  <InternalsVisibleTo>
+    <Module Id="f4b69b55-c90d-4937-8f53-2742898fa948" Name="Continia Document Output" Publisher="Continia Software" />
+    <Module Id="d3b95842-4a61-4d42-96f2-839a6e3b907c" Name="Continia Delivery Network Utility" Publisher="Continia Software" />
+  </InternalsVisibleTo>
+</Package>
+"#;
+
+    #[test]
+    fn parse_manifest_xml_extracts_internals_visible_to_friends() {
+        let meta = parse_manifest_xml(MANIFEST_WITH_FRIENDS).expect("parse manifest");
+        assert_eq!(meta.app_id, "0745e76d-0b72-4641-87c2-ee45db5d2c32");
+        assert_eq!(meta.dependencies.len(), 1, "Dependency parsing unaffected");
+        assert_eq!(
+            meta.internals_visible_to.len(),
+            2,
+            "expected 2 <Module> friend entries"
+        );
+        let cdo = meta
+            .internals_visible_to
+            .iter()
+            .find(|f| f.name == "Continia Document Output")
+            .expect("CDO friend entry present");
+        assert_eq!(cdo.app_id, "f4b69b55-c90d-4937-8f53-2742898fa948");
+        assert_eq!(cdo.publisher, "Continia Software");
+    }
+
+    #[test]
+    fn parse_manifest_xml_without_internals_visible_to_is_empty_not_error() {
+        // The overwhelming majority of manifests carry no
+        // <InternalsVisibleTo> element at all — must parse fine with an
+        // empty friend list, never an error.
+        let manifest = r#"<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/navx/2015/manifest">
+  <App Id="aaaaaaaa-0000-0000-0000-000000000001" Name="PlainApp" Publisher="Test" Version="1.0.0.0" />
+</Package>
+"#;
+        let meta = parse_manifest_xml(manifest).expect("parse manifest");
+        assert!(meta.internals_visible_to.is_empty());
+    }
 
     #[test]
     fn test_parse_real_app_file() {

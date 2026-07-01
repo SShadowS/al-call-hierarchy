@@ -1049,6 +1049,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         };
         (graph, app)
     }
@@ -1587,6 +1588,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         };
         (graph, app)
     }
@@ -1723,6 +1725,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         };
         (graph, app)
     }
@@ -2139,6 +2142,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         };
         (graph, w)
     }
@@ -2828,6 +2832,7 @@ mod tests {
             objects,
             routines: vec![],
             obj_index,
+            ..Default::default()
         };
         (graph, w)
     }
