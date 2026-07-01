@@ -37,7 +37,7 @@ use crate::program::resolve::edge::{
     CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, Histogram, OpenWorldReason, Route,
     RouteTarget, SetCompleteness, SiteId, Witness, callee_fp, classify_obligation,
 };
-use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
+use crate::program::resolve::extract::{CalleeShape, WithState, extract_sites_for_routine};
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::receiver::{ReceiverType, infer_receiver_type};
 use crate::program::resolve::resolver::{
@@ -292,12 +292,15 @@ fn resolve_call_site_obligation(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
+    with_state: WithState,
 ) -> (EdgeKind, DispatchShape, SetCompleteness, Vec<Route>) {
     match shape {
         CalleeShape::Bare { name } => {
             let name_lc = name.to_ascii_lowercase();
             let routes = if let Some(obj_node) = obj_node_opt {
-                resolve_bare(obj_node, &name_lc, arity, graph, index, body_map)
+                resolve_bare(
+                    obj_node, &name_lc, arity, graph, index, body_map, with_state,
+                )
             } else {
                 vec![unknown_route()]
             };
@@ -409,7 +412,7 @@ fn resolve_call_site_obligation(
         CalleeShape::Commit => {
             // `commit` is a global builtin — resolve_bare finds it in the catalog.
             let routes = if let Some(obj_node) = obj_node_opt {
-                resolve_bare(obj_node, "commit", 0, graph, index, body_map)
+                resolve_bare(obj_node, "commit", 0, graph, index, body_map, with_state)
             } else {
                 vec![unknown_route()]
             };
@@ -532,6 +535,7 @@ fn resolve_full_program_from_parts(
                             graph,
                             &index,
                             &body_map,
+                            site.with_state,
                         );
 
                         classified_edges.push(ClassifiedEdge {

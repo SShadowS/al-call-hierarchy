@@ -1,0 +1,8 @@
+{
+	"id": "cc2e3f4a-5555-6666-7777-888899990000",
+	"name": "BareImplicitRecProbe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50970, "to": 51050 }]
+}

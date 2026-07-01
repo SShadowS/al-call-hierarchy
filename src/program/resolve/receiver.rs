@@ -641,7 +641,12 @@ fn infer_implicit_rec(
 /// [`ResolveIndex::resolve_object_ref`]. Only [`ObjectRefResolution::Unique`]
 /// yields a table; `Ambiguous`/`OutOfClosure`/`Unresolved` all decline to
 /// `None` rather than guess.
-fn resolve_source_table_ref(
+///
+/// `pub(crate)`: also reused directly by `resolver.rs`'s `resolve_bare` Step 3
+/// (beyond-1B.3b Task 3) for the Page implicit-Rec table lookup — the exact
+/// same fail-closed rule the EXPLICIT `Rec.Foo()` receiver-inference path
+/// (this module) already established for Tasks 5-7.
+pub(crate) fn resolve_source_table_ref(
     from: ObjectNodeId,
     source_table: &ObjectRef,
     graph: &ProgramGraph,
@@ -664,7 +669,12 @@ fn resolve_source_table_ref(
 /// `ObjectKind::Page`. `extends_target` is always a NAME in AL grammar (a
 /// TableExtension cannot `extends` by numeric id), so this always builds an
 /// [`ObjectRef::Name`], unlike `SourceTable`/`TableNo` which may be numeric.
-fn resolve_tableext_base_table(
+///
+/// `pub(crate)`: also reused directly by `resolver.rs`'s `resolve_bare` Step 3
+/// (beyond-1B.3b Task 3) for the TableExtension implicit-Rec table lookup —
+/// literally "`resolve_object_ref(Table, extends_target)`" as the task brief
+/// specifies, via this existing helper rather than re-deriving it.
+pub(crate) fn resolve_tableext_base_table(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
@@ -711,7 +721,10 @@ fn resolve_pageext_base_page(
 /// Both hops are scoped from `from_object`'s own closure (the extension's),
 /// consistent with every other lookup in this module keying off the CALLING
 /// object's app — not the base page's.
-fn resolve_pageext_base_source_table(
+///
+/// `pub(crate)`: also reused directly by `resolver.rs`'s `resolve_bare` Step 3
+/// (beyond-1B.3b Task 3) for the PageExtension implicit-Rec table lookup.
+pub(crate) fn resolve_pageext_base_source_table(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,

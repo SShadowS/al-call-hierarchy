@@ -6,8 +6,17 @@
 //! 1. **Own object** — a procedure named `name_lc` declared in `from_object`.
 //! 2. **Extension base** — if `from_object` is a `*Extension`, search the base
 //!    object (`TableExtension`→`Table`, `PageExtension`→`Page`, …).
-//! 3. **Implicit-Rec** — Page/Table-ext implicit table lookup (**deferred, TODO
-//!    Phase 2+**; the Task-6 gate measures the residual).
+//! 3. **Implicit-Rec** (beyond-1B.3b Task 3) — a bare call inside a `Table`/
+//!    `Page`/`TableExtension`/`PageExtension` implicitly dispatches to `Rec` as
+//!    a LAST-RESORT fallback, after Steps 1-2 have had first refusal. Every
+//!    other object kind (Codeunit/Report/XmlPort/Query/…) structurally skips
+//!    this step. Gated on `WithState::NoWithProven` (a bare call lexically
+//!    inside a `with X do` is NEVER eligible — see [`crate::program::resolve::
+//!    extract::WithState`]) and on [`resolve_in_table_scope`] (Task 2's
+//!    visibility-scoped table∪extensions search). A table-scope candidate that
+//!    collides in name+arity with a global builtin or a bare-callable
+//!    page/instance intrinsic (`Update`/`Close`/…) is an UNPROVEN precedence —
+//!    fail closed to `Unknown` rather than assume the table wins.
 //! 4. **Global builtin** — `is_global_builtin(name_lc)` → `Catalog` route.
 //! 5. **Unknown** — genuine resolution failure.
 //!
@@ -46,9 +55,15 @@ use crate::program::resolve::edge::{
     EdgeKind, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
     Witness, callee_fp,
 };
+use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::ResolveIndex;
-use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin_id};
-use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
+use crate::program::resolve::member_catalog::{
+    MemberCatalogKind, member_builtin, member_builtin_id,
+};
+use crate::program::resolve::receiver::{
+    FrameworkKind, ReceiverType, resolve_pageext_base_source_table, resolve_source_table_ref,
+    resolve_tableext_base_table,
+};
 use crate::snapshot::TrustTier;
 
 // ---------------------------------------------------------------------------
@@ -456,12 +471,71 @@ fn resolve_in_table_scope(
     }
 }
 
+/// Compute the implicit-`Rec` table `ObjectNodeId` for `resolve_bare`'s Step 3
+/// (bare unqualified calls implicitly dispatching to `Rec` — beyond-1B.3b
+/// Task 3), by `from_object`'s kind. Reuses the SAME fail-closed per-kind
+/// lookups `infer_implicit_rec` (`receiver.rs`) already established for the
+/// EXPLICIT `Rec.Foo()` member-call case (Tasks 5-7) — a guessed table is the
+/// cardinal sin either way, so there is exactly one correct answer per kind
+/// and no reason to re-derive it.
+///
+/// Deliberately narrower than `infer_implicit_rec`: `Codeunit` (`TableNo`) is
+/// NOT handled here. `resolve_bare`'s Step 3 caller already structurally
+/// excludes every kind but `{Table, Page, TableExtension, PageExtension}`
+/// before this is ever called (AL's bare-implicit-dispatch fallback is a
+/// Page/Table source-record mechanism, not a Codeunit `TableNo` one), so this
+/// function is never invoked for a Codeunit — its `_ => None` arm is
+/// defense-in-depth, not a live path.
+///
+/// Returns `None` when there is no unique in-closure table (no declared
+/// property, ambiguous cross-app name, out-of-closure, unresolved) — the
+/// caller falls through to Step 4 rather than guess.
+fn implicit_rec_table_id(
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    match from_object.id.kind {
+        ObjectKind::Table => Some(from_object.id.clone()),
+        ObjectKind::Page => from_object
+            .source_table
+            .as_ref()
+            .and_then(|r| resolve_source_table_ref(from_object.id.clone(), r, graph, index)),
+        ObjectKind::TableExtension => resolve_tableext_base_table(from_object, graph, index),
+        ObjectKind::PageExtension => resolve_pageext_base_source_table(from_object, graph, index),
+        _ => None,
+    }
+}
+
+/// Whether `name_lc` is a global builtin OR a bare-callable page/instance
+/// intrinsic (`member_catalog`'s `PageInstance` set: `Update`/`Close`/
+/// `SetRecord`/…) — the collision set `resolve_bare`'s Step 3 PROBE-THEN-
+/// DECIDE guard checks AFTER finding a table-scope candidate (never gates the
+/// probe itself; see the Step 3 doc in this function's body). A bare call to
+/// one of these names inside a Page/Table trigger is textually ambiguous
+/// between "the implicit-Rec table's own procedure" and "the platform
+/// intrinsic" — with no compiler-verified precedence rule captured here,
+/// fail-closed to `Unknown` on any such collision rather than pick a side.
+fn is_bare_builtin_or_page_intrinsic(name_lc: &str) -> bool {
+    global_builtin_id(name_lc).is_some()
+        || member_builtin(
+            MemberCatalogKind::Framework(&FrameworkKind::PageInstance),
+            name_lc,
+        )
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /// Resolve a bare (unqualified) call to `name_lc` with `arity` arguments from
 /// the context of `from_object`.
+///
+/// `with_state` is the call site's [`WithState`] (beyond-1B.3b Task 3): Step 3
+/// (implicit-Rec) only runs when this is `NoWithProven` — see the module doc
+/// and [`WithState`] itself for the two-signal fail-closed soundness
+/// argument. Every OTHER precedence step is unaffected by `with_state` (a
+/// `with` block does not change own-object/extension-base/builtin lookup).
 ///
 /// Returns a `Vec<Route>` with exactly one entry (bare calls are
 /// single-dispatch in AL; the vec wrapper aligns with the multi-route edge
@@ -473,6 +547,7 @@ pub fn resolve_bare(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
+    with_state: WithState,
 ) -> Vec<Route> {
     // 1. Own object.
     if let Some(route) = resolve_in_object(
@@ -501,11 +576,60 @@ pub fn resolve_bare(
         }
     }
 
-    // 3. Implicit-Rec (deferred).
-    // TODO Phase 2+: if from_object is a Page/Table/TableExtension/PageExtension
-    // with an implicit source table, look up the procedure there and in all its
-    // TableExtensions.  The Task-6 gate measures the residual real-unknown rate
-    // attributable to this gap.
+    // 3. Implicit-Rec (beyond-1B.3b Task 3). Every guard below is
+    // independently fail-closed; any of them declining routes straight past
+    // this step to Step 4/5 rather than guessing.
+    //
+    // (0) STRICT ObjectKind guard: bare-implicit-Rec dispatch is structurally
+    // a Page/Table source-record mechanism in AL — ONLY these four kinds are
+    // eligible. Every other kind (Codeunit/Report/XmlPort/Query/…) skips this
+    // step entirely, no accidental leakage via `implicit_rec_table_id`'s own
+    // (defense-in-depth) kind match.
+    if matches!(
+        from_object.id.kind,
+        ObjectKind::Table
+            | ObjectKind::Page
+            | ObjectKind::TableExtension
+            | ObjectKind::PageExtension
+    ) {
+        // (1) with-guard: Step 3 runs ONLY on a proven with-free call site.
+        // `InsideWith`/`Unknown` (the AST places the site inside a `with`, or
+        // the two with-detection signals disagree) skip Step 3 — a false
+        // `Source` inside an unrepresented `with` is the fatal case this
+        // guards against (see `WithState`'s doc).
+        if with_state == WithState::NoWithProven
+            // (2) Compute the implicit-Rec table id by kind; no unique
+            // in-closure table → fall through (nothing to search).
+            && let Some(table_id) = implicit_rec_table_id(from_object, graph, index)
+            // (3) Visibility-scoped table ∪ extensions search (Task 2):
+            // `None` (0 visible candidates) falls through to Step 4/5;
+            // `Some` is either a clean Source/Abi/Opaque route or an honest
+            // ambiguous Unknown (>1 visible candidate — never pick-first).
+            && let Some((_, routes)) = resolve_in_table_scope(
+                from_object,
+                table_id,
+                name_lc,
+                arity,
+                graph,
+                index,
+                body_map,
+            )
+        {
+            // (4) Builtin/intrinsic PROBE-THEN-DECIDE: the probe (step 3)
+            // already ran; a same-name+arity table-scope candidate exists
+            // AND `name_lc` is also a global builtin or a bare-callable
+            // page/instance intrinsic is an UNPROVEN precedence collision —
+            // fail closed to `Unknown` rather than assume the table wins
+            // (never emit `Catalog` here; Step 4 below is the only place
+            // that does). No table-scope candidate at all means there is
+            // nothing to collide with, so this arm is unreachable in that
+            // case — the surrounding `if let` already required `Some`.
+            if is_bare_builtin_or_page_intrinsic(name_lc) {
+                return member_unknown_route().1;
+            }
+            return routes;
+        }
+    }
 
     // 4. Global builtin.
     if let Some(builtin_id) = global_builtin_id(name_lc) {
@@ -1430,7 +1554,15 @@ codeunit 50100 "MyCU"
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "MyCU");
-        let routes = resolve_bare(from_obj, "dofoo", 0, &graph, &index, &body_map);
+        let routes = resolve_bare(
+            from_obj,
+            "dofoo",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
 
         assert_eq!(routes.len(), 1, "expected exactly one route");
         let r = &routes[0];
@@ -1476,7 +1608,15 @@ codeunit 50101 "CallerCU"
 
         let from_obj = find_obj(&graph, "CallerCU");
         // "message" (1 arg) is a recognized global builtin.
-        let routes = resolve_bare(from_obj, "message", 1, &graph, &index, &body_map);
+        let routes = resolve_bare(
+            from_obj,
+            "message",
+            1,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -1535,6 +1675,7 @@ codeunit 50102 "AnotherCU"
             &graph,
             &index,
             &body_map,
+            WithState::NoWithProven,
         );
 
         assert_eq!(routes.len(), 1);
@@ -1591,7 +1732,15 @@ table 50000 Customer
         );
 
         // "init" is not in the extension itself — only in the base Table.
-        let routes = resolve_bare(from_obj, "init", 0, &graph, &index, &body_map);
+        let routes = resolve_bare(
+            from_obj,
+            "init",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
 
         assert_eq!(routes.len(), 1, "must resolve to exactly one route");
         let r = &routes[0];
@@ -1640,7 +1789,15 @@ codeunit 50200 "ContractCU"
         let from_obj = find_obj(&graph, "ContractCU");
 
         // Source route: resolve to own procedure.
-        let src_routes = resolve_bare(from_obj, "myproc", 0, &graph, &index, &body_map);
+        let src_routes = resolve_bare(
+            from_obj,
+            "myproc",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
         assert_eq!(src_routes.len(), 1);
         let src_route = &src_routes[0];
         assert_eq!(src_route.evidence, Evidence::Source, "Source evidence");
@@ -1650,7 +1807,15 @@ codeunit 50200 "ContractCU"
         );
 
         // Catalog route: global builtin.
-        let cat_routes = resolve_bare(from_obj, "error", 1, &graph, &index, &body_map);
+        let cat_routes = resolve_bare(
+            from_obj,
+            "error",
+            1,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
         assert_eq!(cat_routes.len(), 1);
         let cat_route = &cat_routes[0];
         assert_eq!(cat_route.evidence, Evidence::Catalog, "Catalog evidence");
@@ -1667,6 +1832,7 @@ codeunit 50200 "ContractCU"
             &graph,
             &index,
             &body_map,
+            WithState::NoWithProven,
         );
         assert_eq!(unk_routes.len(), 1);
         let unk_route = &unk_routes[0];
@@ -1703,7 +1869,15 @@ codeunit 50103 "ArityMismatchCU"
 
         let from_obj = find_obj(&graph, "ArityMismatchCU");
         // "dofoo" exists with arity 0; we request arity 2 → no match.
-        let routes = resolve_bare(from_obj, "dofoo", 2, &graph, &index, &body_map);
+        let routes = resolve_bare(
+            from_obj,
+            "dofoo",
+            2,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -2077,7 +2251,15 @@ codeunit 50104 "BodyMissCU"
         let body_map = BodyMap::build(&graph, &[]);
 
         let from_obj = find_obj(&graph, "BodyMissCU");
-        let routes = resolve_bare(from_obj, "myproc", 0, &graph, &index, &body_map);
+        let routes = resolve_bare(
+            from_obj,
+            "myproc",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -2153,7 +2335,15 @@ codeunit 50300 "OverloadCU"
         let from_obj = find_obj(&graph, "OverloadCU");
 
         // Resolve with arity=1 → must get the Post(x: Integer) overload (params_count=1).
-        let routes1 = resolve_bare(from_obj, "post", 1, &graph, &index, &body_map);
+        let routes1 = resolve_bare(
+            from_obj,
+            "post",
+            1,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
         assert_eq!(routes1.len(), 1);
         let r1 = &routes1[0];
         assert!(
@@ -2170,7 +2360,15 @@ codeunit 50300 "OverloadCU"
         );
 
         // Resolve with arity=0 → must get the Post() overload (params_count=0).
-        let routes0 = resolve_bare(from_obj, "post", 0, &graph, &index, &body_map);
+        let routes0 = resolve_bare(
+            from_obj,
+            "post",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
         assert_eq!(routes0.len(), 1);
         let r0 = &routes0[0];
         assert!(

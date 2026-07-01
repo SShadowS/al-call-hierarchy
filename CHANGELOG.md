@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **(resolve) `resolve_bare` Step 3 — bare implicit-`Rec` dispatch, `with`-guarded + builtin-collision-fail-closed, visibility-scoped (follow-up plan v2.1 Task 3)**
+  (`src/program/resolve/resolver.rs`, `src/program/resolve/extract.rs`,
+  `src/program/resolve/receiver.rs`) — implements `resolve_bare`'s Step 3,
+  previously an empty `// TODO`: a BARE (unqualified) call inside a
+  `Table`/`Page`/`TableExtension`/`PageExtension` object that falls through
+  Step 1 (own object) and Step 2 (extension base) now implicitly dispatches
+  to `Rec` — AL semantics: `SomeProc()` in Page/Table code means
+  `Rec.SomeProc()` as a LAST-RESORT fallback. Every guard is independently
+  fail-closed:
+  - **Strict `ObjectKind` guard**: structurally limited to `{Table, Page,
+    TableExtension, PageExtension}`; every other kind (Codeunit — even one
+    with a matching `TableNo`, Report, XmlPort, Query, …) skips Step 3
+    entirely, no accidental leakage.
+  - **`with`-guard, tri-state (`WithState`, new in `extract.rs`)**: Step 3
+    runs ONLY on `NoWithProven`. Investigated whether the IR tracks
+    enclosing `with X do` scope: it does — `walk_stmt_v2`'s `with`-depth
+    tracking is an EXHAUSTIVE match over every `StmtKind` variant (no
+    wildcard arm), so it is structurally sound for every site it visits.
+    Given this project's history of grammar/lowering surprises (see
+    `CLAUDE.md`), the AST signal is combined CONJUNCTIVELY with a redundant,
+    cheap whole-routine raw-text scan for a standalone `with` token
+    (`routine_has_with_token`) — `NoWithProven` only when BOTH agree; a
+    scan-hit with AST depth 0 (the two signals disagreeing) is `Unknown`
+    (skip), never trusted as with-free. False positives (over-skip) are
+    safe; a false negative (running Step 3 inside an unrepresented `with`)
+    would be a false `Source` edge, so the raw scan is fail-closed insurance
+    at negligible cost — `with` is rare in practice (Base App 24 removed it,
+    AppSourceCop forbids it).
+  - **Per-kind implicit table lookup**: `Table`→self; `Page`→
+    `resolve_source_table_ref(source_table)`; `TableExtension`→
+    `resolve_tableext_base_table` (`resolve_object_ref(Table,
+    extends_target)`, Task-1 fail-closed); `PageExtension`→
+    `resolve_pageext_base_source_table`. All three helpers already existed
+    in `receiver.rs` for the EXPLICIT `Rec.Foo()` case (Tasks 5-7) and are
+    now `pub(crate)`, reused as-is rather than re-derived — one correct
+    answer per kind, no duplicated logic.
+  - **Visibility-scoped search**: reuses Task 2's `resolve_in_table_scope`
+    (base table ∪ its visible `TableExtension`s, closure- and
+    access-filtered) unchanged.
+  - **Builtin/intrinsic PROBE-THEN-DECIDE**: after a table-scope search
+    finds a same-name+arity candidate, if the name ALSO matches a global
+    builtin or a bare-callable `PageInstance` intrinsic (`Update`/`Close`/…),
+    the collision is an UNPROVEN precedence — fail closed to `Unknown`
+    (never `Catalog`) rather than assume the table wins. A builtin/intrinsic
+    name with NO table candidate still falls through to Step 4 (`Catalog`)
+    unchanged.
+  11 new fixtures in `tests/r0-corpus/ws-bare-implicit-rec/` (positive:
+  Page→table dispatch, visible-TableExtension dispatch; negatives: own-object
+  shadow, sibling-extension ambiguity, builtin collision, page-intrinsic
+  collision, `with`-block suppression, no-implicit-table Codeunit,
+  same-table own-trigger shadow-guard, PageExtension base-vs-SourceTable
+  precedence, strict-kind Report/Codeunit+TableNo exclusion) exercised via
+  `resolve_full_program` end-to-end, asserting the EXACT route at the EXACT
+  site for every case. One fixture bug caught by the guards themselves during
+  authoring: an initial `GetName` procedure name collided with the REAL AL
+  global builtin `GetName` (an XmlNode/Media intrinsic), correctly forcing
+  the collision path to `Unknown` — renamed to `GetDisplayText` for a clean
+  positive case.
+  **CDO gate (measured 2026-07-01, `CDO_WS`)**: primary real-`unknown` rate
+  2.81%→**1.91%** (unknown 508→346/18104), whole-program 1.19%→**0.81%**
+  (unknown 508→346/42843) — `cdo_full_program_coverage_and_self_reported_metric`
+  ceilings tightened accordingly (0.030→0.022, 520→360). `fresh_missing`
+  102→**4** (FRESH_MISSING_CEILING 110→15) — closes the dominant
+  bare-call-implicit-SourceTable-dispatch bucket (82/102) the beyond-1B.3b
+  Task 8 characterization identified, plus most of the residual. 7 NEW
+  `genuine_wrong` sites surfaced (all 7 the SAME shape: a `Navigate` action's
+  bare `Navigate();` call, newly resolving via Step 3 to each Page's
+  `SourceTable`'s own `procedure Navigate()` — a REAL, ordinary Base
+  Application procedure on 7 distinct posted-document-header tables,
+  independently re-verified against Base App's own embedded ShowMyCode
+  source: `Return Receipt Header`/`Issued Fin. Charge Memo
+  Header`/`Service Cr.Memo Header`/`Service Invoice Header`/`Sales
+  Cr.Memo Header`/`Sales Shipment Header`/`Service Shipment Header`).
+  Root-caused (not whitelisted): fresh's new target is objectively correct
+  per real BC semantics; L3's frozen golden simply predates bare-implicit-Rec
+  dispatch and never modeled the shape. Extended
+  `verify_cross_app_source_procedure_override`
+  (`tests/program_resolve_harness.rs`) to accept a BARE `callee_text` (in
+  addition to the existing qualified-member-call shape) for the
+  `CrossAppSourceProcedure` adjudication path, then added all 7 as
+  independently-source-verified `l3_error_intrinsic` entries to
+  `adjudicated-overrides.json` + `known-genuine-divergences.json` (both
+  42+2→**51** now), re-confirmed by the independent
+  `cdo_genuine_wrong_is_precedence_adjudicated` re-derivation test.
+  `genuine_wrong` stays exactly **0**. `fresh_wrong` 139→149 (all
+  `fresh_ahead_dispatch`, expected collateral movement from closing a real
+  completeness gap; FRESH_WRONG_CEILING tightened 150→152). Hand-adjudicated
+  a sample across object kinds including the report's own worked example
+  (`Page 6175272 "CDO E-Mail Templates"`'s bare
+  `GetReportSelection()`/`GetReportName()` → table 6175283) — all confirmed
+  correct.
+
 ### Fixed
 - **(resolve) Visibility-scoped `resolve_in_table_scope` — closure-filter
   `TableExtension`s and exclude cross-app `Internal`/`Local` members from the

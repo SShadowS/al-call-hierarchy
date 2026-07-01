@@ -69,6 +69,53 @@ pub struct RawSiteV2 {
     /// `PCallSite::callee_text` derivation, which is also the raw function-
     /// expression bytes).
     pub callee_text: String,
+    /// Tri-state `with`-scope guard — see [`WithState`]. Consumed by
+    /// `resolve_bare`'s Step 3 (beyond-1B.3b Task 3): a bare call is only
+    /// eligible for implicit-`Rec` fallback when this is `NoWithProven`.
+    pub with_state: WithState,
+}
+
+/// Tri-state guard for whether a call site sits lexically inside a `with X do`
+/// block — consumed by `resolve_bare`'s Step 3 (implicit-`Rec` bare-call
+/// fallback, beyond-1B.3b Task 3). AL's `with` rebinds the meaning of a bare
+/// identifier to the `with`-receiver's members; the implicit-`Rec` fallback
+/// must NEVER fire inside a `with` it cannot see, since running it there could
+/// synthesize a Route the compiler would actually attribute to the `with`
+/// receiver instead — a false `Source` edge, the cardinal sin.
+///
+/// # Two independent signals, ANDed for `NoWithProven`
+///
+/// [`walk_stmt_v2`] is an EXHAUSTIVE match over every [`StmtKind`] variant (no
+/// wildcard `_` arm — the compiler enforces this stays exhaustive as the IR
+/// grows), so the AST-based `with`-depth this module tracks while walking is
+/// structurally sound for any call site it actually visits: a site is
+/// `InsideWith` if and only if the walk passed through a `StmtKind::With`
+/// body to reach it. That alone would already be a precise per-site proof.
+///
+/// This project's tree-sitter-al grammar has nonetheless had real history of
+/// silent field/shape surprises (see `CLAUDE.md`'s "tree-sitter-al grammar
+/// issues" notes), so Step 3's guard does not rely on the AST signal alone: a
+/// cheap, redundant whole-routine raw-text scan for a standalone `with` token
+/// ([`routine_has_with_token`]) is combined conjunctively. `NoWithProven` only
+/// when BOTH signals agree there is no `with` in play; if the raw scan finds a
+/// `with` token anywhere in the routine's source while the AST places the
+/// current site at depth 0, that DISAGREEMENT is treated as `Unknown` (skip)
+/// rather than trusted — a false positive (over-skip) is always safe, a false
+/// negative is fatal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WithState {
+    /// Both the AST-depth walk and the raw-text scan agree: this call site is
+    /// NOT inside any `with` block anywhere in its enclosing routine.
+    /// `resolve_bare` Step 3 may run.
+    NoWithProven,
+    /// The AST-depth walk places this call site inside at least one
+    /// `StmtKind::With` body. `resolve_bare` Step 3 must skip.
+    InsideWith,
+    /// The AST says depth 0 (not inside a `with`) but the routine's raw
+    /// source text still contains a `with` token — the two signals disagree,
+    /// so the AST placement is not trusted alone. `resolve_bare` Step 3 must
+    /// skip (fail closed).
+    Unknown,
 }
 
 /// The 28 record-operation method names (lowercased), copied verbatim from
@@ -296,8 +343,81 @@ fn classify_call(
     }
 }
 
+/// Threaded through the whole per-routine call-site walk to compute each
+/// site's [`WithState`] — see that type's doc for the two-signal ANDed
+/// soundness argument.
+#[derive(Debug, Clone, Copy)]
+struct WithCtx {
+    /// AST `with`-nesting depth at the current walk position (0 = not
+    /// currently inside any `StmtKind::With` body).
+    depth: u32,
+    /// Whole-routine raw-text scan result, computed ONCE before the walk
+    /// starts (see [`routine_has_with_token`]): `true` when the routine's
+    /// source text contains a standalone `with` token anywhere (deliberately
+    /// including inside strings/comments/quoted-identifiers — a
+    /// false-positive-safe over-approximation).
+    scan_hit: bool,
+}
+
+impl WithCtx {
+    /// Depth incremented on entry to a `StmtKind::With` body.
+    fn entered_with(self) -> WithCtx {
+        WithCtx {
+            depth: self.depth + 1,
+            scan_hit: self.scan_hit,
+        }
+    }
+
+    /// Combine both signals into the [`WithState`] a call site at this
+    /// context is tagged with.
+    fn state(self) -> WithState {
+        if self.depth > 0 {
+            WithState::InsideWith
+        } else if self.scan_hit {
+            WithState::Unknown
+        } else {
+            WithState::NoWithProven
+        }
+    }
+}
+
+/// `true` if an AL identifier-constituent byte (letter/digit/underscore) —
+/// used by [`routine_has_with_token`] to enforce word boundaries so `Within`/
+/// `WidthValue`/etc. never false-match the standalone `with` keyword.
+fn is_al_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Conservative whole-routine raw-text scan (ASCII case-insensitive,
+/// word-bounded) for a standalone `with` token anywhere in `routine_span`'s
+/// source text — the redundant safety net [`WithCtx::state`] ANDs with the
+/// AST-depth signal (see [`WithState`]'s doc for why). Deliberately does NOT
+/// exclude string/comment/quoted-identifier text: a `with` token inside a
+/// string literal or comment still trips this (a false positive), which only
+/// makes Step 3 skip MORE — never less. `routine_span` is expected to be a
+/// valid UTF-8 char-boundary byte range (a tree-sitter node's byte span, as
+/// used throughout this module).
+fn routine_has_with_token(src: &str, routine_span: std::ops::Range<usize>) -> bool {
+    let text = &src[routine_span];
+    let bytes = text.as_bytes();
+    if bytes.len() < 4 {
+        return false;
+    }
+    for i in 0..=bytes.len() - 4 {
+        if bytes[i..i + 4].eq_ignore_ascii_case(b"with") {
+            let before_ok = i == 0 || !is_al_ident_byte(bytes[i - 1]);
+            let after_ok = i + 4 == bytes.len() || !is_al_ident_byte(bytes[i + 4]);
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Recursively collect every [`RawSiteV2`] reachable from `eid`, including
 /// calls nested inside arguments or chained receivers.
+#[allow(clippy::too_many_arguments)]
 fn collect_calls_v2(
     file: &AlFile,
     src: &str,
@@ -305,6 +425,7 @@ fn collect_calls_v2(
     unit: &str,
     caller: &str,
     rvars: &HashSet<String>,
+    ctx: WithCtx,
     out: &mut Vec<RawSiteV2>,
 ) {
     let e = file.ir.expr(eid);
@@ -330,44 +451,45 @@ fn collect_calls_v2(
                 arity: arg_ids.len(),
                 span,
                 callee_text,
+                with_state: ctx.state(),
             });
 
             // Recurse: function expression (catches chained calls), then args.
-            collect_calls_v2(file, src, fn_id, unit, caller, rvars, out);
+            collect_calls_v2(file, src, fn_id, unit, caller, rvars, ctx, out);
             for a in arg_ids {
-                collect_calls_v2(file, src, a, unit, caller, rvars, out);
+                collect_calls_v2(file, src, a, unit, caller, rvars, ctx, out);
             }
         }
         ExprKind::Member { object, .. } => {
             let obj = *object;
-            collect_calls_v2(file, src, obj, unit, caller, rvars, out);
+            collect_calls_v2(file, src, obj, unit, caller, rvars, ctx, out);
         }
         ExprKind::Binary { lhs, rhs, .. } => {
             let (l, r) = (*lhs, *rhs);
-            collect_calls_v2(file, src, l, unit, caller, rvars, out);
-            collect_calls_v2(file, src, r, unit, caller, rvars, out);
+            collect_calls_v2(file, src, l, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, r, unit, caller, rvars, ctx, out);
         }
         ExprKind::Unary { operand, .. } => {
             let op = *operand;
-            collect_calls_v2(file, src, op, unit, caller, rvars, out);
+            collect_calls_v2(file, src, op, unit, caller, rvars, ctx, out);
         }
         ExprKind::Parenthesized(x) => {
             let x = *x;
-            collect_calls_v2(file, src, x, unit, caller, rvars, out);
+            collect_calls_v2(file, src, x, unit, caller, rvars, ctx, out);
         }
         ExprKind::Index { base, index } => {
             let (b, i) = (*base, *index);
-            collect_calls_v2(file, src, b, unit, caller, rvars, out);
-            collect_calls_v2(file, src, i, unit, caller, rvars, out);
+            collect_calls_v2(file, src, b, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, i, unit, caller, rvars, ctx, out);
         }
         ExprKind::RangeExpr { start, end } => {
             let (s, e2) = (*start, *end);
-            collect_calls_v2(file, src, s, unit, caller, rvars, out);
-            collect_calls_v2(file, src, e2, unit, caller, rvars, out);
+            collect_calls_v2(file, src, s, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, e2, unit, caller, rvars, ctx, out);
         }
         ExprKind::QualifiedEnum { enum_type, .. } => {
             let et = *enum_type;
-            collect_calls_v2(file, src, et, unit, caller, rvars, out);
+            collect_calls_v2(file, src, et, unit, caller, rvars, ctx, out);
         }
         // Identifier / QuotedIdentifier / Literal / DatabaseReference / Unknown:
         // no nested calls.
@@ -375,6 +497,7 @@ fn collect_calls_v2(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_block_v2(
     file: &AlFile,
     src: &str,
@@ -382,23 +505,25 @@ fn walk_block_v2(
     unit: &str,
     caller: &str,
     rvars: &HashSet<String>,
+    ctx: WithCtx,
     out: &mut Vec<RawSiteV2>,
 ) {
     for item in &file.ir.block(bid).items {
         match item {
             BlockItem::Stmt(sid) => {
                 let st = file.ir.stmt(*sid);
-                walk_stmt_v2(file, src, &st.kind, unit, caller, rvars, out);
+                walk_stmt_v2(file, src, &st.kind, unit, caller, rvars, ctx, out);
             }
             BlockItem::Preproc(g) => {
                 for b in &g.branches {
-                    walk_block_v2(file, src, *b, unit, caller, rvars, out);
+                    walk_block_v2(file, src, *b, unit, caller, rvars, ctx, out);
                 }
             }
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_stmt_v2(
     file: &AlFile,
     src: &str,
@@ -406,25 +531,26 @@ fn walk_stmt_v2(
     unit: &str,
     caller: &str,
     rvars: &HashSet<String>,
+    ctx: WithCtx,
     out: &mut Vec<RawSiteV2>,
 ) {
     match kind {
         StmtKind::Assignment { target, value } => {
-            collect_calls_v2(file, src, *target, unit, caller, rvars, out);
-            collect_calls_v2(file, src, *value, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *target, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, *value, unit, caller, rvars, ctx, out);
         }
         StmtKind::Call(eid) => {
-            collect_calls_v2(file, src, *eid, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *eid, unit, caller, rvars, ctx, out);
         }
         StmtKind::If {
             cond,
             then_block,
             else_block,
         } => {
-            collect_calls_v2(file, src, *cond, unit, caller, rvars, out);
-            walk_block_v2(file, src, *then_block, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *cond, unit, caller, rvars, ctx, out);
+            walk_block_v2(file, src, *then_block, unit, caller, rvars, ctx, out);
             if let Some(b) = else_block {
-                walk_block_v2(file, src, *b, unit, caller, rvars, out);
+                walk_block_v2(file, src, *b, unit, caller, rvars, ctx, out);
             }
         }
         StmtKind::Case {
@@ -432,24 +558,24 @@ fn walk_stmt_v2(
             branches,
             else_block,
         } => {
-            collect_calls_v2(file, src, *scrutinee, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *scrutinee, unit, caller, rvars, ctx, out);
             for br in branches {
                 for &p in &br.patterns {
-                    collect_calls_v2(file, src, p, unit, caller, rvars, out);
+                    collect_calls_v2(file, src, p, unit, caller, rvars, ctx, out);
                 }
-                walk_block_v2(file, src, br.body, unit, caller, rvars, out);
+                walk_block_v2(file, src, br.body, unit, caller, rvars, ctx, out);
             }
             if let Some(b) = else_block {
-                walk_block_v2(file, src, *b, unit, caller, rvars, out);
+                walk_block_v2(file, src, *b, unit, caller, rvars, ctx, out);
             }
         }
         StmtKind::While { cond, body } => {
-            collect_calls_v2(file, src, *cond, unit, caller, rvars, out);
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *cond, unit, caller, rvars, ctx, out);
+            walk_block_v2(file, src, *body, unit, caller, rvars, ctx, out);
         }
         StmtKind::Repeat { body, until } => {
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
-            collect_calls_v2(file, src, *until, unit, caller, rvars, out);
+            walk_block_v2(file, src, *body, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, *until, unit, caller, rvars, ctx, out);
         }
         StmtKind::For {
             var,
@@ -458,40 +584,53 @@ fn walk_stmt_v2(
             body,
             ..
         } => {
-            collect_calls_v2(file, src, *var, unit, caller, rvars, out);
-            collect_calls_v2(file, src, *from, unit, caller, rvars, out);
-            collect_calls_v2(file, src, *to, unit, caller, rvars, out);
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *var, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, *from, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, *to, unit, caller, rvars, ctx, out);
+            walk_block_v2(file, src, *body, unit, caller, rvars, ctx, out);
         }
         StmtKind::Foreach {
             var,
             iterable,
             body,
         } => {
-            collect_calls_v2(file, src, *var, unit, caller, rvars, out);
-            collect_calls_v2(file, src, *iterable, unit, caller, rvars, out);
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
+            collect_calls_v2(file, src, *var, unit, caller, rvars, ctx, out);
+            collect_calls_v2(file, src, *iterable, unit, caller, rvars, ctx, out);
+            walk_block_v2(file, src, *body, unit, caller, rvars, ctx, out);
         }
         StmtKind::With { receiver, body } => {
-            collect_calls_v2(file, src, *receiver, unit, caller, rvars, out);
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
+            // The receiver expression itself is evaluated OUTSIDE the `with`
+            // body (`with SomeFunc() do` calls `SomeFunc()` in the enclosing
+            // scope), so it keeps the CURRENT (un-incremented) depth; only
+            // the body walk enters the `with`.
+            collect_calls_v2(file, src, *receiver, unit, caller, rvars, ctx, out);
+            walk_block_v2(
+                file,
+                src,
+                *body,
+                unit,
+                caller,
+                rvars,
+                ctx.entered_with(),
+                out,
+            );
         }
         StmtKind::Try { body, catch_block } => {
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
+            walk_block_v2(file, src, *body, unit, caller, rvars, ctx, out);
             if let Some(c) = catch_block {
-                walk_block_v2(file, src, *c, unit, caller, rvars, out);
+                walk_block_v2(file, src, *c, unit, caller, rvars, ctx, out);
             }
         }
         StmtKind::AssertError(body) => {
-            walk_block_v2(file, src, *body, unit, caller, rvars, out);
+            walk_block_v2(file, src, *body, unit, caller, rvars, ctx, out);
         }
         StmtKind::Exit(x) => {
             if let Some(e) = x {
-                collect_calls_v2(file, src, *e, unit, caller, rvars, out);
+                collect_calls_v2(file, src, *e, unit, caller, rvars, ctx, out);
             }
         }
         StmtKind::Block(b) => {
-            walk_block_v2(file, src, *b, unit, caller, rvars, out);
+            walk_block_v2(file, src, *b, unit, caller, rvars, ctx, out);
         }
         StmtKind::Break | StmtKind::Continue | StmtKind::Unknown => {}
     }
@@ -524,7 +663,11 @@ pub fn extract_sites(
                 let caller = routine.name.to_ascii_lowercase();
                 let mut rvars = routine_rvars(routine);
                 rvars.extend(object_globals.iter().cloned());
-                walk_block_v2(file, src, body, unit, &caller, &rvars, &mut out);
+                let ctx = WithCtx {
+                    depth: 0,
+                    scan_hit: routine_has_with_token(src, routine.origin.byte.clone()),
+                };
+                walk_block_v2(file, src, body, unit, &caller, &rvars, ctx, &mut out);
             }
         }
     }
@@ -565,7 +708,11 @@ pub fn extract_sites_for_object(
             let caller = routine.name.to_ascii_lowercase();
             let mut rvars = routine_rvars(routine);
             rvars.extend(object_globals.iter().cloned());
-            walk_block_v2(file, src, body, unit, &caller, &rvars, &mut out);
+            let ctx = WithCtx {
+                depth: 0,
+                scan_hit: routine_has_with_token(src, routine.origin.byte.clone()),
+            };
+            walk_block_v2(file, src, body, unit, &caller, &rvars, ctx, &mut out);
         }
     }
     out.sort_by(|a, b| {
@@ -610,8 +757,12 @@ pub fn extract_sites_for_routine(
     let caller = routine.name.to_ascii_lowercase();
     let mut rvars = routine_rvars(routine);
     rvars.extend(object_globals.iter().cloned());
+    let ctx = WithCtx {
+        depth: 0,
+        scan_hit: routine_has_with_token(src, routine.origin.byte.clone()),
+    };
     let mut out = Vec::new();
-    walk_block_v2(file, src, body, unit, &caller, &rvars, &mut out);
+    walk_block_v2(file, src, body, unit, &caller, &rvars, ctx, &mut out);
     out.sort_by_key(|a| a.span.start);
     out
 }
