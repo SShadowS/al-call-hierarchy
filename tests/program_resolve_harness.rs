@@ -2610,7 +2610,7 @@ fn target_app_declares_procedure(
 
 /// beyond-1B.3b Task 5.5: independently verify one `CrossAppSourceProcedure`
 /// override entry — the counterpart to [`assert_shape_matches_receiver_kind`]
-/// + [`derive_verdict`] for the `builtin-catalog-fp-collision` shape, but for
+/// and [`derive_verdict`] for the `builtin-catalog-fp-collision` shape, but for
 /// a cross-app SOURCE-PROCEDURE target instead of a platform-builtin one.
 ///
 /// Confirms, entirely from LIVE data never touching a fresh-computed edge:

@@ -5,8 +5,10 @@
 // Task 5.5 fix, Base App was systematically absent from the closure, so
 // `resolve_object_ref` returned `OutOfClosure` and this call was an honest
 // `Unknown`. After the fix, the implicit `application` -> MS_APPLICATION_TIER
-// dependency wires Base App into the closure and the call resolves
-// `Evidence::Source`.
+// dependency wires Base App into the closure and the call resolves to the
+// Base App table procedure. Evidence is `Opaque` here because this synthetic
+// `.app` is symbol-only (ABI boundary, no embedded source); a real ShowMyCode
+// Base App with embedded source would resolve `Evidence::Source`.
 codeunit 50100 "WS Base Caller"
 {
     procedure Run()
