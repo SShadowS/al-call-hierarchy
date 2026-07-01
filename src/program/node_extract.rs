@@ -1,6 +1,6 @@
 //! Extract object + routine nodes from one parsed `AlFile`.
 
-use al_syntax::ir::{AlFile, Param, RoutineKind};
+use al_syntax::ir::{AlFile, ObjectKind, Param, RoutineKind};
 
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
@@ -8,6 +8,7 @@ use crate::program::resolve::event::{
     ParsedSubscriberArgs, PublisherKind, is_event_publisher, parse_event_subscriber_ir,
     read_event_subscriber_instance,
 };
+use crate::program::resolve::receiver::unquote_identifier;
 use crate::snapshot::TrustTier;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -29,6 +30,43 @@ impl Access {
     }
 }
 
+/// A losslessly-typed reference to another AL object as written in an object
+/// property (`SourceTable`, `TableNo`) or a page-control target: either a
+/// numeric AL object id or a name. Kept distinct from a plain `String` so a
+/// numeric reference (`SourceTable = 36`) is never confused with a
+/// digit-only name, and so [`ResolveIndex::resolve_object_ref`] can dispatch
+/// each shape to the correct index without re-parsing.
+///
+/// [`ResolveIndex::resolve_object_ref`]: crate::program::resolve::index::ResolveIndex::resolve_object_ref
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObjectRef {
+    /// A name reference. `raw` preserves the as-written (unquoted) text for
+    /// display; `normalized_lc` is the lowercased form used for matching.
+    Name { raw: String, normalized_lc: String },
+    /// A numeric AL object id reference.
+    Id(i64),
+}
+
+/// The kind of one Page/PageExtension layout control, from its raw grammar
+/// section keyword (`part` / `systempart` / `usercontrol`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageControlKind {
+    Part,
+    SystemPart,
+    UserControl,
+}
+
+/// One `part` / `systempart` / `usercontrol` layout control on a
+/// Page/PageExtension, in document order. Resolves `CurrPage.<name>…` member
+/// calls (Tasks 5–7 of the beyond-1B.3b plan; not yet consumed as of this
+/// addition).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageControlNode {
+    pub name_lc: String,
+    pub kind: PageControlKind,
+    pub target: ObjectRef,
+}
+
 #[derive(Debug, Clone)]
 pub struct ObjectNode {
     pub id: ObjectNodeId,
@@ -37,6 +75,19 @@ pub struct ObjectNode {
     pub extends_target: Option<String>,
     pub implements: Vec<String>,
     pub tier: TrustTier,
+    /// The `SourceTable` object property — Page/PageExtension/Report/
+    /// ReportExtension only; `None` for every other kind (and when the
+    /// property is absent). Seeds implicit-`Rec` table resolution (Tasks 5–7).
+    pub source_table: Option<ObjectRef>,
+    /// The `TableNo` object property — Codeunit only; `None` otherwise.
+    pub table_no: Option<ObjectRef>,
+    /// `true` when the `SourceTable` property carried a trailing `temporary`
+    /// marker (`SourceTable = X, Temporary` / `SourceTable = X temporary`).
+    /// Always `false` when `source_table` is `None`.
+    pub source_table_temporary: bool,
+    /// Page/PageExtension layout controls (`part`/`systempart`/`usercontrol`),
+    /// document order. Empty for every other object kind.
+    pub page_controls: Vec<PageControlNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +141,66 @@ fn param_sig_key(params: &[Param]) -> String {
         .join("|")
 }
 
+/// Parse an object-property value (`SourceTable`/`TableNo`) or a page-control
+/// target into an [`ObjectRef`], plus whether a trailing `temporary` marker
+/// was present and stripped. A numeric value → [`ObjectRef::Id`]; anything
+/// else → [`ObjectRef::Name`] with quotes stripped (mirrors the unquoting
+/// [`crate::program::resolve::receiver::classify_type_text`] applies to a
+/// `Record <name>` type).
+fn parse_object_ref_value(value: &str) -> (ObjectRef, bool) {
+    let (base, is_temporary) = strip_temporary_marker(value.trim());
+    let base = base.trim();
+    if let Ok(n) = base.parse::<i64>() {
+        (ObjectRef::Id(n), is_temporary)
+    } else {
+        let raw = unquote_identifier(base);
+        let normalized_lc = raw.to_ascii_lowercase();
+        (ObjectRef::Name { raw, normalized_lc }, is_temporary)
+    }
+}
+
+/// Strip a trailing `temporary` marker (case-insensitive) from an
+/// object-property value's name/id portion, separated from it by whitespace
+/// (`SourceTable = Customer temporary`, mirroring
+/// [`crate::program::resolve::receiver::classify_type_text`]'s `Record <name>
+/// temporary` handling) or by a comma (`SourceTable = Customer, Temporary`).
+/// Returns the remaining text and whether a marker was found.
+///
+/// Stripping requires an explicit separator immediately before the keyword,
+/// so a bare identifier that merely ENDS in "temporary" (e.g. a table
+/// literally named `MyTemporary`) is left untouched.
+fn strip_temporary_marker(s: &str) -> (&str, bool) {
+    let trimmed_end = s.trim_end();
+    let lower = trimmed_end.to_ascii_lowercase();
+    let Some(prefix_len) = lower.strip_suffix("temporary").map(str::len) else {
+        return (trimmed_end, false);
+    };
+    let prefix = &trimmed_end[..prefix_len];
+    let has_separator =
+        matches!(prefix.chars().next_back(), Some(c) if c.is_whitespace() || c == ',');
+    if !has_separator {
+        return (trimmed_end, false);
+    }
+    let remaining = prefix.trim_end();
+    let remaining = remaining
+        .strip_suffix(',')
+        .map(str::trim_end)
+        .unwrap_or(remaining);
+    (remaining, true)
+}
+
+/// Map a raw page-control kind string (`"part"` / `"systempart"` /
+/// `"usercontrol"` — the only values the lowerer emits) to [`PageControlKind`].
+/// Returns `None` for anything else (defensive — never expected in practice).
+fn page_control_kind(raw: &str) -> Option<PageControlKind> {
+    match raw {
+        "part" => Some(PageControlKind::Part),
+        "systempart" => Some(PageControlKind::SystemPart),
+        "usercontrol" => Some(PageControlKind::UserControl),
+        _ => None,
+    }
+}
+
 pub fn extract_nodes(
     app: AppRef,
     file: &AlFile,
@@ -107,6 +218,49 @@ pub fn extract_nodes(
             kind: obj.kind,
             key,
         };
+
+        // SourceTable — Page/PageExtension/Report/ReportExtension only.
+        let mut source_table = None;
+        let mut source_table_temporary = false;
+        if matches!(
+            obj.kind,
+            ObjectKind::Page
+                | ObjectKind::PageExtension
+                | ObjectKind::Report
+                | ObjectKind::ReportExtension
+        ) && let Some(prop) = obj.properties.iter().find(|p| p.name == "sourcetable")
+        {
+            let (r, is_temp) = parse_object_ref_value(&prop.value);
+            source_table = Some(r);
+            source_table_temporary = is_temp;
+        }
+
+        // TableNo — Codeunit only.
+        let table_no = if obj.kind == ObjectKind::Codeunit {
+            obj.properties
+                .iter()
+                .find(|p| p.name == "tableno")
+                .map(|p| parse_object_ref_value(&p.value).0)
+        } else {
+            None
+        };
+
+        // Page controls — Page/PageExtension only, document order.
+        let page_controls = if matches!(obj.kind, ObjectKind::Page | ObjectKind::PageExtension) {
+            obj.page_controls
+                .iter()
+                .filter_map(|pc| {
+                    Some(PageControlNode {
+                        name_lc: pc.name.to_ascii_lowercase(),
+                        kind: page_control_kind(&pc.kind)?,
+                        target: parse_object_ref_value(&pc.target).0,
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         objects.push(ObjectNode {
             id: obj_id.clone(),
             name: obj.name.clone(),
@@ -114,6 +268,10 @@ pub fn extract_nodes(
             extends_target: obj.extends_target.clone(),
             implements: obj.implements.clone(),
             tier,
+            source_table,
+            table_no,
+            source_table_temporary,
+            page_controls,
         });
         // Computed once per object — same value for every routine in the object.
         let subscriber_instance_manual = read_event_subscriber_instance(obj);
@@ -189,5 +347,159 @@ codeunit 50100 "Sales Helper"
         let helper = routs.iter().find(|r| r.id.name_lc == "helper").unwrap();
         assert_eq!(helper.access, Access::Local);
         assert!(!post.is_trigger);
+    }
+
+    /// Parse `src` and return every extracted `ObjectNode`, document order.
+    fn extract_objs(src: &str) -> Vec<ObjectNode> {
+        let file = al_syntax::parse(src);
+        let mut objs = Vec::new();
+        let mut routs = Vec::new();
+        extract_nodes(
+            AppRef(0),
+            &file,
+            TrustTier::Workspace,
+            &mut objs,
+            &mut routs,
+        );
+        objs
+    }
+
+    // -- source_table / page_controls (Page) ----------------------------------
+
+    #[test]
+    fn page_source_table_name_and_part_control() {
+        let src = r#"
+page 50100 "Card"
+{
+    SourceTable = Customer;
+    layout { area(Content) { part(Lines; "Sales Line Subform") { } } }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(objs.len(), 1);
+        let page = &objs[0];
+        assert_eq!(
+            page.source_table,
+            Some(ObjectRef::Name {
+                raw: "Customer".to_string(),
+                normalized_lc: "customer".to_string(),
+            })
+        );
+        assert!(!page.source_table_temporary);
+        assert_eq!(page.table_no, None, "TableNo is Codeunit-only");
+        assert_eq!(page.page_controls.len(), 1);
+        assert_eq!(
+            page.page_controls[0],
+            PageControlNode {
+                name_lc: "lines".to_string(),
+                kind: PageControlKind::Part,
+                target: ObjectRef::Name {
+                    raw: "Sales Line Subform".to_string(),
+                    normalized_lc: "sales line subform".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn page_source_table_numeric_id() {
+        let src = r#"
+page 50101 "NumCard"
+{
+    SourceTable = 36;
+    layout { area(Content) { } }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(objs[0].source_table, Some(ObjectRef::Id(36)));
+        assert!(!objs[0].source_table_temporary);
+    }
+
+    #[test]
+    fn source_table_trailing_temporary_marker_stripped() {
+        let src = r#"
+page 50102 "TempCard"
+{
+    SourceTable = Customer, Temporary;
+    layout { area(Content) { } }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].source_table,
+            Some(ObjectRef::Name {
+                raw: "Customer".to_string(),
+                normalized_lc: "customer".to_string(),
+            }),
+            "the temporary marker must not leak into the resolved name"
+        );
+        assert!(objs[0].source_table_temporary);
+    }
+
+    #[test]
+    fn page_controls_preserve_document_order() {
+        let src = r#"
+page 50103 "MultiControl"
+{
+    SourceTable = Customer;
+    layout
+    {
+        area(Content)
+        {
+            part(First; "Part A") { }
+            systempart(Second; Notes) { }
+            usercontrol(Third; "MyAddIn") { }
+        }
+    }
+}
+"#;
+        let objs = extract_objs(src);
+        let controls = &objs[0].page_controls;
+        assert_eq!(controls.len(), 3);
+        assert_eq!(controls[0].name_lc, "first");
+        assert_eq!(controls[0].kind, PageControlKind::Part);
+        assert_eq!(controls[1].name_lc, "second");
+        assert_eq!(controls[1].kind, PageControlKind::SystemPart);
+        assert_eq!(controls[2].name_lc, "third");
+        assert_eq!(controls[2].kind, PageControlKind::UserControl);
+    }
+
+    // -- table_no (Codeunit) ---------------------------------------------------
+
+    #[test]
+    fn codeunit_table_no_name() {
+        let src = r#"
+codeunit 50104 "Item Helper"
+{
+    TableNo = Item;
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].table_no,
+            Some(ObjectRef::Name {
+                raw: "Item".to_string(),
+                normalized_lc: "item".to_string(),
+            })
+        );
+        assert_eq!(objs[0].source_table, None, "SourceTable is not Codeunit");
+        assert!(objs[0].page_controls.is_empty());
+    }
+
+    // -- Table: no node-fidelity fields -----------------------------------------
+
+    #[test]
+    fn table_object_has_no_node_fidelity_fields() {
+        let src = r#"
+table 50105 "Plain Table"
+{
+    fields { field(1; "No."; Code[20]) { } }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(objs[0].source_table, None);
+        assert_eq!(objs[0].table_no, None);
+        assert!(!objs[0].source_table_temporary);
+        assert!(objs[0].page_controls.is_empty());
     }
 }

@@ -307,6 +307,10 @@ mod tests {
             extends_target: extends_target.map(str::to_string),
             implements: implements.into_iter().map(str::to_string).collect(),
             tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         }
     }
 

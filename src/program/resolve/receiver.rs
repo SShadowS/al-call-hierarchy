@@ -577,7 +577,7 @@ fn parse_object_kind_type(kind: ObjectKind, name_rest: &str) -> ParsedType {
 /// token unchanged if not quoted; returns an empty string for an empty input.
 ///
 /// Port of al-sem `unquoteName`.
-fn unquote_identifier(s: &str) -> String {
+pub(crate) fn unquote_identifier(s: &str) -> String {
     let trimmed = s.trim();
     if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
         trimmed[1..trimmed.len() - 1].to_string()
@@ -661,6 +661,10 @@ mod tests {
                 extends_target: None,
                 implements: vec![],
                 tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
             };
 
         let mut objects = vec![
@@ -774,6 +778,10 @@ mod tests {
             extends_target,
             implements: vec![],
             tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         }
     }
 

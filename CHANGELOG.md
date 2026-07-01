@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **(resolve) Object node fidelity (`SourceTable`/`TableNo`/page-controls/
+  `is_temporary`) + `objects_by_id` index + fail-closed `resolve_object_ref`
+  (beyond-1B.3b Task 4)** (`src/program/node_extract.rs`,
+  `src/program/resolve/index.rs`) — pure additive groundwork for Tasks 5–7
+  (Page/Codeunit implicit-`Rec`, `CurrPage.<part>`); no consumer yet, zero
+  resolution behavior change. `ObjectNode` gains `source_table`/`table_no`:
+  `Option<ObjectRef>` where `ObjectRef` losslessly distinguishes a numeric AL
+  id (`SourceTable = 36` → `Id(36)`) from a name (`SourceTable = "Sales
+  Header"` → `Name{raw, normalized_lc}`), `source_table_temporary: bool` (a
+  trailing `, Temporary` / ` temporary` marker on the `SourceTable` value,
+  stripped losslessly — requires an explicit separator so a table literally
+  named `MyTemporary` is never truncated), and `page_controls:
+  Vec<PageControlNode>` (`part`/`systempart`/`usercontrol` sections, document
+  order, `PageControlKind` + `ObjectRef` target). Populated in `extract_nodes`
+  from the IR's `ObjectDecl.properties`/`page_controls`, scoped per object kind
+  (`SourceTable` for Page/PageExtension/Report/ReportExtension, `TableNo` for
+  Codeunit, `page_controls` for Page/PageExtension only). `ResolveIndex` gains
+  two new GLOBAL (whole-snapshot) grouped indexes, `objects_by_id: HashMap<
+  (ObjectKind, i64), Vec<ObjectNodeId>>` and `objects_by_name: HashMap<
+  (ObjectKind, String), Vec<ObjectNodeId>>`, built in the same pass as the
+  existing `objs_by_number` (which is left unchanged for its existing
+  self-preferred/best-tiebreak callers) — these feed the new
+  `resolve_object_ref(graph, from, kind, &ObjectRef) -> ObjectRefResolution`,
+  the ONE shared helper Tasks 5–7 will call, returning `Unique(ObjectNodeId)` /
+  `Ambiguous` / `OutOfClosure` / `Unresolved`. Fail-closed by construction:
+  only `Unique` ever carries an id. An `Id` ref matches the same `ObjectKind`
+  only, closure-filtered, with NO shadow priority (two in-closure declarations
+  of the same numeric id — an anomaly a merged whole-program snapshot can
+  surface even though a real AL compile never would — is `Ambiguous`, not
+  guessed). A `Name` ref matches by kind + lowercased name; an object declared
+  in `from`'s own app always shadows a same-named dependency object (mirrors
+  the existing self-preference in `object_by_number`/`resolve_object`), so two
+  DEPENDENCY apps sharing a name (neither is `from` itself) is `Ambiguous`.
+  `OutOfClosure` (declared somewhere in the snapshot, just unreachable from
+  `from`) is kept distinct from `Unresolved` (never declared with that
+  kind+id/name at all) — a more informative decline for Tasks 5–7 to reason
+  about. 15 new unit tests (7 node-lowering + 8 `resolve_object_ref`,
+  including a cross-app id/name collision and a two-independent-builds
+  determinism check); `cargo test --workspace` (no `CDO_WS`) stays fully green
+  — no existing test's assertions changed.
+
 ### Fixed
 - **(resolve) Precedence-adjudicate `genuine_wrong=42` via a source-identity
   overlay — L3 golden UNTOUCHED (beyond-1B.3b Task 3)**

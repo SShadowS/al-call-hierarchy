@@ -148,6 +148,10 @@ mod tests {
             extends_target: None,
             implements: vec![],
             tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         };
 
         let mut objects = vec![

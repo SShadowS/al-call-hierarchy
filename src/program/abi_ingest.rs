@@ -250,6 +250,13 @@ pub fn ingest_abi(
             extends_target: abi_obj.extends_target_name.clone(),
             implements: abi_obj.implemented_interfaces.clone().unwrap_or_default(),
             tier: TrustTier::SymbolOnly,
+            // ABI/SymbolOnly ingestion does not (yet) project SourceTable/TableNo/
+            // page-control data from the dependency symbol reference — additive gap,
+            // not a regression (Task 4 scope is the source `extract_nodes` path).
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         });
 
         for routine in &abi_obj.routines {

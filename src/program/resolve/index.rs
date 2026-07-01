@@ -26,6 +26,7 @@ use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjectNodeId, RoutineNodeId};
+use crate::program::node_extract::ObjectRef;
 use crate::program::resolve::edge::Condition;
 use crate::program::resolve::event::ParsedSubscriberArgs;
 
@@ -47,6 +48,34 @@ pub enum WorldMode {
     /// answer depends on reverse-dependency relationships (extension targets,
     /// interface implementers, event subscribers).
     AnalyzedSnapshot,
+}
+
+// ---------------------------------------------------------------------------
+// ObjectRefResolution — result of `ResolveIndex::resolve_object_ref`
+// ---------------------------------------------------------------------------
+
+/// Result of resolving an [`ObjectRef`] (a `SourceTable`/`TableNo`/page-control
+/// target) against the whole-program graph, as seen from one object.
+///
+/// Fail-closed by construction: only [`Self::Unique`] carries an id. Every
+/// other variant is a deliberate decline — callers (Tasks 5–7) must treat a
+/// non-`Unique` result as "no table"/"unknown", never fabricate a guess.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObjectRefResolution {
+    /// Exactly one object in `from`'s AL-visible dependency closure matches.
+    Unique(ObjectNodeId),
+    /// More than one object in the closure matches and no AL shadowing rule
+    /// (own-app-wins) picks a single winner — declared uniqueness could not be
+    /// proven from the data this index holds.
+    Ambiguous,
+    /// The reference matches a declared object somewhere in the whole
+    /// snapshot, but that object's app is not in `from`'s dependency closure
+    /// (unreachable, not a resolution — distinct from never having been
+    /// declared at all).
+    OutOfClosure,
+    /// No declared object anywhere in the snapshot matches (wrong/absent kind,
+    /// or the id/name was never declared).
+    Unresolved,
 }
 
 // ---------------------------------------------------------------------------
@@ -88,8 +117,24 @@ pub struct ResolveIndex {
     /// `(object_id, name_lc)` → list of `RoutineNodeId`s (overloads, ≤1 in practice).
     routines_by_obj_name: HashMap<(ObjectNodeId, String), Vec<RoutineNodeId>>,
     /// `(app, kind, declared_id)` → `ObjectNodeId` (first in sorted order for
-    /// that app; duplicates within one app silently ignored).
+    /// that app; duplicates within one app silently ignored). Feeds the
+    /// existing, more permissive [`Self::object_by_number`] (self-preferred,
+    /// "best"-tiebreak, no ambiguity signal — kept unchanged for its existing
+    /// callers).
     objs_by_number: HashMap<(AppRef, ObjectKind, i64), ObjectNodeId>,
+    /// `(kind, declared_id)` → every `ObjectNodeId` across ALL apps sharing
+    /// that (kind, id), in `graph.objects` sort order. GLOBAL (whole-snapshot,
+    /// not closure-scoped) — unlike `objs_by_number`, which is grouped by
+    /// `app` for an O(1) per-app probe, this is grouped by `(kind, id)` alone
+    /// so [`Self::resolve_object_ref`] can answer "does this id exist ANYWHERE"
+    /// in O(1) without enumerating apps, and can detect a genuine cross-app id
+    /// collision (`ObjectRefResolution::Ambiguous`) that `objs_by_number`'s
+    /// single-slot-per-app shape cannot represent.
+    objects_by_id: HashMap<(ObjectKind, i64), Vec<ObjectNodeId>>,
+    /// `(kind, name_lc)` → every `ObjectNodeId` across ALL apps sharing that
+    /// (kind, name), in `graph.objects` sort order. The Name-arm counterpart
+    /// to `objects_by_id`, used only by [`Self::resolve_object_ref`].
+    objects_by_name: HashMap<(ObjectKind, String), Vec<ObjectNodeId>>,
     /// Lowercased `extends_target` of a `TableExtension` → all extension ids.
     table_extensions: HashMap<String, Vec<ObjectNodeId>>,
     /// Lowercased interface name → all object ids that implement it.
@@ -132,6 +177,8 @@ impl ResolveIndex {
         }
 
         let mut objs_by_number: HashMap<(AppRef, ObjectKind, i64), ObjectNodeId> = HashMap::new();
+        let mut objects_by_id: HashMap<(ObjectKind, i64), Vec<ObjectNodeId>> = HashMap::new();
+        let mut objects_by_name: HashMap<(ObjectKind, String), Vec<ObjectNodeId>> = HashMap::new();
         let mut table_extensions: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
         let mut implementers: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
 
@@ -141,7 +188,15 @@ impl ResolveIndex {
                 objs_by_number
                     .entry((obj.id.app, obj.id.kind, n))
                     .or_insert_with(|| obj.id.clone());
+                objects_by_id
+                    .entry((obj.id.kind, n))
+                    .or_default()
+                    .push(obj.id.clone());
             }
+            objects_by_name
+                .entry((obj.id.kind, obj.name.to_ascii_lowercase()))
+                .or_default()
+                .push(obj.id.clone());
 
             // TableExtension → base table name (lowercased).
             if obj.id.kind == ObjectKind::TableExtension
@@ -245,6 +300,8 @@ impl ResolveIndex {
         ResolveIndex {
             routines_by_obj_name,
             objs_by_number,
+            objects_by_id,
+            objects_by_name,
             table_extensions,
             implementers,
             subscribers_map,
@@ -304,6 +361,100 @@ impl ResolveIndex {
             }
         }
         best.cloned()
+    }
+
+    /// Resolve an [`ObjectRef`] (a `SourceTable`/`TableNo`/page-control target)
+    /// of the given `kind`, as seen from `from` — the ONE shared, fail-closed
+    /// helper Tasks 5–7 call.
+    ///
+    /// Unlike [`Self::object_by_number`]/[`ProgramGraph::resolve_object`]
+    /// (which silently pick the lowest-`ObjectNodeId` "best" match across the
+    /// closure and never signal ambiguity), this is deliberately stricter:
+    /// more than one distinct in-closure declaration is an unprovable case and
+    /// this DECLINES ([`ObjectRefResolution::Ambiguous`]) rather than guessing
+    /// — "a guessed id is the cardinal sin". Only [`ObjectRefResolution::Unique`]
+    /// ever carries an id.
+    ///
+    /// - [`ObjectRef::Id`] matches a declared numeric object id of the SAME
+    ///   `kind` only, via [`Self::objects_by_id`] filtered to `from`'s
+    ///   dependency closure (self included). No shadow priority: numeric ids
+    ///   are supposed to be unique within one AL compile closure, so two
+    ///   distinct in-closure declarations of the same `(kind, id)` — an
+    ///   anomaly that a merged whole-program snapshot can surface even though
+    ///   a real compile never would — is `Ambiguous`, not resolved via a
+    ///   pick.
+    /// - [`ObjectRef::Name`] matches by `kind` + lowercased name within the
+    ///   closure via [`Self::objects_by_name`]. An object declared in `from`'s
+    ///   OWN app always wins over any dependency's same-named object (AL's
+    ///   own-app lookup priority — mirrors the self-preference already applied
+    ///   by `object_by_number`/`resolve_object`), so two dependencies sharing a
+    ///   name is `Ambiguous` only when NEITHER is `from` itself.
+    /// - When the ref matches no declared object anywhere in the whole
+    ///   snapshot, the result is [`ObjectRefResolution::Unresolved`]. When it
+    ///   matches a declared object whose app is outside `from`'s closure, the
+    ///   result is [`ObjectRefResolution::OutOfClosure`] — a distinct, more
+    ///   informative decline than `Unresolved` (the reference is real, just
+    ///   unreachable from here).
+    ///
+    /// No namespace data exists on `ObjectNode` today, so a namespace-qualified
+    /// name is matched purely as literal text via `normalized_lc` (whatever the
+    /// caller wrote); when namespace data lands on the graph, a qualified and
+    /// an unqualified reference to the same object will naturally compare
+    /// unequal here without any change to this function.
+    pub fn resolve_object_ref(
+        &self,
+        graph: &ProgramGraph,
+        from: ObjectNodeId,
+        kind: ObjectKind,
+        r: &ObjectRef,
+    ) -> ObjectRefResolution {
+        let closure = graph.topology.closure(from.app);
+        match r {
+            ObjectRef::Id(n) => {
+                let candidates = self
+                    .objects_by_id
+                    .get(&(kind, *n))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if candidates.is_empty() {
+                    return ObjectRefResolution::Unresolved;
+                }
+                let in_closure: Vec<&ObjectNodeId> = candidates
+                    .iter()
+                    .filter(|oid| closure.contains(&oid.app))
+                    .collect();
+                match in_closure.len() {
+                    0 => ObjectRefResolution::OutOfClosure,
+                    1 => ObjectRefResolution::Unique(in_closure[0].clone()),
+                    _ => ObjectRefResolution::Ambiguous,
+                }
+            }
+            ObjectRef::Name { normalized_lc, .. } => {
+                let candidates = self
+                    .objects_by_name
+                    .get(&(kind, normalized_lc.clone()))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if candidates.is_empty() {
+                    return ObjectRefResolution::Unresolved;
+                }
+                // Own-app shadow: `from`'s own declaration always wins over any
+                // dependency's same-named object — short-circuits before
+                // ambiguity among dependencies is even considered.
+                if let Some(own) = candidates.iter().find(|oid| oid.app == from.app) {
+                    return ObjectRefResolution::Unique(own.clone());
+                }
+                let in_closure: Vec<&ObjectNodeId> = candidates
+                    .iter()
+                    .filter(|oid| closure.contains(&oid.app))
+                    .collect();
+                match in_closure.len() {
+                    0 => ObjectRefResolution::OutOfClosure,
+                    1 => ObjectRefResolution::Unique(in_closure[0].clone()),
+                    _ => ObjectRefResolution::Ambiguous,
+                }
+            }
+        }
     }
 
     /// All `TableExtension` objects whose `extends_target` (lowercased) equals
@@ -436,6 +587,10 @@ mod tests {
             extends_target: extends_target.map(str::to_string),
             implements: implements.into_iter().map(str::to_string).collect(),
             tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         }
     }
 
@@ -682,6 +837,203 @@ mod tests {
         let unknown = AppRef(99);
         let found2 = idx.object_by_number(&graph, unknown, ObjectKind::Table, 18);
         assert!(found2.is_none(), "unknown app has empty closure");
+    }
+
+    // -- resolve_object_ref tests ----------------------------------------------
+
+    /// Fixture for `resolve_object_ref`:
+    /// - AppA (the `from` app) depends on AppB and AppC. AppD is interned but
+    ///   never added as a dependency of A — out of A's closure.
+    /// - AppA: Table 500 "Shared" (own declaration).
+    /// - AppB: Table 501 "Shared" (name collides with A's own — A must shadow
+    ///   it); Table 100 "Item"; Table 200 "OnlyInB".
+    /// - AppC: Table 100 "Item" (id AND name collide with AppB's — neither is
+    ///   `from`'s own app, so both the id- and name-arm see a genuine
+    ///   cross-app ambiguity).
+    /// - AppD: Table 900 "Foreign" — declared, but AppD is unreachable from A.
+    fn build_ref_fixture() -> (ProgramGraph, ObjectNodeId) {
+        let mut apps = AppRegistry::default();
+        let a = apps.intern(&make_app_id("AppA"));
+        let b = apps.intern(&make_app_id("AppB"));
+        let c = apps.intern(&make_app_id("AppC"));
+        let d = apps.intern(&make_app_id("AppD"));
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(a, b);
+        topology.add_dependency(a, c);
+        // `d` is intentionally never wired in — out of A's closure.
+
+        let mut objects = vec![
+            make_obj(a, ObjectKind::Table, Some(500), "Shared", None, vec![]),
+            make_obj(b, ObjectKind::Table, Some(501), "Shared", None, vec![]),
+            make_obj(b, ObjectKind::Table, Some(100), "Item", None, vec![]),
+            make_obj(b, ObjectKind::Table, Some(200), "OnlyInB", None, vec![]),
+            make_obj(c, ObjectKind::Table, Some(100), "Item", None, vec![]),
+            make_obj(d, ObjectKind::Table, Some(900), "Foreign", None, vec![]),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        let from = ObjectNodeId {
+            app: a,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        (
+            ProgramGraph {
+                apps,
+                topology,
+                objects,
+                routines: vec![],
+                obj_index,
+            },
+            from,
+        )
+    }
+
+    fn name_ref(s: &str) -> ObjectRef {
+        ObjectRef::Name {
+            raw: s.to_string(),
+            normalized_lc: s.to_ascii_lowercase(),
+        }
+    }
+
+    #[test]
+    fn resolve_object_ref_id_unique_same_kind() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &ObjectRef::Id(200));
+        match res {
+            ObjectRefResolution::Unique(oid) => {
+                assert!(oid.id_equals_number(200));
+                assert_eq!(oid.kind, ObjectKind::Table);
+            }
+            other => panic!("expected Unique, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_object_ref_id_wrong_kind_is_unresolved() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        // 500 is declared as a Table, never as a Codeunit.
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Codeunit, &ObjectRef::Id(500));
+        assert_eq!(res, ObjectRefResolution::Unresolved);
+    }
+
+    #[test]
+    fn resolve_object_ref_id_absent_is_unresolved() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &ObjectRef::Id(999_999));
+        assert_eq!(res, ObjectRefResolution::Unresolved);
+    }
+
+    #[test]
+    fn resolve_object_ref_id_out_of_closure() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        // 900 is declared in AppD, which A does not depend on.
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &ObjectRef::Id(900));
+        assert_eq!(res, ObjectRefResolution::OutOfClosure);
+    }
+
+    #[test]
+    fn resolve_object_ref_id_ambiguous_cross_app_collision() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        // 100 is declared as Table "Item" in BOTH AppB and AppC — neither is A.
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &ObjectRef::Id(100));
+        assert_eq!(res, ObjectRefResolution::Ambiguous);
+    }
+
+    #[test]
+    fn resolve_object_ref_name_unique_in_closure() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &name_ref("OnlyInB"));
+        match res {
+            ObjectRefResolution::Unique(oid) => assert!(oid.id_equals_number(200)),
+            other => panic!("expected Unique, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_object_ref_name_ambiguous_two_apps() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        // "Item" is declared in both AppB and AppC — neither is A itself.
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &name_ref("Item"));
+        assert_eq!(res, ObjectRefResolution::Ambiguous);
+    }
+
+    #[test]
+    fn resolve_object_ref_name_own_app_shadows_dependency() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+        let from_app = from.app;
+
+        // "Shared" is declared in BOTH A (id 500) and B (id 501) — A's own
+        // declaration must win outright, never Ambiguous.
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &name_ref("Shared"));
+        match res {
+            ObjectRefResolution::Unique(oid) => {
+                assert!(oid.id_equals_number(500), "A's own Shared must win");
+                assert_eq!(oid.app, from_app);
+            }
+            other => panic!("expected Unique(A's Shared), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_object_ref_name_out_of_closure() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let res = idx.resolve_object_ref(&graph, from, ObjectKind::Table, &name_ref("Foreign"));
+        assert_eq!(res, ObjectRefResolution::OutOfClosure);
+    }
+
+    #[test]
+    fn resolve_object_ref_name_unresolved() {
+        let (graph, from) = build_ref_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let res = idx.resolve_object_ref(
+            &graph,
+            from,
+            ObjectKind::Table,
+            &name_ref("NoSuchTableAnywhere"),
+        );
+        assert_eq!(res, ObjectRefResolution::Unresolved);
+    }
+
+    #[test]
+    fn resolve_object_ref_is_deterministic_across_two_builds() {
+        let (graph1, from1) = build_ref_fixture();
+        let idx1 = ResolveIndex::build(&graph1);
+        let (graph2, from2) = build_ref_fixture();
+        let idx2 = ResolveIndex::build(&graph2);
+
+        let ambiguous1 =
+            idx1.resolve_object_ref(&graph1, from1.clone(), ObjectKind::Table, &name_ref("Item"));
+        let ambiguous2 =
+            idx2.resolve_object_ref(&graph2, from2.clone(), ObjectKind::Table, &name_ref("Item"));
+        assert_eq!(ambiguous1, ambiguous2);
+        assert_eq!(ambiguous1, ObjectRefResolution::Ambiguous);
+
+        let unique1 =
+            idx1.resolve_object_ref(&graph1, from1, ObjectKind::Table, &ObjectRef::Id(200));
+        let unique2 =
+            idx2.resolve_object_ref(&graph2, from2, ObjectKind::Table, &ObjectRef::Id(200));
+        assert_eq!(unique1, unique2);
     }
 
     // -- table_extensions_of tests --------------------------------------------

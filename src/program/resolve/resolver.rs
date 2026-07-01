@@ -2034,6 +2034,10 @@ codeunit 50300 "OverloadCU"
             extends_target: None,
             implements: vec![],
             tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         };
         (graph, index, body_map, from_obj)
     }
@@ -3881,6 +3885,10 @@ codeunit 50000 "Caller"
             extends_target: None,
             implements: vec![],
             tier: TrustTier::SymbolOnly,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
         });
 
         // Event-publisher routine: abi_routine_kind=EventPublisher, abi_event_kind=Integration.
