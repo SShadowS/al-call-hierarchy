@@ -8,6 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **(resolve) Visibility-scoped `resolve_in_table_scope` — closure-filter
+  `TableExtension`s and exclude cross-app `Internal`/`Local` members from the
+  Record-receiver source-shadows-catalog scope (fail-closed)**
+  (`src/program/resolve/resolver.rs`) — `resolve_member`'s `ReceiverType::
+  Record` arm previously built its candidate scope (base table ∪
+  `TableExtension`s) via `ResolveIndex::table_extensions_of`, which is
+  whole-snapshot (`WorldMode::AnalyzedSnapshot`, no app scoping). A
+  `TableExtension` declared in an app `from_object` does NOT depend on could
+  therefore be added to the scope and mint a confident `Source` route to a
+  symbol the real AL compiler could never have resolved (from_object's app
+  never imported it) — a false `Source` is the cardinal sin. Separately, a
+  cross-app SOURCE-tier candidate procedure marked `Access::Internal`/
+  `Access::Local` (visible only within its own declaring app) was never
+  checked against the caller's app, so it could also be counted as a
+  candidate despite being AL-invisible to `from_object`. Extracted the
+  scope+cardinality algorithm into a new shared helper,
+  `resolve_in_table_scope` (`from_object`, `table_id`, `name_lc`, `arity`,
+  `graph`, `index`, `body_map` → `Option<(DispatchShape, Vec<Route>)>`), which
+  now gates BOTH the base table and every extension on
+  `graph.topology.closure(from_object.id.app)` membership before counting
+  candidates, and additionally excludes (via new helpers
+  `object_has_visible_member_candidate`/`lookup_routine_access`) any
+  cross-app candidate whose `Access` is `Local`/`Internal` — a lookup miss
+  fails closed (excluded), never assumed visible. SymbolOnly (ABI-ingested
+  `.app` dependency) routines are unaffected: `abi_ingest.rs` already drops
+  `is_local`/`is_internal` ABI routines at ingestion, so the access filter is
+  additive only for SOURCE-tier cross-app objects (e.g. a multi-app
+  workspace with an embedded dependency's own AL source).
+  `Access::Protected` is intentionally left unfiltered (out of scope; a
+  documented gap). `resolve_member`'s `Record` arm now simply calls the
+  extracted helper. Behavior is otherwise IDENTICAL — the change is
+  additive-decline only (a case that previously resolved to a false `Source`
+  or a false ambiguous `Unknown` now correctly declines/resolves per real AL
+  visibility rules); every pre-existing passing test is unaffected. 6 new
+  characterization tests verify: base+extension same-name collision →
+  `Unknown`; a `TableExtension` in an app outside `from_object`'s dependency
+  closure → declines (does not resolve); a cross-app `Internal`/`Local`
+  method (on the base table OR an extension) → excluded; a cross-app
+  `Public` method → still resolves (regression guard, proves the filter
+  doesn't over-exclude). Confirmed the bug pre-fix by re-running the new
+  tests against the unmodified code: 4 of 6 failed exactly as predicted, each
+  resolving a false `Source` route. CDO gate: `genuine_wrong` stays `0`;
+  on the real CDO semantic audit, 6 sites move from `fresh_extra` (fresh
+  falsely "ahead" of the L3 reference) into `matches` (both now correctly
+  decline) — a quantified, isolated soundness correction with zero
+  collateral movement on `fresh_missing`/`fresh_wrong`/`genuine_wrong`.
 - **(resolve) Fail-closed object resolution at the root — `resolve_object`/
   `object_by_number` are now ambiguity-aware; `resolve_object_ref`'s `Id` arm
   gained own-app-shadow; `parsed_type_to_receiver`'s declared-var `Record` arm
