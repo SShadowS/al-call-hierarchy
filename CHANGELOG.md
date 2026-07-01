@@ -69,6 +69,179 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and negative (absent → stays honest `Unknown`) cases.
 
 ### Added
+- **beyond-1B.3b Task 8 (CAPSTONE): the real-`unknown` burndown arc is
+  closed — re-measured, ratchets tightened to the new floor,
+  `engine::l3`/`engine::l2` grep-guard added** (`tests/program_resolve_harness.rs`;
+  no resolver source changes — this task is verification + ratchet + docs, by
+  design) — closes the beyond-1B.3b real-`unknown` burndown arc (Tasks 1–7 +
+  inserted 5.5, all already individually logged above). Summary of the whole
+  arc, before/after:
+  - **Task 1**: lookup PRECEDENCE fix — a workspace/dependency SOURCE
+    definition now shadows the global builtin catalog (was: builtin catalog
+    checked first, silently hiding a same-named user procedure) — plus a
+    structural (name+arity-shaped, not string-matched) builtin-catalog match.
+  - **Task 2**: fail-closed SAME-ARITY OVERLOAD guard — `resolve_in_object`
+    no longer picks the first candidate when N>1 source overloads share
+    `(object, name_lc, params_count)`; collision-aware index preserves every
+    raw entry instead of dropping one, and >1 arity-matched candidates fails
+    closed to `Unresolved` (mirrors the interface fan-out `>1 → Unresolved`
+    rule) rather than guessing.
+  - **Task 3**: PRECEDENCE-ADJUDICATED `genuine_wrong=42` via a source-identity
+    overlay (`adjudicated-overrides.json`) — the frozen L3 golden stays
+    UNTOUCHED (never edited/rebaselined); at audit time the adjudicated
+    target is substituted in-memory before diffing, so fresh matches by
+    construction, backed by an INDEPENDENT re-derivation test
+    (`cdo_genuine_wrong_is_precedence_adjudicated`) that re-hashes the source,
+    re-confirms the call shape/receiver-kind/arity, and re-derives the
+    verdict from the structural catalog — never trusting the committed
+    override's own fields.
+  - **Task 4**: `ObjectNode` FIDELITY groundwork (`SourceTable`/`TableNo`/
+    `page_controls`/`is_temporary`, structured `ObjectRef`) + `objects_by_id`
+    index + the ONE shared fail-closed `resolve_object_ref` helper
+    (`Unique`/`Ambiguous`/`OutOfClosure`/`Unresolved`) that Tasks 5–7 all
+    build on — pure additive groundwork, zero resolution behavior change on
+    its own.
+  - **Task 5**: Page/PageExtension implicit `Rec` via `ObjectNode.source_table`
+    (the `Rec.Method()` MEMBER-call shape), topology-aware fail-closed;
+    Report/ReportExtension deliberately excluded (dataitem-scoped, not a
+    single object-level table — still open, see below).
+  - **Task 5.5 — THE DOMINANT LEVER**: wired the IMPLICIT Base App/System App
+    dependency into the `src/program` closure. Real BC apps declare Base App
+    via the top-level `application` manifest field, NOT `dependencies[]` —
+    the closure builder read only the latter, so Base App (and every
+    cross-Microsoft-layer call into it: PageExtensions, `Record`/`Codeunit`
+    vars typed at a Base App object, …) was systematically unreachable,
+    resolving an honest but wrong `Unknown`. This ONE fix moved the primary
+    real-`unknown` rate **6.50%→3.30%** (whole-program 2.75%→1.39%) — by far
+    the largest single jump in the arc, confirming the north-star hypothesis
+    that most residual `unknown` was a missing-dependency-edge problem, not a
+    resolution-logic problem.
+  - **Tasks 6/7**: closed the remaining charter-§3-node-fidelity receiver
+    gaps — Codeunit implicit `Rec` via `ObjectNode.table_no` (Task 6,
+    `TestRunner` subtype honest-declined) and `CurrPage.<part>.Page`
+    subpage-instance compound receivers (Task 7, control-vs-subpage-instance
+    distinction preserved, `SystemPart`/`UserControl` deliberately excluded).
+  - **Net result** (CDO `CDO_WS`, RE-MEASURED and CONFIRMED 2026-07-01 for
+    this Task 8 closing report — every number below independently reproduced
+    against the live workspace, not merely carried forward):
+    primary real-`unknown` rate **6.46%→2.81%** (`unknown` 508/18104);
+    whole-program **1.19%** (`unknown` 508/42843) — the whole-program arc
+    trajectory, chained from each task's own logged before/after (Task 2's
+    soundness correction 2.73%→2.80%, Task 3/4 unchanged at 2.80%, Task 5.5
+    2.75%→1.39% — the small 2.80%→2.75% step is Task 5's own contribution,
+    Task 6 1.39%→1.34%, Task 7 1.34%→1.19%); no isolated whole-program figure
+    was separately logged for Task 1 alone, so "whole-program pre-arc" is not
+    cited as a single round number here — only primary's 6.46% carries that
+    role (the number the original `<= 0.07` ceiling was set against). L3
+    semantic audit `fresh_missing`
+    **191→102**; the `genuine_wrong` CANDIDATE set stayed exactly constant
+    across Tasks 1–2 (42→42, "no new divergence", per Task 2's own
+    before/after) — no task ever introduced a NEW disjoint divergence beyond
+    the 1B.3a-era 42 — and from Task 3's precedence-adjudication overlay
+    onward the AUDIT's reported `genuine_wrong_count` is exactly **0** (the
+    42 sites are adjudicated `l3_error_intrinsic` L3-golden defects, matched
+    by construction against the overlaid target) through every subsequent
+    task including this one; Task 5.5 grew the manifest 42→44 (2 NEW
+    `CrossAppSourceProcedure` L3-golden defects it surfaced), independently
+    source-verified against real Base App source, never whitelisted —
+    `genuine_wrong_count` stayed 0 after that growth too. `fresh_wrong=139`
+    (all 139 adjudicated `fresh_ahead_dispatch` — fresh REFINES L3, not a
+    divergence).
+  - **What stays honestly `Unknown`** (unchanged by this task; the residual
+    is CHARACTERIZED here, not fixed — fixing it is the next plan): Task 8
+    live-minted the L3-validated golden and diffed the 102-site
+    `fresh_missing` residual site-by-site (throwaway diagnostic, not
+    committed — see `.superpowers/sdd/task-8-report.md`) and source-verified
+    the dominant pattern directly against real CDO source: **82/102 sites**
+    are a BARE (unqualified) call inside a Page/Report trigger that should
+    implicitly dispatch to the object's own `SourceTable`'s global
+    procedures when no local/extension-base/builtin match exists — e.g.
+    `Page 6175272 "CDO E-Mail Templates"`'s `OnAfterGetRecord` calls bare
+    `GetReportSelection()`/`GetReportName()`, both defined on
+    `SourceTable = "CDO E-Mail Template Header"` (table 6175283). This is
+    `resolve_bare`'s own documented `// 3. Implicit-Rec (deferred)` TODO
+    (`src/program/resolve/resolver.rs`) — a DIFFERENT, never-built gap from
+    the `Rec.Method()` explicit MEMBER-call implicit-Rec Tasks 5/6 already
+    closed. **12/102 sites** are a bare call to a procedure on the caller's
+    OWN object from a NESTED field-level trigger (e.g. `Table 6175281
+    "CDO Setup"`'s `"Azure Blob Container Name"` field's `OnValidate` calls
+    bare `CheckAzureContainerPerCompany()`, an `internal procedure` on the
+    SAME table's top level) — root cause not yet isolated, a candidate being
+    the TableExtension-arm fail-closed consistency pass (next plan, below).
+    The remaining 8 are overload sets mixing a same-object and a cross-object
+    candidate. Also still honestly `Unknown`/deferred, unchanged from prior
+    tasks: Report/ReportExtension implicit `Rec` (dataitem block-scope, not
+    object-level — Task 5 explicitly excluded it); `TestRunner` Codeunit
+    subtype (Task 6 explicitly declined it); deep compound-receiver chains
+    beyond one `.Page` hop and `SystemPart`/`UserControl` controls (Task 7
+    explicitly declined them); cross-app-ambiguous tables (`Ambiguous` by
+    `resolve_object_ref`'s design, Task 4); the pre-existing L3-golden
+    span/line-offset (`known-genuine-divergences.json`'s adjudication
+    already accounts for this independently, unrelated to Task 8's ratchets).
+    Full same-arity-TYPE overload DISPATCH remains the genuinely-ambiguous
+    `Variant`-typed-arg case (out of scope for the whole arc, tracked
+    separately, fixture at `tests/r0-corpus/ws-overload-arg-type/`).
+  - **Ratchets tightened** (`tests/program_resolve_harness.rs`,
+    `cdo_full_program_coverage_and_self_reported_metric` +
+    `cdo_l3_semantic_audit_no_fresh_wrong`; a ratchet never loosens):
+    `primary_rate <=` **0.07 → 0.030** (measured 0.0281, dated comment); NEW
+    primary `unknown` COUNT ceiling **`ph.unknown <= 520`** (measured 508) —
+    a ratio ceiling alone can hide a regression if `total` also shifts, a
+    count catches it; NEW companion whole-program `unknown` COUNT ceiling
+    **`h.unknown <= 520`** (measured 508, defense-in-depth for a future
+    dependency-internal regression the primary-scoped count alone would
+    miss); `FRESH_MISSING_CEILING` **191 → 110** (measured 102, breakdown
+    comment rewritten with the 82/12/8 source-verified characterization
+    above, superseding the stale 1B.3a-era `page_rec=115+
+    codeunit_implicit_rec=24+trigger=38+other=14` breakdown that Tasks 5–7
+    had already substantially drained); NEW divergence ratchet:
+    `genuine_wrong == 0` stays the pre-existing HARD gate (unchanged, still
+    exact-zero, never "still-acceptable known wrongness"), plus a NEW
+    `fresh_wrong` COUNT ceiling **`<= 150`** (measured 139) — `genuine_wrong`
+    alone cannot see a new confidently-wrong edge that happens to also pass
+    the (heuristic) `fresh_ahead_dispatch` refinement test; pinning the
+    `fresh_wrong` total is defense-in-depth so such a site still trips a
+    review.
+  - **NEW grep-guard test** — `resolve_module_has_no_stray_engine_l3_l2_imports`
+    (no `CDO_WS` needed, always runs) closes the "convention-only, no CI
+    enforcement" gap two reviewers flagged against 1B.3b Task 3's invariant.
+    It scans every `.rs` file directly under `src/program/resolve` (flat
+    directory, verified no subdirectories) except the ONE sanctioned
+    `builtins.rs::global_builtins` exception, strips `//`/`///`/`//!`
+    comments per line (so the several files' module docs that legitimately
+    NAME `engine::l3`/`engine::l2` in prose — `differential.rs`,
+    `semantic_golden.rs`, `member_catalog.rs` — do not false-positive), and
+    fails on any remaining `engine::l3`/`engine::l2` substring in actual
+    code. Verified zero offending imports today (matches the existing
+    `builtins.rs`-only baseline this task independently re-confirmed via
+    manual `grep`); a `scanned_files > 5` sanity assertion guards against the
+    test passing vacuously if directory listing ever silently breaks.
+  - **No `engine::l3`/`engine::l2` import added by this task** (grep-guarded,
+    self-verified — the new test itself asserts this).
+  - **Gates** (all FOREGROUND, this task): `cargo test --workspace` (no
+    `CDO_WS`) — 51/51 `program_resolve_harness` tests pass (50 pre-existing +
+    1 new grep-guard), full workspace green; `cargo clippy --release
+    --all-features -- -D warnings` — clean; `cargo fmt --check` — clean;
+    (`CDO_WS` + `ENFORCE_CDO_WS=1`, single-test runs, release profile — CDO
+    tests cannot run concurrently, unrelated pre-existing constraint) all six
+    CDO gates green + deterministic under the tightened ratchets:
+    `cdo_full_program_coverage_and_self_reported_metric`,
+    `cdo_l3_semantic_audit_no_fresh_wrong`, `cdo_trigger_audit_frozen_load`
+    (`matches=185`, `fresh_wrong=0`, unchanged), `cdo_event_audit_frozen_load`
+    (`matched_pairs=2`, unchanged), `route_applicability_zero_violations`
+    (`total_routes=17646`, `violations=0`), `fan_out_applicability_zero_violations`
+    (all four violation counters `0`, non-vacuous
+    `routes_checked[interface=28 instance_builtin=455 implicit_trigger=1183
+    event=2464]`), `cdo_genuine_wrong_is_precedence_adjudicated`
+    (`l3_error_intrinsic=44`, `fresh_false_builtin=0`, `needs_manual_review=0`).
+  - **Next plan** (unchanged scope from the roadmap, now with the Task 8
+    residual characterization sharpening it): the BARE-call implicit-Rec
+    dispatch (`resolve_bare` Step 3 — the now-dominant 82/102 residual
+    bucket), full same-arity-TYPE overload DISPATCH, Report implicit-`Rec`
+    with dataitem block-scope context, and a TableExtension-arm fail-closed
+    consistency pass (candidate root cause for the 12/102 same-object nested-
+    trigger residual).
+
 - **(resolve) `CurrPage.<part>.Page` subpage-instance receivers, control-aware
   fail-closed (`regression_compound_receiver`, beyond-1B.3b Task 7)**
   (`src/program/resolve/receiver.rs`, `src/program/resolve/resolver.rs`,

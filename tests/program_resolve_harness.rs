@@ -1260,13 +1260,47 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     );
 
     // ── Regression guard: primary real_unknown_rate ≤ recorded ceiling ───────
-    // Ceiling recorded from first CDO run (2026-06-30): 6.46%.
-    // 0.07 gives ~8% headroom above the baseline for safe guard.
+    // Ceiling history: 6.46% (2026-06-30, 1B.3a) → 0.07 (~8% headroom). The
+    // beyond-1B.3b arc (Tasks 1–7 + 5.5) drove the rate down to a
+    // re-measured, re-confirmed 2.81% (recorded 2026-07-01: primary
+    // unknown=508/18104; whole-program 1.19%, unknown=508/42843 — see
+    // CHANGELOG.md's beyond-1B.3b Task 8 entry). Ratchets only ever
+    // TIGHTEN: 0.030 gives a small deterministic margin above 0.0281 without
+    // re-opening the 6.46%→7% headroom a future regression could hide in.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.07,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.07 — \
+        primary_rate <= 0.030,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.030 \
+         (recorded 2026-07-01: 2.81%, was 6.46% pre-arc) — \
          engine regressed; investigate before raising the ceiling"
+    );
+
+    // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
+    // A ratio ceiling alone can hide a regression if `total` also shifts (a
+    // denominator change masking a numerator increase) — pin the absolute
+    // `unknown` COUNT too. Recorded 2026-07-01: primary `unknown`=508, which
+    // (empirically, for CDO — not an architectural guarantee) equals
+    // whole-program `unknown`=508: every current `Unknown` route happens to
+    // originate from a workspace (primary) routine; a dependency-internal
+    // `Unknown` would inflate whole-program above primary without this count
+    // catching it, hence the separate whole-program ceiling below. 520 gives
+    // a small margin.
+    assert!(
+        ph.unknown <= 520,
+        "primary unknown count {} exceeds ceiling 520 (recorded 2026-07-01: 508) — \
+         engine regressed; investigate before raising the ceiling",
+        ph.unknown,
+    );
+    // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
+    // future regression lands in a dependency-internal (non-primary) routine
+    // — the primary-scoped count above would not catch that on its own.
+    // Recorded 2026-07-01: whole-program `unknown`=508 (same value as
+    // primary today — see comment above); 520 gives the same small margin.
+    assert!(
+        h.unknown <= 520,
+        "whole-program unknown count {} exceeds ceiling 520 (recorded 2026-07-01: 508) — \
+         engine regressed; investigate before raising the ceiling",
+        h.unknown,
     );
 
     // ── Determinism ──────────────────────────────────────────────────────────
@@ -1769,32 +1803,81 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // `fresh_missing` (L3 resolved a target, fresh emitted nothing) was
     // previously informational-only: a dropped trigger/event/member target at
     // CDO scale could increment this counter silently and the test would
-    // still pass. 191 is the CURRENT, EXACT `fresh_missing_count` reproduced
-    // against the live CDO_WS fresh resolver on 2026-07-01 — it matches the
-    // documented characterization in CHANGELOG.md (1B.3a Task 4 entry):
-    // `page_rec=115 + codeunit_implicit_rec=24 + trigger=38 + other=14 = 191`,
-    // all KNOWN, ALREADY-DEFERRED buckets (Page/PageExt implicit-Rec,
-    // Codeunit TableNo/TestRunner implicit-Rec, ImplicitTrigger-shaped member
-    // calls, and a long tail), not a fresh regression. Pinning the exact
-    // current value (rather than a round-number ceiling) means a NEW drop —
-    // even a single one beyond these known buckets — pushes the count to 192
-    // and FAILS, restoring the floor the old dual-run gate's
-    // `regression_unexplained == 0` provided. A manifest mirroring
+    // still pass. History: 191 (1B.3b, `page_rec=115 + codeunit_implicit_rec=24
+    // + trigger=38 + other=14`, CHANGELOG.md 1B.3a Task 4) → beyond-1B.3b
+    // Tasks 5–7 drained most of `page_rec` (Task 5, 191→176) and ALL of
+    // `codeunit_implicit_rec` (Task 6, 174→150) and `compound_receiver`
+    // (Task 7, 150→102) → **102, re-measured and reproduced 2026-07-01**
+    // (beyond-1B.3b Task 8). 110 tightens the ceiling to the new floor with a
+    // small margin (was 191 — a ratchet never loosens).
+    //
+    // Task 8 re-characterized the 102-site residual by live-minting the
+    // L3-validated golden and diffing site-by-site (throwaway diagnostic, not
+    // committed — see task-8-report.md): 82/102 are a DIFFERENT object than
+    // the caller, source-verified as the SAME root cause across every sampled
+    // site — a BARE (unqualified) call inside a Page/Report trigger that
+    // falls through to the object's own `SourceTable`'s global procedures
+    // (verified: `Page 6175272 "CDO E-Mail Templates"`'s `OnAfterGetRecord`
+    // calls bare `GetReportSelection()`/`GetReportName()`, both defined on
+    // `SourceTable = "CDO E-Mail Template Header"`, table 6175283) — this is
+    // `resolve_bare`'s own documented "Step 3: Implicit-Rec (deferred)" TODO
+    // (`src/program/resolve/resolver.rs`), DISTINCT from the explicit
+    // `Rec.Method()` MEMBER-call implicit-Rec receiver work Tasks 5/6 already
+    // closed (that closed `infer_implicit_rec`'s Page/Codeunit member-receiver
+    // arms; this is the separate BARE-call fallback arm, never built). 12/102
+    // are a bare call to a procedure on the caller's OWN object from a nested
+    // field-level trigger (verified: `Table 6175281 "CDO Setup"`'s
+    // `"Azure Blob Container Name"` field's `OnValidate` trigger calls bare
+    // `CheckAzureContainerPerCompany()`, an `internal procedure` declared at
+    // the SAME table's top level) — root cause not yet isolated (a candidate:
+    // the TableExtension-arm fail-closed consistency pass, next-plan item).
+    // The remaining 8 are overload sets mixing a same-object and a
+    // cross-object candidate, consistent with the same implicit-Rec gap
+    // compounding with the `>1 candidates → Unresolved` fail-closed rule.
+    // None of these are a NEW regression — a manifest mirroring
     // `known-genuine-divergences.json` would be the ideal (set-membership,
-    // immune to swaps) but is out of scope for this fix — see this fix's
-    // CHANGELOG/report entry for why a ceiling was chosen over a manifest
-    // here. Raising this ceiling requires re-justifying the new value against
-    // a real characterization, not just bumping the number.
-    const FRESH_MISSING_CEILING: usize = 191;
+    // immune to swaps) but is out of scope for this ratchet — see the
+    // beyond-1B.3b Task 8 CHANGELOG entry for the full characterization.
+    // Raising this ceiling requires re-justifying the new value against a
+    // real characterization, not just bumping the number.
+    const FRESH_MISSING_CEILING: usize = 110;
     assert!(
         audit.fresh_missing_count <= FRESH_MISSING_CEILING,
         "COMPLETENESS REGRESSION: fresh_missing_count={} exceeds the recorded \
-         ceiling {} (known-deferred-bucket baseline pinned 2026-07-01: \
-         page_rec=115 codeunit_implicit_rec=24 trigger=38 other=14 = 191; see \
-         CHANGELOG.md 1B.3a Task 4). The fresh resolver lost an L3-resolved \
-         target it used to find — investigate before raising the ceiling.",
+         ceiling {} (known-deferred-bucket baseline pinned 2026-07-01: 82 \
+         bare-call-implicit-SourceTable-dispatch [`resolve_bare` Step 3 TODO] \
+         + 12 bare-call-same-object-nested-trigger + 8 mixed = 102; see \
+         CHANGELOG.md beyond-1B.3b Task 8). The fresh resolver lost an \
+         L3-resolved target it used to find — investigate before raising the \
+         ceiling.",
         audit.fresh_missing_count,
         FRESH_MISSING_CEILING,
+    );
+
+    // ── Divergence ratchet: `fresh_wrong` COUNT ceiling ───────────────────────
+    // `fresh_wrong` (both L3 and fresh resolved, to DIFFERENT targets) splits
+    // into `fresh_ahead_dispatch` (allowed, fresh refines L3) and
+    // `genuine_wrong` (hard-gated to exactly 0 above). A count-only ceiling on
+    // the SUM is still useful defense-in-depth: `genuine_wrong == 0` alone
+    // cannot see a new confidently-wrong edge that happens to also satisfy the
+    // (heuristic, non-adjudicated) `fresh_ahead_dispatch` refinement test —
+    // pinning the total means any such site still trips a review, even though
+    // it would pass the `genuine_wrong` set-membership gate. Recorded
+    // 2026-07-01: `fresh_wrong_count=139` (all 139 adjudicated
+    // `fresh_ahead_dispatch`, 0 `genuine_wrong` — see CHANGELOG.md
+    // beyond-1B.3b Task 7/8). 150 gives a small margin; a ratchet never
+    // loosens.
+    const FRESH_WRONG_CEILING: usize = 150;
+    assert!(
+        audit.fresh_wrong_count <= FRESH_WRONG_CEILING,
+        "DIVERGENCE REGRESSION: fresh_wrong_count={} exceeds the recorded \
+         ceiling {} (recorded 2026-07-01: 139, all fresh_ahead_dispatch, \
+         genuine_wrong=0) — a new site diverged from the L3-validated golden; \
+         investigate (is it a new fresh_ahead_dispatch refinement, or a \
+         genuine_wrong that the adjudication heuristic mis-classified?) \
+         before raising the ceiling.",
+        audit.fresh_wrong_count,
+        FRESH_WRONG_CEILING,
     );
 
     // ── Determinism: two consecutive runs produce the same digest ─────────────
@@ -4355,4 +4438,93 @@ fn ws_compound_receiver_currpage_part_page_resolves_subpage_all_others_stay_unkn
             ce.edge.routes
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Test 29 (no CDO — always runs): beyond-1B.3b Task 8 grep-guard.
+//
+// 1B.3b Task 3 established (module-doc convention only, no CI enforcement)
+// that `src/program/resolve` is L3-INDEPENDENT except for ONE sanctioned
+// reuse: `builtins.rs::global_builtins` re-exports the platform
+// builtin-membership catalog from `engine::l3::global_builtins`. Two reviewers
+// flagged that this invariant was convention-only — nothing stopped a future
+// task from adding a new `engine::l3`/`engine::l2` import elsewhere in the
+// directory and silently reopening the L3 dependency the whole 1B.3b arc
+// worked to retire. This test closes that gap: it scans every `.rs` file
+// under `src/program/resolve` (flat directory, no subdirectories — verified
+// at the time of writing) and fails on any `engine::l3`/`engine::l2` mention
+// in CODE (not doc/line comments — several files' module docs legitimately
+// EXPLAIN the invariant by naming `engine::l3` in prose, e.g. `differential.rs`
+// / `semantic_golden.rs` / `member_catalog.rs`; those must NOT trip the
+// guard) outside `builtins.rs`.
+// ---------------------------------------------------------------------------
+
+/// Fails if any `src/program/resolve/*.rs` file OTHER than `builtins.rs`
+/// contains a live `engine::l3`/`engine::l2` reference outside a `//`/`///`/
+/// `//!` comment. `builtins.rs` is the ONE sanctioned exception
+/// (`global_builtins` re-export, 1B.3b Task 3) and is skipped entirely — its
+/// own module doc explains and bounds that reuse.
+///
+/// Comment-stripping is a simple "truncate at the first `//` on the line"
+/// pass — sufficient here because every file under this directory uses
+/// `//`-style (line/doc/module-doc) comments exclusively (no `/* */` block
+/// comments), verified at the time of writing. A future block comment would
+/// need this test upgraded; until then, a false NEGATIVE (missing a real
+/// import hidden after a `//` on the same line) is the only failure mode,
+/// never a false positive that would mask a real new dependency.
+#[test]
+fn resolve_module_has_no_stray_engine_l3_l2_imports() {
+    let resolve_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/program/resolve");
+    let mut offenders: Vec<String> = Vec::new();
+    let mut scanned_files = 0usize;
+
+    let entries = std::fs::read_dir(&resolve_dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", resolve_dir.display()));
+    for entry in entries {
+        let entry = entry.expect("readable dir entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or_default()
+            .to_string();
+        // The ONE sanctioned exception — see this test's doc comment.
+        if file_name == "builtins.rs" {
+            continue;
+        }
+        scanned_files += 1;
+
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        for (i, raw_line) in content.lines().enumerate() {
+            let code = match raw_line.find("//") {
+                Some(idx) => &raw_line[..idx],
+                None => raw_line,
+            };
+            if code.contains("engine::l3") || code.contains("engine::l2") {
+                offenders.push(format!("{file_name}:{}: {}", i + 1, raw_line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        scanned_files > 5,
+        "grep-guard scanned suspiciously few files ({scanned_files}) under \
+         {} — directory listing may be broken (test would pass vacuously)",
+        resolve_dir.display(),
+    );
+    assert!(
+        offenders.is_empty(),
+        "engine::l3/engine::l2 reference(s) found in src/program/resolve \
+         OUTSIDE the sanctioned builtins.rs::global_builtins exception \
+         (1B.3b Task 3 / beyond-1B.3b Task 8 grep-guard) — this directory is \
+         meant to stay fully L3-INDEPENDENT except that one deliberate reuse. \
+         Either move the new code to use a different, non-L3 source, or (if \
+         the reuse is deliberate and bounded like builtins.rs's) extend this \
+         guard's exception list with the same justification:\n{:#?}",
+        offenders,
+    );
 }
