@@ -336,6 +336,14 @@ pub fn ingest_abi(
                 // `RoutineNodeId` lookup regardless of route shape (`AbiSymbol`
                 // or `Routine(rid)`) — see `AbiRoutine::return_type_id`'s doc.
                 return_type_id: routine.return_type_id.clone(),
+                // Never marked here: ingestion emits one `RoutineNode` per RAW
+                // ABI routine, with no folding yet — the actual collapse (and
+                // thus the only place that can know ≥2 raw entries shared a
+                // node id) happens later, once every app's routines are
+                // pooled and sorted, in `build::
+                // dedup_routines_preserving_genuine_overloads` (Task 3 review
+                // fix). See `RoutineNode::abi_overload_collapsed`'s doc.
+                abi_overload_collapsed: false,
             });
         }
     }

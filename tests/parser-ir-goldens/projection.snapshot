@@ -80,7 +80,7 @@ ws-cross-object-chain/src/CCBarImpl2.Codeunit.al	517239b71c4b7bab
 ws-cross-object-chain/src/CCCustomer.Table.al	4e6aa45721a67978
 ws-cross-object-chain/src/CCFooImpl.Codeunit.al	e8f795d6883fb90b
 ws-cross-object-chain/src/CCHelper.Codeunit.al	fe2d9fa1d6beb011
-ws-cross-object-chain/src/CrossChainCaller.Codeunit.al	b0da4e110a298eac
+ws-cross-object-chain/src/CrossChainCaller.Codeunit.al	3f646eea3d8fbdae
 ws-cross-object-chain/src/ICCBar.Interface.al	a19947298b0c93dd
 ws-cross-object-chain/src/ICCFoo.Interface.al	2279098f9e485008
 ws-d1/src/customer.al	0022db5d7a079d98

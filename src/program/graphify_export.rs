@@ -980,6 +980,7 @@ mod tests {
             param_sig_key: String::new(),
             return_type: None,
             return_type_id: None,
+            abi_overload_collapsed: false,
         }
     }
 

@@ -140,6 +140,31 @@ pub struct RoutineNode {
     /// see `AbiRoutine::return_type_id`'s doc for the full cross-validation
     /// rationale (Task 3 consumes this; Task 2 only carries it).
     pub return_type_id: Option<(String, i64)>,
+    /// `true` when this node is the arbitrary SURVIVOR of a dedup collapse
+    /// that folded ≥2 raw ABI overload entries onto the same `RoutineNodeId`
+    /// (Task 3 review fix). An ABI routine's [`param_sig_key`] is always
+    /// `String::new()` (see that field's doc) — `AbiParameter::type_text`
+    /// carries only a parameter's OUTER type keyword, never its `Subtype`,
+    /// so two genuinely distinct same-name/same-arity overloads differing
+    /// only by an object-typed parameter's Subtype (`Get(X: Codeunit A)` vs
+    /// `Get(X: Codeunit B)`) hash-collide onto the identical `RoutineNodeId`
+    /// and `build::dedup_routines_preserving_genuine_overloads` silently
+    /// keeps only the first raw entry. That survivor's `return_type` /
+    /// `return_type_id` are therefore UNTRUSTWORTHY BY CONSTRUCTION — they
+    /// belong to only ONE of the ≥2 real declarations, chosen arbitrarily by
+    /// raw JSON order, and a downstream consumer has no way to tell which.
+    /// Set `true` ONLY when ≥2 raw ABI (`TrustTier::SymbolOnly`) entries
+    /// shared the node id; always `false` for a SOURCE routine (whose
+    /// `param_sig_key` is real parsed param-type content, so a genuine
+    /// same-id collapse there is always a true re-parse duplicate of the
+    /// SAME declaration — content-identical, safe to trust). Consumed by
+    /// `resolver::routine_node_for_type_query` /
+    /// `resolver::resolve_abi_prefix_routine` and
+    /// `receiver::receiver_from_routine_node` (Task 3's cross-object
+    /// call-result chain typing, `Var.Method().X()`) — both DECLINE
+    /// (`Unknown(CompoundReceiver)`) rather than read a collapsed survivor's
+    /// return type, fail-closed.
+    pub abi_overload_collapsed: bool,
 }
 
 /// Lowercased, `|`-joined parameter TYPE-TEXT sequence for a SOURCE routine's
@@ -329,6 +354,7 @@ pub fn extract_nodes(
                 param_sig_key: param_sig_key(&r.params),
                 return_type: r.return_type.clone(),
                 return_type_id: None,
+                abi_overload_collapsed: false,
             });
         }
     }

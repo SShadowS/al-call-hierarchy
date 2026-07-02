@@ -11,6 +11,7 @@ codeunit 51206 "CrossChainCaller"
         Response: Codeunit "Dep Http Response";
         ArityChain: Codeunit "Dep Arity Chain";
         DepOverload: Codeunit "Dep Overload";
+        DepCollapse: Codeunit "Dep Collapse";
 
     // (a) POSITIVE: SOURCE prefix. `GetCustomer(No)` (unique arity-1,
     // `Record "CC Customer"` return) types the chain receiver `Record{table:
@@ -160,5 +161,22 @@ codeunit 51206 "CrossChainCaller"
     procedure TestWrongArityAbiDeclines()
     begin
         ArityChain.Get().ReadAs();
+    end;
+
+    // (N11) NEGATIVE — COLLAPSED ABI overload survivor (Task 3 review fix):
+    // `Dep Collapse` declares two `Get` overloads at the SAME arity (1) AND
+    // the SAME OUTER parameter kind (`Codeunit`), differing ONLY in the
+    // parameter's Subtype (`Dep A` vs `Dep C`). `AbiParameter::type_text`
+    // fingerprints only the outer type keyword — never a param's Subtype —
+    // so both overloads hash to the IDENTICAL `RoutineNodeId` and collapse
+    // to ONE arbitrary survivor at ABI ingestion (unlike (N3) above, where
+    // the outer kind itself differs and the two overloads stay genuinely
+    // distinct candidates). The two overloads' RETURN types also differ
+    // (`Dep Http Content` vs `Dep Arity Chain`) — trusting the collapsed
+    // survivor's `return_type` would risk typing the chain to the WRONG
+    // object. Must decline (`RoutineNode::abi_overload_collapsed`).
+    procedure TestAbiOverloadCollapsedDeclines()
+    begin
+        DepCollapse.Get(Helper).ReadAs();
     end;
 }

@@ -6600,3 +6600,30 @@ fn ws_cross_object_chain_wrong_arity_abi_declines() {
     assert_eq!(route.target, RouteTarget::Unresolved);
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
+
+/// Test 32p (fixture N11, NEGATIVE — Task 3 REVIEW FIX: collapsed ABI
+/// overload survivor): `Dep Collapse` declares two `Get` overloads at the
+/// SAME arity (1) AND the SAME outer parameter kind (`Codeunit`), differing
+/// ONLY in the parameter's Subtype (`Dep A` vs `Dep C`) — `AbiParameter::
+/// type_text` fingerprints only the outer keyword, never a Subtype, so both
+/// overloads hash to the IDENTICAL `RoutineNodeId` and collapse to ONE
+/// arbitrary survivor at ABI ingestion (`RoutineNode::abi_overload_
+/// collapsed`), unlike (N3/32h)'s genuinely-distinct-candidate case. The two
+/// overloads' declared RETURN types also differ (`Dep Http Content` vs `Dep
+/// Arity Chain`) — the survivor's `return_type` is untrustworthy by
+/// construction, so the ABI-PREFIX UNIQUENESS GUARD
+/// (`resolve_abi_prefix_routine`/`routine_node_for_type_query`) must decline
+/// rather than type the chain off an arbitrary sibling's return.
+///
+/// Pre-fix (the bug this test pins): the survivor was the FIRST raw JSON
+/// entry (`Get(X: Codeunit "Dep A")`, returning `Codeunit "Dep Http
+/// Content"`), so this chain would have wrongly resolved
+/// `Object{Codeunit, "dep http content"}` and emitted an `Opaque` route to
+/// `ReadAs` — silently ignoring the second, differently-typed overload.
+#[test]
+fn ws_cross_object_chain_abi_overload_collapsed_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testabioverloadcollapseddeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}

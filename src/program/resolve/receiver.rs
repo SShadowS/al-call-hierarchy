@@ -1056,7 +1056,11 @@ fn interface_own_routine_node<'g>(
 /// two paths (interface's own signature, or the resolved implementer/routine).
 ///
 /// Declines (`None`) on: no declared return type; a scalar/primitive return
-/// (`classify_type_text` → `ParsedType::Primitive`); or — Task 2's structured
+/// (`classify_type_text` → `ParsedType::Primitive`); a collapsed ABI-overload
+/// survivor (`node.abi_overload_collapsed` — Task 3 review fix, see
+/// [`RoutineNode::abi_overload_collapsed`]'s doc: its `return_type` may
+/// belong to a DIFFERENT raw declaration than the one actually selected, so
+/// it is untrustworthy by construction); or — Task 2's structured
 /// cross-validation — an ABI-sourced return type whose `Subtype` `(name, id)`
 /// pair disagrees with the object the name resolves to (`node.return_type_id`
 /// is `Some` only for an ABI/SymbolOnly-ingested routine whose declared
@@ -1074,6 +1078,14 @@ fn receiver_from_routine_node(
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> Option<ReceiverType> {
+    // Task 3 review fix: `routine_node_for_type_query` already applies this
+    // same check to the `RouteTarget`-resolved node, but `interface_own_
+    // routine_node`'s result reaches this function WITHOUT going through
+    // that choke point (interface members carry no access/visibility dance
+    // to guard) — check again here so BOTH callers are covered.
+    if node.abi_overload_collapsed {
+        return None;
+    }
     let return_type = node.return_type.as_deref()?;
     let parsed = classify_type_text(return_type);
     if matches!(parsed, ParsedType::Primitive) {
@@ -1083,12 +1095,10 @@ fn receiver_from_routine_node(
 
     if let Some((_name, id)) = &node.return_type_id {
         let resolved_obj = match &receiver {
-            ReceiverType::Object { id: Some(oid), .. } => {
-                graph.objects.iter().find(|o| &o.id == oid)
-            }
+            ReceiverType::Object { id: Some(oid), .. } => object_by_id(graph, oid),
             ReceiverType::Record {
                 table: Some(table_id),
-            } => graph.objects.iter().find(|o| &o.id == table_id),
+            } => object_by_id(graph, table_id),
             _ => None,
         };
         match resolved_obj {
@@ -1098,6 +1108,19 @@ fn receiver_from_routine_node(
     }
 
     Some(receiver)
+}
+
+/// `graph.objects` is kept sorted by `ObjectNodeId` (see `build.rs`'s Step 4)
+/// — an O(log n) `binary_search_by` here mirrors the same idiom
+/// `graph.routines.binary_search_by(|probe| probe.id.cmp(rid))` already uses
+/// throughout `resolver.rs`, replacing an O(n) linear `.find` (Task 3 review
+/// finding 2).
+fn object_by_id<'g>(graph: &'g ProgramGraph, oid: &ObjectNodeId) -> Option<&'g ObjectNode> {
+    graph
+        .objects
+        .binary_search_by(|probe| probe.id.cmp(oid))
+        .ok()
+        .map(|i| &graph.objects[i])
 }
 
 /// `true` when `expr_id` derefs to a bare `this` identifier (case-insensitive

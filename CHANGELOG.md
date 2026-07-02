@@ -90,6 +90,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left for whenever parameter-type ABI fidelity is prioritized.
 
 ### Fixed
+- **Chain-typing now declines on collapsed ABI overload survivors — a dedup-collapse marker
+  makes the silent same-`RoutineNodeId` ABI fold visible, fail-closed (cross-object chains +
+  protected-ABI plan v2.1, Task 3 review fix).** The blocking review finding:
+  `abi_ingest.rs` hardcodes ABI `RoutineNode.param_sig_key = String::new()`, so
+  `build::dedup_routines_preserving_genuine_overloads` (which de-dupes a same-id run by
+  `param_sig_key`) SILENTLY collapsed any second same-name/same-arity/same-outer-param-kind
+  ABI overload to an arbitrary first survivor — and `param_type_fp` fingerprints only a
+  parameter's OUTER type keyword (never its `Subtype`), so two genuinely different overloads
+  (`Get(X: Codeunit A)` vs `Get(X: Codeunit B)`) hash-collide onto ONE `RoutineNodeId`.
+  Task 3's chain arm reads the survivor's `return_type` — if a collapsed sibling had a
+  different object-typed return, that mis-types the chain receiver → potential false
+  `Source` (the cardinal sin). 77 such collapsed pairs exist in CDO's real dependency ABIs
+  (3 in Microsoft Base App also differing in RETURN type); previously unmanifested only
+  because the observed differing returns were scalar/None (the scalar-decline saved it
+  incidentally). Fix, narrowly scoped and fail-closed (no param-`Subtype` modeling — that is
+  a scheduled follow-up): (1) new non-serialized `RoutineNode.abi_overload_collapsed` marker,
+  set by `dedup_routines_preserving_genuine_overloads` EXACTLY when ≥2 raw
+  `TrustTier::SymbolOnly` entries shared one node id (SOURCE routines are never marked —
+  their `param_sig_key` is real parsed content, so a same-key collapse there is always a
+  true re-parse duplicate); (2) `resolver::routine_node_for_type_query` (the single choke
+  point both `RouteTarget::Routine` and `AbiSymbol` type-query arms funnel through) and
+  `receiver::receiver_from_routine_node` (also covering the `interface_own_routine_node`
+  path) DECLINE when the resolved prefix routine is collapse-marked — the return type is
+  untrustworthy by construction; (3) corrected the stale `resolve_in_object` comment claiming
+  dedup "preserves every raw entry in that genuine collision" (now known false for ABI
+  routines); (4) extended the `ws-cross-object-chain` probe `.app` with a new `Dep Collapse`
+  codeunit declaring two `Get` overloads differing ONLY in param `Subtype` with DIFFERENT
+  object-typed returns + fixture N11/test 32p proving the chain declines (test-first:
+  pre-fix it emitted an `Opaque` route to the arbitrary survivor's return object) + 4 new
+  `build.rs` unit tests pinning the marker semantics (ABI sig-fp collision marks; lone ABI
+  routine never marks; distinct-sig_fp ABI pair survives unmarked; SOURCE duplicate collapses
+  unmarked). Also folded in review finding 2: `receiver_from_routine_node`'s Name+Id
+  cross-validation object lookup now uses `binary_search_by` over the id-sorted
+  `graph.objects` (new `object_by_id` helper) instead of an O(n) linear scan. CDO:
+  byte-identical — primary/whole `unknown`=327, 1.81%, `CompoundReceiver`=154,
+  `genuine_wrong`=0; direct probe confirmed ZERO collapse-marked routines in the whole CDO
+  graph (all real deps ship embedded source) and all 5 `GetContent` nodes un-marked — the 2
+  real resolved chain edges survive.
 - **Protected-ABI soundness: `IsProtected` is now parsed from `SymbolReference.json`,
   carried as `Access::Protected` (not dropped, not hardcoded `Public`), and the three
   SymbolOnly visibility short-circuits in `resolver.rs` are closed — the ABI/SymbolOnly

@@ -12,7 +12,7 @@ use crate::program::resolve::event::{
     PublisherKind, is_platform_page_event, is_platform_table_event, platform_event_display_name,
 };
 use crate::program::topology::DependencyGraph;
-use crate::snapshot::{AppSetSnapshot, parse_snapshot};
+use crate::snapshot::{AppSetSnapshot, TrustTier, parse_snapshot};
 
 /// Assemble a `ProgramGraph` from a fully-resolved `AppSetSnapshot`.
 ///
@@ -267,6 +267,7 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
                 param_sig_key: String::new(),
                 return_type: None,
                 return_type_id: None,
+                abi_overload_collapsed: false,
             });
         }
     }
@@ -307,7 +308,29 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 /// `RoutineNodeId` (source `sig_fp` stays `0`) — `resolve_in_object`'s `>1`
 /// arm still returns an honest `Unresolved` rather than guessing; only the
 /// CANONICAL COUNT is fixed here, not distinct node identity (deferred
-/// overload-dispatch work). Never drops a genuine collision silently.
+/// overload-dispatch work). Never drops a genuine collision silently for a
+/// SOURCE routine.
+///
+/// **ABI routines are a narrower case (Task 3 review fix).** An ABI
+/// routine's `param_sig_key` is hardcoded `String::new()` (see that field's
+/// doc on [`RoutineNode`]) — every ABI entry in a run shares the SAME empty
+/// key, so a run of ≥2 raw ABI entries always collapses to exactly ONE
+/// survivor here, same as a genuine same-declaration duplicate. Unlike the
+/// source case, this collapse is NOT always safe to treat as a content-
+/// identical duplicate: `abi_ingest::param_type_fp` degrades a parameter's
+/// type to its OUTER keyword only (never a `Subtype`), so two genuinely
+/// DIFFERENT ABI overloads (differing only by an object-typed parameter's
+/// Subtype) can share both `RoutineNodeId` and the empty `param_sig_key`,
+/// silently collapsing to an ARBITRARY first-occurrence survivor whose
+/// `return_type`/`return_type_id` may belong to the wrong declaration. This
+/// function marks that survivor [`RoutineNode::abi_overload_collapsed`]
+/// whenever ≥2 raw `TrustTier::SymbolOnly` entries shared a node id, so a
+/// downstream type-query (`resolver::routine_node_for_type_query` /
+/// `receiver::receiver_from_routine_node`, Task 3's cross-object call-result
+/// chain typing) can decline rather than trust an untrustworthy return type.
+/// A SOURCE routine is never marked: its `param_sig_key` is real parsed
+/// param-type content, so a genuine same-id/same-key collapse there is
+/// always a true re-parse duplicate of the identical declaration.
 fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) {
     let mut out: Vec<RoutineNode> = Vec::with_capacity(routines.len());
     let mut i = 0;
@@ -316,12 +339,24 @@ fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) 
         while j < routines.len() && routines[j].id == routines[i].id {
             j += 1;
         }
+        // Count raw entries per param-signature key within this run FIRST —
+        // a survivor is only markable once the true raw count sharing its
+        // key is known (needed for the ABI empty-key case above).
+        let mut sig_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for r in &routines[i..j] {
+            *sig_counts.entry(r.param_sig_key.as_str()).or_insert(0) += 1;
+        }
         // Preserve first-occurrence order for determinism; collapse every
         // later entry in the run that repeats an already-seen param signature.
         let mut seen_sigs: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for r in &routines[i..j] {
             if seen_sigs.insert(r.param_sig_key.as_str()) {
-                out.push(r.clone());
+                let mut survivor = r.clone();
+                if r.tier == TrustTier::SymbolOnly && sig_counts[r.param_sig_key.as_str()] >= 2 {
+                    survivor.abi_overload_collapsed = true;
+                }
+                out.push(survivor);
             }
         }
         i = j;
@@ -365,5 +400,170 @@ mod tests {
             .expect("workspace app must be interned");
         let closure = g.topology.closure(ws_ref);
         assert!(closure.len() > 1, "workspace should have ≥1 dependency");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3 review fix: `abi_overload_collapsed` marking
+    // -----------------------------------------------------------------------
+
+    use crate::program::node::{ObjKey, ObjectNodeId};
+
+    fn dep_obj_id(app: AppRef, number: i64) -> ObjectNodeId {
+        ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(number),
+        }
+    }
+
+    /// A minimal ABI-tier (`SymbolOnly`) `RoutineNode` — `param_sig_key`
+    /// hardcoded empty exactly as `abi_ingest::ingest_abi` produces it.
+    fn abi_routine(
+        obj: &ObjectNodeId,
+        name_lc: &str,
+        params_count: usize,
+        sig_fp: u64,
+    ) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj.clone(),
+                name_lc: name_lc.to_string(),
+                enclosing_member_lc: None,
+                params_count,
+                sig_fp,
+            },
+            name: name_lc.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+        }
+    }
+
+    /// A minimal SOURCE (`Workspace`) `RoutineNode` carrying a real
+    /// `param_sig_key` (content, never hardcoded empty for source).
+    fn source_routine(
+        obj: &ObjectNodeId,
+        name_lc: &str,
+        params_count: usize,
+        param_sig_key: &str,
+    ) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj.clone(),
+                name_lc: name_lc.to_string(),
+                enclosing_member_lc: None,
+                params_count,
+                sig_fp: 0,
+            },
+            name: name_lc.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
+            param_sig_key: param_sig_key.to_string(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+        }
+    }
+
+    /// Two raw ABI entries sharing one `RoutineNodeId` (a genuine `sig_fp`
+    /// collision — the degraded-Subtype scenario) collapse to ONE survivor,
+    /// marked `abi_overload_collapsed`.
+    #[test]
+    fn abi_sig_fp_collision_marks_survivor_collapsed() {
+        let app = AppRef(0);
+        let obj = dep_obj_id(app, 60104);
+        let mut routines = vec![
+            abi_routine(&obj, "get", 1, 777),
+            abi_routine(&obj, "get", 1, 777),
+        ];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        assert_eq!(
+            routines.len(),
+            1,
+            "two raw entries sharing (object, name, arity, sig_fp) must collapse to one node"
+        );
+        assert!(
+            routines[0].abi_overload_collapsed,
+            "the survivor of a ≥2-raw-ABI-entry collapse must be flagged \
+             abi_overload_collapsed so a chain type-query declines rather \
+             than trust its return type"
+        );
+    }
+
+    /// A SINGLE ABI routine (no collision at all) must NEVER be marked —
+    /// this is the `GetContent`-shaped real-world case (CDO's 2 real
+    /// resolved chain edges) that must keep resolving after this fix.
+    #[test]
+    fn abi_single_routine_never_marked_collapsed() {
+        let app = AppRef(0);
+        let obj = dep_obj_id(app, 60100);
+        let mut routines = vec![abi_routine(&obj, "getcontent", 0, 0)];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        assert_eq!(routines.len(), 1);
+        assert!(
+            !routines[0].abi_overload_collapsed,
+            "a lone ABI routine with no id collision must never be marked collapsed"
+        );
+    }
+
+    /// Two DISTINCT `sig_fp`s (a genuinely non-degenerate ABI overload pair,
+    /// e.g. differing OUTER param kind) never collide onto one
+    /// `RoutineNodeId` in the first place — both survive as separate nodes,
+    /// neither marked (there was no collapse to mark).
+    #[test]
+    fn abi_distinct_sig_fp_both_survive_unmarked() {
+        let app = AppRef(0);
+        let obj = dep_obj_id(app, 60103);
+        let mut routines = vec![
+            abi_routine(&obj, "get", 1, 111),
+            abi_routine(&obj, "get", 1, 222),
+        ];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        assert_eq!(
+            routines.len(),
+            2,
+            "distinct sig_fp means distinct RoutineNodeId — no collapse at all"
+        );
+        assert!(routines.iter().all(|r| !r.abi_overload_collapsed));
+    }
+
+    /// A genuine SOURCE re-parse duplicate (same declaration, non-empty
+    /// matching `param_sig_key`) collapses exactly like before — but is
+    /// NEVER marked `abi_overload_collapsed` (only `TrustTier::SymbolOnly`
+    /// entries are eligible), since it is content-identical and trustworthy.
+    #[test]
+    fn source_duplicate_collapses_but_is_never_marked() {
+        let app = AppRef(0);
+        let obj = dep_obj_id(app, 51200);
+        let mut routines = vec![
+            source_routine(&obj, "name", 0, ""),
+            source_routine(&obj, "name", 0, ""),
+        ];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        assert_eq!(routines.len(), 1);
+        assert!(
+            !routines[0].abi_overload_collapsed,
+            "a SOURCE routine must never be marked, even when it collapses \
+             on an empty param_sig_key (a genuine 0-arg re-parse duplicate)"
+        );
     }
 }

@@ -262,12 +262,24 @@ fn resolve_in_object(
     // collide onto one `RoutineNodeId` when their `sig_fp` also matches: source
     // `sig_fp` is always 0 (see node.rs), and an ABI `sig_fp` (`param_type_fp`)
     // is 0 for any 0-arg overload or collides whenever the degraded param-type
-    // text happens to match. `build_program_graph`'s dedup (beyond-1B.3b Task 2)
-    // preserves every raw entry in that genuine collision rather than silently
-    // dropping one, so >1 arity-matched candidates here is REAL, unresolved
-    // ambiguity absent further evidence — an `UNKNOWN_ARITY`-sentinel candidate
-    // (Task 1 tri-state arity) never lands in `matched` at all, since it can
-    // never equal a real call's `arity`.
+    // text happens to match (it carries only a parameter's OUTER type keyword,
+    // never a Subtype). `build_program_graph`'s dedup
+    // (`dedup_routines_preserving_genuine_overloads`, beyond-1B.3b Task 2)
+    // preserves every DISTINCT raw entry for a SOURCE routine — its
+    // `param_sig_key` is real parsed param-type content, so two textually
+    // distinct declarations never share a key. It does NOT do the same for an
+    // ABI routine (Task 3 review fix, CORRECTING this comment's prior false
+    // claim): an ABI routine's `param_sig_key` is hardcoded empty, so a run of
+    // ≥2 raw entries sharing one `RoutineNodeId` always collapses to a single
+    // arbitrary survivor there — flagged `RoutineNode::abi_overload_collapsed`
+    // so `receiver.rs`'s cross-object-chain type-query declines rather than
+    // trust its return type, instead of silently keeping only one candidate
+    // here. So >1 arity-matched candidates HERE always means genuinely
+    // DISTINCT `RoutineNodeId`s (different `sig_fp`) survived that collapse —
+    // REAL, unresolved overload ambiguity this engine cannot break by
+    // parameter count alone, absent further evidence — an `UNKNOWN_ARITY`-
+    // sentinel candidate (Task 1 tri-state arity) never lands in `matched` at
+    // all, since it can never equal a real call's `arity`.
     let matched: Vec<&RoutineNodeId> = candidates
         .iter()
         .filter(|rid| rid.params_count == arity)
@@ -1728,6 +1740,21 @@ pub fn resolve_member(
 /// `dispatch_arity` MUST be the exact arity `resolve_member` was called
 /// with to produce `route` (the same value, never re-derived) — see
 /// `receiver.rs`'s round-1 M1 note.
+///
+/// **Collapsed-ABI-overload guard (Task 3 review fix).** Whichever branch
+/// resolves a node, the result is rejected when
+/// [`RoutineNode::abi_overload_collapsed`] is `true` — such a node is the
+/// arbitrary survivor of ≥2 raw ABI overload entries that hash-collided
+/// onto one `RoutineNodeId` (`abi_ingest::param_type_fp` degrades a
+/// parameter's type to its OUTER keyword only, never a `Subtype`), so its
+/// `return_type`/`return_type_id` may belong to the WRONG declaration. This
+/// is checked here — the single choke point both `RouteTarget` arms funnel
+/// through — rather than solely inside [`resolve_abi_prefix_routine`], so a
+/// future `RouteTarget::Routine` producer can never accidentally bypass it
+/// (today only source-tier routines reach `RouteTarget::Routine`, and
+/// `abi_overload_collapsed` is unconditionally `false` for those — see
+/// `build::dedup_routines_preserving_genuine_overloads` — so this is a
+/// no-op on the current call graph, purely defensive).
 pub(crate) fn routine_node_for_type_query<'g>(
     route: &Route,
     dispatch_arity: usize,
@@ -1735,7 +1762,7 @@ pub(crate) fn routine_node_for_type_query<'g>(
     graph: &'g ProgramGraph,
     index: &ResolveIndex,
 ) -> Option<&'g RoutineNode> {
-    match &route.target {
+    let node = match &route.target {
         RouteTarget::Routine(rid) => graph
             .routines
             .binary_search_by(|probe| probe.id.cmp(rid))
@@ -1745,11 +1772,20 @@ pub(crate) fn routine_node_for_type_query<'g>(
             resolve_abi_prefix_routine(key, dispatch_arity, from_object, graph, index)
         }
         RouteTarget::Builtin(_) | RouteTarget::Unresolved => None,
+    }?;
+    if node.abi_overload_collapsed {
+        return None;
     }
+    Some(node)
 }
 
 /// The ABI-PREFIX UNIQUENESS GUARD's implementation — see
-/// [`routine_node_for_type_query`]'s doc for the full rationale.
+/// [`routine_node_for_type_query`]'s doc for the full rationale. Note this
+/// function only proves EXACTLY ONE `RoutineNodeId` is arity+visibility
+/// selectable at the ABI boundary; it does NOT by itself prove that id was
+/// never a dedup collapse of ≥2 raw ABI overloads — the caller,
+/// [`routine_node_for_type_query`], applies that additional
+/// `abi_overload_collapsed` check uniformly to whatever node this returns.
 fn resolve_abi_prefix_routine<'g>(
     key: &AbiRoutineKey,
     dispatch_arity: usize,
@@ -2737,6 +2773,7 @@ pageextension 52911 "ExtA" extends BasePage
             param_sig_key: String::new(),
             return_type: None,
             return_type_id: None,
+            abi_overload_collapsed: false,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -6730,6 +6767,7 @@ codeunit 50000 "Caller"
             param_sig_key: String::new(),
             return_type: None,
             return_type_id: None,
+            abi_overload_collapsed: false,
         });
 
         // Regular procedure: abi_routine_kind=Procedure, abi_event_kind=None.
@@ -6753,6 +6791,7 @@ codeunit 50000 "Caller"
             param_sig_key: String::new(),
             return_type: None,
             return_type_id: None,
+            abi_overload_collapsed: false,
         });
 
         objects.sort_by(|a, b| a.id.cmp(&b.id));
