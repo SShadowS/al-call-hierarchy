@@ -218,8 +218,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `infer_receiver_type` still returns the pre-existing `Unknown` (neutral); full `cargo test
   --workspace` green (no golden moved — `git status` on `tests/goldens/` clean); CDO
   (`CDO_WS`) `cdo_l3_semantic_audit_no_fresh_wrong` + `cdo_full_program_coverage_and_self_reported_metric`
-  UNCHANGED at real-`unknown` 1.97% / 356 (this task adds zero resolution behavior — pure carry +
-  field populate).
+  UNCHANGED at real-`unknown` 1.88% / 340 (the post-Task-1.5 baseline; this task adds zero resolution
+  behavior — pure carry + field populate).
 - **soundness-completion plan Task 3: fresh-native `UnknownReason` diagnostic +
   stratified `aldump` unknown breakdown (charter §8 stratified reporting) — DIAGNOSTIC
   ONLY, the real-`unknown` COUNT and `ObligationOutcome` classification are UNCHANGED**
