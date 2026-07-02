@@ -8,6 +8,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Xml framework chains + a NEW `RecordRef`/`FieldRef`/`KeyRef` typed-return table
+  (chain-tables plan, Task 4).** `src/program/resolve/framework_returns.rs`: `Xml`
+  entries added to `framework_return_kind` — `XmlElement.Create(...)` (arities 1-4),
+  the full symmetric `AsXmlXxx()` zero-arg conversion family (`AsXmlNode`/
+  `AsXmlElement`/`AsXmlText`/…), and `GetChildNodes()` — every entry keyed
+  `(kind, member_lc, is_method, arity)` with per-entry MS-Learn provenance, uncertain
+  arities/members OMITTED. New module `src/program/resolve/recordref_returns.rs`
+  adds `recordref_family_return_kind`, a DISTINCT `(RecordRefFamilyKind, member_lc,
+  is_method, arity) -> Option<RecordRefFamilyKind>` table for the `RecordRef`/
+  `FieldRef`/`KeyRef` unit-variant family (`Field`/`FieldIndex` -> `FieldRef`,
+  `KeyIndex` -> `KeyRef`, `KeyRef.FieldIndex` -> `FieldRef`) — same fail-closed,
+  table-miss-declines contract as `framework_return_kind`. Deliberately excludes
+  scalar accessors (`FieldCount`/`KeyCount`, which return `Integer`) and
+  `FieldRef.Value` (variant-like LEAF data, never chainable — a chained `.X()` off it
+  stays `Unknown`), plus the validated-but-out-of-scope `FieldRef.Record()`/
+  `KeyRef.Record()`. `src/program/resolve/receiver.rs`: `infer_compound_member_receiver`
+  gains the matching `ReceiverType::{RecordRef,FieldRef,KeyRef}` arm (same
+  immediate-decline-on-table-miss mechanism as the `Framework` arm). Also fixes a
+  genuine PRE-EXISTING fail-open bug found while grounding this task's fixtures
+  against real CDO source: `infer_receiver_type`'s Step 4 called `classify_type_text`
+  on the RAW receiver text unconditionally, and its `Xml` arm is the only
+  prefix-wildcard match (`s.starts_with("xml")`) in an otherwise all-exact-match
+  function — a COMPOUND receiver whose full text happened to start with `"xml"`
+  (e.g. the outer `.AsXmlNode()` call's receiver in `XmlElement.Create('root').
+  AsXmlNode()`) would short-circuit to `Framework(Xml)` at Step 4, bypassing the real
+  per-hop chain-typing entirely. Fixed by gating Step 4 to genuine bare identifiers
+  (`!receiver_lc.contains('.') && !receiver_lc.contains('(')`), matching the step's
+  own documented "bare identifier" intent. 22 new fixtures (14 fixture-based + 8
+  table-level unit tests) over `tests/r0-corpus/ws-chain-tables/` cover 6 positives
+  and 8 negatives (un-tabled member, wrong form, wrong arity, same-named member on a
+  non-family receiver, the `FieldRef.Value` chain-decline, an unvalidated/omitted
+  entry, and an HTTPCONTENT regression pin — see below). CDO gate: `CompoundReceiver`
+  154→144 (-10), primary/whole `unknown` 327→317, `real_unknown_rate` 1.81%→1.75%;
+  all 10 newly-resolved edges EXHAUSTIVELY hand-adjudicated correct via a full
+  before/after edge-dump diff (not a sample); `genuine_wrong` stays 0.
+- **Investigation finding, NOT implemented (course correction on this task's original
+  brief): the `HttpContent` framework catalog was never stale.** The brief called for
+  adding `AsText`/`AsBlob`/`AsInStream`/`AsJson*` to `member_catalog.rs`'s `HTTPCONTENT`
+  set. Verified against BOTH live `methods-auto/httpcontent` (Microsoft Learn) and this
+  project's own SymbolReference-generated `member_builtins.json`
+  (`ms-dynamics-smb.al-18.0.2293710`): the platform `HttpContent` VALUE TYPE has
+  exactly `Clear`/`GetHeaders`/`IsSecretContent`/`ReadAs`/`WriteFrom` — a byte-for-byte
+  match with the existing catalog. The methods named `AsText`/`AsBlob`/`AsInStream` are
+  real, but belong to the UNRELATED System Application `Codeunit "Http Content"`
+  (`System.RestClient`), resolved via ordinary object/procedure resolution, not the
+  framework catalog; its one real CDO call site was already resolved by the prior plan
+  v2.1 Task 3 cross-object-chain fix. Adding those members to the framework catalog
+  would have been a fabricated entry that could never fire correctly — not implemented.
+  `tests/r0-corpus/ws-chain-tables/src/CTCaller.Codeunit.al`'s
+  `TestHttpContentAsTextStaysUnknown` regression-pins the correct (declined) behavior;
+  full writeup in `tests/r0-corpus/ws-chain-tables/PROOF.md`.
+
+### Fixed
+- Stale comment in `src/program/abi_ingest.rs` (`param_sig_key`'s "no content key
+  needed" rationale) corrected — it contradicted `build::
+  dedup_routines_preserving_genuine_overloads`'s `abi_overload_collapsed` marking
+  logic in the same codebase, which exists precisely because a same-`RoutineNodeId`
+  ABI run is NOT always a true duplicate (`param_type_fp` degrades a parameter's type
+  to its outer keyword only, so two distinct overloads differing by Subtype can share
+  both the id and the empty `param_sig_key`).
+
 - **Cross-object call-result chains: `Var.Method().X()` now resolves via a PURE
   `resolve_member` type-query on the base's static type, fail-closed (cross-object chains +
   protected-ABI plan v2.1, Task 3).** `src/program/resolve/receiver.rs`:

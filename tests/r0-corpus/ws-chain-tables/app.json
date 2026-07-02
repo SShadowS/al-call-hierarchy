@@ -1,0 +1,8 @@
+{
+	"id": "ffff6666-0000-0000-0000-000000000009",
+	"name": "ChainTables Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51200, "to": 51299 }]
+}

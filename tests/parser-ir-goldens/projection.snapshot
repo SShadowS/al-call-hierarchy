@@ -55,6 +55,8 @@ ws-calls/src/caller.al	96c344c8ad622918
 ws-calls/src/worker.al	36e57bc4b9025574
 ws-callsite-resolutions/src/Broken.Codeunit.al	675b915643c6ceee
 ws-callsite-resolutions/src/Caller.Codeunit.al	11592eb4b5aab4d8
+ws-chain-tables/src/CTCaller.Codeunit.al	6e593a96da86436e
+ws-chain-tables/src/CTItem.Table.al	d83ab04386d49034
 ws-codeunit-rec/src/AmbiguousCodeunit.Codeunit.al	574276894fa24cb4
 ws-codeunit-rec/src/Item.Table.al	761acfca04cdb031
 ws-codeunit-rec/src/ItemRecalcCodeunit.Codeunit.al	afdabd3502bac21c

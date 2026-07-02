@@ -17,6 +17,7 @@ pub mod full;
 pub mod index;
 pub mod member_catalog;
 pub mod receiver;
+pub mod recordref_returns;
 pub mod resolver;
 pub mod semantic_golden;
 pub mod stub;

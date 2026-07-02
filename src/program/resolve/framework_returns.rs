@@ -148,6 +148,80 @@ pub fn framework_return_kind(
         (HttpRequestMessage, "content", true, 0) => Some(HttpContent),
         (HttpClient, "defaultrequestheaders", true, 0) => Some(HttpHeaders),
 
+        // ---------------------------------------------------------------
+        // Xml chains (Task 4, chain-tables plan) — every `Xml*` sub-type
+        // (XmlDocument/XmlElement/XmlNode/XmlText/XmlAttribute/…) collapses
+        // to the single [`FrameworkKind::Xml`] bucket (see
+        // `classify_type_text`'s `s.starts_with("xml")` arm), so a single
+        // `(Xml, member_lc, is_method, arity)` row covers the conversion
+        // regardless of which concrete Xml sub-type it fires on or targets
+        // — there is only ever one INPUT kind and one OUTPUT kind to key on.
+        //
+        // Provenance: methods-auto/xmlelement, /xmlnode, /xmltext (Microsoft
+        // Learn, fetched 2026-07-02) — each page states "Available or
+        // changed with runtime version 1.0". Cross-checked against
+        // `member_catalog.rs`'s `XML` phf set (ms-dynamics-smb.al-18.0.2293710):
+        // every member name below is present.
+        //
+        // Real CDO sites (Task 4 gate adjudication, `Codeunit 6175323 "CDO
+        // Xml Document"` / `Codeunit 6175324 "CDO Xml Node"` / `Codeunit
+        // 6175326 "CDO Xml Management"`): `XmlElement.Create(Name).
+        // AsXmlNode()` (arity 1), `XmlElement.Create(Name, '', InnerText).
+        // AsXmlNode()` (arity 3), `Node.AsXmlElement().GetChildNodes()`,
+        // `Node.AsXmlElement().Add(...)` (×3 sites), `ChildNode.AsXmlText().
+        // Value := ...`.
+        // ---------------------------------------------------------------
+
+        // `XmlElement.Create(Text)` / `Create(Text, Text)` / `Create(Text,
+        // Text, Any,...)` / `Create(Text, Any,...)` — 4 static overloads
+        // (methods-auto/xmlelement "Static methods"), ALL returning
+        // `XmlElement` (Xml) — no return-kind ambiguity across the overload
+        // set, only arg count/type varies. `XmlText.Create(Text)` (arity 1,
+        // methods-auto/xmltext "Static methods") also returns `XmlText`
+        // (Xml) — same table row, no conflict (both collapse to `Xml`).
+        // Arity 1 and 3 are REAL CDO call shapes (confirmed above); arity 2
+        // and 4 are the same validated overload family (fixed-prefix +
+        // variadic `Any,...`) included for completeness. Arity 0 has no
+        // overload (every `Create` requires at least the element/text
+        // `Name`) and is deliberately NOT tabled — a 0-arg `Create()` call
+        // stays fail-closed `Unknown`. Arity ≥5 (deeper variadic calls) is
+        // conservatively OMITTED pending a real site that needs it.
+        (Xml, "create", true, 1) => Some(Xml),
+        (Xml, "create", true, 2) => Some(Xml),
+        (Xml, "create", true, 3) => Some(Xml),
+        (Xml, "create", true, 4) => Some(Xml),
+
+        // `XmlNode.AsXmlAttribute/AsXmlCData/AsXmlComment/AsXmlDeclaration/
+        // AsXmlDocument/AsXmlDocumentType/AsXmlElement/AsXmlProcessingInstruction/
+        // AsXmlText()` (methods-auto/xmlnode) and `<XmlElement|XmlText|…>.
+        // AsXmlNode()` (methods-auto/xmlelement, /xmltext) — the full
+        // symmetric zero-arg XmlNode<->sub-type conversion family, all
+        // deterministic (the operation FAILS at runtime rather than
+        // returning a different kind — never a return-kind ambiguity for
+        // this table). `AsXmlElement`/`AsXmlText`/`AsXmlNode` are the real
+        // CDO shapes (confirmed above); the remaining 7 siblings are the
+        // same validated, unambiguous conversion pattern, included for
+        // completeness.
+        (Xml, "asxmlnode", true, 0) => Some(Xml),
+        (Xml, "asxmlattribute", true, 0) => Some(Xml),
+        (Xml, "asxmlcdata", true, 0) => Some(Xml),
+        (Xml, "asxmlcomment", true, 0) => Some(Xml),
+        (Xml, "asxmldeclaration", true, 0) => Some(Xml),
+        (Xml, "asxmldocument", true, 0) => Some(Xml),
+        (Xml, "asxmldocumenttype", true, 0) => Some(Xml),
+        (Xml, "asxmlelement", true, 0) => Some(Xml),
+        (Xml, "asxmlprocessinginstruction", true, 0) => Some(Xml),
+        (Xml, "asxmltext", true, 0) => Some(Xml),
+
+        // `XmlElement.GetChildNodes()` — a SINGLE zero-arg, value-returning
+        // overload (methods-auto/xmlelement lists exactly one `GetChildNodes()`
+        // row, unlike the sibling `GetChildElements`/`GetDescendantElements`
+        // methods which DO have filtered `(Text)`/`(Text, Text)` overloads —
+        // deliberately NOT tabled here, unvalidated for this task) — returns
+        // an `XmlNodeList`, which also collapses to `Xml`. Real CDO site
+        // (confirmed above): `Node.AsXmlElement().GetChildNodes()`.
+        (Xml, "getchildnodes", true, 0) => Some(Xml),
+
         _ => None,
     }
 }
@@ -246,6 +320,81 @@ mod tests {
         assert_eq!(
             framework_return_kind(&FrameworkKind::HttpClient, "defaultrequestheaders", true, 0),
             Some(FrameworkKind::HttpHeaders)
+        );
+    }
+
+    /// `XmlElement.Create(...)` — all 4 validated arities return `Xml`; arity
+    /// 0 (no overload exists) and arity 5+ (unvalidated) stay declined.
+    #[test]
+    fn xml_create_resolves_across_validated_arities() {
+        for arity in 1..=4 {
+            assert_eq!(
+                framework_return_kind(&FrameworkKind::Xml, "create", true, arity),
+                Some(FrameworkKind::Xml),
+                "arity {arity} must resolve"
+            );
+        }
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "create", true, 0),
+            None
+        );
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "create", true, 5),
+            None
+        );
+    }
+
+    /// The real CDO chain shapes: `XmlElement.Create(...).AsXmlNode()`,
+    /// `Node.AsXmlElement().GetChildNodes()`, `ChildNode.AsXmlText().Value`.
+    #[test]
+    fn xml_conversion_chains_resolve() {
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "asxmlnode", true, 0),
+            Some(FrameworkKind::Xml)
+        );
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "asxmlelement", true, 0),
+            Some(FrameworkKind::Xml)
+        );
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "asxmltext", true, 0),
+            Some(FrameworkKind::Xml)
+        );
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "getchildnodes", true, 0),
+            Some(FrameworkKind::Xml)
+        );
+    }
+
+    /// The full symmetric `AsXmlXxx()` conversion family — every sibling
+    /// resolves, not just the 3 real CDO shapes.
+    #[test]
+    fn xml_full_asxmlxxx_family_resolves() {
+        for member in [
+            "asxmlattribute",
+            "asxmlcdata",
+            "asxmlcomment",
+            "asxmldeclaration",
+            "asxmldocument",
+            "asxmldocumenttype",
+            "asxmlprocessinginstruction",
+        ] {
+            assert_eq!(
+                framework_return_kind(&FrameworkKind::Xml, member, true, 0),
+                Some(FrameworkKind::Xml),
+                "{member} must resolve"
+            );
+        }
+    }
+
+    /// An un-tabled Xml member (`Attributes` — a real catalog LEAF member,
+    /// deliberately not chain-tabled for this task) declines, proving the
+    /// table doesn't fabricate coverage beyond what's validated.
+    #[test]
+    fn xml_untabled_member_declines() {
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::Xml, "attributes", true, 0),
+            None
         );
     }
 

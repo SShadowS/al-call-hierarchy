@@ -91,7 +91,13 @@
 //!    return type) is deliberately NOT handled here — declines — since typing
 //!    it correctly needs `resolve_bare`-style routine lookup, out of this
 //!    step's scope. See [`infer_receiver_type_for_expr`] for the full
-//!    recursion.
+//!    recursion. (c) `<RecordRef|FieldRef|KeyRef>.<Method(..)>` (Task 4,
+//!    chain-tables plan) — the SAME recursive base-typing as (a); if it
+//!    resolves to `RecordRef`/`FieldRef`/`KeyRef`, the versioned
+//!    [`recordref_family_return_kind`] table (a DISTINCT family from
+//!    `framework_return_kind`, same fail-closed table-miss-declines
+//!    contract) maps `(kind, member_lc, is_method, arity)` to the returned
+//!    `*Ref` kind — e.g. `RecordRef.KeyIndex(1).FieldIndex(1)`.
 //! 7. **Unknown** — no positive typing found.
 //!
 //! # Clean-room note
@@ -113,6 +119,9 @@ use crate::program::resolve::edge::RouteTarget;
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::framework_returns::framework_return_kind;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
+use crate::program::resolve::recordref_returns::{
+    RecordRefFamilyKind, recordref_family_return_kind,
+};
 use crate::program::resolve::resolver::{
     resolve_bare, resolve_member, routine_node_for_type_query,
 };
@@ -615,13 +624,42 @@ pub fn infer_receiver_type(
 
     // -----------------------------------------------------------------------
     // Step 4 — static framework type name used as a static receiver
-    // (`XmlDocument.Create(...)`, `Text.CopyStr(...)`, `Version.Create(...)`).
-    // A real variable of the same name would have been found in Step 2 and
-    // would shadow this path.  Only framework value types classify here;
-    // Record/Object/Interface/Enum type names fall through to Unknown.
+    // (`XmlDocument.Create(...)`, `Text.CopyStr(...)`, `Version.Create(...)`
+    // — in each of these, `receiver_lc` is the BARE type name — `Create`/
+    // `CopyStr` is the separate `method`, never part of `receiver_lc`
+    // itself). A real variable of the same name would have been found in
+    // Step 2 and would shadow this path. Only framework value types classify
+    // here; Record/Object/Interface/Enum type names fall through to Unknown.
+    //
+    // BARE-IDENTIFIER GUARD (Task 4 fix): `classify_type_text` only runs when
+    // `receiver_lc` is a genuine bare identifier — no `.`/`(` — never on a
+    // COMPOUND receiver text. Without this guard, a chained call whose
+    // receiver is itself a further call/member expression rooted in an
+    // `Xml*`-named base (e.g. the OUTER `.AsXmlNode()` in `XmlElement.
+    // Create('root').AsXmlNode()`, whose `receiver_lc` is the WHOLE inner
+    // text `"xmlelement.create('root')"`) would spuriously match
+    // `classify_type_text`'s `s.starts_with("xml")` catch-all — a
+    // fail-OPEN hole discovered while adding Task 4's Xml chain-table
+    // entries: an untabled/wrong-arity Xml chain (e.g. the 0-arg
+    // `XmlElement.Create()`, which this task deliberately leaves untabled)
+    // would incorrectly short-circuit to `Framework(Xml)` HERE, bypassing
+    // Steps 5/6's real per-hop chain-typing entirely, rather than declining.
+    // Every other `classify_type_text` arm is an EXACT full-string match
+    // (`"httpclient"`, `"jsonobject"`, …), which a multi-segment
+    // `receiver_lc` could never satisfy — `"xml"` is the ONLY prefix
+    // wildcard, so this guard is the general, principled fix (matches this
+    // step's own doc: "bare identifier"), not an Xml-specific patch.
+    // Steps 5/6 (compound receiver chains, including the SAME `Xml` case)
+    // remain fully unaffected — they operate on `receiver_expr`'s STRUCTURED
+    // AST node, never on this string, and already type each hop's base via
+    // its own recursive bare-identifier call ([`infer_receiver_type_for_expr`]'s
+    // `Identifier` arm), which was never subject to this bug.
     // -----------------------------------------------------------------------
 
-    if let ParsedType::Framework(kind) = classify_type_text(receiver_lc) {
+    if !receiver_lc.contains('.')
+        && !receiver_lc.contains('(')
+        && let ParsedType::Framework(kind) = classify_type_text(receiver_lc)
+    {
         return ReceiverType::Framework(kind);
     }
 
@@ -855,10 +893,19 @@ fn infer_receiver_type_for_expr(
 /// - **Framework chain**: recursively type `object_expr_id` via
 ///   [`infer_receiver_type_for_expr`]; if it resolves to `Framework(kind)`,
 ///   look up `(kind, member_lc, is_method, arity)` in the versioned
-///   [`framework_return_kind`] table. A table miss falls through to the
-///   cross-object-chain arm below (never declines early — a `Framework`
-///   base has no source/ABI procedures to type-query, but falling through
-///   costs nothing and keeps this dispatch a single funnel).
+///   [`framework_return_kind`] table. A table miss declines IMMEDIATELY
+///   (correction, Task 4: does NOT fall through to the cross-object-chain
+///   arm below — a `Framework` base has no source/ABI procedures to
+///   type-query, so falling through could never resolve anything there
+///   anyway; this arm's `if let` unconditionally `return`s either the
+///   mapped kind or `Unknown`).
+/// - **`RecordRef`/`FieldRef`/`KeyRef` chain** (Task 4, chain-tables plan):
+///   the SAME recursive base-typing; if it resolves to one of the three
+///   `*Ref` unit variants, look up `(kind, member_lc, is_method, arity)` in
+///   the versioned [`recordref_family_return_kind`] table (a DISTINCT
+///   family from `framework_return_kind`). A table miss also declines
+///   IMMEDIATELY, for the identical reason — a `*Ref` base has no
+///   source/ABI procedures to type-query either.
 /// - **Cross-object call-result chain** (plan v2.1 Task 3): STRICTLY the
 ///   procedure-CALL form (`is_method`; a bare `Member` — a field/property
 ///   access — is never this arm, round-1 I7). When `base_ty` is `Object`/
@@ -912,6 +959,21 @@ fn infer_compound_member_receiver(
     if let ReceiverType::Framework(kind) = &base_ty {
         if let Some(returned) = framework_return_kind(kind, &member_lc, is_method, arity) {
             return ReceiverType::Framework(returned);
+        }
+        return ReceiverType::Unknown;
+    }
+
+    // `RecordRef`/`FieldRef`/`KeyRef` chain (Task 4, chain-tables plan) —
+    // same fail-closed mechanism as the `Framework` arm just above, a
+    // DISTINCT family (`recordref_returns::recordref_family_return_kind`):
+    // a table-miss declines immediately, same as `Framework`'s table-miss —
+    // it does NOT fall through to the cross-object-chain arm below (a `*Ref`
+    // base has no source/ABI procedures to type-query either, exactly like
+    // `Framework`).
+    if let Some(family) = RecordRefFamilyKind::from_receiver_type(&base_ty) {
+        if let Some(returned) = recordref_family_return_kind(&family, &member_lc, is_method, arity)
+        {
+            return returned.to_receiver_type();
         }
         return ReceiverType::Unknown;
     }

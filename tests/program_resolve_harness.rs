@@ -1499,15 +1499,46 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // reading the System Application `.app`'s embedded source directly
     // (`src/Rest Client/src/HttpResponseMessage.Codeunit.al`/
     // `HttpContent.Codeunit.al`). `genuine_wrong` stays 0.
+    //
+    // TIGHTENED 2026-07-02 (chain-tables plan, Task 4): 0.0182→0.0176,
+    // measured 0.0175 (1.75%). Task 4 resolves the Xml framework chain
+    // subset of `CompoundReceiver` (new entries in `framework_return_kind`,
+    // `src/program/resolve/framework_returns.rs`) plus a NEW,
+    // distinct-family typed-return table for the `RecordRef`/`FieldRef`/
+    // `KeyRef` handle family (`recordref_family_return_kind`, `src/
+    // program/resolve/recordref_returns.rs`) + the matching
+    // `ReceiverType::{RecordRef,FieldRef,KeyRef}` arm in
+    // `infer_compound_member_receiver` — `CompoundReceiver` 154→144, every
+    // other bucket byte-identical. All 10 newly-resolved sites EXHAUSTIVELY
+    // hand-adjudicated correct by diffing the full edge dump before/after
+    // (not a sample — see `tests/r0-corpus/ws-chain-tables/PROOF.md`): 4
+    // `RecordRef.Field(n).<Leaf>()` chains (`Codeunit 6175309 "CDO Legacy
+    // eDoc Dispatcher"` line 148, `Codeunit 6175372 "CDO eDocs Send Code
+    // Migration"` lines 296-298), 1 `RecordRef.KeyIndex(1).FieldIndex(1)`
+    // chain (`Codeunit 6175399 "CDO Data Delete Handler"` line 216), and 5
+    // `Node.AsXmlElement().<Add|GetChildNodes>()` chains (`Codeunit 6175324
+    // "CDO Xml Node"` lines 89/93/120/131/141). `genuine_wrong` stays 0.
+    // This task ALSO found and fixed a genuine PRE-EXISTING fail-open bug in
+    // Step 4 (`classify_type_text`'s `starts_with("xml")` catch-all firing
+    // on a COMPOUND receiver text, not just a bare identifier — see
+    // `receiver.rs`'s Step-4 doc and `PROOF.md`'s "Step-4 bare-identifier
+    // guard fix"); the fix is why several `XmlElement.Create(...).
+    // AsXmlNode()`-shaped sites do NOT additionally appear in the diffed
+    // "newly resolved" set above despite being genuinely exercised by the
+    // new `create`/`asxmlnode` table entries — they were ALREADY (wrongly)
+    // resolving pre-fix via the bug, and the new validated table entries
+    // are what keeps them CORRECTLY resolving post-fix instead of
+    // regressing to `Unknown`.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.0182,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.0182 \
-         (recorded 2026-07-02 post plan v2.1 Task 3: 1.81%, was 1.82% post \
-         uniform-access-and-compound-receiver Task 4, 1.88% post-Task-1.5, \
-         2.25% post-Task-1-only [a transient over-decline], 1.91% \
-         pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — engine \
-         regressed; investigate before raising the ceiling"
+        primary_rate <= 0.0176,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.0176 \
+         (recorded 2026-07-02 post chain-tables Task 4: 1.75%, was 1.81% \
+         post plan v2.1 Task 3, 1.82% post uniform-access-and-compound-\
+         receiver Task 4, 1.88% post-Task-1.5, 2.25% post-Task-1-only [a \
+         transient over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, \
+         6.46% pre-beyond-1B.3b) — engine regressed; investigate before \
+         raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1630,15 +1661,24 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-02 (plan v2.1 Task 3): 337→330, measured 327/327
     // (primary/whole). See the rate-ceiling comment above for the full
     // adjudication of the 2 newly-resolved sites.
+    //
+    // TIGHTENED 2026-07-02 (chain-tables plan, Task 4): 330→320, measured
+    // 317/317 (primary/whole). See the rate-ceiling comment above for the
+    // full exhaustive-diff adjudication of the 10 newly-resolved sites (4
+    // `RecordRef.Field(n)` chains, 1 `RecordRef.KeyIndex(1).FieldIndex(1)`
+    // chain, 5 Xml `AsXmlElement()`→`Add`/`GetChildNodes` chains) and the
+    // Step-4 bare-identifier bug fix this task also made.
     assert!(
-        ph.unknown <= 330,
-        "primary unknown count {} exceeds ceiling 330 (recorded 2026-07-02 \
-         post plan v2.1 Task 3: 327 — 2 sites EXHAUSTIVELY hand-adjudicated \
-         correct, was 329 post uniform-access-and-compound-receiver Task 4, \
-         340 post Task 1.5/3, 407 post Task 1 alone [transient \
-         over-decline], 356 post soundness completion plan v2.1 Task 1.5, \
-         346 post follow-up plan v2.1 Task 4, 508 pre-follow-up) — engine \
-         regressed; investigate before raising the ceiling",
+        ph.unknown <= 320,
+        "primary unknown count {} exceeds ceiling 320 (recorded 2026-07-02 \
+         post chain-tables Task 4: 317 — 10 sites EXHAUSTIVELY \
+         hand-adjudicated correct via a full before/after edge-dump diff, \
+         was 327 post plan v2.1 Task 3, 329 post \
+         uniform-access-and-compound-receiver Task 4, 340 post Task 1.5/3, \
+         407 post Task 1 alone [transient over-decline], 356 post soundness \
+         completion plan v2.1 Task 1.5, 346 post follow-up plan v2.1 Task \
+         4, 508 pre-follow-up) — engine regressed; investigate before \
+         raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
@@ -1646,11 +1686,15 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // — the primary-scoped count above would not catch that on its own.
     // TIGHTENED 2026-07-02 alongside the primary ceiling above (same plan
     // v2.1 Task 3 fix; whole-program `unknown`=327, same value as primary
-    // today).
+    // then).
+    //
+    // TIGHTENED 2026-07-02 (chain-tables plan, Task 4): 330→320, alongside
+    // the primary ceiling above; whole-program `unknown`=317, same value as
+    // primary today.
     assert!(
-        h.unknown <= 330,
-        "whole-program unknown count {} exceeds ceiling 330 (recorded \
-         2026-07-02 post plan v2.1 Task 3: 327 — see the primary-scoped \
+        h.unknown <= 320,
+        "whole-program unknown count {} exceeds ceiling 320 (recorded \
+         2026-07-02 post chain-tables Task 4: 317 — see the primary-scoped \
          ceiling comment above for the full history and adjudication) — \
          engine regressed; investigate before raising the ceiling",
         h.unknown,
@@ -6074,6 +6118,230 @@ fn ws_compound_framework_deferred_record_field_stays_unknown() {
         edges.len(),
         1,
         "Rec.BlobField.CreateOutStream() has exactly 1 call obligation (BlobField has no parens)"
+    );
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+// ---------------------------------------------------------------------------
+// Tests 30k+: Task 4 (chain-tables plan) — Xml framework chains
+// (`framework_returns.rs`) + the NEW RecordRef/FieldRef/KeyRef typed-return
+// table (`recordref_returns.rs`), end-to-end over `ws-chain-tables`.
+//
+// Root feature: the SAME `infer_receiver_type_for_expr` / `infer_compound_
+// member_receiver` funnel (`src/program/resolve/receiver.rs`) that Task 4
+// (beyond-1B.3b) built for `<Framework>.<Prop|Method()>` receivers now also
+// carries (a) Xml entries in `framework_return_kind` and (b) a NEW, distinct
+// `recordref_family_return_kind` table for the `RecordRef`/`FieldRef`/
+// `KeyRef` unit-variant family. See `PROOF.md` for the real-CDO-source
+// grounding of every positive fixture and the HTTPCONTENT investigation
+// finding (fixture n8).
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-chain-tables` and returns the full
+/// `resolve_full_program` report — shared by the tests below.
+fn ws_chain_tables_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-chain-tables");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-chain-tables")
+}
+
+/// Fixture (a1, POSITIVE): `XmlElement.Create('root').AsXmlNode()` — arity-1
+/// `Create` chain-types to `Xml`; `AsXmlNode` is a real XML catalog LEAF
+/// member, so the outer call resolves `Evidence::Catalog`.
+#[test]
+fn ws_chain_tables_xml_create_arity1_as_xml_node_resolves_catalog() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testxmlelementcreatearity1asxmlnode");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Xml::asxmlnode");
+}
+
+/// Fixture (a2, POSITIVE): `XmlElement.Create('root', '', 'InnerText').
+/// AsXmlNode()` — arity-3 `Create` (the REAL CDO arity) chain-types to `Xml`
+/// exactly like arity-1.
+#[test]
+fn ws_chain_tables_xml_create_arity3_as_xml_node_resolves_catalog() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testxmlelementcreatearity3asxmlnode");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Xml::asxmlnode");
+}
+
+/// Fixture (a3, POSITIVE): `Node.AsXmlElement().GetChildNodes()` —
+/// `AsXmlElement()` chain-types to `Xml`; `GetChildNodes` is a real XML
+/// catalog LEAF member.
+#[test]
+fn ws_chain_tables_xml_as_xml_element_get_child_nodes_resolves_catalog() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testxmlnodeasxmlelementgetchildnodes");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Xml::getchildnodes");
+}
+
+/// Fixture (a4, POSITIVE): `Child.AsXmlText().Value()` — `AsXmlText()`
+/// chain-types to `Xml`; `Value` is a real XML catalog LEAF member.
+#[test]
+fn ws_chain_tables_xml_as_xml_text_value_resolves_catalog() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testxmlnodeasxmltextvalue");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Xml::value");
+}
+
+/// Fixture (b, POSITIVE): `RecRef.KeyIndex(1).FieldIndex(1).Value()` —
+/// `KeyIndex(1)` chain-types `RecordRef`->`KeyRef`, `FieldIndex(1)`
+/// chain-types `KeyRef`->`FieldRef`, `Value` is a real FieldRef catalog LEAF
+/// member.
+#[test]
+fn ws_chain_tables_recordref_keyindex_fieldindex_value_resolves_catalog() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testrecordrefkeyindexfieldindexvalue");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "FieldRef::value");
+}
+
+/// Fixture (c, POSITIVE): `RecRef.Field(1).Caption()` — `Field(1)`
+/// chain-types `RecordRef`->`FieldRef`; `Caption` is a real FieldRef catalog
+/// LEAF member. Covers the table's `Field` row independently of fixture (b)
+/// (which exercises `FieldIndex`/`KeyIndex`).
+#[test]
+fn ws_chain_tables_recordref_field_caption_resolves_catalog() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testrecordreffieldcaption");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "FieldRef::caption");
+}
+
+/// Fixture (n1, NEGATIVE — un-tabled Xml member): `Node.Attributes().
+/// Count()` — `Attributes` is a real XML catalog LEAF member but
+/// deliberately not chain-tabled; the outer `Count()` call's receiver stays
+/// `Unknown`.
+#[test]
+fn ws_chain_tables_xml_untabled_member_chain_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testxmluntabledmemberchain");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n2, NEGATIVE — wrong form): `Node.AsXmlElement.GetChildNodes()`
+/// (`AsXmlElement` with no parens) never matches the table's method-form
+/// entry. Exactly 1 call obligation (`AsXmlElement` has no parens, so no
+/// inner call).
+#[test]
+fn ws_chain_tables_xml_wrong_form_property_instead_of_method_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let edges = edges_for_object_routine(&report, 51201, "testxmlwrongformpropertyinsteadofmethod");
+    assert_eq!(
+        edges.len(),
+        1,
+        "Node.AsXmlElement.GetChildNodes() has exactly 1 call obligation (AsXmlElement has no parens)"
+    );
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n3, NEGATIVE — wrong arity): `XmlElement.Create().AsXmlNode()`
+/// (0 args) never matches — no documented overload takes zero arguments.
+#[test]
+fn ws_chain_tables_xml_wrong_arity_create_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testxmlwrongaritycreate");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n4, NEGATIVE — wrong arity, RecordRef family): `RecRef.
+/// KeyIndex(1, 2).FieldCount()` (2 args) never matches the table's arity-1
+/// entry.
+#[test]
+fn ws_chain_tables_recordref_family_wrong_arity_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testrecordreffamilywrongarity");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n5, NEGATIVE — same-named member on a non-RecordRef-family
+/// receiver): `Rec.FieldIndex(1).Value()` where `Rec: Record "CT Item"`
+/// types `Record{..}`, not `RecordRef`/`FieldRef`/`KeyRef` — the
+/// recordref-family table lookup never engages, even though `"fieldindex"`
+/// happens to be a valid RecordRef/KeyRef table member name.
+#[test]
+fn ws_chain_tables_record_fieldindex_not_recordref_family_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testrecordfieldindexnotrecordreffamily");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n6, NEGATIVE — `FieldRef.Value` chain-decline, round-1 I4):
+/// `SourceRecRef.Field(1).Value().SomeMethod()` — `Value` is variant-like
+/// LEAF data, never a chainable receiver; the outer `.SomeMethod()` call's
+/// receiver stays `Unknown`. 3 nested call obligations (`Field(1)`,
+/// `Value()`, `SomeMethod()`).
+#[test]
+fn ws_chain_tables_fieldref_value_chain_decline_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let edges = edges_for_object_routine(&report, 51201, "testfieldrefvaluechaindecline");
+    assert_eq!(
+        edges.len(),
+        3,
+        "SourceRecRef.Field(1).Value().SomeMethod() has 3 nested call obligations"
+    );
+    let route = widest_call_route(&report, 51201, "testfieldrefvaluechaindecline");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n7, NEGATIVE — unvalidated/omitted entry stays declined):
+/// `FRef.Record().Number()` — `FieldRef.Record()` is a real,
+/// MS-Learn-documented method (returns `RecordRef`) but deliberately out of
+/// this task's reviewed scope — must stay `Unknown`.
+#[test]
+fn ws_chain_tables_fieldref_record_unvalidated_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let route = widest_call_route(&report, 51201, "testfieldrefrecordunvalidateddecline");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (n8, NEGATIVE — HTTPCONTENT investigation finding, see
+/// `PROOF.md`): `Content.AsText()` on a genuinely `HttpContent`-typed
+/// receiver stays `Unknown` — `AsText` is NOT a real `HttpContent` member
+/// (verified against methods-auto/httpcontent AND `member_builtins.json`);
+/// the catalog is already complete and correct, so this regression-pins that
+/// it is NOT extended with a fabricated entry. Exactly 1 call obligation
+/// (`Content` is a plain declared variable, not a chain).
+#[test]
+fn ws_chain_tables_httpcontent_astext_stays_unknown() {
+    let report = ws_chain_tables_report();
+    let edges = edges_for_object_routine(&report, 51201, "testhttpcontentastextstaysunknown");
+    assert_eq!(
+        edges.len(),
+        1,
+        "Content.AsText() has exactly 1 call obligation (Content is a plain variable)"
     );
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);

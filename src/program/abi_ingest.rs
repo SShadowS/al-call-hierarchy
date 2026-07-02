@@ -320,9 +320,24 @@ pub fn ingest_abi(
                 publisher_kind,
                 abi_routine_kind: Some(routine_kind),
                 abi_event_kind: Some(event_kind),
-                // ABI routines already carry a non-zero `sig_fp` in `rid` when
-                // signatures differ (see `param_type_fp` above), so a same-id
-                // run here is already a true duplicate — no content key needed.
+                // Hardcoded empty — NOT because a same-`RoutineNodeId` run is
+                // guaranteed a true duplicate here (stale claim, corrected
+                // Task 4: `param_type_fp` degrades a parameter's type to its
+                // OUTER keyword only, never a `Subtype`, so two genuinely
+                // DIFFERENT ABI overloads differing only by an object-typed
+                // parameter's Subtype can share both `rid` and this empty
+                // key — see `build::dedup_routines_preserving_genuine_
+                // overloads`'s doc for the full contradiction), but because
+                // ABI ingestion has no reliable per-overload CONTENT
+                // signature to compute in the first place (unlike source
+                // params, whose real parsed type text backs `param_sig_key`
+                // below). The actual safety net against silently collapsing
+                // two distinct ABI overloads onto an arbitrary survivor is
+                // downstream: `dedup_routines_preserving_genuine_overloads`
+                // marks that survivor `abi_overload_collapsed` whenever ≥2
+                // raw `SymbolOnly` entries shared a node id, so a later
+                // type-query declines rather than trusts a possibly-wrong
+                // `return_type`.
                 param_sig_key: String::new(),
                 // Task 2: the reconstructed SOURCE-SHAPED return-type text
                 // (see `symbol_reference::reconstruct_return_type_text`'s
