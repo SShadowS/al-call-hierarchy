@@ -124,7 +124,7 @@ ws-compound-framework/src/CFCaller.Codeunit.al::0::TestWrongFormPropertyInsteadO
 ws-compound-framework/src/CFCaller.Codeunit.al::0::TestWrongArity	9707c59eb324cb2a
 ws-compound-framework/src/CFCaller.Codeunit.al::0::TestRecursionMistype	1a42576474d98feb
 ws-compound-framework/src/CFCaller.Codeunit.al::0::TestSameNamedMemberOnNonFrameworkBase	71a56194e5f05455
-ws-compound-framework/src/CFCaller.Codeunit.al::0::TestDeferredRecordField	3972848cdcdb2515
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestRecordFieldResolvesFrameworkBlob	403a9f7c27ba63d4
 ws-compound-receiver/src/CustomerCard.Page.al::0::OnOpenPage	47e90f8d41ef18fb
 ws-compound-receiver/src/CustomerCardPart.Page.al::0::RefreshLines	723463d1e1a2d666
 ws-cross-object-chain/src/CCBarImpl.Codeunit.al::0::GetHelper	0be8cba8422220e1
@@ -679,6 +679,14 @@ ws-r3a3-equal-distance-tie/src/tie.al::3::Via2	76f2fe592bb14494
 ws-r3a3-equal-distance-tie/src/tie.al::4::Run	d8723e425006a547
 ws-r3a3-equal-distance-tie/src/tie.al::5::Mid	ec81834e6d1aee3c
 ws-r3a3-equal-distance-tie/src/tie.al::5::Outer	0865adb92cc19b44
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestBlobFieldChain	7953402f22e1650c
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestEnumFieldMultiLevelChain	a1c520baddd8b80b
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestExtensionFieldChain	4b86321d3713f881
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestUnknownFieldName	3b9ee7b83758e24d
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestScalarFieldMemberCall	cb38e52c58127ed6
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestDuplicateFieldAcrossBaseExtension	d08e290dce0d94ea
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestPageReceiverQuotedMember	f7de3c1a09470452
+ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestVarNameShadowsFieldNameNonFieldWins	44c798241b204d78
 ws-recursive/src/cycle.al::0::Ping	caa2d815ab0d5e6f
 ws-recursive/src/cycle.al::0::Pong	7a6274adb6586d10
 ws-report-trigger/src/report.al::0::OnPreReport	b31d2a5b3e173e36

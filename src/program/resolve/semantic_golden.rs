@@ -2547,6 +2547,7 @@ mod tests {
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields: vec![],
         }
     }
 

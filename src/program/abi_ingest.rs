@@ -7,11 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use crate::app_package::open_app_zip;
 use crate::engine::deps::symbol_reference::{
-    AbiEventKind as SrAbiEventKind, AbiRoutine, SymbolReferenceAbi, parse_symbol_reference,
+    AbiEventKind as SrAbiEventKind, AbiRoutine, AbiTable, SymbolReferenceAbi,
+    parse_symbol_reference,
 };
 use crate::engine::l3::al_attributes::{AttributeInfo, bool_arg, find_attribute};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
-use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
+use crate::program::node_extract::{Access, FieldNode, ObjectNode, RoutineNode};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::PublisherKind;
 use crate::snapshot::{AppUnit, TrustTier};
@@ -246,6 +247,48 @@ pub(crate) fn object_kind_from_abi_type(object_type: &str) -> ObjectKind {
     }
 }
 
+/// Find the `AbiTable` entry matching `(object_number, name_lc)` and project
+/// its fields to [`FieldNode`]s (Task 3) — the ABI counterpart of
+/// `node_extract::extract_nodes`'s source-side field projection.
+///
+/// Mirrors the SAME dual `ObjKey::Id`/`ObjKey::Name` matching discipline the
+/// caller just applied to build `obj_id`: a non-zero `object_number` matches
+/// by number (never by name, so a real numeric collision can't be masked by
+/// a name mismatch); `object_number == 0` falls back to a case-insensitive
+/// name match (mirrors `ObjKey::Name(abi_obj.name.to_ascii_lowercase())`).
+/// Returns an empty `Vec` when no `AbiTable` entry matches — an `AbiObject`
+/// with `object_type` "Table"/"TableExtension" but no companion `AbiTable`
+/// should not occur (`parse_symbol_reference` always pushes both from the
+/// same raw JSON entry), but a mismatch fails closed to "no fields" rather
+/// than panicking.
+///
+/// `AbiField::data_type` already carries Task 2's Subtype-qualified,
+/// SOURCE-SHAPED text (`parse_field`) — no reclassification here, exactly
+/// like the source-side projection: the raw declared text is carried
+/// verbatim so `ResolveIndex::field_in_table`'s consumer classifies it via
+/// the SAME `classify_type_text` every other declared type goes through.
+fn abi_table_fields(tables: &[AbiTable], object_number: i64, name: &str) -> Vec<FieldNode> {
+    tables
+        .iter()
+        .find(|t| {
+            if object_number != 0 {
+                t.object_number == object_number
+            } else {
+                t.name.eq_ignore_ascii_case(name)
+            }
+        })
+        .map(|t| {
+            t.fields
+                .iter()
+                .map(|f| FieldNode {
+                    name_lc: f.name.to_ascii_lowercase(),
+                    type_text: f.data_type.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn abi_routine_kind_from_str(
     routine: &AbiRoutine,
 ) -> (AbiRoutineKind, AbiEventKind, Option<PublisherKind>) {
@@ -340,6 +383,21 @@ pub fn ingest_abi(
         };
         let obj_id = ObjectNodeId { app, kind, key };
 
+        // Table fields (Task 3) — Table/TableExtension only. The physical
+        // layout (`fields`/`keys`) lives in a SEPARATE parallel `AbiTable`
+        // entry (`abi.tables`), not on `AbiObject` itself (see
+        // `parse_symbol_reference`'s `Tables`/`TableExtensions` branches,
+        // which push BOTH an `AbiObject` — routines only — AND a matching
+        // `AbiTable` for the SAME raw JSON entry). Matched here by the SAME
+        // dual `object_number`/name-lowercase key `abi_obj`'s own `ObjKey`
+        // used above, since both were built from the identical raw entry and
+        // so always carry the same number (or both `0`, matched by name).
+        let fields = if matches!(kind, ObjectKind::Table | ObjectKind::TableExtension) {
+            abi_table_fields(&abi.tables, abi_obj.object_number, &abi_obj.name)
+        } else {
+            Vec::new()
+        };
+
         objects.push(ObjectNode {
             id: obj_id.clone(),
             name: abi_obj.name.clone(),
@@ -358,6 +416,7 @@ pub fn ingest_abi(
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields,
         });
 
         for routine in &abi_obj.routines {
@@ -470,7 +529,8 @@ pub fn ingest_abi(
 mod tests {
     use super::*;
     use crate::engine::deps::symbol_reference::{
-        AbiEventKind as SrAbiEventKind, AbiObject, AbiParameter, AbiRoutine, SymbolReferenceAbi,
+        AbiEventKind as SrAbiEventKind, AbiField, AbiObject, AbiParameter, AbiRoutine,
+        SymbolReferenceAbi,
     };
     use crate::program::build::build_program_graph;
     use crate::snapshot::compilation::CompilationContext;
@@ -1156,5 +1216,124 @@ mod tests {
             "full",
         )];
         assert_ne!(param_type_fp(&dep_a), param_type_fp(&dep_c));
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3: ABI table-field ingestion (`ObjectNode.fields`)
+    // -----------------------------------------------------------------------
+
+    /// Fixture (d): an ABI `Table` entry's `AbiTable.fields` (Task 2's
+    /// Subtype-qualified `parse_field` — an ABI Enum field carries `Enum
+    /// "X"`, not the bare `"Enum"` pre-Task-2 dropped) must project onto the
+    /// matching `ObjectNode.fields` as `FieldNode{name_lc, type_text}` —
+    /// exactly like the source-side `extract_nodes` projection, so
+    /// `ResolveIndex::field_in_table` works identically regardless of tier.
+    #[test]
+    fn abi_table_fields_populate_object_node_field_nodes() {
+        let ws = ws_id();
+        let dep = dep_id("DepTable");
+        let cache = AbiCache::new();
+        cache.seed(
+            &dep.guid,
+            &dep.name,
+            &dep.publisher,
+            &dep.version,
+            Arc::new(SymbolReferenceAbi {
+                objects: vec![AbiObject {
+                    object_type: "Table".into(),
+                    object_number: 50200,
+                    name: "Dep Table".into(),
+                    ..Default::default()
+                }],
+                tables: vec![AbiTable {
+                    object_number: 50200,
+                    name: "Dep Table".into(),
+                    fields: vec![
+                        AbiField {
+                            field_number: 1,
+                            name: "No.".into(),
+                            data_type: "Code[20]".into(),
+                            field_class: "Normal".into(),
+                            is_blob_like: false,
+                        },
+                        AbiField {
+                            field_number: 2,
+                            name: "Status".into(),
+                            // Task 2 Subtype-qualified shape — the ABI JSON
+                            // carried `TypeDefinition:{Name:"Enum",
+                            // Subtype:{Name:"Dep Status",...}}`; `parse_field`
+                            // reconstructs it to this SOURCE-SHAPED text.
+                            data_type: "Enum \"Dep Status\"".into(),
+                            field_class: "Normal".into(),
+                            is_blob_like: false,
+                        },
+                    ],
+                    keys: vec![],
+                    is_temporary: false,
+                }],
+                ..Default::default()
+            }),
+        );
+
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), make_symbolonly_dep_unit(&dep)],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        let dep_table = g
+            .objects
+            .iter()
+            .find(|o| o.name.eq_ignore_ascii_case("Dep Table"))
+            .expect("Dep Table ObjectNode must exist");
+        assert_eq!(dep_table.fields.len(), 2);
+        assert_eq!(dep_table.fields[0].name_lc, "no.");
+        assert_eq!(dep_table.fields[0].type_text, "Code[20]");
+        assert_eq!(dep_table.fields[1].name_lc, "status");
+        assert_eq!(
+            dep_table.fields[1].type_text, "Enum \"Dep Status\"",
+            "ABI Enum field must carry the Task-2 Subtype-qualified text, not bare \"Enum\""
+        );
+    }
+
+    /// Control: a non-Table/TableExtension ABI object (e.g. Codeunit) never
+    /// gets a field surface, even if (implausibly) an `AbiTable` happened to
+    /// share its `object_number` — `abi_table_fields` is only CONSULTED for
+    /// Table/TableExtension kinds.
+    #[test]
+    fn abi_non_table_object_has_no_fields() {
+        let ws = ws_id();
+        let dep = dep_id("DepCodeunit");
+        let cache = AbiCache::new();
+        cache.seed(
+            &dep.guid,
+            &dep.name,
+            &dep.publisher,
+            &dep.version,
+            Arc::new(SymbolReferenceAbi {
+                objects: vec![AbiObject {
+                    object_type: "Codeunit".into(),
+                    object_number: 50201,
+                    name: "Dep Codeunit".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+        );
+
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), make_symbolonly_dep_unit(&dep)],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        let dep_cu = g
+            .objects
+            .iter()
+            .find(|o| o.name.eq_ignore_ascii_case("Dep Codeunit"))
+            .expect("Dep Codeunit ObjectNode must exist");
+        assert!(dep_cu.fields.is_empty());
     }
 }

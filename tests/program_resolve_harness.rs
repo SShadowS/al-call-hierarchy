@@ -1556,17 +1556,53 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // the whole T1-T4 arc (T1/T2 CDO-neutral soundness+plumbing, T3
     // cross-object chains -2 edges, T4 Xml/RecordRef tables -10 edges). See
     // CHANGELOG.md for the full arc summary.
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 3): 0.01751→0.01293, measured 1.29% (exact raw value
+    // 234/18104=0.012925…). Task 3 adds the table-field type index
+    // (`FieldNode` on `ObjectNode` + `ResolveIndex::field_in_table`,
+    // visibility-scoped, unique-or-decline) and the non-method
+    // `Member{object, member}` record-field arm in
+    // `infer_compound_member_receiver` (`Rec."Field".X()` and every other
+    // `Var."Field".X()` member-qualified record-field chain — the arm keys
+    // on the base typing `Record{table: Some}`, not on the receiver being
+    // literally `Rec`), plus the EnumType-as-chain-base entry
+    // (`enum_chain_return_kind`: `Ordinals()`/`Names()` → `Framework(List)`).
+    // Measured CDO delta: `CompoundReceiver` 144→61 (−83), every other
+    // bucket BYTE-IDENTICAL (`UntrackedReceiver`=91, `OverloadAmbiguous`=56,
+    // `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25). All 83
+    // newly-resolved edges EXHAUSTIVELY adjudicated via a full before/after
+    // edge-dump diff (83 added / 83 removed — the SAME 83 sites flipping
+    // `Unknown(CompoundReceiver)`→`Catalog`, zero collateral changes): 68
+    // Blob-catalog edges (every field verified `Blob` in its declaring
+    // table's real source — `"File Blob"`/`"File Blob Password Protected"`
+    // on Table 6175301, `"Error Message"`/`"E-Mail"` on Table 6175273,
+    // `"PDF Sign Certificate"` on 6175283, `"Statement PDF"` on 6175287,
+    // `Blob` on 6175296 "CDO Temp Blob", `Template` on 6175330), 7
+    // `Enum::asinteger` (5 distinct verified Enum fields on 6175283/6175284),
+    // 1 `Enum::ordinals` + 1 `List::count` (the multi-level
+    // `Rec."eSeal Service".Ordinals().Count()` on Page 6175455, field
+    // verified `Enum CDOESealService` on Table 6175329 "CDO eSeal Setup"),
+    // 5 `Media::hasvalue` (`"Media Reference"; Media` on the PLATFORM ABI
+    // table "Media Resources", verified from the Microsoft System .app's
+    // SymbolReference.json — proves the ABI-tier field index live and
+    // classify-strict: a Media field routes to the MEDIA catalog, never
+    // falsely Blob), and 1 `Text::contains` (`"Additional Information";
+    // Text[250]` on Base App "Error Message", verified from embedded
+    // source). `genuine_wrong` stays 0 (companion audit gate).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.01751,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.01751 \
-         (recorded 2026-07-02 post plan v2.1 Task 5 FINAL: 1.75% \
-         [317/18104=0.017510], byte-identical re-confirm of Task 4's 1.75%, \
-         was 1.81% post plan v2.1 Task 3, 1.82% post \
-         uniform-access-and-compound-receiver Task 4, 1.88% post-Task-1.5, \
-         2.25% post-Task-1-only [a transient over-decline], 1.91% \
-         pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — engine \
-         regressed; investigate before raising the ceiling"
+        primary_rate <= 0.01293,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.01293 \
+         (recorded 2026-07-03 post applicability-param-subtype-recfield \
+         Task 3: 1.29% [234/18104=0.012925], record-field chains — \
+         CompoundReceiver 144→61, all 83 flips exhaustively adjudicated; \
+         was 1.75% post plan v2.1 Task 5 FINAL, 1.81% post plan v2.1 \
+         Task 3, 1.82% post uniform-access-and-compound-receiver Task 4, \
+         1.88% post-Task-1.5, 2.25% post-Task-1-only [a transient \
+         over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% \
+         pre-beyond-1B.3b) — engine regressed; investigate before raising \
+         the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1704,12 +1740,20 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // UntrackedReceiver: 91, OverloadAmbiguous: 56,
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==317). Ceiling
     // pinned to the exact measured value — the plan's FINAL floor.
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 3): 317→234, measured 234/234 (primary/whole) — the record-field
+    // chain arm (see the rate-ceiling comment above for the full delta and
+    // the exhaustive 83-edge adjudication). `unknownByReason`=
+    // {CompoundReceiver: 61, UntrackedReceiver: 91, OverloadAmbiguous: 56,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==234.
     assert!(
-        ph.unknown <= 317,
-        "primary unknown count {} exceeds ceiling 317 (recorded 2026-07-02 \
-         post plan v2.1 Task 5 FINAL: 317 — byte-identical re-confirm of \
-         Task 4's 317, 10 sites EXHAUSTIVELY hand-adjudicated correct via a \
-         full before/after edge-dump diff, was 327 post plan v2.1 Task 3, \
+        ph.unknown <= 234,
+        "primary unknown count {} exceeds ceiling 234 (recorded 2026-07-03 \
+         post applicability-param-subtype-recfield Task 3: 234 — \
+         record-field chains, CompoundReceiver 144→61, all 83 flips \
+         exhaustively adjudicated via a full before/after edge-dump diff; \
+         was 317 post plan v2.1 Task 5 FINAL, 327 post plan v2.1 Task 3, \
          329 post uniform-access-and-compound-receiver Task 4, 340 post \
          Task 1.5/3, 407 post Task 1 alone [transient over-decline], 356 \
          post soundness completion plan v2.1 Task 1.5, 346 post follow-up \
@@ -1731,13 +1775,17 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-02 (plan v2.1 Task 5, FINAL — arc capstone): 320→317,
     // alongside the primary ceiling above; whole-program `unknown`=317,
     // byte-identical re-confirm, same value as primary today.
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 3): 317→234, alongside the primary ceiling above; whole-program
+    // `unknown`=234, same value as primary today.
     assert!(
-        h.unknown <= 317,
-        "whole-program unknown count {} exceeds ceiling 317 (recorded \
-         2026-07-02 post plan v2.1 Task 5 FINAL: 317 — see the \
-         primary-scoped ceiling comment above for the full history and \
-         adjudication) — engine regressed; investigate before raising the \
-         ceiling",
+        h.unknown <= 234,
+        "whole-program unknown count {} exceeds ceiling 234 (recorded \
+         2026-07-03 post applicability-param-subtype-recfield Task 3: 234 \
+         — see the primary-scoped ceiling comment above for the full \
+         history and adjudication) — engine regressed; investigate before \
+         raising the ceiling",
         h.unknown,
     );
 
@@ -6034,7 +6082,10 @@ fn ws_compound_call_result_cross_app_ambiguous_return_stays_unknown() {
 // `framework_return_kind` table (`src/program/resolve/framework_returns.rs`),
 // and separately strips a `this.<rest>` prefix by resolving `<rest>` against
 // the object-GLOBALS-only self scope. Every letter below matches the task
-// brief's fixture list; (d)-(j) are all NEGATIVE/decline proofs.
+// brief's fixture list; (d)-(i) are all NEGATIVE/decline proofs. (j) was
+// ALSO a negative (deferred) at the time this suite was written — the
+// record-field-chains plan's Task 3 landed the deferred mechanism, so (j) is
+// now a POSITIVE; see that test's own doc.
 // ---------------------------------------------------------------------------
 
 /// Loads `tests/r0-corpus/ws-compound-framework` and returns the full
@@ -6210,23 +6261,32 @@ fn ws_compound_framework_non_framework_base_never_hits_table() {
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
-/// Test 30j (fixture j, DEFERRED-shape NEGATIVE — record-field
-/// member-of-member): `Rec.BlobField.CreateOutStream()` stays `Unknown`.
-/// `Rec` types `Record{..}`, not `Framework` — field-type indexing is a
-/// genuinely different, deferred mechanism, out of this task's scope. Exactly
-/// 1 call obligation (`Rec.BlobField` has no parens).
+/// Test 30j (fixture j, POSITIVE post-Task-3 — record-field member-of-member):
+/// `Rec.BlobField.CreateOutStream()` now resolves `Evidence::Catalog`.
+/// `Rec` types `Record{..}`, so `framework_return_kind` (THIS table) never
+/// engages — but the record-field-chains plan's Task 3 landed a SEPARATE
+/// mechanism (`ResolveIndex::field_in_table` + the new non-method `Member`
+/// arm in `infer_compound_member_receiver`) that types `BlobField` (a real
+/// `Blob` field on "CF Customer") as `Framework(Blob)`; `CreateOutStream` is
+/// a real Blob catalog member. Exactly 1 call obligation (`Rec.BlobField`
+/// has no parens). Pre-Task-3 this stayed `Unknown` (deferred) — see
+/// `tests/r0-corpus/ws-record-field-chain/` for the dedicated fixture set
+/// this task added.
 #[test]
-fn ws_compound_framework_deferred_record_field_stays_unknown() {
+fn ws_compound_framework_record_field_resolves_framework_blob() {
     let report = ws_compound_framework_report();
-    let edges = edges_for_object_routine(&report, 51101, "testdeferredrecordfield");
+    let edges = edges_for_object_routine(&report, 51101, "testrecordfieldresolvesframeworkblob");
     assert_eq!(
         edges.len(),
         1,
         "Rec.BlobField.CreateOutStream() has exactly 1 call obligation (BlobField has no parens)"
     );
     let route = &edges[0].edge.routes[0];
-    assert_eq!(route.target, RouteTarget::Unresolved);
-    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Blob::createoutstream");
 }
 
 // ---------------------------------------------------------------------------
@@ -6935,11 +6995,16 @@ fn ws_cross_object_chain_name_id_mismatch_declines() {
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
-/// Test 32m (fixture N7/N9, NEGATIVE — DEFERRED record-field/property
-/// chain): `Rec."No."` (property/field-access form, NO parens) is never this
-/// arm — the arm is STRICTLY the procedure-CALL form (round-1 I7). `"No."`
-/// is a genuine field on "CC Customer", not a procedure, so this stays
-/// honestly `Unknown` regardless.
+/// Test 32m (fixture N7/N9, NEGATIVE — cross-object-chain arm correctly
+/// never engages): `Rec."No."` (property/field-access form, NO parens) is
+/// never the CROSS-OBJECT-CHAIN arm — that arm is STRICTLY the
+/// procedure-CALL form (round-1 I7). Post record-field-chains-plan Task 3,
+/// `Rec."No."` DOES now type via the NEW record-field arm — "No." is a real
+/// `Code[20]` field on "CC Customer", so it resolves `Framework(Text)` (Code
+/// classifies as Text, `classify_type_text`) — but `.Name()` still stays
+/// honestly `Unknown`, because `"name"` is not a real `member_catalog::TEXT`
+/// member (`CatalogMiss`, not "arm doesn't exist"). Same observable route,
+/// different — now more precise — reason.
 #[test]
 fn ws_cross_object_chain_field_property_chain_declines() {
     let report = ws_cross_object_chain_report();
@@ -7097,5 +7162,167 @@ fn ws_cross_object_chain_object_run_collapsed_trigger_declines() {
         route.evidence,
         Evidence::Unknown(UnknownReason::OverloadAmbiguous),
         "expected Unknown(OverloadAmbiguous); got {route:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests 33+: record-field-chains plan Task 3 — table-field type index +
+// `Rec."Field".X()` / `Rec.Field.X()` record-field chains + EnumType chain
+// base, end-to-end over `ws-record-field-chain`.
+//
+// Root feature: `ResolveIndex::field_in_table` (`src/program/resolve/
+// index.rs`, visibility-scoped base+extension field lookup, unique-match-
+// or-decline) feeds the new non-method `Member{object, member}` arm in
+// `infer_compound_member_receiver` (`src/program/resolve/receiver.rs`),
+// which types `Rec."Field"` / `Rec.Field` via `classify_type_text` on the
+// field's declared type text — the SAME strict classification every other
+// declared type goes through, never `FieldDecl::is_blob_like`. A SEPARATE
+// new arm, `enum_chain_return_kind` (`src/program/resolve/
+// framework_returns.rs`), types `Ordinals()`/`Names()` on an Enum-field-
+// typed base as `Framework(List)`, enabling the multi-level chain. See
+// `tests/r0-corpus/ws-record-field-chain/PROOF.md` for the real-CDO-source
+// grounding of every positive fixture.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-record-field-chain` and returns the full
+/// `resolve_full_program` report — shared by the tests below.
+fn ws_record_field_chain_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-record-field-chain");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-record-field-chain")
+}
+
+/// The route for the OUTERMOST call obligation of a fixture routine —
+/// mirrors `widest_call_route`/`outer_chain_route` (picks the widest-span
+/// `Call`-kind edge; this fixture set's chains are all single-line).
+fn rfc_outer_route(report: &ProgramReport, object_id_number: i64, routine_name_lc: &str) -> Route {
+    let edges = edges_for_object_routine(report, object_id_number, routine_name_lc);
+    assert!(
+        !edges.is_empty(),
+        "{routine_name_lc} (object {object_id_number}) must have at least 1 call obligation"
+    );
+    let outer = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::Call)
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("at least one Call-kind edge");
+    outer.edge.routes[0].clone()
+}
+
+/// Test 33a (fixture a, POSITIVE): `Rec."Error Message".CreateInStream(S)` —
+/// Blob field -> `Framework(Blob)` -> `CreateInStream` is a real Blob
+/// catalog member, so the outer call resolves `Evidence::Catalog`.
+#[test]
+fn ws_record_field_chain_blob_field_resolves_catalog() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testblobfieldchain");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Blob::createinstream");
+}
+
+/// Test 33b (fixture b, POSITIVE — multi-level chain):
+/// `Rec."eSeal Service".Ordinals().Count()` — Enum field -> `EnumType` ->
+/// `.Ordinals()` [new `enum_chain_return_kind` arm] -> `Framework(List)` ->
+/// `.Count()` is a real List catalog member. 2 nested call obligations
+/// (`Ordinals()`, `Count()`).
+#[test]
+fn ws_record_field_chain_enum_field_multilevel_resolves_catalog() {
+    let report = ws_record_field_chain_report();
+    let edges = edges_for_object_routine(&report, 51504, "testenumfieldmultilevelchain");
+    assert_eq!(
+        edges.len(),
+        2,
+        "Rec.\"eSeal Service\".Ordinals().Count() has 2 nested call obligations"
+    );
+    let route = rfc_outer_route(&report, 51504, "testenumfieldmultilevelchain");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "List::count");
+}
+
+/// Test 33c (fixture c, POSITIVE — TableExtension folding):
+/// `Rec."Ext Blob".CreateInStream(S)` — a field declared on "RFC Base Ext"
+/// (a `TableExtension` of "RFC Base") resolves through the SAME arm as a
+/// base field, via `ResolveIndex::field_in_table`'s extension folding.
+#[test]
+fn ws_record_field_chain_extension_field_folds_resolves_catalog() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testextensionfieldchain");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Blob::createinstream");
+}
+
+/// Test 33e (fixture e, NEGATIVE): unknown field name — `field_in_table`
+/// genuinely finds nothing, so the receiver stays `Unknown`.
+#[test]
+fn ws_record_field_chain_unknown_field_name_stays_unknown() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testunknownfieldname");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 33f (fixture f, NEGATIVE): a scalar-typed field (`Integer`) — the
+/// member call on it declines (`Primitive` receiver -> `CatalogMiss`).
+#[test]
+fn ws_record_field_chain_scalar_field_stays_unknown() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testscalarfieldmembercall");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 33g (fixture g, NEGATIVE — fail-closed duplicate): "Dup Field" is
+/// declared by BOTH the base table and a visible `TableExtension` —
+/// `field_in_table` must decline (ambiguous), never arbitrarily pick either
+/// candidate.
+#[test]
+fn ws_record_field_chain_duplicate_field_across_extension_stays_unknown() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testduplicatefieldacrossbaseextension");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 33h (fixture h, NEGATIVE): a Page (non-Record) receiver with a
+/// quoted member — the record-field arm's `Record{table: Some(..)}` guard
+/// never engages for an `Object{kind: Page}` receiver, even though the
+/// quoted text names a real field on the page's own SourceTable.
+#[test]
+fn ws_record_field_chain_page_receiver_quoted_member_stays_unknown() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testpagereceiverquotedmember");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 33i (fixture i, NEGATIVE/regression-proof): a local variable named
+/// identically to a real field, referenced BARE (no `Rec.` prefix) — the
+/// pre-existing variable lookup (Step 2, unaffected by Task 3) wins outright;
+/// the record-field arm is never even reached (it only fires when the
+/// `Member`'s `object` sub-expression already resolved to a Record). `.Trim`
+/// is a real Text catalog member, so this resolves via `Framework(Text)`,
+/// proving the non-field binding wins and the field is never mis-typed.
+#[test]
+fn ws_record_field_chain_var_shadows_field_name_non_field_wins() {
+    let report = ws_record_field_chain_report();
+    let route = rfc_outer_route(&report, 51504, "testvarnameshadowsfieldnamenonfieldwins");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(
+        bid.0, "Text::trim",
+        "the LOCAL VARIABLE binding must win (Framework(Text) -> Text::trim), \
+         never a field mis-typing"
     );
 }

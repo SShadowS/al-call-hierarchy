@@ -73,7 +73,7 @@ ws-compound-call-result/src/CRHelper.Codeunit.al	8c8471d83b196f16
 ws-compound-call-result/src/CallResultCaller.Codeunit.al	d828a2e155a5f57d
 ws-compound-call-result/src/CallResultPage.Page.al	27673218cf5458a3
 ws-compound-call-result/src/ICRFoo.Interface.al	20b910d8bcdfce71
-ws-compound-framework/src/CFCaller.Codeunit.al	fd743916b2578b0a
+ws-compound-framework/src/CFCaller.Codeunit.al	30f1d125aaeec22e
 ws-compound-framework/src/CFCustomer.Table.al	0688ea85a49da061
 ws-compound-receiver/src/CustomerCard.Page.al	46c52066a8a0909f
 ws-compound-receiver/src/CustomerCardPart.Page.al	75cf772e7882c46c
@@ -393,6 +393,11 @@ ws-r2c-maybe-elem/src/app.al	1631ab1336641730
 ws-r2c-mixed/src/app.al	eb0093d71ec9a1d2
 ws-r2c-two-sub-maybe/src/app.al	73fbb7794ed6e218
 ws-r3a3-equal-distance-tie/src/tie.al	aaa05ca4d1ff46b9
+ws-record-field-chain/src/RFCBase.Table.al	10bc33e3652ab192
+ws-record-field-chain/src/RFCBaseExt.TableExtension.al	44d694dcbc7d6222
+ws-record-field-chain/src/RFCCaller.Codeunit.al	afb2709db948ca37
+ws-record-field-chain/src/RFCPage.Page.al	b111dcf4ca8355c9
+ws-record-field-chain/src/RFCService.Enum.al	42ca1c05f90f927d
 ws-recursive/src/customer.al	0022db5d7a079d98
 ws-recursive/src/cycle.al	266497c3f9f2b857
 ws-report-trigger/src/report.al	6599c9763f9e6638

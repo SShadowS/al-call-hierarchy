@@ -2874,6 +2874,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
             ObjectNode {
                 id: base_obj_id.clone(),
@@ -2886,6 +2887,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
         ];
 
@@ -3031,6 +3033,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
             ObjectNode {
                 id: dep_obj_id.clone(),
@@ -3043,6 +3046,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
         ];
 
@@ -3234,6 +3238,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
             ObjectNode {
                 id: dep_obj_id.clone(),
@@ -3246,6 +3251,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
         ];
 
@@ -3453,6 +3459,7 @@ pageextension 52911 "ExtA" extends BasePage
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields: vec![],
         }];
 
         let routines = vec![RoutineNode {
@@ -3592,6 +3599,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
             ObjectNode {
                 id: sub_obj_id.clone(),
@@ -3604,6 +3612,7 @@ pageextension 52911 "ExtA" extends BasePage
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             },
         ];
 
@@ -4392,6 +4401,7 @@ codeunit 50300 "OverloadCU"
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields: vec![],
         };
         (graph, index, body_map, from_obj)
     }
@@ -7622,6 +7632,7 @@ codeunit 50000 "Caller"
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields: vec![],
         });
 
         // Event-publisher routine: abi_routine_kind=EventPublisher, abi_event_kind=Integration.

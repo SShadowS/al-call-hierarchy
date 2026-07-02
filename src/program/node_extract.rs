@@ -67,6 +67,27 @@ pub struct PageControlNode {
     pub target: ObjectRef,
 }
 
+/// One table field surface entry (Table / TableExtension only) — Task 3
+/// (record-field chains). `name_lc` is the lowercased, UNQUOTED field name
+/// (mirrors [`RoutineNode`]'s `name_lc`/`RoutineNodeId::name_lc` convention —
+/// both a quoted (`"Error Message"`) and unquoted (`BlobField`) AL member
+/// reference normalize to the SAME lowercased text at the consumption site,
+/// see `receiver::infer_compound_member_receiver`'s `member_lc`). `type_text`
+/// is the RAW declared type text, verbatim (`"Blob"`, `"Enum \"Doc
+/// Status\""`, `"Integer"`, …) — deliberately UNCLASSIFIED here: the consumer
+/// (`ResolveIndex::field_in_table` → `receiver::classify_type_text`) is the
+/// single place that turns text into a [`crate::program::resolve::receiver::ParsedType`],
+/// so a field's type is classified via the SAME strict logic every other
+/// declared type (param/local/return) goes through — never a separate,
+/// possibly-diverging path (e.g. `FieldDecl::is_blob_like`, which also flags
+/// Media/MediaSet and would falsely broaden a Media field into the Blob
+/// catalog if used for classification instead of the declared text).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldNode {
+    pub name_lc: String,
+    pub type_text: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ObjectNode {
     pub id: ObjectNodeId,
@@ -88,6 +109,13 @@ pub struct ObjectNode {
     /// Page/PageExtension layout controls (`part`/`systempart`/`usercontrol`),
     /// document order. Empty for every other object kind.
     pub page_controls: Vec<PageControlNode>,
+    /// Table fields (Table / TableExtension only), document order — Task 3.
+    /// Populated from `FieldDecl` (source, `extract_nodes`) or `AbiField`
+    /// (ABI, `abi_ingest::ingest_abi` — Task 2's Subtype-qualified
+    /// `parse_field`). Empty for every other object kind. Consumed by
+    /// `ResolveIndex::field_in_table` for the `Rec."Field".X()` record-field
+    /// chain arm in `receiver::infer_compound_member_receiver`.
+    pub fields: Vec<FieldNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -322,6 +350,22 @@ pub fn extract_nodes(
             Vec::new()
         };
 
+        // Table fields — Table/TableExtension only, document order (Task 3).
+        // `f.name` is already unquoted (`lower_field`'s `ident_text`, mirrors
+        // `RoutineDecl.name`), so only lowercasing is needed here — the same
+        // convention `RoutineNode::id.name_lc` uses for routine names.
+        let fields = if matches!(obj.kind, ObjectKind::Table | ObjectKind::TableExtension) {
+            obj.fields
+                .iter()
+                .map(|f| FieldNode {
+                    name_lc: f.name.to_ascii_lowercase(),
+                    type_text: f.data_type.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         objects.push(ObjectNode {
             id: obj_id.clone(),
             name: obj.name.clone(),
@@ -333,6 +377,7 @@ pub fn extract_nodes(
             table_no,
             source_table_temporary,
             page_controls,
+            fields,
         });
         // Computed once per object — same value for every routine in the object.
         let subscriber_instance_manual = read_event_subscriber_instance(obj);

@@ -114,12 +114,17 @@ codeunit 51101 "CF Caller"
         Cust.Content().ReadAs(Body);
     end;
 
-    // (j) DEFERRED-shape guard: record-field member-of-member —
-    // `Rec.BlobField.CreateOutStream()` stays Unknown. `Rec` types
-    // `Record{..}`, not `Framework` — field-type indexing (`BlobField`'s
-    // declared field TYPE) is a genuinely different, deferred mechanism
-    // (node-model-heavy, out of this task's scope).
-    procedure TestDeferredRecordField()
+    // (j) Record-field member-of-member: `Rec.BlobField.CreateOutStream()`.
+    // `Rec` types `Record{..}`, not `Framework`, so THIS table
+    // (`framework_return_kind`) never engages — but the record-field-chains
+    // plan's Task 3 landed a SEPARATE mechanism (`ResolveIndex::
+    // field_in_table` + the new non-method `Member` arm in
+    // `infer_compound_member_receiver`) that DOES type `BlobField` (a real
+    // `Blob` field on "CF Customer", declared below) as `Framework(Blob)` —
+    // `CreateOutStream` is a real Blob catalog member, so this now resolves
+    // `Evidence::Catalog`. Pre-Task-3 this stayed `Unknown` (deferred); see
+    // `tests/r0-corpus/ws-record-field-chain/` for the dedicated fixture set.
+    procedure TestRecordFieldResolvesFrameworkBlob()
     var
         Rec: Record "CF Customer";
     begin

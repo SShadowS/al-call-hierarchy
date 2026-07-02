@@ -112,12 +112,12 @@ use al_syntax::ir::{AlFile, ExprId, ExprKind, ObjectKind, RoutineDecl, VarDecl};
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{
-    ObjectNode, ObjectRef, PageControlKind, PageControlNode, RoutineNode,
+    FieldNode, ObjectNode, ObjectRef, PageControlKind, PageControlNode, RoutineNode,
 };
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::RouteTarget;
 use crate::program::resolve::extract::WithState;
-use crate::program::resolve::framework_returns::framework_return_kind;
+use crate::program::resolve::framework_returns::{enum_chain_return_kind, framework_return_kind};
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 use crate::program::resolve::recordref_returns::{
     RecordRefFamilyKind, recordref_family_return_kind,
@@ -761,9 +761,14 @@ pub fn infer_receiver_type(
 ///   table's own implicit-Rec field `"File Blob"` was mis-typed
 ///   `Framework(File)` and `.CreateInStream`/`.CreateOutStream` false-
 ///   resolved to the `File` catalog instead of staying the honest
-///   `Unknown` a Blob FIELD reference correctly is (field-type indexing is
-///   the DEFERRED record-field mechanism, module doc Step 6a's sibling
-///   note) — the cardinal sin this whole plan exists to prevent). So a
+///   `Unknown` a Blob FIELD reference correctly is — the cardinal sin this
+///   whole plan exists to prevent). Field-type indexing was itself the
+///   DEFERRED record-field mechanism at the time this guard was written; it
+///   has since LANDED (record-field chains plan Task 3, see
+///   [`infer_compound_member_receiver`]'s record-field arm), but this
+///   quote-parity guard remains load-bearing regardless — it protects EVERY
+///   Step-4 framework-name lookup a quoted field/var name could spuriously
+///   collide with, not only the now-resolved Blob-field case. So a
 ///   `QuotedIdentifier` is RE-QUOTED before the recursive call, exactly
 ///   reproducing what `receiver_text.to_ascii_lowercase()` would have
 ///   produced for the same source site — restoring BYTE-FOR-BYTE parity
@@ -976,6 +981,51 @@ fn infer_compound_member_receiver(
             return returned.to_receiver_type();
         }
         return ReceiverType::Unknown;
+    }
+
+    // EnumType-as-chain-base (Task 3, record-field chains plan): `Ordinals()`/
+    // `Names()` invoked on an Enum VALUE receiver (typically reached one hop
+    // up via the record-field arm just below, e.g. `Rec."Doc Status".
+    // Ordinals().Count()`) both return `List of [...]` — see
+    // `enum_chain_return_kind`'s doc. Same immediate-decline-on-miss
+    // discipline as the `Framework`/`RecordRef`-family arms above: an
+    // `EnumType` base has no source/ABI procedures to type-query either, so a
+    // table miss never falls through to the cross-object-chain arm below.
+    if let ReceiverType::EnumType { .. } = &base_ty {
+        if let Some(returned) = enum_chain_return_kind(&member_lc, is_method, arity) {
+            return ReceiverType::Framework(returned);
+        }
+        return ReceiverType::Unknown;
+    }
+
+    // Record-field member access (`Rec."Field".X()` / `Rec.Field.X()`) — Task
+    // 3, record-field chains plan. STRICTLY the non-method (bare `Member`,
+    // never a `Call`) shape: `!is_method` — the exact opposite gate of the
+    // cross-object-chain arm just below (round-1 I7 precedent: a bare
+    // `Member` is never a procedure-call chain). Only engages when `base_ty`
+    // proves a `Record` receiver with a RESOLVED table (`table: Some(..)` —
+    // an out-of-closure/unresolved table has no field surface to consult and
+    // falls through to `Unknown`, the same fail-closed contract every other
+    // arm here uses). `member_lc` already handles BOTH a quoted
+    // (`"Error Message"`) and unquoted (`BlobField`) member name identically
+    // (see this function's top — `Rec.` syntactically disambiguates a field
+    // access from a bare-identifier variable reference either way, so both
+    // spellings are safe to route through the SAME field lookup).
+    //
+    // `ResolveIndex::field_in_table` is itself the fail-closed gate (unique
+    // visible match or `None`); a lookup miss (unknown field name, ambiguous
+    // duplicate, or the base object simply isn't Table/TableExtension) falls
+    // through past this arm to the final `Unknown` below, exactly like every
+    // other declined arm.
+    if !is_method
+        && let ReceiverType::Record {
+            table: Some(table_id),
+        } = &base_ty
+        && let Some(field) = index.field_in_table(graph, from_object, table_id, &member_lc)
+    {
+        let field: FieldNode = field;
+        let parsed = classify_type_text(&field.type_text);
+        return parsed_type_to_receiver(parsed, from_object, graph, index);
     }
 
     // Cross-object call-result chain (plan v2.1 Task 3) — see this
@@ -1847,6 +1897,7 @@ mod tests {
                 table_no: None,
                 source_table_temporary: false,
                 page_controls: vec![],
+                fields: vec![],
             };
 
         let mut objects = vec![
@@ -1965,6 +2016,7 @@ mod tests {
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields: vec![],
         }
     }
 
@@ -4726,16 +4778,19 @@ codeunit 50100 "C"
         );
     }
 
-    /// DEFERRED-shape NEGATIVE: record-field member-of-member —
-    /// `Rec.BlobField.CreateOutStream()` stays `Unknown`. `Rec` types
-    /// `Record{..}` (not `Framework`), so — exactly like the non-framework-base
-    /// case above — the table lookup never engages; field-type indexing
-    /// (`BlobField`'s declared field TYPE) is a genuinely different, deferred
-    /// mechanism (node-model-heavy, out of this task's scope per the plan's
-    /// "Out of scope (next plan)" list) — this fixture pins that it stays
-    /// honestly `Unknown` rather than silently mis-typed via this table.
+    /// NEGATIVE (field genuinely absent — was DEFERRED pre-Task-3, now a
+    /// real field-lookup miss): `Rec.BlobField.CreateOutStream()` stays
+    /// `Unknown`. `Rec` types `Record{table: Some(Customer)}`, so the
+    /// record-field arm (record-field chains plan Task 3) DOES engage here —
+    /// but `build_test_graph`'s synthetic "Customer" table declares zero
+    /// fields, so `ResolveIndex::field_in_table` genuinely finds no
+    /// `"blobfield"` and the arm falls through to `Unknown`, same outcome as
+    /// before Task 3 landed (then for a different reason — the mechanism was
+    /// unimplemented; now — the field doesn't exist). See
+    /// `framework_chain_record_field_populated_resolves_to_catalog` below for
+    /// the POSITIVE sibling proving the arm resolves once a real field exists.
     #[test]
-    fn framework_chain_record_field_deferred_stays_unknown() {
+    fn framework_chain_record_field_absent_stays_unknown() {
         let src = r#"
 codeunit 50100 "C"
 {
@@ -4766,6 +4821,113 @@ codeunit 50100 "C"
             None,
         );
         assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// POSITIVE (Task 3, record-field chains plan): the SAME shape as the
+    /// negative above, except `Customer` now genuinely declares a `Blob`
+    /// field named `"BlobField"` — `Rec.BlobField` must type
+    /// `Framework(Blob)` (`classify_type_text` on the field's declared type
+    /// text → `parsed_type_to_receiver`), unaffected by the member name
+    /// being written unquoted here (quoted vs unquoted is exercised
+    /// end-to-end by `tests/r0-corpus/ws-record-field-chain`).
+    #[test]
+    fn framework_chain_record_field_populated_resolves_framework_blob() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Rec.BlobField.CreateOutStream();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "createoutstream");
+
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .expect("Customer table must exist in build_test_graph");
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "blobfield".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("Rec", "Record Customer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
+    }
+
+    /// POSITIVE (Task 3, record-field chains plan): the MULTI-LEVEL chain —
+    /// `Rec."Doc Status".Ordinals().Count()`. `"Doc Status"` is an `Enum "DS"`
+    /// field → the record-field arm types it `EnumType{name_lc: "ds"}`;
+    /// `.Ordinals()` on that base is the NEW `enum_chain_return_kind` arm →
+    /// `Framework(List)` — proving the two new arms compose (field arm feeds
+    /// the enum-chain-base arm one hop up), exactly the real CDO shape
+    /// (`Codeunit 6175455 "CDO E-Seal Setup Wizard"`,
+    /// `Rec."eSeal Service".Ordinals().Count()`).
+    #[test]
+    fn framework_chain_enum_field_ordinals_resolves_framework_list() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+        N: Integer;
+    begin
+        N := Rec."Doc Status".Ordinals().Count();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "count");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "rec.\"doc status\".ordinals()"
+        );
+
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .expect("Customer table must exist in build_test_graph");
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "doc status".to_string(),
+            type_text: "Enum \"DS\"".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Rec", "Record Customer"),
+            var_decl("N", "Integer"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::List));
     }
 
     // NOTE: the Task-3 review finding folded into Task 4 (`infer_call_result_

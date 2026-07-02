@@ -1,0 +1,8 @@
+{
+	"id": "ffff6666-0000-0000-0000-00000000000a",
+	"name": "RecordFieldChain Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51500, "to": 51599 }]
+}

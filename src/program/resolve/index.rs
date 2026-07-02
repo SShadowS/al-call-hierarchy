@@ -26,7 +26,7 @@ use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjectNodeId, RoutineNodeId};
-use crate::program::node_extract::ObjectRef;
+use crate::program::node_extract::{FieldNode, ObjectNode, ObjectRef};
 use crate::program::resolve::edge::Condition;
 use crate::program::resolve::event::{ParsedSubscriberArgs, subscriber_arity_bound};
 
@@ -529,6 +529,127 @@ impl ResolveIndex {
             .unwrap_or(&[])
     }
 
+    /// Resolve field `field_lc` against the VISIBILITY-SCOPED table field
+    /// surface for `base` — the base table's own fields plus every
+    /// `TableExtension` field visible in `from_object`'s compile-time app
+    /// dependency closure (Task 3; mirrors `resolve_in_table_scope`'s
+    /// identical base+extension, closure-filtered scoping for ROUTINES —
+    /// see that function's doc for the full visibility rationale, which
+    /// applies identically here to FIELDS).
+    ///
+    /// # Visibility scoping (fail-closed, same discipline as routines)
+    ///
+    /// [`Self::table_extensions_of`] is whole-snapshot
+    /// (`WorldMode::AnalyzedSnapshot` — no app-scoping). A `TableExtension`
+    /// declared in an app OUTSIDE `from_object`'s transitive dependency
+    /// closure is a symbol `from_object`'s own app never imported — the real
+    /// AL compiler could never resolve a field access against it, so it is
+    /// dropped from the candidate scope entirely, never merely deprioritized.
+    /// `base` itself is gated the same way, defense-in-depth.
+    ///
+    /// # Cardinality
+    ///
+    /// A UNIQUE match across base + visible extensions resolves
+    /// (`Some(FieldNode)`); zero or more-than-one visible declaration
+    /// declines (`None`) — never guess among ambiguous same-name field
+    /// declarations (the cardinal sin).
+    ///
+    /// # Provenance dedup (round-2 addendum)
+    ///
+    /// Before the cardinality check, matches are deduped BY PROVENANCE: an
+    /// IDENTICAL `(declaring object, name, type text)` triple counted more
+    /// than once — e.g. a field declared inside BOTH branches of a source
+    /// `#if`/`#else` (`FieldDecl` extraction, like `globals`/`locals`,
+    /// collects from both branches — see `al_syntax::ir::decl::ObjectDecl`'s
+    /// doc) — collapses to ONE, so harmless re-parse duplication never
+    /// manufactures an artificial ambiguity. Only a genuinely DIFFERENT
+    /// declaration (a different declaring object, or the SAME object
+    /// declaring two DIFFERENT types under the same field name) counts as a
+    /// real duplicate. Every real duplicate-decline is logged (declaring
+    /// object id + field name) for measurement, per the round-2 addendum.
+    pub fn field_in_table(
+        &self,
+        graph: &ProgramGraph,
+        from_object: &ObjectNode,
+        base: &ObjectNodeId,
+        field_lc: &str,
+    ) -> Option<FieldNode> {
+        let closure = graph.topology.closure(from_object.id.app);
+        if !closure.contains(&base.app) {
+            return None;
+        }
+        let base_obj = Self::find_object(graph, base)?;
+
+        let mut matches: Vec<(&ObjectNodeId, &FieldNode)> = base_obj
+            .fields
+            .iter()
+            .filter(|f| f.name_lc == field_lc)
+            .map(|f| (base, f))
+            .collect();
+
+        let base_name_lc = base_obj.name.to_ascii_lowercase();
+        for ext_id in self.table_extensions_of(&base_name_lc) {
+            if !closure.contains(&ext_id.app) {
+                // Outside from_object's dependency closure: invisible, not a
+                // candidate (fail-closed — mirrors `resolve_in_table_scope`).
+                continue;
+            }
+            let Some(ext_obj) = Self::find_object(graph, ext_id) else {
+                continue;
+            };
+            matches.extend(
+                ext_obj
+                    .fields
+                    .iter()
+                    .filter(|f| f.name_lc == field_lc)
+                    .map(|f| (ext_id, f)),
+            );
+        }
+
+        // Dedupe identical (declaring object, name, type) triples — see this
+        // function's doc for why (harmless #if/#else re-parse duplication
+        // must never manufacture an artificial ambiguity).
+        let mut deduped: Vec<(&ObjectNodeId, &FieldNode)> = Vec::new();
+        for m in matches {
+            if !deduped
+                .iter()
+                .any(|(oid, f): &(&ObjectNodeId, &FieldNode)| {
+                    **oid == *m.0 && f.type_text == m.1.type_text
+                })
+            {
+                deduped.push(m);
+            }
+        }
+
+        match deduped.as_slice() {
+            [(_, f)] => Some((*f).clone()),
+            [] => None,
+            _ => {
+                log::debug!(
+                    "field_in_table: duplicate field {field_lc:?} on table {base:?} declines \
+                     (candidates: {:?})",
+                    deduped
+                        .iter()
+                        .map(|(oid, _)| (*oid).clone())
+                        .collect::<Vec<_>>()
+                );
+                None
+            }
+        }
+    }
+
+    /// Look up an `ObjectNode` by id via binary search — `graph.objects` is
+    /// sorted by `ObjectNodeId` at construction (`build_program_graph` Step 4
+    /// / every in-memory test fixture), mirroring `object_extends`'s
+    /// identical `graph.objects.binary_search_by` lookup pattern.
+    fn find_object<'g>(graph: &'g ProgramGraph, id: &ObjectNodeId) -> Option<&'g ObjectNode> {
+        graph
+            .objects
+            .binary_search_by(|probe| probe.id.cmp(id))
+            .ok()
+            .map(|i| &graph.objects[i])
+    }
+
     /// Whether `from` is an extension object that DIRECTLY extends `target`,
     /// by RESOLVED OBJECT IDENTITY (never a lowercased-name comparison) —
     /// the visibility test `object_has_visible_member_candidate`
@@ -768,6 +889,7 @@ mod tests {
             table_no: None,
             source_table_temporary: false,
             page_controls: vec![],
+            fields: vec![],
         }
     }
 
@@ -1359,6 +1481,221 @@ mod tests {
 
         let exts = idx.table_extensions_of("nosuchtable");
         assert!(exts.is_empty());
+    }
+
+    // -- field_in_table tests (Task 3) -----------------------------------------
+    //
+    // Reuses `build_fixture`'s topology: App A (`a`) depends on App B (`b`);
+    // App B does NOT depend on App A. Table 18 "Customer" lives in App B;
+    // TableExtension 50100 "CustomerExt" (extends "Customer") lives in App A.
+    // So from App A's perspective, BOTH the base table and its extension are
+    // visible; from App B's perspective, the base table is visible (it's
+    // B's own) but the extension is OUT OF CLOSURE (B never imported A).
+
+    fn customer_table_id(b: AppRef) -> ObjectNodeId {
+        ObjectNodeId {
+            app: b,
+            kind: ObjectKind::Table,
+            key: ObjKey::Id(18),
+        }
+    }
+
+    fn find_obj_mut<'g>(graph: &'g mut ProgramGraph, id: &ObjectNodeId) -> &'g mut ObjectNode {
+        graph
+            .objects
+            .iter_mut()
+            .find(|o| &o.id == id)
+            .expect("object must exist in fixture")
+    }
+
+    #[test]
+    fn field_in_table_unique_base_field_resolves() {
+        let (mut graph, _a, b) = build_fixture();
+        let customer_id = customer_table_id(b);
+        find_obj_mut(&mut graph, &customer_id)
+            .fields
+            .push(FieldNode {
+                name_lc: "no.".to_string(),
+                type_text: "Code[20]".to_string(),
+            });
+        let idx = ResolveIndex::build(&graph);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+
+        let found = idx.field_in_table(&graph, &from_obj, &customer_id, "no.");
+        assert_eq!(
+            found,
+            Some(FieldNode {
+                name_lc: "no.".to_string(),
+                type_text: "Code[20]".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn field_in_table_unknown_field_name_declines() {
+        let (mut graph, _a, b) = build_fixture();
+        let customer_id = customer_table_id(b);
+        find_obj_mut(&mut graph, &customer_id)
+            .fields
+            .push(FieldNode {
+                name_lc: "no.".to_string(),
+                type_text: "Code[20]".to_string(),
+            });
+        let idx = ResolveIndex::build(&graph);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+
+        assert_eq!(
+            idx.field_in_table(&graph, &from_obj, &customer_id, "no such field"),
+            None
+        );
+    }
+
+    #[test]
+    fn field_in_table_extension_field_folds_into_base_scope() {
+        let (mut graph, a, b) = build_fixture();
+        let ext_id = ObjectNodeId {
+            app: a,
+            kind: ObjectKind::TableExtension,
+            key: ObjKey::Id(50100),
+        };
+        find_obj_mut(&mut graph, &ext_id).fields.push(FieldNode {
+            name_lc: "ext blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let idx = ResolveIndex::build(&graph);
+        // Referencing object lives in App A — sees both Customer (its dep,
+        // App B) and CustomerExt (its own app).
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+        let customer_id = customer_table_id(b);
+
+        let found = idx.field_in_table(&graph, &from_obj, &customer_id, "ext blob");
+        assert_eq!(
+            found,
+            Some(FieldNode {
+                name_lc: "ext blob".to_string(),
+                type_text: "Blob".to_string(),
+            }),
+            "an extension field visible in from_object's closure must fold into the base scope"
+        );
+    }
+
+    #[test]
+    fn field_in_table_out_of_closure_extension_field_declines() {
+        let (mut graph, a, b) = build_fixture();
+        let ext_id = ObjectNodeId {
+            app: a,
+            kind: ObjectKind::TableExtension,
+            key: ObjKey::Id(50100),
+        };
+        find_obj_mut(&mut graph, &ext_id).fields.push(FieldNode {
+            name_lc: "ext blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let idx = ResolveIndex::build(&graph);
+        // Referencing object lives in App B — App B does NOT depend on App A
+        // (build_fixture wires only `a -> b`), so CustomerExt (App A) is
+        // outside B's closure — fail-closed: must NOT resolve, even though
+        // the base table itself (Customer, App B) is B's own object.
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "TheirCU")
+            .unwrap()
+            .clone();
+        let customer_id = customer_table_id(b);
+
+        let found = idx.field_in_table(&graph, &from_obj, &customer_id, "ext blob");
+        assert_eq!(
+            found, None,
+            "an extension field OUTSIDE from_object's dependency closure must never resolve"
+        );
+    }
+
+    #[test]
+    fn field_in_table_duplicate_across_base_and_extension_declines() {
+        let (mut graph, a, b) = build_fixture();
+        let customer_id = customer_table_id(b);
+        let ext_id = ObjectNodeId {
+            app: a,
+            kind: ObjectKind::TableExtension,
+            key: ObjKey::Id(50100),
+        };
+        find_obj_mut(&mut graph, &customer_id)
+            .fields
+            .push(FieldNode {
+                name_lc: "dup field".to_string(),
+                type_text: "Blob".to_string(),
+            });
+        find_obj_mut(&mut graph, &ext_id).fields.push(FieldNode {
+            name_lc: "dup field".to_string(),
+            type_text: "Text[50]".to_string(),
+        });
+        let idx = ResolveIndex::build(&graph);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+
+        let found = idx.field_in_table(&graph, &from_obj, &customer_id, "dup field");
+        assert_eq!(
+            found, None,
+            "a same-name field declared by BOTH the base and a visible extension \
+             must decline (fail-closed ambiguity), never guess"
+        );
+    }
+
+    #[test]
+    fn field_in_table_identical_duplicate_by_provenance_dedupes_and_resolves() {
+        // Mirrors a source field declared inside BOTH branches of a `#if`/
+        // `#else` (`FieldDecl` extraction collects from both — see
+        // `al_syntax::ir::decl::ObjectDecl`'s doc): the SAME declaring
+        // object ends up with two IDENTICAL (name, type) entries. This must
+        // NOT manufacture an artificial ambiguity.
+        let (mut graph, _a, b) = build_fixture();
+        let customer_id = customer_table_id(b);
+        let obj = find_obj_mut(&mut graph, &customer_id);
+        obj.fields.push(FieldNode {
+            name_lc: "no.".to_string(),
+            type_text: "Code[20]".to_string(),
+        });
+        obj.fields.push(FieldNode {
+            name_lc: "no.".to_string(),
+            type_text: "Code[20]".to_string(),
+        });
+        let idx = ResolveIndex::build(&graph);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+
+        let found = idx.field_in_table(&graph, &from_obj, &customer_id, "no.");
+        assert_eq!(
+            found,
+            Some(FieldNode {
+                name_lc: "no.".to_string(),
+                type_text: "Code[20]".to_string(),
+            }),
+            "an identical (object, name, type) duplicate must dedupe to one candidate, not decline"
+        );
     }
 
     // -- implementers_of tests ------------------------------------------------

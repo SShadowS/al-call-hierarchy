@@ -8,6 +8,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Table-field type index + `Rec."Field".X()` record-field chains + EnumType chain
+  base, fail-closed (applicability-param-subtype-recfield plan v2.1, Task 3).** The
+  largest single-task real-`unknown` drop since the arc began: CDO primary
+  real-`unknown` **1.75% (317) → 1.29% (234)**, `CompoundReceiver` **144→61 (−83)**,
+  every other `unknownByReason` bucket BYTE-IDENTICAL (`UntrackedReceiver`=91,
+  `OverloadAmbiguous`=56, `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25),
+  `genuine_wrong` stays **0**. Four pieces: (1) **`FieldNode{name_lc, type_text}` on
+  `ObjectNode`** (`src/program/node_extract.rs`) — the table-field surface, populated
+  from source `FieldDecl` (`extract_nodes`; `FieldDecl` previously had zero consumers
+  under `src/`) AND from ABI `AbiTable`/`AbiField` (`abi_ingest::ingest_abi` via the
+  new `abi_table_fields` — consumes Task 2's Subtype-qualified `parse_field`, so an
+  ABI Enum field carries `Enum "X"`). The type is carried as RAW DECLARED TEXT and
+  classified ONLY at the consumer via the same `classify_type_text` every declared
+  type goes through — never `FieldDecl::is_blob_like` (which also flags
+  Media/MediaSet and would falsely broaden a Media field into the Blob catalog).
+  (2) **`ResolveIndex::field_in_table`** (`src/program/resolve/index.rs`) —
+  VISIBILITY-SCOPED field lookup: base-table fields + only `TableExtension` fields
+  inside the referencing object's dependency closure (the same closure discipline
+  `resolve_in_table_scope` applies to routines; an out-of-closure extension field
+  never resolves), UNIQUE match or `None`, with identical `(object, name, type)`
+  declarations deduped by provenance BEFORE the duplicate check (a `#if`/`#else`
+  re-parse duplicate never manufactures artificial ambiguity) and every real
+  duplicate-decline logged (`log::debug!`, object + field name). (3) **The
+  non-method `Member{object, member}` record-field arm** in
+  `infer_compound_member_receiver` (`src/program/resolve/receiver.rs`): `!is_method`
+  + base types `Record{table: Some}` → `field_in_table` → `classify_type_text` →
+  `parsed_type_to_receiver` — handles BOTH quoted (`Rec."Error Message"`) and
+  unquoted (`Rec.BlobField`) member names, and ANY `Record`-typed base variable
+  (`DOFile."File Blob".X()`), not only literal `Rec`; all declines fall through to
+  honest `Unknown`. (4) **EnumType-as-chain-base** (`enum_chain_return_kind`,
+  `src/program/resolve/framework_returns.rs`): `Ordinals()`/`Names()` on an Enum
+  VALUE receiver → `Framework(List)` (MS Learn methods-auto/enum, fetched
+  2026-07-02: both return `List of [...]`; `AsInteger`/`FromInteger` deliberately
+  excluded — primitive/Enum returns, nothing to chain), enabling the multi-level
+  `Rec."eSeal Service".Ordinals().Count()`. **Exhaustive adjudication (not a
+  sample):** a full before/after CDO edge-dump diff showed exactly 83 changed
+  route-lines — the SAME 83 sites flipping `Unknown(CompoundReceiver)`→`Catalog`,
+  zero site additions/removals, zero collateral changes: 68 Blob-catalog edges
+  (every field verified `Blob` in its declaring table's real source), 7
+  `Enum::asinteger` (5 distinct verified Enum fields), 1 `Enum::ordinals` + 1
+  `List::count` (the multi-level chain, field verified `Enum CDOESealService`), 5
+  `Media::hasvalue` (`"Media Reference"; Media` on the PLATFORM ABI table "Media
+  Resources" — verified from the Microsoft System .app's SymbolReference.json,
+  proving the ABI-tier field path live AND classify-strict: Media routes to the
+  MEDIA catalog, never falsely Blob), 1 `Text::contains` (`"Additional
+  Information"; Text[250]`, verified from Base App embedded source). Fixtures:
+  `tests/r0-corpus/ws-record-field-chain/` (3 positives incl. the multi-level Enum
+  chain + TableExtension folding; 5 fail-closed negatives: unknown field,
+  scalar-typed field, duplicate field across base+extension, Page receiver with a
+  quoted member, local-var-shadows-field-name) + `field_in_table` unit fixtures
+  (visibility/out-of-closure/duplicate/provenance-dedupe) + ABI ingestion unit
+  fixtures + `enum_chain_return_kind` table tests. The prior
+  `ws-compound-framework` fixture (j) (`Rec.BlobField.CreateOutStream()`,
+  previously a DEFERRED-shape negative) now correctly resolves
+  `Blob::createoutstream` — rebaselined as a positive with its history documented.
+  Ratchets tightened (dated 2026-07-03): primary rate ceiling 0.01751→0.01293,
+  primary/whole `unknown` count ceilings 317→234. Found-and-documented (out of
+  scope, `ws-record-field-chain/PROOF.md`): a pre-existing, Task-3-independent gap
+  where a QUOTED bare identifier referencing a local variable never matches Step
+  2's variable lookup (quote-parity asymmetry) — noted for a future task.
 - **cross-object chains + protected-ABI plan v2.1, Task 5 (FINAL): re-measure,
   exhaustive-adjudication sign-off, ratchet finalization — arc capstone**
   (`tests/program_resolve_harness.rs`). Closes the plan Task 1 opened. Full re-measure

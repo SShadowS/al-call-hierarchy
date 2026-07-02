@@ -227,6 +227,49 @@ pub fn framework_return_kind(
 }
 
 // ---------------------------------------------------------------------------
+// enum_chain_return_kind — Task 3 (record-field chains)
+// ---------------------------------------------------------------------------
+
+/// EnumType-as-chain-base: `Ordinals()` / `Names()` invoked on an Enum VALUE
+/// receiver (`ReceiverType::EnumType` — e.g. a `Rec."Doc Status"` record-field
+/// chain, once typed via `ResolveIndex::field_in_table`) both return `List of
+/// [...]`, chainable, so a deeper hop (`Rec."eSeal Service".Ordinals().
+/// Count()`) types correctly via the existing `Framework(List)` machinery.
+/// DISTINCT from [`framework_return_kind`]'s table: `EnumType` is not a
+/// [`FrameworkKind`] variant (it is its own `ReceiverType` lattice value), so
+/// this is a separate, small, deliberately narrow table rather than an
+/// `EnumType` entry shoehorned into the Framework family.
+///
+/// Both are zero-arg METHODS (parens required in AL — `Ordinals()`, never
+/// `Ordinals`). `AsInteger`/`FromInteger` are DELIBERATELY excluded here:
+/// `AsInteger` returns a primitive `Integer` (no further AL chain target —
+/// nothing for this table to add) and `FromInteger` returns the Enum type
+/// itself, not `List` (out of this table's List-only contract; no measured
+/// CDO need for it as a chain base).
+///
+/// Provenance: MS Learn methods-auto/enum (fetched 2026-07-02) — `Ordinals()`
+/// "Gets a list of the ordinal values of the enum" returns `List of
+/// [Integer]`; `Names()` "Gets a list of the names of the enum" returns
+/// `List of [Text]`. Cross-checked against `member_catalog.rs`'s `ENUM_VALUE`
+/// phf set: `ordinals`/`names` are both present as valid members on an Enum
+/// value receiver, confirming real-world membership independent of this
+/// table (the SAME `ENUM_VALUE` set the existing `ReceiverType::EnumType`
+/// LEAF dispatch in `resolver.rs` already consults for
+/// `AsInteger`/`FromInteger`/`Names`/`Ordinals`). Real CDO grounding:
+/// `Codeunit 6175455 "CDO E-Seal Setup Wizard"`,
+/// `Rec."eSeal Service".Ordinals().Count()`.
+pub fn enum_chain_return_kind(
+    member_lc: &str,
+    is_method: bool,
+    arity: usize,
+) -> Option<FrameworkKind> {
+    match (member_lc, is_method, arity) {
+        ("ordinals", true, 0) | ("names", true, 0) => Some(FrameworkKind::List),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -432,5 +475,47 @@ mod tests {
     fn unlisted_kind_declines() {
         let other = FrameworkKind::Other("sometype".to_string());
         assert_eq!(framework_return_kind(&other, "content", true, 0), None);
+    }
+
+    // -- enum_chain_return_kind (Task 3) --------------------------------------
+
+    #[test]
+    fn enum_ordinals_and_names_return_list() {
+        assert_eq!(
+            enum_chain_return_kind("ordinals", true, 0),
+            Some(FrameworkKind::List)
+        );
+        assert_eq!(
+            enum_chain_return_kind("names", true, 0),
+            Some(FrameworkKind::List)
+        );
+    }
+
+    #[test]
+    fn enum_asinteger_frominteger_not_chain_tabled() {
+        // Deliberately excluded (see the function's doc): AsInteger returns a
+        // primitive, FromInteger returns Enum — neither belongs in a
+        // List-only chain-base table.
+        assert_eq!(enum_chain_return_kind("asinteger", true, 0), None);
+        assert_eq!(enum_chain_return_kind("frominteger", true, 1), None);
+    }
+
+    #[test]
+    fn enum_ordinals_wrong_form_or_arity_declines() {
+        assert_eq!(
+            enum_chain_return_kind("ordinals", false, 0),
+            None,
+            "property form (no parens) must not match a method-only entry"
+        );
+        assert_eq!(
+            enum_chain_return_kind("ordinals", true, 1),
+            None,
+            "wrong arity must not match"
+        );
+    }
+
+    #[test]
+    fn enum_unlisted_member_declines() {
+        assert_eq!(enum_chain_return_kind("notamember", true, 0), None);
     }
 }
