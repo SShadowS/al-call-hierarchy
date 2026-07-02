@@ -95,6 +95,11 @@ pub struct GEdge {
     pub condition: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_world_reason: Option<&'static str>,
+    /// For an `unknown`-obligation edge: the diagnostic [`UnknownReason`]
+    /// (`compoundReceiver`, `catalogMiss`, `memberNotFound`, …) of its first
+    /// unresolved route — the "why" behind the failure. `None` on all other edges.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_reason: Option<&'static str>,
 }
 
 /// A graphify extraction document. Fed to `build_from_json` / `build_merge`.
@@ -203,6 +208,7 @@ pub fn build_graphify_document(
             dispatch_shape: None,
             condition: None,
             open_world_reason: None,
+            unknown_reason: None,
         });
     }
 
@@ -381,6 +387,7 @@ fn project_edge(
                     dispatch_shape,
                     condition: condition_str(&route.conditions),
                     open_world_reason: None,
+                    unknown_reason: None,
                 });
             }
         }
@@ -411,6 +418,7 @@ fn project_edge(
                 dispatch_shape,
                 condition: None,
                 open_world_reason: open_world_reason_str(edge.completeness),
+                unknown_reason: None,
             });
         }
         ObligationOutcome::Unknown => {
@@ -434,6 +442,10 @@ fn project_edge(
                 dispatch_shape,
                 condition: None,
                 open_world_reason: None,
+                unknown_reason: edge.routes.iter().find_map(|r| match r.evidence {
+                    Evidence::Unknown(reason) => Some(reason.as_str()),
+                    _ => None,
+                }),
             });
         }
     }
@@ -1158,6 +1170,8 @@ mod tests {
             .collect();
         assert_eq!(amb.len(), 1);
         assert_eq!(amb[0].obligation, Some("unknown"));
+        // The raw per-route decline reason rides along for BC-Brain.
+        assert_eq!(amb[0].unknown_reason, Some("unclassifiedCallee"));
         // Target node must exist (graphify prunes dangling edges).
         let tgt = &amb[0].target;
         assert!(

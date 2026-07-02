@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--graphify-export` edges carry `unknown_reason`.** For an `unknown`-obligation
+  edge, the export now emits its first unresolved route's diagnostic reason
+  (`compoundReceiver`, `catalogMiss`, `memberNotFound`, …) via `UnknownReason::as_str`,
+  so the BC-Brain consumption layer can surface the "why" behind each unresolved edge,
+  not merely that it is unknown. Additive and `skip_serializing_if` None on every
+  non-unknown edge — existing goldens unaffected.
 - **Table-field type index + `Rec."Field".X()` record-field chains + EnumType chain
   base, fail-closed (applicability-param-subtype-recfield plan v2.1, Task 3).** The
   largest single-task real-`unknown` drop since the arc began: CDO primary
