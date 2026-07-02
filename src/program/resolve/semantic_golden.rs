@@ -2135,6 +2135,31 @@ pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
     route_applicability(&all_edges, &raw_abi, &graph, &index, &fan_out_ctx, &parsed)
 }
 
+/// Run the [`crate::program::resolve::index::count_unknown_include_sender_
+/// plus1_subscribers`] preflight diagnostic over `workspace_root` (Task 1
+/// round-2 addendum, folded in by Task 2) — builds the snapshot + graph
+/// internally, mirroring [`run_route_applicability`]. Returns `None` when
+/// the snapshot fails to build (fail-closed; callers should treat that as
+/// "cannot measure", never as "0").
+#[must_use]
+pub fn run_unknown_include_sender_plus1_subscribers_preflight(
+    workspace_root: &Path,
+) -> Option<usize> {
+    use crate::program::abi_ingest::AbiCache;
+    use crate::program::build::build_program_graph;
+    use crate::program::resolve::index::count_unknown_include_sender_plus1_subscribers;
+    use crate::snapshot::SnapshotBuilder;
+
+    let snap = (SnapshotBuilder {
+        workspace_root: workspace_root.to_path_buf(),
+        local_providers: vec![],
+    })
+    .build()
+    .ok()?;
+    let graph = build_program_graph(&snap, &AbiCache::new());
+    Some(count_unknown_include_sender_plus1_subscribers(&graph))
+}
+
 /// CDO semantic audit: compare the fresh resolver against the COMMITTED,
 /// ANONYMIZED, FROZEN L3 verdict (`cdo-anon.json`) over a real workspace.
 ///

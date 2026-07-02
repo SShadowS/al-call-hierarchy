@@ -30,16 +30,76 @@ fn fnv1a(data: &str) -> u64 {
     h
 }
 
+/// Append `s`'s byte length (decimal) then a `:` separator then `s` itself —
+/// a netstring-style LENGTH-DELIMITED encoding (Task 2 round-2 addendum:
+/// "typed, length-delimited canonical tuple"). Concatenating multiple
+/// variable-length fields naively (e.g. a plain `|`-join) lets one field's
+/// content masquerade as an adjacent field's boundary — a Subtype raw name
+/// crafted to contain a `|` (or a decimal id) could otherwise collide with a
+/// differently-shaped tuple. Prefixing every field with its own length makes
+/// the encoding injective per-field regardless of what bytes the field
+/// itself contains.
+fn write_len_prefixed(buf: &mut String, s: &str) {
+    buf.push_str(&s.len().to_string());
+    buf.push(':');
+    buf.push_str(s);
+}
+
+/// Fold one parameter's canonical discriminator tuple — `type_text` (the
+/// bare-fallback SOURCE-SHAPED text) + `subtype_id` + `subtype_raw_name` +
+/// `subtype_tag` (Task 2 round-2 addendum: "outer kind + subtype id + raw
+/// subtype name + a degradation tag") — into `buf` as four length-delimited
+/// fields. See [`AbiParameter::subtype_id`]'s doc for why this is necessary
+/// even though `type_text` alone often already carries full fidelity: on the
+/// FAIL-CLOSED DECLINE shapes (Id-only Subtype; a Subtype Name containing a
+/// `"`), `type_text` degrades to the bare outer keyword ALONE — two
+/// genuinely different declarations can share that degraded text — so the
+/// raw discriminator fields are folded in ADDITIONALLY (never as a
+/// substitute for `type_text`) to keep them from silently colliding.
+fn fold_param_discriminator(
+    buf: &mut String,
+    p: &crate::engine::deps::symbol_reference::AbiParameter,
+) {
+    write_len_prefixed(buf, &p.type_text.to_ascii_lowercase());
+    write_len_prefixed(
+        buf,
+        &p.subtype_id.map(|id| id.to_string()).unwrap_or_default(),
+    );
+    write_len_prefixed(
+        buf,
+        &p.subtype_raw_name
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase(),
+    );
+    write_len_prefixed(buf, p.subtype_tag);
+}
+
+/// The ABI overload dedup fingerprint (`RoutineNodeId::sig_fp`) — a
+/// length-delimited fold of every parameter's canonical discriminator tuple
+/// (Task 2 round-2 addendum), using the project's STABLE fingerprint
+/// primitive ([`fnv1a`] — never `DefaultHasher`/a process-random hasher,
+/// which would make `sig_fp` non-reproducible across runs and silently break
+/// every consumer that persists or compares it within one run).
+///
+/// Prior to Task 2 this folded ONLY `type_text.to_ascii_lowercase()`
+/// `|`-joined — degrading a parameter's type to its OUTER keyword alone
+/// (never a `Subtype`), so two genuinely DIFFERENT same-arity ABI overloads
+/// differing only by an object-typed parameter's Subtype (`Get(X: Codeunit
+/// A)` vs `Get(X: Codeunit B)`) silently fingerprint-collided. Two
+/// parameters now fingerprint identically ONLY when their ENTIRE canonical
+/// tuple (text + subtype id + raw subtype name + degradation tag) matches —
+/// see [`fold_param_discriminator`]'s doc for why all four fields are
+/// necessary, not just `type_text`.
 pub(crate) fn param_type_fp(params: &[crate::engine::deps::symbol_reference::AbiParameter]) -> u64 {
     if params.is_empty() {
         return 0;
     }
-    let joined: String = params
-        .iter()
-        .map(|p| p.type_text.to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join("|");
-    fnv1a(&joined)
+    let mut canon = String::new();
+    for p in params {
+        fold_param_discriminator(&mut canon, p);
+    }
+    fnv1a(&canon)
 }
 
 // ---------------------------------------------------------------------------
@@ -345,24 +405,35 @@ pub fn ingest_abi(
                 include_sender,
                 abi_routine_kind: Some(routine_kind),
                 abi_event_kind: Some(event_kind),
-                // Hardcoded empty — NOT because a same-`RoutineNodeId` run is
-                // guaranteed a true duplicate here (stale claim, corrected
-                // Task 4: `param_type_fp` degrades a parameter's type to its
-                // OUTER keyword only, never a `Subtype`, so two genuinely
-                // DIFFERENT ABI overloads differing only by an object-typed
-                // parameter's Subtype can share both `rid` and this empty
-                // key — see `build::dedup_routines_preserving_genuine_
-                // overloads`'s doc for the full contradiction), but because
-                // ABI ingestion has no reliable per-overload CONTENT
-                // signature to compute in the first place (unlike source
-                // params, whose real parsed type text backs `param_sig_key`
-                // below). The actual safety net against silently collapsing
-                // two distinct ABI overloads onto an arbitrary survivor is
-                // downstream: `dedup_routines_preserving_genuine_overloads`
-                // marks that survivor `abi_overload_collapsed` whenever ≥2
-                // raw `SymbolOnly` entries shared a node id, so a later
-                // type-query declines rather than trusts a possibly-wrong
-                // `return_type`.
+                // Hardcoded empty — STILL correct post-Task-2, for a DIFFERENT
+                // reason than a source routine's real `param_sig_key`. Task 2
+                // made `param_type_fp` (hence `rid.sig_fp` above) carry full
+                // Subtype fidelity (bare-outer-name fallback + the raw
+                // discriminator fold — see `param_type_fp`/
+                // `fold_param_discriminator`'s docs), so two genuinely
+                // DIFFERENT ABI overloads almost always land on DIFFERENT
+                // `sig_fp`s now and never even reach the same `RoutineNodeId`
+                // run in `build::dedup_routines_preserving_genuine_overloads`
+                // — `param_sig_key` never needs to distinguish them THERE.
+                // Within a run that DOES share one `sig_fp` (i.e. every raw
+                // entry's ENTIRE canonical discriminator tuple matched), ABI
+                // ingestion still has no INDEPENDENT per-overload content
+                // signature beyond that tuple to further distinguish them —
+                // unlike source params, whose real parsed type text backs
+                // `param_sig_key` below — so leaving this empty is safe:
+                // every entry in such a run is content-INDISTINGUISHABLE by
+                // our discriminator, whether that's because it's a literal
+                // re-parse duplicate OR a genuinely-different-but-
+                // fingerprint-identical pair (a residual collision the
+                // round-2 addendum calls out — "any residual same-key
+                // multi-entry group is collapse-marked so collisions
+                // OVER-DECLINE, never select"). The safety net is downstream:
+                // `dedup_routines_preserving_genuine_overloads` marks that
+                // survivor `abi_overload_collapsed` whenever ≥2 raw
+                // `SymbolOnly` entries shared a node id, so a later
+                // type-query OR plain dispatch (`resolver::resolve_in_object`,
+                // Task 2's plain-dispatch marker guard) declines rather than
+                // trusts a possibly-wrong candidate.
                 param_sig_key: String::new(),
                 // Task 2: the reconstructed SOURCE-SHAPED return-type text
                 // (see `symbol_reference::reconstruct_return_type_text`'s
@@ -445,12 +516,18 @@ mod tests {
                                 type_text: "Integer".into(),
                                 is_var: false,
                                 is_temporary: false,
+                                subtype_id: None,
+                                subtype_raw_name: None,
+                                subtype_tag: "no_subtype",
                             },
                             AbiParameter {
                                 name: "p2".into(),
                                 type_text: "Text".into(),
                                 is_var: false,
                                 is_temporary: false,
+                                subtype_id: None,
+                                subtype_raw_name: None,
+                                subtype_tag: "no_subtype",
                             },
                         ],
                         return_type_text: None,
@@ -471,6 +548,9 @@ mod tests {
                             type_text: "Integer".into(),
                             is_var: false,
                             is_temporary: false,
+                            subtype_id: None,
+                            subtype_raw_name: None,
+                            subtype_tag: "no_subtype",
                         }],
                         return_type_text: None,
                         return_type_id: None,
@@ -490,6 +570,9 @@ mod tests {
                             type_text: "Integer".into(),
                             is_var: false,
                             is_temporary: false,
+                            subtype_id: None,
+                            subtype_raw_name: None,
+                            subtype_tag: "no_subtype",
                         }],
                         return_type_text: None,
                         return_type_id: None,
@@ -509,6 +592,9 @@ mod tests {
                             type_text: "Text".into(),
                             is_var: false,
                             is_temporary: false,
+                            subtype_id: None,
+                            subtype_raw_name: None,
+                            subtype_tag: "no_subtype",
                         }],
                         return_type_text: None,
                         return_type_id: None,
@@ -962,5 +1048,113 @@ mod tests {
              onto the graph-level RoutineNode, reachable by RoutineNodeId lookup \
              for Task 3's cross-object chain cross-validation"
         );
+    }
+
+    // -------------------------------------------------------------------
+    // Task 2 round-2 addendum: `param_type_fp`'s discriminator-bearing fold
+    // -------------------------------------------------------------------
+
+    fn abi_param(
+        type_text: &str,
+        subtype_id: Option<i64>,
+        subtype_raw_name: Option<&str>,
+        subtype_tag: &'static str,
+    ) -> AbiParameter {
+        AbiParameter {
+            name: "x".into(),
+            type_text: type_text.into(),
+            is_var: false,
+            is_temporary: false,
+            subtype_id,
+            subtype_raw_name: subtype_raw_name.map(String::from),
+            subtype_tag,
+        }
+    }
+
+    /// (e) TRUE DUPLICATE: two parameters with an IDENTICAL canonical tuple
+    /// (same text, same raw id, same raw name, same tag) must still
+    /// fingerprint IDENTICALLY — this is the population
+    /// `dedup_routines_preserving_genuine_overloads` correctly collapses
+    /// (and marks `abi_overload_collapsed`, see `build.rs`'s existing
+    /// `abi_sig_fp_collision_marks_survivor_collapsed`).
+    #[test]
+    fn param_type_fp_identical_discriminator_tuples_collide() {
+        let p1 = vec![abi_param(
+            "Codeunit \"Dep A\"",
+            Some(60130),
+            Some("Dep A"),
+            "full",
+        )];
+        let p2 = vec![abi_param(
+            "Codeunit \"Dep A\"",
+            Some(60130),
+            Some("Dep A"),
+            "full",
+        )];
+        assert_eq!(param_type_fp(&p1), param_type_fp(&p2));
+    }
+
+    /// (b) round-1 critical sliver at the fp layer: two Id-only Subtypes
+    /// sharing the IDENTICAL bare-fallback `type_text` ("Codeunit") but
+    /// DIFFERENT raw ids must fingerprint DIFFERENTLY — this is what lets
+    /// `DoIt(Codeunit 10)`/`DoIt(Codeunit 20)` survive as two distinct
+    /// `RoutineNodeId`s instead of silently colliding.
+    #[test]
+    fn param_type_fp_different_id_only_subtypes_never_collide() {
+        let p10 = vec![abi_param("Codeunit", Some(10), None, "id_only")];
+        let p20 = vec![abi_param("Codeunit", Some(20), None, "id_only")];
+        assert_ne!(param_type_fp(&p10), param_type_fp(&p20));
+    }
+
+    /// Sibling of the above at the fp layer: two quote-bearing Subtype Names
+    /// sharing the IDENTICAL bare-fallback text and the SAME raw id must
+    /// still fingerprint differently via the raw NAME discriminator.
+    #[test]
+    fn param_type_fp_different_quoted_names_never_collide() {
+        let pa = vec![abi_param(
+            "Codeunit",
+            Some(1),
+            Some("Weird\"NameA"),
+            "name_quoted",
+        )];
+        let pb = vec![abi_param(
+            "Codeunit",
+            Some(1),
+            Some("Weird\"NameB"),
+            "name_quoted",
+        )];
+        assert_ne!(param_type_fp(&pa), param_type_fp(&pb));
+    }
+
+    /// Control: a genuinely scalar/no-Subtype parameter never collides with
+    /// a degraded object-typed parameter that happens to share the SAME
+    /// outer keyword text purely by coincidence — the degradation TAG (the
+    /// canonical tuple's fourth component) keeps `"no_subtype"` distinct
+    /// from `"empty_subtype"` even when id/name are both `None` in either.
+    #[test]
+    fn param_type_fp_no_subtype_vs_empty_subtype_tag_distinguishes() {
+        let no_subtype = vec![abi_param("Codeunit", None, None, "no_subtype")];
+        let empty_subtype = vec![abi_param("Codeunit", None, None, "empty_subtype")];
+        assert_ne!(param_type_fp(&no_subtype), param_type_fp(&empty_subtype));
+    }
+
+    /// Full-fidelity case: two DIFFERENT named subtypes (the common,
+    /// non-degraded shape) fingerprint differently — the ordinary case this
+    /// primitive must never regress.
+    #[test]
+    fn param_type_fp_different_full_subtypes_never_collide() {
+        let dep_a = vec![abi_param(
+            "Codeunit \"Dep A\"",
+            Some(60130),
+            Some("Dep A"),
+            "full",
+        )];
+        let dep_c = vec![abi_param(
+            "Codeunit \"Dep C\"",
+            Some(60140),
+            Some("Dep C"),
+            "full",
+        )];
+        assert_ne!(param_type_fp(&dep_a), param_type_fp(&dep_c));
     }
 }

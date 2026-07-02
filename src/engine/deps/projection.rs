@@ -407,6 +407,9 @@ mod tests {
                 type_text: "Record Customer".to_string(),
                 is_var: false,
                 is_temporary: false,
+                subtype_id: None,
+                subtype_raw_name: None,
+                subtype_tag: "no_subtype",
             }],
             Some("Integer"),
         );

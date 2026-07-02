@@ -42,11 +42,47 @@ impl AbiEventKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbiParameter {
     pub name: String,
+    /// SOURCE-SHAPED type text with a BARE-OUTER-NAME FALLBACK on decline
+    /// shapes (Task 2) — see [`reconstruct_param_field_type`]'s doc for the
+    /// full fail-closed rule set. UNLIKE `AbiRoutine::return_type_text`
+    /// (which declines the WHOLE mapping to `None` on an Id-only or
+    /// quote-bearing Subtype), this NEVER loses the outer keyword: `param_
+    /// type_fp`/dedup have no "empty = untrustworthy" contract, so an
+    /// Id-only or quote-bearing Subtype degrades gracefully to the bare
+    /// outer name instead (e.g. `"Codeunit"`) rather than an empty string
+    /// (round-2 addendum).
     pub type_text: String,
     pub is_var: bool,
     /// True when the parameter is declared `temporary` (e.g. `var Rec: Record T
     /// temporary`). Additive — no consumers yet; populated by later tasks (Task 6).
     pub is_temporary: bool,
+    /// The raw `Subtype.Id`, independent of whether `Subtype.Name` was ALSO
+    /// present (Task 2 round-2 addendum) — UNLIKE `AbiRoutine::return_type_id`
+    /// (only `Some` when BOTH Name+Id are proof-grade present, a
+    /// cross-validation pair), this carries whatever raw id the JSON held in
+    /// ANY shape. Folded into `abi_ingest::param_type_fp`'s canonical
+    /// discriminator tuple ALONGSIDE `subtype_raw_name`/`subtype_tag` so two
+    /// parameters whose `type_text` degrades to the IDENTICAL bare-outer-name
+    /// fallback (two DIFFERENT Id-only Subtypes, e.g. `DoIt(Codeunit 10)` vs
+    /// `DoIt(Codeunit 20)`) still fingerprint DIFFERENTLY and never silently
+    /// collapse onto one ABI overload survivor (round-1 critical). Never used
+    /// to synthesize `type_text` — purely a hash input.
+    pub subtype_id: Option<i64>,
+    /// The raw `Subtype.Name`, independent of whether it was safely
+    /// reconstructible into `type_text` (Task 2 round-2 addendum) — carries a
+    /// quote-bearing name verbatim (never escaped/synthesized into text, but
+    /// still folded into the fingerprint) so two DIFFERENT quote-bearing
+    /// Subtype Names sharing the same outer keyword still fingerprint
+    /// differently. `None` when the JSON carried no `Subtype.Name` at all.
+    pub subtype_raw_name: Option<String>,
+    /// The degradation SHAPE behind `type_text`'s reconstruction — the fourth
+    /// canonical-tuple component (round-2 addendum): `"no_type_definition"` |
+    /// `"no_name"` | `"no_subtype"` | `"full"` | `"name_quoted"` | `"id_only"`
+    /// | `"empty_subtype"`. Folded into the fingerprint so a genuinely scalar
+    /// parameter (no `Subtype` at all) can never fingerprint-collide with an
+    /// object-typed parameter whose `Subtype` degraded to the same bare
+    /// outer-name text purely by coincidence of keyword + absent raw id/name.
+    pub subtype_tag: &'static str,
 }
 
 /// A routine signature from `SymbolReference.json`. No body, no anchor, no per-run id.
@@ -107,6 +143,12 @@ pub struct AbiRoutine {
 pub struct AbiField {
     pub field_number: i64,
     pub name: String,
+    /// SOURCE-SHAPED type text (Task 2 — see [`reconstruct_param_field_type`]),
+    /// e.g. `Enum "My Enum"` for an ABI Enum field (previously bare `"Enum"`,
+    /// dropping the Subtype entirely). No dedup/fingerprint consumer for
+    /// fields (unlike `AbiParameter`, fields are never overloaded), so only
+    /// the TEXT is generalized here — `parse_field` discards the raw
+    /// discriminator tuple's other components.
     pub data_type: String,
     /// "Normal" | "FlowField" | "FlowFilter".
     pub field_class: String,
@@ -635,6 +677,107 @@ fn return_type_subtype_id(t: &RawTypeDef) -> Option<(String, i64)> {
     Some((sub.name.clone()?, sub.id?))
 }
 
+/// Reconstruct a PARAMETER/FIELD's SOURCE-SHAPED type text with a
+/// BARE-OUTER-NAME FALLBACK on decline shapes, PLUS the raw Subtype
+/// discriminator tuple (Task 2 round-2 addendum) — the sibling of
+/// [`reconstruct_return_type_text`]/[`return_type_subtype_id`], but with a
+/// DIFFERENT fail-closed contract: `abi_ingest::param_type_fp`/dedup have no
+/// "empty = untrustworthy" signal (an empty/bare string there is a
+/// legitimate, if degraded, dedup key already in wide use), so unlike the
+/// return-type reconstruction (which declines the WHOLE mapping to `None` on
+/// an Id-only or quote-bearing Subtype), a param/field NEVER loses its outer
+/// keyword — it degrades gracefully to that bare keyword instead. Reused by
+/// BOTH `parse_method` (params) and `parse_field` (fields) — one shared
+/// helper, not two independently-drifting copies.
+///
+/// Returns `(text, subtype_id, subtype_raw_name, degradation_tag)`. The last
+/// three are the RAW discriminator `abi_ingest::param_type_fp` folds into a
+/// length-delimited canonical tuple ALONGSIDE `text` (params only — fields
+/// have no fingerprint consumer) so two parameters whose `text` degrades to
+/// the IDENTICAL bare-outer-name fallback (two DIFFERENT Id-only Subtypes;
+/// two DIFFERENT quote-bearing Subtype Names) still fingerprint DIFFERENTLY
+/// and never silently collapse onto one ABI overload survivor (round-1
+/// critical) — never used to synthesize `text` itself, purely fingerprint
+/// input.
+///
+/// - No `TypeDefinition` at all → `("", None, None, "no_type_definition")`.
+/// - `TypeDefinition` present, no `Name` (defensive; should not occur) →
+///   `("", None, None, "no_name")`.
+/// - `Name` ALREADY CONTAINS A `"` (a RECORD-typed param's `Name` is observed
+///   to carry the FULL source-shaped text already, e.g. `Record "Normal
+///   Table"` — a real Continia Core 29.0 shape, see `tests/temp_state_abi.rs`)
+///   → `(Name, Subtype.Id, Subtype.Name, "already_quoted")` UNCHANGED, even
+///   when a Subtype is ALSO present (sometimes redundantly naming the SAME
+///   object) — NEVER re-append `"{Subtype.Name}"`, which would double-quote-
+///   corrupt an already-complete string (round-2 fold-in landmine).
+/// - `Name` present (bare, no embedded quote), no `Subtype` → `(Name, None,
+///   None, "no_subtype")` — bare pass-through, UNCHANGED from today's
+///   fidelity.
+/// - `Subtype.Name` present, quote-free → `("{Name} \"{Subtype.Name}\"",
+///   Subtype.Id, Some(Subtype.Name), "full")` — full source-shaped text,
+///   e.g. `Codeunit "Dep A"` / `Enum "My Enum"`.
+/// - `Subtype.Name` present but contains a `"` → `(Name, Subtype.Id,
+///   Some(Subtype.Name), "name_quoted")` — TEXT degrades to the bare outer
+///   name (never escapes/synthesizes into text), but the raw name is STILL
+///   folded into the fingerprint discriminator.
+/// - `Subtype.Id` present, no `Name` → `(Name, Some(Id), None, "id_only")` —
+///   TEXT degrades to the bare outer name; the raw id is STILL folded.
+/// - `Subtype` present but carries neither `Name` nor `Id` → `(Name, None,
+///   None, "empty_subtype")`.
+fn reconstruct_param_field_type(
+    t: Option<&RawTypeDef>,
+) -> (String, Option<i64>, Option<String>, &'static str) {
+    let Some(t) = t else {
+        return (String::new(), None, None, "no_type_definition");
+    };
+    let Some(outer_name) = t.name.as_deref() else {
+        return (String::new(), None, None, "no_name");
+    };
+    // ALREADY-QUOTED LANDMINE (round-2 fold-in fix): a RECORD-typed param's
+    // `TypeDefinition.Name` is observed to carry the FULL source-shaped text
+    // ALREADY (`Record "Normal Table"`, quote embedded) rather than a bare
+    // keyword like `"Codeunit"` — verified against a real Continia Core 29.0
+    // `SymbolReference.json` (see `parse_method`'s Task 6 doc; pinned by
+    // `tests/temp_state_abi.rs`'s `TempMarkedParam` fixture, which carries
+    // BOTH this shape AND a redundant same-named `Subtype`). When `outer_name`
+    // already contains a `"`, it is complete on its own — appending `"{sub_
+    // name}"` again (the `Some(sub_name)` branch below) would DOUBLE-QUOTE-
+    // CORRUPT it into `Record "Normal Table" "Normal Table"`. Any accompanying
+    // Subtype is carried into the discriminator (harmless/redundant for the
+    // fp — `outer_name` alone already fully discriminates two different
+    // already-quoted texts) but NEVER re-appended to the text.
+    if outer_name.contains('"') {
+        let sub = t.subtype.as_ref();
+        return (
+            outer_name.to_string(),
+            sub.and_then(|s| s.id),
+            sub.and_then(|s| s.name.clone()),
+            "already_quoted",
+        );
+    }
+    match &t.subtype {
+        None => (outer_name.to_string(), None, None, "no_subtype"),
+        Some(sub) => match &sub.name {
+            Some(sub_name) if !sub_name.contains('"') => (
+                format!("{outer_name} \"{sub_name}\""),
+                sub.id,
+                Some(sub_name.clone()),
+                "full",
+            ),
+            Some(sub_name) => (
+                outer_name.to_string(),
+                sub.id,
+                Some(sub_name.clone()),
+                "name_quoted",
+            ),
+            None => match sub.id {
+                Some(id) => (outer_name.to_string(), Some(id), None, "id_only"),
+                None => (outer_name.to_string(), None, None, "empty_subtype"),
+            },
+        },
+    }
+}
+
 /// Classify a method as a routine, deriving event-publisher kind from attributes.
 /// Mirrors `parseMethod`.
 fn parse_method(m: &RawMethod) -> AbiRoutine {
@@ -677,19 +820,26 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
             .clone()
             .unwrap_or_default()
             .iter()
-            .map(|p| AbiParameter {
-                name: p.name.clone().unwrap_or_default(),
-                type_text: p
-                    .type_definition
-                    .as_ref()
-                    .and_then(|t| t.name.clone())
-                    .unwrap_or_default(),
-                is_var: p.is_var == Some(true),
-                // Task 6 (G7, RV-4): a record param carries `TypeDefinition.Temporary`
-                // when declared `temporary` in source (verified against a real Continia
-                // Core 29.0 SymbolReference.json). Read it so the ABI→L3 projection can
-                // model the same Known(true) temp shape the native path produces.
-                is_temporary: p.type_definition.as_ref().and_then(|t| t.temporary) == Some(true),
+            .map(|p| {
+                let (type_text, subtype_id, subtype_raw_name, subtype_tag) =
+                    reconstruct_param_field_type(p.type_definition.as_ref());
+                AbiParameter {
+                    name: p.name.clone().unwrap_or_default(),
+                    // Task 2: bare-fallback SOURCE-SHAPED text (see
+                    // `reconstruct_param_field_type`'s doc) — replaces the old
+                    // outer-keyword-only mapping.
+                    type_text,
+                    is_var: p.is_var == Some(true),
+                    // Task 6 (G7, RV-4): a record param carries `TypeDefinition.Temporary`
+                    // when declared `temporary` in source (verified against a real Continia
+                    // Core 29.0 SymbolReference.json). Read it so the ABI→L3 projection can
+                    // model the same Known(true) temp shape the native path produces.
+                    is_temporary: p.type_definition.as_ref().and_then(|t| t.temporary)
+                        == Some(true),
+                    subtype_id,
+                    subtype_raw_name,
+                    subtype_tag,
+                }
             })
             .collect(),
         parameters_known,
@@ -711,11 +861,13 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
 
 /// Mirror `parseField`.
 fn parse_field(f: &RawField) -> AbiField {
-    let data_type = f
-        .type_definition
-        .as_ref()
-        .and_then(|t| t.name.clone())
-        .unwrap_or_default();
+    // Task 2: same bare-fallback SOURCE-SHAPED reconstruction as a param's
+    // `type_text` (see `reconstruct_param_field_type`'s doc) — an ABI Enum
+    // field now carries `Enum "My Enum"` instead of the bare `"Enum"` this
+    // dropped before. Fields have no fingerprint/dedup consumer, so the raw
+    // discriminator tuple's other three components are discarded here.
+    let (data_type, _subtype_id, _subtype_raw_name, _subtype_tag) =
+        reconstruct_param_field_type(f.type_definition.as_ref());
     let mut field_class = "Normal".to_string();
     for p in f.properties.clone().unwrap_or_default().iter() {
         if p.name.clone().unwrap_or_default().to_lowercase() == "fieldclass" {
@@ -1297,5 +1449,186 @@ mod tests {
         let m = parse_method(&raw);
         assert_eq!(m.return_type_text, None);
         assert_eq!(m.return_type_id, None);
+    }
+
+    // -- Task 2 round-2 addendum: PARAM/FIELD Subtype fidelity ----------------
+    //
+    // `reconstruct_param_field_type` — bare-outer-name-fallback TEXT + the raw
+    // discriminator tuple `param_type_fp` folds. Every case drives the FULL
+    // `parse_method`/`parse_field` path from raw JSON.
+
+    // (a) Task 2 brief fixture: a param with `Subtype{Name:"Dep A",Id:..}`
+    // yields fully source-shaped `type_text = Codeunit "Dep A"`, and the raw
+    // discriminator pair is carried alongside it.
+    #[test]
+    fn parse_method_param_subtype_reconstructs_quoted_source_shape() {
+        let json = r##"{
+            "Name":"Get",
+            "Parameters":[{"Name":"X","TypeDefinition":{"Name":"Codeunit","Subtype":{"Name":"Dep A","Id":60130}}}]
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(m.parameters.len(), 1);
+        let p = &m.parameters[0];
+        assert_eq!(p.type_text, "Codeunit \"Dep A\"");
+        assert_eq!(p.subtype_id, Some(60130));
+        assert_eq!(p.subtype_raw_name.as_deref(), Some("Dep A"));
+        assert_eq!(p.subtype_tag, "full");
+    }
+
+    // (b) round-1 critical sliver: an Id-only Subtype (no Name — a real
+    // observed ABI shape, see `RawSubtype`'s doc) FALLS BACK to the bare
+    // outer name for TEXT (never empty — that would regress dedup), but the
+    // raw `Id` is STILL carried as the fingerprint discriminator. TWO
+    // DIFFERENT Id-only subtypes (`DoIt(Codeunit 10)` vs `DoIt(Codeunit
+    // 20)`) must therefore carry DIFFERENT `subtype_id`s despite IDENTICAL
+    // `type_text` — the primitive `abi_ingest::param_type_fp` needs to keep
+    // them from silently colliding.
+    #[test]
+    fn parse_method_param_id_only_subtype_falls_back_to_bare_name_but_keeps_id() {
+        let json_10 = r##"{
+            "Name":"DoIt",
+            "Parameters":[{"Name":"X","TypeDefinition":{"Name":"Codeunit","Subtype":{"Id":10}}}]
+        }"##;
+        let json_20 = r##"{
+            "Name":"DoIt",
+            "Parameters":[{"Name":"X","TypeDefinition":{"Name":"Codeunit","Subtype":{"Id":20}}}]
+        }"##;
+        let m10 = parse_method(&serde_json::from_str(json_10).unwrap());
+        let m20 = parse_method(&serde_json::from_str(json_20).unwrap());
+        let p10 = &m10.parameters[0];
+        let p20 = &m20.parameters[0];
+
+        assert_eq!(
+            p10.type_text, "Codeunit",
+            "an Id-only Subtype must fall back to the bare outer name, never empty"
+        );
+        assert_eq!(p20.type_text, "Codeunit");
+        assert_eq!(
+            p10.type_text, p20.type_text,
+            "the TEXT is identical by construction — this is exactly the \
+             sliver the raw discriminator must still distinguish"
+        );
+        assert_eq!(p10.subtype_id, Some(10));
+        assert_eq!(p20.subtype_id, Some(20));
+        assert_ne!(
+            p10.subtype_id, p20.subtype_id,
+            "two DIFFERENT Id-only subtypes must carry DIFFERENT raw \
+             discriminators despite identical bare-fallback text"
+        );
+        assert_eq!(p10.subtype_tag, "id_only");
+        assert_eq!(p20.subtype_tag, "id_only");
+    }
+
+    // (b) sibling FORMAT LANDMINE: a Subtype.Name containing a `"` also falls
+    // back to the bare outer name for TEXT (never escapes/synthesizes), but
+    // the raw (quote-bearing) name is STILL carried as the discriminator so
+    // two DIFFERENT quote-bearing names never collide either.
+    #[test]
+    fn parse_method_param_quoted_subtype_name_falls_back_but_keeps_raw_name() {
+        let json_a = r##"{
+            "Name":"DoIt",
+            "Parameters":[{"Name":"X","TypeDefinition":{"Name":"Codeunit","Subtype":{"Name":"Weird\"NameA","Id":1}}}]
+        }"##;
+        let json_b = r##"{
+            "Name":"DoIt",
+            "Parameters":[{"Name":"X","TypeDefinition":{"Name":"Codeunit","Subtype":{"Name":"Weird\"NameB","Id":1}}}]
+        }"##;
+        let ma = parse_method(&serde_json::from_str(json_a).unwrap());
+        let mb = parse_method(&serde_json::from_str(json_b).unwrap());
+        let pa = &ma.parameters[0];
+        let pb = &mb.parameters[0];
+
+        assert_eq!(pa.type_text, "Codeunit");
+        assert_eq!(pb.type_text, "Codeunit");
+        assert_eq!(pa.subtype_raw_name.as_deref(), Some("Weird\"NameA"));
+        assert_eq!(pb.subtype_raw_name.as_deref(), Some("Weird\"NameB"));
+        assert_ne!(
+            pa.subtype_raw_name, pb.subtype_raw_name,
+            "two DIFFERENT quote-bearing Subtype Names sharing the same Id \
+             must still carry different raw-name discriminators"
+        );
+        assert_eq!(pa.subtype_tag, "name_quoted");
+        assert_eq!(pb.subtype_tag, "name_quoted");
+    }
+
+    // Control: a bare scalar param (no Subtype at all) is UNCHANGED — the
+    // pre-Task-2 fidelity, tagged distinctly from a degraded object-typed
+    // param so the two families can never collide by coincidence.
+    #[test]
+    fn parse_method_param_no_subtype_bare_passthrough() {
+        let json = r##"{
+            "Name":"Foo",
+            "Parameters":[{"Name":"n","TypeDefinition":{"Name":"Integer"}}]
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        let p = &m.parameters[0];
+        assert_eq!(p.type_text, "Integer");
+        assert_eq!(p.subtype_id, None);
+        assert_eq!(p.subtype_raw_name, None);
+        assert_eq!(p.subtype_tag, "no_subtype");
+    }
+
+    // ALREADY-QUOTED LANDMINE regression (round-2 fold-in fix, found by
+    // `tests/temp_state_abi.rs`'s real-Continia-shaped fixture): a
+    // RECORD-typed param's outer `Name` is ALREADY the full source-shaped
+    // text (`Record "Normal Table"`), sometimes ALONGSIDE a redundant
+    // same-named `Subtype` — the naive "append the Subtype name" rule would
+    // double-quote-corrupt this into `Record "Normal Table" "Normal Table"`.
+    // Must pass through UNCHANGED, never re-append.
+    #[test]
+    fn parse_method_param_already_quoted_outer_name_with_redundant_subtype_not_doubled() {
+        let json = r##"{
+            "Name":"TempMarkedParam",
+            "Parameters":[{"Name":"Rec","TypeDefinition":{"Name":"Record \"Normal Table\"","Subtype":{"Name":"Normal Table"}}}]
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        let p = &m.parameters[0];
+        assert_eq!(
+            p.type_text, "Record \"Normal Table\"",
+            "an already-quoted outer Name must never be re-appended to"
+        );
+        assert_eq!(p.subtype_tag, "already_quoted");
+    }
+
+    // Sibling control: the SAME already-quoted outer Name with NO Subtype at
+    // all (the more common real shape — see `ByVarUnmarked`/`ByValueUnmarked`
+    // in `tests/temp_state_abi.rs`) must ALSO pass through unchanged.
+    #[test]
+    fn parse_method_param_already_quoted_outer_name_no_subtype_passthrough() {
+        let json = r##"{
+            "Name":"ByVarUnmarked",
+            "Parameters":[{"Name":"Rec","TypeDefinition":{"Name":"Record \"Normal Table\""}}]
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        let p = &m.parameters[0];
+        assert_eq!(p.type_text, "Record \"Normal Table\"");
+        assert_eq!(p.subtype_tag, "already_quoted");
+    }
+
+    // (c) `parse_field` gets the SAME treatment: an ABI Enum field now
+    // carries `Enum "X"` instead of the bare `"Enum"` this dropped before.
+    #[test]
+    fn parse_field_enum_subtype_reconstructs_quoted_source_shape() {
+        let json = r##"{
+            "Id":1,
+            "Name":"Status",
+            "TypeDefinition":{"Name":"Enum","Subtype":{"Name":"X","Id":50100}}
+        }"##;
+        let raw: RawField = serde_json::from_str(json).unwrap();
+        let f = parse_field(&raw);
+        assert_eq!(f.data_type, "Enum \"X\"");
+    }
+
+    // `parse_field` control: a scalar field (no Subtype) is unchanged.
+    #[test]
+    fn parse_field_no_subtype_bare_passthrough() {
+        let json = r##"{"Id":1,"Name":"Amount","TypeDefinition":{"Name":"Decimal"}}"##;
+        let raw: RawField = serde_json::from_str(json).unwrap();
+        let f = parse_field(&raw);
+        assert_eq!(f.data_type, "Decimal");
     }
 }

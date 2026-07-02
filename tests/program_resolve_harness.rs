@@ -426,6 +426,9 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                         type_text: "Integer".into(),
                         is_var: false,
                         is_temporary: false,
+                        subtype_id: None,
+                        subtype_raw_name: None,
+                        subtype_tag: "no_subtype",
                     }],
                     return_type_text: None,
                     return_type_id: None,
@@ -446,12 +449,18 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                             type_text: "Integer".into(),
                             is_var: false,
                             is_temporary: false,
+                            subtype_id: None,
+                            subtype_raw_name: None,
+                            subtype_tag: "no_subtype",
                         },
                         AbiParameter {
                             name: "p2".into(),
                             type_text: "Text".into(),
                             is_var: false,
                             is_temporary: false,
+                            subtype_id: None,
+                            subtype_raw_name: None,
+                            subtype_tag: "no_subtype",
                         },
                     ],
                     return_type_text: None,
@@ -1758,7 +1767,7 @@ use al_call_hierarchy::program::resolve::semantic_golden::{
     cdo_event_anon_golden_path, cdo_trigger_anon_golden_path, load_adjudicated_overrides,
     load_anon_event_golden, load_anon_golden, mint_fresh_golden_for_kind, mint_l3_validated_golden,
     run_cdo_event_audit, run_cdo_semantic_audit, run_cdo_trigger_audit, run_route_applicability,
-    run_semantic_diff,
+    run_semantic_diff, run_unknown_include_sender_plus1_subscribers_preflight,
 };
 
 // beyond-1B.3b Task 3: the INDEPENDENT adjudication test's inputs — the
@@ -2055,6 +2064,44 @@ fn route_applicability_zero_violations() {
         "Test 15 (CDO) — applicability: total_routes={} violations=0 abi_unmapped=0",
         appl_cdo.total_routes,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Test 15b (CDO env-gated): unknown-IncludeSender +1-arity preflight
+// (Task 1 round-2 addendum, folded in by Task 2)
+// ---------------------------------------------------------------------------
+
+/// Counts event-subscriber routines sitting at EXACTLY `publisher_arity + 1`
+/// whose resolved publisher's `IncludeSender` is UNKNOWN — the population
+/// Task 1's fail-closed "no `+1` tolerance without positive evidence" policy
+/// silently declines to wire. T1's commit narrative reported 100%
+/// `IncludeSender` coverage on a real Microsoft Base Application probe (zero
+/// unknowns among 13,581 publisher-attribute entries) but never landed a
+/// CODE diagnostic to confirm that holds on CDO too — this closes that gap.
+/// Asserting `0` here confirms the fail-closed unknown-policy choice is not
+/// silently orphaning a legitimate wiring population on a real workspace; a
+/// nonzero count would not itself be a resolver bug, but is exactly the
+/// signal the round-2 addendum asked to surface for adjudication rather than
+/// letting the policy discard it silently (see the diagnostic's own doc).
+#[test]
+fn cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let count = run_unknown_include_sender_plus1_subscribers_preflight(&ws)
+        .expect("snapshot build must succeed on CDO_WS");
+    assert_eq!(
+        count, 0,
+        "unknown-IncludeSender publishers with +1-arity subscribers found on \
+         CDO — the fail-closed unknown-policy choice may be silently orphaning \
+         a legitimate wiring population; adjudicate before treating this as \
+         expected (see run_unknown_include_sender_plus1_subscribers_preflight's doc)"
+    );
+    eprintln!("Test 15b (CDO) — unknown-IncludeSender +1-arity preflight: count=0");
 }
 
 // ---------------------------------------------------------------------------
@@ -5135,6 +5182,14 @@ fn resolve_module_has_no_stray_engine_l3_l2_imports() {
 // then closure-scoped, ambiguous cross-app name declines to `None` for
 // free). No `Ambiguous`/`OutOfClosure` distinction is needed here either.
 //
+// Plan v2.1 Task 2 (T1-review fold-in) ADDS one entry: `index.rs`'s new
+// `count_unknown_include_sender_plus1_subscribers` preflight diagnostic
+// resolves the same publisher-object identity the subscriber-wiring loop
+// above it already does, via the SAME base function — a genuine semantic
+// caller reusing the audited resolution semantics for a read-only count,
+// never a distinct resolution path. No `Ambiguous`/`OutOfClosure`
+// distinction is needed (identical rationale to the sibling wiring entry).
+//
 // This guard locks that audited set in place: a NEW call site appearing in
 // `src/program/resolve/*.rs` PRODUCTION code (before each file's `#[cfg(test)]`
 // module marker — test fixtures directly exercising the API are expected and
@@ -5183,6 +5238,10 @@ fn resolve_module_pick_first_base_function_callers_are_a_known_allowlist() {
         (
             "index.rs",
             "let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name)",
+        ),
+        (
+            "index.rs",
+            "let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name) else {",
         ),
         (
             "receiver.rs",
@@ -6915,23 +6974,37 @@ fn ws_cross_object_chain_wrong_arity_abi_declines() {
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
-/// Test 32p (fixture N11, NEGATIVE — Task 3 REVIEW FIX: collapsed ABI
-/// overload survivor): `Dep Collapse` declares two `Get` overloads at the
-/// SAME arity (1) AND the SAME outer parameter kind (`Codeunit`), differing
-/// ONLY in the parameter's Subtype (`Dep A` vs `Dep C`) — `AbiParameter::
-/// type_text` fingerprints only the outer keyword, never a Subtype, so both
-/// overloads hash to the IDENTICAL `RoutineNodeId` and collapse to ONE
-/// arbitrary survivor at ABI ingestion (`RoutineNode::abi_overload_
-/// collapsed`), unlike (N3/32h)'s genuinely-distinct-candidate case. The two
-/// overloads' declared RETURN types also differ (`Dep Http Content` vs `Dep
-/// Arity Chain`) — the survivor's `return_type` is untrustworthy by
-/// construction, so the ABI-PREFIX UNIQUENESS GUARD
-/// (`resolve_abi_prefix_routine`/`routine_node_for_type_query`) must decline
-/// rather than type the chain off an arbitrary sibling's return.
+/// Test 32p (fixture N11 — Task 2 SUPERSEDES Task 3's review-fix framing):
+/// `Dep Collapse` declares two `Get` overloads at the SAME arity (1) AND the
+/// SAME outer parameter kind (`Codeunit`), differing ONLY in the parameter's
+/// Subtype (`Dep A` Id 60130 vs `Dep C` Id 60140 — a real probe-`.app`
+/// SymbolReference.json entry, both quote-free Name+Id present). PRE-Task-2,
+/// `AbiParameter::type_text` fingerprinted only the outer keyword, never a
+/// Subtype, so both overloads hashed to the IDENTICAL `RoutineNodeId` and
+/// collapsed to ONE arbitrary survivor at ABI ingestion
+/// (`RoutineNode::abi_overload_collapsed`) — the chain declined via the
+/// ABI-PREFIX UNIQUENESS GUARD (`resolve_abi_prefix_routine`/
+/// `routine_node_for_type_query`) rather than type off an arbitrary
+/// sibling's return.
 ///
-/// Pre-fix (the bug this test pins): the survivor was the FIRST raw JSON
-/// entry (`Get(X: Codeunit "Dep A")`, returning `Codeunit "Dep Http
-/// Content"`), so this chain would have wrongly resolved
+/// POST-Task-2: `abi_ingest::param_type_fp` now reconstructs each param's
+/// FULL source-shaped text (`Codeunit "Dep A"` / `Codeunit "Dep C"`), so the
+/// two overloads' `sig_fp`s DIFFER — they never collapse at all and survive
+/// as TWO DISTINCT `RoutineNodeId`s (`abi_overload_collapsed` stays `false`
+/// on both). The chain still declines, but via a DIFFERENT — and more
+/// honest — mechanism: `resolve_member`'s own arity+visibility selection now
+/// sees 2 live, visible, same-arity candidates and returns
+/// `Unresolved(OverloadAmbiguous)` directly (see the companion test
+/// `ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_declines_ambiguous`
+/// below, which pins the INNER `Get(Helper)` call's route specifically).
+/// The outer chain's assertion below is therefore UNCHANGED (still
+/// `Unresolved`/`Unknown(_)`) — only the reason inside `Unknown` moved from
+/// whatever the collapsed survivor's chain-guard produced to
+/// `OverloadAmbiguous` propagating from the inner call's own failure to type.
+///
+/// Pre-Task-2/pre-Task-3 (the original bug both tests pin): the survivor was
+/// the FIRST raw JSON entry (`Get(X: Codeunit "Dep A")`, returning `Codeunit
+/// "Dep Http Content"`), so this chain would have wrongly resolved
 /// `Object{Codeunit, "dep http content"}` and emitted an `Opaque` route to
 /// `ReadAs` — silently ignoring the second, differently-typed overload.
 #[test]
@@ -6940,4 +7013,44 @@ fn ws_cross_object_chain_abi_overload_collapsed_declines() {
     let route = outer_chain_route(&report, 51206, "testabioverloadcollapseddeclines");
     assert_eq!(route.target, RouteTarget::Unresolved);
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32p companion (Task 2, round-1 critical requirement (d)): pins the
+/// INNER `DepCollapse.Get(Helper)` call specifically — NOT the outer
+/// `.ReadAs()` chain call the sibling test above checks. Post-Task-2, the
+/// two `Get` overloads (`Dep A` Id 60130 / `Dep C` Id 60140) carry DISTINCT
+/// `sig_fp`s and never collapse — `resolve_in_object` finds 2 arity-1,
+/// visible candidates and must decline `Unknown(OverloadAmbiguous)` via
+/// PLAIN dispatch (not a chain type-query). This is the exact call site
+/// that, PRE-Task-2, silently resolved `Opaque` to an ARBITRARY survivor —
+/// the round-1 critical "unguarded plain-dispatch false-Opaque" class this
+/// task closes (only the OUTER `.ReadAs()` chain declined before, via the
+/// separate chain-guard; the inner call itself was never checked).
+#[test]
+fn ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_declines_ambiguous() {
+    let report = ws_cross_object_chain_report();
+    let edges = edges_for_object_routine(&report, 51206, "testabioverloadcollapseddeclines");
+    assert!(!edges.is_empty(), "must have at least one call obligation");
+    // The INNER call is the NARROWEST-span `Call`-kind edge (the outer
+    // `.ReadAs()` chain call's span strictly contains it) — the mirror
+    // image of `outer_chain_route`'s widest-span selection.
+    let inner = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::Call)
+        .min_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("at least one Call-kind edge");
+    let route = &inner.edge.routes[0];
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "the inner DepCollapse.Get(Helper) call must decline — 2 un-collapsed \
+         same-arity candidates, never an arbitrary confident pick; got {route:?}"
+    );
+    assert_eq!(
+        route.evidence,
+        Evidence::Unknown(UnknownReason::OverloadAmbiguous),
+        "expected Unknown(OverloadAmbiguous) from resolve_in_object's ordinary \
+         >1-visible-candidate arm (the overloads never collapsed in the first \
+         place — this is NOT the abi_overload_collapsed marker path); got {route:?}"
+    );
 }

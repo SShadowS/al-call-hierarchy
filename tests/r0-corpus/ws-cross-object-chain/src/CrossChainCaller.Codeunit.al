@@ -163,18 +163,24 @@ codeunit 51206 "CrossChainCaller"
         ArityChain.Get().ReadAs();
     end;
 
-    // (N11) NEGATIVE — COLLAPSED ABI overload survivor (Task 3 review fix):
+    // (N11) NEGATIVE — Task 2 SUPERSEDES the Task-3-review-fix framing below:
     // `Dep Collapse` declares two `Get` overloads at the SAME arity (1) AND
     // the SAME OUTER parameter kind (`Codeunit`), differing ONLY in the
-    // parameter's Subtype (`Dep A` vs `Dep C`). `AbiParameter::type_text`
-    // fingerprints only the outer type keyword — never a param's Subtype —
-    // so both overloads hash to the IDENTICAL `RoutineNodeId` and collapse
-    // to ONE arbitrary survivor at ABI ingestion (unlike (N3) above, where
-    // the outer kind itself differs and the two overloads stay genuinely
-    // distinct candidates). The two overloads' RETURN types also differ
-    // (`Dep Http Content` vs `Dep Arity Chain`) — trusting the collapsed
-    // survivor's `return_type` would risk typing the chain to the WRONG
-    // object. Must decline (`RoutineNode::abi_overload_collapsed`).
+    // parameter's Subtype (`Dep A` Id 60130 vs `Dep C` Id 60140). PRE-Task-2,
+    // `AbiParameter::type_text` fingerprinted only the outer type keyword —
+    // never a param's Subtype — so both overloads hashed to the IDENTICAL
+    // `RoutineNodeId` and collapsed to ONE arbitrary survivor at ABI
+    // ingestion (unlike (N3) above, where the outer kind itself differs and
+    // the two overloads stay genuinely distinct candidates); trusting the
+    // collapsed survivor's `return_type` risked typing the chain to the
+    // WRONG object. POST-Task-2, `param_type_fp` reconstructs each param's
+    // FULL source-shaped text (`Codeunit "Dep A"` / `Codeunit "Dep C"`), so
+    // the two overloads carry DISTINCT `sig_fp`s and never collapse — they
+    // survive as two live, un-collapsed candidates, and the INNER
+    // `Get(Helper)` call itself now honestly declines `OverloadAmbiguous` at
+    // PLAIN dispatch (not just the outer chain, via the collapse-marker
+    // guard, as before). See `program_resolve_harness.rs`'s Test 32p +
+    // companion for both assertions.
     procedure TestAbiOverloadCollapsedDeclines()
     begin
         DepCollapse.Get(Helper).ReadAs();

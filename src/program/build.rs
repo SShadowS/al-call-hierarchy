@@ -317,26 +317,34 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 /// overload-dispatch work). Never drops a genuine collision silently for a
 /// SOURCE routine.
 ///
-/// **ABI routines are a narrower case (Task 3 review fix).** An ABI
-/// routine's `param_sig_key` is hardcoded `String::new()` (see that field's
-/// doc on [`RoutineNode`]) — every ABI entry in a run shares the SAME empty
-/// key, so a run of ≥2 raw ABI entries always collapses to exactly ONE
-/// survivor here, same as a genuine same-declaration duplicate. Unlike the
-/// source case, this collapse is NOT always safe to treat as a content-
-/// identical duplicate: `abi_ingest::param_type_fp` degrades a parameter's
-/// type to its OUTER keyword only (never a `Subtype`), so two genuinely
-/// DIFFERENT ABI overloads (differing only by an object-typed parameter's
-/// Subtype) can share both `RoutineNodeId` and the empty `param_sig_key`,
-/// silently collapsing to an ARBITRARY first-occurrence survivor whose
-/// `return_type`/`return_type_id` may belong to the wrong declaration. This
-/// function marks that survivor [`RoutineNode::abi_overload_collapsed`]
-/// whenever ≥2 raw `TrustTier::SymbolOnly` entries shared a node id, so a
-/// downstream type-query (`resolver::routine_node_for_type_query` /
+/// **ABI routines are a narrower case (Task 3 review fix; fp fidelity fixed
+/// Task 2).** An ABI routine's `param_sig_key` is hardcoded `String::new()`
+/// (see that field's doc on [`RoutineNode`]) — every ABI entry in a run
+/// shares the SAME empty key, so a run of ≥2 raw ABI entries always
+/// collapses to exactly ONE survivor here. Task 2 made
+/// `abi_ingest::param_type_fp` (hence `RoutineNodeId::sig_fp`) fold a
+/// length-delimited canonical tuple of EVERY parameter's outer kind +
+/// Subtype id + raw Subtype name + a degradation tag (previously: only the
+/// OUTER keyword, never a `Subtype` — the gap that let two genuinely
+/// DIFFERENT ABI overloads differing only by an object-typed parameter's
+/// Subtype silently share one `RoutineNodeId`). Post-fix, two entries reach
+/// this function's SAME run only when their ENTIRE canonical tuple matched
+/// — i.e. they are either a true re-parse duplicate, or a residual
+/// fingerprint collision this engine genuinely cannot distinguish further
+/// (round-2 addendum: "any residual same-key multi-entry group is
+/// collapse-marked so collisions OVER-DECLINE, never select"). Either way,
+/// collapsing to ONE survivor and marking it is the correct fail-closed
+/// outcome: this function marks that survivor
+/// [`RoutineNode::abi_overload_collapsed`] whenever ≥2 raw
+/// `TrustTier::SymbolOnly` entries shared a node id, so a downstream
+/// type-query (`resolver::routine_node_for_type_query` /
 /// `receiver::receiver_from_routine_node`, Task 3's cross-object call-result
-/// chain typing) can decline rather than trust an untrustworthy return type.
-/// A SOURCE routine is never marked: its `param_sig_key` is real parsed
-/// param-type content, so a genuine same-id/same-key collapse there is
-/// always a true re-parse duplicate of the identical declaration.
+/// chain typing) AND plain dispatch (`resolver::resolve_in_object`'s
+/// collapse-marker guard, Task 2 round-2) both decline rather than trust a
+/// possibly-wrong candidate. A SOURCE routine is never marked: its
+/// `param_sig_key` is real parsed param-type content, so a genuine
+/// same-id/same-key collapse there is always a true re-parse duplicate of
+/// the identical declaration.
 fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) {
     let mut out: Vec<RoutineNode> = Vec::with_capacity(routines.len());
     let mut i = 0;

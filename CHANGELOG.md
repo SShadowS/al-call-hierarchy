@@ -175,6 +175,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ABI run is NOT always a true duplicate (`param_type_fp` degrades a parameter's type
   to its outer keyword only, so two distinct overloads differing by Subtype can share
   both the id and the empty `param_sig_key`).
+- **ABI param/field Subtype fidelity — genuine overloads un-collapse and decline
+  honestly; plain-dispatch collapse-marker guard closes a latent false-`Opaque` class
+  (applicability-param-subtype-recfield plan v2.1, Task 2).** `parse_method`'s param
+  mapping (`src/engine/deps/symbol_reference.rs`) took only `RawTypeDef.name`,
+  degrading every object-typed parameter to its bare outer keyword (`"Codeunit"`) and
+  silently dropping its `Subtype` — the same root cause as the already-fixed
+  return-type gap, but for params. Added `reconstruct_param_field_type` — a NEW
+  generalized helper (deliberately NOT `reconstruct_return_type_text`, which has a
+  DIFFERENT fail-closed contract: decline-to-`None`) reused by both `parse_method`
+  (params) and `parse_field` (fields): reconstructs FULL source-shaped text
+  (`Codeunit "Dep A"`) when `Subtype.Name` is quote-free; on the DECLINE shapes
+  (Id-only Subtype; a Subtype Name containing `"`) falls back to the BARE OUTER NAME
+  for TEXT (never empty — `param_type_fp`/dedup have no "empty = untrustworthy"
+  contract, unlike returns), while additionally carrying the RAW discriminator
+  (`AbiParameter::subtype_id`/`subtype_raw_name`/`subtype_tag`) so the TEXT fallback
+  never loses distinguishing power. `abi_ingest::param_type_fp` now folds a
+  length-delimited canonical tuple (outer kind + subtype id + raw subtype name + a
+  degradation tag) per parameter via the project's stable FNV-1a primitive (never
+  `DefaultHasher`) — closing the round-1 critical sliver: two DIFFERENT Id-only
+  Subtypes (`DoIt(Codeunit 10)` vs `DoIt(Codeunit 20)`) sharing an identical
+  bare-fallback TEXT now fingerprint DIFFERENTLY and never silently collapse onto one
+  ABI overload survivor; they instead correctly decline `OverloadAmbiguous` at
+  dispatch as two live, un-collapsed candidates. An ABI Enum FIELD now correctly
+  carries `Enum "X"` instead of the bare `"Enum"` this dropped before (`parse_field`,
+  same helper). **Plain-dispatch marker guard (round-1 critical, defense in depth):**
+  `resolve_in_object`'s single-visible-candidate arm — the FINAL candidate-selection
+  boundary every bare-call AND qualified-member dispatch path in the module funnels
+  through — now declines `OverloadAmbiguous` when the sole surviving candidate is
+  `RoutineNode::abi_overload_collapsed`. Previously the marker gated ONLY the
+  cross-object chain type-query boundary (`routine_node_for_type_query`); a marked
+  survivor could still resolve CONFIDENTLY via ordinary PLAIN dispatch (e.g.
+  `DepCollapse.Get(X)` called directly, never chained onward) — an unguarded
+  false-`Source`/`Opaque` vector this closes. `RoutineNode::param_sig_key` stays
+  hardcoded empty for ABI routines (unaffected; safe by construction post-fix — see
+  the updated doc on `dedup_routines_preserving_genuine_overloads`). **sig_fp
+  persistence audit:** grepped for `RoutineNodeId`/`AbiRoutineKey`/`sig_fp`/
+  `param_type_fp` serialization across caches/incremental artifacts/CI baselines —
+  none found; documented that ABI node identity is not stable across fidelity
+  changes (expected, no version-bump needed). **Fold-in (T1 review):** added the
+  preflight diagnostic T1 spec'd but never landed —
+  `index::count_unknown_include_sender_plus1_subscribers` counts event-subscriber
+  routines sitting at exactly `publisher_arity + 1` whose resolved publisher's
+  `IncludeSender` is UNKNOWN (the population the fail-closed no-`+1`-without-evidence
+  policy silently orphans); a new CDO gate
+  (`cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero`) asserts `0`.
+  **CDO: byte-identical (1.75%/317, `genuine_wrong`=0, 0 `abi_overload_collapsed`
+  before AND after — all CDO deps are `EmbeddedSource`, so this fix is dormant on CDO
+  by construction; the fixed N11 probe-`.app` pair (`tests/r0-corpus/
+  ws-cross-object-chain`) now ingests as two DISTINCT, un-collapsed candidates that
+  decline `OverloadAmbiguous` at PLAIN dispatch on the INNER `Get(Helper)` call
+  itself — pre-fix that call silently resolved `Opaque` to an arbitrary survivor and
+  only the OUTER `.ReadAs()` chain call declined, via the separate chain guard).**
 
 - **Cross-object call-result chains: `Var.Method().X()` now resolves via a PURE
   `resolve_member` type-query on the base's static type, fail-closed (cross-object chains +

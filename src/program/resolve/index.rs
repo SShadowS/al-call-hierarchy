@@ -661,6 +661,66 @@ fn kind_from_object_type_str(s: &str) -> Option<ObjectKind> {
 }
 
 // ---------------------------------------------------------------------------
+// PREFLIGHT DIAGNOSTIC — Task 1 round-2 addendum, folded in by Task 2
+// ---------------------------------------------------------------------------
+
+/// Count event-subscriber routines whose declared arity is EXACTLY the
+/// resolved publisher's explicit arity **+1** (i.e. a shape that WOULD wire
+/// under the Sender-tolerant `+1` bound, `event::subscriber_arity_bound`)
+/// where the publisher's [`RoutineNode::include_sender`] is UNKNOWN
+/// (`None`) — the exact population Task 1's fail-closed policy ("no `+1`
+/// tolerance without positive evidence") silently declines to wire.
+///
+/// Task 1's own commit narrative reported a 13,581-entry probe of a real
+/// Microsoft Base Application `SymbolReference.json` finding 100%
+/// `IncludeSender` coverage (zero `None`s), but never landed that as a CODE
+/// diagnostic — this closes that gap (round-2 addendum: "Emit the preflight
+/// diagnostic: count of unknown-IncludeSender publishers with +1-arity
+/// subscribers"). A CDO gate asserts this is `0` — confirming the
+/// fail-closed policy is not silently orphaning a legitimate wiring
+/// population on a real workspace. A nonzero count elsewhere is not itself
+/// a bug (it may be a genuinely unparseable/absent attribute); it is the
+/// exact signal the round-2 addendum asked to surface for adjudication
+/// rather than letting the policy discard it silently.
+///
+/// Deliberately INDEPENDENT of [`ResolveIndex::build`]'s own subscriber
+/// wiring loop (rather than instrumenting it) — a diagnostic that shares no
+/// code path with the mechanism it audits cannot be silently defeated by a
+/// future change to that mechanism.
+pub fn count_unknown_include_sender_plus1_subscribers(graph: &ProgramGraph) -> usize {
+    let mut count = 0usize;
+    for sub_routine in &graph.routines {
+        if sub_routine.event_subscribers.is_empty() {
+            continue;
+        }
+        let sub_app = sub_routine.id.object.app;
+        let sub_params = sub_routine.id.params_count;
+
+        for args in &sub_routine.event_subscribers {
+            let Some(kind) = kind_from_object_type_str(&args.publisher_object_type) else {
+                continue;
+            };
+            let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name) else {
+                continue;
+            };
+            let event_name_lc = args.event_name.to_ascii_lowercase();
+
+            for pr in &graph.routines {
+                if pr.id.object == pub_obj.id
+                    && pr.id.name_lc == event_name_lc
+                    && pr.publisher_kind.is_some()
+                    && pr.include_sender.is_none()
+                    && pr.id.params_count + 1 == sub_params
+                {
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1696,6 +1756,115 @@ mod tests {
             idx.ambiguous_subscriptions().is_empty(),
             "an orphaned subscriber (no candidate at all) is not ambiguity"
         );
+    }
+
+    // -------------------------------------------------------------------
+    // Task 1 round-2 / Task 2 fold-in: unknown-IncludeSender preflight
+    // -------------------------------------------------------------------
+
+    /// A publisher with `include_sender: None` (UNKNOWN) whose sole
+    /// subscriber sits at EXACTLY `publisher_arity + 1` must be counted —
+    /// this is the population the fail-closed policy silently orphans.
+    #[test]
+    fn count_unknown_include_sender_plus1_subscribers_counts_the_orphaned_shape() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id,
+                "OnAfterX",
+                0,
+                PublisherKind::Integration,
+                None, // UNKNOWN IncludeSender
+            )],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                1, // publisher_arity(0) + 1
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+        assert_eq!(count_unknown_include_sender_plus1_subscribers(&graph), 1);
+    }
+
+    /// Control (a): `include_sender: Some(true)` — known, not unknown — must
+    /// NOT be counted even though the arity shape is identical.
+    #[test]
+    fn count_unknown_include_sender_plus1_subscribers_excludes_known_true() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id,
+                "OnAfterX",
+                0,
+                PublisherKind::Integration,
+                Some(true),
+            )],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                1,
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+        assert_eq!(count_unknown_include_sender_plus1_subscribers(&graph), 0);
+    }
+
+    /// Control (b): `include_sender: None` but the subscriber sits at the
+    /// EXACT (non-`+1`) arity — must NOT be counted; this diagnostic is
+    /// specifically about the `+1`-shaped population, not every unknown
+    /// publisher.
+    #[test]
+    fn count_unknown_include_sender_plus1_subscribers_excludes_exact_arity() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id,
+                "OnAfterX",
+                1,
+                PublisherKind::Integration,
+                None,
+            )],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                1, // exact match, not +1
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+        assert_eq!(count_unknown_include_sender_plus1_subscribers(&graph), 0);
     }
 
     // (e) Unresolvable publisher — no panic ----------------------------------

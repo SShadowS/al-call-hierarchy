@@ -260,26 +260,29 @@ fn resolve_in_object(
     // With params_count in RoutineNodeId, each overload is normally a distinct
     // node — but two DISTINCT overloads sharing (object, name_lc, params_count)
     // collide onto one `RoutineNodeId` when their `sig_fp` also matches: source
-    // `sig_fp` is always 0 (see node.rs), and an ABI `sig_fp` (`param_type_fp`)
-    // is 0 for any 0-arg overload or collides whenever the degraded param-type
-    // text happens to match (it carries only a parameter's OUTER type keyword,
-    // never a Subtype). `build_program_graph`'s dedup
-    // (`dedup_routines_preserving_genuine_overloads`, beyond-1B.3b Task 2)
-    // preserves every DISTINCT raw entry for a SOURCE routine — its
-    // `param_sig_key` is real parsed param-type content, so two textually
-    // distinct declarations never share a key. It does NOT do the same for an
-    // ABI routine (Task 3 review fix, CORRECTING this comment's prior false
-    // claim): an ABI routine's `param_sig_key` is hardcoded empty, so a run of
-    // ≥2 raw entries sharing one `RoutineNodeId` always collapses to a single
-    // arbitrary survivor there — flagged `RoutineNode::abi_overload_collapsed`
-    // so `receiver.rs`'s cross-object-chain type-query declines rather than
-    // trust its return type, instead of silently keeping only one candidate
-    // here. So >1 arity-matched candidates HERE always means genuinely
-    // DISTINCT `RoutineNodeId`s (different `sig_fp`) survived that collapse —
-    // REAL, unresolved overload ambiguity this engine cannot break by
-    // parameter count alone, absent further evidence — an `UNKNOWN_ARITY`-
-    // sentinel candidate (Task 1 tri-state arity) never lands in `matched` at
-    // all, since it can never equal a real call's `arity`.
+    // `sig_fp` is always 0 (see node.rs), so two textually distinct SOURCE
+    // declarations never collide there (their real content lives in
+    // `param_sig_key` instead — see `build_program_graph`'s dedup,
+    // `dedup_routines_preserving_genuine_overloads`, beyond-1B.3b Task 2). An
+    // ABI `sig_fp` (`abi_ingest::param_type_fp`) now folds a length-delimited
+    // canonical tuple of every parameter's outer kind + Subtype id + raw
+    // Subtype name + a degradation tag (Task 2 round-2 addendum — previously:
+    // only the OUTER type keyword, never a `Subtype`, so two genuinely
+    // DIFFERENT overloads differing only by an object-typed parameter's
+    // Subtype silently collided). Two ABI entries now collide onto one
+    // `RoutineNodeId` ONLY when their ENTIRE canonical tuple matches — a true
+    // re-parse duplicate, or a residual fingerprint collision this engine
+    // cannot further distinguish (either way, `dedup_routines_preserving_
+    // genuine_overloads` collapses that run to ONE survivor and flags it
+    // `RoutineNode::abi_overload_collapsed`, since an ABI routine's
+    // `param_sig_key` is hardcoded empty — no independent content signature
+    // beyond the tuple already folded into `sig_fp`). So >1 arity-matched
+    // candidates HERE always means genuinely DISTINCT `RoutineNodeId`s
+    // (different `sig_fp`) survived that collapse — REAL, unresolved overload
+    // ambiguity this engine cannot break by parameter count alone, absent
+    // further evidence — an `UNKNOWN_ARITY`-sentinel candidate (Task 1
+    // tri-state arity) never lands in `matched` at all, since it can never
+    // equal a real call's `arity`.
     let matched: Vec<&RoutineNodeId> = candidates
         .iter()
         .filter(|rid| rid.params_count == arity)
@@ -312,7 +315,35 @@ fn resolve_in_object(
         // narrowed an originally-ambiguous (`pre_filter_count > 1`) set down
         // to one, that is NOT a safe selection — fall through to the `_` arm.
         1 if pre_filter_count == 1 => {
-            Some(make_routine_route(visible[0], obj_tier, body_map, graph))
+            let rid0 = visible[0];
+            // PLAIN-DISPATCH MARKER GUARD (Task 2 round-2, the round-1
+            // critical fold-in): before this fix, `abi_overload_collapsed`
+            // was consulted ONLY by the chain-type-query boundary
+            // (`routine_node_for_type_query`) — a marked survivor could
+            // still resolve CONFIDENTLY right here via ordinary PLAIN
+            // dispatch (a qualified call like `DepCollapse.Get(X)`, never
+            // chained onward), an unguarded false-`Source`/`Opaque` vector.
+            // `resolve_in_object` is the SINGLE choke point every plain-call
+            // AND qualified-member dispatch path in this module funnels
+            // through (bare-call Step 1/2/3, `resolve_member`'s Object/
+            // SelfObject/Interface arms) — placing the guard HERE, at the
+            // FINAL candidate-selection boundary, closes it for every one of
+            // them at once rather than one branch at a time. A collapse-
+            // marked node is the arbitrary (or genuinely indistinguishable)
+            // survivor of ≥2 raw ABI entries that fingerprint-collided (see
+            // `build::dedup_routines_preserving_genuine_overloads`'s doc) —
+            // its `return_type`/identity may not even be the one the caller
+            // meant, so it must decline exactly like a genuine >1-candidate
+            // ambiguity, never silently resolve.
+            let collapsed = graph
+                .routines
+                .binary_search_by(|probe| probe.id.cmp(rid0))
+                .ok()
+                .is_some_and(|i| graph.routines[i].abi_overload_collapsed);
+            if collapsed {
+                return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
+            }
+            Some(make_routine_route(rid0, obj_tier, body_map, graph))
         }
         _ => Some(unresolved_route(UnknownReason::OverloadAmbiguous)),
     }
@@ -1709,15 +1740,24 @@ pub fn resolve_member(
 ///   `return_type` from source parsing, never a `return_type_id`; see
 ///   `node_extract::extract_nodes`).
 /// - [`RouteTarget::AbiSymbol`] — **the ABI-PREFIX UNIQUENESS GUARD**
-///   (round-1 C1+C2, round-2 arity-PROOF). The route carries no routine id,
-///   and ABI parameter types are DEGRADED — `abi_ingest::param_type_fp`
-///   fingerprints only the OUTER type keyword (`AbiParameter::type_text`
-///   never carries a param's `Subtype`), so two genuinely different
-///   same-arity overloads differing only in an object-typed parameter's
-///   Subtype (`Get(X: Codeunit A)` vs `Get(X: Codeunit B)`) can hash-collide
-///   onto the identical `RoutineNodeId`. A naive `(object, name, arity)`
-///   re-lookup therefore CANNOT be trusted to reproduce the exact candidate
-///   `resolve_member` selected. This function instead requires ALL of:
+///   (round-1 C1+C2, round-2 arity-PROOF). The route carries no routine id.
+///   Prior to Task 2, ABI parameter types were DEGRADED — `abi_ingest::
+///   param_type_fp` fingerprinted only the OUTER type keyword
+///   (`AbiParameter::type_text` never carried a param's `Subtype`), so two
+///   genuinely different same-arity overloads differing only in an
+///   object-typed parameter's Subtype (`Get(X: Codeunit A)` vs `Get(X:
+///   Codeunit B)`) could hash-collide onto the identical `RoutineNodeId`.
+///   Task 2 closed that: `param_type_fp` now folds a length-delimited
+///   canonical tuple (outer kind + Subtype id + raw Subtype name + a
+///   degradation tag), so two overloads collide ONLY when their ENTIRE tuple
+///   matches — a true duplicate, or a residual collision this engine cannot
+///   further distinguish (either way, correctly collapse-marked, see
+///   `build::dedup_routines_preserving_genuine_overloads`'s doc). This
+///   function's uniqueness proof remains necessary regardless — a naive
+///   `(object, name, arity)` re-lookup still CANNOT be trusted to reproduce
+///   the exact candidate `resolve_member` selected when >1 same-name/
+///   same-arity siblings exist (now genuinely distinct `RoutineNodeId`s,
+///   not a fp collision) — this function instead requires ALL of:
 ///   - the declaring `ObjectNodeId` reconstructed from `key` (the same
 ///     `object_number != 0 ⇒ Id` / `else ⇒ Name` convention
 ///     `make_routine_route`/`abi_check::RawAbiIndex` already use, and the
@@ -1741,18 +1781,21 @@ pub fn resolve_member(
 /// with to produce `route` (the same value, never re-derived) — see
 /// `receiver.rs`'s round-1 M1 note.
 ///
-/// **Collapsed-ABI-overload guard (Task 3 review fix).** Whichever branch
-/// resolves a node, the result is rejected when
-/// [`RoutineNode::abi_overload_collapsed`] is `true` — such a node is the
-/// arbitrary survivor of ≥2 raw ABI overload entries that hash-collided
-/// onto one `RoutineNodeId` (`abi_ingest::param_type_fp` degrades a
-/// parameter's type to its OUTER keyword only, never a `Subtype`), so its
+/// **Collapsed-ABI-overload guard (Task 3 review fix; sibling landed in
+/// plain dispatch by Task 2 round-2 — see [`resolve_in_object`]'s own
+/// PLAIN-DISPATCH MARKER GUARD).** Whichever branch resolves a node, the
+/// result is rejected when [`RoutineNode::abi_overload_collapsed`] is `true`
+/// — such a node is the arbitrary (or genuinely indistinguishable) survivor
+/// of ≥2 raw ABI overload entries that fingerprint-collided onto one
+/// `RoutineNodeId` (a true duplicate, or — post Task 2 — a residual
+/// canonical-tuple collision; see `abi_ingest::param_type_fp`'s doc), so its
 /// `return_type`/`return_type_id` may belong to the WRONG declaration. This
 /// is checked here — the single choke point both `RouteTarget` arms funnel
-/// through — rather than solely inside [`resolve_abi_prefix_routine`], so a
-/// future `RouteTarget::Routine` producer can never accidentally bypass it
-/// (today only source-tier routines reach `RouteTarget::Routine`, and
-/// `abi_overload_collapsed` is unconditionally `false` for those — see
+/// through for the CHAIN type-query path — rather than solely inside
+/// [`resolve_abi_prefix_routine`], so a future `RouteTarget::Routine`
+/// producer can never accidentally bypass it (today only source-tier
+/// routines reach `RouteTarget::Routine`, and `abi_overload_collapsed` is
+/// unconditionally `false` for those — see
 /// `build::dedup_routines_preserving_genuine_overloads` — so this is a
 /// no-op on the current call graph, purely defensive).
 pub(crate) fn routine_node_for_type_query<'g>(
@@ -2845,6 +2888,184 @@ pageextension 52911 "ExtA" extends BasePage
              got {r:?}"
         );
         assert_eq!(r.witness, Witness::None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2 round-2 addendum: PLAIN-DISPATCH MARKER GUARD (round-1
+    // critical). Before this fix, `abi_overload_collapsed` gated ONLY the
+    // chain-type-query boundary (`routine_node_for_type_query`) — a marked
+    // survivor could still resolve CONFIDENTLY via ordinary PLAIN dispatch
+    // (`resolve_in_object`'s single-visible-candidate arm). These two
+    // fixtures build a minimal graph with the marker ALREADY set (bypassing
+    // ingestion/dedup entirely — this targets the SELECTION guard in
+    // isolation) and prove: (f) a MARKED candidate declines even though it
+    // is the sole arity-matched, visible candidate; (control) an UNMARKED
+    // candidate in the identical shape still resolves normally — the guard
+    // must not over-decline.
+    // -----------------------------------------------------------------------
+
+    fn plain_dispatch_marker_guard_fixture(
+        collapsed: bool,
+    ) -> (ProgramGraph, ResolveIndex, BodyMap<'static>, ObjectNodeId) {
+        let ws_id = make_app_id("WS");
+        let dep_id = make_app_id("DepApp");
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let caller_obj_id = ObjectNodeId {
+            app: ws_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(50600),
+        };
+        let dep_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60104),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: caller_obj_id.clone(),
+                name: "Caller".into(),
+                declared_id: Some(50600),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+            ObjectNode {
+                id: dep_obj_id.clone(),
+                name: "Dep Collapse".into(),
+                declared_id: Some(60104),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+        ];
+
+        // The ONLY "Get" overload visible at arity 1 — carries `abi_overload_
+        // collapsed` directly (simulating dedup's post-collapse output)
+        // rather than exercising real ABI ingestion, to isolate the
+        // SELECTION guard from the fp/dedup mechanics Task 2's other tests
+        // already cover.
+        let routines = vec![RoutineNode {
+            id: RoutineNodeId {
+                object: dep_obj_id.clone(),
+                name_lc: "get".into(),
+                enclosing_member_lc: None,
+                params_count: 1,
+                sig_fp: 777,
+            },
+            name: "Get".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: Some("Codeunit \"Dep Http Content\"".into()),
+            return_type_id: Some(("Dep Http Content".into(), 60101)),
+            abi_overload_collapsed: collapsed,
+        }];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        (graph, index, body_map, caller_obj_id)
+    }
+
+    #[test]
+    fn plain_dispatch_declines_on_collapse_marked_candidate() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, caller_obj_id) = plain_dispatch_marker_guard_fixture(true);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("Caller must exist");
+
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "dep collapse".into(),
+            id: None,
+        };
+        let (_shape, routes) =
+            resolve_member(&receiver, "get", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "a collapse-MARKED candidate must never resolve confidently via \
+             PLAIN dispatch either — only the chain-type-query boundary was \
+             guarded before this fix; got {r:?}"
+        );
+        assert!(
+            matches!(
+                r.evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "expected Unknown(OverloadAmbiguous); got {r:?}"
+        );
+        assert_eq!(r.witness, Witness::None);
+    }
+
+    /// Control: the IDENTICAL fixture shape, but UNMARKED — proves the new
+    /// guard does not over-decline a genuinely trustworthy sole ABI
+    /// candidate (the CDO-neutrality-critical property: 0 marked routines
+    /// on CDO means this guard is dormant there by construction).
+    #[test]
+    fn plain_dispatch_resolves_unmarked_candidate_normally() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, caller_obj_id) = plain_dispatch_marker_guard_fixture(false);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("Caller must exist");
+
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "dep collapse".into(),
+            id: None,
+        };
+        let (_shape, routes) =
+            resolve_member(&receiver, "get", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(r.evidence, Evidence::Opaque);
+        assert!(
+            matches!(r.target, RouteTarget::AbiSymbol { .. }),
+            "an UNMARKED sole ABI candidate must still resolve normally; got {r:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
