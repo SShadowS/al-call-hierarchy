@@ -1529,16 +1529,30 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // resolving pre-fix via the bug, and the new validated table entries
     // are what keeps them CORRECTLY resolving post-fix instead of
     // regressing to `Unknown`.
+    //
+    // TIGHTENED 2026-07-02 (plan v2.1 Task 5, FINAL — arc capstone): 0.0176→
+    // 0.01751, RE-CONFIRMED 1.75% (exact raw value 317/18104=0.017509942…) by
+    // an independent single-threaded re-run under `ENFORCE_CDO_WS=1`
+    // (byte-identical to Task 4's own measurement, no drift — Task 5 makes no
+    // resolver changes, only closes the plan). Ceiling pinned to a tiny
+    // deterministic margin (0.01751, five decimal places) above the exact
+    // measured raw rate — `0.0175` alone would sit BELOW the true value
+    // (317/18104 rounds to "1.75%" at 2 decimals but is not exactly 0.0175)
+    // and spuriously trip; this is the plan's FINAL floor: 1.82%→1.75% over
+    // the whole T1-T4 arc (T1/T2 CDO-neutral soundness+plumbing, T3
+    // cross-object chains -2 edges, T4 Xml/RecordRef tables -10 edges). See
+    // CHANGELOG.md for the full arc summary.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.0176,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.0176 \
-         (recorded 2026-07-02 post chain-tables Task 4: 1.75%, was 1.81% \
-         post plan v2.1 Task 3, 1.82% post uniform-access-and-compound-\
-         receiver Task 4, 1.88% post-Task-1.5, 2.25% post-Task-1-only [a \
-         transient over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, \
-         6.46% pre-beyond-1B.3b) — engine regressed; investigate before \
-         raising the ceiling"
+        primary_rate <= 0.01751,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.01751 \
+         (recorded 2026-07-02 post plan v2.1 Task 5 FINAL: 1.75% \
+         [317/18104=0.017510], byte-identical re-confirm of Task 4's 1.75%, \
+         was 1.81% post plan v2.1 Task 3, 1.82% post \
+         uniform-access-and-compound-receiver Task 4, 1.88% post-Task-1.5, \
+         2.25% post-Task-1-only [a transient over-decline], 1.91% \
+         pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — engine \
+         regressed; investigate before raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1668,17 +1682,25 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `RecordRef.Field(n)` chains, 1 `RecordRef.KeyIndex(1).FieldIndex(1)`
     // chain, 5 Xml `AsXmlElement()`→`Add`/`GetChildNodes` chains) and the
     // Step-4 bare-identifier bug fix this task also made.
+    //
+    // TIGHTENED 2026-07-02 (plan v2.1 Task 5, FINAL — arc capstone): 320→317,
+    // RE-CONFIRMED 317/317 (primary/whole) by an independent single-threaded
+    // re-run under `ENFORCE_CDO_WS=1`, byte-identical to Task 4's own
+    // measurement (`unknownByReason`={CompoundReceiver: 144,
+    // UntrackedReceiver: 91, OverloadAmbiguous: 56,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==317). Ceiling
+    // pinned to the exact measured value — the plan's FINAL floor.
     assert!(
-        ph.unknown <= 320,
-        "primary unknown count {} exceeds ceiling 320 (recorded 2026-07-02 \
-         post chain-tables Task 4: 317 — 10 sites EXHAUSTIVELY \
-         hand-adjudicated correct via a full before/after edge-dump diff, \
-         was 327 post plan v2.1 Task 3, 329 post \
-         uniform-access-and-compound-receiver Task 4, 340 post Task 1.5/3, \
-         407 post Task 1 alone [transient over-decline], 356 post soundness \
-         completion plan v2.1 Task 1.5, 346 post follow-up plan v2.1 Task \
-         4, 508 pre-follow-up) — engine regressed; investigate before \
-         raising the ceiling",
+        ph.unknown <= 317,
+        "primary unknown count {} exceeds ceiling 317 (recorded 2026-07-02 \
+         post plan v2.1 Task 5 FINAL: 317 — byte-identical re-confirm of \
+         Task 4's 317, 10 sites EXHAUSTIVELY hand-adjudicated correct via a \
+         full before/after edge-dump diff, was 327 post plan v2.1 Task 3, \
+         329 post uniform-access-and-compound-receiver Task 4, 340 post \
+         Task 1.5/3, 407 post Task 1 alone [transient over-decline], 356 \
+         post soundness completion plan v2.1 Task 1.5, 346 post follow-up \
+         plan v2.1 Task 4, 508 pre-follow-up) — engine regressed; \
+         investigate before raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
@@ -1691,12 +1713,17 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-02 (chain-tables plan, Task 4): 330→320, alongside
     // the primary ceiling above; whole-program `unknown`=317, same value as
     // primary today.
+    //
+    // TIGHTENED 2026-07-02 (plan v2.1 Task 5, FINAL — arc capstone): 320→317,
+    // alongside the primary ceiling above; whole-program `unknown`=317,
+    // byte-identical re-confirm, same value as primary today.
     assert!(
-        h.unknown <= 320,
-        "whole-program unknown count {} exceeds ceiling 320 (recorded \
-         2026-07-02 post chain-tables Task 4: 317 — see the primary-scoped \
-         ceiling comment above for the full history and adjudication) — \
-         engine regressed; investigate before raising the ceiling",
+        h.unknown <= 317,
+        "whole-program unknown count {} exceeds ceiling 317 (recorded \
+         2026-07-02 post plan v2.1 Task 5 FINAL: 317 — see the \
+         primary-scoped ceiling comment above for the full history and \
+         adjudication) — engine regressed; investigate before raising the \
+         ceiling",
         h.unknown,
     );
 

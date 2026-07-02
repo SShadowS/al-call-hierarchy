@@ -8,6 +8,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **cross-object chains + protected-ABI plan v2.1, Task 5 (FINAL): re-measure,
+  exhaustive-adjudication sign-off, ratchet finalization — arc capstone**
+  (`tests/program_resolve_harness.rs`). Closes the plan Task 1 opened. Full re-measure
+  on CDO (`CDO_WS`, `ENFORCE_CDO_WS=1`, single tests, `--release`): primary/whole
+  `unknown`=317, `real_unknown_rate`=1.75% (raw 317/18104=0.017510), `genuine_wrong`=0,
+  `fresh_missing`=4, `fresh_wrong`=149 (all `fresh_ahead_dispatch`),
+  `unknownByReason`={CompoundReceiver: 144, UntrackedReceiver: 91, OverloadAmbiguous: 56,
+  BuiltinPrecedenceCollision: 1, MemberNotFound: 25} (sum=317=`unknown`, verified both
+  primary and whole scopes). **Net across the whole plan: 1.82%(329)→1.75%(317), −12
+  count / −0.07pp, `genuine_wrong` stays 0 through every task.** Trajectory: Task 1
+  protected-ABI soundness fix — CDO-DORMANT (its only true SymbolOnly unit exposes zero
+  public routines; both metric gates byte-identical 1.82%/329), proven exclusively by 9
+  new in-repo fixtures against a real no-embedded-source probe `.app`; Task 2 structured
+  ABI return-type plumbing — resolution-NEUTRAL by construction (nothing consumed
+  `RoutineNode.return_type` yet), byte-identical 1.82%/329; Task 3 cross-object
+  call-result chains (`Var.Method().X()` via a pure `resolve_member` type-query) —
+  329→327 (`CompoundReceiver` 156→154, −2), 1.82%→1.81%, plus a same-task review fix
+  (collapsed-ABI-overload-survivor decline) that stayed byte-identical (327/1.81%,
+  0 collapse-marked routines in the whole CDO graph); Task 4 Xml + `RecordRef`-family
+  typed-return tables plus the HTTPCONTENT-catalog-was-never-stale course-correction and
+  a genuine pre-existing Step-4 fail-open bugfix — 327→317 (`CompoundReceiver` 154→144,
+  −10), 1.81%→1.75%. **Exhaustive-adjudication sign-off (re-confirmed, not re-sampled):**
+  Task 3's 2 newly-resolved edges (`Codeunit 6175364 "CDO Universign E-Seal Service"`'s
+  `ProcessSealResponse`, `Response.GetContent().AsText()`/`.AsBlob()`) and Task 4's 10
+  newly-`Catalog` edges (4 `RecordRef.Field(n).<Leaf>()`, 1
+  `RecordRef.KeyIndex(1).FieldIndex(1)`, 5 `Node.AsXmlElement().<Add|GetChildNodes>()`)
+  were each hand-adjudicated against real CDO/System-Application source during their own
+  task (see `.superpowers/sdd/task-3-report.md` §6 and `task-4-report.md`'s edge table) —
+  2+10=12 equals the exact `CompoundReceiver` bucket drop (156→144) and the exact
+  `unknown` count drop (329→317); no edge unaccounted for. Both tasks' methodology dumped
+  and diffed the FULL (Task 3) or provably-exhaustive-for-the-touched-code (Task 4, the
+  4 new-table BuiltinId prefixes — no other code path could possibly have changed)
+  before/after edge set, so a changed TARGET/EVIDENCE on a pre-existing edge would have
+  surfaced as a removed+added pair, not just a net-new addition; both diffs showed only
+  additions, zero removals. **Protected-ABI dependency check:** none of the 12
+  adjudicated edges depends on a mislabeled-protected ABI member — impossible by
+  construction, not merely by inspection: Task 3's 2 edges resolve through the System
+  Application's `EmbeddedSource` tier (not SymbolOnly at all) via `resolve_in_object`'s
+  uniform per-candidate-visibility discipline (identical for every tier since Task 1);
+  Task 4's 10 edges resolve entirely through the compiled-in `Catalog`/builtin dispatch
+  tables (`framework_returns.rs`/`recordref_returns.rs` → `member_catalog.rs`), which
+  never reads `AbiRoutine`/`Access` data at all. **Ratchet finalization:**
+  `real_unknown_rate` ceiling tightened `0.0176`→`0.01751` (a 5-decimal margin above the
+  exact raw measured value 0.017510, since the 4-decimal `0.0175` display value alone
+  sits BELOW the true raw rate and would spuriously trip); primary/whole `unknown` COUNT
+  ceilings tightened `320`→`317` (exact measured floor, no margin needed for an integer
+  count). `fresh_wrong`/`fresh_missing` ceilings (149 exact / 10 with margin over
+  measured 4) are UNCHANGED — neither moved across T3/T4, kept per the plan's own
+  "keep, don't re-tighten what this plan didn't touch" scope. **Pre-existing-failure
+  investigation:** `fan_out_applicability_zero_violations` and
+  `route_applicability_zero_violations` (both `EventFlow soundness violated on CDO_WS`,
+  `event=200` vs expected `0`) were flagged during Task 3/4 as failing before this plan
+  started. Probed via a clean `git checkout` of master's base commit `8a484d4` (working
+  tree was fully clean of tracked changes) + a full release rebuild + an
+  `ENFORCE_CDO_WS=1` re-run: **both tests fail identically on master** (same
+  `event=200`/`0` assertion, same panic site) — confirmed PRE-EXISTING, unrelated to this
+  plan (no event-flow/fan-out code touched by any of Tasks 1-5), likely graphify-era per
+  the Task-3 report's own hypothesis. Documented here as known-broken-on-master, left
+  open for a future plan to root-cause; NOT a regression introduced by this work.
+  **DEFERRED (next plan, see the plan doc's "Roadmap — beyond this plan" section):**
+  record-field chains (`Rec."Field".X()` — needs a table-field type index on
+  `ObjectNode`, `FieldDecl` already parsed with zero consumers); `UntrackedReceiver`=91;
+  honest-taxonomy reclassification of `OverloadAmbiguous`=56/`MemberNotFound`=25 into
+  charter §5 sub-states; the ABI param-fingerprint `Subtype` degradation
+  (`param_type_fp`/`AbiParameter`, incl. recovering the collapse-marked safe subset once
+  fixed); protected `Variables[]` (dependency page/table variables, relevant once
+  var-access modelling exists); the two pre-existing `fan_out`/`route_applicability` CDO
+  failures documented above.
 - **Xml framework chains + a NEW `RecordRef`/`FieldRef`/`KeyRef` typed-return table
   (chain-tables plan, Task 4).** `src/program/resolve/framework_returns.rs`: `Xml`
   entries added to `framework_return_kind` — `XmlElement.Create(...)` (arities 1-4),
