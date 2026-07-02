@@ -351,6 +351,7 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: pk,
+            include_sender: None,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),

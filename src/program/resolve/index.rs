@@ -28,7 +28,7 @@ use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectRef;
 use crate::program::resolve::edge::Condition;
-use crate::program::resolve::event::ParsedSubscriberArgs;
+use crate::program::resolve::event::{ParsedSubscriberArgs, subscriber_arity_bound};
 
 // ---------------------------------------------------------------------------
 // WorldMode
@@ -255,16 +255,26 @@ impl ResolveIndex {
                     .iter()
                     .filter_map(|&i| {
                         let r = &graph.routines[i];
-                        // Sender-tolerant arity bound: an `[IntegrationEvent(
-                        // IncludeSender=true, …)]` (also Business/Internal) prepends an
-                        // implicit `Sender` parameter that a subscriber may capture, so
-                        // a valid subscriber's arity is at most the publisher's EXPLICIT
-                        // arity + 1. The pre-fix `params_count >= sub_params` dropped
-                        // every IncludeSender subscriber (publisher explicit arity 0 vs
-                        // subscriber arity 1) — a large orphan class. `sub_params <=
-                        // params_count + 1` never rejects a valid subscriber; the
-                        // disambiguation below still prefers an exact-arity match.
-                        (sub_params <= r.id.params_count + 1 && r.publisher_kind.is_some())
+                        // Sender-tolerant arity bound (Task 1, round-2: CONDITIONAL, never
+                        // blanket): an `[IntegrationEvent(IncludeSender: true, …)]` (also
+                        // Business/Internal — all three carry `IncludeSender` at arg
+                        // position 0) prepends an implicit `Sender` parameter that a
+                        // subscriber may capture, so a valid subscriber's arity is at most
+                        // the publisher's EXPLICIT arity + 1 — but ONLY when the publisher
+                        // actually declares `IncludeSender: true`. A blanket `+1`
+                        // regardless of the flag would be SYNCHRONIZED WRONGNESS (the extra
+                        // param is illegal AL otherwise). `r.include_sender` is the single
+                        // source of truth (populated at ingestion — see
+                        // `RoutineNode::include_sender`'s doc); `subscriber_arity_bound` is
+                        // the SAME shared helper `differential::verify_event_subscriber_
+                        // route`'s independent checker uses, so the two can never drift.
+                        // The pre-1B.3b-Task-1 `params_count >= sub_params` bound (no
+                        // tolerance at all) dropped every IncludeSender subscriber
+                        // (publisher explicit arity 0 vs subscriber arity 1) — a large
+                        // orphan class; the disambiguation below still prefers an
+                        // exact-arity match over a Sender-tolerant one.
+                        let max_arity = subscriber_arity_bound(r.id.params_count, r.include_sender);
+                        (sub_params <= max_arity && r.publisher_kind.is_some())
                             .then(|| r.id.clone())
                     })
                     .collect();
@@ -717,6 +727,7 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: None,
+            include_sender: None,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
@@ -731,6 +742,7 @@ mod tests {
         name: &str,
         params: usize,
         kind: PublisherKind,
+        include_sender: Option<bool>,
     ) -> RoutineNode {
         RoutineNode {
             id: RoutineNodeId {
@@ -747,6 +759,7 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: Some(kind),
+            include_sender,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
@@ -778,6 +791,7 @@ mod tests {
             event_subscribers: subs,
             subscriber_instance_manual: manual,
             publisher_kind: None,
+            include_sender: None,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
@@ -1391,6 +1405,7 @@ mod tests {
                 "OnAfterX",
                 0,
                 PublisherKind::Integration,
+                Some(false),
             )],
             vec![make_subscriber(
                 sub_id,
@@ -1440,8 +1455,20 @@ mod tests {
 
         let (graph, _, _) = build_event_fixture(
             vec![
-                make_publisher(pub_id.clone(), "OnAfterX", 0, PublisherKind::Integration),
-                make_publisher(pub_id.clone(), "OnBeforeX", 0, PublisherKind::Integration),
+                make_publisher(
+                    pub_id.clone(),
+                    "OnAfterX",
+                    0,
+                    PublisherKind::Integration,
+                    Some(false),
+                ),
+                make_publisher(
+                    pub_id.clone(),
+                    "OnBeforeX",
+                    0,
+                    PublisherKind::Integration,
+                    Some(false),
+                ),
             ],
             vec![make_subscriber(
                 sub_id,
@@ -1489,6 +1516,7 @@ mod tests {
                 "OnAfterX",
                 0,
                 PublisherKind::Integration,
+                Some(false),
             )],
             vec![make_subscriber(sub_id, "Handler", 0, vec![sa], false)],
         );
@@ -1537,8 +1565,20 @@ mod tests {
         // Subscriber params=0: both overloads satisfy >=0 but neither equals 0.
         let (graph, _, _) = build_event_fixture(
             vec![
-                make_publisher(pub_id.clone(), "OnAfterX", 1, PublisherKind::Integration),
-                make_publisher(pub_id.clone(), "OnAfterX", 2, PublisherKind::Integration),
+                make_publisher(
+                    pub_id.clone(),
+                    "OnAfterX",
+                    1,
+                    PublisherKind::Integration,
+                    Some(false),
+                ),
+                make_publisher(
+                    pub_id.clone(),
+                    "OnAfterX",
+                    2,
+                    PublisherKind::Integration,
+                    Some(false),
+                ),
             ],
             vec![make_subscriber(
                 sub_id,
@@ -1586,6 +1626,7 @@ mod tests {
                 "OnAfterX",
                 0,
                 PublisherKind::Integration,
+                Some(true),
             )],
             vec![make_subscriber(
                 sub_id,
@@ -1599,9 +1640,62 @@ mod tests {
         assert_eq!(
             idx.subscribers_of(&pub_arity0).len(),
             1,
-            "arity-1 (Sender) subscriber must bind to arity-0 IncludeSender publisher"
+            "arity-1 (Sender) subscriber must bind to arity-0 IncludeSender publisher \
+             when the publisher declares IncludeSender=true"
         );
         assert!(idx.ambiguous_subscriptions().is_empty());
+    }
+
+    // (e0-neg) NEGATIVE: IncludeSender=false, 0-arity publisher + 1-arity
+    // subscriber — the conditional bound must NOT tolerate the extra param; the
+    // subscriber orphans (no candidate), proving the fix is CONDITIONAL, not a
+    // blanket re-introduction of the pre-fix strict bound's opposite extreme.
+    #[test]
+    fn subscribers_of_include_sender_false_publisher_orphans_arity_one_subscriber() {
+        let app = AppRef(0);
+        let pub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(1),
+        };
+        let sub_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(2),
+        };
+        let pub_arity0 = RoutineNodeId {
+            object: pub_id.clone(),
+            name_lc: "onafterx".to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let (graph, _, _) = build_event_fixture(
+            vec![make_publisher(
+                pub_id.clone(),
+                "OnAfterX",
+                0,
+                PublisherKind::Integration,
+                Some(false),
+            )],
+            vec![make_subscriber(
+                sub_id,
+                "Handler",
+                1,
+                vec![sub_args("pub", "onafterx")],
+                false,
+            )],
+        );
+        let idx = ResolveIndex::build(&graph);
+        assert!(
+            idx.subscribers_of(&pub_arity0).is_empty(),
+            "arity-1 subscriber must NOT bind to an arity-0 publisher whose \
+             IncludeSender is explicitly false — the +1 tolerance is conditional"
+        );
+        assert!(
+            idx.ambiguous_subscriptions().is_empty(),
+            "an orphaned subscriber (no candidate at all) is not ambiguity"
+        );
     }
 
     // (e) Unresolvable publisher — no panic ----------------------------------
@@ -1664,8 +1758,20 @@ mod tests {
         // Subscriber params=0: both >=0, but exactly ONE has params==0.
         let (graph, _, _) = build_event_fixture(
             vec![
-                make_publisher(pub_id.clone(), "OnAfterX", 0, PublisherKind::Integration),
-                make_publisher(pub_id.clone(), "OnAfterX", 1, PublisherKind::Integration),
+                make_publisher(
+                    pub_id.clone(),
+                    "OnAfterX",
+                    0,
+                    PublisherKind::Integration,
+                    Some(false),
+                ),
+                make_publisher(
+                    pub_id.clone(),
+                    "OnAfterX",
+                    1,
+                    PublisherKind::Integration,
+                    Some(false),
+                ),
             ],
             vec![make_subscriber(
                 sub_id,

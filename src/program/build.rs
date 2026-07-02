@@ -262,6 +262,12 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
                 event_subscribers: vec![],
                 subscriber_instance_manual: false,
                 publisher_kind: Some(PublisherKind::Platform),
+                // No real `[IntegrationEvent]` attribute to read (this
+                // publisher is synthesized, not parsed) — and platform
+                // DB-trigger/lifecycle events never legally prepend a Sender
+                // anyway, so `None` correctly yields no `+1` tolerance via
+                // `event::subscriber_arity_bound`.
+                include_sender: None,
                 abi_routine_kind: None,
                 abi_event_kind: None,
                 param_sig_key: String::new(),
@@ -439,6 +445,7 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: None,
+            include_sender: None,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
@@ -471,6 +478,7 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: None,
+            include_sender: None,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: param_sig_key.to_string(),

@@ -541,7 +541,14 @@ pub fn project_fresh_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow>
 /// directly on `RoutineDecl.attributes_parsed`, not on any pre-computed field.
 ///
 /// Returns `true` (PASS) when:
-/// 1. `sub_rid.params_count <= publisher_params_count` (parameter prefix check).
+/// 1. `sub_rid.params_count <= subscriber_arity_bound(publisher_params_count,
+///    publisher_include_sender)` (parameter prefix check) — the SAME
+///    CONDITIONAL Sender-tolerant bound `ResolveIndex::build`'s wiring
+///    (`index.rs`) uses to admit a candidate in the first place, via the ONE
+///    shared helper [`crate::program::resolve::event::subscriber_arity_bound`]
+///    (Task 1, round-2: a blanket `+1` regardless of `IncludeSender` would be
+///    SYNCHRONIZED WRONGNESS — see that function's doc). Sender param-TYPE
+///    compatibility is NOT validated (arity-only check; documented residual).
 /// 2. At least one `[EventSubscriber]` attribute in the subscriber's raw IR freshly
 ///    parses to match `(publisher_object_type_lc, publisher_name_lc, event_name_lc)`.
 ///
@@ -552,23 +559,32 @@ pub fn project_fresh_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow>
 ///   excluded before reaching the teeth so this path is for consistency only).
 ///
 /// Returns `false` (FAIL → `unverified_extra`) when:
-/// - `sub_rid.params_count > publisher_params_count`, OR
+/// - `sub_rid.params_count` exceeds the Sender-tolerant bound above, OR
 /// - The subscriber IS found in `parsed` but no freshly-parsed attribute names the
 ///   expected `(publisher_object_type_lc, publisher_name_lc, event_name_lc)` triple.
+// Each param maps 1:1 to a piece of the canonical event-route identity (or, for
+// `publisher_include_sender`, Task 1's arity-tolerance input) — a struct wrapper
+// would only pay for itself by shrinking call sites, and most call sites here pass
+// literals straight through (test fixtures), so grouping would only add a layer of
+// indirection without reducing the argument count actually written at each site.
+#[allow(clippy::too_many_arguments)]
 pub fn verify_event_subscriber_route(
     sub_rid: &RoutineNodeId,
     publisher_object_type_lc: &str,
     publisher_name_lc: &str,
     event_name_lc: &str,
     publisher_params_count: usize,
+    publisher_include_sender: Option<bool>,
     parsed: &[crate::snapshot::ParsedUnit],
     apps: &AppRegistry,
 ) -> bool {
     use crate::program::node::ObjKey;
-    use crate::program::resolve::event::parse_event_subscriber_ir;
+    use crate::program::resolve::event::{parse_event_subscriber_ir, subscriber_arity_bound};
 
-    // ── Parameter prefix check ───────────────────────────────────────────────
-    if sub_rid.params_count > publisher_params_count {
+    // ── Parameter prefix check (Sender-tolerant, CONDITIONAL — Task 1) ──────
+    let max_allowed_arity =
+        subscriber_arity_bound(publisher_params_count, publisher_include_sender);
+    if sub_rid.params_count > max_allowed_arity {
         return false;
     }
 

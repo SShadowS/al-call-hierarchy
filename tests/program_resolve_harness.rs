@@ -327,6 +327,7 @@ fn event_teeth_correct_subscriber_passes() {
             "evtpub",
             "onafterx",
             0,
+            Some(false),
             &[unit],
             &apps,
         ),
@@ -353,6 +354,7 @@ fn event_teeth_wrong_publisher_fails() {
             "evtpub_other", // WRONG publisher name
             "onafterx",
             0,
+            Some(false),
             &[unit],
             &apps,
         ),
@@ -380,6 +382,7 @@ fn event_teeth_excess_params_fails() {
             "evtpub",
             "onafterx",
             0, // publisher has 0 params; subscriber has 2
+            Some(false),
             &[unit],
             &apps,
         ),
@@ -1001,6 +1004,7 @@ fn event_teeth_non_circularity_reads_raw_ir() {
             "evtpub",
             "onafterx",
             0,
+            Some(false),
             &[unit_with_attr],
             &apps,
         ),
@@ -1027,6 +1031,7 @@ fn event_teeth_non_circularity_reads_raw_ir() {
             "evtpub",
             "onafterx",
             0,
+            Some(false),
             &[unit_no_attr],
             &apps,
         ),
@@ -2006,10 +2011,17 @@ fn route_applicability_zero_violations() {
     let appl = run_route_applicability(&fixture);
     assert!(
         appl.is_clean(),
-        "route-applicability contract violated on fixture: \
-         witness_violations={} abi_unmapped={}",
+        "route-applicability contract violated on fixture: witness_violations={} \
+         abi_unmapped={} interface_applicability_violations={} \
+         instance_builtin_violations={} implicit_trigger_violations={} event_violations={} \
+         (is_clean() folds ALL six — printing only the first two would hide which family \
+         actually failed; 1B.3b Task 1 observability gap fix)",
         appl.witness_contract_violations,
         appl.abi_unmapped,
+        appl.interface_applicability_violations,
+        appl.instance_builtin_violations,
+        appl.implicit_trigger_violations,
+        appl.event_violations,
     );
     eprintln!(
         "Test 15 (fixture) — applicability: total_routes={} violations=0 abi_unmapped=0",
@@ -2027,10 +2039,17 @@ fn route_applicability_zero_violations() {
     let appl_cdo = run_route_applicability(&ws);
     assert!(
         appl_cdo.is_clean(),
-        "route-applicability contract violated on CDO_WS: \
-         witness_violations={} abi_unmapped={}",
+        "route-applicability contract violated on CDO_WS: witness_violations={} \
+         abi_unmapped={} interface_applicability_violations={} \
+         instance_builtin_violations={} implicit_trigger_violations={} event_violations={} \
+         (is_clean() folds ALL six — printing only the first two would hide which family \
+         actually failed; 1B.3b Task 1 observability gap fix)",
         appl_cdo.witness_contract_violations,
         appl_cdo.abi_unmapped,
+        appl_cdo.interface_applicability_violations,
+        appl_cdo.instance_builtin_violations,
+        appl_cdo.implicit_trigger_violations,
+        appl_cdo.event_violations,
     );
     eprintln!(
         "Test 15 (CDO) — applicability: total_routes={} violations=0 abi_unmapped=0",

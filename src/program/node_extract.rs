@@ -6,7 +6,7 @@ use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::{
     ParsedSubscriberArgs, PublisherKind, is_event_publisher, parse_event_subscriber_ir,
-    read_event_subscriber_instance,
+    publisher_include_sender, read_event_subscriber_instance,
 };
 use crate::program::resolve::receiver::unquote_identifier;
 use crate::snapshot::TrustTier;
@@ -104,6 +104,23 @@ pub struct RoutineNode {
     /// The event-publisher kind when this routine carries an `[IntegrationEvent]`,
     /// `[BusinessEvent]`, or `[InternalEvent]` attribute; `None` otherwise.
     pub publisher_kind: Option<PublisherKind>,
+    /// The publisher attribute's `IncludeSender` flag (Task 1) — tri-state:
+    /// `Some(true)`/`Some(false)` when the attribute's first arg parsed to a
+    /// literal boolean; `None` when this routine is not a publisher at all, or
+    /// the arg could not be read (fail-closed unknown). Populated at
+    /// ingestion: source routines via
+    /// `crate::program::resolve::event::publisher_include_sender`; ABI
+    /// routines via `abi_ingest::abi_publisher_include_sender`; a
+    /// platform-synthetic publisher (`build::inject_platform_event_publishers`)
+    /// always carries `None` (it has no real `[IntegrationEvent]` attribute to
+    /// read, and platform DB-trigger/lifecycle events never legally prepend a
+    /// Sender). SINGLE SOURCE OF TRUTH consumed via
+    /// `crate::program::resolve::event::subscriber_arity_bound` by BOTH the
+    /// `index.rs` subscriber-wiring candidate filter and
+    /// `differential::verify_event_subscriber_route`'s independent re-check —
+    /// see that function's doc for why the `+1` Sender tolerance must be
+    /// CONDITIONAL on this field, never blanket.
+    pub include_sender: Option<bool>,
     /// ABI-only: the routine kind for ABI-boundary routing. `None` for source routines.
     pub abi_routine_kind: Option<AbiRoutineKind>,
     /// ABI-only: the event kind for ABI-boundary publisher annotation. `None` for source routines.
@@ -331,6 +348,11 @@ pub fn extract_nodes(
                 vec![]
             };
             let publisher_kind = is_event_publisher(r);
+            // Only meaningful when `publisher_kind.is_some()`; the parser itself
+            // already filters to a publisher attribute (integrationevent /
+            // businessevent / internalevent), so this is always `None` on a
+            // non-publisher routine.
+            let include_sender = publisher_include_sender(r, &file.ir);
             routines.push(RoutineNode {
                 id: RoutineNodeId {
                     object: obj_id.clone(),
@@ -349,6 +371,7 @@ pub fn extract_nodes(
                 event_subscribers,
                 subscriber_instance_manual,
                 publisher_kind,
+                include_sender,
                 abi_routine_kind: None,
                 abi_event_kind: None,
                 param_sig_key: param_sig_key(&r.params),

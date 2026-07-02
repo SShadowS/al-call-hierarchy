@@ -9,6 +9,7 @@ use crate::app_package::open_app_zip;
 use crate::engine::deps::symbol_reference::{
     AbiEventKind as SrAbiEventKind, AbiRoutine, SymbolReferenceAbi, parse_symbol_reference,
 };
+use crate::engine::l3::al_attributes::{AttributeInfo, bool_arg, find_attribute};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
@@ -204,6 +205,28 @@ fn abi_routine_kind_from_str(
     }
 }
 
+/// ABI-tier counterpart of
+/// `crate::program::resolve::event::publisher_include_sender` — reads
+/// `IncludeSender` (arg index 0) from an ABI routine's raw
+/// `[IntegrationEvent]` / `[BusinessEvent]` / `[InternalEvent]` attribute
+/// (all three carry it at position 0; see that function's doc for the
+/// verified Microsoft Learn signatures). A real dependency probe (Microsoft
+/// Base Application `SymbolReference.json`, 13,581 publisher-attribute
+/// occurrences across `Codeunits` + every nested `Namespaces[]` level) found
+/// 100% coverage — `Arguments[0].Value` was present and parsed to a literal
+/// `"True"`/`"False"` on every single entry, zero unparseable — so, like the
+/// source path, this is expected to be `Some` in practice. `None` remains
+/// the fail-closed contract for the (unobserved) case the JSON's attribute
+/// argument is absent or not a recognizable boolean.
+pub(crate) fn abi_publisher_include_sender(attrs: &[AttributeInfo]) -> Option<bool> {
+    for name in ["IntegrationEvent", "BusinessEvent", "InternalEvent"] {
+        if let Some(attr) = find_attribute(attrs, name) {
+            return bool_arg(attr, 0);
+        }
+    }
+    None
+}
+
 /// Sentinel `RoutineNodeId.params_count` for an ABI routine whose `Parameters`
 /// field was absent/unparseable in `SymbolReference.json` (`AbiRoutine::
 /// parameters_known == false`) — as opposed to a genuinely 0-arg procedure,
@@ -293,6 +316,7 @@ pub fn ingest_abi(
             };
             let sig_fp = param_type_fp(&routine.parameters);
             let (routine_kind, event_kind, publisher_kind) = abi_routine_kind_from_str(routine);
+            let include_sender = abi_publisher_include_sender(&routine.attributes_parsed);
 
             let rid = RoutineNodeId {
                 object: obj_id.clone(),
@@ -318,6 +342,7 @@ pub fn ingest_abi(
                 event_subscribers: vec![],
                 subscriber_instance_manual: false,
                 publisher_kind,
+                include_sender,
                 abi_routine_kind: Some(routine_kind),
                 abi_event_kind: Some(event_kind),
                 // Hardcoded empty — NOT because a same-`RoutineNodeId` run is

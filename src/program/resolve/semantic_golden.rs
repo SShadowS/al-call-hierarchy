@@ -1173,7 +1173,13 @@ pub struct ApplicabilityReport {
     /// raw `[EventSubscriber]` attribute (re-parsed at check time via
     /// [`verify_event_subscriber_route`], NOT from any cached index field)
     /// does not name the publisher object+event the edge claims, or whose
-    /// arity exceeds the publisher's.
+    /// arity exceeds the publisher's Sender-tolerant bound (Task 1) —
+    /// `subscriber_arity_bound(publisher_params_count, publisher.include_sender)`:
+    /// the publisher's own explicit arity, plus ONE more ONLY when the
+    /// publisher's attribute declares `IncludeSender: true`. This is the SAME
+    /// conditional bound `ResolveIndex::build`'s wiring uses to admit a
+    /// candidate — see `event::subscriber_arity_bound`'s doc for why a
+    /// blanket `+1` would be SYNCHRONIZED WRONGNESS.
     pub event_violations: usize,
     /// NON-VACUITY: number of routes [`interface_route_applicable`] was
     /// actually invoked on (i.e. `RouteTarget::Routine` routes on a Polymorphic
@@ -1960,6 +1966,17 @@ pub fn route_applicability(
                 if let Some(pub_obj) = graph.objects.iter().find(|o| o.id == edge.from.object) {
                     let pub_name_lc = pub_obj.name.to_ascii_lowercase();
                     let pub_type_lc = format!("{:?}", edge.from.object.kind).to_ascii_lowercase();
+                    // Look up the publisher ROUTINE's `include_sender` (Task 1) — the
+                    // conditional Sender-tolerant bound needs it, and it is NOT
+                    // recoverable from `edge.from` alone (a `RoutineNodeId`).
+                    // `graph.routines` is sorted by id at construction, mirroring the
+                    // `binary_search_by` lookup idiom used throughout `resolve/` (e.g.
+                    // `index.rs`/`resolver.rs`).
+                    let pub_include_sender = graph
+                        .routines
+                        .binary_search_by(|probe| probe.id.cmp(&edge.from))
+                        .ok()
+                        .and_then(|i| graph.routines[i].include_sender);
                     for route in edge.all_routes() {
                         if let RouteTarget::Routine(sub_rid) = &route.target {
                             event_routes_checked += 1;
@@ -1969,6 +1986,7 @@ pub fn route_applicability(
                                 &pub_name_lc,
                                 &edge.from.name_lc,
                                 edge.from.params_count,
+                                pub_include_sender,
                                 parsed,
                                 &graph.apps,
                             );
@@ -2526,6 +2544,7 @@ mod tests {
             event_subscribers: vec![],
             subscriber_instance_manual: false,
             publisher_kind: None,
+            include_sender: None,
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
@@ -3267,6 +3286,145 @@ codeunit 50804 "EvSub2"
             report.event_violations, 1,
             "EvSub2's raw [EventSubscriber] attr names OtherPub2.OnOther, not \
              EvPub2.OnBar — the ported teeth must catch the mismatch"
+        );
+    }
+
+    // ── Task 1: conditional IncludeSender +1 arity tolerance ────────────────
+
+    /// (a) POSITIVE: `IncludeSender=true`, 0-arity publisher + 1-arity
+    /// Sender-capturing subscriber → the route is applicable, `event_violations
+    /// == 0`. Pre-fix (strict `sub_rid.params_count <= publisher_params_count`
+    /// bound), this route was flagged a violation even though it is exactly the
+    /// wiring's own Sender-tolerant `+1` population (`ae35e90`).
+    #[test]
+    fn event_route_passes_with_include_sender_true_and_arity_one_subscriber() {
+        let src: &'static str = r#"
+codeunit 50805 "EvPub3"
+{
+    [IntegrationEvent(true, false)]
+    procedure OnBaz()
+    begin
+    end;
+}
+
+codeunit 50806 "EvSub3"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvPub3", 'OnBaz', '', false, false)]
+    local procedure Handle(Sender: Codeunit "EvPub3")
+    begin
+    end;
+}
+"#;
+        let (app_id, unit) = make_event_unit(src);
+        let (graph, index) = build_event_graph(&app_id, &unit);
+        let pub_id = find_obj_id(&graph, "EvPub3");
+        let sub_id = find_obj_id(&graph, "EvSub3");
+
+        let pub_rid = RoutineNodeId {
+            object: pub_id,
+            name_lc: "onbaz".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let sub_rid = RoutineNodeId {
+            object: sub_id,
+            name_lc: "handle".into(),
+            enclosing_member_lc: None,
+            params_count: 1,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: pub_rid.clone(),
+            site: SiteId {
+                caller: pub_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::EventFlow,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers,
+            },
+            routes: vec![source_route(sub_rid)],
+        };
+
+        let raw_abi = empty_raw_abi();
+        let units = [unit];
+        let report =
+            route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &units);
+        assert_eq!(
+            report.event_violations, 0,
+            "EvPub3 declares IncludeSender=true, so EvSub3's arity-1 Handle \
+             (capturing the implicit Sender) must be applicable"
+        );
+    }
+
+    /// (b) NEGATIVE: `IncludeSender=false`, 0-arity publisher + 1-arity
+    /// subscriber whose raw attribute genuinely names the right publisher+event
+    /// → the conditional bound must REJECT it (`event_violations == 1`) — proves
+    /// the fix is CONDITIONAL, not a blanket re-admission of any `+1` arity.
+    #[test]
+    fn event_route_violation_when_include_sender_false_and_arity_one_subscriber() {
+        let src: &'static str = r#"
+codeunit 50807 "EvPub4"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnQux()
+    begin
+    end;
+}
+
+codeunit 50808 "EvSub4"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"EvPub4", 'OnQux', '', false, false)]
+    local procedure Handle(NotASender: Codeunit "EvPub4")
+    begin
+    end;
+}
+"#;
+        let (app_id, unit) = make_event_unit(src);
+        let (graph, index) = build_event_graph(&app_id, &unit);
+        let pub_id = find_obj_id(&graph, "EvPub4");
+        let sub_id = find_obj_id(&graph, "EvSub4");
+
+        let pub_rid = RoutineNodeId {
+            object: pub_id,
+            name_lc: "onqux".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let sub_rid = RoutineNodeId {
+            object: sub_id,
+            name_lc: "handle".into(),
+            enclosing_member_lc: None,
+            params_count: 1,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: pub_rid.clone(),
+            site: SiteId {
+                caller: pub_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::EventFlow,
+            shape: DispatchShape::Multicast,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentSubscribers,
+            },
+            routes: vec![source_route(sub_rid)],
+        };
+
+        let raw_abi = empty_raw_abi();
+        let units = [unit];
+        let report =
+            route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &units);
+        assert_eq!(
+            report.event_violations, 1,
+            "EvPub4 declares IncludeSender=false — an arity-1 subscriber must NOT \
+             be tolerated; the +1 Sender bound is conditional, never blanket"
         );
     }
 }

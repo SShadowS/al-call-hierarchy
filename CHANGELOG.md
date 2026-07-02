@@ -129,6 +129,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full writeup in `tests/r0-corpus/ws-chain-tables/PROOF.md`.
 
 ### Fixed
+- **Event-applicability checker fix — the pre-existing `event_violations=200` broken gate
+  root-caused and closed (applicability-param-subtype-recfield plan v2.1, Task 1).**
+  `verify_event_subscriber_route`'s strict arity invariant (`differential.rs`) predated
+  `ae35e90`'s Sender-tolerant `+1` wiring (`index.rs`) — the checker still flagged every
+  route the wiring had just correctly started admitting (the 200 `event_violations` on
+  master were EXACTLY the +200 `IncludeSender` subscribers `ae35e90` wired). Root cause:
+  `ae35e90`'s wiring applied a BLANKET `+1` to every `[IntegrationEvent]`/
+  `[BusinessEvent]`/`[InternalEvent]` publisher regardless of whether the publisher
+  actually declared `IncludeSender: true` — a synchronized-wrongness risk (the `+1` is
+  only legal AL when the attribute says so). Fix: ground-truthed (Microsoft Learn,
+  2026-07-02) that ALL THREE publisher attributes carry `IncludeSender` as their FIRST
+  positional arg (`[IntegrationEvent(IncludeSender, GlobalVarAccess[, Isolated])]`,
+  `[BusinessEvent(IncludeSender[, Isolated])]`, `[InternalEvent(IncludeSender[,
+  Isolated])]`) — previously unparsed anywhere in the codebase (only `Isolated` was read).
+  Added `RoutineNode::include_sender: Option<bool>` (tri-state; single source of truth),
+  populated at ingestion: source via `event::publisher_include_sender` (reads the raw IR
+  attribute arg); ABI via `abi_ingest::abi_publisher_include_sender` (reads the
+  `SymbolReference.json` structured attribute arg) — a 13,581-entry probe of a real
+  Microsoft Base Application `SymbolReference.json` (`Codeunits` + every nested
+  `Namespaces[]` level) found 100% coverage, zero unparseable entries, so ABI-tier is
+  `Some` in practice exactly like source. Added ONE shared helper,
+  `event::subscriber_arity_bound(publisher_params_count, include_sender)` — `+1` ONLY
+  when `include_sender == Some(true)`, `None`/`Some(false)` both mean no tolerance
+  (fail-closed) — consumed by BOTH `index.rs`'s wiring and
+  `differential::verify_event_subscriber_route`'s independent checker, so the two can
+  never drift again. `route_applicability_zero_violations` (Test 15)'s panic message now
+  prints all six `ApplicabilityReport::is_clean()` counters (previously only
+  `witness_contract_violations`/`abi_unmapped` — a genuine observability gap that hid
+  which family actually failed). Residual (documented, not closed): Sender param-TYPE
+  compatibility is not validated, arity-only. CDO: `event_violations` 200→0 on both
+  gates; `cdo_full_program_coverage_and_self_reported_metric` +
+  `cdo_l3_semantic_audit_no_fresh_wrong` byte-identical to the pre-existing baseline
+  (`real_unknown_rate`=1.75%/317, `genuine_wrong`=0, `fresh_missing`=4, `fresh_wrong`=149)
+  — confirms the 200 were exactly the `ae35e90` IncludeSender-true population, zero
+  non-IncludeSender over-wired routes existed to correct. Full CDO harness 128/128 (was
+  126/128 on master). 6 new regression units (2 wiring-level in `index.rs`, 2
+  checker-level in `semantic_golden.rs`, plus `event.rs`'s ingestion-level parsing +
+  bound-arithmetic units) prove BOTH directions: IncludeSender=true admits the `+1`;
+  IncludeSender=false/unknown rejects it.
 - Stale comment in `src/program/abi_ingest.rs` (`param_sig_key`'s "no content key
   needed" rationale) corrected — it contradicted `build::
   dedup_routines_preserving_genuine_overloads`'s `abi_overload_collapsed` marking

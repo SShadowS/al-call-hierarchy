@@ -251,6 +251,70 @@ pub fn is_event_publisher(decl: &RoutineDecl) -> Option<PublisherKind> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// IncludeSender — Task 1 (applicability-checker fix, round-2 grounding)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Read `IncludeSender` — the FIRST positional arg of a publisher routine's
+/// `[IntegrationEvent]` / `[BusinessEvent]` / `[InternalEvent]` attribute —
+/// from its raw IR. Verified against Microsoft Learn (2026-07-02): all three
+/// attributes carry `IncludeSender` at argument index 0:
+/// `[IntegrationEvent(IncludeSender: Boolean, GlobalVarAccess: Boolean [,
+/// Isolated: Boolean])]`, `[BusinessEvent(IncludeSender: Boolean [, Isolated:
+/// Boolean])]`, `[InternalEvent(IncludeSender: Boolean [, Isolated:
+/// Boolean])]`. When `true`, the compiler prepends an implicit `Sender`
+/// parameter that subscriber signatures may (but need not) capture — see
+/// [`subscriber_arity_bound`] for the tolerance rule this feeds.
+///
+/// Returns `None` (tri-state UNKNOWN) when the routine carries no publisher
+/// attribute at all, or the attribute's first arg is absent / not a boolean
+/// literal — defensive fail-closed, since [`subscriber_arity_bound`] treats
+/// `None` identically to `Some(false)` (no `+1` tolerance without positive
+/// evidence). In practice a real publisher attribute always carries a
+/// literal boolean here: source-tier because the attribute is parsed
+/// directly from the call site's own text (this function); ABI-tier per
+/// `abi_ingest::abi_publisher_include_sender`'s doc (a 13,581-entry probe of
+/// a real Microsoft Base Application `SymbolReference.json` found 100%
+/// coverage — every publisher attribute's `arg[0]` was present and
+/// parseable, zero `None`s).
+pub fn publisher_include_sender(decl: &RoutineDecl, ir: &Ir) -> Option<bool> {
+    let attr = decl.attributes_parsed.iter().find(|a| {
+        matches!(
+            a.name.to_ascii_lowercase().as_str(),
+            "integrationevent" | "businessevent" | "internalevent"
+        )
+    })?;
+    match attr.args.first().map(|&id| &ir.expr(id).kind) {
+        Some(ExprKind::Literal(Literal::Bool(b))) => Some(*b),
+        _ => None,
+    }
+}
+
+/// The Sender-tolerant subscriber arity bound for a publisher: the
+/// publisher's own explicit arity, plus exactly ONE additional parameter —
+/// but ONLY when the publisher's `include_sender == Some(true)`. A blanket
+/// `+1` regardless of `IncludeSender` is SYNCHRONIZED WRONGNESS: the extra
+/// parameter is illegal AL unless the publisher attribute actually declares
+/// it. `include_sender == None` (unknown) and `Some(false)` both yield NO
+/// tolerance — fail-closed, no `+1` without positive evidence.
+///
+/// SINGLE SOURCE OF TRUTH for this bound — consumed by BOTH
+/// `ResolveIndex::build`'s subscriber-candidate wiring
+/// (`crate::program::resolve::index`) and `verify_event_subscriber_route`'s
+/// independent re-check (`crate::program::resolve::differential`). Any
+/// future change to the tolerance rule belongs HERE, not duplicated at
+/// either call site — the two must never drift (Task 1).
+///
+/// Residual (round-2 addendum): this is an ARITY bound only — the Sender
+/// parameter's declared TYPE is not cross-checked against the publisher's
+/// own object type.
+pub fn subscriber_arity_bound(
+    publisher_params_count: usize,
+    include_sender: Option<bool>,
+) -> usize {
+    publisher_params_count + usize::from(include_sender == Some(true))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EventSubscriberInstance property
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -421,6 +485,97 @@ mod tests {
         let af = al_syntax::parse(src);
         let r = &af.objects[0].routines[0];
         assert_eq!(is_event_publisher(r), None);
+    }
+
+    // ── publisher_include_sender ─────────────────────────────────────────────
+
+    #[test]
+    fn include_sender_true_on_integration_event() {
+        let src = r#"codeunit 50210 Pub
+{
+    [IntegrationEvent(true, false)]
+    procedure OnAfterX()
+    begin
+    end;
+}"#;
+        let af = al_syntax::parse(src);
+        let r = &af.objects[0].routines[0];
+        assert_eq!(publisher_include_sender(r, &af.ir), Some(true));
+    }
+
+    #[test]
+    fn include_sender_false_on_integration_event() {
+        let src = r#"codeunit 50211 Pub
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterX()
+    begin
+    end;
+}"#;
+        let af = al_syntax::parse(src);
+        let r = &af.objects[0].routines[0];
+        assert_eq!(publisher_include_sender(r, &af.ir), Some(false));
+    }
+
+    #[test]
+    fn include_sender_true_on_business_event() {
+        let src = r#"codeunit 50212 Pub
+{
+    [BusinessEvent(true)]
+    procedure OnAfterX()
+    begin
+    end;
+}"#;
+        let af = al_syntax::parse(src);
+        let r = &af.objects[0].routines[0];
+        assert_eq!(publisher_include_sender(r, &af.ir), Some(true));
+    }
+
+    #[test]
+    fn include_sender_true_on_internal_event() {
+        let src = r#"codeunit 50213 Pub
+{
+    [InternalEvent(true)]
+    procedure OnAfterX()
+    begin
+    end;
+}"#;
+        let af = al_syntax::parse(src);
+        let r = &af.objects[0].routines[0];
+        assert_eq!(publisher_include_sender(r, &af.ir), Some(true));
+    }
+
+    #[test]
+    fn include_sender_none_when_no_publisher_attribute() {
+        let src = r#"codeunit 50214 Plain
+{
+    procedure Plain()
+    begin
+    end;
+}"#;
+        let af = al_syntax::parse(src);
+        let r = &af.objects[0].routines[0];
+        assert_eq!(publisher_include_sender(r, &af.ir), None);
+    }
+
+    // ── subscriber_arity_bound ───────────────────────────────────────────────
+
+    #[test]
+    fn arity_bound_adds_one_when_include_sender_true() {
+        assert_eq!(subscriber_arity_bound(0, Some(true)), 1);
+        assert_eq!(subscriber_arity_bound(3, Some(true)), 4);
+    }
+
+    #[test]
+    fn arity_bound_no_tolerance_when_include_sender_false() {
+        assert_eq!(subscriber_arity_bound(0, Some(false)), 0);
+        assert_eq!(subscriber_arity_bound(3, Some(false)), 3);
+    }
+
+    #[test]
+    fn arity_bound_no_tolerance_when_include_sender_unknown() {
+        assert_eq!(subscriber_arity_bound(0, None), 0);
+        assert_eq!(subscriber_arity_bound(3, None), 3);
     }
 
     // ── read_event_subscriber_instance ───────────────────────────────────────
