@@ -225,14 +225,20 @@ fn unresolved_route(reason: UnknownReason) -> Route {
 ///      interface-implementer fan-out's `>1 candidates → Unresolved` rule) →
 ///      `Unknown(OverloadAmbiguous)`. Never pick-first.
 ///
-/// **SymbolOnly tier exception:** `params_count` is now populated from the ABI
-/// (Task 1), but arity matching for SymbolOnly routines remains deferred
-/// (caller-side type inference not yet implemented).  Any name match immediately
-/// produces an `Opaque` boundary route (via [`make_routine_route`]) rather than
-/// a false Unknown that would regress vs L3's External resolution. SymbolOnly
-/// routines are also public-by-construction at ABI ingestion time (see
-/// [`object_has_visible_member_candidate`]'s doc), so this short-circuit is
-/// never a soundness gap.
+/// **SymbolOnly tier (Task 1 — FULL source-tier selection discipline, no
+/// exception):** `params_count` is populated from the ABI (real `Parameters[]
+/// .len()`, or the `UNKNOWN_ARITY` sentinel when the field was absent/
+/// unparseable — see `abi_ingest::UNKNOWN_ARITY`'s tri-state contract), and
+/// `access` is populated from `IsProtected`/the local/internal drop at
+/// ingestion (`abi_ingest::ingest_abi`) — so a SymbolOnly candidate now flows
+/// through EXACTLY the same arity + per-candidate-visibility selection below
+/// as a source-tier one. There is no `candidates.first()` short-circuit: an
+/// order-dependent pick on a multi-candidate ABI set is a false-`Source`/
+/// `Opaque` vector the pre-Task-1 code was exposed to (a `protected` ABI
+/// sibling could shadow a `public` one, or vice versa, purely by JSON array
+/// order). An `UNKNOWN_ARITY`-sentinel candidate structurally never matches a
+/// real call's `arity` (see the sentinel's doc), so it silently drops out of
+/// `matched` below — never emitting, exactly like a genuine arity mismatch.
 #[allow(clippy::too_many_arguments)] // 7 pre-existing params + `from_object` (Task 1); each is a distinct identity/lookup input, grouping would obscure call sites.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
@@ -249,29 +255,18 @@ fn resolve_in_object(
         return None;
     }
 
-    // SymbolOnly: `params_count` is now populated from the ABI (Task 1), but
-    // arity matching remains deferred — caller-side type inference is not yet
-    // implemented. Use the first candidate directly. `make_routine_route` returns
-    // an Opaque boundary route for SymbolOnly BodyMap misses, carrying the
-    // ABI-sourced routine_kind and event_kind from the graph node.
-    if obj_tier == TrustTier::SymbolOnly {
-        // SAFETY: candidates is non-empty (checked above).
-        return Some(make_routine_route(
-            candidates.first().unwrap(),
-            obj_tier,
-            body_map,
-            graph,
-        ));
-    }
-
     // Arity-exact match: collect EVERY overload whose params_count == arity.
     // With params_count in RoutineNodeId, each overload is normally a distinct
-    // node — but two DISTINCT SOURCE overloads sharing
-    // (object, name_lc, params_count) collide onto one `RoutineNodeId` (source
-    // `sig_fp` is always 0; see node.rs). `build_program_graph`'s dedup
-    // (beyond-1B.3b Task 2) preserves every raw entry in that genuine
-    // collision rather than silently dropping one, so >1 arity-matched
-    // candidates here is REAL, unresolved ambiguity absent further evidence.
+    // node — but two DISTINCT overloads sharing (object, name_lc, params_count)
+    // collide onto one `RoutineNodeId` when their `sig_fp` also matches: source
+    // `sig_fp` is always 0 (see node.rs), and an ABI `sig_fp` (`param_type_fp`)
+    // is 0 for any 0-arg overload or collides whenever the degraded param-type
+    // text happens to match. `build_program_graph`'s dedup (beyond-1B.3b Task 2)
+    // preserves every raw entry in that genuine collision rather than silently
+    // dropping one, so >1 arity-matched candidates here is REAL, unresolved
+    // ambiguity absent further evidence — an `UNKNOWN_ARITY`-sentinel candidate
+    // (Task 1 tri-state arity) never lands in `matched` at all, since it can
+    // never equal a real call's `arity`.
     let matched: Vec<&RoutineNodeId> = candidates
         .iter()
         .filter(|rid| rid.params_count == arity)
@@ -295,16 +290,8 @@ fn resolve_in_object(
 
     match visible.len() {
         0 => {
-            let reason = access_exclusion_reason(
-                obj_id,
-                obj_tier,
-                name_lc,
-                arity,
-                from_object,
-                graph,
-                index,
-            )
-            .unwrap_or(UnknownReason::IndexIntegrationGap);
+            let reason = access_exclusion_reason(obj_id, name_lc, arity, from_object, graph, index)
+                .unwrap_or(UnknownReason::IndexIntegrationGap);
             Some(unresolved_route(reason))
         }
         // Overload-narrowing guard: only select the lone survivor when it was
@@ -388,11 +375,13 @@ fn internal_visible_across(exposing_app: AppRef, caller_app: AppRef, graph: &Pro
 /// CARDINALITY across a multi-object scope (base table ∪ TableExtensions)
 /// WITHOUT committing to a route.
 ///
-/// Mirrors the matching rule [`resolve_in_object`] applies internally: a
-/// SymbolOnly (ABI/dep) object counts ANY name match as a candidate (arity
-/// matching is deferred for ABI routines — same exception `resolve_in_object`
-/// documents); a source/ABI (non-SymbolOnly) tier object counts only an EXACT
-/// arity match.
+/// A SymbolOnly (ABI/dep) object counts ANY name match as a candidate —
+/// EXISTENCE only, deliberately arity-deferred (Task 1: a same-name ABI
+/// sibling might carry the `UNKNOWN_ARITY` sentinel, or simply a different
+/// arity than the one being probed here, so a name-only scan is the correct,
+/// conservative existence signal; [`resolve_in_object`] is where real
+/// arity-EXACT matching happens for what actually gets to emit). A source
+/// tier object counts only an EXACT arity match.
 fn object_has_member_candidate(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
@@ -426,34 +415,24 @@ fn lookup_routine_access(graph: &ProgramGraph, rid: &RoutineNodeId) -> Option<Ac
         .map(|i| graph.routines[i].access)
 }
 
-/// Like [`object_has_member_candidate`], but additionally excludes a
-/// candidate whose declared [`Access`] is not visible from the CALLING
-/// object's identity `from_object` — the caller-identity-aware visibility
-/// check (beyond-1B.3b Task 1, superseding the app-scoped Task 2 version).
+/// The shared per-`Access` visibility predicate: is a candidate DECLARED IN
+/// `obj_id` with declared access `access` visible from the CALLING object's
+/// identity `from_object`? Factored out (Task 1) so [`object_has_visible_
+/// member_candidate`]'s source/ABI arity-filtered scan and its SymbolOnly
+/// NAME-ONLY scan share EXACTLY one rule — two independent copies could
+/// silently drift and reopen the exact soundness gap this function closes.
 ///
-/// # Why this is additive, not a behavior change, for SymbolOnly candidates
-///
-/// SymbolOnly (ABI-ingested `.app` dependency) objects already drop
-/// `is_local`/`is_internal` routines entirely at ingestion time
-/// (`abi_ingest::extract_abi_nodes`) and hardcode every surviving routine's
-/// `Access` to `Public` (`abi_ingest.rs:283`) — so `object_has_member_
-/// candidate`'s existing SymbolOnly short-circuit (any name match counts)
-/// already never sees a non-Public ABI routine; this function's access check
-/// is a no-op for that tier and is skipped entirely for it (avoids a lookup
-/// against ABI routine data that was never populated with real modifiers).
-///
-/// # SOURCE-tier per-candidate `Access` rule (RESOLVED OBJECT IDENTITY, never
-/// a lowercased-name comparison — every branch below compares
-/// [`ObjectNodeId`]s or [`AppRef`]s, both derived from `graph`/`index`
-/// identity, never from `Origin`/source text)
+/// RESOLVED OBJECT IDENTITY, never a lowercased-name comparison — every
+/// branch compares [`ObjectNodeId`]s or [`AppRef`]s, both derived from
+/// `graph`/`index` identity, never from `Origin`/source text.
 ///
 /// - [`Access::Public`] → always visible.
 /// - [`Access::Local`] → visible ONLY when `obj_id == from_object` (the
 ///   candidate's declaring object IS the calling object itself — AL's
 ///   `local` is OBJECT-scoped, not app-scoped; this was the first latent
-///   false-`Source` this task closes: the pre-fix code treated ANY same-app
-///   candidate as visible, so a same-app but DIFFERENT object's `local`
-///   procedure false-resolved to `Source`).
+///   false-`Source` beyond-1B.3b Task 1 closed: the pre-fix code treated ANY
+///   same-app candidate as visible, so a same-app but DIFFERENT object's
+///   `local` procedure false-resolved to `Source`).
 /// - [`Access::Internal`] → visible when `obj_id.app == from_object.app`
 ///   (app-scoped), OR when `obj_id.app`'s manifest declares
 ///   `from_object.app` a friend via `<InternalsVisibleTo>` — AL's
@@ -468,12 +447,53 @@ fn lookup_routine_access(graph: &ProgramGraph, rid: &RoutineNodeId) -> Option<Ac
 ///   is a DIRECT, kind-compatible extension of the candidate's declaring
 ///   object (see [`ResolveIndex::object_extends`] for the full DIRECT +
 ///   KIND-COMPATIBLE + never-reverse + never-peer contract). This closes the
-///   second latent false-`Source`: the pre-fix code left `Protected`
-///   completely unfiltered for any same-app candidate, including a
-///   same-app-but-unrelated object AND a PEER extension of the same base
-///   (the sibling-bleed case — the single biggest false-`Source` this task
-///   closes).
+///   second latent false-`Source` beyond-1B.3b Task 1 closed: the pre-fix
+///   code left `Protected` completely unfiltered for any same-app candidate,
+///   including a same-app-but-unrelated object AND a PEER extension of the
+///   same base (the sibling-bleed case). SAME rule for a SymbolOnly base
+///   (Task 1): AL lets a workspace extension of a dep object call the dep's
+///   `protected` members, and `object_extends` is already tier-agnostic.
 /// - Lookup miss (`None`) → fails closed (excluded), never assumed visible.
+fn object_access_visible_from(
+    obj_id: &ObjectNodeId,
+    access: Option<Access>,
+    from_object: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> bool {
+    match access {
+        Some(Access::Public) => true,
+        Some(Access::Local) => obj_id == from_object,
+        Some(Access::Internal) => internal_visible_across(obj_id.app, from_object.app, graph),
+        Some(Access::Protected) => {
+            obj_id == from_object || index.object_extends(graph, from_object, obj_id)
+        }
+        None => false,
+    }
+}
+
+/// Like [`object_has_member_candidate`], but additionally excludes a
+/// candidate whose declared [`Access`] is not visible from `from_object` —
+/// the caller-identity-aware visibility check (beyond-1B.3b Task 1,
+/// superseding the app-scoped Task 2 version). See [`object_access_visible_
+/// from`] for the full per-`Access` rule (shared by both branches below).
+///
+/// # SymbolOnly (Task 1 — NAME-ONLY `.any()` scan, no shortcut)
+///
+/// `access` is now populated from the real ABI (`IsProtected`/local/internal
+/// drop at ingestion — `abi_ingest::ingest_abi`), so a `protected` ABI
+/// routine is a genuine, non-trivial visibility check, not a hardcoded
+/// `Public` no-op. The scan is deliberately NAME-ONLY (the UN-arity-filtered
+/// candidate list), mirroring [`object_has_member_candidate`]'s own
+/// arity-deferred SymbolOnly existence check: a protected first sibling must
+/// never hide a visible public one purely by JSON-array order, and a real
+/// arity mismatch on ONE same-name candidate must not suppress a DIFFERENT
+/// same-name candidate that IS both visible and arity-correct. This function
+/// answers EXISTENTIALLY ("is SOME visible candidate reachable") — it is an
+/// existence/diagnostics gate consumed by callers to decide whether to even
+/// ATTEMPT `resolve_in_object`, never edge evidence by itself:
+/// `resolve_in_object` alone performs the arity-EXACT, per-candidate
+/// selection that decides what (if anything) actually emits.
 fn object_has_visible_member_candidate(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
@@ -487,20 +507,31 @@ fn object_has_visible_member_candidate(
         return false;
     }
     if obj_tier == TrustTier::SymbolOnly {
-        return true;
+        return index
+            .routines_in_object(obj_id, method_lc)
+            .iter()
+            .any(|rid| {
+                object_access_visible_from(
+                    obj_id,
+                    lookup_routine_access(graph, rid),
+                    from_object,
+                    graph,
+                    index,
+                )
+            });
     }
     index
         .routines_in_object(obj_id, method_lc)
         .iter()
         .filter(|rid| rid.params_count == arity)
-        .any(|rid| match lookup_routine_access(graph, rid) {
-            Some(Access::Public) => true,
-            Some(Access::Local) => obj_id == from_object,
-            Some(Access::Internal) => internal_visible_across(obj_id.app, from_object.app, graph),
-            Some(Access::Protected) => {
-                obj_id == from_object || index.object_extends(graph, from_object, obj_id)
-            }
-            None => false,
+        .any(|rid| {
+            object_access_visible_from(
+                obj_id,
+                lookup_routine_access(graph, rid),
+                from_object,
+                graph,
+                index,
+            )
         })
 }
 
@@ -512,20 +543,24 @@ fn object_has_visible_member_candidate(
 /// `obj_id` at all (genuine absence, not a visibility exclusion) — mirrors
 /// [`object_has_visible_member_candidate`]'s own per-access rule exactly, so
 /// the two never disagree on WHETHER a candidate is visible, only on WHY not.
+///
+/// Tier-agnostic (Task 1): SymbolOnly `access` is now populated from the real
+/// ABI (`IsProtected`/local+internal drop at ingestion), so a SymbolOnly
+/// candidate can be genuinely access-excluded (most commonly `protected`,
+/// from a non-extension caller) — the previous hardcoded "SymbolOnly is
+/// always Public, never access-excluded" short-circuit is gone; the
+/// arity-filtered scan + per-`Access` reason derivation below apply
+/// identically to both tiers (every call site here is already arity-KNOWN,
+/// so no separate name-only variant is needed, unlike [`object_has_visible_
+/// member_candidate`]'s existence-only scan).
 fn access_exclusion_reason(
     obj_id: &ObjectNodeId,
-    obj_tier: TrustTier,
     method_lc: &str,
     arity: usize,
     from_object: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> Option<UnknownReason> {
-    // SymbolOnly candidates are always ingested as `Access::Public` (see
-    // `object_has_visible_member_candidate`'s doc) — never access-excluded.
-    if obj_tier == TrustTier::SymbolOnly {
-        return None;
-    }
     index
         .routines_in_object(obj_id, method_lc)
         .iter()
@@ -599,9 +634,11 @@ enum TableScopeOutcome {
 ///    declaring object, `Internal` requires the same app, `Protected`
 ///    requires self OR a direct kind-compatible extension relationship (see
 ///    [`object_has_visible_member_candidate`] for the full per-access
-///    rationale, including why this is a no-op for SymbolOnly/ABI candidates
-///    — beyond-1B.3b Task 1, superseding the earlier app-scoped-only Task 2
-///    version of this filter).
+///    rationale — beyond-1B.3b Task 1, superseded by Task 1's protected-ABI
+///    soundness fix: SymbolOnly candidates are NO LONGER a `Public`-only
+///    no-op here, since `access` now carries the real ABI `IsProtected`
+///    modifier, so this filter can genuinely exclude a SymbolOnly candidate
+///    too).
 ///
 /// # Cardinality (unchanged from the pre-extraction Record arm; Task 3 wraps
 /// the same three outcomes in [`TableScopeOutcome`] so a decline also
@@ -686,8 +723,8 @@ fn resolve_in_table_scope(
             // Zero visible candidates in the whole scope — diagnose WHY, in
             // scope order (deterministic): the first same-name/arity
             // candidate that exists but is access-excluded, if any.
-            let access_excluded = scope.iter().find_map(|(oid, tier)| {
-                access_exclusion_reason(oid, *tier, name_lc, arity, &from_object.id, graph, index)
+            let access_excluded = scope.iter().find_map(|(oid, _tier)| {
+                access_exclusion_reason(oid, name_lc, arity, &from_object.id, graph, index)
             });
             TableScopeOutcome::NotVisible { access_excluded }
         }
@@ -872,15 +909,9 @@ pub fn resolve_bare(
             ) {
                 return vec![route];
             }
-        } else if let Some(r) = access_exclusion_reason(
-            &base_id,
-            base_tier,
-            name_lc,
-            arity,
-            &from_object.id,
-            graph,
-            index,
-        ) {
+        } else if let Some(r) =
+            access_exclusion_reason(&base_id, name_lc, arity, &from_object.id, graph, index)
+        {
             reason = r;
         }
     }
@@ -1524,9 +1555,12 @@ pub fn resolve_member(
             // Phase 4 Task 2: fan out to all known implementers.
             //
             // For each implementer:
-            //   SymbolOnly tier  → `params_count` is populated from the ABI (Task 1),
-            //                      but arity matching is deferred; delegate directly to
-            //                      `resolve_in_object` which returns AbiSymbol or Unknown.
+            //   SymbolOnly tier  → delegate directly to `resolve_in_object`, which
+            //                      (Task 1) applies the SAME arity-exact +
+            //                      per-candidate-visibility selection as source —
+            //                      returns AbiSymbol (unique visible arity match),
+            //                      or Unknown (arity mismatch / access-excluded /
+            //                      ambiguous), never an order-dependent pick.
             //   Source tier      → count arity-matched overloads first:
             //                        0 candidates → Rule 1 Unresolved (method absent/arity mismatch)
             //                        1 candidate  → unique resolution via `resolve_in_object`
@@ -1548,8 +1582,12 @@ pub fn resolve_member(
                     .unwrap_or(TrustTier::Workspace);
 
                 if impl_tier == TrustTier::SymbolOnly {
-                    // SymbolOnly: arity matching deferred; delegate. The
-                    // `unwrap_or` fires whenever this implementer does not
+                    // SymbolOnly: delegate to `resolve_in_object`'s full
+                    // arity+visibility discipline (Task 1) — no pre-check
+                    // needed here (unlike the source-tier `else` branch below)
+                    // since `resolve_in_object` itself now returns Some(Unknown)
+                    // on arity mismatch/access exclusion/ambiguity. The
+                    // `unwrap_or` fires only when this implementer does not
                     // declare `method_lc` at all (`resolve_in_object` returns
                     // `None` only on a name-absent `candidates.is_empty()`).
                     let route = resolve_in_object(

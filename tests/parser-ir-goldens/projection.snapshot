@@ -356,6 +356,13 @@ ws-pr-summary-multi/src/Rec.Table.al	1986d853edcc9b2c
 ws-preflight-missingdep/src/caller.al	11bef548deb8e120
 ws-preset-txn/src/PresetRec.Table.al	f66eb9fd7e49dc19
 ws-preset-txn/src/PresetTxn.Codeunit.al	7afb695d24a69ddb
+ws-protected-abi/src/DepPageExtOk.PageExt.al	b00b443eb66d01e0
+ws-protected-abi/src/DepPageExtStranger.TableExt.al	5cce40ad3ecec4d1
+ws-protected-abi/src/IProtWorker.Interface.al	4c540e9c5ca006b7
+ws-protected-abi/src/IfaceImplWs.Codeunit.al	b4b99818437a7f5f
+ws-protected-abi/src/IfaceUser.Codeunit.al	7db4fb21969ff825
+ws-protected-abi/src/ProtCaller.Codeunit.al	3244f0901cc2aa29
+ws-protected-abi/src/StrangerTable.Table.al	8bb0eb5c05714f88
 ws-prove/src/CleanRoutine.Codeunit.al	b6561c9ada57a881
 ws-prove/src/ConditionalCommit.Codeunit.al	d20c6522bc1313bc
 ws-prove/src/EarlyExitGuarded.Codeunit.al	48c749e63a889a5b

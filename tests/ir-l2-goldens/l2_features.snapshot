@@ -568,6 +568,17 @@ ws-preflight-missingdep/src/caller.al::0::DoMoreWork	cc16a256945ec274
 ws-preset-txn/src/PresetTxn.Codeunit.al::0::CommitInLoop	6bab84d000014fa0
 ws-preset-txn/src/PresetTxn.Codeunit.al::0::DoWork	09a977a5d82116fc
 ws-preset-txn/src/PresetTxn.Codeunit.al::1::SendAfterModify	f062dd93c76f15d9
+ws-protected-abi/src/DepPageExtOk.PageExt.al::0::CallProtected	eadaa68c434ba499
+ws-protected-abi/src/DepPageExtStranger.TableExt.al::0::CallProtectedStranger	f8589878dfc74535
+ws-protected-abi/src/IfaceImplWs.Codeunit.al::0::DoIt	1181af18ff0d5014
+ws-protected-abi/src/IfaceUser.Codeunit.al::0::TestInterfaceFanOut	1271176dd7528273
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestProtectedExcluded	286a0b3aa372f5cf
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestPublicControl	8ccba127a55e7eb7
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestInternalAbsentControl	7f7009b8fc9b4de6
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestLocalAbsentControl	46d88ce436a5adee
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestMixedArityProtectedArm	108256083fb89b6d
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestMixedArityPublicArm	f5276ac5cdb72641
+ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestWrongArityPublicOnly	bf14447bee4027de
 ws-prove/src/CleanRoutine.Codeunit.al::0::CleanDoWork	02a7c32cd081d79d
 ws-prove/src/CleanRoutine.Codeunit.al::0::CleanHelper	93c1913504f893d0
 ws-prove/src/ConditionalCommit.Codeunit.al::0::ConditionalDoWork	35b76b516486974f

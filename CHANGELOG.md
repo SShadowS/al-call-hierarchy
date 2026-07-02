@@ -8,6 +8,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Protected-ABI soundness: `IsProtected` is now parsed from `SymbolReference.json`,
+  carried as `Access::Protected` (not dropped, not hardcoded `Public`), and the three
+  SymbolOnly visibility short-circuits in `resolver.rs` are closed — the ABI/SymbolOnly
+  (cross-app `.app` dependency) tier previously mislabeled every dependency `protected`
+  member as `Public` and let `resolve_in_object`'s SymbolOnly branch pick
+  `candidates.first()` with NO visibility check, an order-dependent false-`Source`/`Opaque`
+  vector for any workspace with a real SymbolOnly (no-embedded-source) dependency (cross-object
+  chains + protected-ABI plan v2.1, Task 1).** `src/engine/deps/symbol_reference.rs`:
+  `RawMethod`/`AbiRoutine` gain `is_protected` (`#[serde(rename="IsProtected")]`, default
+  false — verified against real Microsoft System App data: 10 `"IsProtected":true` entries,
+  1:1 with its embedded source's 10 `protected procedure`s) and a tri-state
+  `parameters_known` flag (an explicit empty `Parameters:[]` is a KNOWN 0-arity; an
+  absent/unparseable `Parameters` field is UNKNOWN arity, never zero).
+  `src/program/abi_ingest.rs`: survivors of the pre-existing `is_local||is_internal` drop now
+  carry `Access::Protected` (not `Access::Public`) when `IsProtected`; a new
+  `UNKNOWN_ARITY` (`usize::MAX`) sentinel `params_count` for unknown-arity routines can never
+  arity-match a real call site, so it structurally never emits — no special-casing needed
+  downstream. `src/program/resolve/resolver.rs`: (1) `resolve_in_object`'s SymbolOnly branch
+  no longer special-cases the tier at all — it now flows through the SAME arity-exact +
+  per-candidate-visibility selection (incl. the overload-narrowing guard) the source tier
+  already used, emitting only on an unambiguous, visible, arity-matched candidate; (2)
+  `object_has_visible_member_candidate`'s SymbolOnly short-circuit is now a NAME-ONLY `.any()`
+  scan over every same-name candidate (factored into a new shared `object_access_visible_from`
+  predicate so the arity-filtered source scan and the name-only SymbolOnly scan can never
+  drift) — a protected first sibling can no longer hide a visible public one, and this boolean
+  stays existence/diagnostics-only, never edge evidence; (3) `access_exclusion_reason` is now
+  tier-agnostic (dropped its `obj_tier` parameter entirely) and computes the real
+  `ProtectedNotVisible`/`InternalNotVisible`/`LocalNotVisible` reason for SymbolOnly instead of
+  a hardcoded `None`. New fixture `tests/r0-corpus/ws-protected-abi/` (a real probe `.app`, no
+  embedded source) end-to-end proves: a non-extending caller sees honest
+  `Unknown(ProtectedNotVisible)` on a `protected` ABI member; a genuine `PageExtension` of the
+  ABI base DOES see it (carry-Protected, not drop); `local`/`internal` stay dropped; a mixed-
+  arity mixed-access overload pair (`protected GetWorker()` / `public GetWorker(ID)`) never
+  lets the arity-0 call silently select the visible arity-1 sibling; a single visible public
+  `Get(ID)` never emits on a wrong-arity `Get()` call; an interface fan-out to a SymbolOnly
+  implementer applies the SAME per-candidate visibility as its source-tier sibling; a
+  same-id/name but wrong-KIND workspace object (`Table 60000 "Dep Page"` vs the ABI's `Page
+  60000 "Dep Page"`) never bleeds identity into the real ABI base. Verified ABI `Variables[]`
+  is not parsed or ingested anywhere in the codebase (grep-confirmed zero occurrences) — the
+  deferred `protected` table/page VARIABLE modifier is a genuine no-op today, not a silent
+  soundness gap. **Empirically CDO-neutral**: CDO's only true SymbolOnly unit ships zero
+  public routines (all real deps ship EmbeddedSource/ShowMyCode), confirmed by a new
+  diagnostic (`abi_ingestion_integrity_cdo_gate`) enumerating non-empty SymbolOnly objects —
+  0 found — so both CDO metric gates stay BYTE-IDENTICAL (1.82% / `unknown=329`,
+  `genuine_wrong=0`); the fix is proven exclusively by the new in-repo fixtures.
 - **`internalsVisibleTo` friend-app parsing (`parse_manifest_xml`) is now scoped to
   `<InternalsVisibleTo>`, not a whole-document `<Module>` scan** (`src/app_package.rs`,
   whole-branch review M1). The friend-app scan previously used

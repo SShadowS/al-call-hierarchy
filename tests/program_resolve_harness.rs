@@ -427,6 +427,8 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                     return_type_text: None,
                     is_local: false,
                     is_internal: false,
+                    is_protected: false,
+                    parameters_known: true,
                     attributes: vec![],
                     attributes_parsed: vec![],
                 },
@@ -451,6 +453,8 @@ fn dep_pub_abi() -> SymbolReferenceAbi {
                     return_type_text: None,
                     is_local: false,
                     is_internal: false,
+                    is_protected: false,
+                    parameters_known: true,
                     attributes: vec![],
                     attributes_parsed: vec![],
                 },
@@ -916,6 +920,35 @@ fn abi_ingestion_integrity_cdo_gate() {
                 h.unknown,
                 h.real_unknown_rate(),
             );
+
+            // Task 1 (round-1 I3) diagnostic: enumerate SymbolOnly OBJECTS
+            // with >=1 surviving routine (Public/Protected; `local`/
+            // `internal` are still dropped at ingestion — unaffected by this
+            // task). Task 1's fix is EMPIRICALLY CDO-neutral because CDO's
+            // true-SymbolOnly surface is empty (all real deps ship
+            // EmbeddedSource/ShowMyCode), NOT because the selection-logic
+            // change is inert in general — this diagnostic makes that
+            // emptiness explicit so any metric movement on a DIFFERENT
+            // workspace (one with real SymbolOnly public-routine deps) is
+            // immediately attributable to this task's per-candidate
+            // visibility fix, rather than mistaken for a regression.
+            let symbolonly_objects_with_routines: Vec<_> = graph
+                .objects
+                .iter()
+                .filter(|o| o.tier == TrustTier::SymbolOnly)
+                .filter(|o| graph.routines.iter().any(|r| r.id.object == o.id))
+                .collect();
+            eprintln!(
+                "Task1 SymbolOnly-object diagnostic: {} SymbolOnly object(s) carry >=1 \
+                 surviving routine (expected 0 on CDO — its true-SymbolOnly surface is empty)",
+                symbolonly_objects_with_routines.len()
+            );
+            for o in symbolonly_objects_with_routines.iter().take(20) {
+                eprintln!(
+                    "  non-empty SymbolOnly object: {:?} name={:?}",
+                    o.id, o.name
+                );
+            }
         }
     }
 
@@ -6003,4 +6036,249 @@ fn ws_compound_framework_deferred_record_field_stays_unknown() {
     let route = &edges[0].edge.routes[0];
     assert_eq!(route.target, RouteTarget::Unresolved);
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+// ---------------------------------------------------------------------------
+// Tests 31+: Task 1 — protected-ABI soundness. `tests/r0-corpus/
+// ws-protected-abi` (a real SymbolOnly probe `.app`, "ProtAbiDep": Page 60000
+// "Dep Page" [protected P/public Pub/internal I/local L], Codeunit 60001
+// "Dep Arity" [protected GetWorker() + public GetWorker(ID)/Get(ID)],
+// Codeunit 60002 "Dep IfaceImpl" implements IProtWorker [protected DoIt]) end
+// to end through the REAL `SymbolReference.json` → `AbiRoutine` →
+// `abi_ingest` → `resolve_in_object` pipeline — proving the fix at the
+// ingestion+selection boundary, not just the fabricated-graph unit tests
+// already covering `resolve_in_object`'s internals.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-protected-abi` and returns the full
+/// `resolve_full_program` report — shared by Tests 31a-31i below.
+fn ws_protected_abi_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-protected-abi");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-protected-abi")
+}
+
+/// Test 31a (fixture a, NEGATIVE — the false-route this task closes): `Dep
+/// Page.P()` is `protected` in the real ABI `SymbolReference.json`
+/// (`"IsProtected":true`); `ProtCaller` is NOT an extension of "Dep Page", so
+/// this must decline honest `Unknown(ProtectedNotVisible)`. Before Task 1,
+/// `resolve_in_object`'s SymbolOnly branch took `candidates.first()` with NO
+/// visibility check, so this call FALSE-resolved to an `Opaque`/`AbiSymbol`
+/// route — this is the exact false-`Source`-adjacent vector Task 1 closes.
+#[test]
+fn ws_protected_abi_object_receiver_protected_excluded() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51000, "testprotectedexcluded")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(
+        route.evidence,
+        Evidence::Unknown(UnknownReason::ProtectedNotVisible),
+        "a non-extending caller must never see a protected ABI member; got {route:?}"
+    );
+    assert_eq!(route.witness, Witness::None);
+}
+
+/// Test 31b (fixture b, CONTROL): `Dep Page.Pub()` carries no ABI access
+/// modifier (`Access::Public`) — must still resolve as an `Opaque` ABI
+/// boundary route, exactly as before Task 1. Proves the fix does not
+/// over-decline a genuinely-visible ABI member.
+#[test]
+fn ws_protected_abi_object_receiver_public_control_resolves() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51000, "testpubliccontrol")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.evidence, Evidence::Opaque);
+    let RouteTarget::AbiSymbol { ref key } = route.target else {
+        panic!("expected RouteTarget::AbiSymbol, got {:?}", route.target);
+    };
+    assert_eq!(key.routine_name_lc, "pub");
+    assert!(matches!(route.witness, Witness::AbiSymbol { .. }));
+}
+
+/// Test 31c (fixture c, POSITIVE — carry-Protected, not drop): a GENUINE
+/// workspace `PageExtension` of "Dep Page" (`DepPageExtOk`) calling `P()`
+/// bare (extension-base fallback) MUST resolve — AL lets an extension call
+/// its base's `protected` members. Proves `Access::Protected` is CARRIED
+/// (not dropped like `local`/`internal`) and that `object_extends`'s
+/// self-or-extends rule is tier-agnostic against a real SymbolOnly base.
+#[test]
+fn ws_protected_abi_genuine_extension_sees_protected() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51001, "callprotected")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.evidence, Evidence::Opaque);
+    let RouteTarget::AbiSymbol { ref key } = route.target else {
+        panic!("expected RouteTarget::AbiSymbol, got {:?}", route.target);
+    };
+    assert_eq!(key.routine_name_lc, "p");
+    assert!(matches!(route.witness, Witness::AbiSymbol { .. }));
+}
+
+/// Test 31d (fixture d, CONTROL): `internal`/`local` ABI routines are DROPPED
+/// entirely at ingestion (unchanged by Task 1) — the name is genuinely
+/// absent, so these stay `Unknown(MemberNotFound)`, never
+/// `ProtectedNotVisible`. Proves the local/internal drop is untouched by the
+/// protected-carry fix.
+#[test]
+fn ws_protected_abi_internal_and_local_still_absent() {
+    let report = ws_protected_abi_report();
+
+    let internal_route = &edges_for_object_routine(&report, 51000, "testinternalabsentcontrol")[0]
+        .edge
+        .routes[0];
+    assert_eq!(internal_route.target, RouteTarget::Unresolved);
+    assert_eq!(
+        internal_route.evidence,
+        Evidence::Unknown(UnknownReason::MemberNotFound),
+        "IsInternal routines must still be dropped at ingestion; got {internal_route:?}"
+    );
+
+    let local_route = &edges_for_object_routine(&report, 51000, "testlocalabsentcontrol")[0]
+        .edge
+        .routes[0];
+    assert_eq!(local_route.target, RouteTarget::Unresolved);
+    assert_eq!(
+        local_route.evidence,
+        Evidence::Unknown(UnknownReason::MemberNotFound),
+        "IsLocal routines must still be dropped at ingestion; got {local_route:?}"
+    );
+}
+
+/// Test 31e (fixture e): `IProtWorker` has TWO implementers — the dep's
+/// SymbolOnly `Dep IfaceImpl` (`protected DoIt`) and the workspace's
+/// `IfaceImplWs` (`public DoIt`). The polymorphic fan-out must apply
+/// PER-CANDIDATE visibility independently: the dep route declines
+/// (`ProtectedNotVisible`), the workspace route resolves `Source`. Neither a
+/// visible sibling nor an excluded sibling may influence the other's route.
+#[test]
+fn ws_protected_abi_interface_fanout_respects_visibility() {
+    let report = ws_protected_abi_report();
+    let edges = edges_for_object_routine(&report, 51004, "testinterfacefanout");
+    assert_eq!(edges.len(), 1, "Worker.DoIt() is a single call obligation");
+    let edge = &edges[0].edge;
+    assert_eq!(edge.shape, DispatchShape::Polymorphic);
+    assert_eq!(
+        edge.routes.len(),
+        2,
+        "IProtWorker has exactly 2 implementers; got {:?}",
+        edge.routes
+    );
+
+    let abi_route = edge
+        .routes
+        .iter()
+        .find(|r| r.evidence != Evidence::Source)
+        .expect("the dep's SymbolOnly implementer must still emit a route (never dropped)");
+    assert_eq!(
+        abi_route.evidence,
+        Evidence::Unknown(UnknownReason::ProtectedNotVisible),
+        "the SymbolOnly implementer's protected DoIt must decline from a \
+         non-extending caller; got {abi_route:?}"
+    );
+    assert_eq!(abi_route.target, RouteTarget::Unresolved);
+
+    let source_route = edge
+        .routes
+        .iter()
+        .find(|r| r.evidence == Evidence::Source)
+        .expect("the workspace implementer's public DoIt must resolve");
+    let RouteTarget::Routine(ref rid) = source_route.target else {
+        panic!(
+            "expected RouteTarget::Routine, got {:?}",
+            source_route.target
+        );
+    };
+    assert!(
+        rid.object.id_equals_number(51003),
+        "must resolve to \"IfaceImplWs\" (id 51003); got {:?}",
+        rid.object
+    );
+}
+
+/// Test 31f (fixture f, NEGATIVE — the mixed-arity/mixed-access vector this
+/// task closes): `GetWorker` is overloaded in the dep ABI — arity-0
+/// `protected` and arity-1 `public`. An arity-0 call must decline honest
+/// `Unknown`, NEVER silently select the visible arity-1 sibling by
+/// `candidates.first()` order (an order/visibility-dependent pick is exactly
+/// the false-`Source`-adjacent vector this task closes).
+#[test]
+fn ws_protected_abi_mixed_arity_protected_arm_excluded() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51000, "testmixedarityprotectedarm")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "the arity-0 protected GetWorker() must never resolve via the \
+         visible arity-1 sibling; got {route:?}"
+    );
+}
+
+/// Test 31f control (fixture f POSITIVE half): `GetWorker(1)` — the arity-1
+/// `public` overload of the SAME name — must resolve normally, proving the
+/// arity-0 decline above is a genuine arity+access selection, not a blanket
+/// name-level exclusion.
+#[test]
+fn ws_protected_abi_mixed_arity_public_arm_resolves() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51000, "testmixedaritypublicarm")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.evidence, Evidence::Opaque);
+    let RouteTarget::AbiSymbol { ref key } = route.target else {
+        panic!("expected RouteTarget::AbiSymbol, got {:?}", route.target);
+    };
+    assert_eq!(key.routine_name_lc, "getworker");
+    assert_eq!(
+        key.params_count, 1,
+        "must select the arity-1 overload, not the arity-0 protected one"
+    );
+}
+
+/// Test 31g/31i (fixtures g + i, NEGATIVE — the name-only-scan-vs-emission
+/// vector this task closes): `Get(ID: Integer)` is the ONLY declared overload
+/// of `Get` in the dep ABI (public, arity 1). `DepArity.Get()` (arity 0) must
+/// NOT emit a `Catalog`/resolved edge — the existence boolean
+/// (`object_has_visible_member_candidate`, name-only for SymbolOnly) may be
+/// `true`, but that is diagnostics-only, never edge evidence; exactly-one-
+/// same-name is insufficient at the wrong arity.
+#[test]
+fn ws_protected_abi_wrong_arity_single_overload_no_emit() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51000, "testwrongaritypubliconly")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "a SINGLE visible public Get(ID) called at arity 0 must NOT emit \
+         (name-only existence must never justify an edge); got {route:?}"
+    );
+}
+
+/// Test 31h (fixture h, NEGATIVE — stranger-extension identity): the
+/// workspace `TableExtension "DepPageExtStranger" extends "Dep Page"` resolves
+/// its base among TABLE-kind objects only (kind-scoped lookup) — landing on
+/// the WORKSPACE `StrangerTable` (Table 60000 "Dep Page", zero procedures),
+/// NEVER the ABI's Page 60000 "Dep Page" (same id AND name, different
+/// `ObjectNodeId.kind`). `P` is genuinely absent on the workspace stranger
+/// table, so this must stay `Unknown` — never resolving to the ABI base's
+/// protected `P()` via an id/name identity collision.
+#[test]
+fn ws_protected_abi_stranger_extension_never_sees_base() {
+    let report = ws_protected_abi_report();
+    let route = &edges_for_object_routine(&report, 51002, "callprotectedstranger")[0]
+        .edge
+        .routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "a same-id/name but WRONG-KIND stranger extension must never see \
+         the ABI base's protected P(); got {route:?}"
+    );
 }

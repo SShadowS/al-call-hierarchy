@@ -204,6 +204,24 @@ fn abi_routine_kind_from_str(
     }
 }
 
+/// Sentinel `RoutineNodeId.params_count` for an ABI routine whose `Parameters`
+/// field was absent/unparseable in `SymbolReference.json` (`AbiRoutine::
+/// parameters_known == false`) — as opposed to a genuinely 0-arg procedure,
+/// which carries an explicit empty array and a KNOWN count of `0`.
+///
+/// Arity is TRI-STATE (Task 1, round-2 hardening): known-n / known-zero /
+/// unknown. `usize::MAX` can never equal a real call site's argument count
+/// (`args.len()` is always small — AL procedures cap well under a hundred
+/// params), so a candidate carrying this sentinel structurally NEVER
+/// arity-matches any real call. `resolve_in_object`'s `rid.params_count ==
+/// arity` filter therefore excludes it by construction — an unknown-arity
+/// candidate never emits an edge — with zero special-casing needed in
+/// `resolver.rs`. It still counts toward the NAME-ONLY existence scan
+/// (`object_has_visible_member_candidate`'s SymbolOnly branch, which is
+/// arity-deferred by design), matching the tri-state contract: "exists" is
+/// knowable even when "matches this arity" is not.
+pub(crate) const UNKNOWN_ARITY: usize = usize::MAX;
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -264,7 +282,15 @@ pub fn ingest_abi(
                 continue;
             }
             let name_lc = routine.name.to_ascii_lowercase();
-            let params_count = routine.parameters.len();
+            // Tri-state arity (Task 1): a genuinely-parsed `Parameters` array
+            // (even empty) carries its real `len()`; an absent/unparseable one
+            // maps to `UNKNOWN_ARITY`, a sentinel that can never arity-match a
+            // real call site — see the constant's doc for the full contract.
+            let params_count = if routine.parameters_known {
+                routine.parameters.len()
+            } else {
+                UNKNOWN_ARITY
+            };
             let sig_fp = param_type_fp(&routine.parameters);
             let (routine_kind, event_kind, publisher_kind) = abi_routine_kind_from_str(routine);
 
@@ -280,7 +306,14 @@ pub fn ingest_abi(
                 id: rid,
                 name: routine.name.clone(),
                 is_trigger: false,
-                access: Access::Public,
+                // `protected` ABI members are KEPT (unlike local/internal,
+                // dropped above) and carried as `Access::Protected` — an
+                // extension of the declaring object may call them (Task 1).
+                access: if routine.is_protected {
+                    Access::Protected
+                } else {
+                    Access::Public
+                },
                 tier: TrustTier::SymbolOnly,
                 event_subscribers: vec![],
                 subscriber_instance_manual: false,
@@ -368,6 +401,8 @@ mod tests {
                         return_type_text: None,
                         is_local: false,
                         is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -384,6 +419,8 @@ mod tests {
                         return_type_text: None,
                         is_local: false,
                         is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -400,6 +437,8 @@ mod tests {
                         return_type_text: None,
                         is_local: false,
                         is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -416,6 +455,8 @@ mod tests {
                         return_type_text: None,
                         is_local: false,
                         is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -583,6 +624,8 @@ mod tests {
                         return_type_text: None,
                         is_local: false,
                         is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -594,6 +637,8 @@ mod tests {
                         return_type_text: None,
                         is_local: true,
                         is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -605,6 +650,24 @@ mod tests {
                         return_type_text: None,
                         is_local: false,
                         is_internal: true,
+                        is_protected: false,
+                        parameters_known: true,
+                        attributes: vec![],
+                        attributes_parsed: vec![],
+                    },
+                    // Task 1: `protected` is NOT dropped like local/internal —
+                    // it is KEPT and carried as `Access::Protected` (an
+                    // extension of the declaring object may call it).
+                    AbiRoutine {
+                        name: "ProtectedProc".into(),
+                        kind: "procedure".into(),
+                        event_kind: SrAbiEventKind::Unknown,
+                        parameters: vec![],
+                        return_type_text: None,
+                        is_local: false,
+                        is_internal: false,
+                        is_protected: true,
+                        parameters_known: true,
                         attributes: vec![],
                         attributes_parsed: vec![],
                     },
@@ -651,6 +714,116 @@ mod tests {
                 .all(|r| r.id.name_lc != "internalproc"),
             "is_internal must be skipped"
         );
+        let protected_proc = routines_in_skip
+            .iter()
+            .find(|r| r.id.name_lc == "protectedproc")
+            .expect("ProtectedProc must be KEPT (carried as Access::Protected, not dropped)");
+        assert_eq!(
+            protected_proc.access,
+            Access::Protected,
+            "IsProtected:true must carry Access::Protected, never Access::Public"
+        );
+        let public_proc = routines_in_skip
+            .iter()
+            .find(|r| r.id.name_lc == "public")
+            .expect("Public must exist");
+        assert_eq!(
+            public_proc.access,
+            Access::Public,
+            "a routine with neither IsLocal/IsInternal/IsProtected must default to Access::Public"
+        );
+    }
+
+    /// Task 1 (round-2 tri-state arity hardening): an ABI routine whose
+    /// `Parameters` field was absent/unparseable (`parameters_known: false`)
+    /// must be ingested with the `UNKNOWN_ARITY` sentinel, never a false `0` —
+    /// a real 0-arg procedure (explicit `Parameters: []`) is KNOWN-zero and
+    /// must stay distinguishable in principle (both are ingested here to prove
+    /// the sentinel differs from a real 0).
+    #[test]
+    fn unknown_arity_routine_gets_sentinel_params_count() {
+        let dep = dep_id("ArityTest");
+        let abi = SymbolReferenceAbi {
+            objects: vec![AbiObject {
+                object_type: "Codeunit".into(),
+                object_number: 199,
+                name: "Arity Test".into(),
+                routines: vec![
+                    AbiRoutine {
+                        name: "KnownZero".into(),
+                        kind: "procedure".into(),
+                        event_kind: SrAbiEventKind::Unknown,
+                        parameters: vec![],
+                        return_type_text: None,
+                        is_local: false,
+                        is_internal: false,
+                        is_protected: false,
+                        parameters_known: true,
+                        attributes: vec![],
+                        attributes_parsed: vec![],
+                    },
+                    AbiRoutine {
+                        name: "UnknownArity".into(),
+                        kind: "procedure".into(),
+                        event_kind: SrAbiEventKind::Unknown,
+                        parameters: vec![],
+                        return_type_text: None,
+                        is_local: false,
+                        is_internal: false,
+                        is_protected: false,
+                        parameters_known: false,
+                        attributes: vec![],
+                        attributes_parsed: vec![],
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let ws = ws_id();
+        let cache = AbiCache::new();
+        cache.seed(
+            &dep.guid,
+            &dep.name,
+            &dep.publisher,
+            &dep.version,
+            Arc::new(abi),
+        );
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), make_symbolonly_dep_unit(&dep)],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        let routines_in_arity: Vec<_> = g
+            .routines
+            .iter()
+            .filter(|r| r.id.object.id_equals_number(199))
+            .collect();
+
+        let known_zero = routines_in_arity
+            .iter()
+            .find(|r| r.id.name_lc == "knownzero")
+            .expect("KnownZero must exist");
+        assert_eq!(
+            known_zero.id.params_count, 0,
+            "an explicit empty Parameters array is a KNOWN 0-arity"
+        );
+
+        let unknown = routines_in_arity
+            .iter()
+            .find(|r| r.id.name_lc == "unknownarity")
+            .expect("UnknownArity must exist");
+        assert_eq!(
+            unknown.id.params_count, UNKNOWN_ARITY,
+            "an absent Parameters field must map to the UNKNOWN_ARITY sentinel, never 0"
+        );
+        assert_ne!(
+            unknown.id.params_count, known_zero.id.params_count,
+            "unknown arity must never collide with a real known-zero arity"
+        );
     }
 
     /// Task 2 invariant (b, ABI half): an ABI routine's `RoutineNode.return_type`
@@ -673,6 +846,8 @@ mod tests {
                     return_type_text: Some("Codeunit \"Helper\"".into()),
                     is_local: false,
                     is_internal: false,
+                    is_protected: false,
+                    parameters_known: true,
                     attributes: vec![],
                     attributes_parsed: vec![],
                 }],

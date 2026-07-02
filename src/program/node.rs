@@ -95,8 +95,14 @@ impl ObjectNodeId {
 /// member triggers on different fields from colliding in maps/sets.
 /// `params_count` is the parameter count of the routine, used to distinguish
 /// AL overloads (same name, different arity) so each overload maps to a unique
-/// node. For SymbolOnly (dep boundary) routines where params are unavailable,
-/// `params_count` is 0 and arity checking is bypassed in resolution.
+/// node. For SymbolOnly (dep boundary) routines, `params_count` is the real
+/// ABI `Parameters[].len()` (Task 1) — arity checking is NOT bypassed for
+/// SymbolOnly in resolution (`resolve_in_object` applies the same arity-exact
+/// discipline to every tier). The one exception is a SymbolOnly routine whose
+/// `Parameters` field was absent/unparseable in `SymbolReference.json`: its
+/// arity is genuinely UNKNOWN, so ingestion (`abi_ingest::UNKNOWN_ARITY`)
+/// gives it a sentinel `params_count` that can never equal a real call's
+/// arity — it exists (for name-only lookups) but never arity-matches.
 /// `sig_fp` is a stable FNV-1a fingerprint of the parameter type-text sequence.
 /// `0` for source-bearing routines. Non-zero for SymbolOnly ABI routines when
 /// two routines share the same `name_lc` AND `params_count` but differ in param

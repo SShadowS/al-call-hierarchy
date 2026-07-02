@@ -63,6 +63,8 @@ fn routine_from_row(row: &Value) -> AbiRoutine {
         return_type_text,
         is_local: false,
         is_internal: false,
+        is_protected: false,
+        parameters_known: true,
         attributes: vec![],
         attributes_parsed: vec![],
     }

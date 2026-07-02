@@ -1,0 +1,16 @@
+{
+	"id": "bbbb8888-0000-0000-0000-000000000008",
+	"name": "ProtectedAbi Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51000, "to": 51099 }],
+	"dependencies": [
+		{
+			"id": "aaaa9999-0000-0000-0000-000000000009",
+			"name": "ProtAbiDep",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		}
+	]
+}

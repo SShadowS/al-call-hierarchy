@@ -58,9 +58,24 @@ pub struct AbiRoutine {
     pub kind: String,
     pub event_kind: AbiEventKind,
     pub parameters: Vec<AbiParameter>,
+    /// Whether `parameters` reflects a genuinely-parsed `Parameters` JSON array
+    /// (present in the source JSON, even if empty for a true 0-arg procedure) vs.
+    /// the field being absent/unparseable — arity is TRI-STATE (Task 1, round-2
+    /// hardening): `false` here means the candidate's arity is UNKNOWN, never
+    /// zero. Consumers (`abi_ingest`) must never treat an unknown arity as a
+    /// concrete `0` — see `abi_ingest::UNKNOWN_ARITY`.
+    pub parameters_known: bool,
     pub return_type_text: Option<String>,
     pub is_local: bool,
     pub is_internal: bool,
+    /// `protected` visibility modifier (`"IsProtected":true` in
+    /// `SymbolReference.json` — verified against real Microsoft System App data:
+    /// 10 occurrences, matching its embedded source's 10 `protected procedure`s
+    /// 1:1). UNLIKE `is_local`/`is_internal` (dropped entirely at ingestion — AL
+    /// never lets an outside caller reach them), a `protected` ABI routine is
+    /// KEPT and carried as `Access::Protected`: AL lets a workspace extension of
+    /// the declaring object call its `protected` members (Task 1).
+    pub is_protected: bool,
     /// Reconstructed attribute strings (back-compat / display).
     pub attributes: Vec<String>,
     /// Structured attributes — same shape as the native AL path's `AttributeInfo`.
@@ -181,6 +196,8 @@ struct RawMethod {
     is_local: Option<bool>,
     #[serde(rename = "IsInternal")]
     is_internal: Option<bool>,
+    #[serde(rename = "IsProtected")]
+    is_protected: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -554,6 +571,13 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
         }
     }
 
+    // Tri-state arity (Task 1, round-2 hardening): `Some(_)` — even `Some(vec![])`
+    // for a genuine 0-arg procedure — means the JSON carried a real `Parameters`
+    // array; `None` means the field was absent/unparseable, so the arity is
+    // UNKNOWN, never zero. `abi_ingest` maps `!parameters_known` to a sentinel
+    // that can never arity-match a real call site.
+    let parameters_known = m.parameters.is_some();
+
     AbiRoutine {
         name: m.name.clone().unwrap_or_default(),
         kind,
@@ -578,12 +602,14 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
                 is_temporary: p.type_definition.as_ref().and_then(|t| t.temporary) == Some(true),
             })
             .collect(),
+        parameters_known,
         return_type_text: m
             .return_type_definition
             .as_ref()
             .and_then(|t| t.name.clone()),
         is_local: m.is_local == Some(true),
         is_internal: m.is_internal == Some(true),
+        is_protected: m.is_protected == Some(true),
         attributes,
         attributes_parsed,
     }
@@ -954,5 +980,67 @@ mod tests {
         let abi = parse_symbol_reference("{ not json");
         assert!(abi.error.is_some());
         assert!(abi.objects.is_empty());
+    }
+
+    // -- Task 1: `IsProtected` parsing + tri-state arity ---------------------
+
+    #[test]
+    fn parse_method_reads_is_protected() {
+        let json = r##"{
+            "RuntimeVersion":"11.0",
+            "Tables":[],
+            "Codeunits":[{"Id":50100,"Name":"ProtTest","Methods":[
+                {"Name":"P","IsProtected":true,"Parameters":[]},
+                {"Name":"Pub","Parameters":[]}
+            ]}],
+            "Pages":[],"Reports":[],"XmlPorts":[],"Queries":[],"Interfaces":[],
+            "EnumTypes":[],"TableExtensions":[],
+            "AppId":"x","Name":"x","Publisher":"x","Version":"1.0.0.0"
+        }"##;
+        let abi = parse_symbol_reference(json);
+        let cu = abi.objects.first().expect("Codeunit must parse");
+        let p = cu
+            .routines
+            .iter()
+            .find(|r| r.name == "P")
+            .expect("P must exist");
+        assert!(p.is_protected, "IsProtected:true must map to is_protected");
+        let pub_r = cu
+            .routines
+            .iter()
+            .find(|r| r.name == "Pub")
+            .expect("Pub must exist");
+        assert!(
+            !pub_r.is_protected,
+            "absent IsProtected must default to false"
+        );
+    }
+
+    #[test]
+    fn parse_method_arity_is_tri_state() {
+        // "Parameters":[] (present, empty) → known arity 0.
+        let json_present = r##"{"Name":"Foo","Parameters":[]}"##;
+        let raw_present: RawMethod = serde_json::from_str(json_present).unwrap();
+        let m_present = parse_method(&raw_present);
+        assert!(
+            m_present.parameters_known,
+            "an explicit empty Parameters array is a KNOWN 0-arity, not unknown"
+        );
+        assert_eq!(m_present.parameters.len(), 0);
+
+        // No "Parameters" key at all → unknown arity, never zero.
+        let json_absent = r##"{"Name":"Foo"}"##;
+        let raw_absent: RawMethod = serde_json::from_str(json_absent).unwrap();
+        let m_absent = parse_method(&raw_absent);
+        assert!(
+            !m_absent.parameters_known,
+            "an absent Parameters field must be UNKNOWN arity, never zero"
+        );
+        assert_eq!(
+            m_absent.parameters.len(),
+            0,
+            "the parameters Vec is still empty for display purposes, but \
+             parameters_known=false is what callers must gate on"
+        );
     }
 }
