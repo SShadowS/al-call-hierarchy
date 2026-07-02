@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `==` in BOTH `routine_candidate_is_visible` and `object_has_visible_member_candidate`'s
   `Access::Internal` arms (plus `access_exclusion_reason`'s matching arm, so the diagnostic stays
   consistent with the visibility predicate). A welcome unplanned side effect: because
-  `object_has_visible_member_candidate` also gates `resolve_bare`'s Step 2 (extension-base), 10
+  `object_has_visible_member_candidate` also gates `resolve_bare`'s Step 2 (extension-base), 7
   further sites that a documented `resolve_bare` reason-overwrite gap had mislabeled
   `ReceiverOutOfClosure` instead of `InternalNotVisible` now resolve directly too (Step 2 succeeds
   outright and never reaches the overwrite path). 4 new unit tests in
@@ -86,7 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   friend-dependent tests fail while the control/same-app tests stay green. New fixtures under
   `tests/r0-corpus/ws-friend-app-internal/`. CDO (`CDO_WS`): `genuine_wrong` stays 0;
   `InternalNotVisible` bucket dropped to exactly 0; primary/whole `unknown` 407→340 (a drop of 67 —
-  the 60 originally measured plus the 7-ish `ReceiverOutOfClosure` side effect above),
+  the 60 originally measured plus the 7 `ReceiverOutOfClosure` side-effect sites above; CORRECTED
+  2026-07-02, Task 5 — this entry and the mirroring ratchet comment in
+  `tests/program_resolve_harness.rs` previously said "10", which doesn't sum to the measured 67),
   `real_unknown_rate` 2.25%→1.88% — BELOW every prior recorded floor, including the pre-Task-1
   1.91%, confirming the Task-1-alone number was never the true honest floor. Adjudicated a sample
   of restored edges against real CDO/CTS-CDN source (both `.app`s extracted directly): the base
@@ -334,6 +336,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   illustrative example have ZERO occurrences in CDO's source (CDO uses a custom `GetContent()`
   wrapper method, not the real platform `Content()`); ratchets tightened to the measured floor
   (348→337 count, 0.020→0.019 rate) with a small deterministic margin, not loosened.
+- **uniform-access-and-compound-receiver plan Task 5 (FINAL): re-measure, exhaustive-adjudication
+  sign-off, ratchet finalization — arc capstone** (`tests/program_resolve_harness.rs`,
+  `src/program/resolve/resolver.rs`). Closes the plan Task 1 opened. Full re-measure on CDO
+  (`CDO_WS`, `ENFORCE_CDO_WS=1`, single tests, `--release`): primary/whole `unknown`=329,
+  `real_unknown_rate`=1.82%, `genuine_wrong`=0, `fresh_missing`=4, `fresh_wrong`=149,
+  `unknownByReason`={CompoundReceiver: 156, UntrackedReceiver: 91, OverloadAmbiguous: 56,
+  BuiltinPrecedenceCollision: 1, MemberNotFound: 25} (sum=329=`unknown`; `InternalNotVisible`/
+  `ReceiverOutOfClosure` both exactly 0, absent from the map). **Net across the whole plan:
+  1.97%(356)→1.82%(329), −27 count / −0.15pp, `genuine_wrong` stays 0 through every single task.**
+  Trajectory: Task 1 356→407 (a TRANSIENT over-decline, corrected below, not a durable floor);
+  Task 1.5 407→340 (the friend-app model, −67, BELOW every prior floor); Task 2 340→340
+  (golden-neutral primitives, by construction); Task 3 340→340 (0 change — `Func().Method()`
+  resolution is CORRECT and structurally DORMANT on CDO: this real corpus contains ZERO bare
+  chained-call-result sites; every real chained-call idiom found is member-qualified
+  (`Var.Method().Method()`), the DEFERRED cross-object-chain shape, not the bare-function shape
+  this task built); Task 4 340→329 (−11, the framework-table + `this.` resolver). **Exhaustive-
+  adjudication sign-off:** Task 3 contributed 0 newly-resolved edges (vacuously satisfied —
+  nothing to adjudicate, confirmed by an exhaustive grep of CDO's source tree, not a sample);
+  Task 4's 11 newly-`Catalog` edges (2 `this.DialogWindow.Open`/`.Close()` sites + 9
+  `<JsonToken var>.AsValue()...` chain sites) were EACH hand-adjudicated against real CDO source
+  during Task 4 itself (see `.superpowers/sdd/task-4-report.md`), and the count equals the
+  `CompoundReceiver` bucket drop (167→156) exactly — no edge unaccounted for. **Protected-ABI
+  guard:** none of the 11 adjudicated edges depend on any dependency's ABI-ingested member — all
+  11 resolve through the structural, compiled-in Framework builtin catalog (`Dialog`/`JsonValue`,
+  via `framework_returns.rs` → `member_catalog.rs`), never through `AbiRoutine`/`RawMethod`
+  access-level data, so the ABI `protected`-schema gap (documented, still open — see the roadmap
+  below) cannot mislabel any of them; the guard is satisfied by construction, not merely by
+  inspection. **Ratchet finalization:** the per-task tightening already landed the ceilings at
+  the measured floor (`primary_rate <= 0.019` vs measured 0.0182; `unknown <= 337` vs measured
+  329 — both an 8-count/~0.0008 deterministic margin, matching this file's own established
+  convention) — confirmed tight on re-measurement, no further tightening or loosening needed.
+  **Historical-comment correction (Task 1.5 review minor (b)):** the `ReceiverOutOfClosure`
+  "dropped from 10 to 0" claim in the ratchet comment (and this file's own Task 1.5 entry, which
+  separately said "10 further sites" vs "7-ish... side effect" two paragraphs apart — an internal
+  self-contradiction) did not sum consistently against the measured 67-site Task 1.5 drop: two
+  independently-recorded sources disagree on the pre-friend-model split.
+  `.superpowers/sdd/task-1-report.md`'s own pre/post-Task-1 table reads `InternalNotVisible`
+  6→57, `ReceiverOutOfClosure` unchanged at 10 (57+10=67); `.superpowers/sdd/progress.md`'s
+  contemporaneous code-review note (written during Task 1's own review, citing a hands-on CDO
+  re-measurement) instead states `InternalNotVisible`=60 pre-Task-1.5, implying
+  `ReceiverOutOfClosure`=7 (60+7=67). Both splits sum to the correct 67; `.superpowers/sdd/task-3-report.md`'s
+  explicit post-Task-1.5 histogram independently confirms the END state (both buckets OMITTED —
+  i.e. exactly 0). Sided with the reviewer's hands-on figure (60/7) — it matches this file's own
+  pre-existing "7-ish" hedge and the reviewer's citation is a fresh re-measurement, not a report
+  transcription — over the summary-table 57/10; either way the ambiguity is cosmetic/historical
+  only (today's CDO-measured values are unambiguous, see Step 1 above: both 0). Corrected both
+  this file (above) and the harness ratchet comment to "7", not "10", with the reasoning inline.
+  **Directionality test strengthened (Task 1.5 review minor (a)):**
+  `resolve_member_object_cross_app_internal_friendship_not_bidirectional` previously asserted
+  only the GRANTED direction (B → A resolves `Source`) plus a same-app B → B sanity check — the
+  actual REVERSE call (A → B, where B declares no friends of its own) was never exercised, so a
+  bidirectionality regression in `internal_visible_across` (e.g. an accidental
+  `friends.get(a).contains(b) || friends.get(b).contains(a)` symmetric check) could have slipped
+  through untested. Added a third caller object (`DirACaller`, app A, with App A now also
+  depending on App B so the call is topologically reachable) and a real A → B `resolve_member`
+  call against `DirBTarget.SecretB()`, asserting `RouteTarget::Unresolved` /
+  `Evidence::Unknown(UnknownReason::InternalNotVisible)` — proving friendship is one-directional
+  by actually calling in the un-authorized direction, not merely by construction/inspection.
+  97/97 resolver unit tests pass (0 regressions from either fold-in fix). CDO (`CDO_WS`): both
+  gates re-run and confirmed green and deterministic at the numbers above;
+  `sum(unknownByReason)==unknown` holds (asserted in-test); the
+  `resolve_module_has_no_stray_engine_l3_l2_imports` grep-guard holds (no `engine::l3`/
+  `engine::l2` import added anywhere in this plan). **What stays honestly DEFERRED (next plan,
+  see the plan doc's own "Roadmap — beyond this plan" section):** cross-object return-type chains
+  (`Var.Method().X()` — the BULK of the remaining `CompoundReceiver`=156, needs ABI
+  `return_type_text` un-discarded from `symbol_reference.rs`/`abi_ingest.rs` plus base-var
+  chain-typing on the node model, not just receiver-AST typing); record-field member-of-member
+  (`Rec.BlobField.X()` — a Table field-type index on `ObjectNode`); `UntrackedReceiver`=91; the
+  honest-taxonomy reclassification of `OverloadAmbiguous`=56/`MemberNotFound`=25 into charter §5
+  sub-states (gated, proven per-route, needs a fresh external review per its own established
+  precedent); the `protected`-ABI-schema gap (`IsProtected` ingestion); the `resolve_bare`
+  reason-overwrite precision fix; the `full.rs` histogram dedup.
 - **soundness-completion plan Task 3: fresh-native `UnknownReason` diagnostic +
   stratified `aldump` unknown breakdown (charter §8 stratified reporting) — DIAGNOSTIC
   ONLY, the real-`unknown` COUNT and `ObligationOutcome` classification are UNCHANGED**

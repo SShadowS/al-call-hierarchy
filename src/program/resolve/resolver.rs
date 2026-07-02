@@ -6852,11 +6852,19 @@ codeunit 53973 "StrangerCaller"
         ));
     }
 
-    // (1.5-c) DIRECTIONALITY: B lists A as a friend does NOT make B's own
-    // internals visible to... wait, does NOT make A's internals visible to
-    // B (friendship is declared BY the exposing app, not inherited by the
-    // app it names) — the REVERSE call (B → A internal) must stay Unknown
-    // even though A → B is friend-authorized.
+    // (1.5-c) DIRECTIONALITY: friendship is declared BY the exposing app and
+    // is never inherited by the app it names. App A declares App B a friend
+    // (`friends[A] = {B}`), so B → A internal resolves. That grant is
+    // one-directional: it must NOT be readable backwards as `friends[B] =
+    // {A}`. The original version of this fixture only asserted the GRANTED
+    // direction (B → A) plus a same-app B → B sanity check, never the actual
+    // REVERSE call (A → B, where B declares no friends of its own) — so a
+    // bidirectionality bug in `internal_visible_across` could have slipped
+    // through untested (Task 1.5 review, minor finding (a), folded in here).
+    // This now exercises all three: B → A resolves `Source` (granted); B → B
+    // same-app sanity check; A → B, calling an `internal` member of the app
+    // that RECEIVED trust rather than granted it, stays honest `Unknown`
+    // (no reciprocal grant exists).
     #[test]
     fn resolve_member_object_cross_app_internal_friendship_not_bidirectional() {
         use crate::program::resolve::receiver::ReceiverType;
@@ -6885,29 +6893,39 @@ codeunit 53976 "DirBCaller"
     end;
 }
 "#;
+        let src_a_caller: &'static str = r#"
+codeunit 53979 "DirACaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
         let app_a = make_app_id("PrimaryAppDirA");
         let app_b = make_app_id("DepAppDirB");
         let unit_a_target = make_unit(app_a.clone(), "DirATarget.al", src_a_target);
         let unit_b_target = make_unit(app_b.clone(), "DirBTarget.al", src_b_target);
-        let unit_b_caller = make_unit(app_b, "DirBCaller.al", src_b_caller);
-        let units = [unit_a_target, unit_b_target, unit_b_caller];
-        // App B depends on App A (so B → A is topology-reachable); App A
-        // declares App B a friend (A → B is friend-authorized), but App B
-        // declares NO friends of its own — so a call FROM B's object TO
-        // App A's internal (B → A) is friend-authorized, while a call FROM
-        // an object in A's app TO App B's internal would NOT be (not
-        // exercised directly here since App A declares no caller object of
-        // its own in this fixture; the point pinned is that B's caller,
-        // despite living in the app A trusts, gains NO reciprocal trust
-        // over App B's OWN internals — asserted via DirBTarget staying
-        // Unknown to itself would be same-app, so instead this fixture pins
-        // the actual asymmetry: DirBCaller (app B) MAY reach DirATarget
-        // (app A, friend-authorized) but the reverse relationship is never
-        // inferred — there is no "friends[A].contains(B) implies
-        // friends[B].contains(A)" shortcut in the implementation).
+        let unit_b_caller = make_unit(app_b.clone(), "DirBCaller.al", src_b_caller);
+        let unit_a_caller = make_unit(app_a, "DirACaller.al", src_a_caller);
+        let units = [unit_a_target, unit_b_target, unit_b_caller, unit_a_caller];
+        // Dependencies are declared BOTH ways (B depends on A, AND A depends
+        // on B) purely so each app's caller is topologically able to reach
+        // the other app's object — this fixture tests the resolver's access
+        // predicate in isolation, not real-world AL's (acyclic)
+        // dependency-graph constraints. Friends are declared ONE way only:
+        // App A lists App B as a friend (`friends[A] = {B}`); App B declares
+        // NO friends of its own (`friends[B]` absent). So B → A internal is
+        // friend-authorized; A → B internal is NOT (B never granted A
+        // anything) — there is no "friends[A].contains(B) implies
+        // friends[B].contains(A)" shortcut in the implementation, and this
+        // fixture proves it by actually calling in that direction, not just
+        // asserting same-app control cases.
         let graph = build_graph_multi_dep_friends(
             &units,
-            &[("DepAppDirB", "PrimaryAppDirA")],
+            &[
+                ("DepAppDirB", "PrimaryAppDirA"),
+                ("PrimaryAppDirA", "DepAppDirB"),
+            ],
             &[("PrimaryAppDirA", "DepAppDirB")],
         );
         let index = ResolveIndex::build(&graph);
@@ -6962,6 +6980,47 @@ codeunit 53976 "DirBCaller"
             "B → B: same-app internal must still resolve to Source \
              (directionality fixture sanity check); got {:?}",
             routes_b[0].target
+        );
+
+        // A → B: A declared B a friend, but that grant runs ONE way — B
+        // declared no friends of its own, so A calling B's `internal`
+        // member must stay honest Unknown. This is the actual reverse-
+        // direction proof: if `internal_visible_across` ever regressed to
+        // a symmetric/bidirectional check, this assertion (not merely the
+        // same-app B → B control above) would catch it.
+        let from_obj_a = find_obj(&graph, "DirACaller");
+        let receiver_b_target = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "dirbtarget".into(),
+            id: None,
+        };
+        let (shape_rev, routes_rev) = resolve_member(
+            &receiver_b_target,
+            "secretb",
+            0,
+            from_obj_a,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape_rev, DispatchShape::Exact);
+        assert_eq!(routes_rev.len(), 1);
+        assert_eq!(
+            routes_rev[0].target,
+            RouteTarget::Unresolved,
+            "A → B: B never friended A back (friendship is declared BY \
+             the exposing app, never inherited), so this must stay \
+             honest Unknown, not Source; got {:?}",
+            routes_rev[0].target
+        );
+        assert!(
+            matches!(
+                routes_rev[0].evidence,
+                Evidence::Unknown(UnknownReason::InternalNotVisible)
+            ),
+            "A → B must be excluded with InternalNotVisible, not some \
+             other reason; got {:?}",
+            routes_rev[0].evidence
         );
     }
 

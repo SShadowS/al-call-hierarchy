@@ -1509,12 +1509,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // across` in `src/program/resolve/resolver.rs`): a cross-app `internal`
     // member is visible when the declaring app's manifest lists the
     // caller's app as a friend, not ONLY same-app. Measured CDO delta:
-    // primary/whole `unknown` 407→340 (a drop of 67, not merely the ~60
+    // primary/whole `unknown` 407→340 (a drop of 67, not merely the 60
     // `InternalNotVisible` sites originally measured) — the `InternalNotVisible`
     // bucket dropped to EXACTLY 0 (every real CDO cross-app-internal site was
     // friend-authorized, none was a true stranger), AND, as a documented side
-    // effect, `ReceiverOutOfClosure` also dropped from 10 to 0: those 10 sites
-    // are the SAME bare `GetIsSingleConnect`/`GeteCandidatesFiltered`/
+    // effect, `ReceiverOutOfClosure` also dropped from 7 to 0 (CORRECTED
+    // 2026-07-02, Task 5: this comment previously said "10 to 0" — the
+    // arithmetic only works out to the measured 67-site total drop as
+    // 60 (`InternalNotVisible`) + 7 (`ReceiverOutOfClosure`); "10" would
+    // over-count the drop by 3). Those 7 sites are the SAME bare
+    // `GetIsSingleConnect`/`GeteCandidatesFiltered`/
     // `GetIsVendor` calls from `CDOConnecteCandidates.PageExt.al` (extending
     // base Page `"CTS-CDN Connect eCandidates"`, id 6252183, all 3 procedures
     // declared `internal`) that `resolve_bare`'s Step 2 (extension-base) now
@@ -1525,7 +1529,7 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // with the generic `ReceiverOutOfClosure` (a known, documented
     // reason-overwrite imprecision — see the plan's "Out of scope" list); now
     // that Step 2 succeeds outright, that overwrite path is never reached for
-    // these 10 sites. Spot-check VERIFIED against real CDO/CTS-CDN source
+    // these 7 sites. Spot-check VERIFIED against real CDO/CTS-CDN source
     // (both `.app`s extracted directly): `CTSCDNConnecteCandidates.Page.al`
     // (page 6252183) declares `internal procedure GetIsSingleConnect`/
     // `GeteCandidatesFiltered`/`GetIsVendor`; `IPrePostValidator.Validate`'s
