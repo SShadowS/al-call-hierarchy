@@ -291,6 +291,11 @@ pub fn ingest_abi(
                 // signatures differ (see `param_type_fp` above), so a same-id
                 // run here is already a true duplicate — no content key needed.
                 param_sig_key: String::new(),
+                // ABI return types are a deferred concern (Task 2 scope is the
+                // source `extract_nodes` path only): `routine.return_type_text`
+                // is deliberately NOT projected here, mirroring the existing
+                // SourceTable/TableNo/page-control gap noted above.
+                return_type: None,
             });
         }
     }
@@ -645,6 +650,62 @@ mod tests {
                 .iter()
                 .all(|r| r.id.name_lc != "internalproc"),
             "is_internal must be skipped"
+        );
+    }
+
+    /// Task 2 invariant (b, ABI half): an ABI routine's `RoutineNode.return_type`
+    /// stays `None` even when the underlying `AbiRoutine.return_type_text` IS
+    /// populated — proving the discard is a deliberate, deferred scope
+    /// decision (Task 2 is source-`extract_nodes`-only), not an oversight.
+    #[test]
+    fn abi_routine_return_type_is_discarded() {
+        let dep = dep_id("RetTypeTest");
+        let abi = SymbolReferenceAbi {
+            objects: vec![AbiObject {
+                object_type: "Codeunit".into(),
+                object_number: 99,
+                name: "Ret Type Test".into(),
+                routines: vec![AbiRoutine {
+                    name: "GetHelper".into(),
+                    kind: "procedure".into(),
+                    event_kind: SrAbiEventKind::Unknown,
+                    parameters: vec![],
+                    return_type_text: Some("Codeunit \"Helper\"".into()),
+                    is_local: false,
+                    is_internal: false,
+                    attributes: vec![],
+                    attributes_parsed: vec![],
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let ws = ws_id();
+        let cache = AbiCache::new();
+        cache.seed(
+            &dep.guid,
+            &dep.name,
+            &dep.publisher,
+            &dep.version,
+            Arc::new(abi),
+        );
+
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), make_symbolonly_dep_unit(&dep)],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        let get_helper = g
+            .routines
+            .iter()
+            .find(|r| r.id.name_lc == "gethelper")
+            .expect("GetHelper must exist");
+        assert_eq!(
+            get_helper.return_type, None,
+            "ABI return types are a deferred concern — must not leak through"
         );
     }
 }

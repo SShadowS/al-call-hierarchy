@@ -185,6 +185,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tripped, left unchanged).
 
 ### Added
+- **uniform-access-and-compound-receiver plan Task 2: thread the parsed receiver `ExprId` to
+  `infer_receiver_type` + add `return_type` to source `RoutineNode` — enabling infra for Tasks
+  3-4, RESOLUTION-NEUTRAL** (`src/program/resolve/extract.rs`, `full.rs`, `receiver.rs`,
+  `src/program/node_extract.rs`, `abi_ingest.rs`). Two primitives Tasks 3-4's compound-receiver
+  resolvers need were missing: (1) the resolver only ever saw a call site's receiver as a raw
+  `receiver_text: String` (`CalleeShape::Member`) — the STRUCTURED `Expr` tree-sitter/al-syntax
+  had already built for it (`ExprKind::Call{function,args}` / `Member{base,member}` / …) was
+  discarded at extraction; (2) `RoutineNode` (the program-graph node) had no `return_type`, even
+  though `RoutineDecl.return_type: Option<String>` was already parsed and available. Added
+  `CalleeShape::Member.receiver: Option<ExprId>`, populated at its sole construction site
+  (`extract.rs::classify_call`) from the `object` `ExprId` classification already derives
+  `receiver_text` from; threaded it through `ObligationKind::CallSite` (implicitly, via `shape`)
+  into `resolve_call_site_obligation` (which now also takes `file: &AlFile` so the id can be
+  dereferenced) and on into `infer_receiver_type`'s new `receiver_expr: Option<(&AlFile, ExprId)>`
+  parameter — a resolver can now call `file.ir.expr(id)` to inspect the receiver's real shape
+  instead of re-parsing `receiver_text` (which cannot recover argument count/shape and would
+  corrupt on a `.` inside a string-literal argument). `infer_receiver_type`'s existing Steps 0-4
+  are UNCHANGED and still dispatch purely on `receiver_lc`; the new parameter is accepted but not
+  yet consumed (Tasks 3-4 give it behavior). Added `RoutineNode.return_type: Option<String>`,
+  copied verbatim from `RoutineDecl.return_type` in source extraction (`node_extract.rs`); the ABI
+  ingestion path (`abi_ingest.rs`) sets `None` (`AbiRoutine.return_type_text` stays unprojected —
+  a documented, deferred scope gap, not an oversight). **Golden-neutrality mechanics (mandatory,
+  not incidental):** `CalleeShape` switched from `#[derive(PartialEq, Eq)]` to a MANUAL impl that
+  compares every variant's payload EXCEPT `Member.receiver` — an `ExprId` is only stable within
+  the single `AlFile` it was produced from and carries no resolution-affecting information on its
+  own, so it must never influence obligation identity, dedup keys, ordering, or output; neither
+  `CalleeShape`/`RawSiteV2`/`ObligationKind`/`RoutineNode` derive `Hash`/`Ord`/`Serialize`, so no
+  further exclusion sites existed. Verified: 4 new invariant unit tests (`extract.rs`,
+  `receiver.rs` x1, `node_extract.rs`, `abi_ingest.rs`) proving the `Func(1,2,3).M()` receiver
+  dereferences to a real `ExprKind::Call{args.len()==3}` node AND that feeding it into
+  `infer_receiver_type` still returns the pre-existing `Unknown` (neutral); full `cargo test
+  --workspace` green (no golden moved — `git status` on `tests/goldens/` clean); CDO
+  (`CDO_WS`) `cdo_l3_semantic_audit_no_fresh_wrong` + `cdo_full_program_coverage_and_self_reported_metric`
+  UNCHANGED at real-`unknown` 1.97% / 356 (this task adds zero resolution behavior — pure carry +
+  field populate).
 - **soundness-completion plan Task 3: fresh-native `UnknownReason` diagnostic +
   stratified `aldump` unknown breakdown (charter §8 stratified reporting) — DIAGNOSTIC
   ONLY, the real-`unknown` COUNT and `ObligationOutcome` classification are UNCHANGED**

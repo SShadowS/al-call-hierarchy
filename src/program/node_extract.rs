@@ -121,6 +121,14 @@ pub struct RoutineNode {
     /// those already carry a non-zero `sig_fp` in their `RoutineNodeId` when
     /// signatures differ, so same-id runs there are already true duplicates.
     pub param_sig_key: String,
+    /// Declared return-type text, verbatim (e.g. `"Codeunit X"`), for a SOURCE
+    /// routine — copied from `RoutineDecl.return_type` (Task 2 enabling
+    /// primitive). `None` for a procedure/trigger with no return type AND for
+    /// every ABI/SymbolOnly routine (dependency return types are a deferred
+    /// concern — `abi_ingest.rs` discards `AbiRoutine.return_type_text`).
+    /// Not yet consumed by any resolver; additive plumbing for a future
+    /// compound-receiver Phase-A step (`Func().Method()`).
+    pub return_type: Option<String>,
 }
 
 /// Lowercased, `|`-joined parameter TYPE-TEXT sequence for a SOURCE routine's
@@ -308,6 +316,7 @@ pub fn extract_nodes(
                 abi_routine_kind: None,
                 abi_event_kind: None,
                 param_sig_key: param_sig_key(&r.params),
+                return_type: r.return_type.clone(),
             });
         }
     }
@@ -347,6 +356,35 @@ codeunit 50100 "Sales Helper"
         let helper = routs.iter().find(|r| r.id.name_lc == "helper").unwrap();
         assert_eq!(helper.access, Access::Local);
         assert!(!post.is_trigger);
+    }
+
+    /// Task 2 invariant (b): a source routine `procedure P(): Codeunit X` has
+    /// `return_type == Some("Codeunit X")` on its extracted `RoutineNode`
+    /// (copied verbatim from `RoutineDecl.return_type`); a routine with no
+    /// return type declared stays `None`.
+    #[test]
+    fn extracts_source_routine_return_type() {
+        let src = r#"
+codeunit 50100 "Sales Helper"
+{
+    procedure GetHelper(): Codeunit X begin end;
+    procedure Post() begin end;
+}
+"#;
+        let file = al_syntax::parse(src);
+        let mut objs = Vec::new();
+        let mut routs = Vec::new();
+        extract_nodes(
+            AppRef(0),
+            &file,
+            TrustTier::Workspace,
+            &mut objs,
+            &mut routs,
+        );
+        let get_helper = routs.iter().find(|r| r.id.name_lc == "gethelper").unwrap();
+        assert_eq!(get_helper.return_type.as_deref(), Some("Codeunit X"));
+        let post = routs.iter().find(|r| r.id.name_lc == "post").unwrap();
+        assert_eq!(post.return_type, None);
     }
 
     /// Parse `src` and return every extracted `ObjectNode`, document order.

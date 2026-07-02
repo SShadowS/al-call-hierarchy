@@ -342,6 +342,7 @@ mod tests {
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
+            return_type: None,
         }
     }
 

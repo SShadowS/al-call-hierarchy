@@ -6283,6 +6283,7 @@ codeunit 50000 "Caller"
             abi_routine_kind: Some(AbiRoutineKind::EventPublisher),
             abi_event_kind: Some(AbiEventKind::Integration),
             param_sig_key: String::new(),
+            return_type: None,
         });
 
         // Regular procedure: abi_routine_kind=Procedure, abi_event_kind=None.
@@ -6304,6 +6305,7 @@ codeunit 50000 "Caller"
             abi_routine_kind: Some(AbiRoutineKind::Procedure),
             abi_event_kind: Some(AbiEventKind::None),
             param_sig_key: String::new(),
+            return_type: None,
         });
 
         objects.sort_by(|a, b| a.id.cmp(&b.id));

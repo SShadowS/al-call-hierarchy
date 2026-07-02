@@ -22,7 +22,18 @@ use crate::program::resolve::edge::{CanonicalSpan, SourcePos};
 
 /// Classified callee shape for a call expression, mirroring L3's
 /// `classify_callee` + record-op filter.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// # Equality note (`PartialEq`/`Eq`)
+///
+/// `PartialEq`/`Eq` are implemented MANUALLY below rather than derived, so that
+/// `Member`'s `receiver` field (an `ExprId` — Task 2 enabling primitive, see its
+/// doc) is excluded from equality/hashing/ordering entirely. `ExprId`s are only
+/// stable within the single `AlFile` they were produced from and carry no
+/// resolution-affecting information on their own — they must never influence
+/// obligation identity, dedup, or golden-comparable output. Comparing two
+/// `CalleeShape::Member` values compares only `receiver_text` + `method`,
+/// exactly as before this field was added (golden-neutral by construction).
+#[derive(Debug, Clone)]
 pub enum CalleeShape {
     /// A bare identifier call: `Foo()`.
     Bare { name: String },
@@ -30,6 +41,21 @@ pub enum CalleeShape {
     Member {
         receiver_text: String,
         method: String,
+        /// The parsed receiver expression (Task 2 enabling primitive): the
+        /// `ExprId` of the `obj` node classification derives `receiver_text`
+        /// from (`file.ir.expr(*object)` in [`classify_call`]). Lets a future
+        /// resolver inspect the STRUCTURED receiver (`ExprKind::Call{..}` /
+        /// `Member{..}` / …) via `file.ir.expr(id)` instead of re-parsing
+        /// `receiver_text`, which is lossy (e.g. cannot recover argument
+        /// count/shape, and a `.` inside a string-literal argument would
+        /// corrupt a naive text split). `None` only if some future
+        /// construction site cannot supply one; the sole current constructor
+        /// ([`classify_call`]) always populates `Some`.
+        ///
+        /// NOT compared by `PartialEq`/`Eq` (see this enum's doc) and NOT part
+        /// of any obligation dedup key — purely additive plumbing, consumed by
+        /// later resolution steps, never by identity/output today.
+        receiver: Option<ExprId>,
     },
     /// An object-run: `Codeunit.Run(...)`, `Page.Run(...)`, `Report.Run(...)`.
     ObjectRun {
@@ -51,6 +77,54 @@ pub enum CalleeShape {
     /// Any other call expression that doesn't match a known pattern.
     Unknown,
 }
+
+impl PartialEq for CalleeShape {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (CalleeShape::Bare { name: a }, CalleeShape::Bare { name: b }) => a == b,
+            (
+                CalleeShape::Member {
+                    receiver_text: rt1,
+                    method: m1,
+                    // Deliberately excluded from equality — see the enum doc.
+                    receiver: _,
+                },
+                CalleeShape::Member {
+                    receiver_text: rt2,
+                    method: m2,
+                    receiver: _,
+                },
+            ) => rt1 == rt2 && m1 == m2,
+            (
+                CalleeShape::ObjectRun {
+                    object_kind: ok1,
+                    target_ref: tr1,
+                    target_is_name: tn1,
+                },
+                CalleeShape::ObjectRun {
+                    object_kind: ok2,
+                    target_ref: tr2,
+                    target_is_name: tn2,
+                },
+            ) => ok1 == ok2 && tr1 == tr2 && tn1 == tn2,
+            (
+                CalleeShape::RecordOp {
+                    receiver_text: rt1,
+                    op: op1,
+                },
+                CalleeShape::RecordOp {
+                    receiver_text: rt2,
+                    op: op2,
+                },
+            ) => rt1 == rt2 && op1 == op2,
+            (CalleeShape::Commit, CalleeShape::Commit) => true,
+            (CalleeShape::Unknown, CalleeShape::Unknown) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for CalleeShape {}
 
 /// One classified call site extracted from a routine body.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,6 +394,7 @@ fn classify_call(
             CalleeShape::Member {
                 receiver_text,
                 method,
+                receiver: Some(*object),
             }
         }
 
@@ -814,11 +889,60 @@ codeunit 50100 "C"
         // Json.Add is a Member call, NOT a RecordOp (Json is not a record).
         assert!(
             run.iter()
-                .any(|s| matches!(&s.shape, CalleeShape::Member { receiver_text, method } if receiver_text.eq_ignore_ascii_case("json") && method.eq_ignore_ascii_case("add")))
+                .any(|s| matches!(&s.shape, CalleeShape::Member { receiver_text, method, .. } if receiver_text.eq_ignore_ascii_case("json") && method.eq_ignore_ascii_case("add")))
         );
         assert!(
             !run.iter()
                 .any(|s| matches!(&s.shape, CalleeShape::RecordOp { receiver_text, .. } if receiver_text.eq_ignore_ascii_case("json")))
         );
+    }
+
+    /// Task 2 invariant (a): for a `Func().M()` call, `CalleeShape::Member`
+    /// carries a `receiver: Some(ExprId)` that dereferences (via
+    /// `file.ir.expr(id)`) to a STRUCTURED `ExprKind::Call{function, args}`
+    /// node whose `args.len()` equals the source argument count — proving the
+    /// parsed receiver AST (not just its raw text) reaches the resolver. This
+    /// is the primitive Tasks 3-4 consume; Task 2 itself adds no new
+    /// resolution behavior (the field is excluded from `CalleeShape`'s
+    /// `PartialEq`/`Eq`, see that enum's doc).
+    #[test]
+    fn member_receiver_threads_structured_call_expr() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    begin
+        Func(1, 2, 3).M();
+    end;
+    procedure Func(A: Integer; B: Integer; C: Integer): Codeunit "C" begin end;
+}
+"#;
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "C.al", &std::collections::HashSet::new());
+        let run: Vec<_> = sites.iter().filter(|s| s.caller_routine == "run").collect();
+
+        let member_site = run
+            .iter()
+            .find(|s| matches!(&s.shape, CalleeShape::Member { method, .. } if method.eq_ignore_ascii_case("m")))
+            .expect("Func(1, 2, 3).M() must classify as a Member call");
+
+        let CalleeShape::Member { receiver, .. } = &member_site.shape else {
+            unreachable!("filtered to Member above");
+        };
+        let receiver_id = receiver.expect("Member.receiver must be populated by classify_call");
+
+        let receiver_expr = file.ir.expr(receiver_id);
+        match &receiver_expr.kind {
+            ExprKind::Call { args, .. } => {
+                assert_eq!(
+                    args.len(),
+                    3,
+                    "threaded receiver Expr must carry the real source arg count"
+                );
+            }
+            // `ExprKind` derives no `Debug` — assert on the discriminant via
+            // `matches!` rather than interpolating the value.
+            _ => panic!("expected ExprKind::Call for the Func(...) receiver"),
+        }
     }
 }

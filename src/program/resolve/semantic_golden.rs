@@ -1694,6 +1694,7 @@ fn build_fan_out_site_context(
                             CalleeShape::Member {
                                 receiver_text,
                                 method,
+                                ..
                             } => {
                                 let receiver_lc = receiver_text.to_ascii_lowercase();
                                 let recv = infer_receiver_type(
@@ -1703,6 +1704,7 @@ fn build_fan_out_site_context(
                                     obj_node,
                                     graph,
                                     index,
+                                    None,
                                 );
                                 if let ReceiverType::Interface { name_lc } = recv {
                                     ctx_map.insert(
@@ -1728,6 +1730,7 @@ fn build_fan_out_site_context(
                                     obj_node,
                                     graph,
                                     index,
+                                    None,
                                 );
                                 if let ReceiverType::Record {
                                     table: Some(table_id),
@@ -2524,6 +2527,7 @@ mod tests {
             abi_routine_kind: None,
             abi_event_kind: None,
             param_sig_key: String::new(),
+            return_type: None,
         }
     }
 

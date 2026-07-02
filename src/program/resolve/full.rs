@@ -311,6 +311,11 @@ fn resolve_call_site_obligation(
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
     with_state: WithState,
+    // Task 2 enabling primitive: the parsed `AlFile` this obligation's call
+    // site was extracted from, so a `CalleeShape::Member.receiver` `ExprId`
+    // can be dereferenced into `infer_receiver_type`'s `receiver_expr` param.
+    // Resolution-neutral today (Steps 0-4 of `infer_receiver_type` ignore it).
+    file: &al_syntax::ir::AlFile,
 ) -> (EdgeKind, DispatchShape, SetCompleteness, Vec<Route>) {
     match shape {
         CalleeShape::Bare { name } => {
@@ -333,6 +338,7 @@ fn resolve_call_site_obligation(
         CalleeShape::Member {
             receiver_text,
             method,
+            receiver,
         } => {
             let receiver_lc = receiver_text.to_ascii_lowercase();
             let method_lc = method.to_ascii_lowercase();
@@ -344,6 +350,7 @@ fn resolve_call_site_obligation(
                     obj_node,
                     graph,
                     index,
+                    receiver.map(|id| (file, id)),
                 );
                 resolve_member(&recv, &method_lc, arity, obj_node, graph, index, body_map)
             } else {
@@ -413,6 +420,9 @@ fn resolve_call_site_obligation(
             // Infer the record type from the receiver and look up its table
             // ObjectNode.  Falls back to honest-empty when the table is not found.
             let table_node_opt: Option<&ObjectNode> = if let Some(obj_node) = obj_node_opt {
+                // `RecordOp` carries no `ExprId` (Task 2 scoped the primitive
+                // to `CalleeShape::Member` only) — `None` here is unchanged
+                // behavior, not a gap.
                 let recv = infer_receiver_type(
                     &receiver_lc,
                     routine,
@@ -420,6 +430,7 @@ fn resolve_call_site_obligation(
                     obj_node,
                     graph,
                     index,
+                    None,
                 );
                 match recv {
                     ReceiverType::Record {
@@ -575,6 +586,7 @@ fn resolve_full_program_from_parts(
                             &index,
                             &body_map,
                             site.with_state,
+                            &pf.file,
                         );
 
                         classified_edges.push(ClassifiedEdge {
