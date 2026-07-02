@@ -2,10 +2,15 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use al_syntax::ir::ObjectKind;
+
 use crate::program::abi_ingest::AbiCache;
 use crate::program::graph::{ObjectIndex, ProgramGraph};
-use crate::program::node::{AppRef, AppRegistry};
-use crate::program::node_extract::{ObjectNode, RoutineNode, extract_nodes};
+use crate::program::node::{AppRef, AppRegistry, RoutineNodeId};
+use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
+use crate::program::resolve::event::{
+    PublisherKind, is_platform_page_event, is_platform_table_event, platform_event_display_name,
+};
 use crate::program::topology::DependencyGraph;
 use crate::snapshot::{AppSetSnapshot, parse_snapshot};
 
@@ -169,14 +174,107 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
     // ── Step 5: build index from sorted objects ───────────────────────────────
     let obj_index = ObjectIndex::build(&objects);
 
-    ProgramGraph {
+    let mut graph = ProgramGraph {
         apps,
         topology,
         objects,
         routines,
         obj_index,
         friends,
+    };
+
+    // ── Step 6: inject synthetic platform-event publishers ────────────────────
+    // Binds subscribers to the table's implicit DB-trigger / validate events,
+    // which have no publisher routine in source (see below).
+    inject_platform_event_publishers(&mut graph);
+
+    graph
+}
+
+/// Synthetic platform-publisher arity: a generous upper bound so the resolve
+/// index's `params_count >= sub_params` candidate filter admits every real
+/// subscriber. Platform events top out at ~3 params and are never overloaded,
+/// so the exact value only needs to dominate any subscriber's arity.
+const PLATFORM_EVENT_PUBLISHER_ARITY: usize = 8;
+
+/// Inject synthetic [`PublisherKind::Platform`] publisher routines for the
+/// platform-generated TABLE events (`OnAfter*Event` / `OnBefore*Event` + field
+/// validate) that a subscriber targets but which have NO publisher routine in
+/// source.
+///
+/// Without these, a `[EventSubscriber(ObjectType::Table, Database::X,
+/// 'OnAfterDeleteEvent', …)]` resolves to no publisher (the resolve index needs
+/// a `publisher_kind`-bearing routine), so its integration edge — "this
+/// subscriber fires when X is deleted", the charter's data-is-control-flow
+/// wiring — is silently lost. On real BC apps this orphans ~27% of subscribers.
+///
+/// One synthetic per distinct `(table, event_name)`; field-level (`element`)
+/// granularity is intentionally collapsed so the index's `(object, name)`
+/// candidate model resolves each to exactly one publisher (per-field precision
+/// is a later refinement). Events already served by a real publisher routine on
+/// the table are skipped — a synthetic never shadows source.
+pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
+    let mut synth: Vec<RoutineNode> = Vec::new();
+    let mut seen: std::collections::HashSet<RoutineNodeId> = std::collections::HashSet::new();
+
+    for sub in &graph.routines {
+        for args in &sub.event_subscribers {
+            // Recognize the platform TABLE and PAGE events (implicit DB triggers /
+            // field validate / page lifecycle / record / action) that have no
+            // publisher routine in source. Everything else resolves through the
+            // normal `[IntegrationEvent]` publisher path.
+            let pub_kind = match args.publisher_object_type.as_str() {
+                "table" if is_platform_table_event(&args.event_name) => ObjectKind::Table,
+                "page" if is_platform_page_event(&args.event_name) => ObjectKind::Page,
+                _ => continue,
+            };
+            // Resolve the publisher object from the subscriber's app (fail-closed).
+            let Some(pub_obj) =
+                graph.resolve_object(sub.id.object.app, pub_kind, &args.publisher_name)
+            else {
+                continue;
+            };
+            let synth_id = RoutineNodeId {
+                object: pub_obj.id.clone(),
+                name_lc: args.event_name.clone(),
+                enclosing_member_lc: None,
+                params_count: PLATFORM_EVENT_PUBLISHER_ARITY,
+                sig_fp: 0,
+            };
+            if !seen.insert(synth_id.clone()) {
+                continue; // already injected for this (table, event)
+            }
+            // Never shadow a real source publisher of the same name on the table.
+            let has_real_publisher = graph.routines.iter().any(|r| {
+                r.id.object == pub_obj.id
+                    && r.id.name_lc == args.event_name
+                    && r.publisher_kind.is_some()
+            });
+            if has_real_publisher {
+                continue;
+            }
+            synth.push(RoutineNode {
+                id: synth_id,
+                name: platform_event_display_name(&args.event_name).to_string(),
+                is_trigger: false,
+                access: Access::Public,
+                tier: pub_obj.tier,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: Some(PublisherKind::Platform),
+                abi_routine_kind: None,
+                abi_event_kind: None,
+                param_sig_key: String::new(),
+                return_type: None,
+            });
+        }
     }
+
+    if synth.is_empty() {
+        return;
+    }
+    graph.routines.extend(synth);
+    graph.routines.sort_by(|a, b| a.id.cmp(&b.id));
 }
 
 /// Collapse a SORTED `routines` vec's runs of equal `RoutineNodeId` down to
