@@ -1480,17 +1480,34 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `File` framework type) BEFORE it could land as a false `Catalog` route —
     // see `infer_receiver_type_for_expr`'s doc and the
     // `quoted_identifier_never_collides_with_framework_keyword_via_recursion`
-    // regression test. 0.019 gives a small deterministic margin above the
+    // regression test. 0.019 gave a small deterministic margin above the
     // measured 0.0182.
+    //
+    // TIGHTENED 2026-07-02 (plan v2.1 Task 3): 0.019→0.0182, measured 0.0181.
+    // Task 3 resolves the `Var.Method().X()` cross-object call-result chain
+    // subset of `CompoundReceiver` via a PURE `resolve_member` type-query on
+    // the base's static type (`infer_cross_object_chain_receiver`, `src/
+    // program/resolve/receiver.rs`) — `CompoundReceiver` 156→154, every
+    // other bucket byte-identical. Both newly-resolved sites EXHAUSTIVELY
+    // hand-adjudicated correct against real System Application embedded
+    // source (see `.superpowers/sdd/task-3-report.md`): `Codeunit 6175364
+    // "CDO Universign E-Seal Service"`'s `ProcessSealResponse`, lines
+    // 165/168, `Response.GetContent().AsText()`/`.AsBlob()` where `Response:
+    // Codeunit "Http Response Message"` (System App id 2356) declares
+    // `GetContent(): Codeunit "Http Content"` (id 2354), which declares
+    // `AsText(): Text`/`AsBlob(): Codeunit "Temp Blob"` — confirmed by
+    // reading the System Application `.app`'s embedded source directly
+    // (`src/Rest Client/src/HttpResponseMessage.Codeunit.al`/
+    // `HttpContent.Codeunit.al`). `genuine_wrong` stays 0.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.019,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.019 \
-         (recorded 2026-07-02 post uniform-access-and-compound-receiver Task \
-         4: 1.82%, was 1.88% post-Task-1.5, 2.25% post-Task-1-only [a \
-         transient over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, \
-         6.46% pre-beyond-1B.3b) — engine regressed; investigate before \
-         raising the ceiling"
+        primary_rate <= 0.0182,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.0182 \
+         (recorded 2026-07-02 post plan v2.1 Task 3: 1.81%, was 1.82% post \
+         uniform-access-and-compound-receiver Task 4, 1.88% post-Task-1.5, \
+         2.25% post-Task-1-only [a transient over-decline], 1.91% \
+         pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — engine \
+         regressed; investigate before raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1608,30 +1625,34 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // byte-identical. All 11 newly-resolved sites EXHAUSTIVELY hand-
     // adjudicated (see the rate-ceiling comment above and
     // `.superpowers/sdd/task-4-report.md`); `genuine_wrong` stays 0. 337
-    // gives a small deterministic margin above the measured 329.
+    // gave a small deterministic margin above the measured 329.
+    //
+    // TIGHTENED 2026-07-02 (plan v2.1 Task 3): 337→330, measured 327/327
+    // (primary/whole). See the rate-ceiling comment above for the full
+    // adjudication of the 2 newly-resolved sites.
     assert!(
-        ph.unknown <= 337,
-        "primary unknown count {} exceeds ceiling 337 (recorded 2026-07-02 post \
-         uniform-access-and-compound-receiver plan Task 4: 329 — 11 sites \
-         EXHAUSTIVELY hand-adjudicated correct, was 340 post Task 1.5/3, 407 \
-         post Task 1 alone [transient over-decline], 356 post soundness \
-         completion plan v2.1 Task 1.5, 346 post follow-up plan v2.1 Task 4, \
-         508 pre-follow-up) — engine regressed; investigate before raising \
-         the ceiling",
+        ph.unknown <= 330,
+        "primary unknown count {} exceeds ceiling 330 (recorded 2026-07-02 \
+         post plan v2.1 Task 3: 327 — 2 sites EXHAUSTIVELY hand-adjudicated \
+         correct, was 329 post uniform-access-and-compound-receiver Task 4, \
+         340 post Task 1.5/3, 407 post Task 1 alone [transient \
+         over-decline], 356 post soundness completion plan v2.1 Task 1.5, \
+         346 post follow-up plan v2.1 Task 4, 508 pre-follow-up) — engine \
+         regressed; investigate before raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
     // future regression lands in a dependency-internal (non-primary) routine
     // — the primary-scoped count above would not catch that on its own.
-    // TIGHTENED 2026-07-02 alongside the primary ceiling above (same Task 4
-    // fix; whole-program `unknown`=329, same value as primary today).
+    // TIGHTENED 2026-07-02 alongside the primary ceiling above (same plan
+    // v2.1 Task 3 fix; whole-program `unknown`=327, same value as primary
+    // today).
     assert!(
-        h.unknown <= 337,
-        "whole-program unknown count {} exceeds ceiling 337 (recorded \
-         2026-07-02 post uniform-access-and-compound-receiver plan Task 4: \
-         329 — see the primary-scoped ceiling comment above for the full \
-         history and adjudication) — engine regressed; investigate before \
-         raising the ceiling",
+        h.unknown <= 330,
+        "whole-program unknown count {} exceeds ceiling 330 (recorded \
+         2026-07-02 post plan v2.1 Task 3: 327 — see the primary-scoped \
+         ceiling comment above for the full history and adjudication) — \
+         engine regressed; investigate before raising the ceiling",
         h.unknown,
     );
 
@@ -5016,6 +5037,14 @@ fn resolve_module_has_no_stray_engine_l3_l2_imports() {
 // `graph.resolve_object`/`index.object_by_number`. Their removal from
 // `expected` below is that migration being reflected, not a regression.
 //
+// Plan v2.1 Task 3 ADDS one entry: `receiver.rs`'s `interface_own_routine_
+// node` resolves a cross-object chain's `Interface`-typed prefix by NAME to
+// look up the interface's own declared member signature — a genuine
+// semantic caller, structurally identical to `resolve_member`'s existing
+// `Object` arm entry below (typed-receiver-by-name dispatch, own-app-first
+// then closure-scoped, ambiguous cross-app name declines to `None` for
+// free). No `Ambiguous`/`OutOfClosure` distinction is needed here either.
+//
 // This guard locks that audited set in place: a NEW call site appearing in
 // `src/program/resolve/*.rs` PRODUCTION code (before each file's `#[cfg(test)]`
 // module marker — test fixtures directly exercising the API are expected and
@@ -5064,6 +5093,10 @@ fn resolve_module_pick_first_base_function_callers_are_a_known_allowlist() {
         (
             "index.rs",
             "let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name)",
+        ),
+        (
+            "receiver.rs",
+            "let iface = graph.resolve_object(from_object.id.app, ObjectKind::Interface, name_lc)?;",
         ),
     ];
 
@@ -5792,10 +5825,17 @@ fn ws_compound_call_result_local_var_shadow_stays_unknown() {
     );
 }
 
-/// Test 29j (fixture h, DEFERRED-shape guard NEGATIVE — cross-object chain):
-/// `Obj.DoWork().Bar()` — the receiver of `.Bar()` is `Obj.DoWork()`, whose
-/// `function` is a MEMBER expression (`Obj.DoWork`), not a bare identifier;
-/// this cross-object-chain shape is deliberately deferred (Task 4).
+/// Test 29j (fixture h, NEGATIVE — cross-object chain, still `Unknown` but
+/// no longer for the OLD reason): `Obj.DoWork().Bar()` — the receiver of
+/// `.Bar()` is `Obj.DoWork()`, whose `function` is a MEMBER expression
+/// (`Obj.DoWork`), not a bare identifier. Originally this shape was
+/// structurally deferred entirely (pre-plan-v2.1); plan v2.1 Task 3 now
+/// ENGAGES this exact shape via `infer_compound_member_receiver`'s new
+/// cross-object-chain arm — but `DoWork()` here declares NO return type
+/// (see `CRHelper.Codeunit.al`), so the arm's non-scalar-return guard
+/// declines, same observable `Unknown` outcome via a different, now-real
+/// mechanism. See `tests/r0-corpus/ws-cross-object-chain` for the positive/
+/// negative matrix that shape actually exercises end to end.
 #[test]
 fn ws_compound_call_result_cross_object_chain_stays_unknown() {
     let report = ws_compound_call_result_report();
@@ -6283,4 +6323,280 @@ fn ws_protected_abi_stranger_extension_never_sees_base() {
         "a same-id/name but WRONG-KIND stranger extension must never see \
          the ABI base's protected P(); got {route:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Tests 32+: plan v2.1 Task 3 — cross-object call-result chain resolution
+// (`Var.Method().X()`) via a PURE `resolve_member` type-query, fail-closed.
+// `tests/r0-corpus/ws-cross-object-chain` (a real SOURCE object graph +
+// TWO real SymbolOnly probe `.app`s — "CrossChainDep" carrying a
+// `GetContent(): Codeunit "Dep Http Content"` nested-`Subtype` ABI return,
+// and "CrossChainDep2" declaring a same-named "Dep Shared" codeunit for the
+// cross-app-ambiguous-return negative) end to end through the REAL
+// `infer_compound_member_receiver`'s new arm
+// (`src/program/resolve/receiver.rs`).
+//
+// Root feature: when the compound receiver's function is
+// `ExprKind::Member{base, member}` (strictly the procedure-CALL form) and
+// `base` types to `Object`/`Record`/`SelfObject`/`Interface`, the base call's
+// return type is typed via a PURE `resolve_member(base_ty, member_lc, arity,
+// ..)` type-query: EXACTLY ONE route required; `RouteTarget::Routine`/
+// `AbiSymbol` read the resolved routine's declared `return_type` (Task 2's
+// Name+Id cross-validation applied for every ABI-sourced return); anything
+// else declines. Every letter below matches the task brief's fixture list.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-cross-object-chain` and returns the full
+/// `resolve_full_program` report — shared by all tests below.
+fn ws_cross_object_chain_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-cross-object-chain");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-cross-object-chain")
+}
+
+/// The route for the OUTERMOST `Call`-kind obligation of a chain fixture
+/// routine — the WIDEST-span `Call` edge (source spans nest for a
+/// single-line chain expression, so the outermost call always covers the
+/// most columns). Unlike `outer_member_route` (the sibling
+/// `ws-compound-call-result` helper), this does NOT assert a fixed edge
+/// count: a chain may have 2 obligations (one inner call + the outer member
+/// call) or 3 (a 3-level chain) — `ws-cross-object-chain`'s own fixtures
+/// exercise both shapes.
+fn outer_chain_route(
+    report: &ProgramReport,
+    object_id_number: i64,
+    routine_name_lc: &str,
+) -> Route {
+    let edges = edges_for_object_routine(report, object_id_number, routine_name_lc);
+    assert!(
+        !edges.is_empty(),
+        "{routine_name_lc} (object {object_id_number}) must have at least one call obligation"
+    );
+    let outer = edges
+        .iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::Call)
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("at least one Call-kind edge");
+    outer.edge.routes[0].clone()
+}
+
+/// Test 32a (fixture a, POSITIVE): SOURCE prefix. `Helper.GetCustomer(No)`
+/// (unique arity-1, `Record "CC Customer"` return) types the chain receiver
+/// `Record{table: Some(CCCustomer)}`; `Name` is a non-builtin Customer
+/// procedure — must resolve `Source`, exact target id.
+#[test]
+fn ws_cross_object_chain_source_prefix_resolves_to_source() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testsourceprefix");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "name");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert!(
+        rid.object.id_equals_number(51200),
+        "must resolve to \"CC Customer\" (id 51200); got {:?}",
+        rid.object
+    );
+    assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
+
+/// Test 32b (fixture b, POSITIVE): ABI prefix carrying a nested `Subtype`.
+/// `Response.GetContent()`'s declared return (reconstructed from the ABI
+/// `ReturnTypeDefinition.Subtype`, Task 2) types the chain receiver
+/// `Object{Codeunit, "dep http content"}`; `ReadAs` is a PUBLIC ABI member on
+/// that object — must resolve `Opaque`/`AbiSymbol`.
+#[test]
+fn ws_cross_object_chain_abi_prefix_with_subtype_resolves() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testabiprefix");
+    assert_eq!(route.evidence, Evidence::Opaque);
+    let RouteTarget::AbiSymbol { ref key } = route.target else {
+        panic!("expected RouteTarget::AbiSymbol, got {:?}", route.target);
+    };
+    assert_eq!(key.routine_name_lc, "readas");
+    assert_eq!(
+        key.object_number, 60101,
+        "must dispatch on \"Dep Http Content\" (id 60101)"
+    );
+    assert!(matches!(route.witness, Witness::AbiSymbol { .. }));
+}
+
+/// Test 32c (fixture c, NEGATIVE — leaf visibility): `Response.GetContent()`
+/// types the chain exactly like (b), but the leaf `Secret` is an ABI
+/// `internal` member — never visible to this non-friend caller app (dropped
+/// entirely at ABI ingestion, see `abi_ingest::ingest_abi`). Proves the new
+/// chain-typing arm does not bypass Phase B's ordinary visibility discipline
+/// at the leaf — it only types the RECEIVER, never the member itself.
+#[test]
+fn ws_cross_object_chain_abi_leaf_internal_not_visible() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testabileafinternalnotvisible");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32d (fixture d, POSITIVE — single-implementer interface prefix
+/// SUCCESS control): `ICCFoo` has EXACTLY ONE implementer (`CC Foo Impl`) in
+/// the closure — `resolve_member`'s Interface fan-out yields exactly 1
+/// route, the route-count guard accepts, and the chain types
+/// `Object{Codeunit, "cc helper"}` (AL guarantees the implementer's
+/// signature matches the interface's); `DoWork` must resolve `Source`.
+#[test]
+fn ws_cross_object_chain_single_impl_interface_resolves() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testinterfacesingleimpl");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "dowork");
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+    assert!(
+        rid.object.id_equals_number(51201),
+        "must resolve to \"CC Helper\" (id 51201); got {:?}",
+        rid.object
+    );
+    assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
+
+/// Test 32e (fixture N1, NEGATIVE — polymorphic prefix, conservative
+/// decline): `ICCBar` has TWO implementers — `resolve_member`'s Interface
+/// fan-out yields 2 routes; the route-count guard must decline rather than
+/// guess either implementer's return type.
+#[test]
+fn ws_cross_object_chain_polymorphic_interface_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testinterfacepolymorphicdeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32f (fixture N2a, NEGATIVE — builtin-only prefix): `Rec.Next()`
+/// resolves via the platform Record catalog (`RouteTarget::Builtin`), which
+/// carries no modeled return type to chain onto.
+#[test]
+fn ws_cross_object_chain_builtin_prefix_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testbuiltinprefixdeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32g (fixture N2b, NEGATIVE — wrong-arity SOURCE prefix):
+/// `GetCustomer` is declared ONLY at arity 1; called here with arity 0 —
+/// `resolve_member`'s Object arm returns a single `Unresolved
+/// (OverloadAmbiguous)` route, which the new arm declines rather than trust.
+#[test]
+fn ws_cross_object_chain_wrong_arity_source_prefix_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testwrongaritysourceprefixdeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32h (fixture N3, NEGATIVE — ABI same-name overloads, DIFFERENT
+/// returns): `Dep Overload` declares two `Get` overloads at the SAME arity
+/// (1), differing only in the parameter's OUTER kind (`Codeunit`/`Page`) —
+/// ABI parameter types are degraded (no `Subtype` carried on parameters),
+/// but the two overloads still remain two DISTINCT arity-1 candidates here
+/// (their outer kind differs) — `resolve_member`'s own arity+visibility
+/// selection sees 2 candidates and returns `Unresolved(OverloadAmbiguous)`;
+/// the new arm's route-target check declines rather than guess either
+/// overload's return type.
+#[test]
+fn ws_cross_object_chain_abi_overload_ambiguous_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testabioverloadambiguousdeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32i (fixture N4a, NEGATIVE — scalar return): `GetCount(): Integer`
+/// has nothing to dispatch a member call on.
+#[test]
+fn ws_cross_object_chain_scalar_return_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testscalarreturndeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32j (fixture N4b, NEGATIVE — no declared return type at all):
+/// `DoNothing()` declares no return type.
+#[test]
+fn ws_cross_object_chain_no_return_type_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testnoreturntypedeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32k (fixture N5, NEGATIVE — cross-app-ambiguous return):
+/// `GetShared()`'s declared return `Codeunit "Dep Shared"` names an object
+/// declared IDENTICALLY in BOTH `CrossChainDep` and `CrossChainDep2` —
+/// genuinely ambiguous in this workspace's dependency closure;
+/// `parsed_type_to_receiver` (and, at the leaf, `resolve_member`'s own
+/// `graph.resolve_object` re-lookup) both decline rather than guess either
+/// dependency's codeunit.
+#[test]
+fn ws_cross_object_chain_cross_app_ambiguous_return_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testcrossappambiguousreturndeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32l (fixture N6, NEGATIVE — Name+Id cross-validation mismatch, Task
+/// 2): `GetMismatch()`'s declared `Subtype` names "Dep Http Content" but
+/// carries the WRONG `Id` (99999, not that object's real id 60101) — the
+/// resolved object's `declared_id` disagrees with the Subtype's `Id`, so the
+/// whole receiver typing declines rather than trust a name-only match.
+#[test]
+fn ws_cross_object_chain_name_id_mismatch_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testnameidmismatchdeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32m (fixture N7/N9, NEGATIVE — DEFERRED record-field/property
+/// chain): `Rec."No."` (property/field-access form, NO parens) is never this
+/// arm — the arm is STRICTLY the procedure-CALL form (round-1 I7). `"No."`
+/// is a genuine field on "CC Customer", not a procedure, so this stays
+/// honestly `Unknown` regardless.
+#[test]
+fn ws_cross_object_chain_field_property_chain_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testfieldpropertychaindeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32n (fixture N8, NEGATIVE — 3-level chain, middle hop fails to
+/// type): hop 1 (`Helper.GetCustomer(No)`) types fine (`Record{CCCustomer}`);
+/// hop 2 (`<hop1>.NoSuchMethod()`) has no such member on "CC Customer"
+/// (source or catalog) — declines to `Unknown`; the OUTER `.Name()` call's
+/// receiver is therefore `Unknown` too — no partial guessing propagates
+/// through a failed middle hop.
+#[test]
+fn ws_cross_object_chain_three_level_middle_hop_fails_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testthreelevelmiddlehopfailsdeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 32o (fixture N10, NEGATIVE — wrong-arity ABI prefix): `Dep Arity
+/// Chain` declares `Get(ID: Integer): Codeunit "Dep Http Content"` — ONE
+/// candidate, but ONLY at arity 1; called here with arity 0 — a single
+/// visible same-name ABI candidate at the WRONG arity must not emit.
+#[test]
+fn ws_cross_object_chain_wrong_arity_abi_declines() {
+    let report = ws_cross_object_chain_report();
+    let route = outer_chain_route(&report, 51206, "testwrongarityabideclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }

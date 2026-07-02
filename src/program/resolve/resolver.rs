@@ -45,9 +45,10 @@
 
 use al_syntax::ir::ObjectKind;
 
+use crate::program::abi_ingest::object_kind_from_abi_type;
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
-use crate::program::node_extract::{Access, ObjectNode};
+use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
@@ -1677,6 +1678,111 @@ pub fn resolve_member(
         }
         ReceiverType::Unknown => member_unknown_route(UnknownReason::UntrackedReceiver),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-object call-result chain support (plan v2.1 Task 3)
+// ---------------------------------------------------------------------------
+
+/// Resolve the [`RoutineNode`] a `resolve_member` type-query's SINGLE route
+/// identifies, so `receiver.rs`'s cross-object call-result chain step (`Var.
+/// Method().X()`, plan v2.1 Task 3) can read its declared `return_type`/
+/// `return_type_id` — the shared lookup needed regardless of which
+/// [`RouteTarget`] shape the route carries.
+///
+/// - [`RouteTarget::Routine`] — direct: `graph.routines` is sorted by
+///   `RoutineNodeId` (see `build.rs`), so a `binary_search_by` finds the
+///   exact node the route already resolved to (whatever its tier — a
+///   source-bodied dependency reached via `Routine` carries a real
+///   `return_type` from source parsing, never a `return_type_id`; see
+///   `node_extract::extract_nodes`).
+/// - [`RouteTarget::AbiSymbol`] — **the ABI-PREFIX UNIQUENESS GUARD**
+///   (round-1 C1+C2, round-2 arity-PROOF). The route carries no routine id,
+///   and ABI parameter types are DEGRADED — `abi_ingest::param_type_fp`
+///   fingerprints only the OUTER type keyword (`AbiParameter::type_text`
+///   never carries a param's `Subtype`), so two genuinely different
+///   same-arity overloads differing only in an object-typed parameter's
+///   Subtype (`Get(X: Codeunit A)` vs `Get(X: Codeunit B)`) can hash-collide
+///   onto the identical `RoutineNodeId`. A naive `(object, name, arity)`
+///   re-lookup therefore CANNOT be trusted to reproduce the exact candidate
+///   `resolve_member` selected. This function instead requires ALL of:
+///   - the declaring `ObjectNodeId` reconstructed from `key` (the same
+///     `object_number != 0 ⇒ Id` / `else ⇒ Name` convention
+///     `make_routine_route`/`abi_check::RawAbiIndex` already use, and the
+///     same `object_kind_from_abi_type` reversal of the key's `{:?}`-derived
+///     `object_type` string);
+///   - the SAME arity matcher [`resolve_in_object`] uses
+///     (`rid.params_count == dispatch_arity` — tri-state-safe by
+///     construction: the `UNKNOWN_ARITY` sentinel can never equal a real
+///     arity);
+///   - EXACTLY ONE candidate surviving BOTH that arity filter AND
+///     per-candidate visibility from `from_object`
+///     ([`routine_candidate_is_visible`]) — same-name/same-arity siblings
+///     (the exact degraded-collision case above), or a candidate excluded by
+///     access, both decline. A unique surviving candidate is, by
+///     construction, the one `resolve_member` itself selected (identical
+///     filters, identical order).
+/// - [`RouteTarget::Builtin`] / [`RouteTarget::Unresolved`] — no routine
+///   identity at all; decline.
+///
+/// `dispatch_arity` MUST be the exact arity `resolve_member` was called
+/// with to produce `route` (the same value, never re-derived) — see
+/// `receiver.rs`'s round-1 M1 note.
+pub(crate) fn routine_node_for_type_query<'g>(
+    route: &Route,
+    dispatch_arity: usize,
+    from_object: &ObjectNode,
+    graph: &'g ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<&'g RoutineNode> {
+    match &route.target {
+        RouteTarget::Routine(rid) => graph
+            .routines
+            .binary_search_by(|probe| probe.id.cmp(rid))
+            .ok()
+            .map(|i| &graph.routines[i]),
+        RouteTarget::AbiSymbol { key } => {
+            resolve_abi_prefix_routine(key, dispatch_arity, from_object, graph, index)
+        }
+        RouteTarget::Builtin(_) | RouteTarget::Unresolved => None,
+    }
+}
+
+/// The ABI-PREFIX UNIQUENESS GUARD's implementation — see
+/// [`routine_node_for_type_query`]'s doc for the full rationale.
+fn resolve_abi_prefix_routine<'g>(
+    key: &AbiRoutineKey,
+    dispatch_arity: usize,
+    from_object: &ObjectNode,
+    graph: &'g ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<&'g RoutineNode> {
+    let kind = object_kind_from_abi_type(&key.object_type);
+    let obj_key = if key.object_number != 0 {
+        ObjKey::Id(key.object_number)
+    } else {
+        ObjKey::Name(key.object_name_lc.clone())
+    };
+    let obj_id = ObjectNodeId {
+        app: key.app,
+        kind,
+        key: obj_key,
+    };
+
+    let visible: Vec<&RoutineNodeId> = index
+        .routines_in_object(&obj_id, &key.routine_name_lc)
+        .iter()
+        .filter(|rid| rid.params_count == dispatch_arity)
+        .filter(|rid| routine_candidate_is_visible(rid, &from_object.id, graph, index))
+        .collect();
+    let [rid] = visible.as_slice() else {
+        return None;
+    };
+    graph
+        .routines
+        .binary_search_by(|probe| probe.id.cmp(rid))
+        .ok()
+        .map(|i| &graph.routines[i])
 }
 
 // ---------------------------------------------------------------------------

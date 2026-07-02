@@ -51,7 +51,8 @@
 //!    Task 3. Only engages when `receiver_expr` carries a structured
 //!    `ExprKind::Call{function, args}` node whose `function` is a BARE
 //!    identifier (never dotted/member — a `Obj.Method().X()` cross-object
-//!    chain is a DEFERRED shape and declines here). Fail-closed, in order:
+//!    chain declines HERE, at Step 5, and falls through to Step 6's
+//!    cross-object-chain arm instead, plan v2.1 Task 3). Fail-closed, in order:
 //!    (a) a caller param/local/global named identically to `function` SHADOWS
 //!    it in AL (`resolve_bare` cannot see variables) — any such shadow
 //!    declines immediately; (b) otherwise `function` is typed by calling
@@ -103,14 +104,18 @@
 use al_syntax::ir::{AlFile, ExprId, ExprKind, ObjectKind, RoutineDecl, VarDecl};
 
 use crate::program::graph::ProgramGraph;
-use crate::program::node::ObjectNodeId;
-use crate::program::node_extract::{ObjectNode, ObjectRef, PageControlKind, PageControlNode};
+use crate::program::node::{ObjectNodeId, RoutineNodeId};
+use crate::program::node_extract::{
+    ObjectNode, ObjectRef, PageControlKind, PageControlNode, RoutineNode,
+};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::RouteTarget;
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::framework_returns::framework_return_kind;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
-use crate::program::resolve::resolver::resolve_bare;
+use crate::program::resolve::resolver::{
+    resolve_bare, resolve_member, routine_node_for_type_query,
+};
 
 // ---------------------------------------------------------------------------
 // FrameworkKind
@@ -649,12 +654,19 @@ pub fn infer_receiver_type(
 
     // -----------------------------------------------------------------------
     // Step 6 — compound framework property/method + `this.<rest>` receiver
-    // (beyond-1B.3b Task 4).
+    // (beyond-1B.3b Task 4) + cross-object call-result chain receiver
+    // (`Var.Method().X()`, plan v2.1 Task 3 — see [`infer_compound_member_receiver`]'s
+    // new arm).
     //
-    // Only needs `receiver_expr` (Task 2) — unlike Step 5, this step never
-    // calls `resolve_bare`, so it does NOT gate on `bare_ctx`. A no-op for
-    // callers with no `receiver_expr` in scope (unit tests that pass `None`,
-    // the `RecordOp` shape).
+    // The framework/`this.<rest>` sub-cases only need `receiver_expr` (Task
+    // 2) — unlike Step 5, they never call `resolve_bare`, so they do NOT
+    // gate on `bare_ctx`. The NEW cross-object-chain sub-case DOES need a
+    // `BodyMap` (it calls `resolve_member` as a type-query, which needs one
+    // to build routes) — threaded here as `Option<&BodyMap<'_>>` extracted
+    // from `bare_ctx`, so it is a no-op for callers with no `bare_ctx` in
+    // scope (unit tests that pass `None`, `semantic_golden.rs`, the
+    // `RecordOp` shape), exactly like Step 5, while the framework/`this.`
+    // sub-cases remain resolution-neutral either way.
     // -----------------------------------------------------------------------
 
     if let Some((file, expr_id)) = receiver_expr {
@@ -666,6 +678,7 @@ pub fn infer_receiver_type(
             from_object,
             graph,
             index,
+            bare_ctx.map(|(body_map, _)| body_map),
         );
         if !matches!(recv, ReceiverType::Unknown) {
             return recv;
@@ -730,6 +743,18 @@ pub fn infer_receiver_type(
 /// - Anything else (`Index`, `Literal`, `Binary`, …) — declines. Fail-closed by
 ///   construction: every arm either delegates to more fail-closed logic or
 ///   returns `Unknown` directly.
+///
+/// `body_map` (plan v2.1 Task 3 enabling primitive): `Some` when the caller
+/// can supply the `BodyMap` [`infer_compound_member_receiver`]'s new
+/// cross-object call-result chain arm needs to run `resolve_member` as a
+/// type-query; `None` for callers with no such context in scope — that arm
+/// is then a no-op there, exactly like [`infer_receiver_type`]'s `bare_ctx`.
+/// Threaded unchanged through every recursive call so a multi-hop chain's
+/// BASE typing (itself possibly another compound receiver) can reach the new
+/// arm too — a 3-level chain whose middle hop cannot be typed (no
+/// `body_map`, or the middle hop itself declines) correctly propagates
+/// `Unknown` rather than partially guessing.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `body_map` (plan v2.1 Task 3); each is a distinct identity/lookup input, grouping would obscure the recursive call sites.
 fn infer_receiver_type_for_expr(
     file: &AlFile,
     expr_id: ExprId,
@@ -738,6 +763,7 @@ fn infer_receiver_type_for_expr(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
+    body_map: Option<&BodyMap<'_>>,
 ) -> ReceiverType {
     match &file.ir.expr(expr_id).kind {
         ExprKind::Identifier(name) => {
@@ -782,6 +808,7 @@ fn infer_receiver_type_for_expr(
             from_object,
             graph,
             index,
+            body_map,
         ),
         ExprKind::Call { function, args } => {
             if let ExprKind::Member { object, member, .. } = &file.ir.expr(*function).kind {
@@ -796,14 +823,16 @@ fn infer_receiver_type_for_expr(
                     from_object,
                     graph,
                     index,
+                    body_map,
                 )
             } else {
                 // A bare-identifier call (`Func(...)`) reaching HERE (i.e. as
                 // the BASE of a deeper chain, not the top-level receiver) is
                 // the Step-5 shape recursed one level deeper than Step 5
-                // handles — deliberately out of scope (Task 4 targets
-                // single-hop `<Framework>.<rest>`/`this.<rest>` chains, not
-                // nested bare-call chains); decline rather than guess.
+                // handles — deliberately out of scope (single-hop
+                // `<Framework>.<rest>`/`this.<rest>`/cross-object chains
+                // target the OUTER receiver only, not nested bare-call
+                // chains); decline rather than guess.
                 ReceiverType::Unknown
             }
         }
@@ -823,12 +852,22 @@ fn infer_receiver_type_for_expr(
 ///   `resolve_bare`-style routine lookup, out of this step's scope. The
 ///   property form (`is_method: false`) resolves `member` via
 ///   [`infer_this_member`] against the SELF-ONLY `object_globals` scope.
-/// - **Framework chain**: otherwise, recursively type `object_expr_id` via
+/// - **Framework chain**: recursively type `object_expr_id` via
 ///   [`infer_receiver_type_for_expr`]; if it resolves to `Framework(kind)`,
 ///   look up `(kind, member_lc, is_method, arity)` in the versioned
-///   [`framework_return_kind`] table. Any other base type (`Unknown`, `Record`,
-///   `Object`, `SelfObject` via something other than literal `this`, …)
-///   declines — the table only ever fires on a PROVEN `Framework` base.
+///   [`framework_return_kind`] table. A table miss falls through to the
+///   cross-object-chain arm below (never declines early — a `Framework`
+///   base has no source/ABI procedures to type-query, but falling through
+///   costs nothing and keeps this dispatch a single funnel).
+/// - **Cross-object call-result chain** (plan v2.1 Task 3): STRICTLY the
+///   procedure-CALL form (`is_method`; a bare `Member` — a field/property
+///   access — is never this arm, round-1 I7). When `base_ty` is `Object`/
+///   `Record`/`SelfObject`/`Interface` (proven by the SAME recursive typing
+///   above) and a `body_map` is available, types the base call's RETURN
+///   TYPE via a PURE [`resolve_member`] type-query — see
+///   [`infer_cross_object_chain_receiver`] for the full guard. Untyped/
+///   `Unknown`/`Primitive`/`Dynamic`/`*Ref` bases, or any decline along the
+///   way, fall through to `Unknown` — never a partial guess.
 #[allow(clippy::too_many_arguments)] // mirrors infer_receiver_type_for_expr's identity/lookup inputs plus member/is_method/arity — grouping would obscure the dispatch.
 fn infer_compound_member_receiver(
     file: &AlFile,
@@ -841,6 +880,7 @@ fn infer_compound_member_receiver(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
+    body_map: Option<&BodyMap<'_>>,
 ) -> ReceiverType {
     // `member` (from `ExprKind::Member`/`Call{function: Member{..}}`) may
     // itself be RAW WITH QUOTES (mirrors `extract.rs::classify_call`'s own
@@ -866,14 +906,198 @@ fn infer_compound_member_receiver(
         from_object,
         graph,
         index,
+        body_map,
     );
-    let ReceiverType::Framework(kind) = base_ty else {
+
+    if let ReceiverType::Framework(kind) = &base_ty {
+        if let Some(returned) = framework_return_kind(kind, &member_lc, is_method, arity) {
+            return ReceiverType::Framework(returned);
+        }
         return ReceiverType::Unknown;
-    };
-    match framework_return_kind(&kind, &member_lc, is_method, arity) {
-        Some(returned) => ReceiverType::Framework(returned),
-        None => ReceiverType::Unknown,
     }
+
+    // Cross-object call-result chain (plan v2.1 Task 3) — see this
+    // function's doc. `is_method` gates the shape (procedure-CALL form
+    // only); `body_map` gates on the caller having supplied one
+    // (resolution-neutral otherwise, mirrors Step 5's `bare_ctx` gate).
+    if is_method
+        && let Some(bm) = body_map
+        && matches!(
+            base_ty,
+            ReceiverType::Object { .. }
+                | ReceiverType::Record { .. }
+                | ReceiverType::SelfObject
+                | ReceiverType::Interface { .. }
+        )
+        && let Some(recv) = infer_cross_object_chain_receiver(
+            &base_ty,
+            &member_lc,
+            arity,
+            from_object,
+            graph,
+            index,
+            bm,
+        )
+    {
+        return recv;
+    }
+
+    ReceiverType::Unknown
+}
+
+/// Cross-object call-result chain (plan v2.1 Task 3): type a `Var.Method()`
+/// PREFIX's result by a PURE [`resolve_member`] type-query on `base_ty`,
+/// converting the resolved procedure's declared return type to a
+/// [`ReceiverType`] exactly like Step 2's declared-variable path
+/// ([`parsed_type_to_receiver`]).
+///
+/// # Route-count guard
+///
+/// `resolve_member(base_ty, member_lc, arity, ..)` must yield EXACTLY ONE
+/// [`crate::program::resolve::edge::Route`]. For `Object`/`Record`/
+/// `SelfObject` bases this is `resolve_member`'s own unconditional contract
+/// (every arm of its `match` returns a single-element `Vec`). For an
+/// `Interface` base it fans out to every implementer — exactly one route
+/// means exactly one implementer in the closed-world closure; more than one
+/// (a genuinely polymorphic prefix) declines here, never a guessed pick.
+///
+/// A route whose target carries no routine identity at all
+/// (`RouteTarget::Unresolved` — arity mismatch/ambiguous overload/access
+/// excluded — or `RouteTarget::Builtin`, a platform-intrinsic method with no
+/// modeled return type) also declines: there is nothing to read a
+/// `return_type` from.
+///
+/// # Single-implementer interface prefix
+///
+/// Once the route-count guard already passed (exactly one implementer),
+/// PREFERS reading the return type from the INTERFACE's own declared method
+/// signature when the graph models one ([`interface_own_routine_node`]) —
+/// AL requires every implementer's signature to match the interface's
+/// exactly, so this can never be a looser answer than the implementer's, and
+/// sidesteps needing to know the implementer's own tier/ABI-ness. Falls back
+/// to the resolved implementer's own routine node
+/// ([`routine_node_for_type_query`], which also applies the ABI-PREFIX
+/// UNIQUENESS GUARD for an `AbiSymbol` target) when the interface's own
+/// signature isn't modeled.
+fn infer_cross_object_chain_receiver(
+    base_ty: &ReceiverType,
+    member_lc: &str,
+    arity: usize,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+) -> Option<ReceiverType> {
+    let (_shape, routes) = resolve_member(
+        base_ty,
+        member_lc,
+        arity,
+        from_object,
+        graph,
+        index,
+        body_map,
+    );
+    let [route] = routes.as_slice() else {
+        return None;
+    };
+    if matches!(
+        route.target,
+        RouteTarget::Unresolved | RouteTarget::Builtin(_)
+    ) {
+        return None;
+    }
+
+    if let ReceiverType::Interface { name_lc } = base_ty
+        && let Some(node) =
+            interface_own_routine_node(name_lc, member_lc, arity, from_object, graph, index)
+    {
+        return receiver_from_routine_node(node, from_object, graph, index);
+    }
+
+    let node = routine_node_for_type_query(route, arity, from_object, graph, index)?;
+    receiver_from_routine_node(node, from_object, graph, index)
+}
+
+/// The interface's OWN declared member signature (name+arity match), when
+/// modeled — see [`infer_cross_object_chain_receiver`]'s doc. Interface
+/// members carry no access modifier in AL (they are always the public
+/// contract), so no visibility filtering applies here (unlike
+/// `resolve_member`'s implementer dispatch). `None` when the interface
+/// object itself is not resolvable from `from_object`'s app, or zero/more-
+/// than-one same-arity candidate is declared (defensive — a single interface
+/// declaration should never itself be arity-ambiguous, but this never
+/// guesses).
+fn interface_own_routine_node<'g>(
+    name_lc: &str,
+    member_lc: &str,
+    arity: usize,
+    from_object: &ObjectNode,
+    graph: &'g ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<&'g RoutineNode> {
+    let iface = graph.resolve_object(from_object.id.app, ObjectKind::Interface, name_lc)?;
+    let matched: Vec<&RoutineNodeId> = index
+        .routines_in_object(&iface.id, member_lc)
+        .iter()
+        .filter(|rid| rid.params_count == arity)
+        .collect();
+    let [rid] = matched.as_slice() else {
+        return None;
+    };
+    graph
+        .routines
+        .binary_search_by(|probe| probe.id.cmp(rid))
+        .ok()
+        .map(|i| &graph.routines[i])
+}
+
+/// Convert a resolved prefix routine's declared return type into a
+/// [`ReceiverType`] — the shared tail of [`infer_cross_object_chain_receiver`]'s
+/// two paths (interface's own signature, or the resolved implementer/routine).
+///
+/// Declines (`None`) on: no declared return type; a scalar/primitive return
+/// (`classify_type_text` → `ParsedType::Primitive`); or — Task 2's structured
+/// cross-validation — an ABI-sourced return type whose `Subtype` `(name, id)`
+/// pair disagrees with the object the name resolves to (`node.return_type_id`
+/// is `Some` only for an ABI/SymbolOnly-ingested routine whose declared
+/// Subtype carried both fields; applies uniformly regardless of which
+/// `RouteTarget` shape supplied `node`, per `AbiRoutine::return_type_id`'s
+/// doc). Cross-validation only applies when the parsed return type resolved
+/// to an `Object`/`Record` (the only shapes carrying a resolved
+/// `ObjectNodeId` to check an id against); any other shape (`Interface`,
+/// `EnumType`, `Framework`, …) has no identity to cross-check and passes
+/// through unconditionally — those shapes carry no risk of a false `Source`
+/// edge to a WRONG object.
+fn receiver_from_routine_node(
+    node: &RoutineNode,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ReceiverType> {
+    let return_type = node.return_type.as_deref()?;
+    let parsed = classify_type_text(return_type);
+    if matches!(parsed, ParsedType::Primitive) {
+        return None;
+    }
+    let receiver = parsed_type_to_receiver(parsed, from_object, graph, index);
+
+    if let Some((_name, id)) = &node.return_type_id {
+        let resolved_obj = match &receiver {
+            ReceiverType::Object { id: Some(oid), .. } => {
+                graph.objects.iter().find(|o| &o.id == oid)
+            }
+            ReceiverType::Record {
+                table: Some(table_id),
+            } => graph.objects.iter().find(|o| &o.id == table_id),
+            _ => None,
+        };
+        match resolved_obj {
+            Some(obj) if obj.declared_id == Some(*id) => {}
+            _ => return None,
+        }
+    }
+
+    Some(receiver)
 }
 
 /// `true` when `expr_id` derefs to a bare `this` identifier (case-insensitive
@@ -936,8 +1160,10 @@ fn infer_this_member(
 /// `ExprKind::Call{function, args}` node — the receiver of the OUTER member
 /// call (`.Method()`), i.e. the `Func(...)` sub-expression.  Every other
 /// shape reaching here (a `Member` function — the `Obj.Method().X()`
-/// cross-object chain, deliberately DEFERRED — or anything else) declines to
-/// `None` (fail-closed; the caller falls through to `Unknown`).
+/// cross-object chain — or anything else) declines to `None` (fail-closed;
+/// Step 5 is not the shape's home). A `Member`-function shape specifically
+/// then falls through to Step 6's cross-object-chain arm (plan v2.1 Task 3),
+/// which may resolve it; anything else genuinely falls through to `Unknown`.
 ///
 /// Fail-closed at every step (see the module doc's Step 5 for the full
 /// rationale):
@@ -984,8 +1210,8 @@ fn infer_call_result_receiver(
     with_state: WithState,
 ) -> Option<ReceiverType> {
     // 0. Must be a structured Call whose function is a BARE identifier — a
-    //    Member function (`Obj.Method()`) is the deferred cross-object-chain
-    //    shape and declines here.
+    //    Member function (`Obj.Method()`) is the cross-object-chain shape
+    //    Step 6 handles instead (plan v2.1 Task 3) and declines here.
     let ExprKind::Call { function, args } = &file.ir.expr(expr_id).kind else {
         return None;
     };

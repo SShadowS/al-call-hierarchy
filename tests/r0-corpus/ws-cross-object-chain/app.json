@@ -1,0 +1,22 @@
+{
+	"id": "eeee5555-0000-0000-0000-000000000012",
+	"name": "CrossObjectChain Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51200, "to": 51299 }],
+	"dependencies": [
+		{
+			"id": "cccc7777-0000-0000-0000-000000000010",
+			"name": "CrossChainDep",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		},
+		{
+			"id": "dddd6666-0000-0000-0000-000000000011",
+			"name": "CrossChainDep2",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		}
+	]
+}

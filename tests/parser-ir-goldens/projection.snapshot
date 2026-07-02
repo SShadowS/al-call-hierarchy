@@ -75,6 +75,14 @@ ws-compound-framework/src/CFCaller.Codeunit.al	fd743916b2578b0a
 ws-compound-framework/src/CFCustomer.Table.al	0688ea85a49da061
 ws-compound-receiver/src/CustomerCard.Page.al	46c52066a8a0909f
 ws-compound-receiver/src/CustomerCardPart.Page.al	75cf772e7882c46c
+ws-cross-object-chain/src/CCBarImpl.Codeunit.al	4694a0c63c767a4b
+ws-cross-object-chain/src/CCBarImpl2.Codeunit.al	517239b71c4b7bab
+ws-cross-object-chain/src/CCCustomer.Table.al	4e6aa45721a67978
+ws-cross-object-chain/src/CCFooImpl.Codeunit.al	e8f795d6883fb90b
+ws-cross-object-chain/src/CCHelper.Codeunit.al	fe2d9fa1d6beb011
+ws-cross-object-chain/src/CrossChainCaller.Codeunit.al	b0da4e110a298eac
+ws-cross-object-chain/src/ICCBar.Interface.al	a19947298b0c93dd
+ws-cross-object-chain/src/ICCFoo.Interface.al	2279098f9e485008
 ws-d1/src/customer.al	0022db5d7a079d98
 ws-d1/src/jobs.al	331be5852c798801
 ws-d1-dep-terminal/src/caller.al	5a6f1033e4dac9ee

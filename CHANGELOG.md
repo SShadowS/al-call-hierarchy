@@ -8,6 +8,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cross-object call-result chains: `Var.Method().X()` now resolves via a PURE
+  `resolve_member` type-query on the base's static type, fail-closed (cross-object chains +
+  protected-ABI plan v2.1, Task 3).** `src/program/resolve/receiver.rs`:
+  `infer_compound_member_receiver` gains a new arm — strictly the procedure-CALL form
+  (`ExprKind::Call{function: Member{base, member}, ..}`; a bare `Member` property/field
+  access is never this arm). When `base` types (via the existing AST-native recursive
+  `infer_receiver_type_for_expr`) to `Object`/`Record`/`SelfObject`/`Interface`, the base
+  call's return type is typed by calling `resolve_member(base_ty, member_lc, arity, ..)` as
+  a TYPE-QUERY — the SAME dispatch arity the caller uses (never a second `args.len()`
+  model). Guard: EXACTLY ONE route (an `Interface` base fans out to every implementer —
+  more than one is a genuinely polymorphic prefix, conservative decline, never a guessed
+  pick); a route with no routine identity (`Unresolved`/`Builtin`) also declines. The
+  resolved routine's declared `return_type` (Task 2's plumbing, now consumed for the first
+  time) is parsed via `classify_type_text` → `parsed_type_to_receiver`, WITH Task 2's
+  Name+Id cross-validation applied whenever the return type carries a structured ABI
+  `Subtype` pair — the object the Name resolves to must ALSO carry that declared Id, or the
+  whole chain declines rather than trust a name-only match. `src/program/resolve/
+  resolver.rs`: new `pub(crate) routine_node_for_type_query` reads the `RoutineNode` behind
+  a route's target regardless of shape — `RouteTarget::Routine` direct via
+  `binary_search_by`; `RouteTarget::AbiSymbol` via the ABI-PREFIX UNIQUENESS GUARD
+  (`resolve_abi_prefix_routine`): reconstructs the declaring `ObjectNodeId` from the
+  `AbiRoutineKey`, then requires the SAME arity matcher + per-candidate visibility
+  (`routine_candidate_is_visible`) `resolve_in_object` uses to find EXACTLY ONE surviving
+  candidate — same-name/same-arity siblings decline (ABI parameter types are degraded, no
+  `Subtype` carried on parameters, so two genuinely different overloads can share an arity
+  without the engine being able to disambiguate). Single-implementer interface prefixes
+  prefer the interface's OWN declared method signature when the graph models one
+  (`interface_own_routine_node`) over the resolved implementer's, since AL guarantees they
+  match exactly. 15 new end-to-end fixtures over a real `.al` + two real SymbolOnly probe
+  `.app`s (`tests/r0-corpus/ws-cross-object-chain/`) cover: a SOURCE prefix, an ABI prefix
+  carrying a nested `Subtype` (leaf resolves + a NEGATIVE internal-leaf-not-visible
+  sibling), a single-implementer interface prefix positive, and 11 fail-closed negatives
+  (polymorphic interface prefix, builtin-only prefix, wrong-arity source/ABI prefix, ABI
+  same-name overloads with different returns, scalar/no return type, cross-app-ambiguous
+  return, Name+Id mismatch, the deferred record-field/property form, and a 3-level chain
+  whose middle hop fails to type). CDO: primary/whole `unknown` 329→327 (`CompoundReceiver`
+  156→154, every other bucket byte-identical), `real_unknown_rate` 1.82%→1.81%,
+  `genuine_wrong` stays 0 — both newly-resolved sites exhaustively hand-adjudicated correct
+  against the Microsoft System Application's real embedded source
+  (`Codeunit 6175364 "CDO Universign E-Seal Service"`'s `ProcessSealResponse`:
+  `Response.GetContent().AsText()`/`.AsBlob()` where `Response: Codeunit "Http Response
+  Message"` declares `GetContent(): Codeunit "Http Content"`, which declares
+  `AsText(): Text`/`AsBlob(): Codeunit "Temp Blob"`) — the exact real-world idiom this task
+  targets.
 - **Structured ABI return types: `Subtype` is now parsed from `SymbolReference.json` and
   reconstructed into source-shaped `RoutineNode.return_type` text — resolution-neutral
   enabling plumbing for Task 3's cross-object call-result chains (cross-object chains +
