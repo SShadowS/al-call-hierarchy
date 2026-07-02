@@ -1705,6 +1705,7 @@ fn build_fan_out_site_context(
                                     graph,
                                     index,
                                     None,
+                                    None,
                                 );
                                 if let ReceiverType::Interface { name_lc } = recv {
                                     ctx_map.insert(
@@ -1730,6 +1731,7 @@ fn build_fan_out_site_context(
                                     obj_node,
                                     graph,
                                     index,
+                                    None,
                                     None,
                                 );
                                 if let ReceiverType::Record {

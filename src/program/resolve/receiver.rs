@@ -47,7 +47,28 @@
 //!    type name (e.g. `XmlDocument`, `Text`, `File`, `Version`) and no variable was
 //!    found, type it as `Framework(kind)` so Phase B dispatches the static method
 //!    via the builtin catalog.
-//! 5. **Unknown** — no positive typing found.
+//! 5. **Compound call-result receiver (`Func().Method()`)** — beyond-1B.3b
+//!    Task 3. Only engages when `receiver_expr` carries a structured
+//!    `ExprKind::Call{function, args}` node whose `function` is a BARE
+//!    identifier (never dotted/member — a `Obj.Method().X()` cross-object
+//!    chain is a DEFERRED shape and declines here). Fail-closed, in order:
+//!    (a) a caller param/local/global named identically to `function` SHADOWS
+//!    it in AL (`resolve_bare` cannot see variables) — any such shadow
+//!    declines immediately; (b) otherwise `function` is typed by calling
+//!    [`crate::program::resolve::resolver::resolve_bare`] as a TYPE QUERY
+//!    (reusing its own-object/extension-base/implicit-Rec/builtin precedence,
+//!    ambiguity declines, and with-guard) — anything other than exactly one
+//!    route to a `RouteTarget::Routine` declines; (c) that routine's
+//!    `graph.routines[..].return_type` must be `Some` and parse (via
+//!    [`classify_type_text`]) to a non-`Primitive` shape — a `None` or scalar
+//!    return declines; the parsed type is then resolved to a receiver exactly
+//!    like Step 2's declared-variable path (via [`parsed_type_to_receiver`]),
+//!    inheriting its fail-closed cross-app-ambiguous-object decline. Only
+//!    engaged when the caller passes a `bare_ctx` (full end-to-end resolution
+//!    via `resolve_full_program`); callers with no `BodyMap`/`WithState` in
+//!    scope (tests, `semantic_golden.rs`) pass `None` and this step is a no-op
+//!    — resolution-neutral for them, exactly like `receiver_expr` itself.
+//! 6. **Unknown** — no positive typing found.
 //!
 //! # Clean-room note
 //!
@@ -56,12 +77,16 @@
 //! (`RoutineDecl`/`VarDecl`/`Param`) and `ProgramGraph`/`ResolveIndex`, carrying
 //! `ObjectNodeId`s instead of L3 string IDs.
 
-use al_syntax::ir::{AlFile, ExprId, ObjectKind, RoutineDecl, VarDecl};
+use al_syntax::ir::{AlFile, ExprId, ExprKind, ObjectKind, RoutineDecl, VarDecl};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::ObjectNodeId;
 use crate::program::node_extract::{ObjectNode, ObjectRef, PageControlKind, PageControlNode};
+use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::edge::RouteTarget;
+use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
+use crate::program::resolve::resolver::resolve_bare;
 
 // ---------------------------------------------------------------------------
 // FrameworkKind
@@ -417,7 +442,10 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 /// 4. **Static framework type name** — bare identifier matching a framework type
 ///    (`XmlDocument`, `Text`, `File`, `Version`, …) with no variable found;
 ///    returned as `Framework(kind)`.
-/// 5. **Unknown** — no positive typing found.
+/// 5. **Compound call-result receiver (`Func().Method()`)** — see the module
+///    doc's Step 5. Requires both `receiver_expr` (Task 2) and `bare_ctx`
+///    (Task 3) to be populated; a no-op otherwise.
+/// 6. **Unknown** — no positive typing found.
 ///
 /// # `receiver_expr` (Task 2 enabling primitive)
 ///
@@ -425,13 +453,21 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 /// the call site's [`CalleeShape::Member`] populated a `receiver` `ExprId`
 /// (`file.ir.expr(id)` recovers the structured node: `ExprKind::Call{..}` /
 /// `Member{..}` / …), `None` when the caller has no such node in scope (e.g.
-/// the `RecordOp` shape, which does not carry one). Steps 0-4 above are
-/// UNCHANGED by this parameter and continue to dispatch purely on
-/// `receiver_lc` — this task only threads the node through so a later Phase-A
-/// step (compound-receiver resolution, Tasks 3-4) can inspect it; accepting it
-/// today is resolution-neutral by construction.
+/// the `RecordOp` shape, which does not carry one). Steps 0-4 are UNCHANGED by
+/// this parameter and continue to dispatch purely on `receiver_lc`; Step 5
+/// (Task 3) is the first consumer.
+///
+/// # `bare_ctx` (Task 3 enabling primitive)
+///
+/// `Some((body_map, with_state))` when the caller can supply the two extra
+/// inputs Step 5 needs to run [`crate::program::resolve::resolver::resolve_bare`]
+/// as a type query (`resolve_full_program`'s real `CalleeShape::Member`
+/// resolution path); `None` for callers with no such context in scope (unit
+/// tests, `semantic_golden.rs`, the `RecordOp` shape) — Step 5 is then a
+/// no-op, resolution-neutral exactly like `receiver_expr` for those callers.
 ///
 /// [`CalleeShape::Member`]: crate::program::resolve::extract::CalleeShape::Member
+#[allow(clippy::too_many_arguments)] // 6 pre-existing params + `bare_ctx` (Task 3); each is a distinct identity/lookup input, grouping would obscure call sites (mirrors `resolve_in_object`'s precedent).
 pub fn infer_receiver_type(
     receiver_lc: &str,
     routine: &RoutineDecl,
@@ -439,7 +475,8 @@ pub fn infer_receiver_type(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    _receiver_expr: Option<(&AlFile, ExprId)>,
+    receiver_expr: Option<(&AlFile, ExprId)>,
+    bare_ctx: Option<(&BodyMap<'_>, WithState)>,
 ) -> ReceiverType {
     // -----------------------------------------------------------------------
     // Step 0 — `CurrPage.<part>.Page` subpage-instance receivers (Task 7).
@@ -557,10 +594,153 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
-    // Step 5 — Unknown.
+    // Step 5 — compound call-result receiver (`Func().Method()`, Task 3).
+    //
+    // Only engages when BOTH `receiver_expr` (the parsed receiver node, Task
+    // 2) and `bare_ctx` (the `BodyMap`/`WithState` Step 5 needs to run
+    // `resolve_bare` as a type query, Task 3) are populated — a no-op
+    // otherwise, so callers that don't supply them (unit tests,
+    // `semantic_golden.rs`, the `RecordOp` shape) are unaffected.
+    // -----------------------------------------------------------------------
+
+    if let Some((file, expr_id)) = receiver_expr
+        && let Some((body_map, with_state)) = bare_ctx
+        && let Some(recv) = infer_call_result_receiver(
+            file,
+            expr_id,
+            routine,
+            object_globals,
+            from_object,
+            graph,
+            index,
+            body_map,
+            with_state,
+        )
+    {
+        return recv;
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 6 — Unknown.
     // -----------------------------------------------------------------------
 
     ReceiverType::Unknown
+}
+
+/// Step 5's implementation: type a `Func().Method()` compound receiver by the
+/// return type of the bare same-scope function `Func()`.
+///
+/// `expr_id` must dereference (via `file.ir.expr`) to a structured
+/// `ExprKind::Call{function, args}` node — the receiver of the OUTER member
+/// call (`.Method()`), i.e. the `Func(...)` sub-expression.  Every other
+/// shape reaching here (a `Member` function — the `Obj.Method().X()`
+/// cross-object chain, deliberately DEFERRED — or anything else) declines to
+/// `None` (fail-closed; the caller falls through to `Unknown`).
+///
+/// Fail-closed at every step (see the module doc's Step 5 for the full
+/// rationale):
+/// 1. **Bare-identifier guard** — `function` must be `Identifier`/
+///    `QuotedIdentifier`; a dotted/member function chain declines.
+/// 2. **Local-shadowing guard** (round-2 gemini critical, checked BEFORE
+///    typing) — `resolve_bare` resolves ROUTINE calls and cannot see
+///    locals/params/globals, but in AL a same-named variable SHADOWS a
+///    same-named procedure. If `function_lc` matches ANY of
+///    `routine.params`/`routine.locals`/`object_globals`, decline — this
+///    plan does not type variable-backed receivers (e.g. a local ARRAY named
+///    `GetCustomer` makes `GetCustomer(1)` an index access, not a call).
+/// 3. **`resolve_bare` type query** — call `resolve_bare` with `function_lc`
+///    and `args.len()` as the arity; require the SINGLE returned `Route` (its
+///    contract: always exactly one) to target `RouteTarget::Routine` — this
+///    reuses `resolve_bare`'s own-object/extension-base/implicit-Rec/builtin
+///    precedence, its same-arity-overload-ambiguity decline, its
+///    builtin/intrinsic PROBE-THEN-DECIDE collision guard, and its
+///    `with`-guard, for free. A `Builtin`/`AbiSymbol`/`Unresolved` target
+///    (name absent, arity mismatch, ambiguous overload, or an unproven
+///    builtin/Rec-shadow precedence collision) declines.
+/// 4. **Non-scalar return-type guard** — the resolved routine's
+///    `return_type` must be `Some` and parse (via [`classify_type_text`]) to
+///    a non-`Primitive` shape; `None` (no declared return type) or a scalar
+///    primitive (`Integer`, `Boolean`, …) declines — nothing to dispatch a
+///    member call on.
+/// 5. **Type conversion** — the parsed return type is resolved to a
+///    [`ReceiverType`] via [`parsed_type_to_receiver`], the SAME
+///    graph/`ResolveIndex`-backed, fail-closed conversion Step 2's
+///    declared-variable path uses: a cross-app-ambiguous `Record`/`Object`
+///    return inherits that path's decline-to-`None` (never guess), and an
+///    `Interface` return becomes `ReceiverType::Interface` (Phase B fans out
+///    to every implementer — polymorphic, never a concrete guess).
+#[allow(clippy::too_many_arguments)] // 9 distinct identity/lookup inputs mirror `resolve_in_object`'s precedent; grouping would obscure call sites.
+fn infer_call_result_receiver(
+    file: &AlFile,
+    expr_id: ExprId,
+    routine: &RoutineDecl,
+    object_globals: &[VarDecl],
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    with_state: WithState,
+) -> Option<ReceiverType> {
+    // 0. Must be a structured Call whose function is a BARE identifier — a
+    //    Member function (`Obj.Method()`) is the deferred cross-object-chain
+    //    shape and declines here.
+    let ExprKind::Call { function, args } = &file.ir.expr(expr_id).kind else {
+        return None;
+    };
+    let function_lc = match &file.ir.expr(*function).kind {
+        ExprKind::Identifier(name) | ExprKind::QuotedIdentifier(name) => name.to_ascii_lowercase(),
+        _ => return None,
+    };
+
+    // 1. Local-shadowing guard FIRST — see the doc above.
+    let shadowed = routine
+        .params
+        .iter()
+        .any(|p| p.name.to_ascii_lowercase() == function_lc)
+        || routine
+            .locals
+            .iter()
+            .any(|v| v.name.to_ascii_lowercase() == function_lc)
+        || object_globals
+            .iter()
+            .any(|v| v.name.to_ascii_lowercase() == function_lc);
+    if shadowed {
+        return None;
+    }
+
+    // 2. Type-query `function_lc` via `resolve_bare`. Contract: always
+    //    exactly one `Route`; only a `Routine` target is usable here.
+    let routes = resolve_bare(
+        from_object,
+        &function_lc,
+        args.len(),
+        graph,
+        index,
+        body_map,
+        with_state,
+    );
+    let [route] = routes.as_slice() else {
+        return None;
+    };
+    let RouteTarget::Routine(ref rid) = route.target else {
+        return None;
+    };
+
+    // 3. Non-scalar return-type guard.
+    let return_type = graph
+        .routines
+        .iter()
+        .find(|r| &r.id == rid)?
+        .return_type
+        .as_deref()?;
+    let parsed = classify_type_text(return_type);
+    if matches!(parsed, ParsedType::Primitive) {
+        return None;
+    }
+
+    // 4. Convert the parsed return type to a receiver — same fail-closed
+    //    conversion Step 2's declared-variable path uses.
+    Some(parsed_type_to_receiver(parsed, from_object, graph, index))
 }
 
 // ---------------------------------------------------------------------------
@@ -1528,7 +1708,8 @@ mod tests {
             .unwrap();
         let expected_id = customer_node.id.clone();
 
-        let result = infer_receiver_type("cust", &routine, &[], &from_obj, &graph, &index, None);
+        let result =
+            infer_receiver_type("cust", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -1550,7 +1731,16 @@ mod tests {
         let expected_id = customer_node.id.clone();
 
         // "rectmp" → local `RecTmp: Record Customer temporary` → same resolution
-        let result = infer_receiver_type("rectmp", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "rectmp",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -1566,7 +1756,7 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("j", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type("j", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::JsonObject));
     }
 
@@ -1658,7 +1848,8 @@ mod tests {
 
         // "byid" -> `ById: Record 18` (numeric) -> table id 18 ("Customer"),
         // NEVER the table literally named "18".
-        let result = infer_receiver_type("byid", &routine, &[], &from_obj, &graph, &index, None);
+        let result =
+            infer_receiver_type("byid", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -1699,6 +1890,7 @@ mod tests {
             &from_obj,
             &graph,
             &index,
+            None,
             None,
         );
         assert_eq!(
@@ -1817,7 +2009,8 @@ mod tests {
             "fixture sanity: the two {keyword} objects must be distinct"
         );
 
-        let by_id = infer_receiver_type("byid", &routine, &[], &from_obj, &graph, &index, None);
+        let by_id =
+            infer_receiver_type("byid", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(
             by_id,
             ReceiverType::Object {
@@ -1835,6 +2028,7 @@ mod tests {
             &from_obj,
             &graph,
             &index,
+            None,
             None,
         );
         assert_eq!(
@@ -1890,7 +2084,16 @@ mod tests {
         // "mycodeunit"}, `id` carried up front (Task 2: mirrors I1's `Record`
         // — a `Unique` `resolve_object_ref` match is resolved in Phase A, not
         // re-derived by a redundant Phase B by-name lookup).
-        let result = infer_receiver_type("cuparam", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "cuparam",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Object {
@@ -1915,8 +2118,16 @@ mod tests {
 
         // "cunumparam" → param `CuNumParam: Codeunit 50100` → resolves to
         // "mycodeunit", `id` carried up front (Task 2, mirrors I1).
-        let result =
-            infer_receiver_type("cunumparam", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "cunumparam",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Object {
@@ -1934,8 +2145,16 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Page, "MyPage", Some(50200), None);
 
-        let result =
-            infer_receiver_type("currpage", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "currpage",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::PageInstance));
     }
 
@@ -1947,7 +2166,8 @@ mod tests {
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
         // bare "page" singleton
-        let result = infer_receiver_type("page", &routine, &[], &from_obj, &graph, &index, None);
+        let result =
+            infer_receiver_type("page", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::PageInstance));
     }
 
@@ -1958,8 +2178,16 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Report, "MyReport", Some(50300), None);
 
-        let result =
-            infer_receiver_type("currreport", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "currreport",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Framework(FrameworkKind::ReportInstance)
@@ -1973,7 +2201,16 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("session", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "session",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Session));
     }
 
@@ -1984,8 +2221,16 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result =
-            infer_receiver_type("database", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "database",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Database));
     }
 
@@ -1996,7 +2241,8 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("this", &routine, &[], &from_obj, &graph, &index, None);
+        let result =
+            infer_receiver_type("this", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::SelfObject);
     }
 
@@ -2011,8 +2257,16 @@ mod tests {
             .unwrap()
             .clone();
 
-        let result =
-            infer_receiver_type("rec", &routine, &[], &customer_node, &graph, &index, None);
+        let result = infer_receiver_type(
+            "rec",
+            &routine,
+            &[],
+            &customer_node,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -2031,8 +2285,16 @@ mod tests {
             .unwrap()
             .clone();
 
-        let result =
-            infer_receiver_type("xrec", &routine, &[], &customer_node, &graph, &index, None);
+        let result = infer_receiver_type(
+            "xrec",
+            &routine,
+            &[],
+            &customer_node,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -2060,7 +2322,7 @@ mod tests {
             .unwrap();
         let expected_id = customer_node.id.clone();
 
-        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index, None, None);
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -2087,7 +2349,7 @@ mod tests {
             Some("AmbTable".into()),
         );
 
-        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2107,7 +2369,7 @@ mod tests {
             Some("Orphan".into()),
         );
 
-        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &te_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2120,7 +2382,8 @@ mod tests {
         let routine = build_test_routine();
         let page_obj = make_object_node(app, ObjectKind::Page, "CustomerCard", Some(21), None);
 
-        let result = infer_receiver_type("rec", &routine, &[], &page_obj, &graph, &index, None);
+        let result =
+            infer_receiver_type("rec", &routine, &[], &page_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2215,7 +2478,7 @@ mod tests {
             .id
             .clone();
 
-        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index, None, None);
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -2235,7 +2498,7 @@ mod tests {
 
         // "AmbTable" is declared in BOTH `a` and `b` (neither is `w`) — must
         // DECLINE to None, never guess one of the two.
-        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2249,7 +2512,7 @@ mod tests {
         page.source_table = Some(orphan_table_ref());
 
         // "Orphan" is declared, but in an app `w` does not depend on.
-        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &page, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2294,7 +2557,8 @@ mod tests {
 
         // Phase A: infer_receiver_type must decline, never resolve to either
         // dep's AmbTable.
-        let receiver = infer_receiver_type("r", &routine, &[], &from_obj, &graph, &index, None);
+        let receiver =
+            infer_receiver_type("r", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(receiver, ReceiverType::Record { table: None });
 
         // Phase B: a non-builtin method call on the declined receiver stays
@@ -2347,7 +2611,8 @@ mod tests {
             .id
             .clone();
 
-        let result = infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index, None);
+        let result =
+            infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index, None, None);
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -2375,7 +2640,8 @@ mod tests {
         );
         page_ext.source_table = Some(amb_table_ref());
 
-        let result = infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index, None);
+        let result =
+            infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2394,7 +2660,8 @@ mod tests {
             Some("NoSuchBasePage".into()),
         );
 
-        let result = infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index, None);
+        let result =
+            infer_receiver_type("rec", &routine, &[], &page_ext, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2415,7 +2682,7 @@ mod tests {
             normalized_lc: "customer".into(),
         });
 
-        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2426,7 +2693,7 @@ mod tests {
         let routine = build_test_routine();
         let cu_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("rec", &routine, &[], &cu_obj, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &cu_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Unknown);
     }
 
@@ -2457,7 +2724,7 @@ mod tests {
             .id
             .clone();
 
-        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None, None);
         assert_eq!(
             result,
             ReceiverType::Record {
@@ -2481,7 +2748,7 @@ mod tests {
         // place).
         let cu = make_object_node(w, ObjectKind::Codeunit, "PlainCu", Some(50231), None);
 
-        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Unknown);
     }
 
@@ -2499,7 +2766,7 @@ mod tests {
         // stays `Record{table: None}` (mirroring Page's non-`Unique`
         // treatment: builtins still resolve table-independently in Phase B),
         // not `Unknown`.
-        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2513,7 +2780,7 @@ mod tests {
         cu.table_no = Some(orphan_table_ref());
 
         // "Orphan" is declared, but in an app `w` does not depend on.
-        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None);
+        let result = infer_receiver_type("rec", &routine, &[], &cu, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
     }
 
@@ -2531,6 +2798,7 @@ mod tests {
             &from_obj,
             &graph,
             &index,
+            None,
             None,
         );
         assert_eq!(result, ReceiverType::Unknown);
@@ -2557,7 +2825,7 @@ mod tests {
         }];
 
         let result = infer_receiver_type(
-            "globalcu", &routine, &globals, &from_obj, &graph, &index, None,
+            "globalcu", &routine, &globals, &from_obj, &graph, &index, None, None,
         );
         assert_eq!(
             result,
@@ -2576,7 +2844,16 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("iface", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "iface",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::Interface {
@@ -2592,7 +2869,16 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("enumvar", &routine, &[], &from_obj, &graph, &index, None);
+        let result = infer_receiver_type(
+            "enumvar",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(
             result,
             ReceiverType::EnumType {
@@ -2625,7 +2911,7 @@ mod tests {
 
         // Should resolve via the PARAM (Codeunit "MyCodeunit"), not the global (JsonObject)
         let result = infer_receiver_type(
-            "cuparam", &routine, &globals, &from_obj, &graph, &index, None,
+            "cuparam", &routine, &globals, &from_obj, &graph, &index, None, None,
         );
         assert_eq!(
             result,
@@ -2673,6 +2959,7 @@ mod tests {
             &from_obj,
             &graph,
             &index,
+            None,
             None,
         );
         // Record with unresolvable table → Record{None} (not Unknown)
@@ -2726,6 +3013,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(
             result,
@@ -2753,6 +3041,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Xml));
     }
@@ -2766,7 +3055,8 @@ mod tests {
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
 
-        let result = infer_receiver_type("text", &routine, &[], &from_obj, &graph, &index, None);
+        let result =
+            infer_receiver_type("text", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Text));
     }
 
@@ -2921,6 +3211,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(
             result,
@@ -2959,6 +3250,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(
             result,
@@ -2985,8 +3277,16 @@ mod tests {
             .unwrap()
             .clone();
 
-        let result =
-            infer_receiver_type("currpage.lines", &routine, &[], &host, &graph, &index, None);
+        let result = infer_receiver_type(
+            "currpage.lines",
+            &routine,
+            &[],
+            &host,
+            &graph,
+            &index,
+            None,
+            None,
+        );
         assert_eq!(result, ReceiverType::Unknown);
     }
 
@@ -3011,6 +3311,7 @@ mod tests {
             &host,
             &graph,
             &index,
+            None,
             None,
         );
         assert_eq!(result, ReceiverType::Unknown);
@@ -3037,6 +3338,7 @@ mod tests {
             &host,
             &graph,
             &index,
+            None,
             None,
         );
         assert_eq!(result, ReceiverType::Unknown);
@@ -3065,6 +3367,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(result, ReceiverType::Unknown);
     }
@@ -3091,6 +3394,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(result, ReceiverType::Unknown);
     }
@@ -3111,7 +3415,16 @@ mod tests {
             .clone();
 
         assert_eq!(
-            infer_receiver_type("currpage.notes", &routine, &[], &host, &graph, &index, None),
+            infer_receiver_type(
+                "currpage.notes",
+                &routine,
+                &[],
+                &host,
+                &graph,
+                &index,
+                None,
+                None
+            ),
             ReceiverType::Unknown
         );
         assert_eq!(
@@ -3122,6 +3435,7 @@ mod tests {
                 &host,
                 &graph,
                 &index,
+                None,
                 None
             ),
             ReceiverType::Unknown
@@ -3156,6 +3470,7 @@ mod tests {
             &graph,
             &index,
             None,
+            None,
         );
         assert_eq!(
             result,
@@ -3175,10 +3490,13 @@ mod tests {
     /// `Some((&AlFile, ExprId))` for a `Func().M()` call site (the structured
     /// receiver `ExprKind::Call{..}` a resolver could fetch via
     /// `file.ir.expr(id)`) and — since Steps 0-4 dispatch purely on
-    /// `receiver_lc`, unchanged by this task — still returns exactly what it
+    /// `receiver_lc`, unchanged by this task, AND `bare_ctx` (Task 3's Step 5
+    /// enabling primitive) is `None` here — still returns exactly what it
     /// returned before this parameter existed: `Unknown` (`"func()"` matches
-    /// none of Steps 0-4). Resolution-neutral by construction; Tasks 3-4 give
-    /// this parameter behavior.
+    /// none of Steps 0-4, and Step 5 is a no-op without `bare_ctx`).
+    /// Resolution-neutral by construction; see the `infer_call_result_*`
+    /// tests below for Step 5's actual (Task 3) behavior with `bare_ctx`
+    /// populated.
     #[test]
     fn infer_receiver_type_accepts_threaded_call_receiver_and_stays_neutral() {
         use crate::program::resolve::extract::{CalleeShape, extract_sites};
@@ -3223,6 +3541,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             Some((&file, receiver_id)),
+            None,
         );
         assert_eq!(
             result,

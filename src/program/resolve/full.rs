@@ -314,7 +314,8 @@ fn resolve_call_site_obligation(
     // Task 2 enabling primitive: the parsed `AlFile` this obligation's call
     // site was extracted from, so a `CalleeShape::Member.receiver` `ExprId`
     // can be dereferenced into `infer_receiver_type`'s `receiver_expr` param.
-    // Resolution-neutral today (Steps 0-4 of `infer_receiver_type` ignore it).
+    // Task 3 is the first consumer (Step 5, `Func().Method()` compound
+    // receivers) — Steps 0-4 remain unaffected.
     file: &al_syntax::ir::AlFile,
 ) -> (EdgeKind, DispatchShape, SetCompleteness, Vec<Route>) {
     match shape {
@@ -351,6 +352,7 @@ fn resolve_call_site_obligation(
                     graph,
                     index,
                     receiver.map(|id| (file, id)),
+                    Some((body_map, with_state)),
                 );
                 resolve_member(&recv, &method_lc, arity, obj_node, graph, index, body_map)
             } else {
@@ -421,8 +423,9 @@ fn resolve_call_site_obligation(
             // ObjectNode.  Falls back to honest-empty when the table is not found.
             let table_node_opt: Option<&ObjectNode> = if let Some(obj_node) = obj_node_opt {
                 // `RecordOp` carries no `ExprId` (Task 2 scoped the primitive
-                // to `CalleeShape::Member` only) — `None` here is unchanged
-                // behavior, not a gap.
+                // to `CalleeShape::Member` only) — `None`/`None` here is
+                // unchanged behavior, not a gap (Task 3's Step 5 is also
+                // scoped to `CalleeShape::Member`).
                 let recv = infer_receiver_type(
                     &receiver_lc,
                     routine,
@@ -430,6 +433,7 @@ fn resolve_call_site_obligation(
                     obj_node,
                     graph,
                     index,
+                    None,
                     None,
                 );
                 match recv {

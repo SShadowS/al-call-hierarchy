@@ -220,6 +220,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`CDO_WS`) `cdo_l3_semantic_audit_no_fresh_wrong` + `cdo_full_program_coverage_and_self_reported_metric`
   UNCHANGED at real-`unknown` 1.88% / 340 (the post-Task-1.5 baseline; this task adds zero resolution
   behavior — pure carry + field populate).
+- **uniform-access-and-compound-receiver plan Task 3: resolve `Func().Method()` compound
+  receivers via `resolve_bare`-typed prefix return type, fail-closed** (`src/program/resolve/
+  receiver.rs`, `resolver.rs`, `full.rs`, `semantic_golden.rs`). New Phase-A Step 5 in
+  `infer_receiver_type` (`infer_call_result_receiver`): when the receiver's structured `Expr`
+  (Task 2's `receiver_expr`) is `ExprKind::Call{function, args}` with a BARE-identifier
+  `function` (a dotted/member function — the `Obj.Method().X()` cross-object chain — declines,
+  DEFERRED to Task 4), types the receiver by the return type of that bare same-object function:
+  (1) **local-shadowing guard FIRST** (round-2 gemini critical) — `resolve_bare` cannot see
+  locals/params/globals, but a same-named variable SHADOWS a same-named procedure in AL, so a
+  `function_lc` match against `routine.params`/`routine.locals`/`object_globals` declines
+  immediately, never typing a variable-index access as a call; (2) otherwise calls
+  `resolve_bare(from_object, function_lc, args.len(), ...)` as a TYPE QUERY, requiring the
+  single returned `Route` (always exactly one, by `resolve_bare`'s own contract) to target
+  `RouteTarget::Routine` — reusing `resolve_bare`'s own-object/extension-base/implicit-Rec/
+  builtin precedence, same-arity-overload-ambiguity decline, and builtin/Rec-shadow
+  PROBE-THEN-DECIDE collision guard for free; (3) requires `RoutineNode.return_type` (Task 2)
+  to be `Some` and parse (via `classify_type_text`) to a non-`Primitive` shape; (4) converts the
+  parsed type to a `ReceiverType` via the EXISTING `parsed_type_to_receiver` — the same
+  fail-closed conversion Step 2's declared-variable path already uses, so a cross-app-ambiguous
+  `Record`/`Object` return inherits its decline-to-`None` (never guess) and an `Interface`
+  return becomes `ReceiverType::Interface` (polymorphic fan-out). `infer_receiver_type` gained a
+  new `bare_ctx: Option<(&BodyMap<'_>, WithState)>` parameter (mirrors Task 2's `receiver_expr`
+  pattern: `Some` only at `resolve_full_program`'s real `CalleeShape::Member` call site;
+  `None` — Step 5 a no-op — everywhere else: unit tests, `semantic_golden.rs`, the `RecordOp`
+  shape), avoiding any signature churn for the ~50 pre-existing test call sites' RESOLUTION
+  behavior (mechanically threaded through). New fixture `tests/r0-corpus/ws-compound-call-
+  result/` + 12 tests in `tests/program_resolve_harness.rs`: POSITIVE `GetCustomer().Name()`
+  (Record-return), `GetHelper().DoWork()` (Codeunit-return shape), `GetIFoo().Bar()`
+  (Interface-return, fans out Polymorphic to the sole implementer — Task-2-finding-3 return-type-
+  SHAPE coverage for all three consumed shapes); NEGATIVE: overloaded prefix with an arg count
+  matching neither declared arity (wrong-overload guard), scalar (`Integer`) return, absent
+  prefix, arity-mismatch against a single overload, Rec/builtin-shadow collision (`Update()`
+  colliding with the `PageInstance` intrinsic from inside a Page's implicit-Rec), a local variable
+  shadowing an own procedure of the same name (proven load-bearing — the shadowed procedure
+  would otherwise resolve cleanly), the DEFERRED cross-object-chain shape (`Obj.DoWork().Bar()`),
+  and a string-literal-dot-arg prefix (`Foo('a.b').Bar()`, proving the AST-based inspection is
+  never confused by a dot inside a string literal, unlike a hypothetical text-based approach).
+  Each fixture routine surfaces TWO call obligations (the inner `Func()` bare call, resolved
+  independently and unrelated to this task, plus the outer `.Method()` member call Step 5
+  actually types) — the test helper selects the outer (widest-span) edge. CDO (`CDO_WS`):
+  `genuine_wrong` stays 0 (companion gate unchanged: `fresh_wrong=149`/`fresh_missing=4`); primary
+  and whole-program `unknown` BYTE-IDENTICAL to the pre-Task-3 baseline — 340/340,
+  `unknownByReason={CompoundReceiver: 167, UntrackedReceiver: 91, OverloadAmbiguous: 56,
+  BuiltinPrecedenceCollision: 1, MemberNotFound: 25}` on both sides, ZERO newly-`Resolved`
+  call-result edges to adjudicate. Root cause (exhaustively grepped, not sampled — see
+  `tests/program_resolve_harness.rs`'s `cdo_full_program_coverage_and_self_reported_metric` for
+  the exact command): CDO's source tree contains ZERO occurrences of a BARE (non-member-qualified)
+  `Func().Method()` chain; every real chained-call-result idiom present (`JsonToken.AsValue()
+  .AsText()`, `XmlElement.Create(Name).AsXmlNode()`, `Response.GetContent().AsText()`, …) is
+  `Var.Method().Method()` — the DEFERRED cross-object-chain shape (Task 4's scope), not this
+  task's bare-function shape. Not a soundness or implementation gap — the `ws-compound-call-
+  result` fixtures independently prove Step 5 fires and resolves correctly when the bare shape
+  IS present; this real corpus simply doesn't write AL that way. Ceiling NOT re-tightened
+  (nothing moved to tighten it against); left at 348/0.020 pending Task 4.
 - **soundness-completion plan Task 3: fresh-native `UnknownReason` diagnostic +
   stratified `aldump` unknown breakdown (charter §8 stratified reporting) — DIAGNOSTIC
   ONLY, the real-`unknown` COUNT and `ObligationOutcome` classification are UNCHANGED**

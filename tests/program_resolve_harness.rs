@@ -1530,6 +1530,38 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-02 alongside the primary ceiling above (same Task
     // 1.5 fix; whole-program `unknown`=340, same value as primary today —
     // see comment above); 348 gives the same margin.
+    //
+    // UNCHANGED 2026-07-02 (uniform-access-and-compound-receiver plan, Task
+    // 3): implemented `Func().Method()` compound-receiver resolution (a bare
+    // SAME-OBJECT function call's result typed via `resolve_bare` + the new
+    // `RoutineNode.return_type`, see `infer_call_result_receiver` in
+    // `src/program/resolve/receiver.rs`) — 12 new fixture tests over
+    // `ws-compound-call-result` prove it end-to-end (positive Record/
+    // Codeunit/Interface-return shapes + 9 fail-closed negatives: overloaded/
+    // arity-mismatched/absent prefix, scalar return, Rec/builtin-shadow
+    // collision, local-var-shadow, cross-app-ambiguous return, the deferred
+    // cross-object-chain and string-literal-dot-arg guards). Measured on CDO:
+    // BYTE-IDENTICAL to the pre-Task-3 baseline — `unknown`=340/340 (primary/
+    // whole), `unknownByReason`={CompoundReceiver: 167, UntrackedReceiver: 91,
+    // OverloadAmbiguous: 56, BuiltinPrecedenceCollision: 1, MemberNotFound:
+    // 25} on BOTH sides, zero newly-`Resolved` call-result edges to
+    // adjudicate. Root cause (exhaustively grepped, not sampled): CDO's
+    // source tree contains ZERO occurrences of a BARE (non-member-qualified)
+    // `Func().Method()` chain anywhere — `grep -rnoE
+    // "[^.A-Za-z0-9_][A-Za-z_][A-Za-z0-9_]*\([^()]*\)\.[A-Za-z_]\
+    // [A-Za-z0-9_]*\(" --include=*.al .` over the full workspace returns no
+    // matches. Every real chained-call-result idiom found (`JsonToken.
+    // AsValue().AsText()`, `XmlElement.Create(Name).AsXmlNode()`, `Node.
+    // AsXmlElement().Add(...)`, `Response.GetContent().AsText()`,
+    // `SourceRecRef.KeyIndex(1).FieldIndex(1)`, …) is `Var.Method().Method()`
+    // — a MEMBER-qualified prefix, i.e. the DEFERRED cross-object-chain shape
+    // (Task 4's scope, per `infer_call_result_receiver`'s bare-identifier
+    // guard), not Task 3's bare-function shape. Not a bug: `resolve_full_
+    // program`'s own `ws-compound-call-result` fixtures independently prove
+    // Step 5 fires and resolves correctly when the bare shape IS present —
+    // this real corpus simply doesn't write AL that way. Ceiling NOT
+    // re-tightened (nothing moved to tighten it against); left at 348/0.020
+    // pending Task 4.
     assert!(
         h.unknown <= 348,
         "whole-program unknown count {} exceeds ceiling 348 (recorded \
@@ -1537,8 +1569,9 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
          340 — a verified soundness correction restoring an over-decline, \
          was 407 post Task 1 alone [transient over-decline], 356 post \
          soundness completion plan v2.1 Task 1.5, 346 post follow-up plan \
-         v2.1 Task 4, 508 pre-follow-up) — engine regressed; investigate \
-         before raising the ceiling",
+         v2.1 Task 4, 508 pre-follow-up; UNCHANGED post Task 3 — CDO has zero \
+         bare Func().Method() sites, see comment above) — engine regressed; \
+         investigate before raising the ceiling",
         h.unknown,
     );
 
@@ -5450,4 +5483,292 @@ fn ws_bare_implicit_rec_pageextension_caller_resolves_sourcetable_via_step3() {
         rid.object
     );
     assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
+
+// ---------------------------------------------------------------------------
+// Tests 29+: beyond-1B.3b Task 3 — `Func().Method()` compound-receiver
+// resolution (prefix typed via `resolve_bare`, fail-closed), end-to-end over
+// `ws-compound-call-result`.
+//
+// Root feature: `infer_receiver_type`'s new Step 5 (`src/program/resolve/
+// receiver.rs`, `infer_call_result_receiver`) types a `Func().Method()`
+// receiver by the return type of the bare same-object function `Func()`:
+// local-shadowing guard first (a param/local/global named identically to
+// `Func` SHADOWS it in AL — `resolve_bare` cannot see variables), then
+// `resolve_bare` as a TYPE QUERY (reusing its own-object/extension-base/
+// implicit-Rec/builtin precedence, same-arity-overload-ambiguity decline, and
+// builtin/Rec-shadow PROBE-THEN-DECIDE collision guard), then a non-scalar
+// `return_type` guard, then `classify_type_text` →
+// `parsed_type_to_receiver` (the SAME fail-closed conversion Step 2's
+// declared-variable path uses). Every letter below matches the task brief's
+// fixture list; (b)-(h2) are all NEGATIVE/decline proofs.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-compound-call-result` and returns the full
+/// `resolve_full_program` report — shared by Tests 29a-29l below.
+fn ws_compound_call_result_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-compound-call-result");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-compound-call-result")
+}
+
+/// The route for the OUTER `.Method()` member call of a `Func().Method()`
+/// fixture routine.
+///
+/// Every fixture routine here has exactly TWO call obligations, not one: the
+/// extractor walks `Func().Method()` recursively and emits a call site for
+/// EVERY `Call` node it contains — `Func()` is a genuine call in its own
+/// right (classified `CalleeShape::Bare`, resolved independently via ordinary
+/// bare-call precedence, wholly UNRELATED to Task 3's new receiver-typing
+/// step) alongside the OUTER `.Method()` call (`CalleeShape::Member`, the one
+/// Task 3 actually types). The outer call's span always covers the WHOLE
+/// `Func().Method()` expression, so it is always the WIDEST (by
+/// `end.col - start.col`, both single-line spans in this fixture) of the
+/// routine's obligations — a robust, order-independent selector.
+fn outer_member_route(
+    report: &ProgramReport,
+    object_id_number: i64,
+    routine_name_lc: &str,
+) -> Route {
+    let edges = edges_for_object_routine(report, object_id_number, routine_name_lc);
+    assert_eq!(
+        edges.len(),
+        2,
+        "{routine_name_lc} (object {object_id_number}) must have exactly 2 call \
+         obligations (the inner Func() bare call + the outer .Method() member \
+         call); got {:?}",
+        edges.iter().map(|ce| &ce.edge).collect::<Vec<_>>()
+    );
+    let outer = edges
+        .iter()
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("edges is non-empty (asserted len == 2 above)");
+    assert_eq!(
+        outer.edge.kind,
+        EdgeKind::Call,
+        "the outer (widest-span) obligation must be the Member call"
+    );
+    outer.edge.routes[0].clone()
+}
+
+/// Test 29a (fixture a, POSITIVE): `GetCustomer()` (own, unique arity-0,
+/// `Record "CR Customer"` return) types the receiver `Record{table:
+/// Some(CRCustomer)}`; `Name` is a non-builtin Customer procedure — must
+/// resolve `Source`, exact target id.
+#[test]
+fn ws_compound_call_result_record_return_resolves_to_source() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testrecordreturn");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "name");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert!(
+        rid.object.id_equals_number(51000),
+        "must resolve to \"CR Customer\" (id 51000); got {:?}",
+        rid.object
+    );
+    assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
+
+/// Test 29b (Codeunit-return shape, POSITIVE): `GetHelper()` (own, unique
+/// arity-0, `Codeunit "CR Helper"` return) types the receiver `Object{Codeunit,
+/// "CR Helper"}`; `DoWork` must resolve `Source`, exact target id. Return-type-
+/// SHAPE coverage (Task-2 finding 3): `Codeunit X` alongside 29a's `Record X`.
+#[test]
+fn ws_compound_call_result_codeunit_return_resolves_to_source() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testcodeunitreturn");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "dowork");
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+    assert!(
+        rid.object.id_equals_number(51001),
+        "must resolve to \"CR Helper\" (id 51001); got {:?}",
+        rid.object
+    );
+    assert!(matches!(route.witness, Witness::SourceSpan { .. }));
+}
+
+/// Test 29c (fixture g, Interface-return POSITIVE/behavioral): `GetIFoo()`
+/// (own, unique arity-0, `Interface ICRFoo` return) types the receiver
+/// `Interface{"icrfoo"}` — Phase B fans out POLYMORPHICALLY to `ICRFoo`'s sole
+/// implementer (`CR Foo Impl`), never a concrete guess. Return-type-SHAPE
+/// coverage (Task-2 finding 3): `Interface IFoo` alongside 29a/29b.
+#[test]
+fn ws_compound_call_result_interface_return_fans_out_polymorphic() {
+    let report = ws_compound_call_result_report();
+    let edges = edges_for_object_routine(&report, 51003, "testinterfacereturn");
+    assert_eq!(
+        edges.len(),
+        2,
+        "TestInterfaceReturn has 2 call obligations (the inner GetIFoo() bare \
+         call + the outer .Bar() member call); got {:?}",
+        edges.iter().map(|ce| &ce.edge).collect::<Vec<_>>()
+    );
+    let ce = edges
+        .iter()
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("edges is non-empty (asserted len == 2 above)");
+    assert_eq!(
+        ce.edge.shape,
+        DispatchShape::Polymorphic,
+        "an Interface-return receiver must fan out Polymorphic, never a \
+         concrete single guess; got {:?}",
+        ce.edge.shape
+    );
+    assert_eq!(
+        ce.edge.routes.len(),
+        1,
+        "ICRFoo has exactly one implementer; got {:?}",
+        ce.edge.routes
+    );
+    let route = &ce.edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "bar");
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+    assert!(
+        rid.object.id_equals_number(51002),
+        "must resolve to \"CR Foo Impl\" (id 51002); got {:?}",
+        rid.object
+    );
+}
+
+/// Test 29d (fixture b, NEGATIVE — wrong-overload guard): `GetX` is
+/// overloaded (arity 0 → `Codeunit "CR Helper"`, arity 1 → `Record "CR
+/// Customer"`); `GetX(1, 2)` (arity 2) matches NEITHER declared overload —
+/// `resolve_bare`'s Step 1 (own object, zero arity-matched candidates) must
+/// decline; `infer_call_result_receiver` requires a `RouteTarget::Routine`
+/// and gets `Unresolved` instead — stays honest `Unknown`, never falls back
+/// to either overload's return type.
+#[test]
+fn ws_compound_call_result_overload_arity_mismatch_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testoverloadaritymismatch");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "GetX(1, 2), matching neither the arity-0 nor arity-1 overload, must \
+         stay honest Unknown; got {route:?}"
+    );
+}
+
+/// Test 29e (fixture c, NEGATIVE — scalar return): `GetCount(): Integer` —
+/// nothing to dispatch a member call on.
+#[test]
+fn ws_compound_call_result_scalar_return_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testscalarreturn");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "a scalar Integer return must never be treated as a dispatchable \
+         receiver; got {route:?}"
+    );
+}
+
+/// Test 29f (fixture d, NEGATIVE — absent prefix): `Nonexistent()` is not
+/// declared anywhere reachable from `CallResultCaller`.
+#[test]
+fn ws_compound_call_result_absent_prefix_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testabsentprefix");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 29g (fixture d, NEGATIVE — arity mismatch, single overload):
+/// `GetSingle` is declared ONLY at arity 1; called here with arity 0.
+#[test]
+fn ws_compound_call_result_arity_mismatch_single_overload_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testaritymismatchsingle");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 29h (fixture e, NEGATIVE — Rec/builtin-shadow): bare `Update()` used
+/// as a compound-receiver prefix collides between the implicit-Rec table's
+/// own (non-scalar-returning) `Update` procedure and the bare-callable
+/// `PageInstance` intrinsic `Update` — `resolve_bare`'s PROBE-THEN-DECIDE
+/// guard fails closed to `Unresolved{BuiltinPrecedenceCollision}` (never
+/// assumes the table wins), so `Update().Bar()` stays honest `Unknown`.
+#[test]
+fn ws_compound_call_result_rec_builtin_shadow_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51004, "onopenpage");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "Update().Bar() must fail closed on the unproven table-vs-PageInstance-\
+         intrinsic precedence collision, never assume the table wins; got {route:?}"
+    );
+}
+
+/// Test 29i (local-var-shadow NEGATIVE, round-2 gemini critical): a local
+/// `Integer` named identically to `CallResultCaller`'s OWN `GetCustomer`
+/// procedure (the fixture-a positive target) SHADOWS it — the guard must fire
+/// BEFORE ever calling `resolve_bare`, even though `GetCustomer()` would
+/// otherwise resolve cleanly (proving the guard is load-bearing).
+#[test]
+fn ws_compound_call_result_local_var_shadow_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testlocalvarshadow");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "a local variable named identically to an own procedure must shadow \
+         it — the Func() receiver must stay Unknown, never type via the \
+         shadowed procedure's return type; got {route:?}"
+    );
+}
+
+/// Test 29j (fixture h, DEFERRED-shape guard NEGATIVE — cross-object chain):
+/// `Obj.DoWork().Bar()` — the receiver of `.Bar()` is `Obj.DoWork()`, whose
+/// `function` is a MEMBER expression (`Obj.DoWork`), not a bare identifier;
+/// this cross-object-chain shape is deliberately deferred (Task 4).
+#[test]
+fn ws_compound_call_result_cross_object_chain_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testcrossobjectchain");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 29k (fixture h, DEFERRED-shape guard NEGATIVE — string-literal-dot
+/// arg): `Foo('a.b').Bar()` — proves the AST-based (not `receiver_text`-based)
+/// inspection is never confused by a dot embedded in a string-literal
+/// argument; `Foo` is not declared anywhere, so this stays `Unknown` regardless.
+#[test]
+fn ws_compound_call_result_string_literal_dot_arg_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "teststringliteralarg");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 29l (fixture f, NEGATIVE — cross-app-ambiguous return type):
+/// `GetH()`'s return type "CRHelperShared" is a Codeunit declared in BOTH the
+/// "CRLibA" and "CRLibB" dependencies — `parsed_type_to_receiver` inherits
+/// the fail-closed `ResolveIndex::resolve_object_ref` decline (never guesses
+/// either dependency's Codeunit), so `GetH().Bar()` stays honest `Unknown`.
+#[test]
+fn ws_compound_call_result_cross_app_ambiguous_return_stays_unknown() {
+    let report = ws_compound_call_result_report();
+    let route = outer_member_route(&report, 51003, "testcrossappambiguous");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(
+        matches!(route.evidence, Evidence::Unknown(_)),
+        "a cross-app-ambiguous return type (two deps declaring the same \
+         Codeunit name) must never be guessed; got {route:?}"
+    );
 }

@@ -1,0 +1,22 @@
+{
+	"id": "ffff6666-0000-0000-0000-000000000007",
+	"name": "CompoundCallResult Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51000, "to": 51099 }],
+	"dependencies": [
+		{
+			"id": "dddd4444-0000-0000-0000-000000000004",
+			"name": "CRLibA",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		},
+		{
+			"id": "eeee5555-0000-0000-0000-000000000006",
+			"name": "CRLibB",
+			"publisher": "probe",
+			"version": "1.0.0.0"
+		}
+	]
+}
