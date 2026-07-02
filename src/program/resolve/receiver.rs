@@ -68,7 +68,30 @@
 //!    via `resolve_full_program`); callers with no `BodyMap`/`WithState` in
 //!    scope (tests, `semantic_golden.rs`) pass `None` and this step is a no-op
 //!    — resolution-neutral for them, exactly like `receiver_expr` itself.
-//! 6. **Unknown** — no positive typing found.
+//! 6. **Compound framework property/method + `this.<rest>` receiver**
+//!    (beyond-1B.3b Task 4). Only engages when `receiver_expr` (Task 2) is
+//!    populated — unlike Step 5, this step does NOT need `bare_ctx` (it never
+//!    calls `resolve_bare`), so it also fires for callers that supply
+//!    `receiver_expr` but not `bare_ctx`. Two independent AST-based sub-cases,
+//!    both operating on the STRUCTURED `Expr` node (never `receiver_text`
+//!    string-splitting): (a) `<Framework>.<Prop>` / `<Framework>.<Method(..)>`
+//!    — the receiver is `ExprKind::Member{object, member}` (property form) or
+//!    `ExprKind::Call{function: Member{object, member}, args}` (method-call
+//!    form); `object` is recursively typed via the AST-native
+//!    [`infer_receiver_type_for_expr`] helper, and if it resolves to
+//!    `Framework(kind)`, the versioned [`framework_return_kind`] table maps
+//!    `(kind, member_lc, is_method, arity)` to the returned kind — a table
+//!    miss (wrong member, wrong form, wrong arity) declines. (b) `this.<rest>`
+//!    — when `object` is the bare `this` identifier, `member` is resolved
+//!    against a SELF-ONLY scope (`object_globals` only — never
+//!    `routine.params`/`routine.locals`, per AL's documented `this.` semantics
+//!    of addressing only "methods and globals within the same object"); a
+//!    `this.<method>(..)` CALL form (dispatching a same-object procedure's
+//!    return type) is deliberately NOT handled here — declines — since typing
+//!    it correctly needs `resolve_bare`-style routine lookup, out of this
+//!    step's scope. See [`infer_receiver_type_for_expr`] for the full
+//!    recursion.
+//! 7. **Unknown** — no positive typing found.
 //!
 //! # Clean-room note
 //!
@@ -85,6 +108,7 @@ use crate::program::node_extract::{ObjectNode, ObjectRef, PageControlKind, PageC
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::RouteTarget;
 use crate::program::resolve::extract::WithState;
+use crate::program::resolve::framework_returns::framework_return_kind;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 use crate::program::resolve::resolver::resolve_bare;
 
@@ -445,7 +469,10 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 /// 5. **Compound call-result receiver (`Func().Method()`)** — see the module
 ///    doc's Step 5. Requires both `receiver_expr` (Task 2) and `bare_ctx`
 ///    (Task 3) to be populated; a no-op otherwise.
-/// 6. **Unknown** — no positive typing found.
+/// 6. **Compound framework property/method + `this.<rest>` receiver** — see
+///    the module doc's Step 6. Requires only `receiver_expr` (Task 2); a
+///    no-op otherwise.
+/// 7. **Unknown** — no positive typing found.
 ///
 /// # `receiver_expr` (Task 2 enabling primitive)
 ///
@@ -621,10 +648,285 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
-    // Step 6 — Unknown.
+    // Step 6 — compound framework property/method + `this.<rest>` receiver
+    // (beyond-1B.3b Task 4).
+    //
+    // Only needs `receiver_expr` (Task 2) — unlike Step 5, this step never
+    // calls `resolve_bare`, so it does NOT gate on `bare_ctx`. A no-op for
+    // callers with no `receiver_expr` in scope (unit tests that pass `None`,
+    // the `RecordOp` shape).
+    // -----------------------------------------------------------------------
+
+    if let Some((file, expr_id)) = receiver_expr {
+        let recv = infer_receiver_type_for_expr(
+            file,
+            expr_id,
+            routine,
+            object_globals,
+            from_object,
+            graph,
+            index,
+        );
+        if !matches!(recv, ReceiverType::Unknown) {
+            return recv;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 7 — Unknown.
     // -----------------------------------------------------------------------
 
     ReceiverType::Unknown
+}
+
+/// Step 6's AST-native entry point: type an arbitrary `Expr` node directly
+/// from the IR — never by re-parsing source text — recursing through
+/// `Member`/`Call` chains to find a `Framework`-typed base for the compound
+/// framework-property/method step, or the bare `this` identifier for the
+/// `this.<rest>` step (both in [`infer_compound_member_receiver`]).
+///
+/// Dispatch:
+/// - `Identifier`/`QuotedIdentifier` — the base case: type it exactly like a
+///   bare receiver name via [`infer_receiver_type`]'s Steps 0-4 (`receiver_expr`
+///   and `bare_ctx` both `None` — this deliberately does NOT recurse into
+///   Steps 5-6 again for a bare identifier; Step 4's `rec`/singleton/framework
+///   lookup is Step 6's whole base case, so recursing further here would only
+///   ever re-derive the same `Unknown` a second time, never additional
+///   coverage. Terminates by construction — no cycle risk).
+///
+///   **Quote-parity guard (round-2 fix):** the IR's `QuotedIdentifier(name)`
+///   stores `name` ALREADY UNQUOTED (the lowerer strips quotes — see
+///   `extract.rs`'s `classify_call`), whereas the TOP-LEVEL `receiver_lc`
+///   [`infer_receiver_type`] itself dispatches on is sliced from RAW SOURCE
+///   TEXT and so ALWAYS retains any quote characters. Feeding the bare
+///   unquoted name into a fresh `infer_receiver_type` call would therefore
+///   run Steps 0-4 on a DIFFERENT string than the top-level call would have
+///   seen for the same site — concretely, Step 4's naive first-whitespace-
+///   token match (`classify_type_text`) can then spuriously match a quoted
+///   FIELD name that merely STARTS WITH a framework keyword word (e.g. a
+///   `Blob` field literally named `"File Blob"` unquotes to `"file blob"`,
+///   whose first token `"file"` collides with the `File` framework type —
+///   verified as a REAL CDO false-positive during this task's CDO gate: the
+///   table's own implicit-Rec field `"File Blob"` was mis-typed
+///   `Framework(File)` and `.CreateInStream`/`.CreateOutStream` false-
+///   resolved to the `File` catalog instead of staying the honest
+///   `Unknown` a Blob FIELD reference correctly is (field-type indexing is
+///   the DEFERRED record-field mechanism, module doc Step 6a's sibling
+///   note) — the cardinal sin this whole plan exists to prevent). So a
+///   `QuotedIdentifier` is RE-QUOTED before the recursive call, exactly
+///   reproducing what `receiver_text.to_ascii_lowercase()` would have
+///   produced for the same source site — restoring BYTE-FOR-BYTE parity
+///   with Steps 0-4's existing (conservative) quoted-name behavior, never
+///   granting quoted names new resolving power Task 4 doesn't intend to add.
+/// - `Member{object, member, ..}` — the property-access form (`<base>.<member>`,
+///   no parens): delegate to [`infer_compound_member_receiver`] with
+///   `is_method: false`, `arity: 0`.
+/// - `Call{function, args}` whose `function` derefs to `Member{object, member,
+///   ..}` — the method-call form (`<base>.<member>(args)`): delegate to
+///   [`infer_compound_member_receiver`] with `is_method: true`,
+///   `arity: args.len()`. A `Call` whose `function` is anything else (a bare
+///   identifier call, i.e. the Step-5 shape already handled at the TOP level
+///   only — not recursively here) declines.
+/// - Anything else (`Index`, `Literal`, `Binary`, …) — declines. Fail-closed by
+///   construction: every arm either delegates to more fail-closed logic or
+///   returns `Unknown` directly.
+fn infer_receiver_type_for_expr(
+    file: &AlFile,
+    expr_id: ExprId,
+    routine: &RoutineDecl,
+    object_globals: &[VarDecl],
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> ReceiverType {
+    match &file.ir.expr(expr_id).kind {
+        ExprKind::Identifier(name) => {
+            let name_lc = name.to_ascii_lowercase();
+            infer_receiver_type(
+                &name_lc,
+                routine,
+                object_globals,
+                from_object,
+                graph,
+                index,
+                None,
+                None,
+            )
+        }
+        ExprKind::QuotedIdentifier(name) => {
+            // Quote-parity guard — see this function's doc. Re-quote so
+            // Steps 0-4 see EXACTLY the string the top-level `receiver_lc`
+            // (sliced from raw source text) would have carried for the same
+            // site, never a bare unquoted name a quoted field/var reference
+            // never actually is.
+            let requoted_lc = format!("\"{}\"", name.to_ascii_lowercase());
+            infer_receiver_type(
+                &requoted_lc,
+                routine,
+                object_globals,
+                from_object,
+                graph,
+                index,
+                None,
+                None,
+            )
+        }
+        ExprKind::Member { object, member, .. } => infer_compound_member_receiver(
+            file,
+            *object,
+            member,
+            false,
+            0,
+            routine,
+            object_globals,
+            from_object,
+            graph,
+            index,
+        ),
+        ExprKind::Call { function, args } => {
+            if let ExprKind::Member { object, member, .. } = &file.ir.expr(*function).kind {
+                infer_compound_member_receiver(
+                    file,
+                    *object,
+                    member,
+                    true,
+                    args.len(),
+                    routine,
+                    object_globals,
+                    from_object,
+                    graph,
+                    index,
+                )
+            } else {
+                // A bare-identifier call (`Func(...)`) reaching HERE (i.e. as
+                // the BASE of a deeper chain, not the top-level receiver) is
+                // the Step-5 shape recursed one level deeper than Step 5
+                // handles — deliberately out of scope (Task 4 targets
+                // single-hop `<Framework>.<rest>`/`this.<rest>` chains, not
+                // nested bare-call chains); decline rather than guess.
+                ReceiverType::Unknown
+            }
+        }
+        _ => ReceiverType::Unknown,
+    }
+}
+
+/// Step 6's shared implementation for both sub-cases (framework-property/method
+/// chain and `this.<rest>`) — dispatches on whether `object_expr_id` is
+/// literally the bare `this` identifier.
+///
+/// - **`this.<rest>`**: when `object_expr_id` derefs to `Identifier`/
+///   `QuotedIdentifier` matching `"this"` (case-insensitively — AL identifiers
+///   are case-insensitive), `is_method: true` (a `this.Method(...)` CALL form)
+///   declines immediately — deliberately DEFERRED (see the module doc's Step
+///   6b): typing a same-object procedure's return type needs
+///   `resolve_bare`-style routine lookup, out of this step's scope. The
+///   property form (`is_method: false`) resolves `member` via
+///   [`infer_this_member`] against the SELF-ONLY `object_globals` scope.
+/// - **Framework chain**: otherwise, recursively type `object_expr_id` via
+///   [`infer_receiver_type_for_expr`]; if it resolves to `Framework(kind)`,
+///   look up `(kind, member_lc, is_method, arity)` in the versioned
+///   [`framework_return_kind`] table. Any other base type (`Unknown`, `Record`,
+///   `Object`, `SelfObject` via something other than literal `this`, …)
+///   declines — the table only ever fires on a PROVEN `Framework` base.
+#[allow(clippy::too_many_arguments)] // mirrors infer_receiver_type_for_expr's identity/lookup inputs plus member/is_method/arity — grouping would obscure the dispatch.
+fn infer_compound_member_receiver(
+    file: &AlFile,
+    object_expr_id: ExprId,
+    member: &str,
+    is_method: bool,
+    arity: usize,
+    routine: &RoutineDecl,
+    object_globals: &[VarDecl],
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> ReceiverType {
+    // `member` (from `ExprKind::Member`/`Call{function: Member{..}}`) may
+    // itself be RAW WITH QUOTES (mirrors `extract.rs::classify_call`'s own
+    // `strip_quote_chars(member)` before use) — unquote before matching so a
+    // quoted member name (`Response."Content"()`, however rare in practice)
+    // normalizes the same way an unquoted one does, rather than silently
+    // missing the table via a stray embedded quote character.
+    let member_lc = unquote_identifier(member).to_ascii_lowercase();
+
+    if is_this_identifier(file, object_expr_id) {
+        if is_method {
+            // `this.Method(...)` call-result chaining — deferred, decline.
+            return ReceiverType::Unknown;
+        }
+        return infer_this_member(&member_lc, object_globals, from_object, graph, index);
+    }
+
+    let base_ty = infer_receiver_type_for_expr(
+        file,
+        object_expr_id,
+        routine,
+        object_globals,
+        from_object,
+        graph,
+        index,
+    );
+    let ReceiverType::Framework(kind) = base_ty else {
+        return ReceiverType::Unknown;
+    };
+    match framework_return_kind(&kind, &member_lc, is_method, arity) {
+        Some(returned) => ReceiverType::Framework(returned),
+        None => ReceiverType::Unknown,
+    }
+}
+
+/// `true` when `expr_id` derefs to a bare `this` identifier (case-insensitive
+/// — AL identifiers are case-insensitive), the ONLY shape the `this.<rest>`
+/// step (module doc Step 6b) recognizes. A `"this"` `QuotedIdentifier` (i.e.
+/// written `"this"` with quotes, which in AL would refer to a DIFFERENTLY
+/// -named symbol, not the self-reference keyword) is deliberately EXCLUDED —
+/// only the unquoted keyword form is the self-reference.
+fn is_this_identifier(file: &AlFile, expr_id: ExprId) -> bool {
+    matches!(
+        &file.ir.expr(expr_id).kind,
+        ExprKind::Identifier(name) if name.eq_ignore_ascii_case("this")
+    )
+}
+
+/// `this.<rest>` member resolution (module doc Step 6b): resolve `member_lc`
+/// against the SELF-ONLY scope AL's `this` keyword actually permits — object
+/// GLOBALS only (`object_globals`), never `routine.params`/`routine.locals`.
+///
+/// Per Microsoft's AL language documentation ("Use the `this` keyword for
+/// codeunit self-reference"), `this` is a self-reference allowing a symbol
+/// reference to be "a member of the object itself"; the System Application's
+/// own adoption note describes it as "referencing methods and globals within
+/// the same object". Locals and parameters are NOT members of the object —
+/// they belong to the routine's own stack frame — so `this.` cannot address
+/// them; a same-named local/param simply does not shadow a global reached via
+/// `this.` (that is the entire point of the keyword: disambiguating from a
+/// same-named local). This function only ever resolves `member_lc` against
+/// `object_globals`, matching that documented scope exactly — never `routine`
+/// at all. See `tests/r0-corpus/ws-compound-framework/PROOF.md` for the full
+/// citation (no AL compiler was available in this task's execution
+/// environment; the semantics above are spec-stated per Microsoft Learn, not
+/// `alc`-verified).
+///
+/// `this.<method>(...)` (a CALL, dispatching a same-object PROCEDURE's return
+/// type) is handled by the caller ([`infer_compound_member_receiver`]),
+/// which declines before ever reaching here — this function is reached only
+/// for the property form.
+fn infer_this_member(
+    member_lc: &str,
+    object_globals: &[VarDecl],
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> ReceiverType {
+    let Some(ty) = object_globals
+        .iter()
+        .find(|v| v.name.to_ascii_lowercase() == member_lc)
+        .and_then(|v| v.ty.as_deref())
+    else {
+        return ReceiverType::Unknown;
+    };
+    parsed_type_to_receiver(classify_type_text(ty), from_object, graph, index)
 }
 
 /// Step 5's implementation: type a `Func().Method()` compound receiver by the
@@ -727,10 +1029,17 @@ fn infer_call_result_receiver(
     };
 
     // 3. Non-scalar return-type guard.
+    //
+    // Task-3 review finding (folded in by Task 4): `graph.routines` is kept
+    // sorted by `RoutineNodeId` (the same invariant `resolver.rs`'s
+    // `lookup_routine_access`/`make_routine_route` rely on) — an O(n) linear
+    // `.find` here was a needless scan when a `binary_search_by` mirrors that
+    // existing idiom exactly, for both consistency and scaling.
     let return_type = graph
         .routines
-        .iter()
-        .find(|r| &r.id == rid)?
+        .binary_search_by(|probe| probe.id.cmp(rid))
+        .ok()
+        .map(|i| &graph.routines[i])?
         .return_type
         .as_deref()?;
     let parsed = classify_type_text(return_type);
@@ -3549,4 +3858,616 @@ codeunit 50100 "C"
             "threading a real receiver_expr must not change Task 2's resolution outcome"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // infer_receiver_type — Step 6 (beyond-1B.3b Task 4): compound framework
+    // property/method chains + `this.<rest>`.
+    // -----------------------------------------------------------------------
+
+    fn routine_with_locals(locals: Vec<VarDecl>) -> RoutineDecl {
+        let o = test_origin();
+        RoutineDecl {
+            kind: RoutineKind::Procedure,
+            name: "Run".into(),
+            name_origin: o.clone(),
+            params: vec![],
+            return_type: None,
+            locals,
+            attributes: vec![],
+            attributes_parsed: vec![],
+            access_modifier: None,
+            parse_incomplete: false,
+            dataitem_source_table: None,
+            enclosing_member: None,
+            body: None,
+            origin: o,
+        }
+    }
+
+    fn var_decl(name: &str, ty: &str) -> VarDecl {
+        VarDecl {
+            name: name.into(),
+            ty: Some(ty.into()),
+            temporary: false,
+            origin: test_origin(),
+        }
+    }
+
+    /// Parse `src`, extract the sole `Member` call site whose method matches
+    /// `method_lc`, and return `(AlFile, receiver_text, receiver ExprId)`.
+    fn parse_member_site(src: &str, method_lc: &str) -> (al_syntax::ir::AlFile, String, ExprId) {
+        use crate::program::resolve::extract::{CalleeShape, extract_sites};
+
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "T.al", &std::collections::HashSet::new());
+        let site = sites
+            .iter()
+            .find(|s| matches!(&s.shape, CalleeShape::Member { method, .. } if method.eq_ignore_ascii_case(method_lc)))
+            .unwrap_or_else(|| panic!("no Member call site with method {method_lc:?} found"));
+        let CalleeShape::Member {
+            receiver_text,
+            receiver,
+            ..
+        } = &site.shape
+        else {
+            unreachable!("filtered to Member above");
+        };
+        let receiver_id = receiver.expect("Member.receiver must be populated");
+        (file, receiver_text.clone(), receiver_id)
+    }
+
+    /// POSITIVE: `Response.Content().ReadAs(Foo)` — `Response: HttpResponseMessage`
+    /// → `Content()` (real AL zero-arg method, table-verified) → `HttpContent`,
+    /// so the receiver of `.ReadAs(...)` types `Framework(HttpContent)`.
+    #[test]
+    fn framework_chain_http_response_content_resolves_to_http_content() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        Foo: Text;
+    begin
+        Response.Content().ReadAs(Foo);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "response.content()");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Response", "HttpResponseMessage"),
+            var_decl("Foo", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::HttpContent));
+    }
+
+    /// POSITIVE: `JToken.AsObject().Get('key', X)` — `JToken: JsonToken` →
+    /// `AsObject()` (table-verified) → `JsonObject`, so the receiver of
+    /// `.Get(...)` types `Framework(JsonObject)`.
+    #[test]
+    fn framework_chain_jsontoken_asobject_resolves_to_json_object() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        JToken: JsonToken;
+        X: JsonToken;
+    begin
+        JToken.AsObject().Get('key', X);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "get");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "jtoken.asobject()");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("JToken", "JsonToken"),
+            var_decl("X", "JsonToken"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::JsonObject));
+    }
+
+    /// POSITIVE: `this.DialogWindow.Open()` — `this`-strip resolves
+    /// `DialogWindow` against the object-GLOBALS-only scope (`Dialog` global),
+    /// so the receiver of `.Open()` types `Framework(Dialog)`.
+    #[test]
+    fn this_strip_dialogwindow_resolves_to_dialog() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    begin
+        this.DialogWindow.Open();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "open");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "this.dialogwindow");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let object_globals = vec![var_decl("DialogWindow", "Dialog")];
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &object_globals,
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Dialog));
+    }
+
+    /// NEGATIVE: `this.DialogWindow.Open()` where `DialogWindow` is a LOCAL
+    /// variable (or param), never declared as an object global — `this.`
+    /// deliberately does NOT see locals/params (only `object_globals`), so
+    /// this must stay `Unknown`, never fall back to a local-shadow guess.
+    #[test]
+    fn this_strip_ignores_locals_and_params() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        DialogWindow: Dialog;
+    begin
+        this.DialogWindow.Open();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "open");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        // `DialogWindow` declared as a LOCAL on `routine`, NOT in `object_globals`.
+        let routine = routine_with_locals(vec![var_decl("DialogWindow", "Dialog")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[], // no object globals — DialogWindow is NOT a member of the object
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Unknown,
+            "this. must resolve only against object globals, never locals/params"
+        );
+    }
+
+    /// NEGATIVE: `this.Method()` (a CALL form, not a property) — deliberately
+    /// DEFERRED (module doc Step 6b); must decline even when `Method` IS a
+    /// framework-typed global's zero-arg conversion, since this shape isn't
+    /// distinguishing a global from a same-object PROCEDURE without
+    /// `resolve_bare`-style lookup, which this step doesn't perform.
+    #[test]
+    fn this_strip_call_form_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    begin
+        this.DialogWindow().Open();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "open");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let object_globals = vec![var_decl("DialogWindow", "Dialog")];
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &object_globals,
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: base not a known framework type — `Foo.Content().ReadAs(X)`
+    /// where `Foo` is not declared anywhere (unresolved identifier); the
+    /// recursive base-typing declines, so the whole chain declines.
+    #[test]
+    fn framework_chain_unknown_base_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Foo2: Text;
+    begin
+        Foo.Content().ReadAs(Foo2);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("Foo2", "Text")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: prop/method not in the table (table-miss = fail-closed) —
+    /// `Response.Foo().ReadAs(X)`: `Response` types `Framework(HttpResponseMessage)`
+    /// but `"foo"` is not a table entry for that kind.
+    #[test]
+    fn framework_chain_table_miss_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        X: Text;
+    begin
+        Response.Foo().ReadAs(X);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Response", "HttpResponseMessage"),
+            var_decl("X", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: wrong FORM — a table method-entry invoked as a property (no
+    /// parens): `Response.Content.ReadAs(X)` (property form, `is_method:
+    /// false`) never matches the table's `(HttpResponseMessage, "content",
+    /// true, 0)` method-form entry.
+    #[test]
+    fn framework_chain_wrong_form_property_instead_of_method_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        X: Text;
+    begin
+        Response.Content.ReadAs(X);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "response.content");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Response", "HttpResponseMessage"),
+            var_decl("X", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: wrong ARITY — `Response.Content(X).ReadAs(Y)` (1 arg) never
+    /// matches the table's arity-0 entry.
+    #[test]
+    fn framework_chain_wrong_arity_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        X: HttpContent;
+        Y: Text;
+    begin
+        Response.Content(X).ReadAs(Y);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "response.content(x)");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Response", "HttpResponseMessage"),
+            var_decl("X", "HttpContent"),
+            var_decl("Y", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: a base whose recursion mis-types — `Response.Bar().Content().ReadAs(X)`:
+    /// `Response.Bar()` itself is a table-miss (declines to `Unknown`), so the
+    /// OUTER `.Content()` hop's base is `Unknown` (not `Framework`), and the
+    /// whole chain declines — proving a mis-typed intermediate hop propagates
+    /// rather than silently resetting to some other guess.
+    #[test]
+    fn framework_chain_recursion_mistype_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        X: Text;
+    begin
+        Response.Bar().Content().ReadAs(X);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "response.bar().content()"
+        );
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Response", "HttpResponseMessage"),
+            var_decl("X", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: a same-named member on a NON-framework type must NOT hit the
+    /// table — `Cust.Content().ReadAs(X)` where `Cust: Record Customer` types
+    /// `Record{..}`, not `Framework`, so the table lookup never even engages
+    /// (short-circuited by the `Framework(kind)`-only guard), even though
+    /// `"content"` IS a valid table member for `HttpResponseMessage`.
+    #[test]
+    fn framework_chain_non_framework_base_never_hits_table() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Cust: Record Customer;
+        X: Text;
+    begin
+        Cust.Content().ReadAs(X);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Cust", "Record Customer"),
+            var_decl("X", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// REGRESSION (round-2, found via the CDO gate's EXHAUSTIVE adjudication —
+    /// see `.superpowers/sdd/task-4-report.md`): a QUOTED identifier whose
+    /// UNQUOTED text merely STARTS WITH a framework keyword word must NOT
+    /// collide with that framework type via Step 4's naive first-whitespace-
+    /// token match. Real CDO: Table "CDO File"'s OWN `Blob` field
+    /// `"File Blob"`, accessed bare (implicit Rec, inside the table's own
+    /// procedure) as `"File Blob".CreateInStream(...)`, was FALSELY typed
+    /// `Framework(File)` (unquoting "File Blob" → "file blob" → Step 4 matches
+    /// the leading "file" token) and false-resolved `.CreateInStream`/
+    /// `.CreateOutStream` to the `File` catalog instead of staying the honest
+    /// `Unknown` a Blob FIELD reference correctly is — the quote-parity guard
+    /// in `infer_receiver_type_for_expr` (re-quoting a `QuotedIdentifier`
+    /// before recursing) fixes this by restoring byte-for-byte parity with
+    /// the top-level `receiver_lc`'s (quoted, hence non-matching) string.
+    #[test]
+    fn quoted_identifier_never_collides_with_framework_keyword_via_recursion() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Foo: InStream;
+    begin
+        "File Blob".CreateInStream(Foo);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "createinstream");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "\"file blob\"");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("Foo", "InStream")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[], // "File Blob" is NOT a declared var/param/global (mirrors a table field)
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Unknown,
+            "a quoted name that merely unquotes to text starting with a framework \
+             keyword (\"File Blob\" -> \"file blob\" -> \"File\") must never be \
+             mis-typed as that framework type"
+        );
+    }
+
+    /// DEFERRED-shape NEGATIVE: record-field member-of-member —
+    /// `Rec.BlobField.CreateOutStream()` stays `Unknown`. `Rec` types
+    /// `Record{..}` (not `Framework`), so — exactly like the non-framework-base
+    /// case above — the table lookup never engages; field-type indexing
+    /// (`BlobField`'s declared field TYPE) is a genuinely different, deferred
+    /// mechanism (node-model-heavy, out of this task's scope per the plan's
+    /// "Out of scope (next plan)" list) — this fixture pins that it stays
+    /// honestly `Unknown` rather than silently mis-typed via this table.
+    #[test]
+    fn framework_chain_record_field_deferred_stays_unknown() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Rec.BlobField.CreateOutStream();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "createoutstream");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "rec.blobfield");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("Rec", "Record Customer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    // NOTE: the Task-3 review finding folded into Task 4 (`infer_call_result_
+    // receiver`'s return-type lookup switched from a linear `.find` to
+    // `graph.routines.binary_search_by`, mirroring `lookup_routine_access`/
+    // `make_routine_route`) is a behavior-preserving refactor over the SAME
+    // sorted `graph.routines` data — it is exercised end-to-end by the
+    // existing Task 3 fixture suite (`ws_compound_call_result_*` in
+    // `tests/program_resolve_harness.rs`, built via the real
+    // `resolve_full_program` pipeline that populates and sorts `graph.routines`
+    // exactly as production code does), which all continue to pass unchanged.
+    // A hand-built unit `RoutineNode`/`BodyMap`/`WithState` fixture here would
+    // duplicate that coverage while risking drift from the real (much larger)
+    // `RoutineNode` struct shape, so this is deliberately NOT re-tested with a
+    // bespoke unit test.
 }

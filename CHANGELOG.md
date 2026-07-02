@@ -274,6 +274,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result` fixtures independently prove Step 5 fires and resolves correctly when the bare shape
   IS present; this real corpus simply doesn't write AL that way. Ceiling NOT re-tightened
   (nothing moved to tighten it against); left at 348/0.020 pending Task 4.
+- **uniform-access-and-compound-receiver plan Task 4: resolve `<Framework>.<Prop|Method()>`
+  compound receivers via a versioned return-type table, plus `this.<rest>` self-scoped
+  stripping, fail-closed** (new `src/program/resolve/framework_returns.rs`; modified
+  `src/program/resolve/receiver.rs`). New Phase-A Step 6 in `infer_receiver_type`, split into an
+  AST-native recursive entry point (`infer_receiver_type_for_expr`, dispatching on
+  `ExprKind::Identifier`/`QuotedIdentifier`/`Member`/`Call{function: Member}`) plus a shared
+  dispatcher (`infer_compound_member_receiver`) for two sub-cases: (a) **framework chain** — when
+  the receiver is `<base>.<member>` or `<base>.<member>(args)`, `base` is recursively typed, and
+  if it resolves `Framework(kind)`, `(kind, member_lc, is_method, arity)` is looked up in the new
+  `framework_return_kind` table (10 entries — 6 JSON conversions `JsonToken.AsObject/AsArray/
+  AsValue()` and `JsonObject/JsonArray/JsonValue.AsToken()`, 4 HTTP-chain `HttpResponseMessage
+  .Content/Headers()`, `HttpRequestMessage.Content()`, `HttpClient.DefaultRequestHeaders()` — a
+  table miss, wrong form (property vs. method-with-parens), or wrong arity all decline); (b)
+  **`this.<rest>`** — when `base` is literally the `this` identifier, `member` resolves
+  (`infer_this_member`) against a SELF-ONLY scope of `object_globals` ONLY (never
+  `routine.params`/`routine.locals`), per AL's documented `this.` semantics ("Use the `this`
+  keyword for codeunit self-reference": referencing "methods and globals within the same
+  object") — a `this.Method(...)` CALL form is deliberately DEFERRED (declines) since typing it
+  needs `resolve_bare`-style routine lookup, out of this step's scope. Every table entry is
+  individually provenanced against Microsoft's `methods-auto` reference (`"Available or changed
+  with runtime version 1.0"`, fetched 2026-07-02) AND cross-checked for membership against the
+  independently-generated `member_catalog.rs` phf sets; entries L3's table claims but neither
+  source confirms (`JsonObject`/`JsonArray`/`JsonValue` allegedly also having `AsValue`/
+  `AsObject`/`AsArray`) are correctly OMITTED — Rust-owned more accurate than al-sem, not ported.
+  A module-level `MIN_SUPPORTED_RUNTIME` pin documents the policy (every entry floors at runtime
+  1.0, satisfied by every real BC workspace, so no per-workspace dynamic gate is wired — a future
+  higher-floor entry must add one). Folded in the Task-3 review finding: `infer_call_result_
+  receiver`'s return-type lookup switched from an O(n) linear `.find` to `graph.routines
+  .binary_search_by`, mirroring `lookup_routine_access`/`make_routine_route`'s existing idiom.
+  **Round-2 self-found regression, fixed before landing:** the AST-native base recursion
+  originally fed a `QuotedIdentifier`'s ALREADY-UNQUOTED IR text back into `infer_receiver_type`,
+  which could then spuriously match Step 4's naive first-whitespace-token static-framework-name
+  check for a quoted field/var name that merely STARTS WITH a framework keyword word (e.g. a
+  `Blob` field literally named `"File Blob"` unquotes to `"file blob"`, colliding with the `File`
+  framework type) — caught during this task's own CDO exhaustive adjudication (real site: Table
+  "CDO File"'s own `"File Blob"` field). Fixed by RE-QUOTING a `QuotedIdentifier` before
+  recursing, restoring byte-for-byte parity with the top-level `receiver_lc` (always quoted, when
+  sliced from raw source text, for a quoted name) Steps 0-4 already see; pinned by a regression
+  test (`quoted_identifier_never_collides_with_framework_keyword_via_recursion`). New fixture
+  `tests/r0-corpus/ws-compound-framework/` + 10 tests in `tests/program_resolve_harness.rs`, plus
+  12 direct unit tests in `receiver.rs`: POSITIVE `Response.Content().ReadAs(...)`,
+  `JToken.AsObject().Get(...)`, `this.DialogWindow.Open()`; NEGATIVE base-not-framework,
+  table-miss, wrong-form (property vs. method), wrong-arity, a mis-typed recursive intermediate
+  hop, a same-named member on a non-`Framework` base never hitting the table, the DEFERRED
+  record-field shape (`Rec.BlobField.CreateOutStream()`), `this.` ignoring locals/params, and
+  `this.Method()` call-form deferral. CDO (`CDO_WS`): `genuine_wrong` stays 0 (companion gate
+  unchanged: `fresh_wrong=149`/`fresh_missing=4`); primary/whole `unknown` 340→329 (rate
+  1.88%→1.82%), `unknownByReason` `CompoundReceiver` 167→156 (every other bucket
+  byte-identical). All 11 newly-`Catalog` sites EXHAUSTIVELY hand-adjudicated against real CDO
+  source (not a sample — diffed the full before/after edge set via a throwaway per-site dump,
+  deleted before commit): 2 `this.DialogWindow.Open`/`.Close()` sites in `Page 6175313 "CDO
+  eDocuments Setup Wizard"` (confirmed `DialogWindow: Dialog;` is a genuine object-level global,
+  not local) resolving to the `Dialog` catalog, and 9 `<JsonToken var>.AsValue().AsText()`/
+  `.AsInteger()` chains across `Codeunit 6175274`/`6175322`/`6175347`, `Page 6175389` (×3), and
+  `Table 6175273` (×3) resolving to the `JsonValue` catalog — every base variable's declared type
+  and every leaf member independently confirmed against the real source. The HTTP-chain table
+  entries and the `HttpResponseMessage.Content()`/`GetContent()` shape from the task brief's
+  illustrative example have ZERO occurrences in CDO's source (CDO uses a custom `GetContent()`
+  wrapper method, not the real platform `Content()`); ratchets tightened to the measured floor
+  (348→337 count, 0.020→0.019 rate) with a small deterministic margin, not loosened.
 - **soundness-completion plan Task 3: fresh-native `UnknownReason` diagnostic +
   stratified `aldump` unknown breakdown (charter §8 stratified reporting) — DIAGNOSTIC
   ONLY, the real-`unknown` COUNT and `ObligationOutcome` classification are UNCHANGED**

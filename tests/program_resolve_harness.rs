@@ -1417,16 +1417,45 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `unknown` COUNT ceiling below). Net result: the TRUE honest rate for
     // this codebase is LOWER than any prior measurement, because the
     // over-decline was never real soundness — declining an AL-LEGAL friend
-    // call was itself the bug. 0.020 gives a tiny deterministic margin above
-    // the measured 0.0188.
+    // call was itself the bug.
+    //
+    // TIGHTENED 2026-07-02 (uniform-access-and-compound-receiver plan, Task
+    // 4): 0.020 → 0.019, measured 0.0182 (1.82%). Task 4 resolves the
+    // `<Framework>.<Prop|Method()>` compound-receiver subset of the
+    // `CompoundReceiver` bucket via a versioned, per-entry-provenanced
+    // return-type table (`src/program/resolve/framework_returns.rs`) plus
+    // `this.<rest>` self-scoped stripping (`infer_this_member`, object-globals-
+    // only per AL's documented `this.` semantics). Measured CDO delta:
+    // `CompoundReceiver` 167→156 (-11), every other bucket BYTE-IDENTICAL
+    // (`UntrackedReceiver`=91, `OverloadAmbiguous`=56,
+    // `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25 — unchanged). All 11
+    // newly-`Catalog` sites were EXHAUSTIVELY hand-adjudicated against real
+    // CDO source (not a sample — see `.superpowers/sdd/task-4-report.md`): 2
+    // `this.DialogWindow.Open`/`.Close()` sites in `Page 6175313 "CDO
+    // eDocuments Setup Wizard"` (a genuine object-level `Dialog` global,
+    // confirmed by reading its `var` section) resolving to the `Dialog`
+    // catalog, and 9 `<JsonToken var>.AsValue().AsText()`/`.AsInteger()`
+    // chains across `Codeunit 6175274`/`6175322`/`6175347`, `Page 6175389`
+    // (×3), and `Table 6175273` (×3) resolving to the `JsonValue` catalog —
+    // every base variable's declared type and every leaf member independently
+    // confirmed against the real source. A round-2 self-review during this
+    // adjudication caught and fixed a quote-parity bug (a QUOTED field name
+    // that merely unquotes to text starting with a framework keyword, e.g.
+    // Table "CDO File"'s own `"File Blob"` Blob field colliding with the
+    // `File` framework type) BEFORE it could land as a false `Catalog` route —
+    // see `infer_receiver_type_for_expr`'s doc and the
+    // `quoted_identifier_never_collides_with_framework_keyword_via_recursion`
+    // regression test. 0.019 gives a small deterministic margin above the
+    // measured 0.0182.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.020,
-        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.020 \
+        primary_rate <= 0.019,
+        "primary real_unknown_rate {primary_rate:.4} exceeds ceiling 0.019 \
          (recorded 2026-07-02 post uniform-access-and-compound-receiver Task \
-         1.5: 1.88%, was 2.25% post-Task-1-only [a transient over-decline], \
-         1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — \
-         engine regressed; investigate before raising the ceiling"
+         4: 1.82%, was 1.88% post-Task-1.5, 2.25% post-Task-1-only [a \
+         transient over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, \
+         6.46% pre-beyond-1B.3b) — engine regressed; investigate before \
+         raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1510,26 +1539,7 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // story: Task 1 declines cross-app `internal` (fail closed, no exception
     // modeled yet); Task 1.5 restores the subset that AL itself declares
     // legal via `InternalsVisibleTo`; only a TRUE stranger (no friend
-    // declaration in either direction) stays `Unknown`. 348 keeps a similar
-    // ~8-count deterministic margin the prior ceiling used, now over the new
-    // measured 340.
-    assert!(
-        ph.unknown <= 348,
-        "primary unknown count {} exceeds ceiling 348 (recorded 2026-07-02 post \
-         uniform-access-and-compound-receiver plan Task 1.5: 340 — a verified \
-         soundness correction restoring an over-decline, was 407 post Task 1 \
-         alone [transient over-decline], 356 post soundness completion plan \
-         v2.1 Task 1.5, 346 post follow-up plan v2.1 Task 4, 508 \
-         pre-follow-up) — engine regressed; investigate before raising the \
-         ceiling",
-        ph.unknown,
-    );
-    // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
-    // future regression lands in a dependency-internal (non-primary) routine
-    // — the primary-scoped count above would not catch that on its own.
-    // TIGHTENED 2026-07-02 alongside the primary ceiling above (same Task
-    // 1.5 fix; whole-program `unknown`=340, same value as primary today —
-    // see comment above); 348 gives the same margin.
+    // declaration in either direction) stays `Unknown`.
     //
     // UNCHANGED 2026-07-02 (uniform-access-and-compound-receiver plan, Task
     // 3): implemented `Func().Method()` compound-receiver resolution (a bare
@@ -1547,31 +1557,42 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // 25} on BOTH sides, zero newly-`Resolved` call-result edges to
     // adjudicate. Root cause (exhaustively grepped, not sampled): CDO's
     // source tree contains ZERO occurrences of a BARE (non-member-qualified)
-    // `Func().Method()` chain anywhere — `grep -rnoE
-    // "[^.A-Za-z0-9_][A-Za-z_][A-Za-z0-9_]*\([^()]*\)\.[A-Za-z_]\
-    // [A-Za-z0-9_]*\(" --include=*.al .` over the full workspace returns no
-    // matches. Every real chained-call-result idiom found (`JsonToken.
-    // AsValue().AsText()`, `XmlElement.Create(Name).AsXmlNode()`, `Node.
-    // AsXmlElement().Add(...)`, `Response.GetContent().AsText()`,
-    // `SourceRecRef.KeyIndex(1).FieldIndex(1)`, …) is `Var.Method().Method()`
-    // — a MEMBER-qualified prefix, i.e. the DEFERRED cross-object-chain shape
-    // (Task 4's scope, per `infer_call_result_receiver`'s bare-identifier
-    // guard), not Task 3's bare-function shape. Not a bug: `resolve_full_
-    // program`'s own `ws-compound-call-result` fixtures independently prove
-    // Step 5 fires and resolves correctly when the bare shape IS present —
-    // this real corpus simply doesn't write AL that way. Ceiling NOT
-    // re-tightened (nothing moved to tighten it against); left at 348/0.020
-    // pending Task 4.
+    // `Func().Method()` chain anywhere. Every real chained-call-result idiom
+    // found is `Var.Method().Method()` — a MEMBER-qualified prefix, i.e.
+    // Task 4's scope, not Task 3's bare-function shape.
+    //
+    // TIGHTENED 2026-07-02 (uniform-access-and-compound-receiver plan, Task
+    // 4): 348→337, measured 329/329 (primary/whole). Task 4 resolves the
+    // `<Framework>.<Prop|Method()>` subset of `CompoundReceiver` via a
+    // versioned return-type table (`framework_returns.rs`) + `this.<rest>`
+    // stripping — `CompoundReceiver` 167→156, every other bucket
+    // byte-identical. All 11 newly-resolved sites EXHAUSTIVELY hand-
+    // adjudicated (see the rate-ceiling comment above and
+    // `.superpowers/sdd/task-4-report.md`); `genuine_wrong` stays 0. 337
+    // gives a small deterministic margin above the measured 329.
     assert!(
-        h.unknown <= 348,
-        "whole-program unknown count {} exceeds ceiling 348 (recorded \
-         2026-07-02 post uniform-access-and-compound-receiver plan Task 1.5: \
-         340 — a verified soundness correction restoring an over-decline, \
-         was 407 post Task 1 alone [transient over-decline], 356 post \
-         soundness completion plan v2.1 Task 1.5, 346 post follow-up plan \
-         v2.1 Task 4, 508 pre-follow-up; UNCHANGED post Task 3 — CDO has zero \
-         bare Func().Method() sites, see comment above) — engine regressed; \
-         investigate before raising the ceiling",
+        ph.unknown <= 337,
+        "primary unknown count {} exceeds ceiling 337 (recorded 2026-07-02 post \
+         uniform-access-and-compound-receiver plan Task 4: 329 — 11 sites \
+         EXHAUSTIVELY hand-adjudicated correct, was 340 post Task 1.5/3, 407 \
+         post Task 1 alone [transient over-decline], 356 post soundness \
+         completion plan v2.1 Task 1.5, 346 post follow-up plan v2.1 Task 4, \
+         508 pre-follow-up) — engine regressed; investigate before raising \
+         the ceiling",
+        ph.unknown,
+    );
+    // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
+    // future regression lands in a dependency-internal (non-primary) routine
+    // — the primary-scoped count above would not catch that on its own.
+    // TIGHTENED 2026-07-02 alongside the primary ceiling above (same Task 4
+    // fix; whole-program `unknown`=329, same value as primary today).
+    assert!(
+        h.unknown <= 337,
+        "whole-program unknown count {} exceeds ceiling 337 (recorded \
+         2026-07-02 post uniform-access-and-compound-receiver plan Task 4: \
+         329 — see the primary-scoped ceiling comment above for the full \
+         history and adjudication) — engine regressed; investigate before \
+         raising the ceiling",
         h.unknown,
     );
 
@@ -5771,4 +5792,211 @@ fn ws_compound_call_result_cross_app_ambiguous_return_stays_unknown() {
         "a cross-app-ambiguous return type (two deps declaring the same \
          Codeunit name) must never be guessed; got {route:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Tests 30+: beyond-1B.3b Task 4 — `<Framework>.<Prop|Method()>` compound
+// receivers (versioned table) + `this.<rest>`, end-to-end over
+// `ws-compound-framework`.
+//
+// Root feature: `infer_receiver_type`'s new Step 6 (`src/program/resolve/
+// receiver.rs`, `infer_receiver_type_for_expr` / `infer_compound_member_
+// receiver` / `infer_this_member`) types a `<Framework>.<Prop|Method()>`
+// receiver by recursing the AST-native base and consulting the versioned
+// `framework_return_kind` table (`src/program/resolve/framework_returns.rs`),
+// and separately strips a `this.<rest>` prefix by resolving `<rest>` against
+// the object-GLOBALS-only self scope. Every letter below matches the task
+// brief's fixture list; (d)-(j) are all NEGATIVE/decline proofs.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-compound-framework` and returns the full
+/// `resolve_full_program` report — shared by Tests 30a-30j below.
+fn ws_compound_framework_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-compound-framework");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-compound-framework")
+}
+
+/// The route for the OUTERMOST call obligation of a fixture routine —
+/// generalizes `outer_member_route` (Task 3) to an ARBITRARY chain depth (1,
+/// 2, or 3 nested `Call` nodes, depending on the fixture: a bare `<base>.
+/// <member>` property access with no inner call has exactly 1 obligation; a
+/// two-hop `<base>.<mid>().<leaf>()` chain has 2; a three-hop
+/// `<base>.<a>().<b>().<leaf>()` chain has 3) by always picking the WIDEST
+/// span (by `end.col - start.col`, single-line spans in this fixture) — the
+/// outermost expression's span always covers every inner one.
+fn widest_call_route(
+    report: &ProgramReport,
+    object_id_number: i64,
+    routine_name_lc: &str,
+) -> Route {
+    let edges = edges_for_object_routine(report, object_id_number, routine_name_lc);
+    assert!(
+        !edges.is_empty(),
+        "{routine_name_lc} (object {object_id_number}) must have at least 1 call obligation"
+    );
+    let outer = edges
+        .iter()
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("edges is non-empty (asserted above)");
+    assert_eq!(
+        outer.edge.kind,
+        EdgeKind::Call,
+        "the outer (widest-span) obligation must be the Member call"
+    );
+    outer.edge.routes[0].clone()
+}
+
+/// Test 30a (fixture a, POSITIVE): `Response.Content().ReadAs(Body)` —
+/// `Response: HttpResponseMessage` → `Content()` (table-verified) →
+/// `HttpContent` — `ReadAs` is a real HttpContent catalog member, so the
+/// outer call resolves `Evidence::Catalog`.
+#[test]
+fn ws_compound_framework_http_response_content_resolves_catalog() {
+    let report = ws_compound_framework_report();
+    let route = widest_call_route(&report, 51101, "testhttpresponsecontent");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "HttpContent::readas");
+}
+
+/// Test 30b (fixture b, POSITIVE): `JToken.AsObject().Get('key', Found)` —
+/// `JToken: JsonToken` → `AsObject()` (table-verified) → `JsonObject` — `Get`
+/// is a real JsonObject catalog member, so the outer call resolves
+/// `Evidence::Catalog`.
+#[test]
+fn ws_compound_framework_jsontoken_asobject_resolves_catalog() {
+    let report = ws_compound_framework_report();
+    let route = widest_call_route(&report, 51101, "testjsontokenasobject");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "JsonObject::get");
+}
+
+/// Test 30c (fixture c, POSITIVE): `this.DialogWindow.Open()` — `this`-strip
+/// resolves `DialogWindow` against the object-GLOBALS-only self scope →
+/// `Framework(Dialog)` — `Open` is a real Dialog catalog member, so the call
+/// resolves `Evidence::Catalog`. Exactly 1 call obligation (no inner call —
+/// `this.DialogWindow` has no parens).
+#[test]
+fn ws_compound_framework_this_strip_dialogwindow_resolves_catalog() {
+    let report = ws_compound_framework_report();
+    let edges = edges_for_object_routine(&report, 51101, "testthisstripdialogwindow");
+    assert_eq!(
+        edges.len(),
+        1,
+        "this.DialogWindow.Open() has exactly 1 call obligation (no inner call)"
+    );
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Dialog::open");
+}
+
+/// Test 30d (fixture d, NEGATIVE — base not a known framework type):
+/// `Foo.Content().ReadAs(Body)` — `Foo` is not declared anywhere reachable
+/// from this object; the recursive base-typing declines, so the whole chain
+/// declines.
+#[test]
+fn ws_compound_framework_base_not_framework_stays_unknown() {
+    let report = ws_compound_framework_report();
+    let route = widest_call_route(&report, 51101, "testbasenotframework");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 30e (fixture e, NEGATIVE — table-miss): `Response.Bar().ReadAs(Body)`
+/// — `Response` types `Framework(HttpResponseMessage)` but `"Bar"` is not a
+/// table entry for that kind — fail-closed.
+#[test]
+fn ws_compound_framework_table_miss_stays_unknown() {
+    let report = ws_compound_framework_report();
+    let route = widest_call_route(&report, 51101, "testtablemiss");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 30f (fixture f, NEGATIVE — wrong form): `Response.Content.ReadAs(Body)`
+/// (property form, no parens) never matches the table's method-form entry.
+/// Exactly 1 call obligation (`Response.Content` has no parens, so no inner
+/// call).
+#[test]
+fn ws_compound_framework_wrong_form_property_instead_of_method_stays_unknown() {
+    let report = ws_compound_framework_report();
+    let edges = edges_for_object_routine(&report, 51101, "testwrongformpropertyinsteadofmethod");
+    assert_eq!(
+        edges.len(),
+        1,
+        "Response.Content.ReadAs(Body) has exactly 1 call obligation (Content has no parens)"
+    );
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 30g (fixture g, NEGATIVE — wrong arity): `Response.Content(X).ReadAs(Body)`
+/// (1 arg) never matches the table's arity-0 entry.
+#[test]
+fn ws_compound_framework_wrong_arity_stays_unknown() {
+    let report = ws_compound_framework_report();
+    let route = widest_call_route(&report, 51101, "testwrongarity");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 30h (fixture h, NEGATIVE — recursion mis-type): `Response.Bar().
+/// Content().ReadAs(Body)` — `Response.Bar()` is itself a table-miss
+/// (declines), so the OUTER `.Content()` hop's base is `Unknown`, not
+/// `Framework` — the whole chain declines. 3 nested call obligations
+/// (`Bar()`, `Content()`, `ReadAs(...)`).
+#[test]
+fn ws_compound_framework_recursion_mistype_stays_unknown() {
+    let report = ws_compound_framework_report();
+    let edges = edges_for_object_routine(&report, 51101, "testrecursionmistype");
+    assert_eq!(
+        edges.len(),
+        3,
+        "Response.Bar().Content().ReadAs(Body) has 3 nested call obligations"
+    );
+    let route = widest_call_route(&report, 51101, "testrecursionmistype");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 30i (fixture i, NEGATIVE — same-named member on a non-framework
+/// type): `Cust.Content().ReadAs(Body)` where `Cust: Record "CF Customer"`
+/// types `Record{..}`, not `Framework` — the table lookup never engages, even
+/// though `"content"` happens to be a valid HttpResponseMessage table member.
+#[test]
+fn ws_compound_framework_non_framework_base_never_hits_table() {
+    let report = ws_compound_framework_report();
+    let route = widest_call_route(&report, 51101, "testsamenamedmemberonnonframeworkbase");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 30j (fixture j, DEFERRED-shape NEGATIVE — record-field
+/// member-of-member): `Rec.BlobField.CreateOutStream()` stays `Unknown`.
+/// `Rec` types `Record{..}`, not `Framework` — field-type indexing is a
+/// genuinely different, deferred mechanism, out of this task's scope. Exactly
+/// 1 call obligation (`Rec.BlobField` has no parens).
+#[test]
+fn ws_compound_framework_deferred_record_field_stays_unknown() {
+    let report = ws_compound_framework_report();
+    let edges = edges_for_object_routine(&report, 51101, "testdeferredrecordfield");
+    assert_eq!(
+        edges.len(),
+        1,
+        "Rec.BlobField.CreateOutStream() has exactly 1 call obligation (BlobField has no parens)"
+    );
+    let route = &edges[0].edge.routes[0];
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }

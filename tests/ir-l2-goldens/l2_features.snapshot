@@ -101,6 +101,16 @@ ws-compound-call-result/src/CallResultCaller.Codeunit.al::0::TestCrossObjectChai
 ws-compound-call-result/src/CallResultCaller.Codeunit.al::0::TestStringLiteralArg	a2ab8465d30b7dd6
 ws-compound-call-result/src/CallResultCaller.Codeunit.al::0::TestCrossAppAmbiguous	3922d73768d8bdbb
 ws-compound-call-result/src/CallResultPage.Page.al::0::OnOpenPage	7bbec47f95f28322
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestHttpResponseContent	999bdc80ae3822b2
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestJsonTokenAsObject	a10b81255fe28050
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestThisStripDialogWindow	3d5a08587b39073e
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestBaseNotFramework	d35f951185e9bebe
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestTableMiss	5169b0ee8e469596
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestWrongFormPropertyInsteadOfMethod	c0d9b17db1dec765
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestWrongArity	9707c59eb324cb2a
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestRecursionMistype	1a42576474d98feb
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestSameNamedMemberOnNonFrameworkBase	71a56194e5f05455
+ws-compound-framework/src/CFCaller.Codeunit.al::0::TestDeferredRecordField	3972848cdcdb2515
 ws-compound-receiver/src/CustomerCard.Page.al::0::OnOpenPage	47e90f8d41ef18fb
 ws-compound-receiver/src/CustomerCardPart.Page.al::0::RefreshLines	723463d1e1a2d666
 ws-d1/src/jobs.al::0::ProcessAll	af6a5c415d2c7e87

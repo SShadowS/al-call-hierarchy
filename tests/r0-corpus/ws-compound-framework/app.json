@@ -1,0 +1,8 @@
+{
+	"id": "ffff6666-0000-0000-0000-000000000008",
+	"name": "CompoundFramework Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51100, "to": 51199 }]
+}

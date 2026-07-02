@@ -71,6 +71,8 @@ ws-compound-call-result/src/CRHelper.Codeunit.al	8c8471d83b196f16
 ws-compound-call-result/src/CallResultCaller.Codeunit.al	d828a2e155a5f57d
 ws-compound-call-result/src/CallResultPage.Page.al	27673218cf5458a3
 ws-compound-call-result/src/ICRFoo.Interface.al	20b910d8bcdfce71
+ws-compound-framework/src/CFCaller.Codeunit.al	fd743916b2578b0a
+ws-compound-framework/src/CFCustomer.Table.al	0688ea85a49da061
 ws-compound-receiver/src/CustomerCard.Page.al	46c52066a8a0909f
 ws-compound-receiver/src/CustomerCardPart.Page.al	75cf772e7882c46c
 ws-d1/src/customer.al	0022db5d7a079d98
