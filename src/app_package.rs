@@ -356,18 +356,28 @@ fn parse_manifest_xml(content: &str) -> Result<AppMetadata> {
 
     // Friend apps: <InternalsVisibleTo><Module Id Name Publisher/> — grants
     // THIS app's `internal` members visibility to each listed app (Task 1.5).
-    // Same whole-document `descendants()` scan pattern as `<Dependency>`
-    // above (verified against a real CTS-CDN manifest: `<Module>` is used
-    // exclusively for this purpose, never elsewhere in NavxManifest.xml).
+    // Unlike the whole-document `<Dependency>` scan above, this scan is
+    // scoped to `<Module>` children of the `<InternalsVisibleTo>` element
+    // ONLY (whole-branch review M1): the friend map governs cross-app
+    // `internal` visibility, so a stray `<Module>` elsewhere in the manifest
+    // must never be picked up as a spurious friend (a latent false-`Source`
+    // vector). Behavior-preserving on real manifests — verified against a
+    // real CTS-CDN manifest where `<Module>` appears exclusively under
+    // `<InternalsVisibleTo>`.
     let internals_visible_to = doc
         .descendants()
-        .filter(|n| n.has_tag_name("Module"))
-        .map(|m| FriendApp {
-            app_id: m.attribute("Id").unwrap_or_default().to_string(),
-            name: m.attribute("Name").unwrap_or_default().to_string(),
-            publisher: m.attribute("Publisher").unwrap_or_default().to_string(),
+        .find(|n| n.has_tag_name("InternalsVisibleTo"))
+        .map(|ivt| {
+            ivt.children()
+                .filter(|m| m.has_tag_name("Module"))
+                .map(|m| FriendApp {
+                    app_id: m.attribute("Id").unwrap_or_default().to_string(),
+                    name: m.attribute("Name").unwrap_or_default().to_string(),
+                    publisher: m.attribute("Publisher").unwrap_or_default().to_string(),
+                })
+                .collect()
         })
-        .collect();
+        .unwrap_or_default();
 
     Ok(AppMetadata {
         app_id: attr("Id"),
@@ -619,6 +629,47 @@ mod tests {
             .expect("CDO friend entry present");
         assert_eq!(cdo.app_id, "f4b69b55-c90d-4937-8f53-2742898fa948");
         assert_eq!(cdo.publisher, "Continia Software");
+    }
+
+    #[test]
+    fn parse_manifest_xml_ignores_stray_module_outside_internals_visible_to() {
+        // Whole-branch review (M1): a `<Module>` element anywhere in the
+        // document (not just inside `<InternalsVisibleTo>`) must NOT be
+        // treated as a friend app. A loose `doc.descendants()` scan would
+        // pick this up, injecting a spurious friend that could later grant
+        // an unrelated app cross-app `internal` visibility — a false
+        // `Source` if that GUID happens to match a real app in the
+        // snapshot.
+        let manifest = r#"<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/navx/2015/manifest">
+  <App Id="0745e76d-0b72-4641-87c2-ee45db5d2c32" Name="Continia Delivery Network" Publisher="Continia Software" Version="29.0.0.101335" Runtime="17.0" Platform="28.0.0.0" Application="28.0.0.0" />
+  <Dependencies>
+    <Dependency Id="e4b442d0-e8e3-4210-bfca-f1e66686caa0" Name="Continia System Application" Publisher="Continia Software" MinVersion="29.0.0.0" />
+  </Dependencies>
+  <InternalsVisibleTo>
+    <Module Id="f4b69b55-c90d-4937-8f53-2742898fa948" Name="Continia Document Output" Publisher="Continia Software" />
+  </InternalsVisibleTo>
+  <SomeOtherSection>
+    <Module Id="stray-guid" Name="Stray Impostor" Publisher="Nobody" />
+  </SomeOtherSection>
+</Package>
+"#;
+        let meta = parse_manifest_xml(manifest).expect("parse manifest");
+        assert_eq!(
+            meta.internals_visible_to.len(),
+            1,
+            "stray out-of-section <Module> must be excluded"
+        );
+        let ids: Vec<&str> = meta
+            .internals_visible_to
+            .iter()
+            .map(|f| f.app_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["f4b69b55-c90d-4937-8f53-2742898fa948"]);
+        assert!(
+            !ids.contains(&"stray-guid"),
+            "stray <Module> outside <InternalsVisibleTo> must not be treated as a friend"
+        );
     }
 
     #[test]

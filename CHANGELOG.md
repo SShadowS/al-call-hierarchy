@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`internalsVisibleTo` friend-app parsing (`parse_manifest_xml`) is now scoped to
+  `<InternalsVisibleTo>`, not a whole-document `<Module>` scan** (`src/app_package.rs`,
+  whole-branch review M1). The friend-app scan previously used
+  `doc.descendants().filter(|n| n.has_tag_name("Module"))` — a whole-document scan not
+  restricted to the `<InternalsVisibleTo>` section. AL's `NavxManifest.xml` places
+  `<Module Id Name Publisher/>` elements only under `<InternalsVisibleTo>`, but the loose
+  scan meant a stray `<Module>` element elsewhere in the manifest would have been ingested
+  as a spurious friend app; if its GUID happened to resolve to a real app in the snapshot,
+  that app's `internal` calls into the exposing app would false-resolve to `Source` — a
+  latent false-`Source` vector. Fixed by finding the `<InternalsVisibleTo>` element first
+  and iterating only its `<Module>` children (empty friend list if the section is absent).
+  Behavior-preserving on real manifests (CTS-CDN's `<Module>` entries are already under
+  `<InternalsVisibleTo>`) — CDO's self-reported metric is unchanged at 1.82% (329
+  `unknown`/18104), `genuine_wrong=0`. New unit test
+  `parse_manifest_xml_ignores_stray_module_outside_internals_visible_to` asserts a stray
+  `<Module>` outside the section is excluded from the friend list.
 - **uniform-access-and-compound-receiver plan Task 1: `resolve_in_object` is now PER-CANDIDATE
   access-aware — closes the last two false-`Source` gaps in `resolve_member`, the `Object`-arm
   and both `Interface`-impl fan-out delegates** (`src/program/resolve/resolver.rs`).
