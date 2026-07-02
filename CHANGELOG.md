@@ -129,6 +129,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full writeup in `tests/r0-corpus/ws-chain-tables/PROOF.md`.
 
 ### Fixed
+- **Collapse-marker guard now covers every route-construction site, not just plain
+  dispatch — Run/trigger/event paths decline marked ABI survivors
+  (applicability-param-subtype-recfield plan v2.1, Task 2 review fix).** Task 2's own
+  plain-dispatch marker guard (`resolve_in_object`'s single-visible-candidate arm)
+  documented itself as "the SINGLE choke point every plain-call AND qualified-member
+  dispatch path funnels through" — a factually wrong claim (corrected in this fix): FOUR
+  other `make_routine_route` call sites in `src/program/resolve/resolver.rs` look up a
+  routine directly by ROLE (entry trigger / trigger name / subscriber match) rather than
+  through that name+arity SELECTION boundary, so a collapse-marked survivor (a dedup
+  collapse of ≥2 raw ABI entries that fingerprint-collided — see
+  `build::dedup_routines_preserving_genuine_overloads`) could still reach a confident
+  `Opaque` route through any of them, unguarded: (1) `resolve_object_run`
+  (`Codeunit.Run`/`Page.RunModal`/`Report.Run`'s entry-trigger dispatch); (2)
+  `resolve_member`'s own inline `Codeunit.Run(arity<=1)` special case; (3)
+  `resolve_implicit_trigger`'s base-table + `TableExtension` trigger fan-out; (4)
+  `emit_event_flow_edges`'s subscriber fan-out. Added a single shared helper,
+  `routine_is_collapse_marked`, and applied it at all four sites (replacing the
+  duplicated inline lookup inside `resolve_in_object` too, now a thin caller of the same
+  helper): sites (1)-(3) decline to `Unresolved`/`Unknown(OverloadAmbiguous)` in place of
+  the marked candidate's route (site (3)'s Multicast fan-out keeps the route SLOT as an
+  honest Unknown rather than silently shrinking the set's cardinality); site (4) instead
+  SKIPS the marked subscriber's route entirely — its `SetCompleteness::
+  Partial{ReverseDependentSubscribers}` is already open-world, so omitting one
+  untrustworthy candidate doesn't understate an otherwise-closed count the way (3)'s
+  fan-out would. Corrected the "SINGLE choke point" doc claim to honestly enumerate the
+  five guarded sites instead. One new end-to-end fixture (`tests/r0-corpus/
+  ws-cross-object-chain`): extended the existing N11 probe `.app` (`Dep Run Collapse`,
+  object 60105) with a LITERALLY DUPLICATED raw `OnRun` JSON entry (0-arg —
+  `param_type_fp` folds to the fixed `0` for an empty `Parameters[]`), reachable via
+  `Codeunit.Run(Codeunit::"Dep Run Collapse")` — proves site (1) declines rather than
+  resolving the arbitrary duplicate survivor confidently (written failing first, verified
+  red against the pre-fix code, then green). 8 new resolver-level unit tests (marked +
+  unmarked control pairs for all four sites) round out the coverage the review specifically
+  asked for. CDO: both gates byte-identical to the pre-existing baseline
+  (`real_unknown_rate`=1.75%/317, `genuine_wrong`=0, `fresh_missing`=4, `fresh_wrong`=149
+  all `fresh_ahead_dispatch`) — every CDO dependency is `EmbeddedSource`, structurally
+  never `SymbolOnly`, so `abi_overload_collapsed` is never set there and all four newly
+  guarded sites are dormant on CDO by construction, exactly like the original Task 2
+  guard.
 - **Event-applicability checker fix — the pre-existing `event_violations=200` broken gate
   root-caused and closed (applicability-param-subtype-recfield plan v2.1, Task 1).**
   `verify_event_subscriber_route`'s strict arity invariant (`differential.rs`) predated

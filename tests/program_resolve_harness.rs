@@ -7054,3 +7054,48 @@ fn ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_declines_ambigu
          place — this is NOT the abi_overload_collapsed marker path); got {route:?}"
     );
 }
+
+/// Test 32q (fixture N12 — Task 2 REVIEW FIX): `Dep Run Collapse` declares
+/// its `OnRun` entry trigger via a LITERALLY DUPLICATED raw ABI entry
+/// (0-arg — `sig_fp` folds to the fixed `0` for an empty `Parameters[]`, see
+/// `abi_ingest::param_type_fp`), so `dedup_routines_preserving_genuine_
+/// overloads` collapses both raw entries into ONE survivor marked
+/// `abi_overload_collapsed`. `Codeunit.Run(...)` dispatches through
+/// `resolve_object_run` — an entry-trigger lookup by ROLE (fixed name) that
+/// bypasses `resolve_in_object`'s name+arity selection ENTIRELY, so, before
+/// the Task 2 review fix, this path never consulted the collapse marker at
+/// all: it would have resolved the arbitrary raw-JSON survivor CONFIDENTLY
+/// as an `Opaque`/`AbiSymbol` route despite the underlying duplicate/
+/// collision being unresolved. Post-fix: `resolve_object_run` now applies
+/// its own `routine_is_collapse_marked` guard and must decline
+/// `Unresolved`/`Unknown(OverloadAmbiguous)` instead — no route/edge to the
+/// collapsed survivor.
+#[test]
+fn ws_cross_object_chain_object_run_collapsed_trigger_declines() {
+    let report = ws_cross_object_chain_report();
+    let edges = edges_for_object_routine(&report, 51206, "testobjectruncollapsedtriggerdeclines");
+    assert!(!edges.is_empty(), "must have at least one Run obligation");
+    let run_edge = edges
+        .iter()
+        .find(|ce| ce.edge.kind == EdgeKind::Run)
+        .expect("expected exactly one Run-kind edge");
+    assert_eq!(
+        run_edge.edge.routes.len(),
+        1,
+        "expected exactly one route on the ObjectRun edge; got {:?}",
+        run_edge.edge.routes
+    );
+    let route = &run_edge.edge.routes[0];
+    assert_eq!(
+        route.target,
+        RouteTarget::Unresolved,
+        "Codeunit.Run to a codeunit whose sole OnRun candidate is \
+         collapse-MARKED must never resolve confidently — resolve_object_run \
+         bypasses resolve_in_object entirely (Task 2 review fix); got {route:?}"
+    );
+    assert_eq!(
+        route.evidence,
+        Evidence::Unknown(UnknownReason::OverloadAmbiguous),
+        "expected Unknown(OverloadAmbiguous); got {route:?}"
+    );
+}

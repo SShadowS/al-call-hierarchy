@@ -163,6 +163,23 @@ codeunit 51206 "CrossChainCaller"
         ArityChain.Get().ReadAs();
     end;
 
+    // (N12) NEGATIVE — Task 2 REVIEW FIX: `Dep Run Collapse` declares its
+    // `OnRun` entry trigger via a LITERALLY DUPLICATED raw ABI entry (0-arg —
+    // `sig_fp` folds to the fixed 0 for an empty `Parameters[]`, see
+    // `abi_ingest::param_type_fp`), so `dedup_routines_preserving_genuine_
+    // overloads` collapses both raw entries into ONE survivor marked
+    // `abi_overload_collapsed`. `Codeunit.Run(...)` dispatches via
+    // `resolve_object_run`, which looks up the entry trigger by ROLE (fixed
+    // name), never through `resolve_in_object`'s name+arity selection — so,
+    // PRE-review-fix, this path never consulted the collapse marker at all
+    // and would have resolved the arbitrary survivor CONFIDENTLY as
+    // Opaque/AbiSymbol. Must decline Unresolved/Unknown(OverloadAmbiguous)
+    // instead. See `program_resolve_harness.rs`'s companion test.
+    procedure TestObjectRunCollapsedTriggerDeclines()
+    begin
+        Codeunit.Run(Codeunit::"Dep Run Collapse");
+    end;
+
     // (N11) NEGATIVE — Task 2 SUPERSEDES the Task-3-review-fix framing below:
     // `Dep Collapse` declares two `Get` overloads at the SAME arity (1) AND
     // the SAME OUTER parameter kind (`Codeunit`), differing ONLY in the

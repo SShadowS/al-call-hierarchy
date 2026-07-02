@@ -150,7 +150,8 @@ ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestNameIdMismatchDec
 ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestFieldPropertyChainDeclines	57caa02921fd847b
 ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestThreeLevelMiddleHopFailsDeclines	df90cf2fdd69f979
 ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestWrongArityAbiDeclines	9380975d0a35a457
-ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestAbiOverloadCollapsedDeclines	c5602d21d89ff14d
+ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestObjectRunCollapsedTriggerDeclines	7fb1566759afbe8e
+ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestAbiOverloadCollapsedDeclines	4e6ac1cd9b246915
 ws-d1/src/jobs.al::0::ProcessAll	af6a5c415d2c7e87
 ws-d1/src/jobs.al::0::ProcessOne	242af8cdf28a7d3c
 ws-d1/src/jobs.al::0::DirectLoop	7cce302e7d60efeb

@@ -186,6 +186,30 @@ fn unresolved_route(reason: UnknownReason) -> Route {
     }
 }
 
+/// Whether `rid` is currently marked [`RoutineNode::abi_overload_collapsed`]
+/// on `graph` — the COLLAPSE-MARKER GUARD shared by every `make_routine_
+/// route` call site (Task 2 review fix). Before this fix, only TWO of the
+/// SIX sites that ultimately build a route for a specific `RoutineNodeId`
+/// consulted the marker: [`resolve_in_object`]'s single-visible-candidate
+/// arm (the PLAIN-DISPATCH MARKER GUARD, Task 2 round-2) and
+/// [`routine_node_for_type_query`] (the CHAIN-type-query guard, Task 3
+/// review fix). The other FOUR — [`resolve_object_run`], `resolve_member`'s
+/// own inline `Codeunit.Run(arity<=1)` special case, [`resolve_implicit_
+/// trigger`]'s trigger fan-out, and [`emit_event_flow_edges`]'s subscriber
+/// fan-out — look up a routine directly by ROLE (entry trigger / trigger
+/// name / subscriber match) rather than through either selection boundary,
+/// so a collapse-marked survivor could reach a confident `Opaque`/`Source`
+/// route through any of them unguarded. Centralizing the lookup here means
+/// a future call site gets the same protection by construction rather than
+/// by remembering to copy the check.
+fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool {
+    graph
+        .routines
+        .binary_search_by(|probe| probe.id.cmp(rid))
+        .ok()
+        .is_some_and(|i| graph.routines[i].abi_overload_collapsed)
+}
+
 /// Try to resolve `name_lc` with `arity` arguments inside `obj_id`, as called
 /// from the identity `from_object` (Task 1 — beyond-1B.3b-follow-up:
 /// PER-CANDIDATE access filtering; see [`routine_candidate_is_visible`]).
@@ -323,24 +347,32 @@ fn resolve_in_object(
             // still resolve CONFIDENTLY right here via ordinary PLAIN
             // dispatch (a qualified call like `DepCollapse.Get(X)`, never
             // chained onward), an unguarded false-`Source`/`Opaque` vector.
-            // `resolve_in_object` is the SINGLE choke point every plain-call
-            // AND qualified-member dispatch path in this module funnels
-            // through (bare-call Step 1/2/3, `resolve_member`'s Object/
-            // SelfObject/Interface arms) — placing the guard HERE, at the
-            // FINAL candidate-selection boundary, closes it for every one of
-            // them at once rather than one branch at a time. A collapse-
-            // marked node is the arbitrary (or genuinely indistinguishable)
-            // survivor of ≥2 raw ABI entries that fingerprint-collided (see
-            // `build::dedup_routines_preserving_genuine_overloads`'s doc) —
-            // its `return_type`/identity may not even be the one the caller
-            // meant, so it must decline exactly like a genuine >1-candidate
-            // ambiguity, never silently resolve.
-            let collapsed = graph
-                .routines
-                .binary_search_by(|probe| probe.id.cmp(rid0))
-                .ok()
-                .is_some_and(|i| graph.routines[i].abi_overload_collapsed);
-            if collapsed {
+            // `resolve_in_object` is the choke point for NAME+ARITY overload
+            // SELECTION — every dispatch path that narrows a candidate SET
+            // down to one by name+arity+visibility (bare-call Step 1/2/3,
+            // `resolve_member`'s Object/SelfObject/Interface arms) funnels
+            // through here, so placing the guard HERE closes all of them at
+            // once rather than one branch at a time. It is NOT, however, the
+            // only route-construction site in this module (corrected — the
+            // former claim that it was "the SINGLE choke point every
+            // plain-call AND qualified-member dispatch path funnels through"
+            // was factually wrong, Task 2 review fix): entry-trigger dispatch
+            // ([`resolve_object_run`], and `resolve_member`'s own inline
+            // `Codeunit.Run(arity<=1)` special case) and multicast fan-out
+            // ([`resolve_implicit_trigger`]'s trigger routes,
+            // [`emit_event_flow_edges`]'s subscriber routes) each look up a
+            // routine directly by ROLE rather than through this candidate-set
+            // selection, so each of those four sites carries its OWN
+            // [`routine_is_collapse_marked`] guard rather than inheriting
+            // this one — see that helper's doc for the full enumeration. A
+            // collapse-marked node is the arbitrary (or genuinely
+            // indistinguishable) survivor of ≥2 raw ABI entries that
+            // fingerprint-collided (see `build::dedup_routines_preserving_
+            // genuine_overloads`'s doc) — its `return_type`/identity may not
+            // even be the one the caller meant, so it must decline exactly
+            // like a genuine >1-candidate ambiguity, never silently resolve,
+            // no matter which of the five sites reached it.
+            if routine_is_collapse_marked(rid0, graph) {
                 return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
             }
             Some(make_routine_route(rid0, obj_tier, body_map, graph))
@@ -1204,6 +1236,19 @@ pub fn resolve_object_run(
         );
     };
 
+    // COLLAPSE-MARKER GUARD (Task 2 review fix): this entry-trigger lookup
+    // bypasses `resolve_in_object`'s name+arity selection entirely (it picks
+    // by ROLE — the object-level trigger — never by counting candidates), so
+    // it must consult the marker itself; see `routine_is_collapse_marked`'s
+    // doc for the full enumeration of guarded sites.
+    if routine_is_collapse_marked(entry_rid, graph) {
+        return (
+            DispatchShape::Exact,
+            SetCompleteness::Complete,
+            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+        );
+    }
+
     let route = make_routine_route(entry_rid, target_obj.tier, body_map, graph);
     (DispatchShape::Exact, SetCompleteness::Complete, vec![route])
 }
@@ -1267,8 +1312,21 @@ pub fn resolve_implicit_trigger(
 
     let mut routes: Vec<Route> = Vec::new();
 
+    // COLLAPSE-MARKER GUARD (Task 2 review fix): this trigger fan-out looks
+    // up each candidate by ROLE (fixed trigger name), never through
+    // `resolve_in_object`'s name+arity selection, so both loops below must
+    // consult the marker themselves — see `routine_is_collapse_marked`'s
+    // doc. A marked trigger declines to an honest Unknown route rather than
+    // silently vanishing from the Multicast set (which would understate its
+    // real cardinality) or resolving confidently to a possibly-wrong
+    // identity.
+
     // Triggers on the base table itself.
     for rid in index.routines_in_object(&table_object.id, trigger_name) {
+        if routine_is_collapse_marked(rid, graph) {
+            routes.push(unresolved_route(UnknownReason::OverloadAmbiguous));
+            continue;
+        }
         routes.push(make_routine_route(rid, table_object.tier, body_map, graph));
     }
 
@@ -1282,6 +1340,10 @@ pub fn resolve_implicit_trigger(
             .map(|o| o.tier)
             .unwrap_or(TrustTier::Workspace);
         for rid in index.routines_in_object(ext_id, trigger_name) {
+            if routine_is_collapse_marked(rid, graph) {
+                routes.push(unresolved_route(UnknownReason::OverloadAmbiguous));
+                continue;
+            }
             routes.push(make_routine_route(rid, ext_tier, body_map, graph));
         }
     }
@@ -1535,10 +1597,23 @@ pub fn resolve_member(
                     .find(|r| r.enclosing_member_lc.is_none())
                     .or_else(|| candidates.first());
                 return if let Some(entry_rid) = entry_rid {
-                    (
-                        DispatchShape::Exact,
-                        vec![make_routine_route(entry_rid, target_tier, body_map, graph)],
-                    )
+                    // COLLAPSE-MARKER GUARD (Task 2 review fix): mirrors
+                    // `resolve_object_run`'s own guard — this arm looks up
+                    // the entry trigger by ROLE, never through
+                    // `resolve_in_object`'s name+arity selection, so it must
+                    // consult the marker itself; see `routine_is_collapse_
+                    // marked`'s doc.
+                    if routine_is_collapse_marked(entry_rid, graph) {
+                        (
+                            DispatchShape::Exact,
+                            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+                        )
+                    } else {
+                        (
+                            DispatchShape::Exact,
+                            vec![make_routine_route(entry_rid, target_tier, body_map, graph)],
+                        )
+                    }
                 } else {
                     // OnRun not indexed — Opaque boundary (object exists, trigger absent).
                     let (obj_num, obj_name_lc) = match &target_id.key {
@@ -1883,11 +1958,17 @@ fn resolve_abi_prefix_routine<'g>(
 /// - `routes` = one `Route` per subscriber entry, carrying its dispatch
 ///   `conditions` and the subscriber's source span as `Witness::SourceSpan`.
 ///   For SymbolOnly subscribers: `RouteTarget::AbiSymbol` + `Evidence::Opaque`
-///   (mirrors [`make_routine_route`]'s SymbolOnly path).
+///   (mirrors [`make_routine_route`]'s SymbolOnly path) — EXCEPT a subscriber
+///   marked [`RoutineNode::abi_overload_collapsed`] (Task 2 review fix), whose
+///   route is SKIPPED entirely rather than emitted `Opaque` to a possibly-wrong
+///   identity; see `routine_is_collapse_marked`'s doc.
 ///
 /// A publisher with **zero** subscribers emits an edge with **empty routes** —
 /// this is an honest "published, no subscribers in snapshot" state, classified
-/// as `ObligationOutcome::HonestEmpty` by `classify_obligation`.
+/// as `ObligationOutcome::HonestEmpty` by `classify_obligation`. The SAME empty-
+/// routes shape also results when every subscriber that WOULD have matched was
+/// collapse-marked — indistinguishable from "no subscribers" at this edge's
+/// granularity, and correctly so: neither case has a trustworthy target.
 ///
 /// # Determinism
 /// Publishers are iterated in `graph.routines` order (already sorted by
@@ -1909,8 +1990,21 @@ pub fn emit_event_flow_edges(
 
         // Build one Route per subscriber (sorted by subscriber RoutineNodeId — already
         // guaranteed by ResolveIndex::build).
+        // COLLAPSE-MARKER GUARD (Task 2 review fix): this subscriber fan-out
+        // looks up each candidate by ROLE (an already-matched subscriber
+        // entry), never through `resolve_in_object`'s name+arity selection,
+        // so it must consult the marker itself — see `routine_is_collapse_
+        // marked`'s doc. Unlike the OTHER three guarded sites (which
+        // substitute an honest Unknown route in place of the marked
+        // candidate), a marked subscriber's route is SKIPPED entirely here:
+        // `SetCompleteness::Partial{ReverseDependentSubscribers}` already
+        // documents this Multicast set as open-world, so dropping one
+        // untrustworthy candidate doesn't understate a otherwise-closed
+        // cardinality the way it would in `resolve_implicit_trigger`'s
+        // fan-out.
         let routes: Vec<Route> = subs
             .iter()
+            .filter(|se| !routine_is_collapse_marked(&se.subscriber, graph))
             .map(|se| {
                 // Subscriber tier: look up from graph.routines (linear scan; subscriber
                 // lists are small in practice).
@@ -3066,6 +3160,568 @@ pageextension 52911 "ExtA" extends BasePage
             matches!(r.target, RouteTarget::AbiSymbol { .. }),
             "an UNMARKED sole ABI candidate must still resolve normally; got {r:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2 review fix: collapse-marker guard at every `make_routine_route`
+    // call site. `resolve_in_object`'s PLAIN-DISPATCH MARKER GUARD above (and
+    // `routine_node_for_type_query`'s CHAIN-type-query guard) were the only
+    // two `abi_overload_collapsed` consultation points before this fix — but
+    // FOUR other call sites look up a routine directly by ROLE (entry
+    // trigger / trigger fan-out / event subscriber) rather than through
+    // either of those name+arity selection boundaries, so a collapse-marked
+    // survivor could still reach a confident `Opaque`/`Source` route through
+    // any of them:
+    //   1. `resolve_object_run` (Codeunit.Run/Page.RunModal/Report.Run's
+    //      entry-trigger lookup).
+    //   2. `resolve_member`'s own inline `Codeunit.Run(arity<=1)` special
+    //      case (the member-call-shaped mirror of (1)).
+    //   3. `resolve_implicit_trigger`'s base-table + TableExtension trigger
+    //      fan-out (data-is-control-flow Multicast routes).
+    //   4. `emit_event_flow_edges`'s subscriber fan-out.
+    // Each pair below builds the identical marked-vs-unmarked minimal-graph
+    // shape `plain_dispatch_marker_guard_fixture` established (the marker
+    // set directly, bypassing ingestion/dedup — isolates the SELECTION
+    // guard) and proves: (f) a MARKED candidate declines at THIS specific
+    // site; (control) an UNMARKED candidate in the identical shape still
+    // resolves normally — the guard must neither miss a site nor
+    // over-decline an honest one.
+    // -----------------------------------------------------------------------
+
+    /// Shared fixture for the two entry-trigger bypass sites
+    /// (`resolve_object_run`; `resolve_member`'s inline `Codeunit.Run
+    /// (arity<=1)` arm): a SymbolOnly dep Codeunit whose SOLE `onrun` entry
+    /// trigger candidate (0-arg — `sig_fp` folds to the fixed `0` for an
+    /// empty `Parameters[]`, see `abi_ingest::param_type_fp`) carries
+    /// `abi_overload_collapsed` directly, simulating dedup's post-collapse
+    /// output for a literal duplicate raw `OnRun` JSON entry.
+    fn entry_trigger_marker_guard_fixture(
+        collapsed: bool,
+    ) -> (
+        ProgramGraph,
+        ResolveIndex,
+        BodyMap<'static>,
+        ObjectNodeId,
+        ObjectNodeId,
+    ) {
+        let ws_id = make_app_id("WS");
+        let dep_id = make_app_id("DepApp");
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let caller_obj_id = ObjectNodeId {
+            app: ws_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(50610),
+        };
+        let dep_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60150),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: caller_obj_id.clone(),
+                name: "Caller".into(),
+                declared_id: Some(50610),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+            ObjectNode {
+                id: dep_obj_id.clone(),
+                name: "Dep Trigger Collapse".into(),
+                declared_id: Some(60150),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+        ];
+
+        let routines = vec![RoutineNode {
+            id: RoutineNodeId {
+                object: dep_obj_id.clone(),
+                name_lc: "onrun".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "OnRun".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: collapsed,
+        }];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        (graph, index, body_map, caller_obj_id, dep_obj_id)
+    }
+
+    // --- Site 1: `resolve_object_run` ---------------------------------------
+
+    #[test]
+    fn object_run_declines_on_collapse_marked_entry_trigger() {
+        let (graph, index, body_map, _caller_obj_id, _dep_obj_id) =
+            entry_trigger_marker_guard_fixture(true);
+        let from = graph.apps.find_by_name("WS").expect("WS app");
+
+        let (shape, completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Codeunit,
+            Some("Dep Trigger Collapse"),
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(completeness, SetCompleteness::Complete);
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "a collapse-MARKED entry trigger must never resolve confidently via \
+             Codeunit.Run's resolve_object_run path either — this site bypasses \
+             resolve_in_object entirely (Task 2 review fix); got {r:?}"
+        );
+        assert!(
+            matches!(
+                r.evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "expected Unknown(OverloadAmbiguous); got {r:?}"
+        );
+    }
+
+    #[test]
+    fn object_run_resolves_unmarked_entry_trigger_normally() {
+        let (graph, index, body_map, _caller_obj_id, _dep_obj_id) =
+            entry_trigger_marker_guard_fixture(false);
+        let from = graph.apps.find_by_name("WS").expect("WS app");
+
+        let (_shape, _completeness, routes) = resolve_object_run(
+            from,
+            ObjectKind::Codeunit,
+            Some("Dep Trigger Collapse"),
+            true,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(r.evidence, Evidence::Opaque);
+        assert!(
+            matches!(r.target, RouteTarget::AbiSymbol { .. }),
+            "an UNMARKED sole entry trigger must still resolve normally; got {r:?}"
+        );
+    }
+
+    // --- Site 2: `resolve_member`'s inline Codeunit.Run(arity<=1) arm ------
+
+    #[test]
+    fn resolve_member_object_run_arm_declines_on_collapse_marked_entry_trigger() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, caller_obj_id, _dep_obj_id) =
+            entry_trigger_marker_guard_fixture(true);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("Caller must exist");
+
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "dep trigger collapse".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "a collapse-MARKED entry trigger must never resolve confidently via \
+             resolve_member's inline Codeunit.Run(arity<=1) arm either — this \
+             site bypasses resolve_in_object entirely (Task 2 review fix); \
+             got {r:?}"
+        );
+        assert!(
+            matches!(
+                r.evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "expected Unknown(OverloadAmbiguous); got {r:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_member_object_run_arm_resolves_unmarked_entry_trigger_normally() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, caller_obj_id, _dep_obj_id) =
+            entry_trigger_marker_guard_fixture(false);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("Caller must exist");
+
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "dep trigger collapse".into(),
+            id: None,
+        };
+        let (_shape, routes) =
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(r.evidence, Evidence::Opaque);
+        assert!(
+            matches!(r.target, RouteTarget::AbiSymbol { .. }),
+            "an UNMARKED sole entry trigger must still resolve normally; got {r:?}"
+        );
+    }
+
+    // --- Site 3: `resolve_implicit_trigger` ---------------------------------
+
+    /// Fixture for the trigger-fan-out bypass site (`resolve_implicit_
+    /// trigger`): a SymbolOnly dep Table whose SOLE `oninsert` object-level
+    /// trigger candidate carries `abi_overload_collapsed` directly.
+    fn implicit_trigger_marker_guard_fixture(
+        collapsed: bool,
+    ) -> (ProgramGraph, ResolveIndex, BodyMap<'static>, ObjectNodeId) {
+        let dep_id = make_app_id("DepApp");
+        let mut apps = AppRegistry::default();
+        let dep_ref = apps.intern(&dep_id);
+
+        let table_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Table,
+            key: ObjKey::Id(60160),
+        };
+
+        let objects = vec![ObjectNode {
+            id: table_obj_id.clone(),
+            name: "Dep Trigger Table".into(),
+            declared_id: Some(60160),
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::SymbolOnly,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
+        }];
+
+        let routines = vec![RoutineNode {
+            id: RoutineNodeId {
+                object: table_obj_id.clone(),
+                name_lc: "oninsert".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "OnInsert".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: collapsed,
+        }];
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        (graph, index, body_map, table_obj_id)
+    }
+
+    #[test]
+    fn implicit_trigger_declines_route_for_collapse_marked_trigger() {
+        let (graph, index, body_map, table_obj_id) = implicit_trigger_marker_guard_fixture(true);
+        let table_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == table_obj_id)
+            .expect("table");
+
+        let (shape, completeness, routes) =
+            resolve_implicit_trigger("insert", table_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Multicast);
+        assert_eq!(
+            completeness,
+            SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentExtensions
+            }
+        );
+        assert_eq!(
+            routes.len(),
+            1,
+            "a marked trigger must still contribute ONE honest Unknown route, \
+             never silently vanish; got {routes:?}"
+        );
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "a collapse-MARKED table trigger must never resolve confidently via \
+             resolve_implicit_trigger's fan-out either — this site bypasses \
+             resolve_in_object entirely (Task 2 review fix); got {r:?}"
+        );
+        assert!(
+            matches!(
+                r.evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "expected Unknown(OverloadAmbiguous); got {r:?}"
+        );
+    }
+
+    #[test]
+    fn implicit_trigger_resolves_unmarked_trigger_normally() {
+        let (graph, index, body_map, table_obj_id) = implicit_trigger_marker_guard_fixture(false);
+        let table_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == table_obj_id)
+            .expect("table");
+
+        let (_shape, _completeness, routes) =
+            resolve_implicit_trigger("insert", table_obj, &graph, &index, &body_map);
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(r.evidence, Evidence::Opaque);
+        assert!(
+            matches!(r.target, RouteTarget::AbiSymbol { .. }),
+            "an UNMARKED trigger must still resolve normally; got {r:?}"
+        );
+    }
+
+    // --- Site 4: `emit_event_flow_edges` ------------------------------------
+
+    /// Fixture for the event-subscriber-fan-out bypass site
+    /// (`emit_event_flow_edges`): a SymbolOnly dep publisher/subscriber pair
+    /// where the SOLE matching subscriber candidate carries `abi_overload_
+    /// collapsed` directly.
+    fn event_flow_marker_guard_fixture(
+        collapsed: bool,
+    ) -> (ProgramGraph, ResolveIndex, BodyMap<'static>) {
+        let dep_id = make_app_id("DepApp");
+        let mut apps = AppRegistry::default();
+        let dep_ref = apps.intern(&dep_id);
+
+        let pub_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60170),
+        };
+        let sub_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60171),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: pub_obj_id.clone(),
+                name: "Dep Evt Pub".into(),
+                declared_id: Some(60170),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+            ObjectNode {
+                id: sub_obj_id.clone(),
+                name: "Dep Evt Sub".into(),
+                declared_id: Some(60171),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+        ];
+
+        let publisher = RoutineNode {
+            id: RoutineNodeId {
+                object: pub_obj_id.clone(),
+                name_lc: "onafterx".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "OnAfterX".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: Some(crate::program::resolve::event::PublisherKind::Integration),
+            include_sender: Some(false),
+            abi_routine_kind: Some(AbiRoutineKind::EventPublisher),
+            abi_event_kind: Some(AbiEventKind::Integration),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+        };
+
+        let subscriber = RoutineNode {
+            id: RoutineNodeId {
+                object: sub_obj_id.clone(),
+                name_lc: "onafterxhandler".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "OnAfterXHandler".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![crate::program::resolve::event::ParsedSubscriberArgs {
+                publisher_object_type: "codeunit".into(),
+                publisher_name: "dep evt pub".into(),
+                event_name: "onafterx".into(),
+                element: None,
+                skip_on_missing_license: false,
+                skip_on_missing_permission: false,
+            }],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::EventSubscriber),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: collapsed,
+        };
+
+        let mut routines = vec![publisher, subscriber];
+        routines.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        (graph, index, body_map)
+    }
+
+    #[test]
+    fn event_flow_skips_route_for_collapse_marked_subscriber() {
+        let (graph, index, body_map) = event_flow_marker_guard_fixture(true);
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let event_edges: Vec<&Edge> = edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::EventFlow)
+            .collect();
+        assert_eq!(
+            event_edges.len(),
+            1,
+            "publisher must always produce an EventFlow edge"
+        );
+        let e = event_edges[0];
+        assert!(
+            e.routes.is_empty(),
+            "a collapse-MARKED subscriber must never resolve confidently via \
+             emit_event_flow_edges's subscriber fan-out either — this site \
+             bypasses resolve_in_object entirely (Task 2 review fix): the \
+             marked subscriber's route must be SKIPPED, not silently emitted \
+             Opaque; got {:?}",
+            e.routes
+        );
+    }
+
+    #[test]
+    fn event_flow_includes_route_for_unmarked_subscriber_normally() {
+        let (graph, index, body_map) = event_flow_marker_guard_fixture(false);
+        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let event_edges: Vec<&Edge> = edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::EventFlow)
+            .collect();
+        assert_eq!(event_edges.len(), 1);
+        let e = event_edges[0];
+        assert_eq!(
+            e.routes.len(),
+            1,
+            "an UNMARKED subscriber must still be included normally"
+        );
+        let r = &e.routes[0];
+        assert_eq!(r.evidence, Evidence::Opaque);
+        assert!(matches!(r.target, RouteTarget::AbiSymbol { .. }));
     }
 
     // -----------------------------------------------------------------------
