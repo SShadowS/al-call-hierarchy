@@ -65,7 +65,27 @@ pub struct AbiRoutine {
     /// zero. Consumers (`abi_ingest`) must never treat an unknown arity as a
     /// concrete `0` — see `abi_ingest::UNKNOWN_ARITY`.
     pub parameters_known: bool,
+    /// Reconstructed SOURCE-SHAPED return-type text (Task 2) — see
+    /// [`reconstruct_return_type_text`] for the full fail-closed rule set.
+    /// `None` covers both "no return type declared" AND "a return type was
+    /// declared but could not be safely reconstructed" (Id-only Subtype, a
+    /// Subtype Name containing a quote character) — this field alone cannot
+    /// distinguish the two; that distinction does not matter to any consumer
+    /// (both mean "do not treat this as a known scalar type").
     pub return_type_text: Option<String>,
+    /// The raw `(name, id)` pair from the return type's `Subtype`, present
+    /// ONLY when BOTH `Subtype.Name` and `Subtype.Id` were declared in the
+    /// source JSON (Task 2 enabling primitive for Task 3's cross-object chain
+    /// cross-validation: when a return type's declared Subtype carries both a
+    /// Name and an Id, the object the Name resolves to must ALSO carry that
+    /// declared Id, or the candidate route declines — name-or-id alone is not
+    /// proof of object identity, round-1 C4). Deliberately INDEPENDENT of
+    /// `return_type_text`'s fail-closed TEXT reconstruction rules: a Subtype
+    /// Name containing a `"` still yields `return_type_text == None` (never
+    /// synthesize unescaped text), but the raw identity pair is still carried
+    /// here — cross-validation is a structured `==` comparison, never a
+    /// text-synthesis operation, so the quote landmine does not apply to it.
+    pub return_type_id: Option<(String, i64)>,
     pub is_local: bool,
     pub is_internal: bool,
     /// `protected` visibility modifier (`"IsProtected":true` in
@@ -161,6 +181,22 @@ struct RawAttr {
     arguments: Option<Vec<RawArg>>,
 }
 
+/// The nested `Subtype` object `SymbolReference.json` attaches to a
+/// `TypeDefinition` for a database/framework type (e.g.
+/// `{"Name":"Codeunit","Subtype":{"Name":"Http Content","Id":2354}}`) —
+/// carries the AL object's declared name and/or numeric id (Task 2). Either
+/// field may be absent independently: a real dependency ABI can declare only
+/// a `Name` (id genuinely unknown to the compiler at symbol-export time) or
+/// only an `Id` (name unavailable) — see [`reconstruct_return_type_text`] for
+/// how each combination is handled fail-closed.
+#[derive(Debug, Clone, Deserialize, Default)]
+struct RawSubtype {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "Id")]
+    id: Option<i64>,
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 struct RawTypeDef {
     #[serde(rename = "Name")]
@@ -170,6 +206,11 @@ struct RawTypeDef {
     /// by later tasks (Task 6).
     #[serde(rename = "Temporary")]
     temporary: Option<bool>,
+    /// The nested database/framework subtype (Task 2) — see [`RawSubtype`].
+    /// `None` for a scalar/bare type (`Integer`, `HttpHeaders`) that carries
+    /// no nested object identity.
+    #[serde(rename = "Subtype")]
+    subtype: Option<RawSubtype>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -545,6 +586,55 @@ fn abi_attribute_info(a: &RawAttr) -> AttributeInfo {
     AttributeInfo { name, args, raw }
 }
 
+/// Reconstruct AL SOURCE-SHAPED return-type text from a parsed `RawTypeDef`
+/// (Task 2) — fail-closed per the task's round-1/round-2 landmines. Declining
+/// to `None` is always preferred over synthesizing a plausible-looking but
+/// possibly-wrong type reference; this function NEVER escapes, truncates, or
+/// approximates.
+///
+/// - No `Name` at all → `None` (nothing to reconstruct).
+/// - `Name` present, no `Subtype` → the bare `Name` text UNCHANGED (e.g.
+///   `HttpHeaders`, or a generic/container shape like `List of [Codeunit
+///   "X"]` — passed through as-is; a downstream scalar-typed consumer
+///   declines a non-scalar shape itself, this function never approximates a
+///   container into a scalar).
+/// - `Subtype.Name` present and quote-free → `"{Name} \"{Subtype.Name}\""`
+///   (source-shaped, quoted — e.g. `Codeunit "Http Content"`). A
+///   namespace/dot-qualified `Subtype.Name` is carried verbatim, never
+///   truncated.
+/// - `Subtype.Name` present but CONTAINS a `"` → `None`. Re-quoting a name
+///   that already carries a quote character would require escaping, and this
+///   function must never synthesize escaped text a downstream text
+///   classifier could misparse (round-1 M2 / round-2 gemini landmine) —
+///   decline rather than guess at an escaping convention.
+/// - `Subtype.Id` present but NO `Subtype.Name` → `None`. AL object ids are
+///   NOT cross-app unique — a bare numeric reconstruction could resolve to
+///   the WRONG app's object. Never synthesize a numeric type reference
+///   (round-1 critical).
+/// - `Subtype` present but carries neither `Name` nor `Id` → `None`
+///   (defensive; nothing usable to reconstruct).
+fn reconstruct_return_type_text(t: &RawTypeDef) -> Option<String> {
+    let outer_name = t.name.as_deref()?;
+    match &t.subtype {
+        None => Some(outer_name.to_string()),
+        Some(sub) => match &sub.name {
+            Some(sub_name) if !sub_name.contains('"') => {
+                Some(format!("{outer_name} \"{sub_name}\""))
+            }
+            _ => None,
+        },
+    }
+}
+
+/// Extract the raw `(name, id)` cross-validation pair from a `RawTypeDef`'s
+/// `Subtype` — `Some` ONLY when both fields are present (Task 2; see
+/// [`AbiRoutine::return_type_id`]'s doc for why this is independent of
+/// [`reconstruct_return_type_text`]'s fail-closed TEXT rules).
+fn return_type_subtype_id(t: &RawTypeDef) -> Option<(String, i64)> {
+    let sub = t.subtype.as_ref()?;
+    Some((sub.name.clone()?, sub.id?))
+}
+
 /// Classify a method as a routine, deriving event-publisher kind from attributes.
 /// Mirrors `parseMethod`.
 fn parse_method(m: &RawMethod) -> AbiRoutine {
@@ -606,7 +696,11 @@ fn parse_method(m: &RawMethod) -> AbiRoutine {
         return_type_text: m
             .return_type_definition
             .as_ref()
-            .and_then(|t| t.name.clone()),
+            .and_then(reconstruct_return_type_text),
+        return_type_id: m
+            .return_type_definition
+            .as_ref()
+            .and_then(return_type_subtype_id),
         is_local: m.is_local == Some(true),
         is_internal: m.is_internal == Some(true),
         is_protected: m.is_protected == Some(true),
@@ -1042,5 +1136,166 @@ mod tests {
             "the parameters Vec is still empty for display purposes, but \
              parameters_known=false is what callers must gate on"
         );
+    }
+
+    // -- Task 2: structured ABI return types (`Subtype`) ---------------------
+    //
+    // `reconstruct_return_type_text` / `return_type_subtype_id` — source-shaped
+    // reconstruction, fail-closed per the task brief's round-1/round-2
+    // landmines. Every case below drives the FULL `parse_method` path from raw
+    // JSON (never calls the private helpers directly), matching the style of
+    // `parse_method_reads_is_protected` above.
+
+    // (a) Name + Subtype{Name, Id} both present → quoted source-shaped text,
+    // AND the structured (name, id) pair is retained for downstream
+    // cross-validation.
+    #[test]
+    fn parse_method_return_type_subtype_reconstructs_quoted_source_shape() {
+        let json = r##"{
+            "Name":"GetHttpContent",
+            "ReturnTypeDefinition":{"Name":"Codeunit","Subtype":{"Name":"Http Content","Id":2354}}
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(
+            m.return_type_text.as_deref(),
+            Some("Codeunit \"Http Content\""),
+            "Name-preferred quoted source shape"
+        );
+        assert_eq!(
+            m.return_type_id,
+            Some(("Http Content".to_string(), 2354)),
+            "the structured (name, id) pair must be retained for Task 3's \
+             cross-object chain cross-validation"
+        );
+    }
+
+    // (b) bare Name, no Subtype at all → unchanged pass-through.
+    #[test]
+    fn parse_method_return_type_bare_name_passthrough() {
+        let json = r##"{"Name":"Foo","ReturnTypeDefinition":{"Name":"HttpHeaders"}}"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(m.return_type_text.as_deref(), Some("HttpHeaders"));
+        assert_eq!(
+            m.return_type_id, None,
+            "no Subtype at all means no (name, id) pair to carry"
+        );
+    }
+
+    // (c) Subtype carries an Id but NO Name → DECLINE to `None`. AL object ids
+    // are NOT cross-app unique; a bare numeric reconstruction could resolve to
+    // the WRONG app's object (round-1 critical — fail closed, never
+    // synthesize).
+    #[test]
+    fn parse_method_return_type_id_only_declines() {
+        let json = r##"{
+            "Name":"Foo",
+            "ReturnTypeDefinition":{"Name":"Codeunit","Subtype":{"Id":2354}}
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(
+            m.return_type_text, None,
+            "Id-only Subtype must decline the WHOLE reconstruction, not fall \
+             back to the bare outer Name"
+        );
+        assert_eq!(
+            m.return_type_id, None,
+            "no Name means no valid (name, id) pair — a lone id is not proof \
+             of identity"
+        );
+    }
+
+    // (f) FORMAT LANDMINE: Subtype.Name contains a quote character → the TEXT
+    // reconstruction must strictly decline (never escape — downstream text
+    // classification must never see synthesized escaping), but the raw
+    // (name, id) identity pair is STILL carried: cross-validation is a
+    // structured `==` comparison, never text synthesis, so the quote landmine
+    // does not apply to it.
+    #[test]
+    fn parse_method_return_type_subtype_name_with_quote_declines_text_only() {
+        let json = r##"{
+            "Name":"Foo",
+            "ReturnTypeDefinition":{"Name":"Codeunit","Subtype":{"Name":"Weird\"Name","Id":1}}
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(
+            m.return_type_text, None,
+            "a Subtype Name containing a quote must never be synthesized/escaped \
+             into source-shaped text"
+        );
+        assert_eq!(
+            m.return_type_id,
+            Some(("Weird\"Name".to_string(), 1)),
+            "the raw identity pair is independent of the TEXT landmine — it is \
+             never used to synthesize text"
+        );
+    }
+
+    // (f) FORMAT LANDMINE: a namespace/dot-qualified Subtype.Name must be
+    // carried verbatim — never truncated.
+    #[test]
+    fn parse_method_return_type_namespace_qualified_subtype_name_not_truncated() {
+        let json = r##"{
+            "Name":"Foo",
+            "ReturnTypeDefinition":{"Name":"Codeunit","Subtype":{"Name":"My.Namespace.Http Content","Id":9}}
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(
+            m.return_type_text.as_deref(),
+            Some("Codeunit \"My.Namespace.Http Content\""),
+            "a dot-qualified name must be carried verbatim, never truncated at \
+             the first `.`"
+        );
+        assert_eq!(
+            m.return_type_id,
+            Some(("My.Namespace.Http Content".to_string(), 9))
+        );
+    }
+
+    // (f) FORMAT LANDMINE: a generic/container return (`List of [...]`, no
+    // Subtype) passes through as-is — never approximated into a scalar.
+    #[test]
+    fn parse_method_return_type_generic_container_passthrough() {
+        let json = r##"{
+            "Name":"Foo",
+            "ReturnTypeDefinition":{"Name":"List of [Codeunit \"Http Content\"]"}
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(
+            m.return_type_text.as_deref(),
+            Some("List of [Codeunit \"Http Content\"]"),
+            "a generic/container return with no Subtype passes through as-is — \
+             scalar-declined downstream, never approximated here"
+        );
+        assert_eq!(m.return_type_id, None);
+    }
+
+    // Defensive: a Subtype object present but carrying NEITHER Name nor Id →
+    // decline (nothing usable to reconstruct or cross-validate).
+    #[test]
+    fn parse_method_return_type_empty_subtype_declines() {
+        let json = r##"{
+            "Name":"Foo",
+            "ReturnTypeDefinition":{"Name":"Codeunit","Subtype":{}}
+        }"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(m.return_type_text, None);
+        assert_eq!(m.return_type_id, None);
+    }
+
+    // No ReturnTypeDefinition at all → both fields `None` (control).
+    #[test]
+    fn parse_method_no_return_type_definition_yields_none() {
+        let json = r##"{"Name":"Foo"}"##;
+        let raw: RawMethod = serde_json::from_str(json).unwrap();
+        let m = parse_method(&raw);
+        assert_eq!(m.return_type_text, None);
+        assert_eq!(m.return_type_id, None);
     }
 }

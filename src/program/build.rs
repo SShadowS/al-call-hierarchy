@@ -266,6 +266,7 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
                 abi_event_kind: None,
                 param_sig_key: String::new(),
                 return_type: None,
+                return_type_id: None,
             });
         }
     }

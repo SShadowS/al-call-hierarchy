@@ -57,6 +57,7 @@ fn routine_from_sig_row(row: &Value) -> AbiRoutine {
         event_kind: AbiEventKind::Unknown,
         parameters: params,
         return_type_text,
+        return_type_id: None,
         is_local: false,
         is_internal: false,
         is_protected: false,

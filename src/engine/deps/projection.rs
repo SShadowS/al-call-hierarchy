@@ -380,6 +380,7 @@ mod tests {
             event_kind: AbiEventKind::Unknown,
             parameters: params,
             return_type_text: ret.map(|s| s.to_string()),
+            return_type_id: None,
             is_local: false,
             is_internal: false,
             is_protected: false,

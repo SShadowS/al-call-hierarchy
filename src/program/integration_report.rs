@@ -355,6 +355,7 @@ mod tests {
             abi_event_kind: None,
             param_sig_key: String::new(),
             return_type: None,
+            return_type_id: None,
         }
     }
 

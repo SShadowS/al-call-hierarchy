@@ -330,21 +330,28 @@ fn resolve_in_object(
 ///   (`from_object` is a DIRECT, kind-compatible extension of the
 ///   candidate's declaring object).
 /// - Lookup miss (`None`) → fails closed (excluded), never assumed visible.
+///
+/// A pure DELEGATE to [`object_access_visible_from`] (Task 2 fold-in, review
+/// finding from Task 1): the two functions applied the IDENTICAL per-`Access`
+/// rule as two independently-maintained copies — this one keyed by
+/// `RoutineNodeId`, that one by `ObjectNodeId` + an already-looked-up
+/// `Access`. Two copies of the same rule is exactly the kind of latent drift
+/// vector this plan closes elsewhere (see [`object_access_visible_from`]'s
+/// own doc) — collapsing to one predicate means a future rule change can
+/// never update one copy and silently miss the other.
 fn routine_candidate_is_visible(
     rid: &RoutineNodeId,
     from_object: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> bool {
-    match lookup_routine_access(graph, rid) {
-        Some(Access::Public) => true,
-        Some(Access::Local) => rid.object == *from_object,
-        Some(Access::Internal) => internal_visible_across(rid.object.app, from_object.app, graph),
-        Some(Access::Protected) => {
-            rid.object == *from_object || index.object_extends(graph, from_object, &rid.object)
-        }
-        None => false,
-    }
+    object_access_visible_from(
+        &rid.object,
+        lookup_routine_access(graph, rid),
+        from_object,
+        graph,
+        index,
+    )
 }
 
 /// Whether `caller_app` may see `exposing_app`'s `internal` members —
@@ -421,6 +428,10 @@ fn lookup_routine_access(graph: &ProgramGraph, rid: &RoutineNodeId) -> Option<Ac
 /// member_candidate`]'s source/ABI arity-filtered scan and its SymbolOnly
 /// NAME-ONLY scan share EXACTLY one rule — two independent copies could
 /// silently drift and reopen the exact soundness gap this function closes.
+/// [`routine_candidate_is_visible`] (the PER-CANDIDATE selection rule
+/// `resolve_in_object` uses) DELEGATES to this same predicate too (Task 2
+/// fold-in) — every per-candidate/per-object visibility check in this module
+/// now traces back to this ONE function.
 ///
 /// RESOLVED OBJECT IDENTITY, never a lowercased-name comparison — every
 /// branch compares [`ObjectNodeId`]s or [`AppRef`]s, both derived from
@@ -2524,6 +2535,172 @@ pageextension 52911 "ExtA" extends BasePage
             routes[0].target
         );
         assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2 fold-in (cross-object-chains-and-protected-abi plan v2.1): the
+    // genuine boundary fixture Task 1's fixture (g) missed.
+    //
+    // Task 1's (g)/(i) (`ws_protected_abi_wrong_arity_single_overload_no_emit`
+    // in `tests/program_resolve_harness.rs`) proved "existence ≠ emission" for
+    // a wrong-arity SymbolOnly candidate, but it drove the call through an
+    // OBJECT-receiver dispatch (`resolve_member`'s Object arm →
+    // `resolve_in_object` directly) — a path that never consults
+    // `object_has_visible_member_candidate`'s existence boolean at all. Task
+    // 1's OWN "caller audit" section identified the boolean's REAL callers as
+    // exactly two: `resolve_bare` Step 2 (the extension-base gate below) and
+    // `resolve_in_table_scope`'s cardinality filter. Neither was exercised by
+    // (g). This fixture closes that gap: a SymbolOnly base object exposes a
+    // SINGLE same-name candidate at the WRONG arity. `object_has_member_
+    // candidate`'s SymbolOnly branch is deliberately arity-DEFERRED (an
+    // `.any()` name-only scan — existence only), so Step 2's gate reports
+    // "exists" and proceeds to call `resolve_in_object`; that function's own
+    // arity-exact selection must then be the one and only place that decides,
+    // correctly declining rather than leaking the existence boolean's
+    // arity-blindness into a false emission.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn bare_extension_base_symbolonly_wrong_arity_existence_never_leaks_into_emission() {
+        // App WS: ReportExtension 50100 "MyRptExt" extends Report "BaseRpt" (a
+        // SymbolOnly dep object in App Dep, declaring the ONLY overload of
+        // "DoFoo" at arity 0). App WS depends on App Dep.
+        let ws_id = make_app_id("WS");
+        let dep_id = make_app_id("DepApp");
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let ext_obj_id = ObjectNodeId {
+            app: ws_ref,
+            kind: ObjectKind::ReportExtension,
+            key: ObjKey::Id(50100),
+        };
+        let base_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Report,
+            key: ObjKey::Id(60000),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: ext_obj_id.clone(),
+                name: "MyRptExt".into(),
+                declared_id: Some(50100),
+                extends_target: Some("BaseRpt".into()),
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+            ObjectNode {
+                id: base_obj_id.clone(),
+                name: "BaseRpt".into(),
+                declared_id: Some(60000),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+            },
+        ];
+
+        // The ONLY "DoFoo" overload on the SymbolOnly base is arity 0 (public).
+        let routines = vec![RoutineNode {
+            id: RoutineNodeId {
+                object: base_obj_id.clone(),
+                name_lc: "dofoo".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "DoFoo".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+        }];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == ext_obj_id)
+            .expect("MyRptExt must exist");
+
+        // Sanity: the arity-DEFERRED existence scan reports "exists" even
+        // though the sole candidate is arity 0 and we are about to probe
+        // arity 2 — proving the leak vector this test guards against is real
+        // at the boolean layer, not merely hypothetical.
+        assert!(
+            object_has_visible_member_candidate(
+                &base_obj_id,
+                TrustTier::SymbolOnly,
+                "dofoo",
+                2,
+                &from_obj.id,
+                &graph,
+                &index,
+            ),
+            "SymbolOnly existence scan is deliberately arity-deferred — it must \
+             report 'exists' regardless of the requested arity"
+        );
+
+        // The REAL resolution call (Step 2 of resolve_bare) must NOT emit a
+        // route to the wrong-arity candidate despite that existence signal.
+        let routes = resolve_bare(
+            from_obj,
+            "dofoo",
+            2,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(
+            r.target,
+            RouteTarget::Unresolved,
+            "existence-only must never leak into a false emission at the wrong \
+             arity; got {r:?}"
+        );
+        assert!(
+            matches!(
+                r.evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "name found, no arity-matched overload → Unknown(OverloadAmbiguous); \
+             got {r:?}"
+        );
+        assert_eq!(r.witness, Witness::None);
     }
 
     // -----------------------------------------------------------------------
@@ -6446,6 +6623,7 @@ codeunit 50000 "Caller"
             abi_event_kind: Some(AbiEventKind::Integration),
             param_sig_key: String::new(),
             return_type: None,
+            return_type_id: None,
         });
 
         // Regular procedure: abi_routine_kind=Procedure, abi_event_kind=None.
@@ -6468,6 +6646,7 @@ codeunit 50000 "Caller"
             abi_event_kind: Some(AbiEventKind::None),
             param_sig_key: String::new(),
             return_type: None,
+            return_type_id: None,
         });
 
         objects.sort_by(|a, b| a.id.cmp(&b.id));

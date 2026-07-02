@@ -121,14 +121,25 @@ pub struct RoutineNode {
     /// those already carry a non-zero `sig_fp` in their `RoutineNodeId` when
     /// signatures differ, so same-id runs there are already true duplicates.
     pub param_sig_key: String,
-    /// Declared return-type text, verbatim (e.g. `"Codeunit X"`), for a SOURCE
-    /// routine — copied from `RoutineDecl.return_type` (Task 2 enabling
-    /// primitive). `None` for a procedure/trigger with no return type AND for
-    /// every ABI/SymbolOnly routine (dependency return types are a deferred
-    /// concern — `abi_ingest.rs` discards `AbiRoutine.return_type_text`).
-    /// Not yet consumed by any resolver; additive plumbing for a future
-    /// compound-receiver Phase-A step (`Func().Method()`).
+    /// Declared return-type text, verbatim (e.g. `"Codeunit X"`) for a SOURCE
+    /// routine (copied from `RoutineDecl.return_type`), or the reconstructed
+    /// SOURCE-SHAPED text for an ABI/SymbolOnly routine (Task 2 — see
+    /// `abi_ingest::ingest_abi` and
+    /// `crate::engine::deps::symbol_reference::reconstruct_return_type_text`).
+    /// `None` for a procedure/trigger with no return type, or when an ABI
+    /// return type could not be safely reconstructed (fail-closed — see that
+    /// function's doc). Not yet consumed by any resolver; additive plumbing
+    /// for a future compound-receiver Phase-A step (`Func().Method()`).
     pub return_type: Option<String>,
+    /// The structured `(name, id)` cross-validation pair from an ABI return
+    /// type's `Subtype` (Task 2), present only when the underlying
+    /// `AbiRoutine::return_type_id` carried both fields. Always `None` for a
+    /// SOURCE routine (no equivalent raw JSON identity to carry). Reachable
+    /// via the SAME `RoutineNodeId` lookup (`graph.routines.binary_search_by`)
+    /// regardless of which `RouteTarget` shape a consumer resolves through —
+    /// see `AbiRoutine::return_type_id`'s doc for the full cross-validation
+    /// rationale (Task 3 consumes this; Task 2 only carries it).
+    pub return_type_id: Option<(String, i64)>,
 }
 
 /// Lowercased, `|`-joined parameter TYPE-TEXT sequence for a SOURCE routine's
@@ -317,6 +328,7 @@ pub fn extract_nodes(
                 abi_event_kind: None,
                 param_sig_key: param_sig_key(&r.params),
                 return_type: r.return_type.clone(),
+                return_type_id: None,
             });
         }
     }

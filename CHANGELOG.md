@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Structured ABI return types: `Subtype` is now parsed from `SymbolReference.json` and
+  reconstructed into source-shaped `RoutineNode.return_type` text — resolution-neutral
+  enabling plumbing for Task 3's cross-object call-result chains (cross-object chains +
+  protected-ABI plan v2.1, Task 2).** `src/engine/deps/symbol_reference.rs`: `RawTypeDef`
+  gains a nested `subtype: Option<RawSubtype { name, id }>` (serde-renamed to the JSON keys
+  `Subtype`/`Name`/`Id`); a new `reconstruct_return_type_text` fail-closed rule set turns
+  `{"Name":"Codeunit","Subtype":{"Name":"Http Content","Id":2354}}` into the quoted
+  source-shaped `Codeunit "Http Content"` (Name-preferred), a bare `{"Name":"HttpHeaders"}`
+  (no `Subtype`) passes through unchanged, and — critically — an **Id-only Subtype (no
+  Name) declines to `None`**: AL object ids are not cross-app unique, so a bare numeric
+  reconstruction could resolve to the wrong app's object. A `Subtype.Name` containing a `"`
+  also declines to `None` (never escaped/synthesized — a downstream text classifier must
+  never see manufactured escaping), and a namespace/dot-qualified name or a generic/
+  container return (`List of [...]`) is always carried verbatim or declined, never
+  truncated or approximated. `AbiRoutine`/`RoutineNode` additionally carry the raw
+  `(name, id)` pair (`return_type_id`) whenever BOTH are present in the JSON — independent
+  of the text landmines above (it is a structured identity comparison, never text
+  synthesis) — so Task 3 can cross-validate: when a return type's Subtype declares both a
+  Name and an Id, the object the Name resolves to must ALSO carry that Id before a
+  cross-object chain hop trusts it. `src/program/abi_ingest.rs`: `RoutineNode.return_type`/
+  `return_type_id` are now populated from this reconstruction (replacing the prior
+  deliberate `None` hard-set); `RoutineNode.return_type` stays non-serialized. **Nothing
+  consumes `RoutineNode.return_type` for an ABI-tier routine yet (Task 3 does)** — CDO's
+  self-reported metric stays BYTE-IDENTICAL (1.82% / `unknown=329`, `genuine_wrong=0`).
+  Fold-in from Task 1's review: `routine_candidate_is_visible` now DELEGATES to
+  `object_access_visible_from` instead of duplicating its per-`Access` rule (one predicate,
+  no drift vector), and a new fixture
+  (`bare_extension_base_symbolonly_wrong_arity_existence_never_leaks_into_emission`) proves
+  the SymbolOnly existence boolean's arity-deferred `true` never leaks into a false emission
+  when the ONLY caller of that boolean (`resolve_bare` Step 2 / `resolve_in_table_scope`)
+  hands off to `resolve_in_object`'s own arity-exact selection — the genuine boundary case
+  Task 1's fixture (g) exercised via a different (Object-receiver) dispatch path and missed.
+  **Known follow-up (out of scope for this task):** `abi_ingest::param_type_fp` (parameter
+  signature fingerprinting) still hashes only the bare `TypeDefinition.Name`, not a
+  `Subtype`-reconstructed shape — a sibling gap to the return-type reconstruction here,
+  left for whenever parameter-type ABI fidelity is prioritized.
+
 ### Fixed
 - **Protected-ABI soundness: `IsProtected` is now parsed from `SymbolReference.json`,
   carried as `Access::Protected` (not dropped, not hardcoded `Public`), and the three

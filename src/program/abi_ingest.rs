@@ -324,11 +324,18 @@ pub fn ingest_abi(
                 // signatures differ (see `param_type_fp` above), so a same-id
                 // run here is already a true duplicate — no content key needed.
                 param_sig_key: String::new(),
-                // ABI return types are a deferred concern (Task 2 scope is the
-                // source `extract_nodes` path only): `routine.return_type_text`
-                // is deliberately NOT projected here, mirroring the existing
-                // SourceTable/TableNo/page-control gap noted above.
-                return_type: None,
+                // Task 2: the reconstructed SOURCE-SHAPED return-type text
+                // (see `symbol_reference::reconstruct_return_type_text`'s
+                // fail-closed rules) now flows through instead of being
+                // hard-discarded — resolution-neutral until Task 3 adds a
+                // consumer (nothing reads `RoutineNode.return_type` for an
+                // ABI-tier routine yet).
+                return_type: routine.return_type_text.clone(),
+                // The structured `(name, id)` cross-validation pair, carried
+                // alongside the text so Task 3 can reach it via the SAME
+                // `RoutineNodeId` lookup regardless of route shape (`AbiSymbol`
+                // or `Routine(rid)`) — see `AbiRoutine::return_type_id`'s doc.
+                return_type_id: routine.return_type_id.clone(),
             });
         }
     }
@@ -399,6 +406,7 @@ mod tests {
                             },
                         ],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -417,6 +425,7 @@ mod tests {
                             is_temporary: false,
                         }],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -435,6 +444,7 @@ mod tests {
                             is_temporary: false,
                         }],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -453,6 +463,7 @@ mod tests {
                             is_temporary: false,
                         }],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -622,6 +633,7 @@ mod tests {
                         event_kind: SrAbiEventKind::Unknown,
                         parameters: vec![],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -635,6 +647,7 @@ mod tests {
                         event_kind: SrAbiEventKind::Unknown,
                         parameters: vec![],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: true,
                         is_internal: false,
                         is_protected: false,
@@ -648,6 +661,7 @@ mod tests {
                         event_kind: SrAbiEventKind::Unknown,
                         parameters: vec![],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: true,
                         is_protected: false,
@@ -664,6 +678,7 @@ mod tests {
                         event_kind: SrAbiEventKind::Unknown,
                         parameters: vec![],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: true,
@@ -755,6 +770,7 @@ mod tests {
                         event_kind: SrAbiEventKind::Unknown,
                         parameters: vec![],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -768,6 +784,7 @@ mod tests {
                         event_kind: SrAbiEventKind::Unknown,
                         parameters: vec![],
                         return_type_text: None,
+                        return_type_id: None,
                         is_local: false,
                         is_internal: false,
                         is_protected: false,
@@ -826,12 +843,17 @@ mod tests {
         );
     }
 
-    /// Task 2 invariant (b, ABI half): an ABI routine's `RoutineNode.return_type`
-    /// stays `None` even when the underlying `AbiRoutine.return_type_text` IS
-    /// populated — proving the discard is a deliberate, deferred scope
-    /// decision (Task 2 is source-`extract_nodes`-only), not an oversight.
+    /// Task 2 invariant (b, ABI half — FLIPPED from the pre-Task-2 discard):
+    /// an ABI routine's `RoutineNode.return_type` is now POPULATED from the
+    /// underlying `AbiRoutine.return_type_text` (the source-shaped
+    /// reconstruction — see `symbol_reference::reconstruct_return_type_text`)
+    /// instead of being hard-dropped to `None`. The structured `(name, id)`
+    /// cross-validation pair (`AbiRoutine::return_type_id`) is threaded onto
+    /// `RoutineNode.return_type_id` alongside it, reachable via the same
+    /// `RoutineNodeId` lookup regardless of which `RouteTarget` shape a
+    /// consumer (Task 3) ends up resolving through.
     #[test]
-    fn abi_routine_return_type_is_discarded() {
+    fn abi_routine_return_type_is_populated() {
         let dep = dep_id("RetTypeTest");
         let abi = SymbolReferenceAbi {
             objects: vec![AbiObject {
@@ -844,6 +866,7 @@ mod tests {
                     event_kind: SrAbiEventKind::Unknown,
                     parameters: vec![],
                     return_type_text: Some("Codeunit \"Helper\"".into()),
+                    return_type_id: Some(("Helper".into(), 2354)),
                     is_local: false,
                     is_internal: false,
                     is_protected: false,
@@ -879,8 +902,17 @@ mod tests {
             .find(|r| r.id.name_lc == "gethelper")
             .expect("GetHelper must exist");
         assert_eq!(
-            get_helper.return_type, None,
-            "ABI return types are a deferred concern — must not leak through"
+            get_helper.return_type.as_deref(),
+            Some("Codeunit \"Helper\""),
+            "an ABI routine's reconstructed return-type text must now flow through \
+             to RoutineNode.return_type (Task 2 flips the prior deliberate discard)"
+        );
+        assert_eq!(
+            get_helper.return_type_id,
+            Some(("Helper".to_string(), 2354)),
+            "the structured (name, id) cross-validation pair must also be carried \
+             onto the graph-level RoutineNode, reachable by RoutineNodeId lookup \
+             for Task 3's cross-object chain cross-validation"
         );
     }
 }
