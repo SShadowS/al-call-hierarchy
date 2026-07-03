@@ -1756,11 +1756,20 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // are new content). `FRESH_WRONG_CEILING`/`FRESH_MISSING_CEILING` need NO
     // motion (see `cdo_l3_semantic_audit_no_fresh_wrong`, unchanged). Full
     // 160-test CDO-gated harness green (`--test-threads=1`).
+    //
+    // TIGHTENED 2026-07-03 (argtype-dispatch-and-page-catalog plan, Task 1):
+    // 0.005248 → 0.004254, measured 0.43% (77/18104=0.0042532). The Page/Report
+    // instance-catalog completion (SetTableView/SetRecord/GetRecord/
+    // SetSelectionFilter on Page vars; SetTableView on Report vars; SaveRecord
+    // stays CurrPage-only) resolved 18 MemberNotFound sites (25→7); the 7
+    // remaining are the eCandidates verified-real absences (honest Unknown).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.005248,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.005248 \
-         (recorded 2026-07-03 post sigfp-and-ambiguous-reclassification plan \
+        primary_rate <= 0.004254,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.004254 \
+         (recorded 2026-07-03 post argtype-dispatch-and-page-catalog Task 1: \
+         0.43% [77/18104=0.0042532], Page/Report instance-catalog completion; \
+         was 0.52% post sigfp-and-ambiguous-reclassification plan \
          Task 4 — the metric-definition change: 0.52% [95/18104=0.0052475], \
          the full 56-site same-object OverloadAmbiguous population \
          reclassified AmbiguousResolved; was 0.83% \
@@ -1956,10 +1965,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // reclassified `AmbiguousResolved`; `unknownByReason`={CompoundReceiver:
     // 51, UntrackedReceiver: 18, BuiltinPrecedenceCollision: 1,
     // MemberNotFound: 25}, sum==95 — `OverloadAmbiguous` no longer appears).
+    // TIGHTENED 2026-07-03 (argtype-dispatch-and-page-catalog Task 1): 95→77 —
+    // the instance-catalog completion; `unknownByReason`={CompoundReceiver:
+    // 51, UntrackedReceiver: 18, BuiltinPrecedenceCollision: 1,
+    // MemberNotFound: 7}, sum==77.
     assert!(
-        ph.unknown <= 95,
-        "primary unknown count {} exceeds ceiling 95 (recorded 2026-07-03 \
-         post sigfp-and-ambiguous-reclassification plan Task 4 — the \
+        ph.unknown <= 77,
+        "primary unknown count {} exceeds ceiling 77 (recorded 2026-07-03 \
+         post argtype-dispatch-and-page-catalog Task 1: 77, the Page/Report \
+         instance-catalog completion; was 95 post \
+         sigfp-and-ambiguous-reclassification plan Task 4 — the \
          metric-definition change: 95, the full 56-site same-object \
          OverloadAmbiguous population reclassified AmbiguousResolved; was \
          151 post dataitem-receivers Task 1 + review fix, 159 post Task 1 \
@@ -2015,13 +2030,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // ceiling above; whole-program `unknown`=95, same value as primary
     // today (every reclassified site originates in the workspace/primary
     // scope).
+    // TIGHTENED 2026-07-03 (argtype-dispatch-and-page-catalog Task 1): 95→77,
+    // alongside the primary ceiling above.
     assert!(
-        h.unknown <= 95,
-        "whole-program unknown count {} exceeds ceiling 95 (recorded \
-         2026-07-03 post sigfp-and-ambiguous-reclassification plan Task 4: \
-         95 — see the primary-scoped ceiling comment above for the full \
-         history and adjudication) — engine regressed; investigate before \
-         raising the ceiling",
+        h.unknown <= 77,
+        "whole-program unknown count {} exceeds ceiling 77 (recorded \
+         2026-07-03 post argtype-dispatch-and-page-catalog Task 1: 77; was 95 \
+         post sigfp-and-ambiguous-reclassification plan Task 4 — see the \
+         primary-scoped ceiling comment above for the full history and \
+         adjudication) — engine regressed; investigate before raising the \
+         ceiling",
         h.unknown,
     );
 
