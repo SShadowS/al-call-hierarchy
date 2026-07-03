@@ -1767,10 +1767,12 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // UNCHANGED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1, Task
     // 2 — fail-closed arg-type dispatch): byte-identical 0.43%
     // [77/18104=0.0042532] — Task 2 disambiguates `AmbiguousResolved`
-    // candidate sets (56→12, see the `ambiguous_resolved` ratchet below), a
-    // DIFFERENT histogram bucket entirely; it never touches `Unknown`. This
-    // ceiling's re-measurement on the identical CDO snapshot is the direct
-    // confirmation of that non-interaction.
+    // candidate sets (56→12, later 56→13 after the 2026-07-04 review fix —
+    // see the `ambiguous_resolved` ratchet below), a DIFFERENT histogram
+    // bucket entirely; it never touches `Unknown`. This ceiling's
+    // re-measurement on the identical CDO snapshot is the direct
+    // confirmation of that non-interaction (re-confirmed again after the
+    // review fix).
     let primary_rate = ph.real_unknown_rate();
     assert!(
         primary_rate <= 0.004254,
@@ -2100,17 +2102,54 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // the L3 semantic audit stays clean (`cdo_l3_semantic_audit_no_fresh_
     // wrong`, unchanged) — both HARD gates, both re-run and green on this
     // exact CDO snapshot.
+    //
+    // TIGHTENED AGAIN 2026-07-04 (Task 2 REVIEW FIX, Finding 1 — `with`-scope
+    // gate for bare-identifier arg typing): 12 -> 13 (one of the 44 Task-2
+    // picks reverts to `AmbiguousResolved`). INVESTIGATED per this ratchet's
+    // own "a rise means the pick regressed — verify before updating"
+    // instruction, using a diff of `task2_dump_argtype_dispatch_flips_on_cdo`
+    // run before vs. after the review fix (isolated via `git stash` against
+    // the SAME warm CDO snapshot, not two separate measurements): exactly ONE
+    // site dropped, `UseContiniaAuthorization` (`Codeunit 6175322 "CDO Http
+    // Management"`, calling `ContiniaOnlineAuth.Authorize(HttpClient,
+    // false)`) — no site was added. Root cause: this routine's own body
+    // contains NO real `with` block (the AST-depth signal is correctly 0),
+    // but its LEADING COMMENT ("`// Callers running inside a TryFunction MUST
+    // share the same "CDO Http Management" instance with an outside-
+    // TryFunction warmup call...`") contains a standalone word "with" —
+    // `extract::routine_has_with_token`'s raw-text scan is BY DESIGN
+    // comment-blind (see that fn's doc: "a `with` token inside a ... comment
+    // still trips this ... over-skip is always safe, a false negative is
+    // fatal"), so the two with-detection signals DISAGREE and
+    // `WithCtx::state()` resolves to `WithState::Unknown` for this ENTIRE
+    // routine. This is NOT a new heuristic gap introduced by the review fix —
+    // `resolve_bare`'s pre-existing Step 3 (implicit-Rec) has ALWAYS skipped
+    // on this exact `Unknown` signal for any bare call in this routine; the
+    // review fix's `arg_dispatch::type_one_arg` with-scope gate (module doc)
+    // deliberately mirrors that SAME established, already-tested, and already
+    // load-bearing precedent for arg typing too — the finding explicitly
+    // required "mirror Step 3's existing gate exactly," and this single-site
+    // count movement is the direct, EXPECTED, and CORRECT consequence of
+    // doing so faithfully rather than adding a narrower (and inconsistent)
+    // gate that special-cases this call site. `unknown`/`real_unknown_rate`
+    // stay BYTE-IDENTICAL (a disjoint histogram bucket — this call site was
+    // already `Source`-resolved via a DIFFERENT route before Task 2 ever
+    // existed; it merely stops being a Task-2 CONFIDENT PICK, falling back to
+    // the pre-Task-2 honest `AmbiguousResolved` shape for its 2-candidate
+    // `Authorize` overload set) — re-confirmed byte-identical below.
     assert_eq!(
-        ph.ambiguous_resolved, 12,
-        "primary ambiguousResolved count {} != the recorded 2026-07-03 value \
-         12 (argtype-dispatch-and-page-catalog plan v2.1, Task 2 — 44 sites \
-         flipped to Resolved) — investigate before updating this ratchet",
+        ph.ambiguous_resolved, 13,
+        "primary ambiguousResolved count {} != the recorded 2026-07-04 value \
+         13 (Task 2 review fix, Finding 1 — with-scope gate; investigated: \
+         exactly 1 site, `UseContiniaAuthorization`, reverts due to a \
+         pre-existing with-detection-signal disagreement — see the comment \
+         above) — investigate before updating this ratchet",
         ph.ambiguous_resolved,
     );
     assert_eq!(
-        h.ambiguous_resolved, 12,
-        "whole-program ambiguousResolved count {} != the recorded 2026-07-03 \
-         value 12, same value as primary today",
+        h.ambiguous_resolved, 13,
+        "whole-program ambiguousResolved count {} != the recorded 2026-07-04 \
+         value 13, same value as primary today",
         h.ambiguous_resolved,
     );
 
@@ -2454,6 +2493,12 @@ fn route_applicability_zero_violations() {
 // doc). Run with `CDO_WS=... cargo test --release --test
 // program_resolve_harness task2_dump_argtype_dispatch_flips_on_cdo --
 // --ignored --nocapture`.
+//
+// 2026-07-04 (Task 2 review fix, Finding 1): this SAME dump, diffed
+// before/after the with-scope arg-typing gate, is what identified the
+// single site (`UseContiniaAuthorization`) behind the `ambiguous_resolved`
+// ratchet's 12->13 move — see that ratchet's comment for the full root
+// cause. The dump now reports 43, not 44.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -5155,6 +5200,106 @@ fn ws_overload_callexpr_discriminator_stays_ambiguous_resolved() {
     let report = resolve_full_program(&fixture)
         .expect("resolve_full_program must succeed on ws-overload-callexpr-discriminator");
     assert_stays_ambiguous_resolved(&report, "run");
+}
+
+// ---------------------------------------------------------------------------
+// Tests 23p-23q: argtype-dispatch-and-page-catalog plan (v2.1), Task 2 REVIEW
+// FIX (Finding 1) — `with`-scope gate for bare-identifier arg typing.
+// `arg_dispatch::type_one_arg` never used to consult `WithState`, so a bare-
+// identifier argument inside a `with X do` block was typed from CALLER scope
+// even though AL rebinds it to the WITH-receiver's member — a constructible
+// WRONG PICK (dormant on CDO, which has zero `with` blocks).
+// `tests/r0-corpus/ws-overload-with-scope/`: `SomeField` is BOTH a table
+// field (Decimal, on "WS With Scope Table") and a global var (Text, on the
+// caller codeunit); `Target.Foo` overloads on `(Decimal)`/`(Text)`.
+// ---------------------------------------------------------------------------
+
+fn ws_overload_with_scope_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-with-scope");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-with-scope")
+}
+
+/// Test 23p: `CallInsideWith` sits inside `with Rec do` — the with-scope
+/// gate must degrade the bare-identifier arg `SomeField` to untyped, which
+/// degrades the WHOLE call back to honest `AmbiguousResolved`. Before the
+/// Finding-1 fix, this call would fail-closed-PICK `Foo(X: Text)` (the
+/// GLOBAL `SomeField`'s type) — a wrong pick, since the compiler actually
+/// binds `SomeField` to the WITH-receiver's Decimal field.
+#[test]
+fn ws_overload_with_scope_call_inside_with_stays_ambiguous_resolved() {
+    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+
+    let report = ws_overload_with_scope_report();
+    let edges = edges_for_caller(&report, "callinsidewith");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallInsideWith has exactly one call obligation"
+    );
+    let edge = &edges[0].edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::AmbiguousOverload,
+        "the with-scope gate must degrade the bare-identifier arg to \
+         untyped, which degrades the whole call to AmbiguousOverload; got {:?}",
+        edge.shape
+    );
+    assert_eq!(edge.routes.len(), 2, "got {:?}", edge.routes);
+    assert_eq!(
+        classify_obligation(edge),
+        ObligationOutcome::AmbiguousResolved,
+        "a bare-identifier arg inside a proven `with` block must NEVER be \
+         typed from caller scope — no pick, honest AmbiguousResolved"
+    );
+}
+
+/// Test 23q (control): `CallOutsideWith` is the SAME call, unshadowed by any
+/// `with` — the with-scope gate must not over-fire: `SomeField` (the global,
+/// Text) is typed normally and confidently picks `Foo(X: Text)` (Text/
+/// Decimal are cross-family, a proven elimination of the sibling overload).
+#[test]
+fn ws_overload_with_scope_call_outside_with_control_picks_text_overload() {
+    let report = ws_overload_with_scope_report();
+    let edges = edges_for_caller(&report, "calloutsidewith");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallOutsideWith has exactly one call obligation"
+    );
+    let edge = &edges[0].edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::Exact,
+        "outside any `with`, the global SomeField must type normally and \
+         confidently pick; got {:?}",
+        edge.shape
+    );
+    assert_eq!(edge.routes.len(), 1, "got {:?}", edge.routes);
+    let route = &edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source, "got {route:?}");
+    assert!(route.fires_by_default(), "got {route:?}");
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected a Routine target; got {route:?}");
+    };
+    assert_eq!(rid.params_count, 1);
+    let Witness::SourceSpan { ref file, span } = route.witness else {
+        panic!("expected SourceSpan witness; got {route:?}");
+    };
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-with-scope");
+    let src = std::fs::read_to_string(fixture.join(file)).expect("read witness file");
+    let decl_text = src[span.0 as usize..span.1 as usize].to_ascii_lowercase();
+    assert!(
+        decl_text.contains("text"),
+        "picked routine must be the Text overload (the global SomeField's \
+         type); got {decl_text:?}"
+    );
+    assert!(
+        !decl_text.contains("decimal"),
+        "picked routine must NOT be the Decimal overload; got {decl_text:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

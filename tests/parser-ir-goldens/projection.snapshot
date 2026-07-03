@@ -339,6 +339,9 @@ ws-overload-field-discriminator/src/Target.Codeunit.al	99b08490e7044510
 ws-overload-negatives/src/Caller.Codeunit.al	11a864d2ac2265e7
 ws-overload-negatives/src/INeg.Interface.al	fade07bed57a8c52
 ws-overload-negatives/src/Target.Codeunit.al	fdd0faa05350dfae
+ws-overload-with-scope/Caller.Codeunit.al	bb78a209bfb738e2
+ws-overload-with-scope/Target.Codeunit.al	bff87716479897fd
+ws-overload-with-scope/WithTable.Table.al	4fb5760de1723b2c
 ws-page-rec/src/AmbiguousPage.Page.al	b74fc2521a7f6be7
 ws-page-rec/src/Customer.Table.al	eb081b12693177ea
 ws-page-rec/src/CustomerCard.Page.al	e5840568492d77c3

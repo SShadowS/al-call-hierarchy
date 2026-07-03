@@ -64,6 +64,20 @@
 //! - **Caller-scope-EXACT var lookup** ([`type_one_arg`]): params → locals →
 //!   globals, the SAME shadowing order `receiver.rs`'s Step 2 uses for
 //!   receiver typing — never a receiver/`with` scope.
+//! - **`with`-scope gate for bare-identifier args** ([`type_one_arg`], Task 2
+//!   review fix): AL's `with X do` rebinds a bare identifier to the
+//!   `with`-receiver's member — this module's caller-scope-EXACT lookup
+//!   (params → locals → globals) structurally CANNOT see that rebinding, so
+//!   typing a bare-identifier arg from caller scope while inside an
+//!   unrepresented `with` risks a WRONG PICK (e.g. `with Rec do
+//!   Target.Foo(SomeField)`, where a table field shadows a same-named global
+//!   of a DIFFERENT type across two overloads). Mirrors `resolve_bare`'s own
+//!   Step 3 with-guard EXACTLY: a bare-identifier arg is typed from caller
+//!   scope only when `with_state == WithState::NoWithProven`; any other
+//!   state (`InsideWith` or the disagreeing-signals `Unknown`) degrades that
+//!   ONE argument position to [`ArgDispatchInfo::untyped`], which in turn
+//!   degrades the WHOLE call (module doc's cardinal rule) — never a partial
+//!   pick. A LITERAL argument is unaffected (a literal cannot rebind).
 //!
 //! # SOURCE tier only
 //!
@@ -83,6 +97,7 @@ use al_syntax::ir::{AlFile, Expr, ExprId, ExprKind, Literal, ObjectKind, Routine
 use crate::program::graph::ProgramGraph;
 use crate::program::node::ObjectNodeId;
 use crate::program::node_extract::ObjectRef;
+use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 use crate::program::resolve::receiver::{ParsedType, classify_type_text};
 use crate::program::sig_fp::normalize_type_text;
@@ -234,6 +249,7 @@ fn literal_canonical(lit: &Literal) -> Option<(CanonicalArgType, LiteralKind)> {
 /// Per-call-site-argument-position dispatch info (I7: NOT a bare
 /// `Option<String>` — canonical semantic type, literal origin, var-passable
 /// flag, all threaded so the pick can apply the full hardened rule set).
+#[derive(Debug)]
 pub(crate) struct ArgDispatchInfo {
     /// The argument's canonical semantic type, when this increment can
     /// positively type it — `None` (untyped) for any expression shape this
@@ -290,7 +306,11 @@ pub(crate) struct ParamDispatchInfo {
 /// `routine`/`object_globals` supply the caller-scope-EXACT lookup chain
 /// (params -> locals -> globals); `from` is the CALLING object's identity
 /// (its app dependency closure is what an object-bearing arg type resolves
-/// against).
+/// against). `with_state` is the call site's [`WithState`] (Task 2 review
+/// fix) — a bare-identifier arg is typed from caller scope ONLY when this is
+/// `NoWithProven`; see the module doc's "`with`-scope gate for
+/// bare-identifier args" entry.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `with_state` (Task 2 review fix).
 pub(crate) fn type_call_args(
     args: &[ExprId],
     file: &AlFile,
@@ -299,6 +319,7 @@ pub(crate) fn type_call_args(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
+    with_state: WithState,
 ) -> Vec<ArgDispatchInfo> {
     args.iter()
         .map(|&id| {
@@ -309,6 +330,7 @@ pub(crate) fn type_call_args(
                 from,
                 graph,
                 index,
+                with_state,
             )
         })
         .collect()
@@ -321,6 +343,7 @@ fn type_one_arg(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
+    with_state: WithState,
 ) -> ArgDispatchInfo {
     match &expr.kind {
         // `QuotedIdentifier` already stores the UNQUOTED name (the lowerer
@@ -328,6 +351,17 @@ fn type_one_arg(
         // `VarDecl::name` use), so both arms compare directly against the
         // caller's declared names with no extra unquoting.
         ExprKind::Identifier(name) | ExprKind::QuotedIdentifier(name) => {
+            // `with`-scope gate (Task 2 review fix, module doc): a BARE
+            // IDENTIFIER can be REBOUND by an enclosing `with X do` to the
+            // with-receiver's member, which this caller-scope-EXACT lookup
+            // structurally cannot see. Mirrors `resolve_bare`'s Step 3
+            // with-guard exactly — `InsideWith`/`Unknown` degrade this
+            // position to untyped rather than risk typing it against the
+            // WRONG (caller-scope) declaration. A literal (the other arm
+            // below) is unaffected — it cannot be rebound by `with`.
+            if with_state != WithState::NoWithProven {
+                return ArgDispatchInfo::untyped();
+            }
             // Caller-scope-EXACT lookup: params -> locals -> globals (the
             // SAME Step-2 shadowing order `receiver.rs`'s `infer_receiver_
             // type` uses) — never a receiver/`with` scope. `.find` stops at
@@ -395,12 +429,29 @@ fn type_one_arg(
 /// degrading the WHOLE call per the module doc — when ANY parameter has no
 /// declared type text, or its declared type fails canonicalization
 /// (unresolvable object reference).
+///
+/// # `parse_incomplete` gate (Task 2 review, Finding 3)
+///
+/// `decl.params` is trusted verbatim below — but a `parse_incomplete` decl
+/// means the parser already recovered from a syntax error somewhere INSIDE
+/// this routine's own declaration, and a param TYPE is the very first place
+/// this module lets candidate metadata adjudicate between overloads. A
+/// recovery artifact masquerading as a legitimate declared type there could
+/// feed a confident (and possibly WRONG) pick. Fail closed uniformly with
+/// every other codebase consumer of this flag (`engine::l5`'s detectors,
+/// `l3_workspace`'s coverage report, etc. all skip a `parse_incomplete`
+/// routine rather than trust its recovered shape): treat it exactly like
+/// missing candidate metadata, degrading the WHOLE call, never a partial or
+/// best-effort read of the recovered params.
 pub(crate) fn candidate_param_infos(
     decl: &RoutineDecl,
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> Option<Vec<ParamDispatchInfo>> {
+    if decl.parse_incomplete {
+        return None;
+    }
     let mut out = Vec::with_capacity(decl.params.len());
     for p in &decl.params {
         let ty = p.ty.as_deref()?;
@@ -975,7 +1026,15 @@ mod tests {
         let from = test_object_id();
 
         let e = ident_expr("X");
-        let info = type_one_arg(&e, &routine, &globals, &from, &graph, &index);
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &globals,
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
         assert_eq!(
             info.canonical,
             Some(CanonicalArgType::Base("integer".into())),
@@ -996,7 +1055,15 @@ mod tests {
         let from = test_object_id();
 
         let e = ident_expr("X");
-        let info = type_one_arg(&e, &routine, &globals, &from, &graph, &index);
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &globals,
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
         assert_eq!(
             info.canonical,
             Some(CanonicalArgType::Base("boolean".into())),
@@ -1016,12 +1083,142 @@ mod tests {
             kind: ExprKind::Literal(Literal::Int("5".to_string())),
             origin: test_origin(),
         };
-        let info = type_one_arg(&e, &routine, &[], &from, &graph, &index);
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
         assert_eq!(
             info.canonical,
             Some(CanonicalArgType::Base("integer".into()))
         );
         assert_eq!(info.literal_kind, Some(LiteralKind::Integer));
         assert!(!info.var_passable);
+    }
+
+    // -- type_one_arg: `with`-scope gate (Task 2 review fix, Finding 1) -----
+
+    /// The dormant wrong-pick vector, directly at the `type_one_arg` unit
+    /// level: a bare identifier that resolves cleanly in caller scope
+    /// (`WithState::NoWithProven`) must degrade to UNTYPED the moment the
+    /// call site is known to sit inside a `with` block — the caller-scope
+    /// lookup cannot see the with-receiver's own rebinding, so trusting the
+    /// caller-scope type here would risk typing the arg against the WRONG
+    /// declaration.
+    #[test]
+    fn type_one_arg_bare_identifier_degrades_inside_with() {
+        let mut routine = empty_routine();
+        routine.locals.push(var("SomeField", "Integer"));
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = ident_expr("SomeField");
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::InsideWith,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a bare identifier inside a proven `with` must degrade to \
+             untyped, even though caller scope resolves it cleanly; got {info:?}",
+        );
+        assert!(!info.var_passable);
+    }
+
+    /// The disagreeing-signals `WithState::Unknown` case must ALSO degrade
+    /// (fail closed) — not just the proven `InsideWith` case.
+    #[test]
+    fn type_one_arg_bare_identifier_degrades_on_with_signal_disagreement() {
+        let mut routine = empty_routine();
+        routine.locals.push(var("SomeField", "Integer"));
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = ident_expr("SomeField");
+        let info = type_one_arg(&e, &routine, &[], &from, &graph, &index, WithState::Unknown);
+        assert_eq!(
+            info.canonical, None,
+            "the with-detection-signal-disagreement case must also fail \
+             closed to untyped; got {info:?}",
+        );
+    }
+
+    /// Control: a LITERAL argument is unaffected by `with_state` — a literal
+    /// cannot be rebound by a `with` block, so it stays typed even
+    /// `InsideWith`.
+    #[test]
+    fn type_one_arg_literal_typed_regardless_of_with_state() {
+        let routine = empty_routine();
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = Expr {
+            kind: ExprKind::Literal(Literal::Int("5".to_string())),
+            origin: test_origin(),
+        };
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::InsideWith,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("integer".into())),
+            "a literal must type regardless of with_state; got {info:?}",
+        );
+    }
+
+    // -- candidate_param_infos: `parse_incomplete` gate (Finding 3) ---------
+
+    /// A `parse_incomplete` candidate declaration must degrade to `None`
+    /// (missing candidate metadata) even when every param otherwise carries
+    /// a syntactically well-formed declared type — the recovered shape is
+    /// never trusted as pick-adjudicating evidence.
+    #[test]
+    fn candidate_param_infos_degrades_on_parse_incomplete() {
+        let mut decl = empty_routine();
+        decl.params.push(param("X", "Integer"));
+        decl.parse_incomplete = true;
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        assert!(
+            candidate_param_infos(&decl, &from, &graph, &index).is_none(),
+            "a parse_incomplete candidate must yield no param metadata at all"
+        );
+    }
+
+    /// Control: the same declaration with `parse_incomplete = false` yields
+    /// full metadata — proves the gate is specific to the flag, not a
+    /// blanket regression.
+    #[test]
+    fn candidate_param_infos_populates_when_parse_complete() {
+        let mut decl = empty_routine();
+        decl.params.push(param("X", "Integer"));
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let infos = candidate_param_infos(&decl, &from, &graph, &index)
+            .expect("a parse-complete candidate must yield param metadata");
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].canonical, CanonicalArgType::Base("integer".into()));
     }
 }

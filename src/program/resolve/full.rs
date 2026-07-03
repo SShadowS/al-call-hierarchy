@@ -226,6 +226,11 @@ fn resolve_call_site_obligation(
     // Built ONCE per obligation (not per-arm): SOURCE-tier only (`arg_
     // dispatch`'s own SymbolOnly gate lives in `resolve_in_object`, but
     // there is nothing to type at all without a resolved calling object).
+    // Task 2 review fix: `with_state` threads into arg typing too — a bare-
+    // identifier arg can be REBOUND by an enclosing `with` block, exactly
+    // the hazard `resolve_bare`'s Step 3 with-guard already exists to close
+    // for bare CALLS (see `arg_dispatch`'s module doc, "`with`-scope gate
+    // for bare-identifier args").
     let args_info: Vec<ArgDispatchInfo> = match obj_node_opt {
         Some(obj_node) => arg_dispatch::type_call_args(
             call_args,
@@ -235,6 +240,7 @@ fn resolve_call_site_obligation(
             &obj_node.id,
             graph,
             index,
+            with_state,
         ),
         None => Vec::new(),
     };

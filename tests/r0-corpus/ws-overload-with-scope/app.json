@@ -1,0 +1,8 @@
+{
+	"id": "bb22cc33-dd44-ee55-ff66-778899001122",
+	"name": "OverloadWithScopeProbe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50960, "to": 50999 }]
+}

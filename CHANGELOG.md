@@ -8,6 +8,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`with`-scope gate for bare-identifier arg typing — closes a dormant
+  wrong-pick vector in fail-closed arg-type dispatch (Task 2 review fix,
+  argtype-dispatch-and-page-catalog plan v2.1).** `arg_dispatch::
+  type_call_args`/`type_one_arg` never consulted the call site's
+  `WithState`, even though `resolve_call_site_obligation` (`full.rs`)
+  already threads it to callee resolution. Inside a `with X do` block, AL
+  rebinds a bare identifier to the WITH-receiver's member — the arg-typing
+  module's caller-scope-EXACT lookup (params → locals → globals)
+  structurally cannot see that rebinding, so a bare-identifier argument
+  could be typed against the WRONG (caller-scope) declaration and
+  fail-closed-PICK the wrong overload (e.g. `with Rec do
+  Target.Foo(SomeField)` where a table field's Decimal shadows a same-named
+  global Text across a `(Decimal)`/`(Text)` overload pair). Dormant on CDO
+  (zero `with` blocks in the corpus — no flip tainted). Fixed by mirroring
+  `resolve_bare`'s existing Step 3 with-guard exactly: a bare-identifier arg
+  now yields `ArgDispatchInfo::untyped()` (degrading the whole call — no
+  pick, stays `AmbiguousResolved`) unless `with_state ==
+  WithState::NoWithProven`; a literal argument is unaffected (it cannot be
+  rebound by `with`). New fixture `tests/r0-corpus/ws-overload-with-scope/`
+  (`CallInsideWith` proves the degrade; `CallOutsideWith` is the control
+  proving the same call still confidently picks outside any `with`) plus 3
+  new unit tests in `arg_dispatch.rs`.
+  - **Also (Finding 3, same review):** `candidate_param_infos` now degrades
+    to `None` (missing candidate metadata) when the candidate declaration is
+    `parse_incomplete` — a param TYPE is the first place candidate metadata
+    adjudicates a pick, so a parser-recovery artifact there is never trusted,
+    consistent with every other `parse_incomplete` consumer in the codebase
+    (`engine::l5`'s detectors, `l3_workspace` coverage, etc.). 2 new unit
+    tests (`candidate_param_infos_degrades_on_parse_incomplete` +
+    parse-complete control).
+  - **CDO harness re-run** (`CDO_WS`, `ENFORCE_CDO_WS=1`, release,
+    `--test-threads=1`): `unknown`/`real_unknown_rate` stay byte-identical at
+    77/0.43% (a disjoint histogram bucket) and `genuine_wrong=0` holds, but
+    `ambiguousResolved` moves **12 → 13** — INVESTIGATED (a rise is this
+    ratchet's own documented "verify before updating" trigger), root-caused
+    to exactly ONE site via a before/after diff of
+    `task2_dump_argtype_dispatch_flips_on_cdo` (`git stash`-isolated against
+    the identical snapshot): `UseContiniaAuthorization`
+    (`Codeunit 6175322 "CDO Http Management"`) reverts to
+    `AmbiguousResolved`. Its own routine body has no real `with` block (AST
+    depth 0), but a LEADING COMMENT contains the standalone word "with" —
+    `extract::routine_has_with_token`'s raw-text scan is deliberately
+    comment-blind by design, so the two with-detection signals disagree and
+    resolve to `WithState::Unknown` for the whole routine. This is not a new
+    gap: `resolve_bare`'s pre-existing Step 3 has ALWAYS skipped on this same
+    `Unknown` signal for this routine; the review fix's with-scope gate
+    faithfully mirrors that same established precedent into arg typing, as
+    the finding required, rather than adding an inconsistent narrower gate.
+    Ratchet re-pinned 12→13 in `tests/program_resolve_harness.rs` with the
+    full root-cause writeup inline.
+  - See also `.superpowers/sdd/argtype-dispatch-task-2-report.md` §8 and the
+    `### Added` section below (Task 2, "Fail-closed argument-type overload
+    dispatch") for a report-accuracy correction to that entry's flip-category
+    breakdown (Finding 2, same review).
+
 - **Page/Report instance-catalog completion — `SetTableView`/`SetRecord`/
   `GetRecord`/`SetSelectionFilter` exist unconditionally (Task 1,
   argtype-dispatch-and-page-catalog plan).** `resolver::
@@ -127,8 +182,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `unknown`/`real_unknown_rate` byte-identical at 77/0.43% (a DIFFERENT
     histogram bucket; arg-type dispatch never touches `Unknown`).
     **Adjudication** (`.superpowers/sdd/argtype-dispatch-task-2-report.md`
-    has the full table; `task2_dump_argtype_dispatch_flips_on_cdo`, a new
-    `#[ignore]`d diagnostic, reproduces the raw dump): the 44 flips are overwhelmingly
+    has the full table + a review-fix correction section (§8);
+    `task2_dump_argtype_dispatch_flips_on_cdo`, a new `#[ignore]`d
+    diagnostic, reproduces the raw dump): reviewer-reproduced breakdown of
+    the 44 (corrects an earlier draft of this entry's "~34 object-record /
+    ~7 cross-family / ~3 unreadable" estimate, which had the unreadable
+    share off by an order of magnitude) — **25/44 (57%) have
+    `picked_decl=[<unreadable>]`** (the diagnostic's naive path-join can't
+    resolve dependency/base-app source paths; not independently re-verified
+    this task); of the 19/44 with readable decl text, the majority are
     Object/Record EXACT-IDENTITY eliminations — CDO's real code very
     commonly overloads a procedure BY RECORD TYPE (`CheckAndSetHandled`,
     `PrintPDFFile`, `RunPrePostValidation`, the obsoleted
@@ -136,16 +198,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     local `Record "CDO Send Code"` before dispatching) — the SOUNDEST
     elimination category in the whole design (two different AL record types
     are never assignment-compatible without an explicit `RecordRef`/
-    `Variant` detour). A smaller set are cross-family Base eliminations
-    (hand-traced exemplar: `GetJsonAttribute`'s 3-overload family, where a
-    `var returnValue: Text` argument eliminates both a `Text`-first-param
-    sibling and a `var Integer`-typed sibling by two INDEPENDENT
-    discriminating positions). NONE of the 44 touch the "undecided"
-    soft-family gate (no Text-vs-Code or Integer-vs-Decimal pick fired on
-    real CDO code). `genuine_wrong=0` and the L3 semantic audit
-    (`cdo_l3_semantic_audit_no_fresh_wrong`) both HARD gates, both re-run
-    green on the identical snapshot. `ambiguous_resolved` ratchet re-pinned
-    56→12 (both scopes); `unknown`/`real_unknown_rate` ceilings unchanged.
+    `Variant` detour); `GetJsonAttribute`'s 3-overload family is the ONLY
+    hand-traced cross-family Base elimination (a `var returnValue: Text`
+    argument eliminates both a `Text`-first-param sibling and a `var
+    Integer`-typed sibling by two INDEPENDENT discriminating positions) — no
+    other cross-family pick was independently traced. The pick
+    PRECONDITIONS held identically for all 44 regardless of decl
+    readability (the ABI/BodyMap carries full candidate parameter
+    TYPE+MODE metadata even when the diagnostic can't render the winning
+    decl's source text), and the frozen-L3 semantic audit gate
+    (`cdo_l3_semantic_audit_no_fresh_wrong`, green throughout) corroborates
+    the WHOLE population, not just the hand-traced subset. NONE of the 44
+    touch the "undecided" soft-family gate (no Text-vs-Code or
+    Integer-vs-Decimal pick fired on real CDO code). `genuine_wrong=0` and
+    the L3 semantic audit both HARD gates, both re-run green on the
+    identical snapshot. `ambiguous_resolved` ratchet re-pinned 56→12 (both
+    scopes); `unknown`/`real_unknown_rate` ceilings unchanged.
   - **Out of scope (deferred, documented in the plan's roadmap):**
     Enum::Value / call-result / `Rec.Field` argument typing; ABI-tier
     (SymbolOnly) parameter-type retention; implicit-conversion modeling.
