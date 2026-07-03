@@ -538,8 +538,11 @@ pub enum ObligationOutcome {
 ///
 /// i.e. every candidate is a concrete exact route (`Source`, or exact
 /// `Opaque`+`AbiSymbol`/`Abi`). A mixed/degraded set fails this check and
-/// falls through to the pre-existing generic classification below, UNCHANGED
-/// by this function's addition.
+/// (Task 3 review fix) is caught by `classify_obligation`'s explicit
+/// degraded-set guard immediately below this function's call site, which
+/// returns `Unknown` directly rather than falling through to the generic
+/// has-real/all-manual classification (a latent laundering path — see the
+/// guard's doc comment for the BINDING addendum this closes).
 fn is_ambiguous_resolved(e: &Edge) -> bool {
     e.shape == DispatchShape::AmbiguousOverload
         && !e.routes.is_empty()
@@ -555,12 +558,40 @@ pub fn classify_obligation(e: &Edge) -> ObligationOutcome {
     // Task 3: an all-concrete `AmbiguousOverload` candidate set classifies as
     // `AmbiguousResolved` BEFORE the generic has-real/all-manual logic below —
     // see `is_ambiguous_resolved`'s doc for the strict precondition and why a
-    // mixed/degraded set must NOT take this branch (it falls through instead;
-    // `Route::fires_by_default` now also excludes `Condition::AmbiguousDispatch`
-    // routes, so a degraded set still correctly never overstates reachability
-    // via the untouched ManualBinding-style fallback path below).
+    // mixed/degraded set must NOT take this branch (Task 3 review fix: it is
+    // caught by the explicit degraded-set guard immediately below instead,
+    // which returns `Unknown` directly — see that guard's doc comment).
     if is_ambiguous_resolved(e) {
         return ObligationOutcome::AmbiguousResolved;
+    }
+
+    // Task 3 review fix (BLOCKING finding — structural backstop for the
+    // producer-prevalidation contract): a mixed/degraded `AmbiguousOverload`
+    // set (non-empty routes that failed `is_ambiguous_resolved` above — e.g.
+    // a concrete `AmbiguousDispatch` candidate alongside an
+    // `Evidence::Unknown`/`RouteTarget::Unresolved` route, a collapse-marked
+    // candidate, an unconditionally-firing route mixed in, or routes missing
+    // `Condition::AmbiguousDispatch` entirely) must NOT fall through to the
+    // generic has-real/all-manual fallback below: that fallback was designed
+    // for `ManualBinding`/`Exact`-style edges, and blindly applying it here
+    // can launder a broken overload-candidate set into `Resolved` or
+    // `ConditionalResolved`. The sigfp-and-ambiguous-reclassification plan's
+    // Round-1 BINDING addendum ("T4 — strict `AmbiguousResolved`
+    // preconditions") is explicit: "A mixed/degraded set STAYS `Unknown`
+    // (with the collapse reason)." No producer emits a degraded
+    // `AmbiguousOverload` set today (`resolve_in_object` only ever emits
+    // either the strict all-`AmbiguousDispatch` form or nothing) — this is
+    // defense-in-depth against a FUTURE producer bug, not a live
+    // reclassification of current output. An EMPTY candidate set is a
+    // different failure mode (no candidates at all, not a broken candidate
+    // set) and is deliberately left to the untouched fallback below, which
+    // already yields `Unknown` for it via the non-fan-out catch-all.
+    if e.shape == DispatchShape::AmbiguousOverload && !e.routes.is_empty() {
+        debug_assert!(
+            !is_ambiguous_resolved(e),
+            "unreachable: is_ambiguous_resolved(e) already returned true above"
+        );
+        return ObligationOutcome::Unknown;
     }
 
     // Collect real routes: non-Unknown evidence AND non-Unresolved target.
@@ -1496,11 +1527,17 @@ mod tests {
         );
     }
 
-    /// NEGATIVE: mixed conditions — one route is AmbiguousDispatch, the other
-    /// fires unconditionally. The strict precondition ("EVERY route carries
-    /// AmbiguousDispatch") fails, so this is NOT AmbiguousResolved; it falls
-    /// through unchanged to the pre-existing has-real/all-manual logic, which
-    /// sees >=1 default-firing real route → Resolved.
+    /// NEGATIVE (Task 3 review fix — degraded-set anti-laundering backstop):
+    /// mixed conditions — one route is AmbiguousDispatch, the other fires
+    /// unconditionally. The strict precondition ("EVERY route carries
+    /// AmbiguousDispatch") fails, so this is NOT AmbiguousResolved. An
+    /// `AmbiguousOverload`-shaped set that isn't a valid closed candidate set
+    /// is itself contradictory (a truly ambiguous overload can't also have an
+    /// unconditionally-firing candidate) — the mixed-CONDITIONS-under-
+    /// `AmbiguousOverload` case, so `classify_obligation`'s explicit degraded-
+    /// set guard fires and this STAYS `Unknown`, never laundered into
+    /// `Resolved` by the generic has-real/all-manual fallback (which is NOT
+    /// reached for this shape once the guard applies).
     #[test]
     fn mixed_ambiguous_and_default_route_is_not_ambiguous_resolved() {
         let edge = edge_with(
@@ -1513,17 +1550,23 @@ mod tests {
         assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
         assert_eq!(
             outcome,
-            ObligationOutcome::Resolved,
-            "a mixed set with >=1 default-firing route keeps the pre-existing Resolved outcome"
+            ObligationOutcome::Unknown,
+            "a mixed/degraded AmbiguousOverload set STAYS Unknown (Task 3 review fix) \
+             instead of laundering through the generic has-real/all-manual fallback"
         );
     }
 
-    /// NEGATIVE: an Unknown-evidence route inside the candidate set. The
-    /// strict precondition ("NO route has Evidence::Unknown") fails, so this
-    /// is NOT AmbiguousResolved; the sole remaining real route is
-    /// AmbiguousDispatch-flavored (not default-firing), so the pre-existing
-    /// fallback (same has-real/all-manual shape as an all-ManualBinding edge)
-    /// yields ConditionalResolved, never Unknown or AmbiguousResolved.
+    /// NEGATIVE (Task 3 review fix): an Unknown-evidence route inside the
+    /// candidate set. The strict precondition ("NO route has
+    /// Evidence::Unknown") fails, so this is NOT AmbiguousResolved. Before
+    /// the review fix, the sole remaining real route (AmbiguousDispatch-
+    /// flavored, not default-firing) fell through to the generic has-real/
+    /// all-manual fallback and yielded `ConditionalResolved` — a latent
+    /// laundering path for a mixed/degraded set. The plan's BINDING addendum
+    /// ("T4 — strict AmbiguousResolved preconditions") is explicit: "A
+    /// mixed/degraded set STAYS Unknown (with the collapse reason)." The
+    /// explicit degraded-set guard in `classify_obligation` now returns
+    /// `Unknown` directly for this shape, never reaching the fallback.
     #[test]
     fn unknown_evidence_route_inside_candidate_set_is_not_ambiguous_resolved() {
         let edge = edge_with(
@@ -1537,14 +1580,15 @@ mod tests {
         );
         let outcome = classify_obligation(&edge);
         assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
-        assert_eq!(outcome, ObligationOutcome::ConditionalResolved);
+        assert_eq!(outcome, ObligationOutcome::Unknown);
     }
 
-    /// NEGATIVE: a collapse-marked candidate (`AbiCollapsedOverload`-flavored
-    /// Unresolved route) inside the set — same shape of failure as the
-    /// Unknown-evidence case above (subsumed by "NO route has
-    /// Evidence::Unknown"), pinned separately because Task 4's design
-    /// document calls it out as its own explicit scenario.
+    /// NEGATIVE (Task 3 review fix): a collapse-marked candidate
+    /// (`AbiCollapsedOverload`-flavored Unresolved route) inside the set —
+    /// same shape of failure as the Unknown-evidence case above (subsumed by
+    /// "NO route has Evidence::Unknown"), pinned separately because Task 4's
+    /// design document calls it out as its own explicit scenario. Same
+    /// degraded-set guard, same `Unknown` outcome.
     #[test]
     fn collapse_marked_candidate_inside_set_is_not_ambiguous_resolved() {
         let edge = edge_with(
@@ -1558,14 +1602,18 @@ mod tests {
         );
         let outcome = classify_obligation(&edge);
         assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
-        assert_eq!(outcome, ObligationOutcome::ConditionalResolved);
+        assert_eq!(outcome, ObligationOutcome::Unknown);
     }
 
     /// NEGATIVE: an empty candidate set under `AmbiguousOverload` +
-    /// `Complete` — precondition fails (`!routes.is_empty()`), and since
-    /// `AmbiguousOverload` is not a fan-out shape (`is_fanout` only matches
-    /// Polymorphic/Multicast) the pre-existing fallback yields the honest
-    /// `Unknown` (mirrors the plain "Exact Call with no target" case).
+    /// `Complete` — precondition fails (`!routes.is_empty()`), so the new
+    /// degraded-set guard (which itself requires non-empty routes) does not
+    /// apply either; this falls through unchanged to the pre-existing
+    /// fallback. Since `AmbiguousOverload` is not a fan-out shape (`is_fanout`
+    /// only matches Polymorphic/Multicast) that fallback yields the honest
+    /// `Unknown` (mirrors the plain "Exact Call with no target" case) —
+    /// same outcome as the non-empty degraded cases above, reached via the
+    /// untouched path rather than the new guard.
     #[test]
     fn empty_candidate_set_is_not_ambiguous_resolved() {
         let edge = edge_with(
@@ -1579,13 +1627,20 @@ mod tests {
         assert_eq!(outcome, ObligationOutcome::Unknown);
     }
 
-    /// NEGATIVE: ManualBinding-only routes under `AmbiguousOverload` shape —
-    /// proves shape alone is insufficient; without the `AmbiguousDispatch`
-    /// condition the precondition fails and the untouched
-    /// ManualBinding→ConditionalResolved path applies exactly as it did
-    /// before Task 3.
+    /// NEGATIVE (Task 3 review fix): ManualBinding-only routes under
+    /// `AmbiguousOverload` shape — proves shape alone is insufficient; without
+    /// the `AmbiguousDispatch` condition the strict precondition fails. Before
+    /// the review fix this fell through to the generic ManualBinding→
+    /// `ConditionalResolved` path; the explicit degraded-set guard now
+    /// intercepts every non-empty, non-strict `AmbiguousOverload` set BEFORE
+    /// that generic fallback, so this now STAYS `Unknown` too. The untouched
+    /// ManualBinding→`ConditionalResolved` path still applies for
+    /// non-`AmbiguousOverload` shapes — see
+    /// `conditional_resolved_vs_resolved_vs_empty`'s `manual_edge` case
+    /// (shape `Multicast`), which is unaffected by this guard because it is
+    /// scoped to `DispatchShape::AmbiguousOverload` only.
     #[test]
-    fn manual_binding_only_under_ambiguous_overload_shape_stays_conditional_resolved() {
+    fn manual_binding_only_under_ambiguous_overload_shape_is_unknown() {
         let edge = edge_with(
             EdgeKind::Call,
             DispatchShape::AmbiguousOverload,
@@ -1594,7 +1649,7 @@ mod tests {
         );
         let outcome = classify_obligation(&edge);
         assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
-        assert_eq!(outcome, ObligationOutcome::ConditionalResolved);
+        assert_eq!(outcome, ObligationOutcome::Unknown);
     }
 
     /// `Histogram` gains a dedicated `ambiguous_resolved` counter (Task 3),
