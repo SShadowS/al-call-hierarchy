@@ -8,6 +8,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Source `sig_fp` identity + `AmbiguousResolved` reclassification — arc
+  complete (Task 5 FINAL, sigfp-and-ambiguous-reclassification plan). Primary
+  real-`unknown` moves 0.83%→0.52% (`unknown` 151→95, `realUnknownRate`
+  0.008340698188245692→0.0052474591250552365) by a DOCUMENTED
+  metric-definition change, not a resolution improvement: 56 genuine
+  same-object overload-ambiguity call sites, which the engine already proved
+  it could enumerate exhaustively and completely (a closed candidate set,
+  not an open-world guess), move from `Unknown` to a new
+  `ObligationOutcome::AmbiguousResolved` — "exactly one candidate fires at
+  runtime, chosen by argument-type dispatch this engine does not perform;
+  not a resolution gap." These edges remain PRACTICALLY unresolved at
+  runtime from the tooling's perspective (nothing picks a winner) — the
+  both-ways `Histogram::legacy_unknown_rate_including_ambiguous()` /
+  `realUnknownRateLegacyIncludingAmbiguous` reads BYTE-IDENTICAL to the
+  pre-change `realUnknownRate` at both scopes (0.008340698188245692 primary
+  / 0.003478942032992351 whole), proving the move is a pure relabeling, not
+  a stat-juke.
+  - **The sequencing (T1→T4) that makes the relabeling honest.** A candidate
+    set deduped on an ALIASED id would silently collapse a genuine 2-overload
+    ambiguity into a false-appears-resolved single route — the exact footgun
+    the pre-existing `index.rs:157-168` comment warned about. So identity had
+    to be fixed BEFORE candidates could be safely carried: **Task 1** added a
+    `source_overload_aliased` fail-closed marker (mirroring the pre-existing
+    ABI `abi_overload_collapsed` pattern) plus a dual-publisher
+    `emit_event_flow_edges` SKIP guard (never a synthetic zero-span) for the
+    one case an aliased id's corrupted last-write-wins span could otherwise
+    leak — measured `eventFlowDualPublisherAliasSkips=0` on CDO throughout
+    (the guard never had to fire; 0 of the 6 primary / 313 whole-program
+    aliased groups had ≥2 publisher siblings). **Task 2** then gave source
+    overloads REAL identity: one shared `source_routine_node_id` constructor
+    (`src/program/sig_fp.rs`) fingerprints every parameter's normalized type
+    text + `var`/by-ref flag (fnv1a, length-delimited, reusing the
+    `abi_ingest::param_type_fp` primitive) instead of the old universal
+    `sig_fp: 0`. A Task 2 review fix then caught a 6th LIVE construction site
+    the original 5-site audit had missed
+    (`semantic_golden.rs::build_fan_out_site_context`, which independently
+    re-walks call sites for `route_applicability`'s fan-out soundness teeth)
+    — post-fix, all 5 live sites (one of the original 5 was dead code,
+    deleted rather than migrated) are unified on the one constructor, closing
+    a real applicability-gate regression the narrower fixture set couldn't
+    catch (measured pre-fix: `interface_applicability_violations=24`,
+    `implicit_trigger_violations=324`, both silently green). The
+    `source_overload_aliased` marker's role flips post-Task-2 from "fires for
+    every genuine overload pair" to a pure **residual-collision guard**:
+    `source_overload_alias_collision_guard_group_count_pinned_on_cdo` pins
+    the post-fix marked-GROUP count at **0 primary / 0 whole-program** on CDO
+    (down from the pre-Task-2 baseline of 6/313 — every real overload now
+    gets its own distinct id and never reaches the guard at all; a nonzero
+    reading in future would mean a genuine `sig_fp` normalization collision,
+    a threshold alert to investigate, never to silently mask). **Task 3**
+    landed the `Condition::AmbiguousDispatch` /
+    `DispatchShape::AmbiguousOverload` / `ObligationOutcome::AmbiguousResolved`
+    taxonomy as INERT mechanics (CDO byte-identical before any producer used
+    it), including the structural anti-laundering backstop that a
+    mixed/degraded candidate set (any collapse-marked or `Evidence::Unknown`
+    candidate) can never construct `AmbiguousOverload` at all — it stays the
+    honest single `Unresolved(OverloadAmbiguous)` route. **Task 4** wired it:
+    `resolve_in_object`'s genuine `>1`-candidate arm now returns one
+    concrete `Route` per candidate (each `Condition::AmbiguousDispatch`,
+    `fires_by_default()==false`, excluded from `default_reachable_routes()`
+    but included in the new `may_reachable_routes()` may-traversal set) —
+    see the Task 4 entry below for the full wiring, fixture, and
+    per-emission-site partition detail.
+  - **The `.dependencies` audit (Task 0, preflight — user-requested roadmap
+    item, now CLOSED).** Swept every source walker
+    (`snapshot/provider.rs`, `engine/snapshot.rs`, `engine/l2/l2_workspace.rs`,
+    `indexer.rs`, `main.rs`) plus every other `dependencies`-adjacent hit
+    (the `app.json` manifest field, the unrelated `.alpackages`
+    external-dependency machinery, doc mentions, frozen goldens): **CLEAN —
+    no walker anywhere special-cases a `.dependencies` folder**; it is a
+    normal old CAL→AL decompiled-source naming convention, already parsed,
+    resolved, and represented in the committed goldens (confirmed by real
+    resolved edges under `.dependencies/CDO/**` in
+    `tests/goldens/semantic-edges/*.json`). No fix was needed; the CDO
+    baselines this whole arc measured against required no re-derivation.
+  - **Full re-measurement (Task 5, this entry, `--test-threads=1`, full
+    160-test `program_resolve_harness` + the separate CDO-gated
+    `source_overload_alias_collision_guard_group_count_pinned_on_cdo` lib
+    test): every number reproduced BYTE-IDENTICAL to Task 4's post-change
+    baseline** — `unknown`=95 (primary=whole), `realUnknownRate`=0.5247%
+    primary / 0.2189% whole, `ambiguousResolved`=56 both scopes (ratchet
+    pinned, `assert_eq!`), `unknownByReason`={CompoundReceiver: 51,
+    UntrackedReceiver: 18, BuiltinPrecedenceCollision: 1, MemberNotFound: 25}
+    (sums to 95, both scopes), `genuine_wrong`=0 (HARD GATE), `fresh_missing`=3,
+    `fresh_wrong`=149 (all 149 adjudicated `fresh_ahead_dispatch`, never
+    `genuine_wrong`), `fresh_extra`=5024, `matches`=6201, audit digest
+    `b7b7407c71c19191feed4ca255614615154921427c0291b630cac88e6c6b08ac`; both
+    applicability gates green and NON-VACUOUS
+    (`route_applicability`: `total_routes=18663 violations=0 abi_unmapped=0`;
+    `fan_out_applicability`: all 4 violation kinds 0,
+    `routes_checked[interface=28 instance_builtin=463 implicit_trigger=1183
+    event=3404]`, all > 0); frozen `cdo_event_audit_frozen_load` /
+    `cdo_trigger_audit_frozen_load` digests unmoved
+    (`728d9bb6a5c...8281ac` / `a250f70896...39c28`); the T1 dual-publisher
+    guard fired 0 times (`eventFlowDualPublisherAliasSkips=0`); the T2
+    residual-collision guard pinned 0/0 (primary/whole-program marked
+    groups). All 160/160 harness tests + the collision-guard lib test pass,
+    single-threaded, foreground, `CDO_WS`+`ENFORCE_CDO_WS=1`.
+  - **Candidate-distribution correction (a review-caught undercount in the
+    Task 4 entry below, fixed here with the real `--graphify-export`
+    breakdown):** the 56 reclassified sites are **52 unique
+    (caller, target-method) pairs** — 39 with 2 candidate overloads, 12 with
+    3, and exactly 1 with 9 (`Codeunit "Http Content"`, System Application id
+    2354, `.Create` — a genuinely 9-way-overloaded platform method) — summing
+    to **123 unique (caller, candidate-target) routes**; 10 of those 123
+    pairs have a second call site inside the SAME caller reaching the SAME
+    candidate set, contributing a second `GEdge` each, which is where the
+    previously-reported **133 total `GEdge`s** (123 + 10) actually comes
+    from — not a uniform "2-3 candidates each" as originally stated.
+  - **Doc fixes (review nits):** `full.rs`'s `CalleeShape::Commit` arm comment
+    corrected from "the vanishingly rare case" to "structurally impossible in
+    valid AL" — `Commit` is a reserved statement keyword, so no compiling AL
+    source can ever declare a procedure that collides with it; the arm stays
+    defensive-only, not a reachable live path. `sig_fp.rs`'s
+    `source_routine_node_id` doc corrected from "the 5-site audit" naming only
+    4 call sites to the full 6-site reality (5 originally audited + the
+    Task-2-review-caught 6th, `semantic_golden.rs::build_fan_out_site_context`;
+    today's live call-site count is 5, since one of the original 5 was dead
+    code deleted rather than migrated — the 6 names the audit's total reach).
+  - **DEFERRED** (recorded, not started this arc — the plan's own
+    out-of-scope list plus the roadmap beyond it): the 13 workspace-tier
+    `MemberNotFound` sites (need genuinely new proven-absent machinery; the
+    preprocessor union-read favors absence proofs but needs its own
+    confirming fixture first); **arg-type dispatch** — now the natural NEXT
+    lever, since the 56 `AmbiguousResolved` edges already CARRY their full
+    candidate set and only need a picker; the cross-object table-scope +
+    interface per-implementer ambiguity populations (measured 0/56 on CDO
+    this arc, so out of scope by measurement, not by fiat); unquoted bare
+    implicit-`Rec` fields; protected `Variables[]`; `Sender` param-TYPE.
 - **Candidate-carrying `AmbiguousResolved` for same-object overload ambiguity —
   metric-definition change (Task 4, sigfp-and-ambiguous-reclassification
   plan).** `resolve_in_object`'s genuine `>1`-visible arm now PREVALIDATES
@@ -80,11 +209,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.003478942032992351 whole — the both-ways proof the reclassification is a
   pure relabeling, never a stat-juke). `--graphify-export` on CDO: 133
   `GEdge`s with `obligation:"ambiguous_resolved"` + `dispatch_shape:
-  "ambiguous_overload"` + `may_fire:true` (56 sites, 2-3 candidates each) —
-  real end-to-end confirmation of the Task 3 DTO mapping, not just the unit
-  fixture. `genuine_wrong=0` (HARD GATE, unchanged); every one of the 56
-  reclassified sites landed `fresh_extra` (L3's frozen golden was EMPTY for
-  all of them — acceptance-matrix rule 1, ungated): `fresh_extra`
+  "ambiguous_overload"` + `may_fire:true` — 52 unique caller-target pairs (39
+  with 2 candidates, 12 with 3, and 1 with 9 — `Codeunit "Http Content"
+  .Create`, System Application id 2354) summing to 123 unique
+  (caller, candidate-target) routes, with 10 of those pairs contributing a
+  second `GEdge` for a repeat call site in the same caller (123 + 10 = 133
+  total `GEdge`s) — real end-to-end confirmation of the Task 3 DTO mapping,
+  not just the unit fixture. `genuine_wrong=0` (HARD GATE, unchanged); every
+  one of the 56 reclassified sites landed `fresh_extra` (L3's frozen golden
+  was EMPTY for all of them — acceptance-matrix rule 1, ungated): `fresh_extra`
   4968→5024 (+56), `matches` 6257→6201 (-56, the mirror movement),
   `fresh_wrong`/`fresh_missing`/`fresh_ahead_dispatch` counts BYTE-IDENTICAL
   (149/3/149) to the pre-Task-4 baseline (`genuine_wrong` stays 0 in that

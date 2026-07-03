@@ -133,11 +133,23 @@ pub(crate) fn source_param_sig_fp(params: &[Param]) -> u64 {
 /// by every live reconstruction site (`node_extract::extract_nodes`,
 /// `resolve::body_map::BodyMap::build`,
 /// `resolve::full::resolve_full_program_from_parts`,
-/// `resolve::stub::resolve_program`) so a real declaration's identity can
-/// never silently diverge between sites (the 5-site audit's central risk —
-/// see the sigfp-and-ambiguous-reclassification plan, Task 2). `decl`
-/// supplies `name` / `enclosing_member` / `params` verbatim from the parsed
-/// IR: every field `RoutineNodeId` needs beyond the caller-supplied `object`.
+/// `resolve::stub::resolve_program`,
+/// `resolve::semantic_golden::build_fan_out_site_context`) so a real
+/// declaration's identity can never silently diverge between sites. The
+/// ORIGINAL Task 2 audit covered 5 sites (`node_extract.rs:452`,
+/// `body_map.rs:65`, `full.rs:210` [dead code, since deleted — see
+/// `full.rs`'s module doc], `full.rs:573`, `stub.rs:68`); a Task 2 review
+/// fix then found a 6th LIVE site the audit had missed
+/// (`semantic_golden.rs::build_fan_out_site_context`, which independently
+/// re-walks the same call sites for `route_applicability`'s fan-out
+/// soundness teeth and had hardcoded `sig_fp: 0` too — see the
+/// sigfp-and-ambiguous-reclassification plan, Task 2's "review fix" for the
+/// full divergence/blast-radius writeup). Post-fix, ALL 5 live construction
+/// sites (one of the original 5 was dead code, not a 6th survivor) are
+/// unified on this constructor — the 6-site figure names the audit's total
+/// reach, not today's live call-site count. `decl` supplies `name` /
+/// `enclosing_member` / `params` verbatim from the parsed IR: every field
+/// `RoutineNodeId` needs beyond the caller-supplied `object`.
 pub fn source_routine_node_id(object: ObjectNodeId, decl: &RoutineDecl) -> RoutineNodeId {
     RoutineNodeId {
         object,

@@ -383,9 +383,13 @@ fn resolve_call_site_obligation(
             // catalog (Step 4). Threading the real shape through (Task 4)
             // rather than hardcoding `Exact` costs nothing here (Step 4
             // always yields `Exact`) and stays consistent with the `Bare`
-            // arm above for the vanishingly rare case an object declares its
-            // OWN overloaded 0-arity `commit` procedure (Step 1 would then
-            // reach it before Step 4 ever runs).
+            // arm above for the case an object declares its OWN overloaded
+            // 0-arity `commit` procedure (Step 1 would then reach it before
+            // Step 4 ever runs) — structurally impossible in valid AL
+            // (`Commit` is a reserved statement keyword; no compiling AL
+            // source can declare a procedure that collides with it), so
+            // this arm stays defensive-only rather than a live path any
+            // real CDO/workspace source can reach.
             let (shape, routes) = if let Some(obj_node) = obj_node_opt {
                 resolve_bare(obj_node, "commit", 0, graph, index, body_map, with_state)
             } else {
