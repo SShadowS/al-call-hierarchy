@@ -1431,6 +1431,55 @@ report 50101 T
         );
     }
 
+    /// Task 1 review-fix pin (undescribed/untested finding): the
+    /// `RawKind::ModifyModification` arm added to `collect_routines` is
+    /// GLOBAL — it fires for ANY `modify()` block regardless of enclosing
+    /// object kind, not only a report `dataset`/`requestpage`. A
+    /// TableExtension's `fields { modify(Field) { trigger .. } }` is the
+    /// most common real-world shape this touches. `enclosing_member` must
+    /// populate (the Target-field fix is general), but
+    /// `in_dataset_modify_context` must stay `false` — `dataset_ctx` is only
+    /// ever forced `true` descending into a report `DatasetSection`/
+    /// `ReportDataitem`, neither of which a TableExtension's `fields`
+    /// section is — so the resolver's dataitem-map fallback correctly never
+    /// fires here (inert on CDO, verified by the Task 1 CDO re-measure; this
+    /// test pins the lowering behavior the resolver's inertness depends on).
+    #[test]
+    fn modify_modification_in_tableextension_fields_populates_member_not_dataset_context() {
+        let src = r#"
+tableextension 50100 "T Ext" extends Customer
+{
+    fields
+    {
+        modify(Name)
+        {
+            trigger OnBeforeValidate()
+            begin
+            end;
+        }
+    }
+}
+"#;
+        let af = parse(src);
+        let routine = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .find(|r| r.name.eq_ignore_ascii_case("OnBeforeValidate"))
+            .expect(
+                "the trigger nested in the TableExtension field modify() must still be lowered",
+            );
+        let (member_name, _origin) = routine
+            .enclosing_member
+            .as_ref()
+            .expect("modify()'s Target must populate enclosing_member outside Report objects too");
+        assert_eq!(member_name, "Name");
+        assert!(
+            !routine.in_dataset_modify_context,
+            "a TableExtension field modify() must never set report dataset context"
+        );
+    }
+
     /// A dataitem trigger's `dataitem_source_table` (the direct, non-fallback
     /// path) is unaffected by the `modify()` fix — sanity guard against
     /// regressing the existing mechanism while adding the new one.

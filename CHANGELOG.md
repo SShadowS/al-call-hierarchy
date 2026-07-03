@@ -61,6 +61,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FRESH_MISSING_CEILING`/`FRESH_WRONG_CEILING` audit ratchets are unchanged (measured
   values didn't move). Out of scope (deferred, per the plan): unquoted bare
   implicit-Rec dataitem-name fields; XmlPort/Query dataitem modeling (zero on CDO).
+  **Correction (Task 1 review fix, below):** the `CompoundReceiver` 61→60 (−1) delta
+  reported above was NOT a clean, isolated movement — it silently netted a genuine
+  −10 dataitem win against a +9 regression this same task introduced in
+  `is_atomic_receiver_token` (8 sites false-demoted to `Unknown`, +1 relabel). See the
+  Fixed entry for the corrected accounting and final post-fix numbers.
+
+### Fixed
+- **`is_atomic_receiver_token` judged a well-formed QUOTED receiver token on its
+  UNQUOTED-branch `(` call-shape exclusion before its own quote-parity check — 8
+  real-field CDO sites false-demoted to `Unknown` (dataitem-receivers plan, Task 1
+  review fix).** Task 1's centralization of the atomic-receiver-token guard (above)
+  applied the unquoted branch's `if s.contains('(') { return false; }` BEFORE checking
+  whether `s` was a well-formed quoted span — so a QUOTED identifier containing an
+  interior paren (a real BC field-name shape: `"View (Blob)"`, `"Request Page (XML)"`)
+  wrongly classified COMPOUND instead of ATOMIC, and Step 3a's bare implicit-Rec
+  quoted-field lookup never engaged for it. Confirmed by exhaustive pre/post edge-dump
+  diff over all 18,586 CDO routes (only 9 differ, zero collateral elsewhere): **8
+  regressed sites** — `Table 6175282 "CDO Queue Entry".al:172/:179`, `Table 6175284
+  "CDO E-Mail Template Line".al:900/:911`, `Table 6175307 "CDO E-Mail Templ. Line
+  Report".al:287/:298`, `.dependencies/CDO/Table/CDOPageDefaultfilter.Table.al:184/:193`
+  — restored from `Unknown(CompoundReceiver)` back to `Catalog`
+  (`Blob::createoutstream`/`Blob::createinstream`, matching the SAME field shapes Task
+  4 (applicability-param-subtype-recfield plan v2.1) had already independently
+  confirmed resolved via this exact Blob-catalog path before Task 1 ever ran); **1
+  site relabeled** (`.dependencies/CDO/Page/CDOPageDefaultFilters.Page.al:87`,
+  `CalcFields("View (Blob)")`) from `Unknown(CompoundReceiver)` to
+  `Unknown(UntrackedReceiver)` — genuinely `Unknown` before AND after, a diagnostic
+  reason-bucket correction only, not a resolution change. Fixed: the quoted branch of
+  `is_atomic_receiver_token` is now judged PURELY on quote-parity (`len() > 2`, starts
+  AND ends with `"`, exactly 2 quote characters) — an interior paren inside a
+  well-formed quoted span is just a character of the identifier, never a call-shape
+  signal (a quoted span can never itself be a call target); the `(` call-shape
+  exclusion now applies ONLY to the unquoted branch. New unit tests
+  (`is_atomic_receiver_token_quoted_paren_is_atomic`,
+  `is_atomic_receiver_token_paren_fix_negatives`,
+  `step3a_bare_quoted_field_with_interior_paren_resolves_blob` in `receiver.rs`) pin
+  the fix; Step 3a's now-redundant `len()`/`ends_with('"')` re-check (subsumed by the
+  helper once gated on `starts_with('"')`) removed. **The `modify()` lowerer fix
+  (Task 1, above) is GLOBAL** — `collect_routines`'s `RawKind::ModifyModification` arm
+  fires for any `modify()` block regardless of enclosing object kind (Table/Page/
+  PageExtension/TableExtension too, not only report `dataset`/`requestpage`); this was
+  correct but undescribed/untested — pinned by a new
+  `modify_modification_in_tableextension_fields_populates_member_not_dataset_context`
+  lowerer test (confirms `enclosing_member` populates for a TableExtension field
+  `modify()` trigger while `in_dataset_modify_context` correctly stays `false`, since
+  `dataset_ctx` is only ever forced `true` descending into a report `DatasetSection`/
+  `ReportDataitem`) — inert on CDO (verified: zero TableExtension `modify()` sites
+  exercise the resolver's dataset fallback). CDO re-measure (`CDO_WS`,
+  single-threaded, `--release`): primary/whole `unknown` **159→151**, primary
+  `real_unknown_rate` **0.88%→0.83%** (raw 151/18104=0.008340); `unknownByReason`
+  `CompoundReceiver` 60→**51** (−9 = the 8 restorations + the 1 relabel-away),
+  `UntrackedReceiver` 17→**18** (+1 = the relabel-in), `OverloadAmbiguous`=56,
+  `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25 all byte-identical;
+  `genuine_wrong`=0 and `fresh_wrong`=149 both UNCHANGED; `fresh_missing`=3 unchanged;
+  trigger/event frozen-audit digests UNCHANGED; fan-out non-vacuity counts
+  (interface=28, instance_builtin=463, implicit_trigger=1183, event=3404) UNCHANGED.
+  All 9 CDO gates green. Metric/count ratchets tightened (0.00879→0.00834 /
+  159→151, dated 2026-07-03).
 
 - **Applicability-checker fix + ABI param-Subtype fidelity + record-field chains complete
   — real-`unknown` 1.75%→0.99%, SUB-1% for the first time (applicability-param-subtype-

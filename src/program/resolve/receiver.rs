@@ -751,12 +751,20 @@ pub fn infer_receiver_type(
     // AL too but is not distinguished here from a not-yet-modeled
     // var/global without risking exactly the false-`Source` class this task
     // exists to avoid — deferred to a future task (roadmap).
+    //
+    // `starts_with('"')` narrows the helper's atomic verdict to the QUOTED
+    // shape specifically (the helper also returns `true` for a plain
+    // unquoted atomic identifier like `cust`, which this step must not
+    // treat as a field-name candidate). No separate `len()`/`ends_with('"')`
+    // recheck is needed here (Task 1 review-fix, LOW finding): once
+    // `is_atomic_receiver_token` is true AND the token starts with `"`, its
+    // own quoted branch has ALREADY proven `len() > 2 && ends_with('"') &&`
+    // exactly 2 quote chars — re-deriving that here would be dead,
+    // subsumed-by-construction code.
     // -----------------------------------------------------------------------
 
     if is_atomic_receiver_token(receiver_lc)
-        && receiver_lc.len() >= 2
         && receiver_lc.starts_with('"')
-        && receiver_lc.ends_with('"')
         && let Some((_, with_state)) = bare_ctx
         && with_state == WithState::NoWithProven
         && matches!(
@@ -2180,33 +2188,46 @@ fn parse_object_kind_type(kind: ObjectKind, name_rest: &str) -> ParsedType {
 /// sits inside quotes and is therefore NOT a segment separator at all.
 ///
 /// Two atomic shapes:
-/// - **Unquoted**: no `.` and no `(` anywhere (unchanged from before).
+/// - **Unquoted**: no `.` and no `(` anywhere (unchanged from before). The
+///   `(` exclusion is a CALL-SHAPE guard here — an unquoted `foo(1)` is a
+///   call, never a bare identifier.
 /// - **Quoted**: the ENTIRE string is a single quoted token — `len() > 2`
 ///   (excludes the degenerate empty-quote `""`), starts AND ends with `"`,
 ///   those are the ONLY two `"` characters in the string (excludes an
 ///   escaped-quote AL identifier — `""` doubling to embed a literal quote,
 ///   e.g. `"a""b"` — from this fast path; an unusual doubled-quote-escaped
-///   name fails closed to COMPOUND here, never silently mishandled), and no
-///   `(` anywhere (a quoted name is never itself a call target). `"A.B".C`
-///   and `"A.B"."C.D"` both have an UNQUOTED `.` after/between the quoted
-///   span(s) — a real segment separator — and so correctly stay COMPOUND.
+///   name fails closed to COMPOUND here, never silently mishandled).
+///   Judged PURELY on quote-parity — an interior `(` inside a well-formed
+///   quoted span is just a character of the identifier, never a call-shape
+///   signal (a quoted span can never itself be a call target, so there is
+///   nothing for a paren guard to protect against there). Real BC field
+///   names routinely contain parens — `"View (Blob)"`, `"Request Page
+///   (XML)"` — and MUST classify atomic (Task 1 review-fix: the prior
+///   version applied the unquoted branch's `(` exclusion BEFORE the
+///   quote-parity check, so any well-formed quoted token containing a paren
+///   wrongly fell to COMPOUND — an 8-site CDO regression, since fixed).
+///   `"A.B".C` and `"A.B"."C.D"` both have an UNQUOTED `.` after/between the
+///   quoted span(s) — a real segment separator — and so correctly stay
+///   COMPOUND (caught by the quoted branch's `ends_with('"')`/exactly-2-quotes
+///   check, since `.C`/`."C.D"` trails past the closing quote).
 ///
 /// Unsupported/malformed forms (unequal quote counts, a lone `"`, …) fail
 /// closed to COMPOUND — never guessed atomic.
 pub(crate) fn is_atomic_receiver_token(s: &str) -> bool {
-    if s.contains('(') {
-        return false;
-    }
     if s.starts_with('"') {
-        // Any quoted-shaped token — with or without an interior dot — must be
-        // well-formed to count as atomic: closes with exactly the matching
-        // pair of quotes (no stray/escaped quote chars) and is non-degenerate
-        // (`len() > 2` excludes the empty quoted identifier `""`). A
-        // malformed/unsupported quoted shape fails closed to COMPOUND here,
-        // consistent with every other decline in this module.
+        // Any quoted-shaped token — with or without an interior dot OR an
+        // interior paren — must be well-formed to count as atomic: closes
+        // with exactly the matching pair of quotes (no stray/escaped quote
+        // chars) and is non-degenerate (`len() > 2` excludes the empty
+        // quoted identifier `""`). A malformed/unsupported quoted shape
+        // fails closed to COMPOUND here, consistent with every other
+        // decline in this module. Deliberately NO `(` exclusion in this
+        // branch — see the doc comment above.
         return s.len() > 2 && s.ends_with('"') && s.matches('"').count() == 2;
     }
-    !s.contains('.')
+    // Unquoted branch: `(` is a call-shape guard (`foo(1)` is never a bare
+    // identifier); `.` is a segment separator.
+    !s.contains('(') && !s.contains('.')
 }
 
 /// Strip surrounding double-quotes from an identifier token.  Returns the
@@ -4141,6 +4162,47 @@ mod tests {
         );
     }
 
+    /// Task 1 review-fix regression guard: a well-formed QUOTED identifier
+    /// containing an interior paren is a real BC field-name shape (`"View
+    /// (Blob)"`, `"Request Page (XML)"`) and MUST classify atomic — the
+    /// paren-exclusion is a CALL-SHAPE guard that only applies to the
+    /// UNQUOTED branch (`foo(1)` is a call; a quoted span never is). The
+    /// pre-fix version applied the unquoted branch's `contains('(')` check
+    /// before the quote-parity check and wrongly failed these to COMPOUND —
+    /// an 8-site CDO regression (Table 6175282/:172,:179,
+    /// 6175284/:900,:911, 6175307/:287,:298 +2 in
+    /// `CDOPageDefaultfilter.Table.al`), since fixed.
+    #[test]
+    fn is_atomic_receiver_token_quoted_paren_is_atomic() {
+        assert!(
+            is_atomic_receiver_token("\"view (blob)\""),
+            "quoted identifier with interior paren must stay atomic"
+        );
+        assert!(
+            is_atomic_receiver_token("\"request page (xml)\""),
+            "quoted identifier with interior paren must stay atomic"
+        );
+    }
+
+    /// Companion negatives for the same review-fix: the unquoted call-shape
+    /// guard and the quoted-then-trailing-segment compound shape must both
+    /// still correctly decline, exactly as before the fix.
+    #[test]
+    fn is_atomic_receiver_token_paren_fix_negatives() {
+        assert!(
+            !is_atomic_receiver_token("foo(1)"),
+            "unquoted call-shape with an argument must still decline"
+        );
+        assert!(
+            !is_atomic_receiver_token("\"a.b\".c"),
+            "quoted segment followed by an unquoted trailing segment must still decline"
+        );
+        assert!(
+            !is_atomic_receiver_token("\"\""),
+            "degenerate empty quote must still decline"
+        );
+    }
+
     #[test]
     fn infer_rec_in_codeunit_is_unknown() {
         let (graph, app) = build_test_graph();
@@ -5897,6 +5959,57 @@ codeunit 50100 "C"
             Some((&body_map, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
+    }
+
+    /// Task 1 review-fix regression guard: the SAME Step 3a shape as above,
+    /// but the quoted field name carries an INTERIOR PAREN — mirrors the
+    /// real CDO shape (Table 6175282 "CDO Update Output Profile Line",
+    /// fields `"Request Page (XML)"` at rows :172/:179; also Table 6175284
+    /// :900/:911, Table 6175307 :287/:298, and 2 sites in the `.dependencies`
+    /// `CDOPageDefaultfilter.Table.al` :184/:193). The dataitem-receivers
+    /// plan Task 1 centralized this step's quote guard into
+    /// `is_atomic_receiver_token`, which (pre-fix) applied the UNQUOTED
+    /// branch's `contains('(')` call-shape exclusion BEFORE the quote-parity
+    /// check — so a well-formed quoted token containing a paren wrongly
+    /// classified COMPOUND and this step never engaged, regressing these 8
+    /// sites from `Catalog` (`Blob::createoutstream`/`createinstream`) to
+    /// `Unknown(CompoundReceiver)`. Fixed: the quoted branch is now judged
+    /// purely on quote-parity, so `"req page (xml)"` classifies atomic and
+    /// this step's Blob-field lookup fires exactly as it did before Task 1.
+    #[test]
+    fn step3a_bare_quoted_field_with_interior_paren_resolves_blob() {
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "req page (xml)".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph.objects[customer_idx].clone();
+        let body_map = BodyMap::build(&graph, &[]);
+        let _ = app;
+
+        let result = infer_receiver_type(
+            "\"req page (xml)\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Framework(FrameworkKind::Blob),
+            "a quoted field name with an interior paren must still resolve via \
+             Step 3a's Blob-field lookup, exactly like a paren-free quoted field name"
+        );
     }
 
     /// POSITIVE (b): the SAME shape, inside a TableExtension's own procedure
