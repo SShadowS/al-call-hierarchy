@@ -1670,10 +1670,21 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // those sites correctly stay `Unknown` under the fail-closed collision/
     // requestpage-isolation/var-shadow guards, per design (see
     // `.superpowers/sdd/task-1-report.md`).
+    //
+    // TIGHTENED 2026-07-03 (Task 1 review fix, 5b1bb94): 0.00879→0.008341,
+    // measured 0.83% (151/18104=0.0083407 — 6 decimals needed; 0.00834 sits
+    // BELOW the raw value). The review-fix restored 8 real
+    // quoted-paren Blob-field sites the naive `contains('(')` pre-check had
+    // regressed (Catalog→Unknown, masked by bucket netting) + 1 diagnostic
+    // relabel; ALL 18,586 routes diffed — exactly 9 changes. NOTE: the
+    // paragraph above's "zero collateral" and "correctly stay Unknown under
+    // guards" claims were WRONG (see the CHANGELOG correction) — the true
+    // accounting: 19 pre-fix dataitem UntrackedReceiver sites, all 29 real
+    // dataitem uses resolve, the residual contains zero dataitem sites.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.00879,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.00879 \
+        primary_rate <= 0.008341,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.008341 \
          (recorded 2026-07-03 post dataitem-receivers Task 1: 0.88% \
          [159/18104=0.008782], report-dataitem receivers — UntrackedReceiver \
          37→17 + CompoundReceiver 61→60; was 0.99% post \
@@ -1848,10 +1859,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // summary). `unknownByReason`={CompoundReceiver: 60, UntrackedReceiver:
     // 17, OverloadAmbiguous: 56, BuiltinPrecedenceCollision: 1,
     // MemberNotFound: 25}, sum==159.
+    // TIGHTENED 2026-07-03 (Task 1 review fix, 5b1bb94): 159→151 — the
+    // quoted-paren guard fix restored 8 Catalog sites (+1 relabel);
+    // `unknownByReason`={CompoundReceiver: 51, UntrackedReceiver: 18,
+    // OverloadAmbiguous: 56, BuiltinPrecedenceCollision: 1,
+    // MemberNotFound: 25}, sum==151.
     assert!(
-        ph.unknown <= 159,
-        "primary unknown count {} exceeds ceiling 159 (recorded 2026-07-03 \
-         post dataitem-receivers Task 1: 159 — report-dataitem receivers, \
+        ph.unknown <= 151,
+        "primary unknown count {} exceeds ceiling 151 (recorded 2026-07-03 \
+         post dataitem-receivers Task 1 + review fix: 151 — quoted-paren \
+         restoration; was 159 post Task 1 alone — report-dataitem receivers, \
          UntrackedReceiver 37→17 + CompoundReceiver 61→60; was 180 post \
          applicability-param-subtype-recfield Task 4/5, 234 post Task 3, \
          317 post plan v2.1 Task 5 FINAL, 327 post plan v2.1 Task 3, 329 \
@@ -1892,9 +1909,12 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-03 (dataitem-receivers plan, Task 1): 180→159,
     // alongside the primary ceiling above; whole-program `unknown`=159,
     // same value as primary today.
+    //
+    // TIGHTENED 2026-07-03 (Task 1 review fix, 5b1bb94): 159→151, alongside
+    // the primary ceiling above (quoted-paren restoration).
     assert!(
-        h.unknown <= 159,
-        "whole-program unknown count {} exceeds ceiling 159 (recorded \
+        h.unknown <= 151,
+        "whole-program unknown count {} exceeds ceiling 151 (recorded \
          2026-07-03 post dataitem-receivers Task 1: 159 — see the \
          primary-scoped ceiling comment above for the full history and \
          adjudication) — engine regressed; investigate before raising the \
