@@ -634,6 +634,11 @@ pub fn classify_obligation(e: &Edge) -> ObligationOutcome {
 /// real-unknown = Unknown obligations / all obligations (spec §3.2).
 ///
 /// `ConditionalResolved` edges count as resolved-for-resolution (not Unknown).
+/// `AmbiguousResolved` edges (sigfp-and-ambiguous-reclassification plan, Task
+/// 4 — see the charter's §5/§8 metric-definition addendum and
+/// [`Histogram::legacy_unknown_rate_including_ambiguous`]) ALSO count as
+/// resolved-for-resolution here, since `classify_obligation` never returns
+/// `Unknown` for them.
 pub fn real_unknown_rate(edges: &[Edge]) -> f64 {
     if edges.is_empty() {
         return 0.0;
@@ -740,6 +745,30 @@ impl Histogram {
             0.0
         } else {
             self.unknown as f64 / self.total as f64
+        }
+    }
+
+    /// Legacy/advisory rate that counts `ambiguous_resolved` edges as unknown
+    /// too — the metric definition BEFORE the sigfp-and-ambiguous-
+    /// reclassification plan's Task 4 (both-ways reporting, round-1 addendum
+    /// "T4/T5 — both-ways metric reporting", BINDING). `real_unknown_rate`
+    /// (above) is the CORRECT, current metric: a closed
+    /// `DispatchShape::AmbiguousOverload` candidate set is a proven-exhaustive
+    /// enumeration, not a resolution failure, so `ObligationOutcome::
+    /// AmbiguousResolved` edges are honestly excluded from `unknown`. This
+    /// method exists SOLELY so the metric-definition change is never
+    /// stat-juked: it reports what the rate would still read under the OLD
+    /// (pre-Task-4) definition, side-by-side with the new one, in every
+    /// consumer that surfaces `real_unknown_rate` (see `aldump`'s
+    /// `realUnknownRateLegacyIncludingAmbiguous` key). These edges remain
+    /// PRACTICALLY unresolved at runtime from the tooling's perspective — a
+    /// CLOSED candidate set, not a PICK — which is exactly why both numbers
+    /// are reported, not just the new one.
+    pub fn legacy_unknown_rate_including_ambiguous(&self) -> f64 {
+        if self.total == 0 {
+            0.0
+        } else {
+            (self.unknown + self.ambiguous_resolved) as f64 / self.total as f64
         }
     }
 }

@@ -230,6 +230,30 @@ category cannot express that; each *route* carries its own evidence.)
 `DynamicOpen`/`Opaque` with honest bounds are tracked separately and are **not** failures. Plus
 existing diagnostic sub-states: `ambiguous`, `memberNotFound`.
 
+> **Metric-definition addendum (2026-07-03, sigfp-and-ambiguous-reclassification plan, Task 4):**
+> a same-object, same-arity overload set that resolves to `>1` DISTINCT, concrete, in-source
+> candidates (`DispatchShape::AmbiguousOverload`, every route carrying `Condition::
+> AmbiguousDispatch`) is now `ObligationOutcome::AmbiguousResolved`, not `Unknown` — the
+> candidate set is a **proven-closed, snapshot-enumerated enumeration**, not a resolution gap:
+> the engine has correctly identified *every* routine the call could possibly dispatch to; the
+> only thing it cannot do is pick *which one* (that needs runtime argument-type dispatch, which
+> this engine does not model — deferred, see the plan's roadmap). This is DELIBERATELY NOT the
+> same claim as `Evidence::Source` (a proven single target) — it is a new, honestly-labeled
+> third state between "resolved" and "unknown". These edges remain **PRACTICALLY unresolved at
+> runtime from the tooling's perspective** — a closed candidate set, not a pick — which is why
+> `real_unknown_rate` reports BOTH ways (see `Histogram::real_unknown_rate` — the new, correct
+> metric — and `Histogram::legacy_unknown_rate_including_ambiguous` — the old, pre-Task-4
+> definition, kept side-by-side so this reclassification is never stat-juked). Measured on CDO
+> (`--test-threads=1`, full 160-test harness, all green): `unknown` 151→95 (the FULL 56-site
+> same-object `OverloadAmbiguous` population reclassified `ambiguousResolved` — Step 0 measured
+> 100% of the 56 CDO sites as this direct same-object shape, zero from the cross-object/interface
+> populations this plan leaves out of scope), `realUnknownRate` 0.8341%→0.5247% (primary-scoped,
+> 95/18104 edges), `realUnknownRateLegacyIncludingAmbiguous` byte-identical to the pre-Task-4
+> `realUnknownRate` (0.008340698188245692) — the both-ways proof this is a pure relabeling, never
+> a stat-juke. `genuine_wrong` stays 0 (hard gate); every reclassified site's frozen L3 golden was
+> empty (`fresh_extra` 4968→5024, `matches` 6257→6201, `fresh_wrong`/`fresh_missing` byte-identical
+> at 149/3) — no fresh-vs-L3 ceiling needed to move.
+
 ## 6. Principles (non-negotiable)
 
 1. **No false certainty** — honesty over flashiness; conservative under uncertainty; never claim
@@ -265,7 +289,10 @@ existing diagnostic sub-states: `ambiguous`, `memberNotFound`.
 - **Primary, CI-gated metric:** **workspace-originated real-`unknown` rate → 0** (routes with
   `Evidence::Unknown` originating in workspace edges), with **zero false-`Source`/`ABI`**
   (soundness). Workspace-originated denominator so a regression is not drowned by Base App's ~8k
-  uniform files.
+  uniform files. **2026-07-03 addendum (Task 4):** `ObligationOutcome::AmbiguousResolved` edges
+  (see §5's metric-definition addendum) are excluded from this primary metric — they are a
+  proven-closed candidate set, not a resolution failure — but are ALWAYS reported alongside a
+  legacy/advisory rate that still counts them, so the exclusion is never invisible.
 - **Stratified reporting** (never one aggregate): workspace / deep-source / symbol-boundary /
   synthetic(event,trigger) / dynamic — separately.
 - **Risk-weighted, not raw:** rank residual unknowns by **centrality / query-blocking impact**

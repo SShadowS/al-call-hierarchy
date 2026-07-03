@@ -1572,9 +1572,15 @@ fn infer_call_result_receiver(
         return None;
     }
 
-    // 2. Type-query `function_lc` via `resolve_bare`. Contract: always
-    //    exactly one `Route`; only a `Routine` target is usable here.
-    let routes = resolve_bare(
+    // 2. Type-query `function_lc` via `resolve_bare`. Contract: usable ONLY
+    //    when it resolved to exactly one `Route` of a `Routine` target — a
+    //    genuine same-object overload ambiguity (Task 4,
+    //    sigfp-and-ambiguous-reclassification plan: `resolve_bare` can now
+    //    return >1 candidate routes for `DispatchShape::AmbiguousOverload`)
+    //    has no single unambiguous return type to type-query, so the
+    //    `[route]` slice pattern's `else` arm already declines correctly —
+    //    no explicit shape check needed.
+    let (_shape, routes) = resolve_bare(
         from_object,
         &function_lc,
         args.len(),

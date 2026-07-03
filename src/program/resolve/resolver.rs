@@ -52,9 +52,9 @@ use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
-    AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
-    EdgeKind, Evidence, OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos,
-    UnknownReason, Witness, callee_fp,
+    AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, Condition,
+    DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind, OpenWorldReason, Route, RouteTarget,
+    SetCompleteness, SiteId, SourcePos, UnknownReason, Witness, callee_fp,
 };
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::ResolveIndex;
@@ -286,6 +286,16 @@ fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool
 /// order). An `UNKNOWN_ARITY`-sentinel candidate structurally never matches a
 /// real call's `arity` (see the sentinel's doc), so it silently drops out of
 /// `matched` below — never emitting, exactly like a genuine arity mismatch.
+///
+/// # Return shape (Task 4, sigfp-and-ambiguous-reclassification plan)
+///
+/// Returns `Option<(DispatchShape, Vec<Route>)>` (the file's own
+/// `(DispatchShape, Vec<Route>)` tuple convention — see [`member_catalog_route`]
+/// etc.): `None` only on genuine name-absence (unchanged). Every `Some` outcome
+/// is `(DispatchShape::Exact, vec![single route])` EXCEPT the genuine `>1`
+/// visible, prevalidated-concrete candidate case, which is
+/// `(DispatchShape::AmbiguousOverload, vec![one route per candidate])` — see
+/// the `_` arm's doc below for the prevalidation contract.
 #[allow(clippy::too_many_arguments)] // 7 pre-existing params + `from_object` (Task 1); each is a distinct identity/lookup input, grouping would obscure call sites.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
@@ -296,7 +306,7 @@ fn resolve_in_object(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
-) -> Option<Route> {
+) -> Option<(DispatchShape, Vec<Route>)> {
     let candidates = index.routines_in_object(obj_id, name_lc);
     if candidates.is_empty() {
         return None;
@@ -341,7 +351,10 @@ fn resolve_in_object(
         // MemberNotFound stop. Reason-split Task 2: nothing to be AMBIGUOUS
         // between (zero candidates survived the arity filter) — distinct from
         // OverloadAmbiguous, which now means genuine >1-candidate ambiguity.
-        return Some(unresolved_route(UnknownReason::ArityMismatch));
+        return Some((
+            DispatchShape::Exact,
+            vec![unresolved_route(UnknownReason::ArityMismatch)],
+        ));
     }
 
     // Per-candidate visibility filter (Task 1): partition the arity-matched
@@ -356,7 +369,7 @@ fn resolve_in_object(
         0 => {
             let reason = access_exclusion_reason(obj_id, name_lc, arity, from_object, graph, index)
                 .unwrap_or(UnknownReason::IndexIntegrationGap);
-            Some(unresolved_route(reason))
+            Some((DispatchShape::Exact, vec![unresolved_route(reason)]))
         }
         // Overload-narrowing guard: only select the lone survivor when it was
         // ALSO the lone candidate before visibility filtering. If access
@@ -402,19 +415,75 @@ fn resolve_in_object(
             // `routine_is_collapse_marked` call sites enumerated above are
             // unchanged by Task 2 and still emit `OverloadAmbiguous`).
             if routine_is_collapse_marked(rid0, graph) {
-                return Some(unresolved_route(UnknownReason::AbiCollapsedOverload));
+                return Some((
+                    DispatchShape::Exact,
+                    vec![unresolved_route(UnknownReason::AbiCollapsedOverload)],
+                ));
             }
-            Some(make_routine_route(rid0, obj_tier, body_map, graph))
+            Some((
+                DispatchShape::Exact,
+                vec![make_routine_route(rid0, obj_tier, body_map, graph)],
+            ))
         }
         // pre_filter_count == 1 was already handled by the guarded arm above;
         // reaching `visible.len() == 1` here means `pre_filter_count > 1` —
         // access narrowed an originally-ambiguous same-arity set down to one
         // survivor. NOT a safe selection (see the doc above): the decided
         // reason-split Task 2 label for this shape.
-        1 => Some(unresolved_route(UnknownReason::AccessFilteredOverload)),
-        // >1 visible: genuine unresolved ambiguity — stays OverloadAmbiguous
-        // (reason-split Task 2: unchanged, the textbook case).
-        _ => Some(unresolved_route(UnknownReason::OverloadAmbiguous)),
+        1 => Some((
+            DispatchShape::Exact,
+            vec![unresolved_route(UnknownReason::AccessFilteredOverload)],
+        )),
+        // >1 visible: genuine unresolved ambiguity (sigfp-and-ambiguous-
+        // reclassification plan, Task 4 — round-2 closer #1 PREVALIDATION):
+        // every candidate must be CONCRETE — not collapse-marked (ABI or
+        // source-alias) AND its constructed route must carry non-`Unknown`
+        // evidence (a source-tier candidate absent from `BodyMap` would
+        // otherwise silently degrade `make_routine_route` to
+        // `Unknown(IndexIntegrationGap)`) — BEFORE the
+        // `DispatchShape::AmbiguousOverload` shape is ever constructed. A
+        // SINGLE non-concrete candidate degrades the WHOLE set back to
+        // today's pre-Task-4 `Unknown(OverloadAmbiguous)` behavior (shape
+        // `Exact`, ONE route) — never partially construct, and never emit a
+        // mixed/degraded `AmbiguousOverload` set (see
+        // `edge::classify_obligation`'s degraded-set backstop, which exists
+        // as defense-in-depth for exactly this contract, not as the live
+        // mechanism). Only when EVERY candidate survives prevalidation do we
+        // return one concrete route per candidate, each tagged
+        // `Condition::AmbiguousDispatch` (round-1 addendum: "T4 — strict
+        // `AmbiguousResolved` preconditions").
+        _ => {
+            let degraded = visible
+                .iter()
+                .any(|rid| routine_is_collapse_marked(rid, graph));
+            if degraded {
+                return Some((
+                    DispatchShape::Exact,
+                    vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+                ));
+            }
+            let candidate_routes: Vec<Route> = visible
+                .iter()
+                .map(|rid| make_routine_route(rid, obj_tier, body_map, graph))
+                .collect();
+            if candidate_routes
+                .iter()
+                .any(|r| r.evidence.kind() == EvidenceKind::Unknown)
+            {
+                return Some((
+                    DispatchShape::Exact,
+                    vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+                ));
+            }
+            let routes = candidate_routes
+                .into_iter()
+                .map(|mut r| {
+                    r.conditions.push(Condition::AmbiguousDispatch);
+                    r
+                })
+                .collect();
+            Some((DispatchShape::AmbiguousOverload, routes))
+        }
     }
 }
 
@@ -864,7 +933,7 @@ fn resolve_in_table_scope(
                 index,
                 body_map,
             ) {
-                Some(route) => TableScopeOutcome::Resolved(DispatchShape::Exact, vec![route]),
+                Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
                 // Defensive: `object_has_visible_member_candidate` already
                 // confirmed a visible arity match exists, so `resolve_in_object`
                 // should always return `Some` here.
@@ -959,9 +1028,13 @@ fn is_bare_builtin_or_page_intrinsic(name_lc: &str) -> bool {
 /// argument. Every OTHER precedence step is unaffected by `with_state` (a
 /// `with` block does not change own-object/extension-base/builtin lookup).
 ///
-/// Returns a `Vec<Route>` with exactly one entry (bare calls are
-/// single-dispatch in AL; the vec wrapper aligns with the multi-route edge
-/// model for future polymorphic cases).
+/// Returns `(DispatchShape, Vec<Route>)` (Task 4, sigfp-and-ambiguous-
+/// reclassification plan — the file's own tuple convention, mirroring
+/// [`resolve_member`]): a bare call is single-dispatch (`DispatchShape::Exact`,
+/// exactly one route) in every case EXCEPT a genuine same-object overload
+/// ambiguity resolved via [`resolve_in_object`]'s prevalidated candidate-set
+/// arm, which returns `DispatchShape::AmbiguousOverload` with one route per
+/// candidate — see that function's doc.
 pub fn resolve_bare(
     from_object: &ObjectNode,
     name_lc: &str,
@@ -970,9 +1043,9 @@ pub fn resolve_bare(
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
     with_state: WithState,
-) -> Vec<Route> {
+) -> (DispatchShape, Vec<Route>) {
     // 1. Own object.
-    if let Some(route) = resolve_in_object(
+    if let Some((shape, routes)) = resolve_in_object(
         &from_object.id,
         from_object.tier,
         name_lc,
@@ -982,7 +1055,7 @@ pub fn resolve_bare(
         index,
         body_map,
     ) {
-        return vec![route];
+        return (shape, routes);
     }
 
     // Task 3: running diagnostic reason for the eventual Step 5 fallback, in
@@ -1021,7 +1094,7 @@ pub fn resolve_bare(
             graph,
             index,
         ) {
-            if let Some(route) = resolve_in_object(
+            if let Some((shape, routes)) = resolve_in_object(
                 &base_id,
                 base_tier,
                 name_lc,
@@ -1031,7 +1104,7 @@ pub fn resolve_bare(
                 index,
                 body_map,
             ) {
-                return vec![route];
+                return (shape, routes);
             }
         } else if let Some(r) =
             access_exclusion_reason(&base_id, name_lc, arity, &from_object.id, graph, index)
@@ -1083,7 +1156,7 @@ pub fn resolve_bare(
                     index,
                     body_map,
                 ) {
-                    TableScopeOutcome::Resolved(_, routes) => {
+                    TableScopeOutcome::Resolved(shape, routes) => {
                         // (4) Builtin/intrinsic PROBE-THEN-DECIDE: the probe
                         // (step 3) already ran; a same-name+arity table-scope
                         // candidate exists AND `name_lc` is also a global
@@ -1093,14 +1166,18 @@ pub fn resolve_bare(
                         // (never emit `Catalog` here; Step 4 below is the
                         // only place that does).
                         if is_bare_builtin_or_page_intrinsic(name_lc) {
-                            return vec![unresolved_route(
-                                UnknownReason::BuiltinPrecedenceCollision,
-                            )];
+                            return (
+                                DispatchShape::Exact,
+                                vec![unresolved_route(UnknownReason::BuiltinPrecedenceCollision)],
+                            );
                         }
-                        return routes;
+                        return (shape, routes);
                     }
                     TableScopeOutcome::Ambiguous => {
-                        return vec![unresolved_route(UnknownReason::OverloadAmbiguous)];
+                        return (
+                            DispatchShape::Exact,
+                            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+                        );
                     }
                     TableScopeOutcome::NotVisible { access_excluded } => {
                         if let Some(r) = access_excluded {
@@ -1128,16 +1205,19 @@ pub fn resolve_bare(
 
     // 4. Global builtin.
     if let Some(builtin_id) = global_builtin_id(name_lc) {
-        return vec![Route {
-            target: RouteTarget::Builtin(builtin_id.clone()),
-            evidence: Evidence::Catalog,
-            conditions: vec![],
-            witness: Witness::CatalogEntry {
-                id: builtin_id,
-                catalog_version: catalog_version().to_string(),
-            },
-            receiver_tier: None,
-        }];
+        return (
+            DispatchShape::Exact,
+            vec![Route {
+                target: RouteTarget::Builtin(builtin_id.clone()),
+                evidence: Evidence::Catalog,
+                conditions: vec![],
+                witness: Witness::CatalogEntry {
+                    id: builtin_id,
+                    catalog_version: catalog_version().to_string(),
+                },
+                receiver_tier: None,
+            }],
+        );
     }
 
     // 5. Unknown. Reason-split Task 2: the `MemberNotFound` DEFAULT (never
@@ -1148,9 +1228,12 @@ pub fn resolve_bare(
     // CodeunitTableNoExcluded/ReportRecExcluded/an access-exclusion reason)
     // is untagged — tier is `MemberNotFound`-specific (see its doc).
     if reason == UnknownReason::MemberNotFound {
-        return vec![unresolved_route_with_tier(reason, from_object.tier)];
+        return (
+            DispatchShape::Exact,
+            vec![unresolved_route_with_tier(reason, from_object.tier)],
+        );
     }
-    vec![unresolved_route(reason)]
+    (DispatchShape::Exact, vec![unresolved_route(reason)])
 }
 
 // ---------------------------------------------------------------------------
@@ -1457,6 +1540,35 @@ fn member_dynamic_open_route() -> (DispatchShape, Vec<Route>) {
     )
 }
 
+/// Collapse a per-IMPLEMENTER [`resolve_in_object`] result to a SINGLE route
+/// for the `Interface` fan-out's per-implementer slot (Task 4, round-1 review
+/// addendum "T4 — interface nesting OUT OF SCOPE", BINDING): an implementer's
+/// OWN same-object overload ambiguity must NOT extend a nested candidate set
+/// into the already-`Polymorphic` edge — flattening would corrupt both
+/// Complete-vs-Partial completeness semantics (the interface fan-out is
+/// `SetCompleteness::Partial{ReverseDependentImplementers}`, open-world; a
+/// nested `AmbiguousOverload` candidate set is `Complete`, closed-world — the
+/// two must never merge) and the per-implementer grouping (BC-Brain expects
+/// one route per implementer, not a variable-width nested fan-out). A genuine
+/// `DispatchShape::AmbiguousOverload` result collapses back to exactly the
+/// single `Unresolved(OverloadAmbiguous)` route this per-implementer slot
+/// always emitted for a same-object ambiguity BEFORE Task 4 existed — see the
+/// `resolve_member_interface_implementer_own_overload_ambiguity_stays_nested_unresolved`
+/// fixture. Every OTHER shape `resolve_in_object` returns is, by
+/// construction, already exactly one route, so `routes.pop()` is a plain
+/// unwrap of that invariant — `absent` (the `None`-name-absent fallback,
+/// pre-built by each call site with its own tier/reason) is the only other
+/// path.
+fn interface_delegate_route(result: Option<(DispatchShape, Vec<Route>)>, absent: Route) -> Route {
+    match result {
+        Some((DispatchShape::AmbiguousOverload, _candidate_routes)) => {
+            unresolved_route(UnknownReason::OverloadAmbiguous)
+        }
+        Some((_, mut routes)) => routes.pop().unwrap_or(absent),
+        None => absent,
+    }
+}
+
 /// Map an object kind to its instance-builtin [`FrameworkKind`] catalog, if any.
 ///
 /// Returns `None` for kinds that have no instance-builtin catalog — their member
@@ -1701,7 +1813,7 @@ pub fn resolve_member(
             }
 
             // General dispatch: resolve the method among the target object's procedures.
-            if let Some(route) = resolve_in_object(
+            if let Some((shape, routes)) = resolve_in_object(
                 &target_id,
                 target_tier,
                 method_lc,
@@ -1711,7 +1823,7 @@ pub fn resolve_member(
                 index,
                 body_map,
             ) {
-                (DispatchShape::Exact, vec![route])
+                (shape, routes)
             } else {
                 // Method name absent from target object's declared procedures.
                 // Fall through to the instance-builtin catalog for kinds that have one
@@ -1733,7 +1845,7 @@ pub fn resolve_member(
         }
         ReceiverType::SelfObject => {
             // Dispatch to the calling object's own declared procedures.
-            if let Some(route) = resolve_in_object(
+            if let Some((shape, routes)) = resolve_in_object(
                 &from_object.id,
                 from_object.tier,
                 method_lc,
@@ -1743,7 +1855,7 @@ pub fn resolve_member(
                 index,
                 body_map,
             ) {
-                (DispatchShape::Exact, vec![route])
+                (shape, routes)
             } else {
                 // Method not found in own object — the receiver (from_object
                 // itself) IS resolved by construction; tag its tier
@@ -1790,7 +1902,7 @@ pub fn resolve_member(
                     // `unwrap_or` fires only when this implementer does not
                     // declare `method_lc` at all (`resolve_in_object` returns
                     // `None` only on a name-absent `candidates.is_empty()`).
-                    let route = resolve_in_object(
+                    let result = resolve_in_object(
                         impl_id,
                         impl_tier,
                         method_lc,
@@ -1799,15 +1911,20 @@ pub fn resolve_member(
                         graph,
                         index,
                         body_map,
-                    )
-                    .unwrap_or_else(|| {
-                        // The implementer object itself IS resolved (`impl_id`/
-                        // `impl_tier` above) — tag its tier (reason-split Task
-                        // 2). `impl_tier == SymbolOnly` here by construction
-                        // (this branch), so this tier can never PROVE absence —
-                        // see `MemberNotFound`'s doc.
-                        unresolved_route_with_tier(UnknownReason::MemberNotFound, impl_tier)
-                    });
+                    );
+                    // The implementer object itself IS resolved (`impl_id`/
+                    // `impl_tier` above) — tag its tier (reason-split Task 2)
+                    // on the name-absent fallback. `impl_tier == SymbolOnly`
+                    // here by construction (this branch), so this tier can
+                    // never PROVE absence — see `MemberNotFound`'s doc. A
+                    // nested `AmbiguousOverload` result collapses to a single
+                    // route, never extends this Polymorphic edge — see
+                    // `interface_delegate_route`'s doc (Task 4 round-1
+                    // addendum, interface nesting OUT OF SCOPE).
+                    let route = interface_delegate_route(
+                        result,
+                        unresolved_route_with_tier(UnknownReason::MemberNotFound, impl_tier),
+                    );
                     routes.push(route);
                 } else {
                     let candidates = index.routines_in_object(impl_id, method_lc);
@@ -1827,10 +1944,14 @@ pub fn resolve_member(
                         match matching {
                             1 => {
                                 // Unique arity-matched overload: guaranteed to
-                                // resolve — the `unwrap_or` is defensive
-                                // (should never fire; `resolve_in_object`
-                                // itself finds `matched.len() == 1`).
-                                let route = resolve_in_object(
+                                // resolve — the `unresolved_route` fallback is
+                                // defensive (should never fire;
+                                // `resolve_in_object` itself finds
+                                // `matched.len() == 1`, so its `_` arm's
+                                // `AmbiguousOverload` shape is structurally
+                                // unreachable here too — `interface_delegate_
+                                // route` handles it uniformly anyway).
+                                let result = resolve_in_object(
                                     impl_id,
                                     impl_tier,
                                     method_lc,
@@ -1839,10 +1960,11 @@ pub fn resolve_member(
                                     graph,
                                     index,
                                     body_map,
-                                )
-                                .unwrap_or_else(|| {
-                                    unresolved_route(UnknownReason::IndexIntegrationGap)
-                                });
+                                );
+                                let route = interface_delegate_route(
+                                    result,
+                                    unresolved_route(UnknownReason::IndexIntegrationGap),
+                                );
                                 routes.push(route);
                             }
                             _ => {
@@ -2237,8 +2359,8 @@ mod tests {
     use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{
-        Condition, DispatchShape, Edge, EdgeKind, Evidence, ObligationOutcome, OpenWorldReason,
-        RouteTarget, SetCompleteness, Witness, classify_obligation,
+        Condition, DispatchShape, Edge, EdgeKind, Evidence, Histogram, ObligationOutcome,
+        OpenWorldReason, RouteTarget, SetCompleteness, Witness, classify_obligation,
     };
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::topology::DependencyGraph;
@@ -2454,7 +2576,7 @@ codeunit 50100 "MyCU"
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "MyCU");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "dofoo",
             0,
@@ -2508,7 +2630,7 @@ codeunit 50101 "CallerCU"
 
         let from_obj = find_obj(&graph, "CallerCU");
         // "message" (1 arg) is a recognized global builtin.
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "message",
             1,
@@ -2568,7 +2690,7 @@ codeunit 50102 "AnotherCU"
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "AnotherCU");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "xyz_this_does_not_exist_at_all",
             0,
@@ -2617,7 +2739,7 @@ table 50108 "BareTableNF"
             TrustTier::Workspace,
             "fixture sanity: the workspace-parsed table must be Workspace-tier"
         );
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "xyz_this_does_not_exist_at_all",
             0,
@@ -2691,7 +2813,7 @@ table 50000 Customer
         );
 
         // "init" is not in the extension itself — only in the base Table.
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "init",
             0,
@@ -2768,7 +2890,7 @@ tableextension 52901 "ExtA" extends Base
         let from_obj = find_obj(&graph, "ExtA");
         assert_eq!(from_obj.id.kind, ObjectKind::TableExtension);
 
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "l",
             0,
@@ -2816,7 +2938,7 @@ tableextension 52903 "ExtA" extends Base
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "pub",
             0,
@@ -2865,7 +2987,7 @@ tableextension 52905 "ExtA" extends Base
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "i",
             0,
@@ -2915,7 +3037,7 @@ tableextension 52907 "ExtA" extends Base
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "p",
             0,
@@ -2963,7 +3085,7 @@ pageextension 52909 "ExtA" extends BasePage
         let from_obj = find_obj(&graph, "ExtA");
         assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
 
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "l",
             0,
@@ -3010,7 +3132,7 @@ pageextension 52911 "ExtA" extends BasePage
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "pub",
             0,
@@ -3174,7 +3296,7 @@ pageextension 52911 "ExtA" extends BasePage
 
         // The REAL resolution call (Step 2 of resolve_bare) must NOT emit a
         // route to the wrong-arity candidate despite that existence signal.
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "dofoo",
             2,
@@ -3987,7 +4109,7 @@ codeunit 50200 "ContractCU"
         let from_obj = find_obj(&graph, "ContractCU");
 
         // Source route: resolve to own procedure.
-        let src_routes = resolve_bare(
+        let (_shape, src_routes) = resolve_bare(
             from_obj,
             "myproc",
             0,
@@ -4005,7 +4127,7 @@ codeunit 50200 "ContractCU"
         );
 
         // Catalog route: global builtin.
-        let cat_routes = resolve_bare(
+        let (_shape, cat_routes) = resolve_bare(
             from_obj,
             "error",
             1,
@@ -4023,7 +4145,7 @@ codeunit 50200 "ContractCU"
         );
 
         // Unknown route: no match anywhere.
-        let unk_routes = resolve_bare(
+        let (_shape, unk_routes) = resolve_bare(
             from_obj,
             "zz_absolutely_no_match_xyz",
             0,
@@ -4070,7 +4192,7 @@ codeunit 50103 "ArityMismatchCU"
 
         let from_obj = find_obj(&graph, "ArityMismatchCU");
         // "dofoo" exists with arity 0; we request arity 2 → no match.
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "dofoo",
             2,
@@ -4457,7 +4579,7 @@ codeunit 50104 "BodyMissCU"
         let body_map = BodyMap::build(&graph, &[]);
 
         let from_obj = find_obj(&graph, "BodyMissCU");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "myproc",
             0,
@@ -4540,7 +4662,7 @@ codeunit 50300 "OverloadCU"
         let from_obj = find_obj(&graph, "OverloadCU");
 
         // Resolve with arity=1 → must get the Post(x: Integer) overload (params_count=1).
-        let routes1 = resolve_bare(
+        let (_shape1, routes1) = resolve_bare(
             from_obj,
             "post",
             1,
@@ -4565,7 +4687,7 @@ codeunit 50300 "OverloadCU"
         );
 
         // Resolve with arity=0 → must get the Post() overload (params_count=0).
-        let routes0 = resolve_bare(
+        let (_shape0, routes0) = resolve_bare(
             from_obj,
             "post",
             0,
@@ -7165,6 +7287,148 @@ codeunit 51499 "IfaceCaller2"
         assert_eq!(routes[0].evidence, Evidence::Source);
     }
 
+    /// Task 4 fixture (e), round-1 addendum "T4 — interface nesting OUT OF
+    /// SCOPE" (BINDING): an implementer with its OWN same-object overload
+    /// ambiguity (`Bar(p: Integer)` / `Bar(p: Text)`, both `Public`) inside an
+    /// Interface Polymorphic fan-out must NOT extend that nested candidate
+    /// set into the edge — the ambiguous implementer contributes exactly ONE
+    /// `Unresolved(OverloadAmbiguous)` route (the pre-Task-4 shape), never
+    /// `AmbiguousResolved`/`Complete`, and the edge's overall shape stays
+    /// `Polymorphic` with exactly `implementers.len()` routes (2, not 3).
+    #[test]
+    fn resolve_member_interface_implementer_own_overload_ambiguity_stays_nested_unresolved() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src: &'static str = r#"
+codeunit 51410 "IFooAmbigImpl" implements IFoo
+{
+    procedure Bar(p: Integer)
+    begin
+    end;
+
+    procedure Bar(p: Text)
+    begin
+    end;
+}
+
+codeunit 51411 "IFooCleanImpl" implements IFoo
+{
+    procedure Bar(p: Integer)
+    begin
+    end;
+}
+
+codeunit 51499 "IfaceNestedCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "IfaceNested.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        // Sanity: the ambiguous implementer genuinely has TWO same-arity
+        // `Bar` candidates.
+        let ambig_obj = find_obj(&graph, "IFooAmbigImpl");
+        let bar_candidates = index.routines_in_object(&ambig_obj.id, "bar");
+        assert_eq!(
+            bar_candidates.len(),
+            2,
+            "fixture must produce TWO Bar candidates"
+        );
+
+        let from_obj = find_obj(&graph, "IfaceNestedCaller");
+        let receiver = ReceiverType::Interface {
+            name_lc: "ifoo".into(),
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(
+            shape,
+            DispatchShape::Polymorphic,
+            "the OUTER edge stays Polymorphic — nesting must never corrupt \
+             the fan-out's own shape"
+        );
+        assert_eq!(
+            routes.len(),
+            2,
+            "exactly ONE route per implementer (2 implementers) — the \
+             ambiguous implementer's OWN 2-candidate set must NOT extend \
+             this vec to 3; got {routes:?}"
+        );
+
+        let unresolved_count = routes
+            .iter()
+            .filter(|r| r.target == RouteTarget::Unresolved)
+            .count();
+        assert_eq!(
+            unresolved_count, 1,
+            "exactly one route (the ambiguous implementer's) must be \
+             Unresolved; got {routes:?}"
+        );
+        let ambiguous_route = routes
+            .iter()
+            .find(|r| r.target == RouteTarget::Unresolved)
+            .expect("one Unresolved route must exist");
+        assert_eq!(
+            ambiguous_route.evidence,
+            Evidence::Unknown(UnknownReason::OverloadAmbiguous),
+            "got {:?}",
+            ambiguous_route.evidence
+        );
+        assert!(
+            !ambiguous_route
+                .conditions
+                .contains(&Condition::AmbiguousDispatch),
+            "the collapsed nested-ambiguity route must NEVER carry \
+             AmbiguousDispatch (that would misrepresent it as a live \
+             AmbiguousResolved candidate); got {ambiguous_route:?}"
+        );
+
+        let resolved_count = routes
+            .iter()
+            .filter(|r| matches!(r.target, RouteTarget::Routine(_)))
+            .count();
+        assert_eq!(
+            resolved_count, 1,
+            "the clean implementer must still resolve normally; got {routes:?}"
+        );
+
+        // The edge-level classification must NEVER be AmbiguousResolved for
+        // this shape (it is Polymorphic, not AmbiguousOverload, so
+        // `classify_obligation` cannot take that branch regardless — this
+        // assertion documents the invariant explicitly).
+        let edge = Edge {
+            from: bar_candidates[0].clone(),
+            site: SiteId {
+                caller: bar_candidates[0].clone(),
+                span: CanonicalSpan {
+                    unit: "IfaceNestedCaller.al".into(),
+                    start: SourcePos { line: 1, col: 1 },
+                    end: SourcePos { line: 1, col: 1 },
+                },
+                callee_fingerprint: 0,
+            },
+            kind: EdgeKind::Call,
+            shape,
+            completeness: SetCompleteness::Partial {
+                reason: OpenWorldReason::ReverseDependentImplementers,
+            },
+            routes: routes.clone(),
+        };
+        assert_ne!(
+            classify_obligation(&edge),
+            ObligationOutcome::AmbiguousResolved,
+            "nesting must never produce AmbiguousResolved"
+        );
+    }
+
     /// ZERO implementers → empty route vec (HonestEmpty).
     #[test]
     fn resolve_member_interface_zero_implementers_emits_empty_routes() {
@@ -8234,7 +8498,7 @@ codeunit 53930 "BareLocalSelf"
         let body_map = BodyMap::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "BareLocalSelf");
-        let routes = resolve_bare(
+        let (_shape, routes) = resolve_bare(
             from_obj,
             "dofoo",
             0,
@@ -9024,13 +9288,21 @@ codeunit 53971 "OverloadNCaller"
         );
     }
 
-    /// Reason-split Task 2 fixture: a GENUINE >1-visible same-arity overload
-    /// (BOTH candidates `Public`, so access filtering removes NEITHER) stays
-    /// `OverloadAmbiguous` — the textbook case `resolve_in_object`'s doc
-    /// describes, distinct from `AccessFilteredOverload` (the sibling test
-    /// above, where access narrows the visible set to exactly one).
+    /// Task 4 (sigfp-and-ambiguous-reclassification plan) fixture (a): a
+    /// GENUINE >1-visible same-arity overload (BOTH candidates `Public`, so
+    /// access filtering removes NEITHER) is now candidate-carrying
+    /// `AmbiguousResolved` — TWO concrete `Source` routes (one per overload,
+    /// distinct post-T2 `RoutineNodeId`s via real `sig_fp`), each tagged
+    /// `Condition::AmbiguousDispatch` and `fires_by_default() == false`, the
+    /// edge `SetCompleteness::Complete`, and `classify_obligation` /
+    /// `Histogram` both agreeing this is NOT `unknown` — the pre-Task-4
+    /// behavior (single `Unresolved(OverloadAmbiguous)` route, `Exact`
+    /// shape) this test used to pin. This is the ONLY same-object overload
+    /// ambiguity shape henceforth; `AccessFilteredOverload` (the sibling test
+    /// above, where access narrows the visible set to exactly one) is
+    /// unaffected.
     #[test]
-    fn resolve_member_object_genuine_two_public_same_arity_overload_stays_overload_ambiguous() {
+    fn resolve_member_object_genuine_two_public_same_arity_overload_becomes_ambiguous_resolved() {
         use crate::program::resolve::receiver::ReceiverType;
 
         let src_target: &'static str = r#"
@@ -9061,13 +9333,17 @@ codeunit 53973 "OverloadPCaller"
         let index = ResolveIndex::build(&graph);
         let body_map = BodyMap::build(&graph, &units);
 
-        // Sanity: two same-arity `Bar` candidates, BOTH `Public`.
+        // Sanity: two same-arity `Bar` candidates, BOTH `Public`, DISTINCT ids.
         let target_obj = find_obj(&graph, "OverloadPTarget");
         let bar_candidates = index.routines_in_object(&target_obj.id, "bar");
         assert_eq!(
             bar_candidates.len(),
             2,
             "fixture must produce TWO `Bar` candidates"
+        );
+        assert_ne!(
+            bar_candidates[0], bar_candidates[1],
+            "the two overloads must be genuinely distinct post-T2 RoutineNodeIds"
         );
 
         let from_obj = find_obj(&graph, "OverloadPCaller");
@@ -9079,20 +9355,317 @@ codeunit 53973 "OverloadPCaller"
         let (shape, routes) =
             resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &body_map);
 
-        assert_eq!(shape, DispatchShape::Exact);
-        assert_eq!(routes.len(), 1);
+        assert_eq!(shape, DispatchShape::AmbiguousOverload);
+        assert_eq!(routes.len(), 2, "one route per candidate; got {routes:?}");
+
+        let mut seen_ids = std::collections::HashSet::new();
+        for r in &routes {
+            assert_eq!(r.evidence, Evidence::Source, "got {r:?}");
+            assert!(
+                r.conditions.contains(&Condition::AmbiguousDispatch),
+                "every candidate route must carry AmbiguousDispatch; got {r:?}"
+            );
+            assert!(
+                !r.fires_by_default(),
+                "an AmbiguousDispatch route must not fire by default; got {r:?}"
+            );
+            let RouteTarget::Routine(ref rid) = r.target else {
+                panic!("expected a Routine target; got {r:?}");
+            };
+            assert!(
+                seen_ids.insert(rid.clone()),
+                "candidate routes must target DISTINCT RoutineNodeIds; got {routes:?}"
+            );
+        }
+
+        // Excluded from default/must traversal...
+        let edge = Edge {
+            from: bar_candidates[0].clone(),
+            site: SiteId {
+                caller: bar_candidates[0].clone(),
+                span: CanonicalSpan {
+                    unit: "OverloadPCaller.al".into(),
+                    start: SourcePos { line: 1, col: 1 },
+                    end: SourcePos { line: 1, col: 1 },
+                },
+                callee_fingerprint: 0,
+            },
+            kind: EdgeKind::Call,
+            shape,
+            completeness: SetCompleteness::Complete,
+            routes: routes.clone(),
+        };
+        assert_eq!(
+            edge.default_reachable_routes().count(),
+            0,
+            "AmbiguousDispatch routes must be excluded from default reachability"
+        );
+        // ...but INCLUDED in may-reachability (the round-1 "inverse cardinal
+        // sin" addendum: exactly one candidate WILL fire, so a may/
+        // change-impact traversal must see BOTH).
+        assert_eq!(
+            edge.may_reachable_routes().count(),
+            2,
+            "AmbiguousDispatch routes MUST be may-reachable"
+        );
+
+        assert_eq!(shape, DispatchShape::AmbiguousOverload);
+        // `completeness_for_shape(AmbiguousOverload) == Complete` (the
+        // candidate set is snapshot-enumerated CLOSED, not open-world) is
+        // already pinned by `full.rs`'s own Task 3 unit test; this fixture
+        // constructs the edge with `SetCompleteness::Complete` directly
+        // (mirroring what `resolve_call_site_obligation` actually produces
+        // via that function) and asserts `classify_obligation` end-to-end.
+        assert_eq!(
+            classify_obligation(&edge),
+            ObligationOutcome::AmbiguousResolved,
+            "an all-concrete, all-AmbiguousDispatch candidate set classifies \
+             AmbiguousResolved, NOT Unknown — the metric-definition change"
+        );
+
+        let h = Histogram::of_edges(std::slice::from_ref(&edge));
+        assert_eq!(h.unknown, 0, "must NOT count toward unknown");
+        assert_eq!(
+            h.ambiguous_resolved, 1,
+            "must count in the dedicated ambiguous_resolved bucket"
+        );
+    }
+
+    /// Task 4 fixture (b): a THREE-overload genuine same-object ambiguity
+    /// carries THREE candidate routes — proves the candidate-carrying arm
+    /// generalizes past the 2-overload case.
+    #[test]
+    fn resolve_member_object_genuine_three_way_overload_becomes_ambiguous_resolved_with_3_routes() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53974 "Overload3Target"
+{
+    procedure Baz(p: Integer)
+    begin
+    end;
+
+    procedure Baz(p: Text)
+    begin
+    end;
+
+    procedure Baz(p: Decimal)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53975 "Overload3Caller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "Overload3Target.al", src_target);
+        let unit_caller = make_unit(app_id, "Overload3Caller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let target_obj = find_obj(&graph, "Overload3Target");
+        let baz_candidates = index.routines_in_object(&target_obj.id, "baz");
+        assert_eq!(
+            baz_candidates.len(),
+            3,
+            "fixture must produce THREE candidates"
+        );
+
+        let from_obj = find_obj(&graph, "Overload3Caller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "overload3target".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "baz", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::AmbiguousOverload);
+        assert_eq!(routes.len(), 3, "one route per candidate; got {routes:?}");
+        let mut seen_ids = std::collections::HashSet::new();
+        for r in &routes {
+            assert_eq!(r.evidence, Evidence::Source);
+            assert!(r.conditions.contains(&Condition::AmbiguousDispatch));
+            assert!(!r.fires_by_default());
+            let RouteTarget::Routine(ref rid) = r.target else {
+                panic!("expected a Routine target; got {r:?}");
+            };
+            assert!(seen_ids.insert(rid.clone()), "targets must be distinct");
+        }
+    }
+
+    /// Task 4 fixture (c): a genuinely ambiguous (`>1` visible, same-arity)
+    /// candidate set where ONE candidate is `abi_overload_collapsed`-marked
+    /// must NOT construct `DispatchShape::AmbiguousOverload` at all (round-2
+    /// closer #1, BINDING: "a mixed/collapsed candidate set must never
+    /// CONSTRUCT `DispatchShape::AmbiguousOverload`") — it degrades the WHOLE
+    /// set back to the pre-Task-4 single `Unresolved(OverloadAmbiguous)`
+    /// route, `Exact` shape, exactly like today's behavior. Low-level
+    /// `ProgramGraph` construction (mirrors `entry_trigger_marker_guard_
+    /// fixture`) since `abi_overload_collapsed` can only be set directly on a
+    /// `RoutineNode`, not produced by the parser fixture path.
+    #[test]
+    fn resolve_member_object_ambiguous_set_with_one_collapse_marked_candidate_stays_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let ws_id = make_app_id("WS");
+        let dep_id = make_app_id("DepApp");
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let caller_obj_id = ObjectNodeId {
+            app: ws_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(50611),
+        };
+        let dep_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60151),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: caller_obj_id.clone(),
+                name: "MixedCaller".into(),
+                declared_id: Some(50611),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+            },
+            ObjectNode {
+                id: dep_obj_id.clone(),
+                name: "MixedTarget".into(),
+                declared_id: Some(60151),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+            },
+        ];
+
+        // Two DISTINCT (different sig_fp) same-arity `Foo` candidates — a
+        // genuine >1-visible ambiguity — but ONE is collapse-marked.
+        let routines = vec![
+            RoutineNode {
+                id: RoutineNodeId {
+                    object: dep_obj_id.clone(),
+                    name_lc: "foo".into(),
+                    enclosing_member_lc: None,
+                    params_count: 1,
+                    sig_fp: 111,
+                },
+                name: "Foo".into(),
+                is_trigger: false,
+                access: Access::Public,
+                tier: TrustTier::SymbolOnly,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: None,
+                include_sender: None,
+                abi_routine_kind: Some(AbiRoutineKind::Procedure),
+                abi_event_kind: Some(AbiEventKind::None),
+                param_sig_key: String::new(),
+                return_type: None,
+                return_type_id: None,
+                abi_overload_collapsed: true,
+                source_overload_aliased: false,
+            },
+            RoutineNode {
+                id: RoutineNodeId {
+                    object: dep_obj_id.clone(),
+                    name_lc: "foo".into(),
+                    enclosing_member_lc: None,
+                    params_count: 1,
+                    sig_fp: 222,
+                },
+                name: "Foo".into(),
+                is_trigger: false,
+                access: Access::Public,
+                tier: TrustTier::SymbolOnly,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: None,
+                include_sender: None,
+                abi_routine_kind: Some(AbiRoutineKind::Procedure),
+                abi_event_kind: Some(AbiEventKind::None),
+                param_sig_key: String::new(),
+                return_type: None,
+                return_type_id: None,
+                abi_overload_collapsed: false,
+                source_overload_aliased: false,
+            },
+        ];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("caller must exist");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "mixedtarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(
+            shape,
+            DispatchShape::Exact,
+            "a mixed/collapsed candidate set must NEVER construct AmbiguousOverload"
+        );
+        assert_eq!(
+            routes.len(),
+            1,
+            "the degraded set stays ONE route; got {routes:?}"
+        );
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
         assert_eq!(
             routes[0].evidence,
             Evidence::Unknown(UnknownReason::OverloadAmbiguous),
-            "BOTH same-arity overloads are Public and visible — genuine \
-             unresolved ambiguity stays OverloadAmbiguous (unchanged by \
-             reason-split Task 2); got {:?}",
+            "got {:?}",
             routes[0].evidence
         );
-        assert_eq!(
-            routes[0].receiver_tier, None,
-            "OverloadAmbiguous is not a MemberNotFound shape — no receiver_tier"
+        assert!(
+            !routes[0].conditions.contains(&Condition::AmbiguousDispatch),
+            "a degraded route must never carry AmbiguousDispatch; got {:?}",
+            routes[0]
         );
     }
 

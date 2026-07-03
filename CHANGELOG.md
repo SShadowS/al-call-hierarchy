@@ -8,6 +8,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Candidate-carrying `AmbiguousResolved` for same-object overload ambiguity —
+  metric-definition change (Task 4, sigfp-and-ambiguous-reclassification
+  plan).** `resolve_in_object`'s genuine `>1`-visible arm now PREVALIDATES
+  every candidate (concrete: not collapse-marked, and its constructed route
+  carries non-`Unknown` evidence) BEFORE ever constructing
+  `DispatchShape::AmbiguousOverload` — a mixed/degraded set (any candidate
+  fails prevalidation) stays the pre-Task-4 single `Unresolved(OverloadAmbiguous)`
+  route, `Exact` shape, unchanged. When every candidate is concrete, the
+  function now returns ONE `Route` per candidate (Source for source tiers,
+  Opaque+`AbiSymbol` for SymbolOnly, via the existing `make_routine_route`),
+  each tagged `Condition::AmbiguousDispatch` — the taxonomy Task 3 built as
+  inert mechanics is now WIRED. Step 0 measurement (CDO, throwaway
+  instrumentation, deleted before commit) partitioned the 56 `OverloadAmbiguous`
+  sites by emission call site: **100% (56/56) emit from `resolve_in_object`'s
+  own arm via 3 non-nested, same-object call sites** (`resolve_member`'s
+  `Object` receiver 41, `resolve_bare`'s Step 1 own-object 13,
+  `resolve_bare`'s Step 3 implicit-Rec single-winning-table-scope-object 2) —
+  ZERO from the cross-object table-scope `Ambiguous` outcome, ZERO from the
+  interface per-implementer `matching!=1` arm, ZERO nested under an
+  interface's SymbolOnly/source-tier delegate. The reclassification scope is
+  therefore the FULL 56-site population, with no site scoped out.
+  `resolve_in_object`'s signature is now `Option<(DispatchShape, Vec<Route>)>`
+  (the file's own tuple convention) — all 7 call sites updated. `resolve_bare`
+  (public API) is now `(DispatchShape, Vec<Route>)` too, so
+  `resolve_call_site_obligation`'s `Bare`/`Commit` arms thread the REAL shape
+  through instead of hardcoding `Exact` (behavior-preserving for every other
+  case: `completeness_for_shape` maps both `Exact` and `AmbiguousOverload` to
+  `Complete`). **Interface nesting OUT OF SCOPE (round-1 addendum, honored
+  even though CDO measured zero live nested cases):** a new
+  `interface_delegate_route` helper collapses a per-implementer
+  `AmbiguousOverload` result back to the single pre-Task-4
+  `Unresolved(OverloadAmbiguous)` route rather than extending the
+  already-`Polymorphic` edge — pinned by a dedicated nested-interface fixture
+  asserting the edge stays `Polymorphic`/2-routes (not 3) and never
+  `AmbiguousResolved`. **Both-ways metric reporting (round-1 addendum,
+  BINDING):** `Histogram::legacy_unknown_rate_including_ambiguous()` (and the
+  additive `aldump` `--program-call-graph-stats` key
+  `realUnknownRateLegacyIncludingAmbiguous`) reports the rate under the OLD
+  (pre-Task-4) definition side-by-side with the new `realUnknownRate`, so the
+  metric-definition change is never stat-juked — these edges remain
+  PRACTICALLY unresolved at runtime from the tooling's perspective (a closed
+  candidate set, not a pick). Charter §5/§8 (`docs/superpowers/specs/2026-06-28-bc-semantic-intelligence-charter.md`)
+  get the explicit metric-definition addendum. Fixtures: a genuine 2-overload
+  and a genuine 3-overload same-object call → `AmbiguousResolved`/N candidate
+  routes, each `fires_by_default()==false` + in `may_reachable_routes()` +
+  excluded from `default_reachable_routes()`, `Histogram.ambiguous_resolved`
+  incremented and `Histogram.unknown` NOT incremented; a collapse-marked
+  candidate mixed into an otherwise-ambiguous set → shape stays `Exact`,
+  `Unknown(OverloadAmbiguous)`, never `AmbiguousDispatch`-tagged; the nested
+  interface case (above); `ArityMismatch`/`AccessFilteredOverload`/
+  `AbiCollapsedOverload`'s existing T2-split reasons regression-verified
+  unchanged. Three PRE-EXISTING tests encoded the old single-route behavior
+  and were REBASELINED (correctness over backwards compatibility — the new
+  behavior is verifiably right): `ws_overload_collision_ambiguous_call_is_
+  honest_unknown` → `..._becomes_ambiguous_resolved_with_two_candidates`
+  (the canonical real-fixture ambiguity site, now 2 `Source` routes);
+  `ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_declines_
+  ambiguous` → `..._becomes_ambiguous_resolved` (proves the SymbolOnly/ABI
+  path too — 2 `Opaque`+`AbiSymbol` routes, since ABI candidates ARE
+  "concrete exact" per the strict precondition); `unknown_reason_breakdown_
+  over_real_fixtures_sums_and_spans_reasons` dropped `OverloadAmbiguous` from
+  its expected-reasons list (its sole source in that corpus reclassified).
+  CDO (measured, `--test-threads=1`, full 160-test harness, ALL GREEN):
+  primary+whole `unknown` 151→95 (the full 56-site same-object population
+  reclassified, `unknownByReason.overloadAmbiguous` 56→0, every other reason
+  byte-identical), `ambiguousResolved` 0→56 in both scopes, `realUnknownRate`
+  0.8341%→0.5247% (primary, 95/18104), 0.3479%→0.2189% (whole, 95/43404);
+  `realUnknownRateLegacyIncludingAmbiguous` byte-identical to the pre-Task-4
+  `realUnknownRate` at both scopes (0.008340698188245692 primary /
+  0.003478942032992351 whole — the both-ways proof the reclassification is a
+  pure relabeling, never a stat-juke). `--graphify-export` on CDO: 133
+  `GEdge`s with `obligation:"ambiguous_resolved"` + `dispatch_shape:
+  "ambiguous_overload"` + `may_fire:true` (56 sites, 2-3 candidates each) —
+  real end-to-end confirmation of the Task 3 DTO mapping, not just the unit
+  fixture. `genuine_wrong=0` (HARD GATE, unchanged); every one of the 56
+  reclassified sites landed `fresh_extra` (L3's frozen golden was EMPTY for
+  all of them — acceptance-matrix rule 1, ungated): `fresh_extra`
+  4968→5024 (+56), `matches` 6257→6201 (-56, the mirror movement),
+  `fresh_wrong`/`fresh_missing`/`fresh_ahead_dispatch` counts BYTE-IDENTICAL
+  (149/3/149) to the pre-Task-4 baseline (`genuine_wrong` stays 0 in that
+  count too) — `FRESH_WRONG_CEILING`/`FRESH_MISSING_CEILING` need no motion;
+  the audit digest moved (expected — fresh's projected targets for these 56
+  sites are new non-empty content). Ratchets re-derived (dated 2026-07-03) to
+  the new floor (`unknown<=95`, `real_unknown_rate<=0.005248`,
+  `ambiguous_resolved==56` new ratchet); `.superpowers/sdd/task-4-report.md`
+  has the full partition + exhaustive adjudication.
 - **`AmbiguousDispatch`/`AmbiguousOverload`/`AmbiguousResolved` taxonomy trio —
   inert mechanics (Task 3, sigfp-and-ambiguous-reclassification plan).** Lays
   the honest vocabulary for reclassifying genuine same-object overload

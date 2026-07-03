@@ -219,19 +219,27 @@ fn resolve_call_site_obligation(
     match shape {
         CalleeShape::Bare { name } => {
             let name_lc = name.to_ascii_lowercase();
-            let routes = if let Some(obj_node) = obj_node_opt {
+            // Task 4 (sigfp-and-ambiguous-reclassification plan): thread the
+            // REAL shape `resolve_bare` determined through — a bare call is
+            // `DispatchShape::Exact` in every case except a genuine
+            // same-object overload ambiguity, which is now
+            // `DispatchShape::AmbiguousOverload` (previously hardcoded
+            // `Exact` unconditionally, which would have mislabeled the
+            // multi-route ambiguous case). `completeness_for_shape` maps
+            // BOTH `Exact` and `AmbiguousOverload` to `SetCompleteness::
+            // Complete`, so this is behavior-preserving for every other
+            // shape.
+            let (shape, routes) = if let Some(obj_node) = obj_node_opt {
                 resolve_bare(
                     obj_node, &name_lc, arity, graph, index, body_map, with_state,
                 )
             } else {
-                vec![unknown_route(UnknownReason::IndexIntegrationGap)]
+                (
+                    DispatchShape::Exact,
+                    vec![unknown_route(UnknownReason::IndexIntegrationGap)],
+                )
             };
-            (
-                EdgeKind::Call,
-                DispatchShape::Exact,
-                SetCompleteness::Complete,
-                routes,
-            )
+            (EdgeKind::Call, shape, completeness_for_shape(shape), routes)
         }
 
         CalleeShape::Member {
@@ -371,18 +379,22 @@ fn resolve_call_site_obligation(
         }
 
         CalleeShape::Commit => {
-            // `commit` is a global builtin — resolve_bare finds it in the catalog.
-            let routes = if let Some(obj_node) = obj_node_opt {
+            // `commit` is a global builtin — resolve_bare finds it in the
+            // catalog (Step 4). Threading the real shape through (Task 4)
+            // rather than hardcoding `Exact` costs nothing here (Step 4
+            // always yields `Exact`) and stays consistent with the `Bare`
+            // arm above for the vanishingly rare case an object declares its
+            // OWN overloaded 0-arity `commit` procedure (Step 1 would then
+            // reach it before Step 4 ever runs).
+            let (shape, routes) = if let Some(obj_node) = obj_node_opt {
                 resolve_bare(obj_node, "commit", 0, graph, index, body_map, with_state)
             } else {
-                vec![unknown_route(UnknownReason::IndexIntegrationGap)]
+                (
+                    DispatchShape::Exact,
+                    vec![unknown_route(UnknownReason::IndexIntegrationGap)],
+                )
             };
-            (
-                EdgeKind::Call,
-                DispatchShape::Exact,
-                SetCompleteness::Complete,
-                routes,
-            )
+            (EdgeKind::Call, shape, completeness_for_shape(shape), routes)
         }
 
         CalleeShape::Unknown => {

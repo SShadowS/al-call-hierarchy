@@ -1318,10 +1318,18 @@ fn main() -> ExitCode {
                 // Task 3 (sigfp-and-ambiguous-reclassification plan): closed
                 // same-object overload-ambiguity candidate sets, honestly
                 // excluded from `unknown`/`realUnknownRate` — see
-                // `ObligationOutcome::AmbiguousResolved`'s doc. Zero on CDO
-                // until Task 4 wires a producer (mechanics-only this task).
+                // `ObligationOutcome::AmbiguousResolved`'s doc. Wired by a
+                // real producer (`resolve_in_object`) as of Task 4.
                 "ambiguousResolved": h.ambiguous_resolved,
                 "realUnknownRate": h.real_unknown_rate(),
+                // Task 4 both-ways reporting (round-1 addendum, BINDING): the
+                // LEGACY/advisory rate under the PRE-Task-4 metric definition
+                // (counts `ambiguousResolved` as unknown too) — additive,
+                // side-by-side with `realUnknownRate` so the metric-definition
+                // change is never stat-juked. See `Histogram::legacy_
+                // unknown_rate_including_ambiguous`'s doc.
+                "realUnknownRateLegacyIncludingAmbiguous":
+                    h.legacy_unknown_rate_including_ambiguous(),
                 "unknownByReason": whole_by_reason,
                 "unknownReceiverTier": whole_tier_by_reason,
             },
@@ -1338,6 +1346,8 @@ fn main() -> ExitCode {
                 "unknown": ph.unknown,
                 "ambiguousResolved": ph.ambiguous_resolved,
                 "realUnknownRate": ph.real_unknown_rate(),
+                "realUnknownRateLegacyIncludingAmbiguous":
+                    ph.legacy_unknown_rate_including_ambiguous(),
                 "unknownByReason": primary_by_reason,
                 "unknownReceiverTier": primary_tier_by_reason,
             },

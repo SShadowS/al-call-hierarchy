@@ -1727,20 +1727,54 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // bijection holds by construction (only `Evidence::Unknown`'s reason
     // payload / `Route::receiver_tier` differ — `Evidence::kind()`, route
     // targets, and every non-`Unknown` bucket are untouched by this task).
+    // TIGHTENED 2026-07-03 (sigfp-and-ambiguous-reclassification plan, Task
+    // 4 — the metric-definition change): 0.008341 → 0.005248, measured
+    // 0.0052475 (95/18104). The full 56-site same-object `OverloadAmbiguous`
+    // population (100% of it — Step 0 partitioned all 56 to
+    // `resolve_in_object`'s own genuine-ambiguity arm via 3 non-nested,
+    // same-object call sites: `resolve_member`'s `Object` receiver 41,
+    // `resolve_bare`'s Step 1 own-object 13, `resolve_bare`'s Step 3
+    // implicit-Rec single-winning-table-scope-object 2 — ZERO from the
+    // cross-object table-scope `Ambiguous` outcome, ZERO from the interface
+    // per-implementer `matching!=1` arm, ZERO nested under an interface
+    // delegate) reclassifies `ObligationOutcome::AmbiguousResolved` — a
+    // proven-closed candidate set, not a resolution gap; see the
+    // `unknownByReason` comment below and the charter §5/§8 metric-definition
+    // addendum. `ambiguousResolved` 0→56 (both scopes). This is a
+    // metric-DEFINITION change, not a resolver soundness fix — THIS IS WHY
+    // `Histogram::legacy_unknown_rate_including_ambiguous()` exists: computed
+    // on the SAME run, it reads UNCHANGED at 0.008341 (151/18104,
+    // byte-identical to this ratchet's pre-Task-4 value), proving the
+    // reclassification is a pure relabeling, never a stat-juke. CDO semantic
+    // audit (informational, not gated by this ratchet): `genuine_wrong`
+    // stays 0 (HARD GATE, unchanged); `fresh_wrong`/`fresh_ahead_dispatch`
+    // stays byte-identical at 149/149 and `fresh_missing` stays 3 — ALL 56
+    // reclassified sites landed `fresh_extra` (4968→5024, +56) because the
+    // frozen L3 golden was EMPTY for every one of them (acceptance-matrix
+    // rule 1 — ungated); `matches` 6257→6201 (-56, the mirror movement);
+    // digest moved (fresh's projected non-empty targets for these 56 sites
+    // are new content). `FRESH_WRONG_CEILING`/`FRESH_MISSING_CEILING` need NO
+    // motion (see `cdo_l3_semantic_audit_no_fresh_wrong`, unchanged). Full
+    // 160-test CDO-gated harness green (`--test-threads=1`).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.008341,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.008341 \
-         (recorded 2026-07-03 post dataitem-receivers Task 1: 0.88% \
-         [159/18104=0.008782], report-dataitem receivers — UntrackedReceiver \
-         37→17 + CompoundReceiver 61→60; was 0.99% post \
-         applicability-param-subtype-recfield Task 4/5 [180/18104=0.009943], \
-         1.29% post Task 3, 1.75% post plan v2.1 Task 5 FINAL, 1.81% post \
-         plan v2.1 Task 3, 1.82% post uniform-access-and-compound-receiver \
-         Task 4, 1.88% post-Task-1.5, 2.25% post-Task-1-only [a transient \
-         over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% \
-         pre-beyond-1B.3b) — engine regressed; investigate before raising \
-         the ceiling"
+        primary_rate <= 0.005248,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.005248 \
+         (recorded 2026-07-03 post sigfp-and-ambiguous-reclassification plan \
+         Task 4 — the metric-definition change: 0.52% [95/18104=0.0052475], \
+         the full 56-site same-object OverloadAmbiguous population \
+         reclassified AmbiguousResolved; was 0.83% \
+         [151/18104=0.008341] post dataitem-receivers Task 1 review fix, \
+         0.88% post dataitem-receivers Task 1, 0.99% post \
+         applicability-param-subtype-recfield Task 4/5, 1.29% post Task 3, \
+         1.75% post plan v2.1 Task 5 FINAL, 1.81% post plan v2.1 Task 3, \
+         1.82% post uniform-access-and-compound-receiver Task 4, 1.88% \
+         post-Task-1.5, 2.25% post-Task-1-only [a transient over-decline], \
+         1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — \
+         engine regressed; investigate before raising the ceiling. NOTE: use \
+         `Histogram::legacy_unknown_rate_including_ambiguous()` (should stay \
+         0.008341) to distinguish a genuine regression from a producer that \
+         stopped emitting AmbiguousResolved."
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1914,19 +1948,28 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // UNCHANGED 2026-07-03 (dataitem-depscope-reason-split plan, Task 2):
     // count stays 151 — diagnostic-only reason-split, see the rate-ceiling
     // comment above for the full measured (zero-movement) breakdown.
+    //
+    // TIGHTENED 2026-07-03 (sigfp-and-ambiguous-reclassification plan, Task
+    // 4 — the metric-definition change): 151→95, measured 95/95
+    // (primary/whole). See the rate-ceiling comment above for the full
+    // partition + adjudication (all 56 `OverloadAmbiguous` sites
+    // reclassified `AmbiguousResolved`; `unknownByReason`={CompoundReceiver:
+    // 51, UntrackedReceiver: 18, BuiltinPrecedenceCollision: 1,
+    // MemberNotFound: 25}, sum==95 — `OverloadAmbiguous` no longer appears).
     assert!(
-        ph.unknown <= 151,
-        "primary unknown count {} exceeds ceiling 151 (recorded 2026-07-03 \
-         post dataitem-receivers Task 1 + review fix: 151 — quoted-paren \
-         restoration; was 159 post Task 1 alone — report-dataitem receivers, \
-         UntrackedReceiver 37→17 + CompoundReceiver 61→60; was 180 post \
-         applicability-param-subtype-recfield Task 4/5, 234 post Task 3, \
-         317 post plan v2.1 Task 5 FINAL, 327 post plan v2.1 Task 3, 329 \
-         post uniform-access-and-compound-receiver Task 4, 340 post Task \
-         1.5/3, 407 post Task 1 alone [transient over-decline], 356 post \
-         soundness completion plan v2.1 Task 1.5, 346 post follow-up plan \
-         v2.1 Task 4, 508 pre-follow-up) — engine regressed; investigate \
-         before raising the ceiling",
+        ph.unknown <= 95,
+        "primary unknown count {} exceeds ceiling 95 (recorded 2026-07-03 \
+         post sigfp-and-ambiguous-reclassification plan Task 4 — the \
+         metric-definition change: 95, the full 56-site same-object \
+         OverloadAmbiguous population reclassified AmbiguousResolved; was \
+         151 post dataitem-receivers Task 1 + review fix, 159 post Task 1 \
+         alone, 180 post applicability-param-subtype-recfield Task 4/5, 234 \
+         post Task 3, 317 post plan v2.1 Task 5 FINAL, 327 post plan v2.1 \
+         Task 3, 329 post uniform-access-and-compound-receiver Task 4, 340 \
+         post Task 1.5/3, 407 post Task 1 alone [transient over-decline], \
+         356 post soundness completion plan v2.1 Task 1.5, 346 post \
+         follow-up plan v2.1 Task 4, 508 pre-follow-up) — engine regressed; \
+         investigate before raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
@@ -1966,14 +2009,46 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // UNCHANGED 2026-07-03 (dataitem-depscope-reason-split plan, Task 2):
     // count stays 151, alongside the primary ceiling above (diagnostic-only
     // reason-split, zero-movement measured breakdown).
+    //
+    // TIGHTENED 2026-07-03 (sigfp-and-ambiguous-reclassification plan, Task
+    // 4 — the metric-definition change): 151→95, alongside the primary
+    // ceiling above; whole-program `unknown`=95, same value as primary
+    // today (every reclassified site originates in the workspace/primary
+    // scope).
     assert!(
-        h.unknown <= 151,
-        "whole-program unknown count {} exceeds ceiling 151 (recorded \
-         2026-07-03 post dataitem-receivers Task 1: 159 — see the \
-         primary-scoped ceiling comment above for the full history and \
-         adjudication) — engine regressed; investigate before raising the \
-         ceiling",
+        h.unknown <= 95,
+        "whole-program unknown count {} exceeds ceiling 95 (recorded \
+         2026-07-03 post sigfp-and-ambiguous-reclassification plan Task 4: \
+         95 — see the primary-scoped ceiling comment above for the full \
+         history and adjudication) — engine regressed; investigate before \
+         raising the ceiling",
         h.unknown,
+    );
+
+    // ── `ambiguous_resolved` ratchet (round-1 addendum: "ambiguous_resolved
+    // gets its own histogram count + ratchet") ───────────────────────────────
+    // NEW 2026-07-03 (sigfp-and-ambiguous-reclassification plan, Task 4): a
+    // FLOOR (not a ceiling) — this task's producer must keep classifying the
+    // full same-object same-arity ambiguity population honestly; a DROP means
+    // a regression (fewer candidates recognized, or a producer bug silently
+    // degrading a formerly-clean candidate set back to `Unknown`), a RISE
+    // means a genuine expansion (e.g. a future task reclassifying the
+    // currently-out-of-scope cross-object/interface populations too) —
+    // either way, investigate before moving this exact-pinned value. 56 is
+    // the full measured CDO population (both scopes — every reclassified
+    // site originates in the workspace/primary scope).
+    assert_eq!(
+        ph.ambiguous_resolved, 56,
+        "primary ambiguousResolved count {} != the recorded 2026-07-03 value \
+         56 (sigfp-and-ambiguous-reclassification plan Task 4) — investigate \
+         before updating this ratchet",
+        ph.ambiguous_resolved,
+    );
+    assert_eq!(
+        h.ambiguous_resolved, 56,
+        "whole-program ambiguousResolved count {} != the recorded 2026-07-03 \
+         value 56, same value as primary today",
+        h.ambiguous_resolved,
     );
 
     // ── Determinism ──────────────────────────────────────────────────────────
@@ -4309,13 +4384,22 @@ fn ws_overload_collision_report() -> ProgramReport {
 }
 
 /// Test 23a: `Target.Resolve(5)` against a same-name/same-arity SOURCE
-/// overload pair must NOT resolve to a confident `Source` route — no
+/// overload pair must NOT resolve to a confident SINGLE `Source` route — no
 /// arg-type evidence exists to pick between the two overloads (full arg-type
-/// dispatch is out of scope for this task). Must be honest ambiguous/Unknown:
-/// `RouteTarget::Unresolved` + `Evidence::Unknown`, never a guessed pick-first
-/// route to either overload.
+/// dispatch remains out of scope). REBASELINED (Task 4,
+/// sigfp-and-ambiguous-reclassification plan — the metric-definition change,
+/// correctness over backwards compatibility): this is no longer honest
+/// `Unknown` — it is candidate-carrying `ObligationOutcome::AmbiguousResolved`,
+/// TWO concrete `Source` routes (one per overload, distinct post-T2
+/// `RoutineNodeId`s), each carrying `Condition::AmbiguousDispatch` and
+/// `fires_by_default() == false`. Never a guessed pick-first SINGLE route to
+/// either overload — the closed candidate SET is the honest answer.
 #[test]
-fn ws_overload_collision_ambiguous_call_is_honest_unknown() {
+fn ws_overload_collision_ambiguous_call_becomes_ambiguous_resolved_with_two_candidates() {
+    use al_call_hierarchy::program::resolve::edge::{
+        Condition, ObligationOutcome, classify_obligation,
+    };
+
     let report = ws_overload_collision_report();
     let edges = edges_for_caller(&report, "callambiguous");
     assert_eq!(
@@ -4323,27 +4407,51 @@ fn ws_overload_collision_ambiguous_call_is_honest_unknown() {
         1,
         "CallAmbiguous must have exactly one call obligation"
     );
-    let routes = &edges[0].edge.routes;
+    let edge = &edges[0].edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::AmbiguousOverload,
+        "got {:?}",
+        edge.shape
+    );
+    let routes = &edge.routes;
     assert_eq!(
         routes.len(),
-        1,
-        "member-Object call is single-dispatch (Exact)"
+        2,
+        "one route per candidate overload; got {routes:?}"
     );
-    let route = &routes[0];
+
+    let mut seen_ids = std::collections::HashSet::new();
+    for route in routes {
+        assert_eq!(route.evidence, Evidence::Source, "got {route:?}");
+        assert!(
+            route.conditions.contains(&Condition::AmbiguousDispatch),
+            "every candidate route must carry AmbiguousDispatch; got {route:?}"
+        );
+        assert!(
+            !route.fires_by_default(),
+            "an AmbiguousDispatch route must not fire by default; got {route:?}"
+        );
+        let RouteTarget::Routine(ref rid) = route.target else {
+            panic!("expected a Routine target; got {route:?}");
+        };
+        assert!(
+            seen_ids.insert(rid.clone()),
+            "candidate routes must target DISTINCT RoutineNodeIds; got {routes:?}"
+        );
+        assert!(
+            matches!(route.witness, Witness::SourceSpan { .. }),
+            "got {route:?}"
+        );
+    }
 
     assert_eq!(
-        route.target,
-        RouteTarget::Unresolved,
-        "an unresolvable same-arity overload set must NEVER pick a route by \
-         guessing; got {route:?}"
-    );
-    assert!(
-        matches!(route.evidence, Evidence::Unknown(_)),
+        classify_obligation(edge),
+        ObligationOutcome::AmbiguousResolved,
         "no arg-type evidence exists to disambiguate the two `Resolve` \
-         overloads — must be honest Unknown, not a confident Source \
-         pick-first; got {route:?}"
+         overloads, but the CLOSED candidate set is a proven-exhaustive \
+         enumeration, not a resolution gap — AmbiguousResolved, never Unknown"
     );
-    assert_eq!(route.witness, Witness::None);
 }
 
 /// Test 23b: the graph must not silently DROP one of the two colliding
@@ -5937,12 +6045,22 @@ fn unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons() {
     // Pin the specific reasons this corpus is known to exercise (observed via
     // the one-off dump; a change here means the corpus's decline sites
     // shifted — investigate before updating).
+    //
+    // `OverloadAmbiguous` REMOVED (Task 4, sigfp-and-ambiguous-reclassification
+    // plan — the metric-definition change): `ws-overload-collision`'s ONLY
+    // genuine ambiguity site (`Target.Resolve(5)` against two same-arity
+    // `Resolve` overloads) was this corpus's sole `OverloadAmbiguous` source —
+    // it now classifies `ObligationOutcome::AmbiguousResolved` (candidate-
+    // carrying, not `Unknown`), so `unknown_reason_breakdown` (which only
+    // walks `Unknown`-classified edges) no longer surfaces it anywhere in this
+    // corpus. See `ws_overload_collision_ambiguous_call_becomes_ambiguous_
+    // resolved_with_two_candidates` for the direct fixture pinning the new
+    // shape.
     for expected in [
         UnknownReason::CodeunitTableNoExcluded,
         UnknownReason::CompoundReceiver,
         UnknownReason::UntrackedReceiver,
         UnknownReason::ReceiverOutOfClosure,
-        UnknownReason::OverloadAmbiguous,
     ] {
         assert!(
             combined.contains_key(&expected),
@@ -7930,14 +8048,33 @@ fn ws_cross_object_chain_abi_overload_collapsed_declines() {
 /// `.ReadAs()` chain call the sibling test above checks. Post-Task-2, the
 /// two `Get` overloads (`Dep A` Id 60130 / `Dep C` Id 60140) carry DISTINCT
 /// `sig_fp`s and never collapse — `resolve_in_object` finds 2 arity-1,
-/// visible candidates and must decline `Unknown(OverloadAmbiguous)` via
-/// PLAIN dispatch (not a chain type-query). This is the exact call site
-/// that, PRE-Task-2, silently resolved `Opaque` to an ARBITRARY survivor —
-/// the round-1 critical "unguarded plain-dispatch false-Opaque" class this
-/// task closes (only the OUTER `.ReadAs()` chain declined before, via the
-/// separate chain-guard; the inner call itself was never checked).
+/// visible candidates via PLAIN dispatch (not a chain type-query). This is
+/// the exact call site that, PRE-Task-2, silently resolved `Opaque` to an
+/// ARBITRARY survivor — the round-1 critical "unguarded plain-dispatch
+/// false-Opaque" class that task closed (only the OUTER `.ReadAs()` chain
+/// declined before, via the separate chain-guard; the inner call itself was
+/// never checked).
+///
+/// REBASELINED (Task 4, sigfp-and-ambiguous-reclassification plan — the
+/// metric-definition change, correctness over backwards compatibility): both
+/// candidates are CONCRETE (SymbolOnly `Evidence::Opaque` +
+/// `RouteTarget::AbiSymbol` — the plan's "exact `Opaque`+`AbiSymbol` for
+/// SymbolOnly" prevalidation-pass shape, never a false `Unresolved`), so this
+/// is no longer a single `Unknown(OverloadAmbiguous)` decline — it is
+/// candidate-carrying `ObligationOutcome::AmbiguousResolved`, TWO `AbiSymbol`
+/// routes (one per `Get` overload), each carrying `Condition::
+/// AmbiguousDispatch`. The chain still CANNOT type-query through it (the
+/// sibling `ws_cross_object_chain_abi_overload_collapsed_declines` above
+/// stays `Unresolved`/`Unknown` — `routine_node_for_type_query`'s `[route]`
+/// slice pattern declines on a 2-route result, unaffected by this
+/// reclassification) — only the INNER plain-dispatch call's own obligation
+/// changed shape.
 #[test]
-fn ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_declines_ambiguous() {
+fn ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_becomes_ambiguous_resolved() {
+    use al_call_hierarchy::program::resolve::edge::{
+        Condition, ObligationOutcome, classify_obligation,
+    };
+
     let report = ws_cross_object_chain_report();
     let edges = edges_for_object_routine(&report, 51206, "testabioverloadcollapseddeclines");
     assert!(!edges.is_empty(), "must have at least one call obligation");
@@ -7949,19 +8086,49 @@ fn ws_cross_object_chain_abi_overload_uncollapsed_plain_dispatch_declines_ambigu
         .filter(|ce| ce.edge.kind == EdgeKind::Call)
         .min_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
         .expect("at least one Call-kind edge");
-    let route = &inner.edge.routes[0];
+
     assert_eq!(
-        route.target,
-        RouteTarget::Unresolved,
-        "the inner DepCollapse.Get(Helper) call must decline — 2 un-collapsed \
-         same-arity candidates, never an arbitrary confident pick; got {route:?}"
+        inner.edge.shape,
+        DispatchShape::AmbiguousOverload,
+        "got {:?}",
+        inner.edge.shape
     );
+    let routes = &inner.edge.routes;
     assert_eq!(
-        route.evidence,
-        Evidence::Unknown(UnknownReason::OverloadAmbiguous),
-        "expected Unknown(OverloadAmbiguous) from resolve_in_object's ordinary \
-         >1-visible-candidate arm (the overloads never collapsed in the first \
-         place — this is NOT the abi_overload_collapsed marker path); got {route:?}"
+        routes.len(),
+        2,
+        "one route per Get overload; got {routes:?}"
+    );
+
+    let mut seen_keys = std::collections::HashSet::new();
+    for route in routes {
+        assert_eq!(
+            route.evidence,
+            Evidence::Opaque,
+            "SymbolOnly candidates are concrete Opaque, never Source; got {route:?}"
+        );
+        assert!(
+            route.conditions.contains(&Condition::AmbiguousDispatch),
+            "every candidate route must carry AmbiguousDispatch; got {route:?}"
+        );
+        assert!(
+            !route.fires_by_default(),
+            "an AmbiguousDispatch route must not fire by default; got {route:?}"
+        );
+        let RouteTarget::AbiSymbol { ref key } = route.target else {
+            panic!("expected an AbiSymbol target; got {route:?}");
+        };
+        assert!(
+            seen_keys.insert(key.clone()),
+            "candidate routes must target DISTINCT AbiRoutineKeys; got {routes:?}"
+        );
+    }
+
+    assert_eq!(
+        classify_obligation(&inner.edge),
+        ObligationOutcome::AmbiguousResolved,
+        "a closed, all-concrete 2-candidate ABI overload set is \
+         AmbiguousResolved, never Unknown — the metric-definition change"
     );
 }
 
