@@ -274,6 +274,7 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
                 return_type: None,
                 return_type_id: None,
                 abi_overload_collapsed: false,
+                source_overload_aliased: false,
             });
         }
     }
@@ -341,10 +342,25 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 /// `receiver::receiver_from_routine_node`, Task 3's cross-object call-result
 /// chain typing) AND plain dispatch (`resolver::resolve_in_object`'s
 /// collapse-marker guard, Task 2 round-2) both decline rather than trust a
-/// possibly-wrong candidate. A SOURCE routine is never marked: its
-/// `param_sig_key` is real parsed param-type content, so a genuine
-/// same-id/same-key collapse there is always a true re-parse duplicate of
-/// the identical declaration.
+/// possibly-wrong candidate. `abi_overload_collapsed` is never set for a
+/// SOURCE routine: its `param_sig_key` is real parsed param-type content, so
+/// a genuine same-id/same-key collapse there is always a true re-parse
+/// duplicate of the identical declaration.
+///
+/// **Source-overload alias marking (sigfp-and-ambiguous-reclassification
+/// plan, Task 1).** A run with ≥2 DISTINCT `param_sig_key`s surviving under
+/// one `RoutineNodeId` is the source-tier mirror of the ABI case above: a
+/// genuine same-name/same-arity overload PAIR that source `sig_fp` (always
+/// `0`) cannot distinguish at the id level. Neither survivor collapses (both
+/// are real, both are kept — this function's whole point), but EVERY
+/// survivor in such a run is marked [`RoutineNode::source_overload_aliased`]
+/// — a same-id/different-key COLLISION GUARD consumed by
+/// `resolver::emit_event_flow_edges`. A TRUE re-parse duplicate (one
+/// distinct key in the run) collapses to a single unmarked survivor, same as
+/// always. The two marker fields are mutually exclusive by construction:
+/// this branch only ever fires for `r.tier != TrustTier::SymbolOnly`, whose
+/// `param_sig_key` is never the ABI-only empty-key sentinel this function
+/// collapses on.
 fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) {
     let mut out: Vec<RoutineNode> = Vec::with_capacity(routines.len());
     let mut i = 0;
@@ -355,12 +371,16 @@ fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) 
         }
         // Count raw entries per param-signature key within this run FIRST —
         // a survivor is only markable once the true raw count sharing its
-        // key is known (needed for the ABI empty-key case above).
+        // key is known (needed for the ABI empty-key case above). The
+        // number of DISTINCT keys in the run (`sig_counts.len()`) is what
+        // the source-overload-alias marking below needs: >=2 distinct keys
+        // surviving under one id is a genuine aliased overload pair.
         let mut sig_counts: std::collections::HashMap<&str, usize> =
             std::collections::HashMap::new();
         for r in &routines[i..j] {
             *sig_counts.entry(r.param_sig_key.as_str()).or_insert(0) += 1;
         }
+        let distinct_key_count = sig_counts.len();
         // Preserve first-occurrence order for determinism; collapse every
         // later entry in the run that repeats an already-seen param signature.
         let mut seen_sigs: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -369,6 +389,8 @@ fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) 
                 let mut survivor = r.clone();
                 if r.tier == TrustTier::SymbolOnly && sig_counts[r.param_sig_key.as_str()] >= 2 {
                     survivor.abi_overload_collapsed = true;
+                } else if r.tier != TrustTier::SymbolOnly && distinct_key_count >= 2 {
+                    survivor.source_overload_aliased = true;
                 }
                 out.push(survivor);
             }
@@ -460,6 +482,7 @@ mod tests {
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         }
     }
 
@@ -493,6 +516,7 @@ mod tests {
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         }
     }
 

@@ -2025,6 +2025,63 @@ fn resolve_abi_prefix_routine<'g>(
 // Publisher-anchored EventFlow edge emission (Phase 4b Task 3)
 // ---------------------------------------------------------------------------
 
+/// `RoutineNodeId`s where ≥2 [`RoutineNode::source_overload_aliased`]
+/// sibling routines are BOTH publishers (`publisher_kind.is_some()`) — a
+/// TRUE dual-publisher source-overload-alias collision (Task 1,
+/// sigfp-and-ambiguous-reclassification plan).
+///
+/// [`BodyMap::get_with_path`]'s lookup is keyed by `RoutineNodeId` alone and
+/// `BodyMap::build` is last-write-wins on that key (see its doc), so for an
+/// aliased id it can only ever return ONE decl+span — there is no way to
+/// tell, from inside [`emit_event_flow_edges`]'s loop, which of the ≥2
+/// physically distinct publisher declarations that single answer actually
+/// belongs to. Every loop iteration for the shared id would additionally
+/// push an `Edge` with the IDENTICAL `(from, site)` pair (routes too, since
+/// [`ResolveIndex::subscribers_of`] is also keyed by the shared id), which
+/// would silently look like a harmless duplicate to any `(from, site)`
+/// dedup downstream — but could just as easily be masking a dropped
+/// fan-out once Task 2 gives each overload real per-candidate identity.
+/// Single-publisher-sibling aliasing (one overload is a publisher, its
+/// sibling is not) is NOT in this set — that shape still emits its one
+/// edge unchanged this task; only a genuine dual-publisher collision is
+/// unsafe enough to fail closed on.
+fn dual_publisher_alias_ids(routines: &[RoutineNode]) -> std::collections::HashSet<RoutineNodeId> {
+    let mut publisher_alias_counts: std::collections::HashMap<&RoutineNodeId, usize> =
+        std::collections::HashMap::new();
+    for r in routines {
+        if r.source_overload_aliased && r.publisher_kind.is_some() {
+            *publisher_alias_counts.entry(&r.id).or_insert(0) += 1;
+        }
+    }
+    publisher_alias_counts
+        .into_iter()
+        .filter(|(_, n)| *n >= 2)
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+/// Number of publisher routines whose `EventFlow` edge [`emit_event_flow_edges`]
+/// SKIPPED under the Task 1 dual-publisher source-overload-alias collision
+/// guard (each id in [`dual_publisher_alias_ids`] contributes exactly as many
+/// skips as it has publisher-kind aliased siblings — 2 for the ordinary
+/// aliased-pair case). A pure re-derivation of the SAME guard `emit_event_flow_
+/// edges` applies, so it stays truthful without threading a counter through
+/// that function's return type. Surfaced on `ProgramReport` for the report
+/// path: a nonzero value beyond the CDO-measured known-pair signatures is a
+/// threshold alert (investigate, don't mask — collision-guard-observability
+/// addendum).
+pub fn dual_publisher_alias_skip_count(routines: &[RoutineNode]) -> usize {
+    let alias_ids = dual_publisher_alias_ids(routines);
+    if alias_ids.is_empty() {
+        return 0;
+    }
+    routines
+        .iter()
+        .filter(|r| r.source_overload_aliased && r.publisher_kind.is_some())
+        .filter(|r| alias_ids.contains(&r.id))
+        .count()
+}
+
 /// Emit one `EventFlow` `Multicast` edge per publisher event routine, with
 /// routes to all its resolved subscribers (from [`ResolveIndex::subscribers_of`]).
 ///
@@ -2052,6 +2109,16 @@ fn resolve_abi_prefix_routine<'g>(
 /// collapse-marked — indistinguishable from "no subscribers" at this edge's
 /// granularity, and correctly so: neither case has a trustworthy target.
 ///
+/// # Dual-publisher source-overload-alias guard (Task 1, SKIP-ONLY)
+/// A publisher whose id is in [`dual_publisher_alias_ids`] is SKIPPED
+/// entirely — no edge (corrupted-span or synthetic-zero-span) is emitted for
+/// it. See that function's doc for why the span cannot be trusted. This is a
+/// narrower guard than the collapse-marker one above: it fires only for a
+/// TRUE dual-publisher alias, never for a single-publisher-sibling pair
+/// (whose one publisher keeps emitting its edge unchanged) and never for a
+/// non-publisher alias (irrelevant to this function). Each skip is counted by
+/// [`dual_publisher_alias_skip_count`] for the report path.
+///
 /// # Determinism
 /// Publishers are iterated in `graph.routines` order (already sorted by
 /// `RoutineNodeId`); subscriber routes within each edge are already sorted by
@@ -2062,9 +2129,15 @@ pub fn emit_event_flow_edges(
     body_map: &BodyMap<'_>,
 ) -> Vec<Edge> {
     let mut edges = Vec::new();
+    let dual_publisher_alias = dual_publisher_alias_ids(&graph.routines);
 
     for pub_routine in &graph.routines {
         if pub_routine.publisher_kind.is_none() {
+            continue;
+        }
+        if dual_publisher_alias.contains(&pub_routine.id) {
+            // SKIP-ONLY guard (Task 1 addendum: never a synthetic span) —
+            // counted via `dual_publisher_alias_skip_count`.
             continue;
         }
 
@@ -3057,6 +3130,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -3219,6 +3293,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type: Some("Codeunit \"Dep Http Content\"".into()),
             return_type_id: Some(("Dep Http Content".into(), 60101)),
             abi_overload_collapsed: collapsed,
+            source_overload_aliased: false,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -3426,6 +3501,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: collapsed,
+            source_overload_aliased: false,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -3634,6 +3710,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: collapsed,
+            source_overload_aliased: false,
         }];
 
         let obj_index = ObjectIndex::build(&objects);
@@ -3790,6 +3867,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         };
 
         let subscriber = RoutineNode {
@@ -3821,6 +3899,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: collapsed,
+            source_overload_aliased: false,
         };
 
         let mut routines = vec![publisher, subscriber];
@@ -7841,6 +7920,7 @@ codeunit 50000 "Caller"
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         });
 
         // Regular procedure: abi_routine_kind=Procedure, abi_event_kind=None.
@@ -7866,6 +7946,7 @@ codeunit 50000 "Caller"
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         });
 
         objects.sort_by(|a, b| a.id.cmp(&b.id));
@@ -8876,6 +8957,7 @@ codeunit 53971 "OverloadNCaller"
                 return_type: None,
                 return_type_id: None,
                 abi_overload_collapsed: false,
+                source_overload_aliased: false,
             }
         }
         let routines = vec![

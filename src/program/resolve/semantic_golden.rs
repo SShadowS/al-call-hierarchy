@@ -2578,6 +2578,7 @@ mod tests {
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         }
     }
 

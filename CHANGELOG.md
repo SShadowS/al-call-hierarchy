@@ -8,6 +8,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`.dependencies` folder special-casing preflight audit — CLEAN (Task 0,
+  sigfp-and-ambiguous-reclassification plan).** Read-only sweep of every
+  source walker for `.dependencies` folder-name special-casing, requested by
+  the user as a PREFLIGHT before Task 1's CDO baselines: `src/snapshot/
+  provider.rs::walk_al_source`, `src/engine/snapshot.rs::discover_al_files`/
+  `count_app_json`, `src/engine/l2/l2_workspace.rs::discover_al_files`/
+  `discover_al_files_app_scoped`/`count_app_json_paths` (which `src/engine/
+  l3/l3_workspace.rs` reuses), `src/indexer.rs::index_directory`, and `src/
+  main.rs::run_analysis` all skip only `.alpackages`/`.snapshots`/
+  `node_modules`/`.git` — never `.dependencies`. Every other `dependencies`
+  hit in the codebase is either the app.json manifest FIELD (`dependencies[]`
+  / `declared_dependencies` / `primaryDependencies`) or the unrelated
+  `.alpackages` external-dependency-resolution machinery (`src/
+  dependencies.rs`, `indexer.rs::index_dependencies`). Confirmed positively:
+  the frozen semantic goldens (`tests/goldens/semantic-edges/*.json`) already
+  carry real resolved call-graph edges for CDO's own `.dependencies/CDO/**`
+  source files, proving they are ingested and resolved as normal AL source,
+  not excluded. No script/doc claims otherwise (a sibling plan's now-VOID T1
+  proposal to skip `.dependencies` was deleted before implementation — see
+  `docs/superpowers/plans/2026-07-03-dataitem-depscope-reason-split.md`'s
+  header and this repo's prior CHANGELOG entry). No code changes required;
+  Task 1 proceeded on unmodified CDO baselines.
+- **Source-overload collision guard — `RoutineNode::source_overload_aliased`
+  + `emit_event_flow_edges` dual-publisher SKIP guard (Task 1,
+  sigfp-and-ambiguous-reclassification plan).** Source-tier `sig_fp` is
+  always `0`, so two genuine same-name/same-arity SOURCE overloads (differing
+  only by parameter TYPE) alias onto ONE `RoutineNodeId`;
+  `dedup_routines_preserving_genuine_overloads` already kept both survivors
+  (the prior Task 2 review fix), but neither was flagged as aliased, so a
+  role-lookup consumer (rather than arity-filtered dispatch) had no way to
+  know a `BodyMap` last-write-wins span lookup for the shared id might
+  answer for the WRONG sibling. `RoutineNode` gains a new non-serialized
+  `source_overload_aliased: bool` field (mirrors `abi_overload_collapsed`'s
+  shape): `dedup_routines_preserving_genuine_overloads` (`build.rs`) marks
+  EVERY survivor of a same-id run with ≥2 DISTINCT `param_sig_key`s, while a
+  TRUE re-parse duplicate (one distinct key) still collapses to a single
+  unmarked survivor. `resolver::emit_event_flow_edges` gains a new
+  `dual_publisher_alias_ids` collision guard: a publisher id is SKIPPED
+  entirely (never a synthetic zero-span) only when ≥2
+  `source_overload_aliased` siblings sharing that id are BOTH publishers — a
+  TRUE dual-publisher collision; a single-publisher-sibling pair (one
+  overload is a publisher, its sibling is not) is unaffected and keeps
+  emitting its one edge unchanged. Each skip is counted by the new
+  `resolver::dual_publisher_alias_skip_count`, surfaced as `ProgramReport::
+  event_flow_dual_publisher_alias_skips` and in aldump's
+  `--program-call-graph-stats` JSON (`eventFlowDualPublisherAliasSkips`) for
+  the report path. Four new fixtures in `tests/program_resolve_harness.rs`
+  (`source_overload_alias_marks_both_survivors`,
+  `true_duplicate_collapses_unmarked`,
+  `dual_publisher_alias_skips_event_flow_edges`, plus the pre-existing
+  `compound_obj_dup_and_overload_*` single-publisher-sibling pair confirmed
+  unaffected); a mutation check (temporarily disabling the marking condition
+  and the skip guard) confirmed the new assertions genuinely catch the
+  regression before being restored green. CDO re-measure (`CDO_WS`,
+  `ENFORCE_CDO_WS=1`, single-threaded, `--release`): resolution stats
+  BYTE-IDENTICAL (primary `unknown`=151, `real_unknown_rate`=0.8341%,
+  `unknownByReason` unchanged, `coverage.holds`=true, `genuine_wrong`=0) and
+  `eventFlowDualPublisherAliasSkips`=0 — CDO's 6 aliased id-groups in the
+  primary workspace app (18 marked routines total; hundreds more across
+  embedded Base Application/CTS-SYS dependency source) carry ZERO publishers
+  among them, so the dual-publisher guard never fires on CDO today and the
+  frozen event/trigger digests are unmoved (confirmed via
+  `cdo_event_audit_frozen_load`/`cdo_trigger_audit_frozen_load`, both
+  byte-identical). `cargo test --workspace`: 159/159 in the touched harness,
+  full workspace suite green; `cargo fmt --check` and `cargo clippy --release
+  --all-features -- -D warnings` both clean.
 - **Report-dataitem receivers + Unknown reason-split complete — real-`unknown`
   0.99%→0.83% (dataitem-depscope-reason-split plan, Task 3, FINAL — arc capstone).**
   Full re-measure on CDO (`CDO_WS`, `ENFORCE_CDO_WS=1`, single-threaded, `--release`,

@@ -4682,6 +4682,352 @@ fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
 }
 
 // ---------------------------------------------------------------------------
+// Tests 23f-23i: sigfp-and-ambiguous-reclassification plan, Task 1 — the
+// source-overload alias marker (`RoutineNode::source_overload_aliased`) and
+// the dual-publisher event-flow collision guard
+// (`resolver::emit_event_flow_edges` / `resolver::dual_publisher_alias_
+// skip_count`). Source `sig_fp` is always `0`, so two genuine same-name/
+// same-arity SOURCE overloads (differing only by parameter TYPE) collide
+// onto ONE `RoutineNodeId`; `dedup_routines_preserving_genuine_overloads`
+// already keeps BOTH survivors (Task 2 review fix — see the tests above),
+// but until this task neither was flagged as aliased, so a role-lookup
+// consumer like `emit_event_flow_edges`'s publisher fan-out had no way to
+// know its `BodyMap` span answer might belong to the WRONG sibling.
+// ---------------------------------------------------------------------------
+
+/// A single workspace source object declaring two overloads that collide
+/// onto ONE `RoutineNodeId`: `Resolve(Value: Integer)` and `Resolve(Value:
+/// Text)`. Neither is a publisher — isolates the alias MARKER from the
+/// event-flow guard (Test 23f).
+fn two_overload_alias_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
+    use al_call_hierarchy::snapshot::compilation::CompilationContext;
+    use al_call_hierarchy::snapshot::embedded::SourceFile;
+    use al_call_hierarchy::snapshot::provider::SourceRoot;
+    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+
+    let src = r#"
+codeunit 50980 "Alias Target"
+{
+    procedure Resolve(Value: Integer)
+    begin
+    end;
+
+    procedure Resolve(Value: Text)
+    begin
+    end;
+}
+"#
+    .to_string();
+
+    let app_id = AppId {
+        guid: String::new(),
+        name: "Alias App".into(),
+        publisher: "Test".into(),
+        version: "1.0.0.0".into(),
+    };
+
+    let ws_source = SourceRoot {
+        files: vec![SourceFile {
+            virtual_path: "AliasTarget.al".into(),
+            text: src,
+        }],
+        tier: TrustTier::Workspace,
+        content_hash: "ws-hash".into(),
+    };
+
+    let ws_unit = AppUnit {
+        id: app_id.clone(),
+        provenance: Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::Workspace,
+            content_hash: "ws-hash".into(),
+        },
+        source: Some(ws_source),
+        compilation: CompilationContext::default(),
+        declared_deps: vec![],
+        internals_visible_to: vec![],
+        abi: None,
+        app_path: None,
+    };
+
+    AppSetSnapshot {
+        workspace_app: app_id,
+        apps: vec![ws_unit],
+        world: World::Closed,
+    }
+}
+
+/// Test 23f: two same-id different-`param_sig_key` SOURCE decls must BOTH
+/// survive dedup AND both carry `source_overload_aliased == true`.
+#[test]
+fn source_overload_alias_marks_both_survivors() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+
+    let snap = two_overload_alias_snapshot();
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+
+    let resolve_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "resolve")
+        .collect();
+    assert_eq!(
+        resolve_entries.len(),
+        2,
+        "both genuine overloads must survive dedup; got {:?}",
+        resolve_entries
+            .iter()
+            .map(|r| &r.param_sig_key)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        resolve_entries.iter().all(|r| r.source_overload_aliased),
+        "every survivor of a same-id different-param_sig_key run must be \
+         marked source_overload_aliased; got {:?}",
+        resolve_entries
+            .iter()
+            .map(|r| (r.param_sig_key.clone(), r.source_overload_aliased))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A single workspace source object embedded TWICE (workspace + embedded
+/// dep, identical content, mirroring `compound_overload_dup_snapshot`'s own
+/// obj_dup pattern) declaring ONE procedure — no overload pair, a TRUE
+/// re-parse duplicate (Test 23g, control).
+fn true_duplicate_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
+    use al_call_hierarchy::snapshot::compilation::CompilationContext;
+    use al_call_hierarchy::snapshot::embedded::SourceFile;
+    use al_call_hierarchy::snapshot::provider::SourceRoot;
+    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+
+    let src = r#"
+codeunit 50981 "Dup Target"
+{
+    procedure Resolve(Value: Integer)
+    begin
+    end;
+}
+"#
+    .to_string();
+
+    let app_id = AppId {
+        guid: String::new(),
+        name: "Dup App".into(),
+        publisher: "Test".into(),
+        version: "1.0.0.0".into(),
+    };
+
+    let ws_source = SourceRoot {
+        files: vec![SourceFile {
+            virtual_path: "DupTarget.al".into(),
+            text: src.clone(),
+        }],
+        tier: TrustTier::Workspace,
+        content_hash: "ws-hash".into(),
+    };
+    let dep_source = SourceRoot {
+        files: vec![SourceFile {
+            virtual_path: "DupTarget.al".into(),
+            text: src,
+        }],
+        tier: TrustTier::EmbeddedSource,
+        content_hash: "dep-hash".into(),
+    };
+
+    let ws_unit = AppUnit {
+        id: app_id.clone(),
+        provenance: Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::Workspace,
+            content_hash: "ws-hash".into(),
+        },
+        source: Some(ws_source),
+        compilation: CompilationContext::default(),
+        declared_deps: vec![],
+        internals_visible_to: vec![],
+        abi: None,
+        app_path: None,
+    };
+    let dep_unit = AppUnit {
+        id: app_id.clone(),
+        provenance: Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::EmbeddedSource,
+            content_hash: "dep-hash".into(),
+        },
+        source: Some(dep_source),
+        compilation: CompilationContext::default(),
+        declared_deps: vec![],
+        internals_visible_to: vec![],
+        abi: None,
+        app_path: None,
+    };
+
+    AppSetSnapshot {
+        workspace_app: app_id,
+        apps: vec![ws_unit, dep_unit],
+        world: World::Closed,
+    }
+}
+
+/// Test 23g (CONTROL): a true re-parse duplicate (same `param_sig_key`)
+/// still collapses to ONE unmarked survivor.
+#[test]
+fn true_duplicate_collapses_unmarked() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+
+    let snap = true_duplicate_snapshot();
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+
+    let resolve_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "resolve")
+        .collect();
+    assert_eq!(
+        resolve_entries.len(),
+        1,
+        "a true re-parse duplicate must collapse to ONE canonical survivor; got {}",
+        resolve_entries.len()
+    );
+    assert!(
+        !resolve_entries[0].source_overload_aliased,
+        "a true re-parse duplicate's lone survivor must NOT be marked \
+         source_overload_aliased"
+    );
+}
+
+/// A single workspace source object declaring two overloads that BOTH carry
+/// `[IntegrationEvent]` — a TRUE dual-publisher alias collision (Test 23h).
+fn dual_publisher_alias_snapshot() -> al_call_hierarchy::snapshot::AppSetSnapshot {
+    use al_call_hierarchy::snapshot::compilation::CompilationContext;
+    use al_call_hierarchy::snapshot::embedded::SourceFile;
+    use al_call_hierarchy::snapshot::provider::SourceRoot;
+    use al_call_hierarchy::snapshot::{AppSetSnapshot, AppUnit, World};
+
+    let src = r#"
+codeunit 50982 "Dual Publisher Target"
+{
+    [IntegrationEvent(false, false)]
+    procedure Resolve(Value: Integer)
+    begin
+    end;
+
+    [IntegrationEvent(false, false)]
+    procedure Resolve(Value: Text)
+    begin
+    end;
+}
+"#
+    .to_string();
+
+    let app_id = AppId {
+        guid: String::new(),
+        name: "Dual Publisher App".into(),
+        publisher: "Test".into(),
+        version: "1.0.0.0".into(),
+    };
+
+    let ws_source = SourceRoot {
+        files: vec![SourceFile {
+            virtual_path: "DualPublisherTarget.al".into(),
+            text: src,
+        }],
+        tier: TrustTier::Workspace,
+        content_hash: "ws-hash".into(),
+    };
+
+    let ws_unit = AppUnit {
+        id: app_id.clone(),
+        provenance: Provenance {
+            app: app_id.clone(),
+            tier: TrustTier::Workspace,
+            content_hash: "ws-hash".into(),
+        },
+        source: Some(ws_source),
+        compilation: CompilationContext::default(),
+        declared_deps: vec![],
+        internals_visible_to: vec![],
+        abi: None,
+        app_path: None,
+    };
+
+    AppSetSnapshot {
+        workspace_app: app_id,
+        apps: vec![ws_unit],
+        world: World::Closed,
+    }
+}
+
+/// Test 23h: a dual-publisher aliased pair must emit ZERO EventFlow edges
+/// for the shared id (SKIP-ONLY guard — never a corrupted-span edge), and
+/// the skip must be counted (exactly 2 — one per aliased publisher
+/// sibling).
+#[test]
+fn dual_publisher_alias_skips_event_flow_edges() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+    use al_call_hierarchy::program::resolve::body_map::BodyMap;
+    use al_call_hierarchy::program::resolve::index::ResolveIndex;
+    use al_call_hierarchy::program::resolve::resolver::{
+        dual_publisher_alias_skip_count, emit_event_flow_edges,
+    };
+    use al_call_hierarchy::snapshot::parse_snapshot;
+
+    let snap = dual_publisher_alias_snapshot();
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+    let parsed = parse_snapshot(&snap);
+    let index = ResolveIndex::build(&graph);
+    let body_map = BodyMap::build(&graph, &parsed);
+
+    // Precondition: both overloads survived, both aliased, both publishers.
+    let resolve_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "resolve")
+        .collect();
+    assert_eq!(
+        resolve_entries.len(),
+        2,
+        "both overloads must survive dedup"
+    );
+    assert!(
+        resolve_entries
+            .iter()
+            .all(|r| r.source_overload_aliased && r.publisher_kind.is_some()),
+        "fixture precondition: both survivors must be aliased publishers; got {:?}",
+        resolve_entries
+            .iter()
+            .map(|r| (r.source_overload_aliased, r.publisher_kind.is_some()))
+            .collect::<Vec<_>>()
+    );
+
+    let edges = emit_event_flow_edges(&graph, &index, &body_map);
+    let alias_id = resolve_entries[0].id.clone();
+    let corrupted: Vec<_> = edges.iter().filter(|e| e.from == alias_id).collect();
+    assert!(
+        corrupted.is_empty(),
+        "a dual-publisher aliased pair must emit ZERO EventFlow edges for \
+         the shared id (skip-only guard); got {} edge(s): {:?}",
+        corrupted.len(),
+        corrupted
+    );
+
+    assert_eq!(
+        dual_publisher_alias_skip_count(&graph.routines),
+        2,
+        "the guard must count exactly 2 skips (one per aliased publisher \
+         sibling) for the ordinary dual-publisher-pair shape"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Tests 22+: beyond-1B.3b Task 5 — Page/PageExtension implicit `Rec` via
 // `ObjectNode.source_table`, end-to-end over `ws-page-rec`.
 //

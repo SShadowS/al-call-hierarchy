@@ -1348,6 +1348,11 @@ fn main() -> ExitCode {
                 "abiMapped": abi.abi_mapped,
                 "abiUnmapped": abi.abi_unmapped,
             },
+            // ── Collision-guard observability (Task 1) ───────────────────────
+            // Publisher EventFlow edges skipped by the dual-publisher
+            // source-overload-alias guard (`resolver::emit_event_flow_edges`).
+            // Expected 0 outside the CDO-measured known dual-publisher pairs.
+            "eventFlowDualPublisherAliasSkips": r.event_flow_dual_publisher_alias_skips,
         });
 
         return match serde_json::to_string_pretty(&value) {

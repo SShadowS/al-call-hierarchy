@@ -233,6 +233,29 @@ pub struct RoutineNode {
     /// (`Unknown(CompoundReceiver)`) rather than read a collapsed survivor's
     /// return type, fail-closed.
     pub abi_overload_collapsed: bool,
+    /// `true` when this SOURCE routine survived
+    /// `build::dedup_routines_preserving_genuine_overloads` as one of ≥2
+    /// entries sharing a `RoutineNodeId` whose [`param_sig_key`]s DIFFER
+    /// (sigfp-and-ambiguous-reclassification plan, Task 1) — a genuine
+    /// same-name/same-arity SOURCE overload PAIR aliased onto one id
+    /// (source `sig_fp` is always `0`, so the id alone cannot distinguish
+    /// them). Unlike [`abi_overload_collapsed`] (which marks the ARBITRARY
+    /// single survivor of a COLLAPSED run), this marks EVERY surviving
+    /// sibling of a run that did NOT collapse: both overloads are real and
+    /// both are kept, but they remain indistinguishable by id alone. It is
+    /// a same-id/different-key COLLISION GUARD: any downstream consumer
+    /// that looks a routine up by ROLE rather than through arity-filtered
+    /// dispatch (e.g. `resolver::emit_event_flow_edges`'s publisher
+    /// fan-out, which cannot tell which sibling's span `BodyMap`'s
+    /// last-write-wins lookup answers for — `body_map.rs`'s `insert` doc)
+    /// must fail closed (skip) rather than trust a single answer for a
+    /// shared id. Always `false` for a TRUE re-parse duplicate (same
+    /// `param_sig_key` collapses to one unmarked survivor) and always
+    /// `false` for an ABI/`SymbolOnly` routine (that tier's alias signal is
+    /// [`abi_overload_collapsed`] instead — the two fields are mutually
+    /// exclusive by construction, see `build::dedup_routines_preserving_
+    /// genuine_overloads`). Not serialized (like `abi_overload_collapsed`).
+    pub source_overload_aliased: bool,
 }
 
 /// Lowercased, `|`-joined parameter TYPE-TEXT sequence for a SOURCE routine's
@@ -465,6 +488,7 @@ pub fn extract_nodes(
                 return_type: r.return_type.clone(),
                 return_type_id: None,
                 abi_overload_collapsed: false,
+                source_overload_aliased: false,
             });
         }
     }

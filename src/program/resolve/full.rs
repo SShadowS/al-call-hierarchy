@@ -124,6 +124,14 @@ pub struct ProgramReport {
     pub abi_integrity: AbiIntegrityReport,
     /// The workspace app's [`AppRef`] (use with [`is_primary_scope`]).
     pub primary_app_ref: AppRef,
+    /// Count of publisher `EventFlow` edges SKIPPED by [`resolver::
+    /// emit_event_flow_edges`]'s Task 1 dual-publisher source-overload-alias
+    /// collision guard (sigfp-and-ambiguous-reclassification plan) —
+    /// [`resolver::dual_publisher_alias_skip_count`]. Expected `0` outside
+    /// the CDO-measured known dual-publisher pairs; a nonzero value beyond
+    /// those signatures is a threshold alert (investigate, don't mask —
+    /// collision-guard-observability addendum).
+    pub event_flow_dual_publisher_alias_skips: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -738,6 +746,9 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
     let plain_edges: Vec<Edge> = edges.iter().map(|ce| ce.edge.clone()).collect();
     let abi_integrity = abi_ingestion_integrity(&plain_edges, &raw_abi_index);
 
+    let event_flow_dual_publisher_alias_skips =
+        crate::program::resolve::resolver::dual_publisher_alias_skip_count(&graph.routines);
+
     Some(ProgramReport {
         edges,
         coverage,
@@ -745,6 +756,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         primary_histogram,
         abi_integrity,
         primary_app_ref,
+        event_flow_dual_publisher_alias_skips,
     })
 }
 

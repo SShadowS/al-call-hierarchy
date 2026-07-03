@@ -518,6 +518,10 @@ pub fn ingest_abi(
                 // dedup_routines_preserving_genuine_overloads` (Task 3 review
                 // fix). See `RoutineNode::abi_overload_collapsed`'s doc.
                 abi_overload_collapsed: false,
+                // Always `false` for an ABI/`SymbolOnly` routine — see
+                // `RoutineNode::source_overload_aliased`'s doc (mutually
+                // exclusive with `abi_overload_collapsed` by construction).
+                source_overload_aliased: false,
             });
         }
     }

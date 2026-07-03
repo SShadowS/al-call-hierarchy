@@ -5807,6 +5807,7 @@ codeunit 50100 "C"
             return_type: None,
             return_type_id: None,
             abi_overload_collapsed: false,
+            source_overload_aliased: false,
         }
     }
 
