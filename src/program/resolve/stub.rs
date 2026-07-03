@@ -85,6 +85,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
                                 evidence: Evidence::Unknown(UnknownReason::UnclassifiedCallee),
                                 conditions: vec![],
                                 witness: Witness::None,
+                                receiver_tier: None,
                             }],
                         });
                     }
@@ -141,6 +142,7 @@ pub fn synthetic_unknown_edge_for_test() -> Vec<Edge> {
             evidence: Evidence::Unknown(UnknownReason::UnclassifiedCallee),
             conditions: vec![],
             witness: Witness::None,
+            receiver_tier: None,
         }],
     }]
 }

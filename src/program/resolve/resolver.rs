@@ -123,6 +123,7 @@ fn make_routine_route(
                 file: path.to_string(),
                 span: (decl.origin.byte.start as u32, decl.origin.byte.end as u32),
             },
+            receiver_tier: None,
         }
     } else if obj_tier == TrustTier::SymbolOnly {
         // SymbolOnly routine: body unavailable (loaded from .app SymbolReference,
@@ -165,6 +166,7 @@ fn make_routine_route(
             evidence: Evidence::Opaque,
             conditions: vec![],
             witness: Witness::AbiSymbol { key },
+            receiver_tier: None,
         }
     } else {
         // Source-tier BodyMap miss: integration bug.  Surface it as Unknown so
@@ -183,6 +185,20 @@ fn unresolved_route(reason: UnknownReason) -> Route {
         evidence: Evidence::Unknown(reason),
         conditions: vec![],
         witness: Witness::None,
+        receiver_tier: None,
+    }
+}
+
+/// Like [`unresolved_route`] but additionally tags the resolved RECEIVER
+/// object's [`TrustTier`] (reason-split Task 2's `receiver_tier` diagnostic —
+/// see [`Route::receiver_tier`]'s doc). Used ONLY at
+/// `UnknownReason::MemberNotFound` emission sites where a receiver OBJECT was
+/// in fact resolved (member-absent-on-a-resolved-surface) — never for
+/// `ObjectNotInGraph`, where no resolved receiver exists to tag.
+fn unresolved_route_with_tier(reason: UnknownReason, tier: TrustTier) -> Route {
+    Route {
+        receiver_tier: Some(tier),
+        ..unresolved_route(reason)
     }
 }
 
@@ -224,8 +240,14 @@ fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool
 ///
 /// # Selection rule (the overload-narrowing guard — do NOT weaken)
 ///
+/// Reason-split (Task 2): this rule structurally produces exactly FOUR
+/// distinct `Unknown` shapes, now tagged with FOUR distinct [`UnknownReason`]
+/// values (previously all four collapsed into one `OverloadAmbiguous`
+/// bucket) — see each variant's own doc for the full rationale.
+///
 /// 1. Zero arity-matched candidates (`pre_filter_count == 0`): name found but
-///    no overload matches the arity → `Unknown(OverloadAmbiguous)`.
+///    no overload matches the arity → `Unknown(ArityMismatch)` — nothing to
+///    be ambiguous BETWEEN.
 /// 2. `pre_filter_count >= 1`: partition the arity-matched set by
 ///    [`routine_candidate_is_visible`].
 ///    - **0 visible** → access excluded every arity-matched candidate →
@@ -236,7 +258,8 @@ fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool
 ///      per-`Access` rule).
 ///    - **Exactly 1 visible AND `pre_filter_count == 1`** → the visible
 ///      candidate WAS the only overload to begin with; access filtering
-///      changed nothing about cardinality → resolve it.
+///      changed nothing about cardinality → resolve it (subject to the
+///      collapse-marker guard below → `Unknown(AbiCollapsedOverload)`).
 ///    - **Exactly 1 visible BUT `pre_filter_count > 1`** → access narrowed an
 ///      originally-AMBIGUOUS same-arity set down to one. This is NOT a safe
 ///      selection: the pre-filter set was ambiguous (no arg-type evidence to
@@ -244,8 +267,7 @@ fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool
 ///      access removing the OTHER sibling(s) doesn't prove the call meant
 ///      THIS one. Selecting the lone survivor would MANUFACTURE a false
 ///      `Source` route from what is actually still an unproven overload
-///      choice → `Unknown(OverloadAmbiguous)`, exactly like the >1-visible
-///      case below.
+///      choice → `Unknown(AccessFilteredOverload)`.
 ///    - **>1 visible** → genuine unresolved ambiguity (mirrors the
 ///      interface-implementer fan-out's `>1 candidates → Unresolved` rule) →
 ///      `Unknown(OverloadAmbiguous)`. Never pick-first.
@@ -316,8 +338,10 @@ fn resolve_in_object(
         // Name found but no arity-matched overload: emit Unknown rather than
         // a false-confident route to a wrong-arity candidate. Does NOT fall
         // through to extension-base / global-builtin — mirrors L3's
-        // MemberNotFound stop.
-        return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
+        // MemberNotFound stop. Reason-split Task 2: nothing to be AMBIGUOUS
+        // between (zero candidates survived the arity filter) — distinct from
+        // OverloadAmbiguous, which now means genuine >1-candidate ambiguity.
+        return Some(unresolved_route(UnknownReason::ArityMismatch));
     }
 
     // Per-candidate visibility filter (Task 1): partition the arity-matched
@@ -371,12 +395,25 @@ fn resolve_in_object(
             // genuine_overloads`'s doc) — its `return_type`/identity may not
             // even be the one the caller meant, so it must decline exactly
             // like a genuine >1-candidate ambiguity, never silently resolve,
-            // no matter which of the five sites reached it.
+            // no matter which of the five sites reached it. Reason-split Task
+            // 2: this is an ABI ingestion-fidelity admission, NOT a live
+            // candidate-set ambiguity — `AbiCollapsedOverload`, distinct from
+            // `OverloadAmbiguous` (this guard only; the OTHER four
+            // `routine_is_collapse_marked` call sites enumerated above are
+            // unchanged by Task 2 and still emit `OverloadAmbiguous`).
             if routine_is_collapse_marked(rid0, graph) {
-                return Some(unresolved_route(UnknownReason::OverloadAmbiguous));
+                return Some(unresolved_route(UnknownReason::AbiCollapsedOverload));
             }
             Some(make_routine_route(rid0, obj_tier, body_map, graph))
         }
+        // pre_filter_count == 1 was already handled by the guarded arm above;
+        // reaching `visible.len() == 1` here means `pre_filter_count > 1` —
+        // access narrowed an originally-ambiguous same-arity set down to one
+        // survivor. NOT a safe selection (see the doc above): the decided
+        // reason-split Task 2 label for this shape.
+        1 => Some(unresolved_route(UnknownReason::AccessFilteredOverload)),
+        // >1 visible: genuine unresolved ambiguity — stays OverloadAmbiguous
+        // (reason-split Task 2: unchanged, the textbook case).
         _ => Some(unresolved_route(UnknownReason::OverloadAmbiguous)),
     }
 }
@@ -1099,10 +1136,20 @@ pub fn resolve_bare(
                 id: builtin_id,
                 catalog_version: catalog_version().to_string(),
             },
+            receiver_tier: None,
         }];
     }
 
-    // 5. Unknown.
+    // 5. Unknown. Reason-split Task 2: the `MemberNotFound` DEFAULT (never
+    // overwritten by an earlier step) means Step 1's own-object
+    // `resolve_in_object` call found the name absent entirely — the receiver
+    // (from_object itself) IS resolved by construction, so tag its tier.
+    // Every other `reason` value here (ReceiverOutOfClosure/WithScopeGuard/
+    // CodeunitTableNoExcluded/ReportRecExcluded/an access-exclusion reason)
+    // is untagged — tier is `MemberNotFound`-specific (see its doc).
+    if reason == UnknownReason::MemberNotFound {
+        return vec![unresolved_route_with_tier(reason, from_object.tier)];
+    }
     vec![unresolved_route(reason)]
 }
 
@@ -1133,6 +1180,7 @@ fn opaque_boundary_route(key: AbiRoutineKey) -> Route {
         evidence: Evidence::Opaque,
         conditions: vec![],
         witness: Witness::AbiSymbol { key },
+        receiver_tier: None,
     }
 }
 
@@ -1194,11 +1242,14 @@ pub fn resolve_object_run(
         // which app owns it, so creating an AbiSymbol with `app = from`
         // (caller's app) would be semantically wrong and would fail the
         // ABI ingestion integrity check. Emit Unknown/Unresolved: honest
-        // failure — we cannot name the callee.
+        // failure — we cannot name the callee. Reason-split Task 2: the
+        // RECEIVER OBJECT itself is absent — `ObjectNotInGraph`, not
+        // `MemberNotFound` (which now means member-absent-on-a-RESOLVED
+        // surface). No externality claim — see `ObjectNotInGraph`'s doc.
         return (
             DispatchShape::Exact,
             SetCompleteness::Complete,
-            vec![unresolved_route(UnknownReason::MemberNotFound)],
+            vec![unresolved_route(UnknownReason::ObjectNotInGraph)],
         );
     };
 
@@ -1373,6 +1424,7 @@ fn member_catalog_route(bid: BuiltinId) -> (DispatchShape, Vec<Route>) {
                 id: bid,
                 catalog_version: catalog_version().to_string(),
             },
+            receiver_tier: None,
         }],
     )
 }
@@ -1381,6 +1433,18 @@ fn member_catalog_route(bid: BuiltinId) -> (DispatchShape, Vec<Route>) {
 /// every caller supplies a diagnostic [`UnknownReason`]).
 fn member_unknown_route(reason: UnknownReason) -> (DispatchShape, Vec<Route>) {
     (DispatchShape::Exact, vec![unresolved_route(reason)])
+}
+
+/// Like [`member_unknown_route`] but tags `receiver_tier` — see
+/// [`unresolved_route_with_tier`]'s doc.
+fn member_unknown_route_with_tier(
+    reason: UnknownReason,
+    tier: TrustTier,
+) -> (DispatchShape, Vec<Route>) {
+    (
+        DispatchShape::Exact,
+        vec![unresolved_route_with_tier(reason, tier)],
+    )
 }
 
 /// Build a `(DynamicOpen, [Unknown blocker])` outcome for Dynamic receivers —
@@ -1581,8 +1645,9 @@ pub fn resolve_member(
             };
             let Some(target) = target else {
                 // Target not in the graph — honest Unknown (not Opaque: we have no
-                // identity for an unresolvable typed receiver).
-                return member_unknown_route(UnknownReason::MemberNotFound);
+                // identity for an unresolvable typed receiver). Reason-split
+                // Task 2: the RECEIVER OBJECT itself is absent — `ObjectNotInGraph`.
+                return member_unknown_route(UnknownReason::ObjectNotInGraph);
             };
             let target_id = target.id.clone();
             let target_tier = target.tier;
@@ -1660,7 +1725,10 @@ pub fn resolve_member(
                 {
                     return member_catalog_route(bid);
                 }
-                member_unknown_route(UnknownReason::MemberNotFound)
+                // The receiver object WAS resolved (`target`/`target_tier`
+                // above) — member-absent-on-a-resolved-surface stays
+                // `MemberNotFound`; tag its tier (reason-split Task 2).
+                member_unknown_route_with_tier(UnknownReason::MemberNotFound, target_tier)
             }
         }
         ReceiverType::SelfObject => {
@@ -1677,8 +1745,10 @@ pub fn resolve_member(
             ) {
                 (DispatchShape::Exact, vec![route])
             } else {
-                // Method not found in own object.
-                member_unknown_route(UnknownReason::MemberNotFound)
+                // Method not found in own object — the receiver (from_object
+                // itself) IS resolved by construction; tag its tier
+                // (reason-split Task 2).
+                member_unknown_route_with_tier(UnknownReason::MemberNotFound, from_object.tier)
             }
         }
         ReceiverType::Interface { name_lc } => {
@@ -1730,13 +1800,25 @@ pub fn resolve_member(
                         index,
                         body_map,
                     )
-                    .unwrap_or_else(|| unresolved_route(UnknownReason::MemberNotFound));
+                    .unwrap_or_else(|| {
+                        // The implementer object itself IS resolved (`impl_id`/
+                        // `impl_tier` above) — tag its tier (reason-split Task
+                        // 2). `impl_tier == SymbolOnly` here by construction
+                        // (this branch), so this tier can never PROVE absence —
+                        // see `MemberNotFound`'s doc.
+                        unresolved_route_with_tier(UnknownReason::MemberNotFound, impl_tier)
+                    });
                     routes.push(route);
                 } else {
                     let candidates = index.routines_in_object(impl_id, method_lc);
                     if candidates.is_empty() {
-                        // Method name absent from this implementer — Rule 1 Unresolved.
-                        routes.push(unresolved_route(UnknownReason::MemberNotFound));
+                        // Method name absent from this implementer — Rule 1
+                        // Unresolved. The implementer object IS resolved; tag
+                        // its tier (reason-split Task 2).
+                        routes.push(unresolved_route_with_tier(
+                            UnknownReason::MemberNotFound,
+                            impl_tier,
+                        ));
                     } else {
                         let matching = candidates
                             .iter()
@@ -2430,6 +2512,65 @@ codeunit 50102 "AnotherCU"
         assert_eq!(r.witness, Witness::None);
     }
 
+    /// Reason-split Task 2: the resolve_bare Step-5 default MemberNotFound
+    /// (never overwritten by Step 2/3's more-specific reasons) is tagged with
+    /// the receiver's (`from_object`'s own) `TrustTier` — a `Table` object
+    /// kind is used deliberately: it is NEITHER an extension kind (Step 2
+    /// skipped) NOR a Codeunit/Report (Step 3's kind-specific overwrites),
+    /// and its OWN implicit-Rec table search (Step 3, `Table` → itself)
+    /// legitimately finds zero visible candidates without an access-exclusion
+    /// reason, so `reason` reaches Step 5 UNCHANGED — the untouched
+    /// `MemberNotFound` default this test pins.
+    #[test]
+    fn bare_table_step5_default_member_not_found_tags_receiver_tier() {
+        let src: &'static str = r#"
+table 50108 "BareTableNF"
+{
+    procedure KnownProc()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "BareTableNF.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "BareTableNF");
+        assert_eq!(
+            from_obj.tier,
+            TrustTier::Workspace,
+            "fixture sanity: the workspace-parsed table must be Workspace-tier"
+        );
+        let routes = resolve_bare(
+            from_obj,
+            "xyz_this_does_not_exist_at_all",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(routes.len(), 1);
+        let r = &routes[0];
+        assert_eq!(r.target, RouteTarget::Unresolved);
+        assert_eq!(
+            r.evidence,
+            Evidence::Unknown(UnknownReason::MemberNotFound),
+            "the Step-5 default must stay MemberNotFound (member-absent-on-a-\
+             resolved-surface: from_object itself); got {r:?}"
+        );
+        assert_eq!(
+            r.receiver_tier,
+            Some(TrustTier::Workspace),
+            "MemberNotFound must tag the resolved receiver's (from_object's) \
+             tier (reason-split Task 2's additive receiver_tier diagnostic)"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // (d) extension calling a base-object proc → resolved via the base
     // -----------------------------------------------------------------------
@@ -2978,12 +3119,9 @@ pageextension 52911 "ExtA" extends BasePage
              arity; got {r:?}"
         );
         assert!(
-            matches!(
-                r.evidence,
-                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
-            ),
-            "name found, no arity-matched overload → Unknown(OverloadAmbiguous); \
-             got {r:?}"
+            matches!(r.evidence, Evidence::Unknown(UnknownReason::ArityMismatch)),
+            "name found, no arity-matched overload → Unknown(ArityMismatch) \
+             (reason-split Task 2 — was OverloadAmbiguous pre-split); got {r:?}"
         );
         assert_eq!(r.witness, Witness::None);
     }
@@ -3131,11 +3269,16 @@ pageextension 52911 "ExtA" extends BasePage
         assert!(
             matches!(
                 r.evidence,
-                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+                Evidence::Unknown(UnknownReason::AbiCollapsedOverload)
             ),
-            "expected Unknown(OverloadAmbiguous); got {r:?}"
+            "expected Unknown(AbiCollapsedOverload) (reason-split Task 2 — was \
+             OverloadAmbiguous pre-split); got {r:?}"
         );
         assert_eq!(r.witness, Witness::None);
+        assert_eq!(
+            r.receiver_tier, None,
+            "AbiCollapsedOverload is not a MemberNotFound shape — no receiver_tier"
+        );
     }
 
     /// Control: the IDENTICAL fixture shape, but UNMARKED — proves the new
@@ -4095,11 +4238,18 @@ codeunit 50202 "AnotherCaller"
             "target not in any indexed app must yield Unresolved (not AbiSymbol); got {:?}",
             r.target
         );
-        assert!(
-            matches!(r.evidence, Evidence::Unknown(_)),
-            "not-found target must use Unknown evidence (honest failure)"
+        assert_eq!(
+            r.evidence,
+            Evidence::Unknown(UnknownReason::ObjectNotInGraph),
+            "not-found target must use Unknown(ObjectNotInGraph) (reason-split \
+             Task 2 — the RECEIVER OBJECT itself is absent; was MemberNotFound \
+             pre-split); got {r:?}"
         );
         assert_eq!(r.witness, Witness::None);
+        assert_eq!(
+            r.receiver_tier, None,
+            "ObjectNotInGraph has no resolved receiver to tag"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -4791,8 +4941,20 @@ codeunit 50506 "AnotherCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::MemberNotFound),
+            "the target OBJECT resolved; only the method is absent — stays \
+             MemberNotFound (reason-split Task 2); got {:?}",
+            routes[0].evidence
+        );
         assert_eq!(routes[0].witness, Witness::None);
+        assert_eq!(
+            routes[0].receiver_tier,
+            Some(TrustTier::Workspace),
+            "member-absent-on-a-resolved-surface must tag the resolved \
+             receiver's (target object's) tier (reason-split Task 2)"
+        );
     }
 
     // (e) Object receiver where the target object isn't in the graph → Unknown
@@ -4835,8 +4997,18 @@ codeunit 50507 "OrphanCaller"
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::ObjectNotInGraph),
+            "reason-split Task 2 — the RECEIVER OBJECT itself is absent; was \
+             MemberNotFound pre-split; got {:?}",
+            routes[0].evidence
+        );
         assert_eq!(routes[0].witness, Witness::None);
+        assert_eq!(
+            routes[0].receiver_tier, None,
+            "ObjectNotInGraph has no resolved receiver to tag"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -8594,7 +8766,252 @@ codeunit 53971 "OverloadNCaller"
             routes[0].target
         );
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        // NOTE (reason-split Task 2 investigation): this fixture's TWO
+        // same-arity SOURCE overloads (`Foo(Integer)`/`Foo(Text)`) share an
+        // IDENTICAL `RoutineNodeId` (source `sig_fp` is always 0 — see
+        // `resolve_in_object`'s doc), so `graph.routines`'s sorted
+        // `binary_search_by` on that id is genuinely non-deterministic
+        // between the two id-colliding entries (Rust's own contract: "if
+        // there are multiple matches, any one could be returned") — a
+        // PRE-EXISTING, Task-2-independent degeneracy this fixture happens
+        // to observe as `InternalNotVisible`, not the `AccessFilteredOverload`
+        // shape (see `resolve_member_object_mixed_access_public_two_distinct_
+        // sig_fp_overloads_declines_as_access_filtered` below for a
+        // collision-free fixture of that shape). Left as the original
+        // generic assertion — asserting a SPECIFIC reason here would pin
+        // undefined behavior.
         assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    /// Reason-split Task 2 fixture: a COLLISION-FREE `AccessFilteredOverload`
+    /// probe. Manually constructs the graph (mirrors
+    /// `plain_dispatch_marker_guard_fixture`'s pattern) with two DISTINCT
+    /// `sig_fp` values so the two same-arity candidates get genuinely
+    /// DISTINCT `RoutineNodeId`s — sidestepping the source-tier same-`id`
+    /// collision the sibling test above documents (source `sig_fp` is always
+    /// 0, so two textually distinct source overloads of the same arity
+    /// legitimately alias one `RoutineNodeId`; ABI-shaped `sig_fp` does not).
+    /// One candidate `Public` (always visible), one `Internal` (excluded
+    /// cross-app, no friendship declared) — access narrows the ORIGINALLY
+    /// `pre_filter_count == 2` set down to exactly ONE visible survivor, and
+    /// the resolver must decline rather than select it.
+    #[test]
+    fn resolve_member_object_two_distinct_sig_fp_overloads_access_narrowed_to_one_declines() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let ws_id = make_app_id("AccessFilteredWS");
+        let dep_id = make_app_id("AccessFilteredDep");
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let caller_obj_id = ObjectNodeId {
+            app: ws_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(53990),
+        };
+        let target_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(63990),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: caller_obj_id.clone(),
+                name: "AccFilteredCaller".into(),
+                declared_id: Some(53990),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+            },
+            ObjectNode {
+                id: target_obj_id.clone(),
+                name: "AccFilteredTarget".into(),
+                declared_id: Some(63990),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+            },
+        ];
+
+        fn overload(
+            target_obj_id: ObjectNodeId,
+            sig_fp: u64,
+            access: Access,
+            param_sig_key: &str,
+        ) -> RoutineNode {
+            RoutineNode {
+                id: RoutineNodeId {
+                    object: target_obj_id,
+                    name_lc: "foo".into(),
+                    enclosing_member_lc: None,
+                    params_count: 1,
+                    sig_fp,
+                },
+                name: "Foo".into(),
+                is_trigger: false,
+                access,
+                tier: TrustTier::Workspace,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: None,
+                include_sender: None,
+                abi_routine_kind: Some(AbiRoutineKind::Procedure),
+                abi_event_kind: Some(AbiEventKind::None),
+                param_sig_key: param_sig_key.into(),
+                return_type: None,
+                return_type_id: None,
+                abi_overload_collapsed: false,
+            }
+        }
+        let routines = vec![
+            overload(target_obj_id.clone(), 100, Access::Public, "integer"),
+            overload(target_obj_id.clone(), 200, Access::Internal, "text"),
+        ];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        // Sanity: two GENUINELY distinct RoutineNodeIds (differing sig_fp),
+        // not a same-id collision.
+        let candidates = index.routines_in_object(&target_obj_id, "foo");
+        assert_eq!(
+            candidates.len(),
+            2,
+            "fixture must produce TWO `foo` candidates"
+        );
+        assert_ne!(
+            candidates[0].sig_fp, candidates[1].sig_fp,
+            "fixture sanity: the two overloads must be genuinely distinct RoutineNodeIds"
+        );
+
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("caller must exist");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "accfilteredtarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::AccessFilteredOverload),
+            "access narrowed an originally-ambiguous (pre_filter_count==2) \
+             same-arity set down to ONE visible survivor (Public) and \
+             declined rather than select it — reason-split Task 2's \
+             AccessFilteredOverload label; got {:?}",
+            routes[0].evidence
+        );
+        assert_eq!(
+            routes[0].receiver_tier, None,
+            "AccessFilteredOverload is not a MemberNotFound shape — no receiver_tier"
+        );
+    }
+
+    /// Reason-split Task 2 fixture: a GENUINE >1-visible same-arity overload
+    /// (BOTH candidates `Public`, so access filtering removes NEITHER) stays
+    /// `OverloadAmbiguous` — the textbook case `resolve_in_object`'s doc
+    /// describes, distinct from `AccessFilteredOverload` (the sibling test
+    /// above, where access narrows the visible set to exactly one).
+    #[test]
+    fn resolve_member_object_genuine_two_public_same_arity_overload_stays_overload_ambiguous() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_target: &'static str = r#"
+codeunit 53972 "OverloadPTarget"
+{
+    procedure Bar(p: Integer)
+    begin
+    end;
+
+    procedure Bar(p: Text)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 53973 "OverloadPCaller"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_target = make_unit(app_id.clone(), "OverloadPTarget.al", src_target);
+        let unit_caller = make_unit(app_id, "OverloadPCaller.al", src_caller);
+        let units = [unit_target, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        // Sanity: two same-arity `Bar` candidates, BOTH `Public`.
+        let target_obj = find_obj(&graph, "OverloadPTarget");
+        let bar_candidates = index.routines_in_object(&target_obj.id, "bar");
+        assert_eq!(
+            bar_candidates.len(),
+            2,
+            "fixture must produce TWO `Bar` candidates"
+        );
+
+        let from_obj = find_obj(&graph, "OverloadPCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "overloadptarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::OverloadAmbiguous),
+            "BOTH same-arity overloads are Public and visible — genuine \
+             unresolved ambiguity stays OverloadAmbiguous (unchanged by \
+             reason-split Task 2); got {:?}",
+            routes[0].evidence
+        );
+        assert_eq!(
+            routes[0].receiver_tier, None,
+            "OverloadAmbiguous is not a MemberNotFound shape — no receiver_tier"
+        );
     }
 
     // (D-neg-4) Object receiver, same-app but UNRELATED (non-extension)

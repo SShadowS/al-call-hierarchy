@@ -266,6 +266,7 @@ fn unknown_route(reason: UnknownReason) -> Route {
         evidence: Evidence::Unknown(reason),
         conditions: vec![],
         witness: Witness::None,
+        receiver_tier: None,
     }
 }
 

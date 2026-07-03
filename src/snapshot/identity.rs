@@ -17,7 +17,11 @@ impl AppId {
 }
 
 /// How trustworthy the source backing an app is.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+///
+/// `Hash`/`PartialOrd`/`Ord` (resolve-reason-split Task 2 addition): needed so
+/// [`crate::program::resolve::edge::Route`]'s `receiver_tier: Option<TrustTier>`
+/// diagnostic field can ride `Route`'s existing derived `Hash`/`Ord` stack.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TrustTier {
     Workspace,
     EmbeddedSource,
@@ -35,6 +39,22 @@ impl TrustTier {
             TrustTier::LocalSourceVerified => 3,
             TrustTier::LocalSourceApproximate => 2,
             TrustTier::SymbolOnly => 1,
+        }
+    }
+
+    /// Stable snake_case identifier for diagnostic/export rendering (mirrors
+    /// [`crate::program::resolve::edge::UnknownReason::as_str`]'s pattern) —
+    /// the ONE canonical string mapping; `graphify_export::tier_str` and
+    /// `aldump`'s `receiver_tier` rendering both delegate here rather than
+    /// hand-rolling independent copies of the same match.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TrustTier::Workspace => "workspace",
+            TrustTier::EmbeddedSource => "embedded_source",
+            TrustTier::LocalSourceVerified => "local_source_verified",
+            TrustTier::LocalSourceApproximate => "local_source_approximate",
+            TrustTier::SymbolOnly => "symbol_only",
         }
     }
 }

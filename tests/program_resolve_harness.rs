@@ -564,6 +564,7 @@ fn abi_integrity_maps_known_routine() {
             witness: Witness::AbiSymbol {
                 key: dodepwork_key(),
             },
+            receiver_tier: None,
         },
     );
 
@@ -611,6 +612,7 @@ fn abi_integrity_catches_unmapped_route() {
             witness: Witness::AbiSymbol {
                 key: bogus_key.clone(),
             },
+            receiver_tier: None,
         },
     );
 
@@ -662,6 +664,7 @@ fn abi_integrity_exempts_entry_trigger_boundary_key() {
             witness: Witness::AbiSymbol {
                 key: entry_trigger_key,
             },
+            receiver_tier: None,
         },
     );
 
@@ -703,6 +706,7 @@ fn abi_integrity_exempts_entry_trigger_boundary_key() {
             witness: Witness::AbiSymbol {
                 key: non_trigger_key,
             },
+            receiver_tier: None,
         },
     );
     let report2 = abi_ingestion_integrity(&[edge2], &index);
@@ -733,6 +737,7 @@ fn abi_integrity_event_publisher_kind_checked() {
             witness: Witness::AbiSymbol {
                 key: ondepevent_key(),
             },
+            receiver_tier: None,
         },
     );
     let ok = abi_ingestion_integrity(&[correct_edge], &index);
@@ -751,6 +756,7 @@ fn abi_integrity_event_publisher_kind_checked() {
             evidence: Evidence::Opaque,
             conditions: vec![],
             witness: Witness::AbiSymbol { key: wrong_key },
+            receiver_tier: None,
         },
     );
     let bad = abi_ingestion_integrity(&[wrong_edge], &index);
@@ -782,6 +788,7 @@ fn histogram_taxonomy_split() {
                 file: "f.al".into(),
                 span: (0, 10),
             },
+            receiver_tier: None,
         },
     );
 
@@ -796,6 +803,7 @@ fn histogram_taxonomy_split() {
                 id: BuiltinId("message".into()),
                 catalog_version: "v1".into(),
             },
+            receiver_tier: None,
         },
     );
 
@@ -811,6 +819,7 @@ fn histogram_taxonomy_split() {
             witness: Witness::AbiSymbol {
                 key: dodepwork_key(),
             },
+            receiver_tier: None,
         },
     );
 
@@ -822,6 +831,7 @@ fn histogram_taxonomy_split() {
             evidence: Evidence::Unknown(UnknownReason::MemberNotFound),
             conditions: vec![],
             witness: Witness::None,
+            receiver_tier: None,
         },
     );
 
@@ -1681,6 +1691,42 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // guards" claims were WRONG (see the CHANGELOG correction) — the true
     // accounting: 19 pre-fix dataitem UntrackedReceiver sites, all 29 real
     // dataitem uses resolve, the residual contains zero dataitem sites.
+    //
+    // UNCHANGED 2026-07-03 (dataitem-depscope-reason-split plan, Task 2 —
+    // DIAGNOSTIC-ONLY reason-split): rate/count BYTE-IDENTICAL — Task 2 adds
+    // NO new resolution, only new `UnknownReason` diagnostic labels
+    // (`ArityMismatch`/`AbiCollapsedOverload`/`AccessFilteredOverload` split
+    // out of `OverloadAmbiguous`; `ObjectNotInGraph` split out of
+    // `MemberNotFound`; the additive nullable `receiver_tier` field on
+    // `MemberNotFound` routes). Measured on CDO (release, single-threaded):
+    // `unknownByReason` (both primary AND whole-program) =
+    // {CompoundReceiver: 51, UntrackedReceiver: 18, OverloadAmbiguous: 56,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 25} — ZERO edges moved
+    // into any of the four new reason buckets. This is a real, measured
+    // finding, not an implementation gap: CDO's current 151-site residual
+    // happens to be homogeneous per shape family — every `OverloadAmbiguous`
+    // site is a GENUINE >1-visible-candidate ambiguity (none is a bare
+    // arity-zero-match, an ABI-collapse-marked survivor [the collapse-marker
+    // guard is dormant on CDO by construction — 0 `abi_overload_collapsed`
+    // routines], or an access-narrowed-to-1 decline), and every
+    // `MemberNotFound` site is a genuine member-absent-on-a-resolved-surface
+    // (none is a `resolve_object_run`/`resolve_member`-Object-arm absent-
+    // RECEIVER-OBJECT case) — verified via 6 new collision-free unit
+    // fixtures in `resolver.rs`/`edge.rs` that DO exercise each new bucket
+    // independently of CDO's specific population (`resolve_in_object`'s
+    // source-tier same-arity-different-type overloads alias one
+    // `RoutineNodeId` — see
+    // `resolve_member_object_two_distinct_sig_fp_overloads_access_narrowed_
+    // to_one_declines`'s doc for why the `AccessFilteredOverload` fixture
+    // manually constructs distinct `sig_fp`s rather than reusing AL source
+    // text). The `receiver_tier` diagnostic (new, additive) stratifies the 25
+    // `MemberNotFound` sites further — see `aldump --program-call-graph-
+    // stats`'s new `unknownReceiverTier` key for the live breakdown; not
+    // re-pinned here (diagnostic-only, no gate). `genuine_wrong` stays 0
+    // (companion audit gate); every applicability gate green; per-site
+    // bijection holds by construction (only `Evidence::Unknown`'s reason
+    // payload / `Route::receiver_tier` differ — `Evidence::kind()`, route
+    // targets, and every non-`Unknown` bucket are untouched by this task).
     let primary_rate = ph.real_unknown_rate();
     assert!(
         primary_rate <= 0.008341,
@@ -1864,6 +1910,10 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `unknownByReason`={CompoundReceiver: 51, UntrackedReceiver: 18,
     // OverloadAmbiguous: 56, BuiltinPrecedenceCollision: 1,
     // MemberNotFound: 25}, sum==151.
+    //
+    // UNCHANGED 2026-07-03 (dataitem-depscope-reason-split plan, Task 2):
+    // count stays 151 — diagnostic-only reason-split, see the rate-ceiling
+    // comment above for the full measured (zero-movement) breakdown.
     assert!(
         ph.unknown <= 151,
         "primary unknown count {} exceeds ceiling 151 (recorded 2026-07-03 \
@@ -1912,6 +1962,10 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     //
     // TIGHTENED 2026-07-03 (Task 1 review fix, 5b1bb94): 159→151, alongside
     // the primary ceiling above (quoted-paren restoration).
+    //
+    // UNCHANGED 2026-07-03 (dataitem-depscope-reason-split plan, Task 2):
+    // count stays 151, alongside the primary ceiling above (diagnostic-only
+    // reason-split, zero-movement measured breakdown).
     assert!(
         h.unknown <= 151,
         "whole-program unknown count {} exceeds ceiling 151 (recorded \

@@ -386,6 +386,7 @@ mod tests {
                 file: "f.al".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         }
     }
 

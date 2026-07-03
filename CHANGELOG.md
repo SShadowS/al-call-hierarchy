@@ -8,6 +8,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`UnknownReason` reason-split: `ArityMismatch`/`AbiCollapsedOverload`/
+  `AccessFilteredOverload` (out of `OverloadAmbiguous`) + `ObjectNotInGraph` (out of
+  `MemberNotFound`) + the additive `Route::receiver_tier` diagnostic
+  (dataitem-depscope-reason-split plan, Task 2 — DIAGNOSTIC-ONLY, count-preserving).**
+  `resolve_in_object`'s `OverloadAmbiguous` conflated four structurally distinct decline
+  shapes (`src/program/resolve/resolver.rs`): zero arity-matched candidates now emits
+  `ArityMismatch` (nothing to be ambiguous BETWEEN); the sole visible candidate being
+  `RoutineNode::abi_overload_collapsed`-marked now emits `AbiCollapsedOverload` (an ABI
+  ingestion-fidelity admission, not a live candidate set); access narrowing an
+  originally-ambiguous (`pre_filter_count > 1`) set down to exactly one visible survivor,
+  then declining rather than selecting it, now emits `AccessFilteredOverload`; a genuine
+  `>1`-visible same-arity ambiguity is UNCHANGED, still `OverloadAmbiguous`. Scoped
+  strictly to `resolve_in_object`'s own three emission sites — the other
+  `routine_is_collapse_marked` call sites (`resolve_object_run`'s entry-trigger lookup,
+  `resolve_implicit_trigger`'s fan-out, `resolve_member`'s inline `Codeunit.Run`
+  special-case) are unchanged, still `OverloadAmbiguous`, per the plan's explicit
+  grounding. Similarly, `MemberNotFound` conflated "the receiver OBJECT itself is absent
+  from the graph" with "the receiver resolved but the member is absent" —
+  `resolve_object_run`'s and `resolve_member`'s `Object`-arm absent-target shapes now emit
+  `ObjectNotInGraph` (no externality claim — an `UndeclaredExternalTarget`-style label was
+  considered and dropped as unprovable from mere absence, per the charter's open-world
+  discipline); every other `MemberNotFound` site (bare-call Step 5's untouched default,
+  `resolve_member`'s `SelfObject`/`Interface` arms, the post-`resolve_in_object`-None
+  Object-arm fallback) stays `MemberNotFound`, now additionally tagged with the resolved
+  receiver's `TrustTier` via a new `Route::receiver_tier: Option<TrustTier>` field — a
+  SEPARATE additive/nullable diagnostic, not a reason-string split (`MemberNotFound`
+  stays one stable `as_str()` key; `ObjectNotInGraph` always carries `receiver_tier:
+  None`, since there is no resolved receiver to tag). `TrustTier` gained `Hash`/
+  `PartialOrd`/`Ord` derives (needed for `Route`'s existing derive stack) and a canonical
+  `as_str()` method (`graphify_export::tier_str` now delegates to it, byte-identical
+  output). New `unknown_receiver_tier_breakdown` function
+  (`src/program/resolve/edge.rs`) stratifies by `(UnknownReason, Option<TrustTier>)`,
+  wired additively into `aldump --program-call-graph-stats`'s new `unknownReceiverTier`
+  JSON key (sibling of `unknownByReason`, both `wholeProgram`/`primaryScoped` scopes) and
+  `graphify_export`'s `GEdge.unknown_receiver_tier` field (appended last, never reorders
+  existing keys — BC-Brain consumes this export). Diagnostic-only by construction: no
+  `ObligationOutcome`/`classify_obligation` change, `Evidence::kind()`'s projection
+  untouched, committed semantic goldens byte-identical (no regen needed), per-site
+  bijection holds (every pre-Task-2 `Unknown` site maps 1:1 to a post-Task-2 `Unknown`
+  site with only the reason/`receiver_tier` diagnostic fields changed). 6 new
+  collision-free unit fixtures in `resolver.rs` (one per new shape, including a manually
+  constructed distinct-`sig_fp` fixture for `AccessFilteredOverload` — two SOURCE-tier
+  same-arity, different-PARAMETER-TYPE overloads share one `RoutineNodeId` since source
+  `sig_fp` is always 0, so an AL-source-text fixture for that shape is unreliable; see
+  `resolve_member_object_two_distinct_sig_fp_overloads_access_narrowed_to_one_declines`'s
+  doc) plus 2 new `edge.rs` unit tests (`as_str()` key uniqueness,
+  `unknown_receiver_tier_breakdown`'s sum/stratification invariants). Measured on CDO
+  (`CDO_WS`, single-threaded, `--release`): `real_unknown_rate`/`unknown` count BYTE-
+  IDENTICAL at 0.83% / 151 (both primary and whole-program) — a genuine, measured
+  zero-movement result: CDO's current 151-site residual happens to be homogeneous per
+  shape family (every `OverloadAmbiguous` site is a genuine >1-visible ambiguity, every
+  `MemberNotFound` site is a resolved-surface member-miss; the collapse-marker guard is
+  dormant on CDO by construction — 0 `abi_overload_collapsed` routines). The NEW
+  `unknownReceiverTier` diagnostic DOES surface new information: the 25
+  `memberNotFound` sites split `embedded_source: 12` / `workspace: 13` (verified via
+  `aldump --program-call-graph-stats` directly against `CDO_WS`). `genuine_wrong`=0 and
+  every applicability/preflight/audit gate green (156/156 harness tests, full CDO run).
 - **Report-dataitem receivers + trigger implicit-Rec + quote-aware token guard + additive
   `modify()` lowering — real-`unknown` 0.99%→0.88% (dataitem-receivers plan, Task 1).**
   Models `al_syntax::ir::ObjectDecl.report_dataitems`/`RoutineDecl.dataitem_source_table`

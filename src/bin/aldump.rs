@@ -1238,7 +1238,9 @@ fn main() -> ExitCode {
         //
         // Both `--l3-call-graph-stats` and `--l3-call-graph-stats-cross-app`
         // are KEPT unchanged; this flag is now fully independent of L3.
-        use al_call_hierarchy::program::resolve::edge::unknown_reason_breakdown;
+        use al_call_hierarchy::program::resolve::edge::{
+            unknown_reason_breakdown, unknown_receiver_tier_breakdown,
+        };
         use al_call_hierarchy::program::resolve::full::{
             coverage_holds, is_primary_scope, resolve_full_program,
         };
@@ -1272,6 +1274,36 @@ fn main() -> ExitCode {
             .map(|(reason, count)| (reason.as_str().to_string(), count))
             .collect();
 
+        // Reason-split Task 2: ADDITIVE `receiver_tier` diagnostic, keyed
+        // `"<reason>:<tier|none>"` — sibling of `unknownByReason` above, never
+        // a replacement. Only `memberNotFound` routes ever carry `Some(tier)`
+        // today (see `Route::receiver_tier`'s doc); every other reason
+        // reports under its own `:none` key.
+        fn tier_reason_key(
+            reason: al_call_hierarchy::program::resolve::edge::UnknownReason,
+            tier: Option<al_call_hierarchy::snapshot::TrustTier>,
+        ) -> String {
+            match tier {
+                Some(t) => format!("{}:{}", reason.as_str(), t.as_str()),
+                None => format!("{}:none", reason.as_str()),
+            }
+        }
+        let whole_tier_by_reason: std::collections::BTreeMap<String, usize> =
+            unknown_receiver_tier_breakdown(r.edges.iter().map(|ce| &ce.edge))
+                .into_iter()
+                .map(|((reason, tier), count)| (tier_reason_key(reason, tier), count))
+                .collect();
+        let primary_tier_by_reason: std::collections::BTreeMap<String, usize> =
+            unknown_receiver_tier_breakdown(
+                r.edges
+                    .iter()
+                    .filter(|ce| is_primary_scope(ce, r.primary_app_ref))
+                    .map(|ce| &ce.edge),
+            )
+            .into_iter()
+            .map(|((reason, tier), count)| (tier_reason_key(reason, tier), count))
+            .collect();
+
         let value = serde_json::json!({
             // ── Whole-program histogram ──────────────────────────────────────
             "wholeProgram": {
@@ -1285,6 +1317,7 @@ fn main() -> ExitCode {
                 "unknown": h.unknown,
                 "realUnknownRate": h.real_unknown_rate(),
                 "unknownByReason": whole_by_reason,
+                "unknownReceiverTier": whole_tier_by_reason,
             },
             // ── Primary-scoped histogram (workspace edges only) ──────────────
             // Mirrors --l3-call-graph-stats-cross-app scoping.
@@ -1299,6 +1332,7 @@ fn main() -> ExitCode {
                 "unknown": ph.unknown,
                 "realUnknownRate": ph.real_unknown_rate(),
                 "unknownByReason": primary_by_reason,
+                "unknownReceiverTier": primary_tier_by_reason,
             },
             // ── Coverage contract ────────────────────────────────────────────
             "coverage": {

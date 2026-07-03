@@ -18,6 +18,7 @@
 //! across the crate.  The named accessors are the enforced API for consumers.
 
 use crate::program::node::{AppRef, RoutineNodeId};
+use crate::snapshot::TrustTier;
 
 /// Caller / target identity is a 1B.1 app-qualified routine node.
 pub type NodeId = RoutineNodeId;
@@ -144,11 +145,37 @@ pub enum UnknownReason {
     /// extractor could not classify (not multi-segment — see
     /// [`Self::CompoundReceiver`]).
     UnclassifiedCallee,
-    /// Overload/arity resolution could not pick a unique candidate: zero
-    /// arity-matched overloads, more than one same-arity SOURCE overload
-    /// collision, or more than one visible table-scope candidate (base table
-    /// ∪ its `TableExtension`s).
+    /// GENUINE overload ambiguity ONLY (reason-split Task 2 — narrowed from
+    /// its pre-Task-2 meaning, which also covered [`Self::ArityMismatch`],
+    /// [`Self::AbiCollapsedOverload`], and [`Self::AccessFilteredOverload`]
+    /// below): `>1` visible, arity-matched, DISTINCT `RoutineNodeId`
+    /// candidates this engine cannot break by name+arity+visibility alone —
+    /// the textbook case (e.g. two real 2-arg source overloads). Also used
+    /// by table-scope/interface/trigger-fan-out sites structurally identical
+    /// to this shape but outside `resolve_in_object` (unchanged by Task 2).
     OverloadAmbiguous,
+    /// A name was found in the candidate object, but ZERO overloads match
+    /// the call's arity (`resolve_in_object`'s `pre_filter_count == 0`) —
+    /// nothing to be ambiguous BETWEEN; distinct from [`Self::OverloadAmbiguous`]
+    /// (reason-split Task 2).
+    ArityMismatch,
+    /// The sole arity-matched, visible candidate is [`RoutineNode::
+    /// abi_overload_collapsed`]-marked: an ABI ingestion-fidelity admission
+    /// (≥2 raw ABI entries fingerprint-collided into one arbitrary/
+    /// indistinguishable survivor), NOT a live candidate-set ambiguity
+    /// (reason-split Task 2; `resolve_in_object`'s PLAIN-DISPATCH MARKER
+    /// GUARD only — the other `routine_is_collapse_marked` call sites
+    /// outside `resolve_in_object` are unchanged by Task 2 and still emit
+    /// [`Self::OverloadAmbiguous`]).
+    AbiCollapsedOverload,
+    /// Access filtering narrowed an originally-ambiguous (`pre_filter_count
+    /// > 1`) same-arity candidate set down to exactly ONE visible survivor,
+    /// and the resolver declined rather than select it (the pre-filter set
+    /// was ambiguous with no arg-type evidence to pick between overloads, so
+    /// access removing the other sibling(s) doesn't prove the call meant the
+    /// survivor) — a distinct diagnostic shape from a genuinely >1-visible
+    /// ambiguity (reason-split Task 2; `resolve_in_object` only).
+    AccessFilteredOverload,
     /// A bare-call table-scope candidate collides in name+arity with a
     /// global builtin or a bare-callable page/instance intrinsic — unproven
     /// precedence, fail closed rather than guess which wins.
@@ -181,10 +208,29 @@ pub enum UnknownReason {
     /// name, an out-of-closure declared type, or an otherwise-unresolved
     /// receiver.
     ReceiverOutOfClosure,
-    /// The callee name is not declared anywhere reachable from this call
-    /// site (own object, extension base, target object, or interface
-    /// implementer) — genuine absence, not a visibility or overload issue.
+    /// MEMBER-absent-on-a-RESOLVED-surface ONLY (reason-split Task 2 —
+    /// narrowed from its pre-Task-2 meaning, which also covered
+    /// [`Self::ObjectNotInGraph`] below): the RECEIVER object was resolved
+    /// (own object, extension base, target object, or interface implementer
+    /// — all found in the graph), but the callee name is not declared
+    /// anywhere reachable from it — genuine absence, not a visibility or
+    /// overload issue. Pairs with [`Route::receiver_tier`] (populated at
+    /// every `MemberNotFound` emission site): only a source-complete tier
+    /// (`Workspace`/`EmbeddedSource`/`LocalSourceVerified`/
+    /// `LocalSourceApproximate`) can ever PROVE a member's absence —
+    /// `SymbolOnly`'s ABI listing is not exhaustive of the real object, so a
+    /// `SymbolOnly`-tagged `MemberNotFound` is honest-but-unprovable, never a
+    /// stronger claim.
     MemberNotFound,
+    /// The RECEIVER OBJECT itself is absent from the whole-program graph —
+    /// not in workspace source, not in any dependency's SymbolReference
+    /// (reason-split Task 2, split out of the old `MemberNotFound`). Makes
+    /// NO externality claim (an `UndeclaredExternalTarget`-style label was
+    /// considered and dropped: externality is unprovable from mere absence —
+    /// name prefixes/sampling/not-in-graph are all disallowed proofs per the
+    /// charter's open-world discipline). `receiver_tier` is intentionally
+    /// left `None` here — there is no resolved receiver to tag.
+    ObjectNotInGraph,
     /// An internal index/body-map lookup that should structurally never miss
     /// did — a defensive fallback, not a normal AL-semantics decline.
     IndexIntegrationGap,
@@ -200,6 +246,9 @@ impl UnknownReason {
             UnknownReason::UntrackedReceiver => "untrackedReceiver",
             UnknownReason::UnclassifiedCallee => "unclassifiedCallee",
             UnknownReason::OverloadAmbiguous => "overloadAmbiguous",
+            UnknownReason::ArityMismatch => "arityMismatch",
+            UnknownReason::AbiCollapsedOverload => "abiCollapsedOverload",
+            UnknownReason::AccessFilteredOverload => "accessFilteredOverload",
             UnknownReason::BuiltinPrecedenceCollision => "builtinPrecedenceCollision",
             UnknownReason::WithScopeGuard => "withScopeGuard",
             UnknownReason::CodeunitTableNoExcluded => "codeunitTableNoExcluded",
@@ -210,6 +259,7 @@ impl UnknownReason {
             UnknownReason::CatalogMiss => "catalogMiss",
             UnknownReason::ReceiverOutOfClosure => "receiverOutOfClosure",
             UnknownReason::MemberNotFound => "memberNotFound",
+            UnknownReason::ObjectNotInGraph => "objectNotInGraph",
             UnknownReason::IndexIntegrationGap => "indexIntegrationGap",
         }
     }
@@ -325,6 +375,19 @@ pub struct Route {
     /// unconditionally.  See [`Condition`] and [`Route::fires_by_default`].
     pub conditions: Vec<Condition>,
     pub witness: Witness,
+    /// Diagnostic-only, additive field (reason-split Task 2): the resolved
+    /// RECEIVER object's [`TrustTier`], populated ONLY alongside
+    /// `Evidence::Unknown(UnknownReason::MemberNotFound)` routes — the
+    /// member-absent-on-a-resolved-surface shape, where a receiver object
+    /// WAS found so its tier is knowable. `None` everywhere else, INCLUDING
+    /// `UnknownReason::ObjectNotInGraph` (no resolved receiver exists there
+    /// to tag). NOT a reason split — `MemberNotFound` stays one stable
+    /// `as_str()` key; consumers group by `(reason, receiver_tier)` (see
+    /// [`unknown_receiver_tier_breakdown`]). NEVER consulted by
+    /// `classify_obligation`/`ObligationOutcome`, and NEVER compared against
+    /// the committed semantic goldens (same serialization-boundary discipline
+    /// as [`Evidence::Unknown`]'s payload — see [`Evidence::kind`]).
+    pub receiver_tier: Option<TrustTier>,
 }
 
 impl Route {
@@ -581,6 +644,34 @@ pub fn unknown_reason_breakdown<'a>(
     map
 }
 
+/// Stratified `(UnknownReason, receiver_tier)` breakdown (reason-split Task
+/// 2). A SEPARATE function, not a change to [`unknown_reason_breakdown`]'s
+/// signature — `receiver_tier` is an ADDITIVE diagnostic, not a reason split
+/// (see [`Route::receiver_tier`]'s doc): today only `MemberNotFound` routes
+/// ever carry `Some(tier)`; every other reason's routes report `None`, and
+/// `sum(values()) == unknown_reason_breakdown(edges).values().sum()` (same
+/// per-edge counting rule: one Unknown-classified edge contributes its first
+/// `Unknown`-evidence route's `(reason, tier)` pair).
+#[must_use]
+pub fn unknown_receiver_tier_breakdown<'a>(
+    edges: impl IntoIterator<Item = &'a Edge>,
+) -> std::collections::BTreeMap<(UnknownReason, Option<TrustTier>), usize> {
+    let mut map = std::collections::BTreeMap::new();
+    for e in edges {
+        if classify_obligation(e) != ObligationOutcome::Unknown {
+            continue;
+        }
+        let hit = e.routes.iter().find_map(|r| match r.evidence {
+            Evidence::Unknown(reason) => Some((reason, r.receiver_tier)),
+            _ => None,
+        });
+        if let Some(key) = hit {
+            *map.entry(key).or_insert(0) += 1;
+        }
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -624,6 +715,7 @@ mod tests {
                     file: "f.al".into(),
                     span: (10, 20),
                 },
+                receiver_tier: None,
             }],
         };
         assert_eq!(e.routes.len(), 1);
@@ -666,6 +758,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         }
     }
 
@@ -760,6 +853,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         }
     }
 
@@ -772,6 +866,7 @@ mod tests {
                 file: "f".into(),
                 span: (2, 3),
             },
+            receiver_tier: None,
         }
     }
 
@@ -785,6 +880,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         };
         assert_eq!(r.conditions.len(), 2);
         assert!(r.conditions.contains(&Condition::ManualBinding));
@@ -802,6 +898,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         };
         assert!(
             r_empty.fires_by_default(),
@@ -817,6 +914,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         };
         assert!(
             !r_manual.fires_by_default(),
@@ -832,6 +930,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         };
         assert!(
             r_skip.fires_by_default(),
@@ -847,6 +946,7 @@ mod tests {
                 file: "f".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         };
         assert!(
             !r_both.fires_by_default(),
@@ -973,6 +1073,7 @@ mod tests {
             evidence: Evidence::Unknown(reason),
             conditions: vec![],
             witness: Witness::None,
+            receiver_tier: None,
         }
     }
 
@@ -1070,6 +1171,127 @@ mod tests {
         assert_eq!(
             sum, hist.unknown,
             "sum(unknownByReason) must equal the Unknown obligation count"
+        );
+    }
+
+    // ---- Reason-split Task 2: new UnknownReason variants + receiver_tier ----
+
+    fn unknown_route_with_tier(reason: UnknownReason, tier: TrustTier) -> Route {
+        Route {
+            receiver_tier: Some(tier),
+            ..unknown_route_with(reason)
+        }
+    }
+
+    /// Every new reason-split Task 2 variant renders a stable, distinct
+    /// camelCase `as_str()` key (pinned so an accidental `Debug`-style rename
+    /// or a duplicate key across variants fails a test, not a diagnostic
+    /// consumer at runtime).
+    #[test]
+    fn reason_split_task2_variants_render_distinct_camel_case_keys() {
+        assert_eq!(UnknownReason::ArityMismatch.as_str(), "arityMismatch");
+        assert_eq!(
+            UnknownReason::AbiCollapsedOverload.as_str(),
+            "abiCollapsedOverload"
+        );
+        assert_eq!(
+            UnknownReason::AccessFilteredOverload.as_str(),
+            "accessFilteredOverload"
+        );
+        assert_eq!(UnknownReason::ObjectNotInGraph.as_str(), "objectNotInGraph");
+        // Unchanged siblings still render their pre-existing keys.
+        assert_eq!(
+            UnknownReason::OverloadAmbiguous.as_str(),
+            "overloadAmbiguous"
+        );
+        assert_eq!(UnknownReason::MemberNotFound.as_str(), "memberNotFound");
+
+        let keys = [
+            UnknownReason::ArityMismatch.as_str(),
+            UnknownReason::AbiCollapsedOverload.as_str(),
+            UnknownReason::AccessFilteredOverload.as_str(),
+            UnknownReason::ObjectNotInGraph.as_str(),
+            UnknownReason::OverloadAmbiguous.as_str(),
+            UnknownReason::MemberNotFound.as_str(),
+        ];
+        let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
+        assert_eq!(unique.len(), keys.len(), "every key must be distinct");
+    }
+
+    /// `unknown_receiver_tier_breakdown` (Task 2's ADDITIVE diagnostic):
+    /// stratifies by `(reason, receiver_tier)`, accumulates duplicates, and
+    /// its sum matches `unknown_reason_breakdown`'s sum exactly (same
+    /// per-edge counting rule — see both functions' docs). `receiver_tier`
+    /// is `None` for every non-`MemberNotFound` reason, `Some(tier)` only
+    /// where explicitly tagged.
+    #[test]
+    fn unknown_receiver_tier_breakdown_sums_match_and_stratify_by_tier() {
+        let edges = vec![
+            edge_with(
+                EdgeKind::Call,
+                DispatchShape::Exact,
+                SetCompleteness::Complete,
+                vec![unknown_route_with_tier(
+                    UnknownReason::MemberNotFound,
+                    TrustTier::Workspace,
+                )],
+            ),
+            edge_with(
+                EdgeKind::Call,
+                DispatchShape::Exact,
+                SetCompleteness::Complete,
+                vec![unknown_route_with_tier(
+                    UnknownReason::MemberNotFound,
+                    TrustTier::SymbolOnly,
+                )],
+            ),
+            edge_with(
+                EdgeKind::Call,
+                DispatchShape::Exact,
+                SetCompleteness::Complete,
+                // Duplicate (reason, tier) pair — must accumulate, not overwrite.
+                vec![unknown_route_with_tier(
+                    UnknownReason::MemberNotFound,
+                    TrustTier::Workspace,
+                )],
+            ),
+            edge_with(
+                EdgeKind::Call,
+                DispatchShape::Exact,
+                SetCompleteness::Complete,
+                // ObjectNotInGraph never carries a tier.
+                vec![unknown_route_with(UnknownReason::ObjectNotInGraph)],
+            ),
+        ];
+
+        let hist = Histogram::of_edges(&edges);
+        assert_eq!(hist.unknown, 4, "sanity: 4 Unknown edges in the fixture");
+
+        let reason_breakdown = unknown_reason_breakdown(&edges);
+        let tier_breakdown = unknown_receiver_tier_breakdown(&edges);
+
+        let reason_sum: usize = reason_breakdown.values().sum();
+        let tier_sum: usize = tier_breakdown.values().sum();
+        assert_eq!(reason_sum, hist.unknown);
+        assert_eq!(
+            tier_sum, reason_sum,
+            "unknown_receiver_tier_breakdown must count the same edges as \
+             unknown_reason_breakdown — additive, never a different population"
+        );
+
+        assert_eq!(
+            tier_breakdown.get(&(UnknownReason::MemberNotFound, Some(TrustTier::Workspace))),
+            Some(&2),
+            "duplicate (reason, tier) pairs must accumulate: {tier_breakdown:?}"
+        );
+        assert_eq!(
+            tier_breakdown.get(&(UnknownReason::MemberNotFound, Some(TrustTier::SymbolOnly))),
+            Some(&1)
+        );
+        assert_eq!(
+            tier_breakdown.get(&(UnknownReason::ObjectNotInGraph, None)),
+            Some(&1),
+            "ObjectNotInGraph must report under a `None` tier key"
         );
     }
 }

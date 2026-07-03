@@ -2618,6 +2618,7 @@ mod tests {
                 file: "f.al".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         }
     }
 
@@ -2800,6 +2801,7 @@ mod tests {
                 id: BuiltinId(id.into()),
                 catalog_version: "test".into(),
             },
+            receiver_tier: None,
         }
     }
 

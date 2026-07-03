@@ -100,6 +100,14 @@ pub struct GEdge {
     /// unresolved route — the "why" behind the failure. `None` on all other edges.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unknown_reason: Option<&'static str>,
+    /// Reason-split Task 2, ADDITIVE key (appended last — never reorders the
+    /// fields above; BC-Brain consumes this export): the diagnostic
+    /// [`crate::snapshot::TrustTier`] of the resolved receiver object for a
+    /// `memberNotFound`-reason edge (see [`crate::program::resolve::edge::
+    /// Route::receiver_tier`]'s doc). `None` on every other edge, INCLUDING
+    /// other `unknown` reasons.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_receiver_tier: Option<&'static str>,
 }
 
 /// A graphify extraction document. Fed to `build_from_json` / `build_merge`.
@@ -209,6 +217,7 @@ pub fn build_graphify_document(
             condition: None,
             open_world_reason: None,
             unknown_reason: None,
+            unknown_receiver_tier: None,
         });
     }
 
@@ -388,6 +397,7 @@ fn project_edge(
                     condition: condition_str(&route.conditions),
                     open_world_reason: None,
                     unknown_reason: None,
+                    unknown_receiver_tier: None,
                 });
             }
         }
@@ -419,6 +429,7 @@ fn project_edge(
                 condition: None,
                 open_world_reason: open_world_reason_str(edge.completeness),
                 unknown_reason: None,
+                unknown_receiver_tier: None,
             });
         }
         ObligationOutcome::Unknown => {
@@ -446,6 +457,19 @@ fn project_edge(
                     Evidence::Unknown(reason) => Some(reason.as_str()),
                     _ => None,
                 }),
+                // Reason-split Task 2, additive: the same first `Unknown`
+                // route's `receiver_tier`, rendered via the canonical
+                // `TrustTier::as_str()` — `None` unless that route's reason
+                // is `MemberNotFound` (see `Route::receiver_tier`'s doc).
+                unknown_receiver_tier: edge
+                    .routes
+                    .iter()
+                    .find_map(|r| match r.evidence {
+                        Evidence::Unknown(_) => Some(r.receiver_tier),
+                        _ => None,
+                    })
+                    .flatten()
+                    .map(|t| t.as_str()),
             });
         }
     }
@@ -731,13 +755,10 @@ fn routine_kind_str(r: &RoutineNode) -> &'static str {
 }
 
 fn tier_str(t: TrustTier) -> &'static str {
-    match t {
-        TrustTier::Workspace => "workspace",
-        TrustTier::EmbeddedSource => "embedded_source",
-        TrustTier::LocalSourceVerified => "local_source_verified",
-        TrustTier::LocalSourceApproximate => "local_source_approximate",
-        TrustTier::SymbolOnly => "symbol_only",
-    }
+    // Delegates to the canonical mapping (resolve-reason-split Task 2) —
+    // byte-identical strings to the pre-Task-2 hand-rolled match, so existing
+    // `al_tier` output is unaffected.
+    t.as_str()
 }
 
 fn relation_for(kind: EdgeKind, target: &RouteTarget) -> &'static str {
@@ -1066,6 +1087,7 @@ mod tests {
                     file: "src/Callee.al".into(),
                     span: (10, 20),
                 },
+                receiver_tier: None,
             }],
         };
         let ce = ClassifiedEdge {
@@ -1150,6 +1172,7 @@ mod tests {
                 ),
                 conditions: vec![],
                 witness: Witness::None,
+                receiver_tier: None,
             }],
         };
         let ce = ClassifiedEdge {
@@ -1232,6 +1255,7 @@ mod tests {
                 file: "f.al".into(),
                 span: (0, 1),
             },
+            receiver_tier: None,
         };
         let edge = Edge {
             from: pubr.clone(),
