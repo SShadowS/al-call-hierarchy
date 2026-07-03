@@ -608,6 +608,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fixed entry for the corrected accounting and final post-fix numbers.
 
 ### Fixed
+- **`resolve_in_object`'s `_` arm prevalidated only ABI collapse-marking, not
+  source-alias — the last laundering path out of `unknown` for a residual
+  `sig_fp` collision (whole-branch review fix, F1, HIGH).** The plan's own
+  binding addendum requires the `DispatchShape::AmbiguousOverload` prevalidation
+  to decline when "NO candidate is collapse-marked (ABI **or source-alias**)",
+  but the `_` arm's `degraded` predicate consulted only `RoutineNode::
+  abi_overload_collapsed` via `routine_is_collapse_marked` — never
+  `RoutineNode::source_overload_aliased`. Two `source_overload_aliased`
+  survivors (a residual same-id `sig_fp` collision — two GENUINELY DISTINCT
+  source overloads sharing one `RoutineNodeId`) would both resolve through the
+  SAME `BodyMap` entry (`BodyMap` is keyed by `RoutineNodeId`), producing two
+  IDENTICAL-target concrete routes that slipped past both the `_` arm's
+  prevalidation AND `edge::classify_obligation`'s `is_ambiguous_resolved`
+  classifier backstop, constructing a confident-looking `AmbiguousOverload`/
+  `AmbiguousResolved` edge out of a genuine unresolved collision. Fixed: the
+  `_` arm's `degraded` predicate now ALSO treats a `source_overload_aliased`
+  candidate as degraded (new `routine_is_source_aliased` helper, mirroring
+  `routine_is_collapse_marked`), plus a cheap belt-and-braces dedup-shrink
+  check — deduping `visible`'s `RoutineNodeId`s down to fewer entries than
+  routes is never a valid `AmbiguousOverload` input, regardless of either
+  marker. Both degrade to the existing single `Unresolved(OverloadAmbiguous)`
+  route, `DispatchShape::Exact`. Unit test added
+  (`resolve_member_object_ambiguous_set_with_source_alias_candidates_stays_unknown`):
+  a synthetic same-id source-aliased pair, with a REAL `BodyMap` entry (via
+  `sig_fp::source_routine_node_id` on real parsed source) so both candidates
+  resolve non-`Unknown` — proven failing before the fix (constructed
+  `AmbiguousOverload` with two identical `Routine(...)` routes) and passing
+  after. **Inert on CDO**: `source_overload_alias_collision_guard_group_count_
+  pinned_on_cdo` measures 0/0 marked groups on the real workspace, so this
+  fix cannot move any CDO number — independently re-confirmed: full 160-test
+  `program_resolve_harness` byte-identical (`unknown` 95/95,
+  `realUnknownRate` 0.52%, `ambiguousResolved` 56/56 exact-pinned,
+  `genuine_wrong=0`). Also rewrote the now-stale "source `sig_fp` is always
+  `0`, so two distinct SOURCE declarations never collide" doc comments (both
+  the module-level doc and `resolve_in_object`'s own arity-match comment,
+  F2, MEDIUM) — the exact false reasoning that masked F1 — to describe the
+  post-Task-2 reality: `sig_fp` is a real fingerprint, a genuine overload
+  pair almost never collides, and a residual collision is caught by the
+  degraded-set guard above, never trusted as distinct. Additionally hardened
+  `graphify_export.rs`'s `AmbiguousResolved` arm (F3, observation) with the
+  same Unknown/Unresolved skip the sibling `Resolved` arm already has, plus a
+  `debug_assert` — safe by `classify_obligation`'s `is_ambiguous_resolved`
+  invariant today, defense-in-depth against a future producer bug.
 - **`build_fan_out_site_context` missed the Task 2 `source_routine_node_id`
   unification — the 6th live `RoutineNodeId` construction site, still
   hardcoding `sig_fp: 0` (Task 2 review fix).** Task 2 (above) migrated 4 live

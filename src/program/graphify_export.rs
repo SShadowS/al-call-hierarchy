@@ -421,6 +421,28 @@ fn project_edge(
         // of these WILL run, this engine just cannot name which.
         ObligationOutcome::AmbiguousResolved => {
             for route in &edge.routes {
+                // Defense-in-depth (whole-branch review F3): `classify_
+                // obligation`'s `is_ambiguous_resolved` prevalidation already
+                // GUARANTEES every route reaching this arm carries
+                // non-`Unknown` evidence and a non-`Unresolved` target (see
+                // that function's doc) — this arm is therefore safe by
+                // invariant to iterate unconditionally, unlike the `Resolved`
+                // arm above (whose routes are NOT pre-filtered that way).
+                // Mirror that arm's skip anyway: a future producer bug that
+                // violates the invariant then degrades to a silently-dropped
+                // edge rather than a bogus node/edge for an `Unresolved`
+                // target, and the `debug_assert` makes the violation loud in
+                // debug/test builds instead of only in release-mode output.
+                if matches!(route.evidence, Evidence::Unknown(_))
+                    || route.target == RouteTarget::Unresolved
+                {
+                    debug_assert!(
+                        false,
+                        "AmbiguousResolved route must be concrete per classify_obligation's \
+                         is_ambiguous_resolved invariant; got {route:?}"
+                    );
+                    continue;
+                }
                 let target = ensure_target_node(
                     &route.target,
                     graph,

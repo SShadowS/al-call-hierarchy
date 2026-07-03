@@ -28,9 +28,12 @@
 //! matches when `rid.params_count == arity`.  When EXACTLY ONE match is found
 //! it is returned.  When the name is found but NO overload matches the arity,
 //! OR more than one same-arity overload matches (a genuine SOURCE-overload
-//! collision — source `sig_fp` is always 0, so two distinct same-arity
-//! overloads are indistinguishable at the id level; full arg-type dispatch to
-//! disambiguate is deferred), an `Unknown` route is emitted — no
+//! collision — post-Task-2 (sigfp-and-ambiguous-reclassification plan)
+//! source `sig_fp` is a real fingerprint, so this now means either
+//! genuinely distinct overloads full arg-type dispatch would be needed to
+//! disambiguate, or a residual same-id `source_overload_aliased` collision
+//! [`resolve_in_object`]'s degraded-set guard catches — see its doc), an
+//! `Unknown` route is emitted — no
 //! false-confident edge to a wrong-arity OR ambiguously-picked target.  The
 //! caller still stops at that precedence level (does NOT fall through to
 //! extension-base / global-builtin), mirroring L3's MemberNotFound stop
@@ -226,6 +229,29 @@ fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool
         .is_some_and(|i| graph.routines[i].abi_overload_collapsed)
 }
 
+/// Whether `rid` is currently marked [`RoutineNode::source_overload_aliased`]
+/// on `graph` — the SOURCE-tier sibling of [`routine_is_collapse_marked`]
+/// (whole-branch review F1). Consulted ONLY by [`resolve_in_object`]'s `_`
+/// arm prevalidation: the binding precondition for constructing
+/// `DispatchShape::AmbiguousOverload` is "NO candidate is collapse-marked,
+/// ABI **or source-alias**" (sigfp-and-ambiguous-reclassification plan,
+/// round-1 addendum), but before this fix only the ABI marker was actually
+/// consulted there. A `source_overload_aliased` survivor is one of ≥2
+/// GENUINELY DISTINCT source overloads whose `sig_fp` collided onto ONE
+/// `RoutineNodeId` (see `build::dedup_routines_preserving_genuine_overloads`'s
+/// doc) — left unguarded, such a pair could reach `resolve_in_object`'s `_`
+/// arm as TWO candidates sharing one id, both resolving through the SAME
+/// `BodyMap` entry (`BodyMap` is keyed by `RoutineNodeId`), and construct an
+/// `AmbiguousOverload` shape with two IDENTICAL-target concrete routes — the
+/// last laundering path out of `unknown` this prevalidation exists to close.
+fn routine_is_source_aliased(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool {
+    graph
+        .routines
+        .binary_search_by(|probe| probe.id.cmp(rid))
+        .ok()
+        .is_some_and(|i| graph.routines[i].source_overload_aliased)
+}
+
 /// Try to resolve `name_lc` with `arity` arguments inside `obj_id`, as called
 /// from the identity `from_object` (Task 1 — beyond-1B.3b-follow-up:
 /// PER-CANDIDATE access filtering; see [`routine_candidate_is_visible`]).
@@ -315,30 +341,42 @@ fn resolve_in_object(
     // Arity-exact match: collect EVERY overload whose params_count == arity.
     // With params_count in RoutineNodeId, each overload is normally a distinct
     // node — but two DISTINCT overloads sharing (object, name_lc, params_count)
-    // collide onto one `RoutineNodeId` when their `sig_fp` also matches: source
-    // `sig_fp` is always 0 (see node.rs), so two textually distinct SOURCE
-    // declarations never collide there (their real content lives in
-    // `param_sig_key` instead — see `build_program_graph`'s dedup,
-    // `dedup_routines_preserving_genuine_overloads`, beyond-1B.3b Task 2). An
-    // ABI `sig_fp` (`abi_ingest::param_type_fp`) now folds a length-delimited
-    // canonical tuple of every parameter's outer kind + Subtype id + raw
-    // Subtype name + a degradation tag (Task 2 round-2 addendum — previously:
-    // only the OUTER type keyword, never a `Subtype`, so two genuinely
-    // DIFFERENT overloads differing only by an object-typed parameter's
-    // Subtype silently collided). Two ABI entries now collide onto one
-    // `RoutineNodeId` ONLY when their ENTIRE canonical tuple matches — a true
-    // re-parse duplicate, or a residual fingerprint collision this engine
-    // cannot further distinguish (either way, `dedup_routines_preserving_
-    // genuine_overloads` collapses that run to ONE survivor and flags it
-    // `RoutineNode::abi_overload_collapsed`, since an ABI routine's
+    // collide onto one `RoutineNodeId` when their `sig_fp` also matches.
+    // Post-Task-2 (sigfp-and-ambiguous-reclassification plan), SOURCE `sig_fp`
+    // is a REAL fingerprint (`sig_fp::source_param_sig_fp`, an fnv1a fold of
+    // every parameter's normalized type text + by-ref flag) — NOT always `0`
+    // as it was pre-Task-2 (see node.rs's now-historical note) — so a genuine
+    // same-name/same-arity SOURCE overload pair almost always gets DISTINCT
+    // ids and never reaches this collision path at all. A residual collision
+    // (the fingerprint itself aliases despite the two declarations' real
+    // content, tracked independently in `param_sig_key`, genuinely differing)
+    // still reaches here: `build_program_graph`'s dedup
+    // (`dedup_routines_preserving_genuine_overloads`) keeps BOTH survivors
+    // under the shared id rather than collapsing to one, and marks EVERY
+    // survivor in that run [`RoutineNode::source_overload_aliased`] — the `_`
+    // arm below (whole-branch review F1) treats any such marked candidate as
+    // degraded, exactly like an ABI `abi_overload_collapsed` survivor, rather
+    // than trust two same-id candidates as a genuine `>1`-DISTINCT-target
+    // ambiguity. An ABI `sig_fp` (`abi_ingest::param_type_fp`) now folds a
+    // length-delimited canonical tuple of every parameter's outer kind +
+    // Subtype id + raw Subtype name + a degradation tag (Task 2 round-2
+    // addendum — previously: only the OUTER type keyword, never a `Subtype`,
+    // so two genuinely DIFFERENT overloads differing only by an object-typed
+    // parameter's Subtype silently collided). Two ABI entries now collide
+    // onto one `RoutineNodeId` ONLY when their ENTIRE canonical tuple matches
+    // — a true re-parse duplicate, or a residual fingerprint collision this
+    // engine cannot further distinguish (either way, `dedup_routines_
+    // preserving_genuine_overloads` collapses that run to ONE survivor and
+    // flags it `RoutineNode::abi_overload_collapsed`, since an ABI routine's
     // `param_sig_key` is hardcoded empty — no independent content signature
-    // beyond the tuple already folded into `sig_fp`). So >1 arity-matched
-    // candidates HERE always means genuinely DISTINCT `RoutineNodeId`s
-    // (different `sig_fp`) survived that collapse — REAL, unresolved overload
-    // ambiguity this engine cannot break by parameter count alone, absent
-    // further evidence — an `UNKNOWN_ARITY`-sentinel candidate (Task 1
-    // tri-state arity) never lands in `matched` at all, since it can never
-    // equal a real call's `arity`.
+    // beyond the tuple already folded into `sig_fp`). So `matched.len() > 1`
+    // HERE means either genuinely DISTINCT `RoutineNodeId`s (different
+    // `sig_fp`) — REAL, unresolved overload ambiguity this engine cannot
+    // break by parameter count alone, absent further evidence — OR a residual
+    // same-id `source_overload_aliased` collision (caught by the `_` arm's
+    // degraded-set guard below, never trusted as distinct); an
+    // `UNKNOWN_ARITY`-sentinel candidate (Task 1 tri-state arity) never lands
+    // in `matched` at all, since it can never equal a real call's `arity`.
     let matched: Vec<&RoutineNodeId> = candidates
         .iter()
         .filter(|rid| rid.params_count == arity)
@@ -453,9 +491,26 @@ fn resolve_in_object(
         // `Condition::AmbiguousDispatch` (round-1 addendum: "T4 — strict
         // `AmbiguousResolved` preconditions").
         _ => {
-            let degraded = visible
-                .iter()
-                .any(|rid| routine_is_collapse_marked(rid, graph));
+            // F1 (whole-branch review fix): the prevalidation contract above
+            // is "NO candidate is collapse-marked, ABI **or source-alias**"
+            // — check BOTH markers, not just the ABI one (see
+            // `routine_is_source_aliased`'s doc for the exact laundering path
+            // this closes). Cheap belt: an ID-level dedup shrink of `visible`
+            // is ALSO degraded, regardless of either marker — two candidates
+            // sharing one `RoutineNodeId` (however that duplication arose)
+            // can never be a genuine `>1`-DISTINCT-target ambiguity, so
+            // deduping down to fewer entries than routes is never a valid
+            // `AmbiguousOverload` input.
+            let dedup_shrinks = {
+                let mut ids: Vec<&RoutineNodeId> = visible.clone();
+                ids.sort();
+                ids.dedup();
+                ids.len() != visible.len()
+            };
+            let degraded = dedup_shrinks
+                || visible.iter().any(|rid| {
+                    routine_is_collapse_marked(rid, graph) || routine_is_source_aliased(rid, graph)
+                });
             if degraded {
                 return Some((
                     DispatchShape::Exact,
@@ -9649,6 +9704,207 @@ codeunit 53975 "Overload3Caller"
             shape,
             DispatchShape::Exact,
             "a mixed/collapsed candidate set must NEVER construct AmbiguousOverload"
+        );
+        assert_eq!(
+            routes.len(),
+            1,
+            "the degraded set stays ONE route; got {routes:?}"
+        );
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::OverloadAmbiguous),
+            "got {:?}",
+            routes[0].evidence
+        );
+        assert!(
+            !routes[0].conditions.contains(&Condition::AmbiguousDispatch),
+            "a degraded route must never carry AmbiguousDispatch; got {:?}",
+            routes[0]
+        );
+    }
+
+    /// F1 (whole-branch review fix): a genuinely ambiguous (`>1` visible,
+    /// same-arity) candidate set where BOTH candidates carry the IDENTICAL
+    /// `RoutineNodeId` — the residual sig_fp collision `build::
+    /// dedup_routines_preserving_genuine_overloads` marks
+    /// `source_overload_aliased` (two DISTINCT source overloads whose
+    /// `sig_fp` collided) — must NOT construct `DispatchShape::
+    /// AmbiguousOverload` either, exactly like the ABI `abi_overload_
+    /// collapsed` sibling fixture above. Pre-fix, `resolve_in_object`'s `_`
+    /// arm's `degraded` predicate consulted ONLY `abi_overload_collapsed`, so
+    /// this pair sailed through prevalidation — neither route's evidence is
+    /// `Unknown` (both candidates share the SAME `BodyMap` entry, since
+    /// `BodyMap` is keyed by `RoutineNodeId` and both candidates carry the
+    /// SAME one) — and constructed an `AmbiguousOverload` shape with two
+    /// IDENTICAL-target routes: a genuine unresolved collision laundered into
+    /// a confident-looking multi-route resolution, the last laundering path
+    /// the binding precondition "NO candidate is collapse-marked, ABI OR
+    /// source-alias" was meant to close. The REAL `RoutineNodeId` (computed
+    /// via the same [`crate::program::sig_fp::source_routine_node_id`]
+    /// constructor production code uses) is reused for BOTH synthetic
+    /// `RoutineNode` entries below, so the `BodyMap` built from ONE real
+    /// parsed declaration satisfies both `make_routine_route` lookups —
+    /// reproducing "two IDENTICAL-target concrete routes" faithfully rather
+    /// than relying on the separate Unknown-evidence prevalidation (which
+    /// would mask this specific gap: an absent `BodyMap` entry, not a
+    /// same-id collision, is what THAT check exists to catch).
+    #[test]
+    fn resolve_member_object_ambiguous_set_with_source_alias_candidates_stays_unknown() {
+        use crate::program::resolve::receiver::ReceiverType;
+        use crate::program::sig_fp::source_routine_node_id;
+
+        let app_id = make_app_id("AliasWS");
+        let mut apps = AppRegistry::default();
+        let app_ref = apps.intern(&app_id);
+
+        let caller_obj_id = ObjectNodeId {
+            app: app_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(50700),
+        };
+        let target_obj_id = ObjectNodeId {
+            app: app_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60152),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: caller_obj_id.clone(),
+                name: "AliasCaller".into(),
+                declared_id: Some(50700),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+            },
+            ObjectNode {
+                id: target_obj_id.clone(),
+                name: "AliasTarget".into(),
+                declared_id: Some(60152),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+            },
+        ];
+
+        // Real parsed source for the target's ONE `Foo` procedure — its
+        // production-computed `RoutineNodeId` (a real `sig_fp`) is reused
+        // (cloned) as BOTH synthetic candidates' id below, simulating the
+        // residual collision `dedup_routines_preserving_genuine_overloads`
+        // marks `source_overload_aliased`, rather than fabricating an
+        // arbitrary `sig_fp` integer that would not roundtrip through a real
+        // `BodyMap` lookup the same way.
+        let target_src: &'static str = r#"
+codeunit 60152 "AliasTarget"
+{
+    procedure Foo(X: Integer)
+    begin
+    end;
+}
+"#;
+        let unit = make_unit(app_id.clone(), "AliasTarget.al", target_src);
+        let routine_decl = &unit.files[0].file.objects[0].routines[0];
+        let real_id = source_routine_node_id(target_obj_id.clone(), routine_decl);
+
+        // Two DISTINCT source declarations (distinct `param_sig_key`) whose
+        // `sig_fp` collided onto the SAME `RoutineNodeId` — both survivors of
+        // such a run are marked `source_overload_aliased` (never collapsed to
+        // one, per `dedup_routines_preserving_genuine_overloads`'s doc).
+        let routines = vec![
+            RoutineNode {
+                id: real_id.clone(),
+                name: "Foo".into(),
+                is_trigger: false,
+                access: Access::Public,
+                tier: TrustTier::Workspace,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: None,
+                include_sender: None,
+                abi_routine_kind: None,
+                abi_event_kind: None,
+                param_sig_key: "integer_variant_a".into(),
+                return_type: None,
+                return_type_id: None,
+                abi_overload_collapsed: false,
+                source_overload_aliased: true,
+            },
+            RoutineNode {
+                id: real_id.clone(),
+                name: "Foo".into(),
+                is_trigger: false,
+                access: Access::Public,
+                tier: TrustTier::Workspace,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: None,
+                include_sender: None,
+                abi_routine_kind: None,
+                abi_event_kind: None,
+                param_sig_key: "integer_variant_b".into(),
+                return_type: None,
+                return_type_id: None,
+                abi_overload_collapsed: false,
+                source_overload_aliased: true,
+            },
+        ];
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let units = [unit];
+        let body_map = BodyMap::build(&graph, &units);
+
+        // Sanity preconditions: both candidates share the identical id, and
+        // the BodyMap resolves it (non-Unknown evidence for BOTH) — the
+        // exact shape the pre-fix `degraded` predicate failed to catch.
+        assert_eq!(
+            index.routines_in_object(&target_obj_id, "foo").len(),
+            2,
+            "both source-aliased survivors must be indexed under the same id"
+        );
+        assert!(
+            body_map.get(&real_id).is_some(),
+            "BodyMap must resolve the shared id (non-Unknown evidence precondition)"
+        );
+
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("caller must exist");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "aliastarget".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(
+            shape,
+            DispatchShape::Exact,
+            "a source-alias-marked candidate set must NEVER construct AmbiguousOverload; got {routes:?}"
         );
         assert_eq!(
             routes.len(),
