@@ -1,0 +1,8 @@
+{
+	"id": "ffff7777-0000-0000-0000-00000000000b",
+	"name": "BareImplicitRecField Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51520, "to": 51599 }]
+}

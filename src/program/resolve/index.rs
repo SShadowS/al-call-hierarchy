@@ -638,6 +638,74 @@ impl ResolveIndex {
         }
     }
 
+    /// Whether a routine (ANY arity, ANY access level) named `name_lc`
+    /// exists anywhere in the VISIBILITY-SCOPED table surface for `base` —
+    /// the SAME base + closure-visible-`TableExtension` scope
+    /// [`Self::field_in_table`] itself consults for fields (round-2
+    /// soundness correction, record-field chains plan Task 4).
+    ///
+    /// # Why this exists: the non-method `Member` AST shape is AMBIGUOUS
+    ///
+    /// AL's parens are OPTIONAL on a zero-argument procedure call
+    /// (`Rec.Insert;` compiles — the Code Cop AA0008 flags the missing
+    /// parens as a STYLE issue, not a compile error). A parens-less call
+    /// therefore parses to the EXACT SAME AST shape as a plain field/
+    /// property access: `ExprKind::Member{object, member}` with no
+    /// enclosing `Call` node at all. Every consumer that types a
+    /// non-method `Member` as a RECORD FIELD (`infer_compound_member_
+    /// receiver`'s field arm, and the bare implicit-Rec quoted-field arm in
+    /// `infer_receiver_type`) MUST check this FIRST — if a same-named
+    /// routine exists anywhere a parens-less call to it could legally
+    /// target, typing `member`/the bare identifier as a field instead would
+    /// risk a false `Source`/`Catalog` edge, the cardinal sin. This
+    /// function is the fail-closed gate: it only ever WIDENS the decline
+    /// set (a `true` result blocks field-typing; it never causes one), so a
+    /// caller composing `!table_scope_has_routine(..) && field_in_table(..)`
+    /// stays fail-closed by construction.
+    ///
+    /// # Scope, deliberately NOT access-filtered
+    ///
+    /// Unlike [`crate::program::resolve::resolver::resolve_in_table_scope`]
+    /// (which additionally filters candidates by `Access` — `Local`/
+    /// `Internal`/`Protected`/`Public` visibility from the caller), this
+    /// function checks EXISTENCE alone across the closure-visible scope. A
+    /// routine that would be `Access`-excluded from an actual call still
+    /// signals a real symbol collision worth declining over — over-
+    /// declining is always the safe direction, and skipping access
+    /// filtering keeps this check simple and keeps it in lockstep with
+    /// `field_in_table`'s own (access-agnostic — fields have no `Access`
+    /// modifier) visibility discipline.
+    pub fn table_scope_has_routine(
+        &self,
+        graph: &ProgramGraph,
+        from_object: &ObjectNode,
+        base: &ObjectNodeId,
+        name_lc: &str,
+    ) -> bool {
+        let closure = graph.topology.closure(from_object.id.app);
+        if !closure.contains(&base.app) {
+            return false;
+        }
+        if !self.routines_in_object(base, name_lc).is_empty() {
+            return true;
+        }
+        let Some(base_obj) = Self::find_object(graph, base) else {
+            return false;
+        };
+        let base_name_lc = base_obj.name.to_ascii_lowercase();
+        for ext_id in self.table_extensions_of(&base_name_lc) {
+            if !closure.contains(&ext_id.app) {
+                // Outside from_object's dependency closure: invisible, not a
+                // candidate — mirrors `field_in_table`'s identical filter.
+                continue;
+            }
+            if !self.routines_in_object(ext_id, name_lc).is_empty() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Look up an `ObjectNode` by id via binary search — `graph.objects` is
     /// sorted by `ObjectNodeId` at construction (`build_program_graph` Step 4
     /// / every in-memory test fixture), mirroring `object_extends`'s
@@ -1696,6 +1764,95 @@ mod tests {
             }),
             "an identical (object, name, type) duplicate must dedupe to one candidate, not decline"
         );
+    }
+
+    // -- table_scope_has_routine tests (round-2, Task 4) -----------------------
+
+    #[test]
+    fn table_scope_has_routine_finds_base_routine() {
+        let (mut graph, _a, b) = build_fixture();
+        let customer_id = customer_table_id(b);
+        graph
+            .routines
+            .push(make_routine(customer_id.clone(), "GetThing"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let idx = ResolveIndex::build(&graph);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+
+        assert!(idx.table_scope_has_routine(&graph, &from_obj, &customer_id, "getthing"));
+    }
+
+    #[test]
+    fn table_scope_has_routine_finds_extension_routine_in_closure() {
+        let (mut graph, a, b) = build_fixture();
+        let ext_id = ObjectNodeId {
+            app: a,
+            kind: ObjectKind::TableExtension,
+            key: ObjKey::Id(50100),
+        };
+        graph.routines.push(make_routine(ext_id, "GetThing"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let idx = ResolveIndex::build(&graph);
+        // Referencing object lives in App A — sees CustomerExt (its own app).
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+        let customer_id = customer_table_id(b);
+
+        assert!(
+            idx.table_scope_has_routine(&graph, &from_obj, &customer_id, "getthing"),
+            "an extension routine visible in from_object's closure must count"
+        );
+    }
+
+    #[test]
+    fn table_scope_has_routine_out_of_closure_extension_routine_declines() {
+        let (mut graph, a, b) = build_fixture();
+        let ext_id = ObjectNodeId {
+            app: a,
+            kind: ObjectKind::TableExtension,
+            key: ObjKey::Id(50100),
+        };
+        graph.routines.push(make_routine(ext_id, "GetThing"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let idx = ResolveIndex::build(&graph);
+        // Referencing object lives in App B — App B does NOT depend on App A,
+        // so CustomerExt (App A) is outside B's closure.
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "TheirCU")
+            .unwrap()
+            .clone();
+        let customer_id = customer_table_id(b);
+
+        assert!(
+            !idx.table_scope_has_routine(&graph, &from_obj, &customer_id, "getthing"),
+            "an extension routine OUTSIDE from_object's dependency closure must not count"
+        );
+    }
+
+    #[test]
+    fn table_scope_has_routine_absent_returns_false() {
+        let (graph, _a, b) = build_fixture();
+        let idx = ResolveIndex::build(&graph);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "SomeImpl")
+            .unwrap()
+            .clone();
+        let customer_id = customer_table_id(b);
+
+        assert!(!idx.table_scope_has_routine(&graph, &from_obj, &customer_id, "nosuchroutine"));
     }
 
     // -- implementers_of tests ------------------------------------------------

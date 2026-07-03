@@ -32,17 +32,39 @@
 //!    When the receiver name is `rec`/`xrec`, a variable with that name shadows
 //!    the implicit-Rec step (a Codeunit routine may declare `var Rec: Record
 //!    Customer`; the declared type is used in that case).
-//! 3. **Implicit Rec / xRec** — reached only when no variable named `rec`/`xrec`
-//!    was found in step 2: resolves to the enclosing object's implicit record type
-//!    (Table self-id, TableExtension base, Page/PageExtension via `SourceTable`,
-//!    Codeunit via `TableNo` — topology-aware, fail-closed through
-//!    `ResolveIndex::resolve_object_ref`, see [`infer_implicit_rec`] — or
-//!    `Record{None}` for Report/ReportExtension, whose implicit Rec is
-//!    per-dataitem scoped rather than object-level and is not yet modeled).
-//!    A Codeunit with no `TableNo` declared at all (including `Subtype =
-//!    Test`/`TestRunner`, which never declares one) has no implicit-Rec
-//!    entity to type and returns `Unknown`; every other object kind not
-//!    listed above (Report/ReportExtension aside) also returns `Unknown`.
+//! 3. **Implicit Rec / xRec** — two sub-cases, in order, both reached only on a
+//!    Step 2 miss (a variable/param/global ALWAYS shadows the implicit Rec,
+//!    whether by identity or by field — AL scoping; see Step 2's quote-parity
+//!    fix, which is what makes this precedence correctly enforceable for a
+//!    quoted name):
+//!    - **3a. Bare quoted-field receiver** (record-field chains plan Task 4) —
+//!      when the receiver is a QUOTED identifier and the enclosing object is a
+//!      Table or TableExtension, looks the name up in the implicit-Rec table's
+//!      visibility-scoped field surface (`ResolveIndex::field_in_table`) and
+//!      types by the field's declared type. A same-named ROUTINE anywhere in
+//!      that same visibility-scoped table surface
+//!      (`ResolveIndex::table_scope_has_routine`) declines FIRST — AL's
+//!      parens are optional on a zero-argument call, so a bare `Member` AST
+//!      node is structurally ambiguous between a field access and a
+//!      parens-less procedure call, and this step must never guess between
+//!      them. Also gated on `WithState::NoWithProven` (mirrors
+//!      [`crate::program::resolve::resolver::resolve_bare`]'s own Step 3
+//!      implicit-Rec with-guard). Any other object kind, an unquoted
+//!      receiver, a field-name miss, or an ambiguous/duplicate field all
+//!      decline (fall through to 3b, never guessed) — quoted-only is
+//!      deliberate undercoverage, an unquoted bare field reference is
+//!      deferred to a future task.
+//!    - **3b. `rec`/`xrec` identity** — resolves to the enclosing object's
+//!      implicit record type (Table self-id, TableExtension base,
+//!      Page/PageExtension via `SourceTable`, Codeunit via `TableNo` —
+//!      topology-aware, fail-closed through `ResolveIndex::resolve_object_ref`,
+//!      see [`infer_implicit_rec`] — or `Record{None}` for
+//!      Report/ReportExtension, whose implicit Rec is per-dataitem scoped
+//!      rather than object-level and is not yet modeled). A Codeunit with no
+//!      `TableNo` declared at all (including `Subtype = Test`/`TestRunner`,
+//!      which never declares one) has no implicit-Rec entity to type and
+//!      returns `Unknown`; every other object kind not listed above
+//!      (Report/ReportExtension aside) also returns `Unknown`.
 //! 4. **Static framework type name** — when the receiver name matches a framework
 //!    type name (e.g. `XmlDocument`, `Text`, `File`, `Version`) and no variable was
 //!    found, type it as `Framework(kind)` so Phase B dispatches the static method
@@ -587,26 +609,59 @@ pub fn infer_receiver_type(
     // NOTE: `rec`/`xrec` are looked up here too.  A Codeunit routine that
     // declares `var Rec: Record Customer` must resolve to
     // `Record{Some(customer_id)}`, not to `infer_implicit_rec(Codeunit)`
-    // which would return `Unknown`.  The implicit-Rec path fires only as a
-    // fallback in Step 3 when NO variable named `rec`/`xrec` was found.
+    // which would return `Unknown`.  The implicit-Rec IDENTITY fallback
+    // fires only in Step 3b when NO variable named `rec`/`xrec` was found
+    // (Step 3a, immediately below Step 2, independently handles a quoted
+    // FIELD receiver — see its doc; the two never overlap since `rec`/
+    // `xrec` are never written quoted).
+    //
+    // QUOTE-PARITY FIX (record-field chains plan, Task 4 round-2 addendum):
+    // `receiver_lc` is sliced from RAW SOURCE TEXT (`full.rs`'s
+    // `receiver_text.to_ascii_lowercase()`) and so RETAINS AL quote
+    // characters for a quoted identifier (e.g. `"\"file blob\""`), while
+    // `Param`/`VarDecl` names are stored ALREADY UNQUOTED — `ident_text`
+    // (`al_syntax::lower`) strips the wrapping quotes at lowering time.
+    // Comparing the two directly, as this step did before this fix, meant a
+    // QUOTED identifier naming a real local/param/global var (e.g. a var
+    // declared `"Sales Header Filter": Record "Sales Header"`, or a helper
+    // local shadowing a field-like name, `"File Blob": Text[100]`) could
+    // NEVER match here — it silently fell through past Step 2 instead, an
+    // AL-scoping violation (a var/param/global ALWAYS shadows a same-named
+    // field) that would have been unsound once Step 3a's field lookup
+    // landed. `unquote_identifier` (this module's existing quote-stripping
+    // helper, already used by `infer_compound_member_receiver`'s
+    // member-name normalization) mirrors `ident_text`'s own convention
+    // exactly, so the comparison key now sees what the var/param/global's
+    // OWN unquoted name would have been for the identical source spelling.
+    // Gated on the SAME bare-identifier shape Step 4 (below) already
+    // established (no `.`/`(` — a genuinely compound receiver text is left
+    // untouched here, since no real var/param/global name could ever equal
+    // a multi-segment string anyway; the guard just keeps this step within
+    // its own documented "bare identifier" scope).
     // -----------------------------------------------------------------------
+
+    let lookup_lc: String = if !receiver_lc.contains('.') && !receiver_lc.contains('(') {
+        unquote_identifier(receiver_lc)
+    } else {
+        receiver_lc.to_string()
+    };
 
     let declared_ty: Option<&str> = routine
         .params
         .iter()
-        .find(|p| p.name.to_ascii_lowercase() == receiver_lc)
+        .find(|p| p.name.to_ascii_lowercase() == lookup_lc)
         .and_then(|p| p.ty.as_deref())
         .or_else(|| {
             routine
                 .locals
                 .iter()
-                .find(|v| v.name.to_ascii_lowercase() == receiver_lc)
+                .find(|v| v.name.to_ascii_lowercase() == lookup_lc)
                 .and_then(|v| v.ty.as_deref())
         })
         .or_else(|| {
             object_globals
                 .iter()
-                .find(|v| v.name.to_ascii_lowercase() == receiver_lc)
+                .find(|v| v.name.to_ascii_lowercase() == lookup_lc)
                 .and_then(|v| v.ty.as_deref())
         });
 
@@ -615,7 +670,87 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
-    // Step 3 — implicit Rec / xRec (fallback: no variable named rec/xrec).
+    // Step 3a — bare implicit-Rec QUOTED-field receiver (record-field chains
+    // plan, Task 4). Reached ONLY on a Step 2 miss — AL scoping means a
+    // same-named local/param/global var ALWAYS shadows a field, and Step 2's
+    // quote-parity fix (above) is exactly what makes that precedence
+    // correctly enforceable for a quoted name; this step never runs before
+    // Step 2, and never overrides a Step 2 hit.
+    //
+    // AL lets a Table/TableExtension procedure reference the implicit
+    // `Rec`'s OWN field by BARE QUOTED NAME with no `Rec.` prefix at all —
+    // `"File Blob".CreateInStream(Stream)` inside a Table's procedure means
+    // exactly `Rec."File Blob".CreateInStream(Stream)`. This mirrors
+    // `resolver.rs`'s `resolve_bare` Step 3 implicit-Rec precedent for BARE
+    // CALLS: the same STRICT `ObjectKind` guard (Table/TableExtension only —
+    // Page/PageExtension/Codeunit/Report never expose this bare-field
+    // shorthand here, even though some of them DO have an implicit-Rec
+    // RECORD; out of this task's measured/fixture-proven scope, deliberately
+    // not widened) and the same `with_state` with-guard (a bare reference
+    // inside an un-modeled `with` block could silently mean a DIFFERENT
+    // record's field — a false `Source` edge, the cardinal sin — so this
+    // step requires the same `WithState::NoWithProven` proof `resolve_bare`'s
+    // Step 3 requires, sourced from the same `bare_ctx` Steps 5/6 already
+    // thread through; a caller supplying no `bare_ctx` — unit tests,
+    // `semantic_golden.rs` — makes this step a no-op, exactly like Step 5).
+    //
+    // AMBIGUITY GUARD (round-2 soundness correction): AL's parens are
+    // OPTIONAL on a zero-argument call (`Rec.Insert;` compiles — the Code
+    // Cop AA0008 flags the missing parens as a STYLE issue, not a compile
+    // error), so a bare quoted name is structurally ambiguous between a
+    // field reference and a parens-less call to a same-named routine
+    // somewhere in the SAME visibility-scoped table surface. A same-named
+    // routine anywhere in that surface (`ResolveIndex::table_scope_has_
+    // routine`, checked FIRST) declines this step entirely — never guess
+    // which of the two a bare quoted name means.
+    //
+    // `ResolveIndex::field_in_table` is itself the fail-closed gate (unique
+    // visible match across base + closure-visible extensions, or `None`);
+    // an unknown field name, an ambiguous duplicate, or a same-named routine
+    // all fall through to Step 3b / eventually `Unknown` — never a partial
+    // guess. Quoted-only is DELIBERATE undercoverage (see the module doc):
+    // an unquoted bare field reference (`MyBlob.CreateInStream()`) is legal
+    // AL too but is not distinguished here from a not-yet-modeled
+    // var/global without risking exactly the false-`Source` class this task
+    // exists to avoid — deferred to a future task (roadmap).
+    // -----------------------------------------------------------------------
+
+    if receiver_lc.len() >= 2
+        && receiver_lc.starts_with('"')
+        && receiver_lc.ends_with('"')
+        && !receiver_lc.contains('.')
+        && let Some((_, with_state)) = bare_ctx
+        && with_state == WithState::NoWithProven
+        && matches!(
+            from_object.id.kind,
+            ObjectKind::Table | ObjectKind::TableExtension
+        )
+    {
+        let table_id = match from_object.id.kind {
+            ObjectKind::Table => Some(from_object.id.clone()),
+            ObjectKind::TableExtension => resolve_tableext_base_table(from_object, graph, index),
+            _ => None,
+        };
+        if let Some(table_id) = table_id {
+            let field_lc = unquote_identifier(receiver_lc);
+            if !index.table_scope_has_routine(graph, from_object, &table_id, &field_lc)
+                && let Some(field) = index.field_in_table(graph, from_object, &table_id, &field_lc)
+            {
+                return parsed_type_to_receiver(
+                    classify_type_text(&field.type_text),
+                    from_object,
+                    graph,
+                    index,
+                );
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 3b — implicit Rec / xRec identity (fallback: no variable named
+    // rec/xrec found in Step 2; Step 3a's quoted-field lookup never applies
+    // here since `receiver_lc` is never quoted for the literal `rec`/`xrec`
+    // spelling).
     // -----------------------------------------------------------------------
 
     if receiver_lc == "rec" || receiver_lc == "xrec" {
@@ -1000,27 +1135,46 @@ fn infer_compound_member_receiver(
 
     // Record-field member access (`Rec."Field".X()` / `Rec.Field.X()`) — Task
     // 3, record-field chains plan. STRICTLY the non-method (bare `Member`,
-    // never a `Call`) shape: `!is_method` — the exact opposite gate of the
-    // cross-object-chain arm just below (round-1 I7 precedent: a bare
-    // `Member` is never a procedure-call chain). Only engages when `base_ty`
-    // proves a `Record` receiver with a RESOLVED table (`table: Some(..)` —
-    // an out-of-closure/unresolved table has no field surface to consult and
-    // falls through to `Unknown`, the same fail-closed contract every other
-    // arm here uses). `member_lc` already handles BOTH a quoted
-    // (`"Error Message"`) and unquoted (`BlobField`) member name identically
-    // (see this function's top — `Rec.` syntactically disambiguates a field
-    // access from a bare-identifier variable reference either way, so both
-    // spellings are safe to route through the SAME field lookup).
+    // never a `Call`) AST shape: `!is_method` — the exact opposite gate of
+    // the cross-object-chain arm just below.
+    //
+    // ROUND-2 SOUNDNESS CORRECTION: a bare `Member{object, member}` node
+    // (`is_method: false`, no argument list AT ALL — not even an empty
+    // `()`) is NOT proof this is a field/property access. AL's parens are
+    // OPTIONAL on a zero-argument call (`Rec.Insert;` compiles — the Code
+    // Cop AA0008 flags the missing parens as a STYLE issue, not a compile
+    // error): a parens-less call to a same-named PROCEDURE parses to the
+    // IDENTICAL AST shape as a field reference. (This doc previously claimed
+    // "a bare `Member` is never a procedure-call chain" — true as the
+    // `is_method` GATE distinguishing this arm from the cross-object-CHAIN
+    // arm below, but wrong as a claim that `!is_method` rules out a
+    // procedure call altogether; a parens-less call is exactly such a case,
+    // just not a *chain*.) So: a same-named ROUTINE anywhere in the SAME
+    // visibility-scoped table surface (`ResolveIndex::table_scope_has_
+    // routine`, base + closure-visible extensions — checked FIRST, before
+    // the field lookup) declines this arm entirely — never guess which of
+    // the two `member_lc` means.
+    //
+    // Only engages when `base_ty` proves a `Record` receiver with a
+    // RESOLVED table (`table: Some(..)` — an out-of-closure/unresolved
+    // table has no field surface to consult and falls through to
+    // `Unknown`, the same fail-closed contract every other arm here uses).
+    // `member_lc` already handles BOTH a quoted (`"Error Message"`) and
+    // unquoted (`BlobField`) member name identically (see this function's
+    // top — `Rec.` syntactically disambiguates a field access from a
+    // bare-identifier variable reference either way, so both spellings are
+    // safe to route through the SAME field lookup).
     //
     // `ResolveIndex::field_in_table` is itself the fail-closed gate (unique
     // visible match or `None`); a lookup miss (unknown field name, ambiguous
-    // duplicate, or the base object simply isn't Table/TableExtension) falls
-    // through past this arm to the final `Unknown` below, exactly like every
-    // other declined arm.
+    // duplicate, a same-named routine, or the base object simply isn't
+    // Table/TableExtension) falls through past this arm to the final
+    // `Unknown` below, exactly like every other declined arm.
     if !is_method
         && let ReceiverType::Record {
             table: Some(table_id),
         } = &base_ty
+        && !index.table_scope_has_routine(graph, from_object, table_id, &member_lc)
         && let Some(field) = index.field_in_table(graph, from_object, table_id, &member_lc)
     {
         let field: FieldNode = field;
@@ -1842,8 +1996,8 @@ mod tests {
     use al_syntax::ir::{ObjectKind, Origin, Param, Point, RoutineDecl, RoutineKind, VarDecl};
 
     use crate::program::graph::{ObjectIndex, ProgramGraph};
-    use crate::program::node::{AppRef, ObjKey, ObjectNodeId};
-    use crate::program::node_extract::ObjectNode;
+    use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
+    use crate::program::node_extract::{Access, ObjectNode};
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::topology::DependencyGraph;
     use crate::snapshot::{AppId, TrustTier};
@@ -4928,6 +5082,478 @@ codeunit 50100 "C"
             None,
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::List));
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 4 (record-field chains plan): a `RoutineNode` builder for the
+    // routine-shadow guard tests below — mirrors `index.rs`'s own
+    // `make_routine` test helper exactly (same field defaults).
+    // -----------------------------------------------------------------------
+
+    fn make_routine_node(obj_id: ObjectNodeId, name: &str) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id,
+                name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: name.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 4: Step 2 quote-parity fix (round-2 addendum) — a QUOTED
+    // identifier naming a real local/param/global var must resolve AS THE
+    // VAR, never fall through past Step 2.
+    // -----------------------------------------------------------------------
+
+    /// POSITIVE (c): a quoted RECORD VAR receiver with no colliding field —
+    /// `"Sales Header Filter"` is a LOCAL var (not a report dataitem
+    /// construct; the fresh engine does not model those — see the Task 4
+    /// report's static var-extraction audit), and resolves as the var's
+    /// declared `Record` type. Pre-fix, the raw quote-retaining
+    /// `receiver_lc` never matched the unquoted `VarDecl` name and this
+    /// fell through to `Unknown` (`UntrackedReceiver`).
+    #[test]
+    fn quote_parity_quoted_var_receiver_resolves_as_var() {
+        let (graph, app) = build_test_graph();
+        let customer_id = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "Customer")
+            .unwrap()
+            .id
+            .clone();
+        let index = ResolveIndex::build(&graph);
+        // NOTE: `var_decl`'s name argument is used VERBATIM as `VarDecl.name`
+        // (no unquoting — unlike the real lowerer's `ident_text`, which
+        // strips AL quote characters at parse time), so this must be
+        // written UNQUOTED to faithfully simulate what a real quoted
+        // declaration `"Sales Header Filter": Record Customer` would
+        // actually produce.
+        let routine = routine_with_locals(vec![var_decl("Sales Header Filter", "Record Customer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            "\"sales header filter\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            },
+            "a quoted identifier naming a real local var must resolve as the var"
+        );
+    }
+
+    /// NEGATIVE / PRECEDENCE (d): a quoted name matching BOTH a local var
+    /// AND a table field on the SAME object — the var MUST win (AL scoping:
+    /// vars/params/globals always shadow a field). `from_object` is the
+    /// Customer TABLE itself (Step 3a's field arm would otherwise engage),
+    /// with a genuine `"File Blob"` Blob field declared — but a LOCAL var
+    /// of the identical quoted name shadows it, so the result must be the
+    /// var's declared type (`Record Customer`), never `Framework(Blob)`.
+    #[test]
+    fn quote_parity_var_and_field_same_quoted_name_var_wins() {
+        let (mut graph, _app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "file blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let customer_id = graph.objects[customer_idx].id.clone();
+        let index = ResolveIndex::build(&graph);
+        // See the sibling test above for why `var_decl`'s argument here is
+        // UNQUOTED.
+        let routine = routine_with_locals(vec![var_decl("File Blob", "Record Customer")]);
+        let from_obj = graph.objects[customer_idx].clone();
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let result = infer_receiver_type(
+            "\"file blob\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            },
+            "a var shadowing a same-named field must win — never the field, \
+             even though Step 3a's Table-scope field lookup is fully wired here"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 4: Step 3a — bare implicit-Rec quoted-field receiver.
+    // -----------------------------------------------------------------------
+
+    /// POSITIVE (a): `"File Blob".CreateInStream(S)` inside a Table's own
+    /// procedure — the implicit-Rec field types `Framework(Blob)`.
+    #[test]
+    fn step3a_bare_quoted_field_in_table_scope_resolves_blob() {
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "file blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph.objects[customer_idx].clone();
+        let body_map = BodyMap::build(&graph, &[]);
+        let _ = app;
+
+        let result = infer_receiver_type(
+            "\"file blob\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
+    }
+
+    /// POSITIVE (b): the SAME shape, inside a TableExtension's own procedure
+    /// — resolves via the base+own field surface (`ResolveIndex::
+    /// field_in_table`'s extension folding), for BOTH a field declared on
+    /// the extension itself and one inherited from the base table.
+    #[test]
+    fn step3a_bare_quoted_field_in_tableextension_scope_resolves() {
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "base blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let mut ext_obj = make_object_node(
+            app,
+            ObjectKind::TableExtension,
+            "CustomerExt",
+            Some(50200),
+            Some("Customer".to_string()),
+        );
+        ext_obj.fields.push(FieldNode {
+            name_lc: "ext note".to_string(),
+            type_text: "Text[100]".to_string(),
+        });
+        graph.objects.push(ext_obj);
+        graph.objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "CustomerExt")
+            .unwrap()
+            .clone();
+        let body_map = BodyMap::build(&graph, &[]);
+
+        // The extension's OWN field.
+        let result_own = infer_receiver_type(
+            "\"ext note\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result_own, ReceiverType::Framework(FrameworkKind::Text));
+
+        // The BASE table's field, folded into the extension's own scope.
+        let result_base = infer_receiver_type(
+            "\"base blob\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result_base, ReceiverType::Framework(FrameworkKind::Blob));
+    }
+
+    /// NEGATIVE (e): a quoted-field-shaped receiver in a NON-Table/
+    /// TableExtension object (no implicit-Rec field surface reachable this
+    /// way) must decline to `Unknown`, even with a fully-wired `bare_ctx`.
+    #[test]
+    fn step3a_non_table_scope_declines() {
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let result = infer_receiver_type(
+            "\"file blob\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE (f): an unknown quoted name inside a Table's own procedure
+    /// (no such field declared anywhere in scope) declines to `Unknown`.
+    #[test]
+    fn step3a_unknown_quoted_field_declines() {
+        let (graph, app) = build_test_graph();
+        let customer = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "Customer")
+            .unwrap()
+            .clone();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+        let _ = app;
+
+        let result = infer_receiver_type(
+            "\"no such field\"",
+            &routine,
+            &[],
+            &customer,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// `with_state` gating: Step 3a must NOT fire when the call site is
+    /// inside an un-modeled `with` block (`InsideWith`/`Unknown`) — mirrors
+    /// `resolve_bare`'s own Step 3 with-guard exactly.
+    #[test]
+    fn step3a_declines_inside_with() {
+        let (mut graph, _app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "file blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph.objects[customer_idx].clone();
+        let body_map = BodyMap::build(&graph, &[]);
+
+        for ws in [WithState::InsideWith, WithState::Unknown] {
+            let result = infer_receiver_type(
+                "\"file blob\"",
+                &routine,
+                &[],
+                &from_obj,
+                &graph,
+                &index,
+                None,
+                Some((&body_map, ws)),
+            );
+            assert_eq!(
+                result,
+                ReceiverType::Unknown,
+                "Step 3a must decline under WithState {ws:?}"
+            );
+        }
+    }
+
+    /// `bare_ctx` gating: with no `bare_ctx` supplied (unit tests /
+    /// `semantic_golden.rs` shape), Step 3a is a no-op — mirrors Step 5/6's
+    /// identical `bare_ctx`-optionality contract.
+    #[test]
+    fn step3a_no_bare_ctx_is_noop() {
+        let (mut graph, _app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "file blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph.objects[customer_idx].clone();
+
+        let result = infer_receiver_type(
+            "\"file blob\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 4 round-2 soundness correction: the routine-shadow guard
+    // (`ResolveIndex::table_scope_has_routine`) — AL's parens are optional
+    // on a zero-argument call, so a bare `Member` AST node is ambiguous
+    // between a field access and a parens-less procedure call.
+    // -----------------------------------------------------------------------
+
+    /// Step 3a must decline (never type as a field) when a same-named
+    /// ROUTINE exists anywhere in the visibility-scoped table surface —
+    /// `"File Blob"` is BOTH a genuine `Blob` field AND a declared
+    /// procedure on the same table; the ambiguity must fail closed.
+    #[test]
+    fn step3a_declines_when_same_named_routine_exists() {
+        let (mut graph, _app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "file blob".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let customer_id = graph.objects[customer_idx].id.clone();
+        // `make_routine_node`'s name arg mirrors `RoutineDecl.name` (already
+        // unquoted by the real lowerer's `ident_text`) — UNQUOTED here too,
+        // so `name_lc` genuinely matches `field_lc`'s unquoted lookup key.
+        graph
+            .routines
+            .push(make_routine_node(customer_id, "File Blob"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph.objects[customer_idx].clone();
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let result = infer_receiver_type(
+            "\"file blob\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Unknown,
+            "a same-named routine anywhere in the table scope must block field-typing"
+        );
+    }
+
+    /// The SAME guard, exercised on Task 3's `Rec."Field".X()` compound
+    /// arm — the coordinator-required regression fixture: a table declares
+    /// BOTH a field AND a procedure named `GetThing`; `Rec.GetThing` (a
+    /// parens-less reference — `is_method: false`, structurally identical
+    /// to a field access) must decline to `Unknown`, never mistyped as the
+    /// field. The existing `framework_chain_record_field_populated_
+    /// resolves_framework_blob` test is the CONTROL sibling (field only,
+    /// no routine) proving the arm still resolves when there is no
+    /// ambiguity.
+    #[test]
+    fn compound_record_field_arm_declines_when_same_named_routine_exists() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Rec.GetThing.CreateOutStream();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "createoutstream");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "rec.getthing");
+
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "getthing".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let customer_id = graph.objects[customer_idx].id.clone();
+        graph
+            .routines
+            .push(make_routine_node(customer_id, "GetThing"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("Rec", "Record Customer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Unknown,
+            "Rec.GetThing is a parens-less call to a same-named routine, never the field"
+        );
     }
 
     // NOTE: the Task-3 review finding folded into Task 4 (`infer_call_result_

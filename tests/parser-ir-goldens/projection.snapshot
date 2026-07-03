@@ -39,6 +39,9 @@ ws-bare-implicit-rec/IRTableExtA.TableExtension.al	dd21d1adb247079f
 ws-bare-implicit-rec/IRTableExtB.TableExtension.al	002255aa890875de
 ws-bare-implicit-rec/IRTableExtBaseT.Table.al	1cac51b682ccaa23
 ws-bare-implicit-rec/IRWithTables.Table.al	0eae2933dad6754c
+ws-bare-implicit-rec-field/RBFBase.Table.al	db685ee4cb5f0f40
+ws-bare-implicit-rec-field/RBFBaseExt.TableExtension.al	0efafb8db66435ea
+ws-bare-implicit-rec-field/RBFCaller.Codeunit.al	331b16cabacaac0e
 ws-baseapp-closure/src/WsBaseCaller.Codeunit.al	8797168955b41e98
 ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al	cb20b32909be32c3
 ws-builtin-shadow/Acme.Table.al	a0cac9abb6d1c7d1

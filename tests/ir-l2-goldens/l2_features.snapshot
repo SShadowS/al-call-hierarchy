@@ -41,6 +41,15 @@ ws-bare-implicit-rec/IRTableAExtD.TableExtension.al::1::Dup	5314e26adebd69a2
 ws-bare-implicit-rec/IRTableExtA.TableExtension.al::0::CallShared	9059452bd8d1e842
 ws-bare-implicit-rec/IRTableExtB.TableExtension.al::0::SharedProc	1e7f24608c47c699
 ws-bare-implicit-rec/IRWithTables.Table.al::0::GetNameW	d4024779581f0735
+ws-bare-implicit-rec-field/RBFBase.Table.al::0::Shadowed Field	afe36c21a053ae68
+ws-bare-implicit-rec-field/RBFBase.Table.al::0::TestBareBlobField	c9c711667f646e83
+ws-bare-implicit-rec-field/RBFBase.Table.al::0::TestBareTextField	4d50707bdc867e14
+ws-bare-implicit-rec-field/RBFBase.Table.al::0::TestBareUnknownField	6c338e06beeb2a0c
+ws-bare-implicit-rec-field/RBFBase.Table.al::0::TestBareVarShadowsFieldQuoteParity	38d6e07532c76570
+ws-bare-implicit-rec-field/RBFBase.Table.al::0::TestBareRoutineShadowsField	67853b79a1d94033
+ws-bare-implicit-rec-field/RBFBaseExt.TableExtension.al::0::TestBareOwnExtField	ba474b7d7722c249
+ws-bare-implicit-rec-field/RBFBaseExt.TableExtension.al::0::TestBareBaseFieldFromExtension	e7eb9cf6c7e268b3
+ws-bare-implicit-rec-field/RBFCaller.Codeunit.al::0::TestBareFieldReceiverNonTableScope	1cf7e651fbee8181
 ws-baseapp-closure/src/WsBaseCaller.Codeunit.al::0::Run	6378e9310d30e2a5
 ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al::0::Run	a19777337a1266d1
 ws-builtin-shadow/Acme.Table.al::0::FieldNo	e745de7563a4d71c

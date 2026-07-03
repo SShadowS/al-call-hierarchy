@@ -1590,19 +1590,68 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // falsely Blob), and 1 `Text::contains` (`"Additional Information";
     // Text[250]` on Base App "Error Message", verified from embedded
     // source). `genuine_wrong` stays 0 (companion audit gate).
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 4): 0.01293→0.00995, measured 0.99% (exact raw value
+    // 180/18104=0.009943…). Task 4 adds `infer_receiver_type`'s Step 3a —
+    // bare implicit-Rec QUOTED-field receivers (`"Field".X()` with NO
+    // `Rec.` prefix, inside a Table/TableExtension's own procedure means
+    // exactly `Rec."Field".X()`; mirrors `resolve_bare`'s Step-3
+    // implicit-Rec precedent, `WithState::NoWithProven`-gated) — plus a
+    // Step-2 quote-parity fix (a QUOTED identifier naming a real local var
+    // now correctly matches Step 2's var lookup, which always wins over a
+    // field — was previously silently unmatched since `VarDecl` names are
+    // stored unquoted while the top-level `receiver_lc` retains quotes) and
+    // a round-2 soundness correction (`ResolveIndex::table_scope_has_
+    // routine`: AL's parens are optional on a zero-argument call, so a bare
+    // `Member`/quoted-bare-receiver shape is ambiguous between a field and
+    // a parens-less procedure-call chain — a same-named routine anywhere in
+    // the visibility-scoped table surface now blocks field-typing, applied
+    // to BOTH the new Step 3a arm and Task 3's existing `Rec."Field".X()`
+    // arm). Measured CDO delta: `UntrackedReceiver` 91→37 (−54), every
+    // other bucket BYTE-IDENTICAL (`CompoundReceiver`=61,
+    // `OverloadAmbiguous`=56, `BuiltinPrecedenceCollision`=1,
+    // `MemberNotFound`=25 — confirming the routine-shadow guard caused ZERO
+    // CDO delta to Task 3's already-landed arm, as predicted). All 54
+    // newly-resolved edges EXHAUSTIVELY adjudicated via a full before/after
+    // edge-dump diff (54 added / 54 removed, IDENTICAL `(from, span)` key
+    // sets — a pure re-resolution of the same 54 sites, zero site
+    // additions/removals/collateral changes): 53 Blob-catalog edges
+    // (`Blob::createinstream`/`createoutstream`/`hasvalue`, every field
+    // spot-verified `Blob` in its declaring table's real source across 11
+    // distinct tables — e.g. `"To BLOB"`/`"Cc BLOB"`/`"Bcc BLOB"` on Table
+    // 6175273, `"HTML E-Mail Template"`/`"Plain Text E-Mail Template"`/
+    // `"Request Page (xml)"` on Table 6175284, `"Request Page (XML)"` on
+    // Table 6175282) and 1 `Text::trim` (Table 6175281 "CDO Setup",
+    // field(203; "Azure Blob Private Endpoint URL"; Text[250])'s own
+    // `OnValidate` trigger — this ONE site was also `genuine_wrong` against
+    // the frozen L3 golden until adjudicated: L3's golden misattributes
+    // this callee_fp to an UNRELATED procedure `CheckAzureContainerPerCompany`
+    // called from a DIFFERENT field's `OnValidate` trigger 8-31 lines away
+    // — the SAME L3 line/routine-key misattribution bug already documented
+    // for the sibling `CopyStr`/`MaxStrLen` calls on this exact line
+    // [`known-genuine-divergences.json` entries 39-40]; `Text::trim`
+    // independently verified a genuine catalog member and the field
+    // genuinely `Text[250]`, so entry 52 is `l3_error_intrinsic` — see
+    // `cdo_l3_semantic_audit_no_fresh_wrong`). `genuine_wrong` stays 0
+    // (companion audit gate). Quote-parity's OWN independent CDO yield is
+    // MEASURED ZERO (no site in the diff flipped via the var-lookup path
+    // alone — every one of the 54 flips is Step 3a's field arm) — framed
+    // honestly as defensive/soundness plumbing (like Task 2's ABI fix),
+    // proven correct by dedicated unit + r0-corpus fixtures instead.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.01293,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.01293 \
+        primary_rate <= 0.00995,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.00995 \
          (recorded 2026-07-03 post applicability-param-subtype-recfield \
-         Task 3: 1.29% [234/18104=0.012925], record-field chains — \
-         CompoundReceiver 144→61, all 83 flips exhaustively adjudicated; \
-         was 1.75% post plan v2.1 Task 5 FINAL, 1.81% post plan v2.1 \
-         Task 3, 1.82% post uniform-access-and-compound-receiver Task 4, \
-         1.88% post-Task-1.5, 2.25% post-Task-1-only [a transient \
-         over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% \
-         pre-beyond-1B.3b) — engine regressed; investigate before raising \
-         the ceiling"
+         Task 4: 0.99% [180/18104=0.009943], bare implicit-Rec quoted-field \
+         receivers — UntrackedReceiver 91→37, all 54 flips exhaustively \
+         adjudicated; was 1.29% post Task 3, 1.75% post plan v2.1 Task 5 \
+         FINAL, 1.81% post plan v2.1 Task 3, 1.82% post \
+         uniform-access-and-compound-receiver Task 4, 1.88% post-Task-1.5, \
+         2.25% post-Task-1-only [a transient over-decline], 1.91% \
+         pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — engine \
+         regressed; investigate before raising the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1747,18 +1796,27 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // the exhaustive 83-edge adjudication). `unknownByReason`=
     // {CompoundReceiver: 61, UntrackedReceiver: 91, OverloadAmbiguous: 56,
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==234.
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 4): 234→180, measured 180/180 (primary/whole) — bare
+    // implicit-Rec quoted-field receivers + the routine-shadow guard (see
+    // the rate-ceiling comment above for the full delta and the exhaustive
+    // 54-edge adjudication). `unknownByReason`={CompoundReceiver: 61,
+    // UntrackedReceiver: 37, OverloadAmbiguous: 56,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==180.
     assert!(
-        ph.unknown <= 234,
-        "primary unknown count {} exceeds ceiling 234 (recorded 2026-07-03 \
-         post applicability-param-subtype-recfield Task 3: 234 — \
-         record-field chains, CompoundReceiver 144→61, all 83 flips \
-         exhaustively adjudicated via a full before/after edge-dump diff; \
-         was 317 post plan v2.1 Task 5 FINAL, 327 post plan v2.1 Task 3, \
-         329 post uniform-access-and-compound-receiver Task 4, 340 post \
-         Task 1.5/3, 407 post Task 1 alone [transient over-decline], 356 \
-         post soundness completion plan v2.1 Task 1.5, 346 post follow-up \
-         plan v2.1 Task 4, 508 pre-follow-up) — engine regressed; \
-         investigate before raising the ceiling",
+        ph.unknown <= 180,
+        "primary unknown count {} exceeds ceiling 180 (recorded 2026-07-03 \
+         post applicability-param-subtype-recfield Task 4: 180 — bare \
+         implicit-Rec quoted-field receivers, UntrackedReceiver 91→37, all \
+         54 flips exhaustively adjudicated via a full before/after \
+         edge-dump diff; was 234 post Task 3, 317 post plan v2.1 Task 5 \
+         FINAL, 327 post plan v2.1 Task 3, 329 post \
+         uniform-access-and-compound-receiver Task 4, 340 post Task 1.5/3, \
+         407 post Task 1 alone [transient over-decline], 356 post \
+         soundness completion plan v2.1 Task 1.5, 346 post follow-up plan \
+         v2.1 Task 4, 508 pre-follow-up) — engine regressed; investigate \
+         before raising the ceiling",
         ph.unknown,
     );
     // Defense-in-depth companion: whole-program `unknown` COUNT, in case a
@@ -1779,10 +1837,14 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
     // Task 3): 317→234, alongside the primary ceiling above; whole-program
     // `unknown`=234, same value as primary today.
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 4): 234→180, alongside the primary ceiling above; whole-program
+    // `unknown`=180, same value as primary today.
     assert!(
-        h.unknown <= 234,
-        "whole-program unknown count {} exceeds ceiling 234 (recorded \
-         2026-07-03 post applicability-param-subtype-recfield Task 3: 234 \
+        h.unknown <= 180,
+        "whole-program unknown count {} exceeds ceiling 180 (recorded \
+         2026-07-03 post applicability-param-subtype-recfield Task 4: 180 \
          — see the primary-scoped ceiling comment above for the full \
          history and adjudication) — engine regressed; investigate before \
          raising the ceiling",
@@ -1827,7 +1889,9 @@ use al_call_hierarchy::program::resolve::semantic_golden::{
 // — see `cdo_genuine_wrong_is_precedence_adjudicated`'s doc comment.
 use al_call_hierarchy::program::resolve::builtins::is_global_builtin;
 use al_call_hierarchy::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
-use al_call_hierarchy::program::resolve::receiver::FrameworkKind;
+use al_call_hierarchy::program::resolve::receiver::{
+    FrameworkKind, ParsedType, classify_type_text,
+};
 use sha2::{Digest, Sha256};
 
 /// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 1 — the `CDO_WS` presence check).
@@ -2310,26 +2374,27 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
         audit.genuine_wrong_count,
         manifest_keys.len(),
     );
-    // beyond-1B.3b Task 3: ALL 42 manifest entries are now adjudicated
-    // `l3_error_intrinsic` and overlaid (`run_cdo_semantic_audit` applies
+    // beyond-1B.3b Task 3 (grown to 52 entries by record-field chains plan
+    // Task 4): ALL manifest entries are now adjudicated `l3_error_intrinsic`
+    // and overlaid (`run_cdo_semantic_audit` applies
     // `adjudicated-overrides.json` in-memory before diffing) — fresh is
     // compared against the ADJUDICATED target for these sites, which fresh
     // matches by construction (that agreement is what the independent
     // adjudication in `cdo_genuine_wrong_is_precedence_adjudicated`
     // confirms). So `genuine_wrong_count` must now be EXACTLY 0: a nonzero
     // count means either the overlay failed to apply (a wiring bug) or a
-    // genuinely NEW disjoint divergence appeared that is not one of the 42
+    // genuinely NEW disjoint divergence appeared that is not one of the 52
     // known/adjudicated sites — both are real bugs, not "still-acceptable
     // known wrongness". The manifest/set-membership checks above stay as
     // defense-in-depth for that second case.
     assert_eq!(
         audit.genuine_wrong_count, 0,
-        "genuine_wrong_count={} (expected 0): all 42 known-genuine-divergences.json sites \
+        "genuine_wrong_count={} (expected 0): all 52 known-genuine-divergences.json sites \
          are adjudicated l3_error_intrinsic and should have been overlaid to match fresh \
          exactly (see adjudicated-overrides.json / apply_adjudicated_overrides). A nonzero \
          count means either the overlay didn't apply (check for an \
-         'Adjudication overlay: N/42' log line above — N should be 42) or a genuinely NEW \
-         divergence appeared beyond the 42 adjudicated ones.",
+         'Adjudication overlay: N/52' log line above — N should be 52) or a genuinely NEW \
+         divergence appeared beyond the 52 adjudicated ones.",
         audit.genuine_wrong_count,
     );
 
@@ -2374,14 +2439,22 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // margin (was 15, was 110 before that — a ratchet never loosens);
     // raising it further requires re-justifying the new value against a real
     // characterization, not just bumping the number.
-    const FRESH_MISSING_CEILING: usize = 10;
+    //
+    // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
+    // Task 4): 10→5, measured 3 (one of the 4 prior `fresh_missing` sites is
+    // newly resolved by Step 3a's bare implicit-Rec quoted-field arm to a
+    // target that EXACTLY MATCHES L3's golden — moving it into `matches`
+    // rather than `fresh_missing`; `genuine_wrong` stays 0). 5 keeps a small
+    // margin above the measured 3 (same "tiny margin, not zero-tolerance"
+    // policy this ceiling has always used).
+    const FRESH_MISSING_CEILING: usize = 5;
     assert!(
         audit.fresh_missing_count <= FRESH_MISSING_CEILING,
         "COMPLETENESS REGRESSION: fresh_missing_count={} exceeds the recorded \
-         ceiling {} (baseline pinned 2026-07-01 post follow-up plan v2.1 Task 4 \
-         [`resolve_bare` Step 3 bare implicit-Rec, arc capstone]: 4, was 102 \
-         pre-follow-up; see CHANGELOG.md). The fresh resolver lost an \
-         L3-resolved target it used to find — investigate before raising the \
+         ceiling {} (baseline pinned 2026-07-03 post applicability-param-subtype-recfield \
+         Task 4 [bare implicit-Rec quoted-field receivers]: 3, was 4 post follow-up \
+         plan v2.1 Task 4, 102 pre-follow-up; see CHANGELOG.md). The fresh resolver \
+         lost an L3-resolved target it used to find — investigate before raising the \
          ceiling.",
         audit.fresh_missing_count,
         FRESH_MISSING_CEILING,
@@ -2440,6 +2513,15 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // stays unchanged at 4 (verified — see the metric gate). Ratchet raised
     // to the exact measured value (zero margin, per this ceiling's own
     // established zero-tolerance philosophy).
+    //
+    // RE-CONFIRMED 2026-07-03 (applicability-param-subtype-recfield plan
+    // v2.1, Task 4): still EXACTLY 149 (byte-identical) — the ONE new
+    // divergence Task 4's bare implicit-Rec quoted-field arm exposed at
+    // `Table 6175281 CDO Setup.al:332`'s `.Trim()` call (a genuine L3
+    // golden defect, `known-genuine-divergences.json` entry 52) is
+    // adjudicated `l3_error_intrinsic` and overlaid IN-MEMORY before this
+    // diff runs, so it never surfaces here as a raw `fresh_wrong` count —
+    // net movement zero, ceiling unchanged.
     const FRESH_WRONG_CEILING: usize = 149;
     assert!(
         audit.fresh_wrong_count <= FRESH_WRONG_CEILING,
@@ -2752,19 +2834,20 @@ fn committed_goldens_metadata_is_valid() {
     }
     assert_eq!(
         manifest_entries.len(),
-        51,
-        "known-genuine-divergences.json must carry exactly 51 adjudicated entries \
+        52,
+        "known-genuine-divergences.json must carry exactly 52 adjudicated entries \
          (beyond-1B.3b Task 3: 42 builtin-catalog-fp-collision; beyond-1B.3b Task 5.5: \
          +2 CrossAppSourceProcedure; follow-up plan v2.1 Task 3 (bare implicit-Rec): \
-         +7 CrossAppSourceProcedure (bare callee shape) — all 51 l3_error_intrinsic / \
-         0 fresh_false_builtin / 0 needs_manual_review) — this assertion is \
-         UNCONDITIONAL (no CDO_WS needed)"
+         +7 CrossAppSourceProcedure (bare callee shape); record-field chains plan Task 4: \
+         +1 builtin-catalog-fp-collision (Text::trim, receiver_kind=Framework) — all 52 \
+         l3_error_intrinsic / 0 fresh_false_builtin / 0 needs_manual_review) — this \
+         assertion is UNCONDITIONAL (no CDO_WS needed)"
     );
     assert_eq!(
         manifest_intrinsic_keys.len(),
-        51,
-        "expected all 51 known-genuine-divergences.json entries to be adjudicated \
-         l3_error_intrinsic; a non-51 count means a fresh_false_builtin or \
+        52,
+        "expected all 52 known-genuine-divergences.json entries to be adjudicated \
+         l3_error_intrinsic; a non-52 count means a fresh_false_builtin or \
          needs_manual_review survivor slipped through — investigate before relying \
          on the overlay"
     );
@@ -2843,10 +2926,10 @@ fn committed_goldens_metadata_is_valid() {
     );
     assert_eq!(
         overrides.entries.len(),
-        51,
-        "adjudicated-overrides.json must carry exactly 51 entries (one per adjudicated \
+        52,
+        "adjudicated-overrides.json must carry exactly 52 entries (one per adjudicated \
          known-genuine-divergences.json site; beyond-1B.3b Task 3 + Task 5.5 + follow-up \
-         plan v2.1 Task 3)"
+         plan v2.1 Task 3 + record-field chains plan Task 4)"
     );
 
     // ── Non-circularity invariant (testable): overlay entries hold CANONICAL
@@ -2951,6 +3034,19 @@ fn unit_declares_procedure_named(unit_content: &str, name_lc: &str) -> bool {
 /// [`is_global_builtin`]/[`member_builtin`] (the structural catalog) and
 /// [`unit_declares_procedure_named`] (a plain-text scan of the SAME unit) —
 /// never `resolve_full_program`, never a fresh-computed `Edge`.
+///
+/// `"Framework"` (record-field chains plan Task 4, entry 52): `catalog_key`'s
+/// PREFIX (before `::`, e.g. `"Text"`) is run through [`classify_type_text`]
+/// — the SAME pure string→shape classifier the resolver itself uses (never a
+/// bespoke re-implementation) — and MUST parse to `ParsedType::Framework`; an
+/// unrecognized prefix or a non-Framework shape (e.g. `Record`/`Primitive`)
+/// fails closed to `needs_manual_review` rather than silently skipping the
+/// catalog check. This covers a bare QUOTED FIELD receiver typed by its
+/// declared type text (`infer_receiver_type`'s Step 3a / `infer_compound_
+/// member_receiver`'s record-field arm) — unlike `PageInstance`/`Record`/
+/// `RecordRef`, the receiver is not a fixed keyword, so
+/// [`assert_shape_matches_receiver_kind`] does not apply a fixed-token check
+/// to it (only the catalog-membership + shadow checks below apply).
 fn derive_verdict(ov: &AdjudicatedOverride, unit_content: &str) -> &'static str {
     let method_lc = ov
         .catalog_key
@@ -2967,6 +3063,15 @@ fn derive_verdict(ov: &AdjudicatedOverride, unit_content: &str) -> &'static str 
         ),
         "Record" => member_builtin(MemberCatalogKind::Record, &method_lc),
         "RecordRef" => member_builtin(MemberCatalogKind::RecordRef, &method_lc),
+        "Framework" => {
+            let prefix = ov.catalog_key.split("::").next().unwrap_or("");
+            match classify_type_text(prefix) {
+                ParsedType::Framework(kind) => {
+                    member_builtin(MemberCatalogKind::Framework(&kind), &method_lc)
+                }
+                _ => return "needs_manual_review", // prefix isn't a recognized Framework type
+            }
+        }
         _ => return "needs_manual_review", // unrecognized receiver kind — fail closed
     };
     if !catalog_match {
@@ -3061,10 +3166,10 @@ fn assert_shape_matches_receiver_kind(ov: &AdjudicatedOverride) {
             assert!(
                 matches!(
                     ov.receiver_kind.as_str(),
-                    "PageInstance" | "Record" | "RecordRef"
+                    "PageInstance" | "Record" | "RecordRef" | "Framework"
                 ),
                 "{}:{}: callee_text {:?} is a member call (`<receiver>.<method>`), but \
-                 receiver_kind is {:?} — expected PageInstance/Record/RecordRef",
+                 receiver_kind is {:?} — expected PageInstance/Record/RecordRef/Framework",
                 ov.unit,
                 ov.line,
                 ov.callee_text,
@@ -7325,4 +7430,146 @@ fn ws_record_field_chain_var_shadows_field_name_non_field_wins() {
         "the LOCAL VARIABLE binding must win (Framework(Text) -> Text::trim), \
          never a field mis-typing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Tests 34+: record-field-chains plan Task 4 — bare implicit-Rec QUOTED-field
+// receivers (`"Field".X()` with NO `Rec.` prefix, inside a Table/
+// TableExtension's own procedure), end-to-end over
+// `ws-bare-implicit-rec-field`.
+//
+// Root feature: `infer_receiver_type`'s new Step 3a (`src/program/resolve/
+// receiver.rs`) — a QUOTED bare identifier in Table/TableExtension scope,
+// after Step 2's (quote-parity-fixed) var/param/global lookup misses, looks
+// the name up in the SAME visibility-scoped `ResolveIndex::field_in_table`
+// surface Task 3's explicit `Rec."Field"` arm consults, gated on
+// `WithState::NoWithProven` (mirrors `resolve_bare`'s own Step 3) and on the
+// round-2 routine-shadow guard (`ResolveIndex::table_scope_has_routine`) —
+// AL's parens are optional on a zero-argument call, so a bare quoted name is
+// structurally ambiguous between a field reference and a parens-less
+// procedure-call chain. See `tests/r0-corpus/ws-bare-implicit-rec-field/
+// PROOF.md` for the real-CDO-source grounding.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-bare-implicit-rec-field` and returns the full
+/// `resolve_full_program` report — shared by the tests below.
+fn ws_bare_implicit_rec_field_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-bare-implicit-rec-field");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-bare-implicit-rec-field")
+}
+
+/// Test 34a (fixture a, POSITIVE): `"File Blob".CreateInStream(S)` inside
+/// the TABLE's own procedure (no `Rec.` prefix at all) — the implicit-Rec
+/// field types `Framework(Blob)`, resolving the Blob catalog leaf.
+#[test]
+fn ws_bare_implicit_rec_field_blob_resolves_catalog() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51520, "testbareblobfield");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Blob::createinstream");
+}
+
+/// Extra positive: a bare Text field — `.Trim()` is a real Text catalog
+/// member (the measured "~1 Text[250] `.Trim()`" population from the plan's
+/// grounding).
+#[test]
+fn ws_bare_implicit_rec_field_text_resolves_catalog() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51520, "testbaretextfield");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Text::trim");
+}
+
+/// Test 34b (fixture b, POSITIVE — TableExtension scope, own field):
+/// `"Ext Blob".CreateInStream(S)` inside the TableExtension's own procedure.
+#[test]
+fn ws_bare_implicit_rec_field_tableext_own_field_resolves_catalog() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51521, "testbareownextfield");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Blob::createinstream");
+}
+
+/// Test 34b (fixture b, POSITIVE — TableExtension scope, base field folded):
+/// `"File Blob".CreateInStream(S)` inside the TableExtension's own procedure
+/// — the BASE table's field, visible via `field_in_table`'s extension
+/// folding.
+#[test]
+fn ws_bare_implicit_rec_field_tableext_base_field_resolves_catalog() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51521, "testbarebasefieldfromextension");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Blob::createinstream");
+}
+
+/// Test 34f (fixture f, NEGATIVE): an unknown quoted name — `field_in_table`
+/// genuinely finds nothing, so the receiver stays `Unknown`.
+#[test]
+fn ws_bare_implicit_rec_field_unknown_name_stays_unknown() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51520, "testbareunknownfield");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 34c/34d (fixture c+d, QUOTE-PARITY + PRECEDENCE): a quoted name
+/// matching BOTH a local var AND a real table field — the var MUST win
+/// (AL scoping), resolving `Framework(Text)` (`.Trim()`), never the field's
+/// `Framework(Blob)`. Pre-quote-parity-fix, this would have fallen through
+/// Step 2 to Step 3a and (post-Task-4) mistyped the field — the exact
+/// false-`Source` class the fix exists to prevent.
+#[test]
+fn ws_bare_implicit_rec_field_var_shadows_field_quote_parity() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51520, "testbarevarshadowsfieldquoteparity");
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(
+        bid.0, "Text::trim",
+        "the LOCAL VARIABLE binding must win (Framework(Text) -> Text::trim), \
+         never the same-named field (Framework(Blob))"
+    );
+}
+
+/// Round-2 soundness correction (coordinator-required regression fixture):
+/// a same-named ROUTINE ("Shadowed Field") declared on the same table must
+/// block field-typing — AL's parens are optional on a zero-argument call,
+/// so a bare quoted name is ambiguous between the field and a parens-less
+/// call to the procedure; must decline to `Unknown`, never mistyped as the
+/// field.
+#[test]
+fn ws_bare_implicit_rec_field_routine_shadow_stays_unknown() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51520, "testbareroutineshadowsfield");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Test 34e (fixture e, NEGATIVE): a quoted-field-shaped bare receiver in a
+/// NON-Table/TableExtension object (a Codeunit) — Step 3a's `ObjectKind`
+/// guard declines, even though "File Blob" is a real field name on "RBF
+/// Base" elsewhere in this same app (proving the OBJECT-KIND gate, not
+/// merely "no such field").
+#[test]
+fn ws_bare_implicit_rec_field_non_table_scope_stays_unknown() {
+    let report = ws_bare_implicit_rec_field_report();
+    let route = rfc_outer_route(&report, 51522, "testbarefieldreceivernontablescope");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }

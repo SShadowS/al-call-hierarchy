@@ -8,6 +8,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bare implicit-Rec quoted-field receivers + var-lookup quote parity, fail-closed
+  (applicability-param-subtype-recfield plan v2.1, Task 4).** CDO primary real-`unknown`
+  **1.29% (234) → 0.99% (180)**, `UntrackedReceiver` **91→37 (−54)**, every other
+  `unknownByReason` bucket BYTE-IDENTICAL (`CompoundReceiver`=61, `OverloadAmbiguous`=56,
+  `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25), `genuine_wrong` stays **0**. Three
+  pieces: (1) **Step 2 quote-parity fix** (`infer_receiver_type`,
+  `src/program/resolve/receiver.rs`) — the pre-existing var/param/global lookup compared
+  the RAW quote-retaining receiver text against `VarDecl`/`Param` names, which are stored
+  ALREADY UNQUOTED (the lowerer's `ident_text` strips AL quote characters); a quoted
+  identifier naming a real local var could therefore never match and silently fell
+  through. Now unquotes (via the existing `unquote_identifier` helper) before comparing,
+  gated on the same bare-identifier shape the static-framework-name step already uses.
+  MEASURED CDO YIELD ZERO on this corpus (no site in the exhaustive edge-diff resolved via
+  this path alone — every flip is the new Step 3a arm below) — framed honestly as
+  necessary soundness/precedence plumbing, like the earlier ABI param-Subtype fix,
+  verified correct by dedicated unit + r0-corpus fixtures instead. (2) **Step 3a — bare
+  implicit-Rec QUOTED-field receiver**: `"Field".X()` with NO `Rec.` prefix, written
+  inside a Table/TableExtension's own procedure, means exactly `Rec."Field".X()`.
+  Mirrors `resolve_bare`'s Step-3 implicit-Rec precedent for bare CALLS (same strict
+  `ObjectKind::Table | TableExtension` guard, same `WithState::NoWithProven` with-guard),
+  looking the field up via the SAME visibility-scoped `ResolveIndex::field_in_table`
+  surface Task 3's explicit `Rec."Field"` arm consults. Runs only on a Step 2 miss (AL
+  scoping: a var/param/global always shadows a field). Quoted-only is deliberate
+  documented undercoverage — an unquoted bare field reference is deferred to a future
+  task. (3) **Round-2 soundness correction — the routine-shadow guard**
+  (`ResolveIndex::table_scope_has_routine`, `src/program/resolve/index.rs`), applied to
+  BOTH the new Step 3a arm AND Task 3's existing `Rec."Field".X()` compound arm: AL's
+  parens are optional on a zero-argument procedure call (`Rec.Insert;` compiles — the
+  Code Cop AA0008 flags the missing parens as a style issue, not a compile error), so a
+  bare `Member` AST node (and a bare quoted receiver used as the base of a further call)
+  is structurally ambiguous between a field/property access and a parens-less
+  procedure-call chain. A same-named routine anywhere in the same visibility-scoped table
+  surface now declines field-typing rather than guessing. Measured CDO delta from the
+  guard alone: **zero** (confirmed by the exhaustive edge-diff — no Task-3 site regressed).
+  **Exhaustive adjudication (not a sample):** a full before/after CDO edge-dump diff
+  showed exactly 54 changed route-lines — the SAME 54 sites flipping
+  `Unknown(UntrackedReceiver)`→`Catalog`, IDENTICAL `(from, span)` key sets (zero site
+  additions/removals/collateral changes): 53 Blob-catalog edges (`Blob::createinstream`/
+  `createoutstream`/`hasvalue`, fields spot-verified `Blob` across 11 distinct tables) and
+  1 `Text::trim` (Table 6175281 "CDO Setup", a Text[250] field's own `OnValidate`
+  trigger). The `Text::trim` site was ALSO `genuine_wrong` against the frozen L3 golden
+  until adjudicated: L3's golden misattributes this callee_fp to an unrelated procedure
+  (`CheckAzureContainerPerCompany`, called from a DIFFERENT field's `OnValidate` trigger
+  8-31 lines away) — the SAME L3 line/routine-key misattribution bug already documented
+  for the sibling `CopyStr`/`MaxStrLen` calls on this exact line
+  (`known-genuine-divergences.json` entries 39-40); independently re-verified `Text::trim`
+  a genuine catalog member and the field genuinely `Text[250]`, added as entry 52
+  (`l3_error_intrinsic`) — the independent-verification harness
+  (`cdo_genuine_wrong_is_precedence_adjudicated`) gained a new `receiver_kind: "Framework"`
+  case (reuses `classify_type_text` — the SAME classifier the resolver itself uses — to
+  resolve `catalog_key`'s type prefix, never a bespoke re-implementation).
+  **Static var-extraction audit** (round-2 addendum, required before landing): confirmed
+  via the tree-sitter-al grammar that AL has NO block-scoped variable declarations (a
+  `var_section` only ever appears in a procedure/trigger's own preamble, never nested
+  inside `if`/`while`/`repeat`/`case`/`for` — grammar-verified, not merely assumed) — the
+  brief's named concern ("locals in repeat/while/if/case/for blocks") is structurally a
+  non-issue. Found (and documented as orthogonal, not a blocker): whole-body preprocessor-
+  split routines (`preproc_split_procedure`/`preproc_split_procedure_preamble`/procedures
+  using `preproc_split_procedure_body`/`preproc_split_complete_body`) are either entirely
+  unindexed as routines or indexed with `body: None` — a PRE-EXISTING, symmetric coverage
+  gap (zero call-site obligations extracted either way) with no false-`Source` risk, since
+  a routine with no obligations can never have a receiver mis-typed. Fixtures:
+  `tests/r0-corpus/ws-bare-implicit-rec-field/` (2 positive Blob/Text bare-field
+  procedures + TableExtension own/base-field folding + var-shadows-field quote-parity +
+  routine-shadow-declines + non-Table-scope negative + unknown-field negative) + unit
+  fixtures in `receiver.rs` (Step 2 quote parity, Step 3a positive/negative/with-guard/
+  bare_ctx-optionality, routine-shadow for both arms) + `ResolveIndex::table_scope_has_
+  routine` unit fixtures (base/extension/out-of-closure/absent) in `index.rs`. Ratchets
+  tightened (dated 2026-07-03): primary rate ceiling 0.01293→0.00995, primary/whole
+  `unknown` count ceilings 234→180, `fresh_missing` ceiling 10→5 (measured 3); `fresh_wrong`
+  ceiling unchanged at 149 (re-confirmed byte-identical — the new divergence is overlaid
+  before the diff runs).
 - **`--graphify-export` edges carry `unknown_reason`.** For an `unknown`-obligation
   edge, the export now emits its first unresolved route's diagnostic reason
   (`compoundReceiver`, `catalogMiss`, `memberNotFound`, …) via `UnknownReason::as_str`,
