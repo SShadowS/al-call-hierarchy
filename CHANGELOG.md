@@ -8,6 +8,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Real source `sig_fp` via ONE shared `RoutineNodeId` constructor — distinct
+  overload identity (Task 2, sigfp-and-ambiguous-reclassification plan).**
+  Source-tier `sig_fp` was hardcoded `0` at 5 independent reconstruction
+  sites, so two genuine same-name/same-arity SOURCE overloads (differing only
+  by parameter TYPE) aliased onto ONE `RoutineNodeId` (6 primary / 313
+  whole-program aliased groups measured on CDO pre-fix), corrupting publisher
+  spans (`BodyMap` last-write-wins) and merging the two overloads' caller
+  identity on outgoing edges. New module `src/program/sig_fp.rs`: the shared
+  `fnv1a` + `write_len_prefixed` primitives (moved from `abi_ingest`, now
+  reused by BOTH tiers) and `source_routine_node_id(object, decl)` — the ONE
+  constructor now used by ALL live source-tier reconstruction sites
+  (`node_extract::extract_nodes`, `resolve::body_map::BodyMap::build`,
+  `resolve::full::resolve_full_program_from_parts`,
+  `resolve::stub::resolve_program`), so a declaration's identity can never
+  silently diverge between sites. `sig_fp` = FNV-1a over the length-delimited
+  fold of each parameter's `(conservatively normalized type text, by_ref)`
+  tuple: normalization is LEXER-INSENSITIVE ONLY (trim + ASCII-lowercase +
+  whitespace-run collapse — never quote-stripping/ID-vs-Name resolution,
+  which would need compiler backing; under-normalization only splits, never
+  aliases); `var` is folded as its own component (a separate grammar field,
+  not part of the type text — array rank/subtype qualifiers ARE already in
+  the verbatim `Param.ty` text); `params.is_empty() → 0` (ABI
+  `param_type_fp` convention parity). The 5th audited site,
+  `resolve::full::obligation_inventory` (+ its `Obligation`/`ObligationKind`
+  carriers), was reviewer-confirmed DEAD CODE with zero callers (coverage is
+  tracked inline in `resolve_full_program_from_parts`, never via that
+  pre-pass) and is DELETED, with a historical note in `full.rs`'s module doc.
+  **Marker reframe (T2 Step-1(d)):** `RoutineNode::source_overload_aliased`
+  is now a same-id/different-`param_sig_key` COLLISION GUARD — normal
+  overloads get distinct ids and survive UNMARKED; true re-parse duplicates
+  still collapse unmarked; only a residual same-id/different-key survivor (a
+  `sig_fp` normalization collision) is marked/fail-closed (the Task 1
+  dual-publisher event-flow skip guard stays as the permanent net). Fixtures:
+  `sig_fp.rs` unit tests (distinct types→distinct fp; case/whitespace
+  variants→same fp; quoted-name-vs-numeric-ID never unified; `var`
+  distinguishes; empty→0), `build.rs`
+  `source_distinct_sig_fp_overloads_survive_unmarked` +
+  `source_normalization_collision_marks_both_survivors_collision_guard`, the
+  new end-to-end 4-site parity + per-overload-attribution fixture
+  `tests/fixtures/sigfp_overload_identity` +
+  `sigfp_identity_agrees_across_all_four_live_sites`, and the reframed Tests
+  23f/23h (`distinct_sig_fp_overloads_survive_unmarked`,
+  `distinct_sig_fp_publishers_both_emit_correct_spans` — each publisher
+  overload now emits its OWN EventFlow edge with its OWN `name_origin` span,
+  the exact fidelity fix this plan targeted; the Task 1 skip guard no longer
+  fires for them). **Pinned:** the post-Task-2 collision-guard-marked group
+  count on CDO is asserted at 0/0 (primary/whole-program) by the new
+  CDO-gated `source_overload_alias_collision_guard_group_count_pinned_on_cdo`
+  — any future nonzero = a normalization collision to investigate, never
+  mask. CDO re-measure (CDO_WS, single-threaded): dispatch outcomes
+  UNCHANGED — primary `unknown`=151, `real_unknown_rate`=0.8341%,
+  `unknownByReason` byte-identical, `coverage.holds`=true, `genuine_wrong`=0;
+  semantic goldens unmoved (site keys never encode `sig_fp`); frozen
+  event/trigger digests byte-identical (CDO's aliased pairs carry zero
+  dual-publishers, so no publisher span actually corrected on CDO — the
+  span fix is proven by the in-repo fixture instead);
+  `eventFlowDualPublisherAliasSkips`=0. `cargo test --workspace` green.
 - **`.dependencies` folder special-casing preflight audit — CLEAN (Task 0,
   sigfp-and-ambiguous-reclassification plan).** Read-only sweep of every
   source walker for `.dependencies` folder-name special-casing, requested by

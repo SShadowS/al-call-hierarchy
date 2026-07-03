@@ -9,6 +9,7 @@ use crate::program::resolve::event::{
     publisher_include_sender, read_event_subscriber_instance,
 };
 use crate::program::resolve::receiver::unquote_identifier;
+use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::TrustTier;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -176,10 +177,18 @@ pub struct RoutineNode {
     pub abi_routine_kind: Option<AbiRoutineKind>,
     /// ABI-only: the event kind for ABI-boundary publisher annotation. `None` for source routines.
     pub abi_event_kind: Option<AbiEventKind>,
-    /// Content key distinguishing SOURCE routines that collide onto the same
-    /// `RoutineNodeId` (source `sig_fp` is always `0` — see node.rs): the
-    /// lowercased, `|`-joined parameter-type-text sequence, computed by
-    /// [`param_sig_key`]. Two re-parses of the SAME declaration always share
+    /// Content key distinguishing SOURCE routines by parameter-type CONTENT,
+    /// independent of `RoutineNodeId::sig_fp`: the lowercased, `|`-joined
+    /// parameter-type-text sequence, computed by [`param_sig_key`]. Since
+    /// sigfp-and-ambiguous-reclassification plan Task 2, SOURCE `sig_fp` is a
+    /// real fingerprint (`sig_fp::source_param_sig_fp`) that normally already
+    /// distinguishes genuine overloads at the id level — but this field
+    /// remains the authority `build::dedup_routines_preserving_
+    /// genuine_overloads` compares by STRING EQUALITY (not by re-deriving a
+    /// hash), so it still catches a residual same-id/different-content
+    /// survivor (a `sig_fp` normalization collision — see
+    /// [`RoutineNode::source_overload_aliased`]) even if the fingerprint
+    /// itself aliased. Two re-parses of the SAME declaration always share
     /// this key; two genuine same-name/same-arity overloads (differing only
     /// by parameter TYPE) always differ in it. Used by
     /// `build::dedup_routines_preserving_genuine_overloads` (beyond-1B.3b
@@ -236,15 +245,20 @@ pub struct RoutineNode {
     /// `true` when this SOURCE routine survived
     /// `build::dedup_routines_preserving_genuine_overloads` as one of ≥2
     /// entries sharing a `RoutineNodeId` whose [`param_sig_key`]s DIFFER
-    /// (sigfp-and-ambiguous-reclassification plan, Task 1) — a genuine
-    /// same-name/same-arity SOURCE overload PAIR aliased onto one id
-    /// (source `sig_fp` is always `0`, so the id alone cannot distinguish
-    /// them). Unlike [`abi_overload_collapsed`] (which marks the ARBITRARY
-    /// single survivor of a COLLAPSED run), this marks EVERY surviving
-    /// sibling of a run that did NOT collapse: both overloads are real and
-    /// both are kept, but they remain indistinguishable by id alone. It is
-    /// a same-id/different-key COLLISION GUARD: any downstream consumer
-    /// that looks a routine up by ROLE rather than through arity-filtered
+    /// (sigfp-and-ambiguous-reclassification plan, Task 1; reframed by Task
+    /// 2). Introduced when source `sig_fp` was always `0` (Task 1), when it
+    /// fired for EVERY genuine same-name/same-arity SOURCE overload pair
+    /// (the id alone could never distinguish them). Since Task 2, SOURCE
+    /// `sig_fp` is a real fingerprint
+    /// (`sig_fp::source_param_sig_fp`) that normally already gives a genuine
+    /// overload pair DISTINCT ids — those pairs no longer even reach the
+    /// same dedup run, so they survive UNMARKED. This field's post-Task-2
+    /// role is therefore a same-id/different-normalized-key COLLISION GUARD:
+    /// it fires ONLY when two entries' `sig_fp`s alias despite their
+    /// [`param_sig_key`] content genuinely differing (a normalization
+    /// collision this engine cannot further distinguish), never for an
+    /// ordinary distinct-type overload pair. Any downstream consumer that
+    /// looks a routine up by ROLE rather than through arity-filtered
     /// dispatch (e.g. `resolver::emit_event_flow_edges`'s publisher
     /// fan-out, which cannot tell which sibling's span `BodyMap`'s
     /// last-write-wins lookup answers for — `body_map.rs`'s `insert` doc)
@@ -464,16 +478,7 @@ pub fn extract_nodes(
             // non-publisher routine.
             let include_sender = publisher_include_sender(r, &file.ir);
             routines.push(RoutineNode {
-                id: RoutineNodeId {
-                    object: obj_id.clone(),
-                    name_lc: r.name.to_ascii_lowercase(),
-                    enclosing_member_lc: r
-                        .enclosing_member
-                        .as_ref()
-                        .map(|(n, _)| n.to_ascii_lowercase()),
-                    params_count: r.params.len(),
-                    sig_fp: 0,
-                },
+                id: source_routine_node_id(obj_id.clone(), r),
                 name: r.name.clone(),
                 is_trigger: matches!(r.kind, RoutineKind::Trigger),
                 access: Access::from_modifier(r.access_modifier.as_deref()),

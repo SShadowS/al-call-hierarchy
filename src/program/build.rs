@@ -438,6 +438,98 @@ mod tests {
         assert!(closure.len() > 1, "workspace should have ≥1 dependency");
     }
 
+    /// Pin the post-Task-2 `source_overload_aliased` collision-guard-marked
+    /// GROUP count on CDO (sigfp-and-ambiguous-reclassification plan, Task 2,
+    /// T1-review fold-in). Pre-Task-2 (source `sig_fp` always `0`), CDO
+    /// measured 6 primary / 313 whole-program ALIASED groups — every genuine
+    /// same-name/same-arity overload pair, since none had distinct ids.
+    /// Post-Task-2, a real overload pair gets a real distinct `sig_fp` and no
+    /// longer reaches the guard at all; a NONZERO count here now means a
+    /// genuine `sig_fp` NORMALIZATION COLLISION survived — a threshold
+    /// alert to investigate, never to silently mask (round-1 addendum,
+    /// collision-guard observability). `routines` is sorted by
+    /// `RoutineNodeId`, so entries sharing one id are adjacent; a "group" is
+    /// one maximal run of adjacent marked entries sharing the SAME id.
+    #[test]
+    fn source_overload_alias_collision_guard_group_count_pinned_on_cdo() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            return;
+        };
+
+        let snap = crate::snapshot::SnapshotBuilder {
+            workspace_root: ws,
+            local_providers: vec![],
+        }
+        .build()
+        .expect("snapshot");
+
+        let cache = AbiCache::new();
+        let g = build_program_graph(&snap, &cache);
+
+        fn count_groups(marked: &[&RoutineNode]) -> usize {
+            let mut groups = 0usize;
+            let mut i = 0;
+            while i < marked.len() {
+                let mut j = i + 1;
+                while j < marked.len() && marked[j].id == marked[i].id {
+                    j += 1;
+                }
+                groups += 1;
+                i = j;
+            }
+            groups
+        }
+
+        let primary_app_ref = g
+            .apps
+            .find_by_name(&snap.workspace_app.name)
+            .expect("workspace app must be interned");
+
+        let all_marked: Vec<&RoutineNode> = g
+            .routines
+            .iter()
+            .filter(|r| r.source_overload_aliased)
+            .collect();
+        let primary_marked: Vec<&RoutineNode> = all_marked
+            .iter()
+            .copied()
+            .filter(|r| r.id.object.app == primary_app_ref)
+            .collect();
+
+        let whole_program_groups = count_groups(&all_marked);
+        let primary_groups = count_groups(&primary_marked);
+
+        // Measured on CDO_WS 2026-07-03 (Task 2 landing): both `0` — every
+        // real overload pair now gets a distinct sig_fp; zero residual
+        // normalization collisions. Re-derive (never silently loosen) if
+        // this ever moves — see the doc above.
+        const EXPECTED_WHOLE_PROGRAM_GROUPS: usize = 0;
+        const EXPECTED_PRIMARY_GROUPS: usize = 0;
+        assert_eq!(
+            whole_program_groups,
+            EXPECTED_WHOLE_PROGRAM_GROUPS,
+            "whole-program collision-guard-marked group count moved from the \
+             pinned CDO baseline — investigate before re-pinning; marked: {:?}",
+            all_marked
+                .iter()
+                .map(|r| (r.name.clone(), r.param_sig_key.clone()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            primary_groups,
+            EXPECTED_PRIMARY_GROUPS,
+            "primary-scoped collision-guard-marked group count moved from the \
+             pinned CDO baseline — investigate before re-pinning; marked: {:?}",
+            primary_marked
+                .iter()
+                .map(|r| (r.name.clone(), r.param_sig_key.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Task 3 review fix: `abi_overload_collapsed` marking
     // -----------------------------------------------------------------------
@@ -487,12 +579,18 @@ mod tests {
     }
 
     /// A minimal SOURCE (`Workspace`) `RoutineNode` carrying a real
-    /// `param_sig_key` (content, never hardcoded empty for source).
+    /// `param_sig_key` (content, never hardcoded empty for source) AND an
+    /// explicit `sig_fp` — since sigfp-and-ambiguous-reclassification plan
+    /// Task 2, SOURCE `sig_fp` is a real (non-zero for non-empty params)
+    /// fingerprint, so tests that need to construct a SPECIFIC id relationship
+    /// (distinct ids for a normal overload pair; a residual same-id
+    /// collision) must control it explicitly rather than hardcoding `0`.
     fn source_routine(
         obj: &ObjectNodeId,
         name_lc: &str,
         params_count: usize,
         param_sig_key: &str,
+        sig_fp: u64,
     ) -> RoutineNode {
         RoutineNode {
             id: RoutineNodeId {
@@ -500,7 +598,7 @@ mod tests {
                 name_lc: name_lc.to_string(),
                 enclosing_member_lc: None,
                 params_count,
-                sig_fp: 0,
+                sig_fp,
             },
             name: name_lc.to_string(),
             is_trigger: false,
@@ -594,8 +692,8 @@ mod tests {
         let app = AppRef(0);
         let obj = dep_obj_id(app, 51200);
         let mut routines = vec![
-            source_routine(&obj, "name", 0, ""),
-            source_routine(&obj, "name", 0, ""),
+            source_routine(&obj, "name", 0, "", 0),
+            source_routine(&obj, "name", 0, "", 0),
         ];
         dedup_routines_preserving_genuine_overloads(&mut routines);
 
@@ -604,6 +702,85 @@ mod tests {
             !routines[0].abi_overload_collapsed,
             "a SOURCE routine must never be marked, even when it collapses \
              on an empty param_sig_key (a genuine 0-arg re-parse duplicate)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // sigfp-and-ambiguous-reclassification plan, Task 2: the
+    // `source_overload_aliased` marker's REFRAMED post-Task-2 role —
+    // a same-id/different-`param_sig_key` COLLISION GUARD (T2 Step-1(d)).
+    // -----------------------------------------------------------------------
+
+    /// Normal case: two genuine same-name/same-arity SOURCE overloads with
+    /// DISTINCT `sig_fp` (the ordinary Task 2 outcome — real overloads never
+    /// share an id in the first place) never even reach the same dedup run —
+    /// both survive UNMARKED. Mirrors `abi_distinct_sig_fp_both_survive_
+    /// unmarked` for the source tier.
+    #[test]
+    fn source_distinct_sig_fp_overloads_survive_unmarked() {
+        let app = AppRef(0);
+        let obj = dep_obj_id(app, 51201);
+        let mut routines = vec![
+            source_routine(&obj, "resolve", 1, "integer", 111),
+            source_routine(&obj, "resolve", 1, "text", 222),
+        ];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        assert_eq!(
+            routines.len(),
+            2,
+            "distinct sig_fp means distinct RoutineNodeId — no shared run at all"
+        );
+        assert!(
+            routines.iter().all(|r| !r.source_overload_aliased),
+            "a normal distinct-id overload pair must NOT be marked \
+             source_overload_aliased; got {:?}",
+            routines
+                .iter()
+                .map(|r| r.source_overload_aliased)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Residual collision case: two entries whose `param_sig_key` CONTENT
+    /// genuinely differs but whose `sig_fp` nonetheless collides (the
+    /// normalization-collision scenario `sig_fp::source_param_sig_fp`'s doc
+    /// warns is possible for two SPELLINGS of what a compiler would treat as
+    /// the SAME type, e.g. differing internal whitespace — reachable in
+    /// practice, see `sig_fp::tests::case_and_whitespace_variants_of_same_
+    /// type_collide` for the fingerprint-level proof). Both survive (neither
+    /// is a true duplicate), but BOTH are marked `source_overload_aliased`
+    /// as a fail-closed COLLISION GUARD — the post-Task-2 role this field
+    /// exists for.
+    #[test]
+    fn source_normalization_collision_marks_both_survivors_collision_guard() {
+        let app = AppRef(0);
+        let obj = dep_obj_id(app, 51202);
+        let mut routines = vec![
+            source_routine(&obj, "resolve", 1, "record customer", 999),
+            source_routine(&obj, "resolve", 1, "record  customer", 999),
+        ];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        assert_eq!(
+            routines.len(),
+            2,
+            "a same-id/different-param_sig_key run is NOT a true duplicate — \
+             both entries must survive"
+        );
+        assert!(
+            routines.iter().all(|r| r.source_overload_aliased),
+            "every survivor of a same-id/different-param_sig_key collision \
+             run must be marked source_overload_aliased (fail-closed); got {:?}",
+            routines
+                .iter()
+                .map(|r| r.source_overload_aliased)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            routines.iter().all(|r| !r.abi_overload_collapsed),
+            "the SOURCE collision guard is distinct from the ABI collapse \
+             marker — a source routine must never be abi_overload_collapsed"
         );
     }
 }

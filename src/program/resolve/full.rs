@@ -1,13 +1,14 @@
-//! 1B.3a Task 3: Obligation inventory + `resolve_full_program` + self-reported
-//! taxonomy'd metric.
+//! 1B.3a Task 3: `resolve_full_program` + self-reported taxonomy'd metric.
 //!
 //! # Coverage contract
 //!
 //! Every parsed call/event obligation (each [`CalleeShape`] site in every
 //! workspace source routine + every publisher event routine in the program
-//! graph) is enumerated as an [`Obligation`] with a stable [`ObligationId`].
-//! [`resolve_full_program`] (and [`resolve_full_program_from_parts`]) resolves
-//! each obligation to exactly one classified [`ClassifiedEdge`].
+//! graph) gets a stable [`ObligationId`], tracked INLINE during the single
+//! resolution pass in [`resolve_full_program_from_parts`] (an
+//! `obligation_id_set` built alongside `classified_edges` — see that
+//! function's body). [`resolve_full_program`] resolves each obligation to
+//! exactly one classified [`ClassifiedEdge`].
 //!
 //! The **COVERAGE CONTRACT** is **distinct-id SET equality**:
 //!
@@ -19,6 +20,15 @@
 //! `Unknown`/`HonestDynamic`/`HonestEmpty` edges ARE valid classified edges;
 //! they fulfil the coverage contract. Only a silently-absent edge (an
 //! obligation that produced no edge at all) violates it.
+//!
+//! (Historical note, sigfp-and-ambiguous-reclassification plan Task 2: a
+//! separate `pub fn obligation_inventory` used to enumerate obligations as a
+//! standalone pre-pass — reviewer-confirmed DEAD CODE with zero callers
+//! outside its own definition (coverage was, and is, computed by the inline
+//! tracking above, never by comparing against that separate enumeration).
+//! Its own [`RoutineNodeId`] reconstruction was one of the 5 audited
+//! `sig_fp`-hardcoded-`0` sites; since it had no live caller, it was deleted
+//! rather than migrated to [`crate::program::sig_fp::source_routine_node_id`].)
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -47,6 +57,7 @@ use crate::program::resolve::resolver::{
     emit_event_flow_edges, resolve_bare, resolve_implicit_trigger, resolve_member,
     resolve_object_run,
 };
+use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::{AppSetSnapshot, ParsedUnit, SnapshotBuilder, parse_snapshot};
 
 // ---------------------------------------------------------------------------
@@ -66,25 +77,6 @@ pub enum ObligationId {
         callee_fp: u64,
     },
     Publisher(RoutineNodeId),
-}
-
-/// The resolution demand encoded by one obligation.
-#[derive(Clone, Debug)]
-pub enum ObligationKind {
-    /// A classified call/dispatch site in a routine body.
-    CallSite {
-        from_object_id: ObjectNodeId,
-        shape: CalleeShape,
-        arity: usize,
-    },
-    /// An event-publisher routine (fires on event).
-    Publisher,
-}
-
-/// One parsed obligation.
-pub struct Obligation {
-    pub id: ObligationId,
-    pub kind: ObligationKind,
 }
 
 /// A classified edge annotated with the obligation it was resolved from.
@@ -148,117 +140,6 @@ pub fn coverage_holds(c: &Coverage) -> bool {
 /// (primary) app — mirrors `--l3-call-graph-stats-cross-app` scoping.
 pub fn is_primary_scope(edge: &ClassifiedEdge, primary_app_ref: AppRef) -> bool {
     edge.edge.from.object.app == primary_app_ref
-}
-
-/// Enumerate every parsed call/event obligation without resolving them.
-///
-/// Call obligations come from workspace source routines (filtered to
-/// `primary_app_ref` and `primary_file_set`).  Publisher obligations come from
-/// ALL publisher routines in `graph.routines` (same set that
-/// [`emit_event_flow_edges`] processes — no app filter, cross-app).
-///
-/// The returned [`Vec`] may contain duplicate obligation ids when two call
-/// sites in the same routine happen to share `(caller, span, callee_fp)` (an
-/// extremely rare degenerate case in generated/macro code).  The SET-equality
-/// coverage contract de-duplicates via [`HashSet`].
-pub fn obligation_inventory(
-    graph: &ProgramGraph,
-    parsed: &[ParsedUnit],
-    primary_app_ref: AppRef,
-    primary_file_set: &HashSet<String>,
-) -> Vec<Obligation> {
-    let mut obligations: Vec<Obligation> = Vec::new();
-
-    // ── Phase 1: call-site obligations (workspace source routines) ────────────
-    for unit in parsed {
-        let Some(app_ref) = graph.apps.find(&unit.app) else {
-            continue;
-        };
-        if app_ref != primary_app_ref {
-            continue;
-        }
-
-        for pf in &unit.files {
-            if !primary_file_set.contains(&pf.virtual_path) {
-                continue;
-            }
-
-            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
-                let obj_key = match obj.id {
-                    Some(n) => ObjKey::Id(n),
-                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
-                };
-                let obj_node_id = ObjectNodeId {
-                    app: primary_app_ref,
-                    kind: obj.kind,
-                    key: obj_key,
-                };
-
-                // Record-typed global variable names (same logic as harnesses).
-                let globals_rec: HashSet<String> = obj
-                    .globals
-                    .iter()
-                    .filter(|v| {
-                        v.ty.as_deref()
-                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
-                            .unwrap_or(false)
-                    })
-                    .map(|v| v.name.to_ascii_lowercase())
-                    .collect();
-
-                for (routine_idx, routine) in obj.routines.iter().enumerate() {
-                    let caller = RoutineNodeId {
-                        object: obj_node_id.clone(),
-                        name_lc: routine.name.to_ascii_lowercase(),
-                        enclosing_member_lc: routine
-                            .enclosing_member
-                            .as_ref()
-                            .map(|(n, _)| n.to_ascii_lowercase()),
-                        params_count: routine.params.len(),
-                        sig_fp: 0,
-                    };
-
-                    let sites = extract_sites_for_routine(
-                        &pf.file,
-                        &pf.text,
-                        &pf.virtual_path,
-                        &globals_rec,
-                        obj_idx,
-                        routine_idx,
-                    );
-
-                    for site in &sites {
-                        let fp = callee_fp(&site.callee_text);
-                        obligations.push(Obligation {
-                            id: ObligationId::CallSite {
-                                caller: caller.clone(),
-                                span: site.span.clone(),
-                                callee_fp: fp,
-                            },
-                            kind: ObligationKind::CallSite {
-                                from_object_id: obj_node_id.clone(),
-                                shape: site.shape.clone(),
-                                arity: site.arity,
-                            },
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Phase 2: publisher obligations (all apps — mirrors emit_event_flow_edges) ──
-    for pub_routine in &graph.routines {
-        if pub_routine.publisher_kind.is_none() {
-            continue;
-        }
-        obligations.push(Obligation {
-            id: ObligationId::Publisher(pub_routine.id.clone()),
-            kind: ObligationKind::Publisher,
-        });
-    }
-
-    obligations
 }
 
 // ---------------------------------------------------------------------------
@@ -570,16 +451,7 @@ fn resolve_full_program_from_parts(
                     .collect();
 
                 for (routine_idx, routine) in obj.routines.iter().enumerate() {
-                    let caller = RoutineNodeId {
-                        object: obj_node_id.clone(),
-                        name_lc: routine.name.to_ascii_lowercase(),
-                        enclosing_member_lc: routine
-                            .enclosing_member
-                            .as_ref()
-                            .map(|(n, _)| n.to_ascii_lowercase()),
-                        params_count: routine.params.len(),
-                        sig_fp: 0,
-                    };
+                    let caller = source_routine_node_id(obj_node_id.clone(), routine);
 
                     let sites = extract_sites_for_routine(
                         &pf.file,

@@ -13,7 +13,7 @@
 //! ambiguity.
 
 use crate::program::graph::ProgramGraph;
-use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
+use crate::program::node::{ObjKey, ObjectNodeId};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::{
     DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, SiteId,
@@ -22,6 +22,7 @@ use crate::program::resolve::edge::{
 use crate::program::resolve::extract_min::extract_raw_sites;
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::resolver::emit_event_flow_edges;
+use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::ParsedUnit;
 
 /// Emit one `Unknown`-route `Edge` per extracted call site across all parsed
@@ -57,16 +58,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
 
                 for routine in &obj.routines {
                     let name_lc = routine.name.to_ascii_lowercase();
-                    let caller = RoutineNodeId {
-                        object: obj_id.clone(),
-                        name_lc: name_lc.clone(),
-                        enclosing_member_lc: routine
-                            .enclosing_member
-                            .as_ref()
-                            .map(|(n, _)| n.to_ascii_lowercase()),
-                        params_count: routine.params.len(),
-                        sig_fp: 0,
-                    };
+                    let caller = source_routine_node_id(obj_id.clone(), routine);
 
                     for site in sites.iter().filter(|s| s.caller_routine == name_lc) {
                         let fingerprint = callee_fp(&site.callee_text);
@@ -109,7 +101,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
 /// real snapshot.
 #[cfg(test)]
 pub fn synthetic_unknown_edge_for_test() -> Vec<Edge> {
-    use crate::program::node::{AppRef, ObjectKind};
+    use crate::program::node::{AppRef, ObjectKind, RoutineNodeId};
     use crate::program::resolve::edge::{CanonicalSpan, SourcePos};
 
     let caller = RoutineNodeId {

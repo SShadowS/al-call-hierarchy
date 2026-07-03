@@ -1,0 +1,217 @@
+//! Shared `sig_fp` fingerprint primitives for `RoutineNodeId` overload
+//! identity (sigfp-and-ambiguous-reclassification plan, Task 2).
+//!
+//! Both the ABI tier ([`crate::program::abi_ingest::param_type_fp`]) and the
+//! SOURCE tier ([`source_param_sig_fp`] below) fold their own canonical
+//! parameter-discriminator tuple through the SAME stable hash primitive
+//! ([`fnv1a`]) and the SAME length-delimited encoding
+//! ([`write_len_prefixed`]), so the two independently-computed fingerprints
+//! never diverge in their underlying collision-resistance properties even
+//! though the ABI/source tuples differ in SHAPE: ABI additionally carries a
+//! raw `Subtype` id/name/degradation-tag (recovering identity
+//! `AbiParameter::type_text` alone can lose — see `abi_ingest::
+//! fold_param_discriminator`'s doc). SOURCE has no equivalent raw-JSON
+//! Subtype fields to recover: its `Param.ty` type-TEXT is already the
+//! fully-qualified VERBATIM source text (array rank / subtype name-or-id /
+//! generic args are already IN that text, byte-for-byte between the type
+//! clause's first and last token), so a single normalized-text field plus the
+//! `var` (by-ref) modifier flag is sufficient — see [`source_param_sig_fp`].
+
+use al_syntax::ir::{Param, RoutineDecl};
+
+use crate::program::node::{ObjectNodeId, RoutineNodeId};
+
+// ---------------------------------------------------------------------------
+// Stable FNV-1a fingerprint (never `DefaultHasher` / a process-random hasher
+// — `sig_fp` must be reproducible across runs so every consumer that
+// persists or compares it within one run agrees).
+// ---------------------------------------------------------------------------
+
+pub(crate) fn fnv1a(data: &str) -> u64 {
+    let mut h: u64 = 14695981039346656037;
+    for b in data.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    h
+}
+
+/// Append `s`'s byte length (decimal) then a `:` separator then `s` itself —
+/// a netstring-style LENGTH-DELIMITED encoding. Concatenating multiple
+/// variable-length fields naively (e.g. a plain `|`-join) lets one field's
+/// content masquerade as an adjacent field's boundary (a type text crafted to
+/// contain a `|` could otherwise collide with a differently-shaped tuple);
+/// prefixing every field with its own length makes the encoding injective
+/// per-field regardless of what bytes the field itself contains.
+pub(crate) fn write_len_prefixed(buf: &mut String, s: &str) {
+    buf.push_str(&s.len().to_string());
+    buf.push(':');
+    buf.push_str(s);
+}
+
+// ---------------------------------------------------------------------------
+// SOURCE-tier sig_fp (Task 2)
+// ---------------------------------------------------------------------------
+
+/// Conservative, LEXER-INSENSITIVE-ONLY normalization of a parameter type
+/// TEXT: ASCII-lowercase, then collapse leading/trailing/internal whitespace
+/// runs to nothing/a single space (`split_whitespace` + re-join). Deliberately
+/// does NOT strip quotes or resolve ID-vs-Name synonyms (`Codeunit "My Cu"`
+/// vs `Codeunit 50100` naming the SAME object) — that would need
+/// compiler-backed symbol resolution this fold has no access to.
+/// Under-normalization here only SPLITS an id (two spellings of the identical
+/// overload get distinct `sig_fp`s) — tolerable noise, since a real AL object
+/// declares each overload's parameter types with exactly one spelling in its
+/// source; over-normalization risks ALIASING two genuinely different
+/// overloads onto one id, the cardinal risk this whole plan closes.
+fn normalize_type_text(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+/// The SOURCE-tier overload-identity fingerprint (`RoutineNodeId::sig_fp`) —
+/// a length-delimited fold of every parameter's `(normalized type text,
+/// by-ref flag)` tuple, using the same [`fnv1a`] + [`write_len_prefixed`]
+/// primitives `abi_ingest::param_type_fp` uses for the ABI tier, and the same
+/// `params.is_empty() -> 0` convention (a zero-arity routine's `params_count`
+/// alone already fully determines the id; ABI parity — see
+/// `abi_ingest::param_type_fp`'s identical guard). `by_ref` (the `var`
+/// modifier) is folded in as its own component because it is a SEPARATE
+/// grammar field (`Param::by_ref`), not embedded in `ty`'s text — unlike
+/// array rank / subtype qualifiers, which ARE already part of the verbatim
+/// type-clause text.
+pub(crate) fn source_param_sig_fp(params: &[Param]) -> u64 {
+    if params.is_empty() {
+        return 0;
+    }
+    let mut canon = String::new();
+    for p in params {
+        write_len_prefixed(
+            &mut canon,
+            &normalize_type_text(p.ty.as_deref().unwrap_or("")),
+        );
+        write_len_prefixed(&mut canon, if p.by_ref { "1" } else { "0" });
+    }
+    fnv1a(&canon)
+}
+
+/// ONE shared constructor for a SOURCE-tier `RoutineNodeId` (Task 2) — used
+/// by every live reconstruction site (`node_extract::extract_nodes`,
+/// `resolve::body_map::BodyMap::build`,
+/// `resolve::full::resolve_full_program_from_parts`,
+/// `resolve::stub::resolve_program`) so a real declaration's identity can
+/// never silently diverge between sites (the 5-site audit's central risk —
+/// see the sigfp-and-ambiguous-reclassification plan, Task 2). `decl`
+/// supplies `name` / `enclosing_member` / `params` verbatim from the parsed
+/// IR: every field `RoutineNodeId` needs beyond the caller-supplied `object`.
+pub fn source_routine_node_id(object: ObjectNodeId, decl: &RoutineDecl) -> RoutineNodeId {
+    RoutineNodeId {
+        object,
+        name_lc: decl.name.to_ascii_lowercase(),
+        enclosing_member_lc: decl
+            .enclosing_member
+            .as_ref()
+            .map(|(n, _)| n.to_ascii_lowercase()),
+        params_count: decl.params.len(),
+        sig_fp: source_param_sig_fp(&decl.params),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use al_syntax::ir::{Origin, Point};
+
+    fn test_origin() -> Origin {
+        Origin {
+            kind_text: "",
+            ts_id: 0,
+            byte: 0..0,
+            start: Point { row: 0, column: 0 },
+            end: Point { row: 0, column: 0 },
+        }
+    }
+
+    fn param(ty: &str, by_ref: bool) -> Param {
+        Param {
+            name: "x".into(),
+            by_ref,
+            ty: Some(ty.into()),
+            origin: test_origin(),
+        }
+    }
+
+    /// (d) `params.is_empty()` -> `0`, mirroring ABI's `param_type_fp`
+    /// convention (a zero-arity routine's `params_count` alone already fully
+    /// discriminates — no fingerprint needed).
+    #[test]
+    fn empty_params_fingerprint_to_zero() {
+        assert_eq!(source_param_sig_fp(&[]), 0);
+    }
+
+    /// (b) two param-type-differing single-param overloads get DISTINCT
+    /// non-zero fingerprints.
+    #[test]
+    fn distinct_param_types_never_collide() {
+        let int_fp = source_param_sig_fp(&[param("Integer", false)]);
+        let text_fp = source_param_sig_fp(&[param("Text", false)]);
+        assert_ne!(int_fp, 0);
+        assert_ne!(text_fp, 0);
+        assert_ne!(int_fp, text_fp);
+    }
+
+    /// (c) case/whitespace variants of the SAME type text fingerprint
+    /// IDENTICALLY — the conservative lexer-insensitive normalization.
+    #[test]
+    fn case_and_whitespace_variants_of_same_type_collide() {
+        let a = source_param_sig_fp(&[param("Record Customer", false)]);
+        let b = source_param_sig_fp(&[param("  record   CUSTOMER  ", false)]);
+        assert_eq!(
+            a, b,
+            "trim + lowercase + internal-whitespace-collapse must treat these as the SAME type"
+        );
+    }
+
+    /// Round-1 addendum: under-normalization (never strip quotes / resolve
+    /// ID-vs-Name) — two DIFFERENT quoted-name spellings that a compiler
+    /// would resolve to the same object are NOT unified here (a real object
+    /// declares each overload's parameter with exactly one spelling, so this
+    /// never over-collapses in practice; it is a conscious conservative
+    /// choice, not an oversight).
+    #[test]
+    fn quoted_object_name_is_never_unquoted() {
+        let a = source_param_sig_fp(&[param(r#"Codeunit "My Cu""#, false)]);
+        let b = source_param_sig_fp(&[param("Codeunit 50100", false)]);
+        assert_ne!(
+            a, b,
+            "ID-vs-Name synonyms must NOT be unified without compiler backing"
+        );
+    }
+
+    /// `var` (by-ref) is folded in as its own tuple component — a parameter
+    /// differing ONLY by `var` must fingerprint DIFFERENTLY (never silently
+    /// aliased onto the non-var overload's id).
+    #[test]
+    fn by_ref_flag_distinguishes_otherwise_identical_types() {
+        let by_val = source_param_sig_fp(&[param("Record Customer", false)]);
+        let by_ref = source_param_sig_fp(&[param("Record Customer", true)]);
+        assert_ne!(by_val, by_ref);
+    }
+
+    /// Two re-parses of the SAME declaration (identical param list) always
+    /// fingerprint identically — a stability sanity check underlying the
+    /// true-duplicate collapse path in `build::
+    /// dedup_routines_preserving_genuine_overloads`.
+    #[test]
+    fn identical_param_lists_always_collide() {
+        let a = source_param_sig_fp(&[param("Integer", false), param("Text", true)]);
+        let b = source_param_sig_fp(&[param("Integer", false), param("Text", true)]);
+        assert_eq!(a, b);
+    }
+}

@@ -10,10 +10,12 @@ pub mod l3_mint;
 pub mod node;
 pub mod node_extract;
 pub mod resolve;
+pub mod sig_fp;
 pub mod topology;
 
 pub use build::build_program_graph;
 pub use graph::{ObjectIndex, ProgramGraph};
 pub use node::{AppRef, AppRegistry, ObjKey, ObjectNodeId, RoutineNodeId};
 pub use node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
+pub use sig_fp::source_routine_node_id;
 pub use topology::DependencyGraph;

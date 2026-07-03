@@ -15,36 +15,13 @@ use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{Access, FieldNode, ObjectNode, RoutineNode};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::PublisherKind;
+use crate::program::sig_fp::{fnv1a, write_len_prefixed};
 use crate::snapshot::{AppUnit, TrustTier};
 use al_syntax::ir::ObjectKind;
 
 // ---------------------------------------------------------------------------
-// FNV-1a fingerprint (stable across runs)
+// Fold one parameter's canonical discriminator tuple
 // ---------------------------------------------------------------------------
-
-fn fnv1a(data: &str) -> u64 {
-    let mut h: u64 = 14695981039346656037;
-    for b in data.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(1099511628211);
-    }
-    h
-}
-
-/// Append `s`'s byte length (decimal) then a `:` separator then `s` itself —
-/// a netstring-style LENGTH-DELIMITED encoding (Task 2 round-2 addendum:
-/// "typed, length-delimited canonical tuple"). Concatenating multiple
-/// variable-length fields naively (e.g. a plain `|`-join) lets one field's
-/// content masquerade as an adjacent field's boundary — a Subtype raw name
-/// crafted to contain a `|` (or a decimal id) could otherwise collide with a
-/// differently-shaped tuple. Prefixing every field with its own length makes
-/// the encoding injective per-field regardless of what bytes the field
-/// itself contains.
-fn write_len_prefixed(buf: &mut String, s: &str) {
-    buf.push_str(&s.len().to_string());
-    buf.push(':');
-    buf.push_str(s);
-}
 
 /// Fold one parameter's canonical discriminator tuple — `type_text` (the
 /// bare-fallback SOURCE-SHAPED text) + `subtype_id` + `subtype_raw_name` +

@@ -103,11 +103,17 @@ impl ObjectNodeId {
 /// arity is genuinely UNKNOWN, so ingestion (`abi_ingest::UNKNOWN_ARITY`)
 /// gives it a sentinel `params_count` that can never equal a real call's
 /// arity — it exists (for name-only lookups) but never arity-matches.
-/// `sig_fp` is a stable FNV-1a fingerprint of the parameter type-text sequence.
-/// `0` for source-bearing routines. Non-zero for SymbolOnly ABI routines when
-/// two routines share the same `name_lc` AND `params_count` but differ in param
-/// types. Together with `name_lc` and `params_count`, extends `RoutineNodeId` to
-/// a total discriminator for ABI overloads.
+/// `sig_fp` is a stable FNV-1a fingerprint of the parameter type-text sequence
+/// (`0` when `params_count == 0`, for BOTH tiers — a zero-arity routine's
+/// `params_count` alone already fully discriminates). Non-zero whenever two
+/// routines share the same `name_lc` AND `params_count` but differ in param
+/// types: for SymbolOnly ABI routines via `abi_ingest::param_type_fp`; for
+/// SOURCE routines via `sig_fp::source_param_sig_fp`
+/// (sigfp-and-ambiguous-reclassification plan, Task 2 — before Task 2, SOURCE
+/// `sig_fp` was unconditionally `0`; see `node_extract::RoutineNode::
+/// source_overload_aliased` for the collision-guard that covered that gap).
+/// Together with `name_lc` and `params_count`, extends `RoutineNodeId` to a
+/// total discriminator for overloads in EITHER tier.
 /// `None < Some(…)` under `Ord`, so object-level triggers sort before field
 /// triggers — intentional.
 ///
@@ -129,11 +135,14 @@ pub struct RoutineNodeId {
     pub name_lc: String,
     pub enclosing_member_lc: Option<String>,
     pub params_count: usize,
-    /// Stable fingerprint of the parameter type-text sequence (FNV-1a hash).
-    /// `0` for source-bearing routines. Non-zero for SymbolOnly ABI routines when
-    /// two routines share the same `name_lc` AND `params_count` but differ in
-    /// param types. Extends `RoutineNodeId` to a total discriminator.
-    /// NOT stable across engine versions — see the struct-level doc note above.
+    /// Stable fingerprint of the parameter type-text sequence (FNV-1a hash);
+    /// `0` when `params_count == 0` in EITHER tier. Non-zero whenever two
+    /// routines share the same `name_lc` AND `params_count` but differ in
+    /// param types — for SymbolOnly ABI routines (`abi_ingest::
+    /// param_type_fp`) and, since Task 2, for SOURCE routines too
+    /// (`sig_fp::source_param_sig_fp`). Extends `RoutineNodeId` to a total
+    /// discriminator. NOT stable across engine versions — see the
+    /// struct-level doc note above.
     pub sig_fp: u64,
 }
 

@@ -4450,7 +4450,12 @@ fn ws_overload_collision_control_single_overload_resolves_cleanly() {
 // object is embedded BOTH as workspace source AND as an embedded dep
 // (`obj_dup=2`) AND that object declares a genuine same-name/same-arity
 // overload pair (2 distinct source procedures colliding onto ONE
-// `RoutineNodeId`, since source `sig_fp` is always `0`), the run holds 4 raw
+// `RoutineNodeId` — at the time this fix landed, source `sig_fp` was always
+// `0`; since sigfp-and-ambiguous-reclassification plan Task 2 it is a real
+// per-overload fingerprint, but the compound-DUPLICATION half of this
+// scenario is unaffected: BOTH raw copies of the SAME `Resolve(Value: Text)`
+// declaration still compute the SAME `sig_fp`, so they still collide onto one
+// id and must still collapse to one canonical survivor), the run holds 4 raw
 // entries — `run_len(4) > obj_dup(2)` kept all 4 instead of the canonical 2.
 // This inflated `graph.routines` and could push a legitimate single-target
 // event subscription into `ambiguous_subscriptions` (candidate count 2
@@ -4658,22 +4663,18 @@ fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
             .collect::<Vec<_>>()
     );
 
-    let app = graph
-        .apps
-        .find_by_name("Compound App")
-        .expect("app interned");
-    let target_id = ObjectNodeId {
-        app,
-        kind: ObjectKind::Codeunit,
-        key: ObjKey::Id(50970),
-    };
-    let publisher_id = RoutineNodeId {
-        object: target_id,
-        name_lc: "resolve".into(),
-        enclosing_member_lc: None,
-        params_count: 1,
-        sig_fp: 0,
-    };
+    // sigfp-and-ambiguous-reclassification plan Task 2: SOURCE `sig_fp` is no
+    // longer unconditionally `0` — the publisher overload's real id must be
+    // looked up from the graph (its `sig_fp` is a real fingerprint of its
+    // `Text` parameter type), never hand-built with a hardcoded `sig_fp: 0`
+    // (which would silently diverge from the actual id and always miss).
+    let publisher_id = graph
+        .routines
+        .iter()
+        .find(|r| r.id.name_lc == "resolve" && r.publisher_kind.is_some())
+        .expect("the publisher overload must survive dedup")
+        .id
+        .clone();
     assert_eq!(
         idx.subscribers_of(&publisher_id).len(),
         1,
@@ -4682,17 +4683,31 @@ fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
 }
 
 // ---------------------------------------------------------------------------
-// Tests 23f-23i: sigfp-and-ambiguous-reclassification plan, Task 1 — the
-// source-overload alias marker (`RoutineNode::source_overload_aliased`) and
-// the dual-publisher event-flow collision guard
-// (`resolver::emit_event_flow_edges` / `resolver::dual_publisher_alias_
-// skip_count`). Source `sig_fp` is always `0`, so two genuine same-name/
-// same-arity SOURCE overloads (differing only by parameter TYPE) collide
+// Tests 23f-23i: sigfp-and-ambiguous-reclassification plan, Task 1 (source-
+// overload alias marker, `RoutineNode::source_overload_aliased`, and the
+// dual-publisher event-flow collision guard —
+// `resolver::emit_event_flow_edges` / `resolver::dual_publisher_alias_
+// skip_count`), REFRAMED by Task 2 (real source `sig_fp`).
+//
+// At Task 1, source `sig_fp` was always `0`, so two genuine same-name/
+// same-arity SOURCE overloads (differing only by parameter TYPE) collided
 // onto ONE `RoutineNodeId`; `dedup_routines_preserving_genuine_overloads`
-// already keeps BOTH survivors (Task 2 review fix — see the tests above),
-// but until this task neither was flagged as aliased, so a role-lookup
+// already kept BOTH survivors (Task 2-of-the-EARLIER-plan review fix — see
+// the tests above), but neither was flagged as aliased, so a role-lookup
 // consumer like `emit_event_flow_edges`'s publisher fan-out had no way to
 // know its `BodyMap` span answer might belong to the WRONG sibling.
+//
+// Since Task 2 (this plan), SOURCE `sig_fp` is a real fingerprint
+// (`sig_fp::source_param_sig_fp`): a genuine same-name/same-arity overload
+// pair now gets DISTINCT ids and never even reaches the same dedup run, so
+// it survives UNMARKED (Test 23f, updated). `source_overload_aliased`'s
+// post-Task-2 role is a same-id/different-`param_sig_key` COLLISION GUARD —
+// it fires ONLY when two entries' `sig_fp`s alias despite their raw content
+// genuinely differing (a normalization collision this engine cannot further
+// distinguish; see `build.rs`'s `source_normalization_collision_marks_both_
+// survivors_collision_guard` for that scenario in isolation). Test 23g
+// (a TRUE re-parse duplicate) and the dual-publisher case (Test 23h) are
+// updated accordingly below.
 // ---------------------------------------------------------------------------
 
 /// A single workspace source object declaring two overloads that collide
@@ -4757,10 +4772,13 @@ codeunit 50980 "Alias Target"
     }
 }
 
-/// Test 23f: two same-id different-`param_sig_key` SOURCE decls must BOTH
-/// survive dedup AND both carry `source_overload_aliased == true`.
+/// Test 23f (sigfp-and-ambiguous-reclassification plan, Task 2 — reframed
+/// from the Task-1-era `source_overload_alias_marks_both_survivors`): two
+/// param-type-differing SOURCE overloads get DISTINCT non-zero `sig_fp`s (and
+/// therefore DISTINCT `RoutineNodeId`s), so they no longer even share a dedup
+/// run — both survive UNMARKED (`source_overload_aliased == false`).
 #[test]
-fn source_overload_alias_marks_both_survivors() {
+fn distinct_sig_fp_overloads_survive_unmarked() {
     use al_call_hierarchy::program::abi_ingest::AbiCache;
     use al_call_hierarchy::program::build::build_program_graph;
 
@@ -4782,10 +4800,38 @@ fn source_overload_alias_marks_both_survivors() {
             .map(|r| &r.param_sig_key)
             .collect::<Vec<_>>()
     );
+
+    // DISTINCT sig_fp -> DISTINCT full RoutineNodeId (Task 2's whole point).
+    assert_ne!(
+        resolve_entries[0].id.sig_fp,
+        resolve_entries[1].id.sig_fp,
+        "param-type-differing overloads must get distinct sig_fp; got {:?}",
+        resolve_entries
+            .iter()
+            .map(|r| r.id.sig_fp)
+            .collect::<Vec<_>>()
+    );
     assert!(
-        resolve_entries.iter().all(|r| r.source_overload_aliased),
-        "every survivor of a same-id different-param_sig_key run must be \
-         marked source_overload_aliased; got {:?}",
+        resolve_entries.iter().all(|r| r.id.sig_fp != 0),
+        "a non-empty param list must never fingerprint to the ABI-parity \
+         zero sentinel; got {:?}",
+        resolve_entries
+            .iter()
+            .map(|r| r.id.sig_fp)
+            .collect::<Vec<_>>()
+    );
+    assert_ne!(
+        resolve_entries[0].id, resolve_entries[1].id,
+        "distinct sig_fp must yield distinct RoutineNodeId end-to-end"
+    );
+
+    // Post-Task-2 marker semantics: normal (distinct-id) overloads are
+    // UNMARKED — the collision guard only fires for a residual same-id
+    // survivor (see `build.rs`'s
+    // `source_normalization_collision_marks_both_survivors_collision_guard`).
+    assert!(
+        resolve_entries.iter().all(|r| !r.source_overload_aliased),
+        "distinct-id genuine overloads must NOT be marked source_overload_aliased; got {:?}",
         resolve_entries
             .iter()
             .map(|r| (r.param_sig_key.clone(), r.source_overload_aliased))
@@ -4964,12 +5010,17 @@ codeunit 50982 "Dual Publisher Target"
     }
 }
 
-/// Test 23h: a dual-publisher aliased pair must emit ZERO EventFlow edges
-/// for the shared id (SKIP-ONLY guard — never a corrupted-span edge), and
-/// the skip must be counted (exactly 2 — one per aliased publisher
-/// sibling).
+/// Test 23h (sigfp-and-ambiguous-reclassification plan, Task 2 — reframed
+/// from the Task-1-era `dual_publisher_alias_skips_event_flow_edges`): since
+/// Task 2, two param-type-differing publisher overloads get DISTINCT
+/// `sig_fp`s/ids, so the Task-1 skip-only guard no longer fires for them
+/// (`dual_publisher_alias_skip_count == 0`) — EACH publisher emits its OWN
+/// EventFlow edge, and its `site.span` is the FIDELITY FIX this whole plan
+/// exists for: it must match ITS OWN declaration's `name_origin`, never a
+/// sibling's (the last-write-wins `BodyMap` corruption Task 1's guard used to
+/// paper over by skipping both).
 #[test]
-fn dual_publisher_alias_skips_event_flow_edges() {
+fn distinct_sig_fp_publishers_both_emit_correct_spans() {
     use al_call_hierarchy::program::abi_ingest::AbiCache;
     use al_call_hierarchy::program::build::build_program_graph;
     use al_call_hierarchy::program::resolve::body_map::BodyMap;
@@ -4986,7 +5037,8 @@ fn dual_publisher_alias_skips_event_flow_edges() {
     let index = ResolveIndex::build(&graph);
     let body_map = BodyMap::build(&graph, &parsed);
 
-    // Precondition: both overloads survived, both aliased, both publishers.
+    // Precondition: both overloads survived, both UNMARKED (distinct ids),
+    // both publishers.
     let resolve_entries: Vec<_> = graph
         .routines
         .iter()
@@ -5000,30 +5052,233 @@ fn dual_publisher_alias_skips_event_flow_edges() {
     assert!(
         resolve_entries
             .iter()
-            .all(|r| r.source_overload_aliased && r.publisher_kind.is_some()),
-        "fixture precondition: both survivors must be aliased publishers; got {:?}",
+            .all(|r| !r.source_overload_aliased && r.publisher_kind.is_some()),
+        "fixture precondition: both survivors must be UNMARKED publishers \
+         (distinct sig_fp); got {:?}",
         resolve_entries
             .iter()
             .map(|r| (r.source_overload_aliased, r.publisher_kind.is_some()))
             .collect::<Vec<_>>()
     );
-
-    let edges = emit_event_flow_edges(&graph, &index, &body_map);
-    let alias_id = resolve_entries[0].id.clone();
-    let corrupted: Vec<_> = edges.iter().filter(|e| e.from == alias_id).collect();
-    assert!(
-        corrupted.is_empty(),
-        "a dual-publisher aliased pair must emit ZERO EventFlow edges for \
-         the shared id (skip-only guard); got {} edge(s): {:?}",
-        corrupted.len(),
-        corrupted
+    assert_ne!(
+        resolve_entries[0].id.sig_fp, resolve_entries[1].id.sig_fp,
+        "the two publisher overloads must have distinct sig_fp"
     );
 
+    // The Task 1 guard must NOT fire — no alias survives to trigger it.
     assert_eq!(
         dual_publisher_alias_skip_count(&graph.routines),
+        0,
+        "distinct-id publisher overloads must never be counted as a \
+         dual-publisher-alias skip"
+    );
+
+    let edges = emit_event_flow_edges(&graph, &index, &body_map);
+    assert_eq!(
+        edges.len(),
         2,
-        "the guard must count exactly 2 skips (one per aliased publisher \
-         sibling) for the ordinary dual-publisher-pair shape"
+        "each distinct-id publisher must emit its OWN EventFlow edge; got {} edges",
+        edges.len()
+    );
+
+    // Per-overload span fidelity: each publisher's edge must carry ITS OWN
+    // decl's name-origin span (via BodyMap, now keyed by a distinct id per
+    // sibling — no more last-write-wins collision).
+    for entry in &resolve_entries {
+        let matching: Vec<_> = edges.iter().filter(|e| e.from == entry.id).collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "each publisher id must have exactly one EventFlow edge; entry sig_fp={}",
+            entry.id.sig_fp
+        );
+        let (decl, path) = body_map
+            .get_with_path(&entry.id)
+            .expect("publisher must be in BodyMap under its own distinct id");
+        let expected_span = CanonicalSpan {
+            unit: path.to_string(),
+            start: SourcePos {
+                line: decl.name_origin.start.row,
+                col: decl.name_origin.start.column,
+            },
+            end: SourcePos {
+                line: decl.name_origin.end.row,
+                col: decl.name_origin.end.column,
+            },
+        };
+        assert_eq!(
+            matching[0].site.span, expected_span,
+            "publisher span must match ITS OWN decl's name-origin, never a \
+             sibling's — the exact span-corruption bug Task 2 fixes"
+        );
+    }
+
+    // The two spans must themselves be DISTINCT (Integer-overload and
+    // Text-overload are declared on different lines) — a residual collision
+    // (both edges carrying the SAME span) would silently hide the bug even
+    // though `matching.len() == 1` held for each id.
+    assert_ne!(
+        edges[0].site.span, edges[1].site.span,
+        "the two publishers' spans must differ (declared on different lines)"
+    );
+}
+
+/// Test 23i (sigfp-and-ambiguous-reclassification plan, Task 2 — the 5-site
+/// audit's parity fixture): the SAME two-overload declaration
+/// (`tests/fixtures/sigfp_overload_identity`), read independently through
+/// ALL FOUR live `sig_fp::source_routine_node_id` call sites
+/// (`node_extract::extract_nodes` via `graph.routines`;
+/// `resolve::body_map::BodyMap::build`; `resolve::full::
+/// resolve_full_program`'s `resolve_full_program_from_parts` site;
+/// `resolve::stub::resolve_program`), must agree on the SAME id for each
+/// overload — proving the shared constructor closes the "5 independent
+/// reconstruction sites silently diverge" risk the plan's audit called out.
+/// Each overload's own outgoing call must also attribute to ITS OWN id,
+/// never its sibling's (per-overload caller attribution).
+#[test]
+fn sigfp_identity_agrees_across_all_four_live_sites() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+    use al_call_hierarchy::program::resolve::body_map::BodyMap;
+    use al_call_hierarchy::program::resolve::stub;
+    use al_call_hierarchy::snapshot::{SnapshotBuilder, parse_snapshot};
+
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/sigfp_overload_identity");
+
+    // Site 1: node_extract::extract_nodes (via build_program_graph).
+    let snap = SnapshotBuilder {
+        workspace_root: fixture.clone(),
+        local_providers: vec![],
+    }
+    .build()
+    .expect("snapshot must build");
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+
+    let resolve_entries: Vec<_> = graph
+        .routines
+        .iter()
+        .filter(|r| r.id.name_lc == "resolve")
+        .collect();
+    assert_eq!(
+        resolve_entries.len(),
+        2,
+        "both overloads must survive dedup"
+    );
+    assert_ne!(
+        resolve_entries[0].id.sig_fp, resolve_entries[1].id.sig_fp,
+        "the two overloads must have distinct sig_fp"
+    );
+    assert!(
+        resolve_entries.iter().all(|r| !r.source_overload_aliased),
+        "a genuine distinct-type overload pair must be unmarked"
+    );
+
+    let int_id = resolve_entries
+        .iter()
+        .find(|r| r.param_sig_key == "integer")
+        .expect("Integer overload must exist")
+        .id
+        .clone();
+    let text_id = resolve_entries
+        .iter()
+        .find(|r| r.param_sig_key == "text")
+        .expect("Text overload must exist")
+        .id
+        .clone();
+
+    // Site 2: resolve::body_map::BodyMap::build — each id must retrieve the
+    // CORRECT decl (matching its own param type), never a last-write-wins
+    // collision with its sibling.
+    let parsed = parse_snapshot(&snap);
+    let body_map = BodyMap::build(&graph, &parsed);
+    let int_decl = body_map
+        .get(&int_id)
+        .expect("Integer overload must be in BodyMap under its own id");
+    assert_eq!(int_decl.params.len(), 1);
+    assert_eq!(int_decl.params[0].ty.as_deref(), Some("Integer"));
+    let text_decl = body_map
+        .get(&text_id)
+        .expect("Text overload must be in BodyMap under its own id");
+    assert_eq!(text_decl.params.len(), 1);
+    assert_eq!(text_decl.params[0].ty.as_deref(), Some("Text"));
+
+    // Site 3: resolve::full::resolve_full_program (its internal
+    // resolve_full_program_from_parts site) builds its OWN graph from the
+    // SAME on-disk fixture — if its `source_routine_node_id` call diverged
+    // from Site 1's even slightly, filtering by the id computed above would
+    // come up EMPTY here. Also proves per-overload caller attribution: each
+    // overload's OWN outgoing call resolves to its OWN distinctly-named
+    // helper, never merged with its sibling's.
+    let report = resolve_full_program(&fixture).expect("resolve_full_program must succeed");
+
+    let int_edges: Vec<_> = report
+        .edges
+        .iter()
+        .filter(|ce| ce.edge.from == int_id)
+        .collect();
+    assert_eq!(
+        int_edges.len(),
+        1,
+        "Integer overload must have exactly one outgoing call obligation \
+         (HelperInt()); site 1/site 3 ids disagree if this is 0"
+    );
+    let RouteTarget::Routine(ref int_target) = int_edges[0].edge.routes[0].target else {
+        panic!(
+            "expected a resolved Routine target for HelperInt(); got {:?}",
+            int_edges[0].edge.routes[0].target
+        );
+    };
+    assert_eq!(
+        int_target.name_lc, "helperint",
+        "the Integer overload's own call must attribute to HelperInt, not its sibling"
+    );
+
+    let text_edges: Vec<_> = report
+        .edges
+        .iter()
+        .filter(|ce| ce.edge.from == text_id)
+        .collect();
+    assert_eq!(
+        text_edges.len(),
+        1,
+        "Text overload must have exactly one outgoing call obligation (HelperText())"
+    );
+    let RouteTarget::Routine(ref text_target) = text_edges[0].edge.routes[0].target else {
+        panic!(
+            "expected a resolved Routine target for HelperText(); got {:?}",
+            text_edges[0].edge.routes[0].target
+        );
+    };
+    assert_eq!(
+        text_target.name_lc, "helpertext",
+        "the Text overload's own call must attribute to HelperText, not its sibling"
+    );
+
+    // Site 4: resolve::stub::resolve_program, reusing the SAME graph/parsed
+    // from Site 1/2 — must key edges under the SAME ids Site 1 computed (id
+    // PARITY, the property this fixture proves). `extract_raw_sites`
+    // correlates a call site to its caller by NAME alone (documented
+    // "Multi-object-file limitation" — it has no per-overload arity/id
+    // granularity), so BOTH `Resolve` entries pick up BOTH call sites
+    // (HelperInt() and HelperText()) here; that's a pre-existing, orthogonal
+    // stub-resolver limitation, NOT a sig_fp identity divergence. The
+    // property under test is that EACH id appears at all (id parity) —
+    // `0` would mean Site 4's `source_routine_node_id` call diverged from
+    // Site 1's.
+    let stub_edges = stub::resolve_program(&graph, &parsed);
+    assert_eq!(
+        stub_edges.iter().filter(|e| e.from == int_id).count(),
+        2,
+        "stub resolver must key edges under the Integer overload's own id \
+         (2, both call sites — see the name-only correlation note above)"
+    );
+    assert_eq!(
+        stub_edges.iter().filter(|e| e.from == text_id).count(),
+        2,
+        "stub resolver must key edges under the Text overload's own id \
+         (2, both call sites — see the name-only correlation note above)"
     );
 }
 

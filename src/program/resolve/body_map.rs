@@ -10,6 +10,7 @@ use al_syntax::ir::RoutineDecl;
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
+use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::ParsedUnit;
 
 /// Borrows `RoutineDecl`s from a parsed snapshot, indexed by `RoutineNodeId`.
@@ -54,16 +55,7 @@ impl<'a> BodyMap<'a> {
                         key,
                     };
                     for routine in &obj.routines {
-                        let r_id = RoutineNodeId {
-                            object: obj_id.clone(),
-                            name_lc: routine.name.to_ascii_lowercase(),
-                            enclosing_member_lc: routine
-                                .enclosing_member
-                                .as_ref()
-                                .map(|(n, _)| n.to_ascii_lowercase()),
-                            params_count: routine.params.len(),
-                            sig_fp: 0,
-                        };
+                        let r_id = source_routine_node_id(obj_id.clone(), routine);
                         // Last-write wins on true same-key collision (same
                         // object + name + enclosing_member); distinct
                         // enclosing_member_lc values produce distinct keys.
