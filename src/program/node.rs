@@ -110,6 +110,19 @@ impl ObjectNodeId {
 /// a total discriminator for ABI overloads.
 /// `None < Some(…)` under `Ord`, so object-level triggers sort before field
 /// triggers — intentional.
+///
+/// `sig_fp` STABILITY (Task 2's persistence audit, applicability-param-subtype-recfield
+/// plan): `sig_fp` is stable only WITHIN one build of this engine, not ACROSS versions.
+/// It is derived from `param_type_fp`'s canonical tuple (outer kind + subtype id + raw
+/// subtype name + a degradation tag — see `abi_ingest.rs`), so any fidelity change to
+/// that reconstruction (e.g. Task 2's own param/field Subtype fix, which changed which
+/// ABI overloads collapse) changes the fingerprint for affected routines. No cache,
+/// incremental artifact, or CI baseline was found (grepped) to persist `RoutineNodeId`/
+/// `AbiRoutineKey`/`sig_fp`/`param_type_fp` across runs — by construction there is
+/// nothing to migrate/version-bump today, but a future consumer that DOES persist a
+/// `RoutineNodeId` (a cache keyed on it, an incremental diff, a snapshot) must treat ABI
+/// node identity as NOT durable across a fidelity change to the reconstruction logic,
+/// and add its own version tag rather than assuming `sig_fp` is forward/backward stable.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct RoutineNodeId {
     pub object: ObjectNodeId,
@@ -120,6 +133,7 @@ pub struct RoutineNodeId {
     /// `0` for source-bearing routines. Non-zero for SymbolOnly ABI routines when
     /// two routines share the same `name_lc` AND `params_count` but differ in
     /// param types. Extends `RoutineNodeId` to a total discriminator.
+    /// NOT stable across engine versions — see the struct-level doc note above.
     pub sig_fp: u64,
 }
 

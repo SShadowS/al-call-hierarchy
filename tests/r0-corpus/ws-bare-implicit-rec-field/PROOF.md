@@ -68,13 +68,23 @@ cross-declaration semantic uniqueness, so this fixture exercises OUR OWN fail-cl
 directly — the identical convention `ws-record-field-chain/RFCBaseExt.TableExtension.al`'s "Dup Field"
 duplicate-field fixture already established for `field_in_table`'s own duplicate-decline logic.
 
-## Note on the quote-parity fixture's dataitem framing
+## Note on the quote-parity fixture's dataitem framing (corrected — Task 5 review)
 
-The plan's round-2 addendum describes real CDO sites resolving via this fix as "27 dataitem-named vars"
-(`"Sales Header Filter".GetView()`-shaped) — a naming convention echoing Report dataitems, not an actual
-Report-dataitem CONSTRUCT. The fresh engine (`src/program`) does not model Report dataitems as record vars
-at all (`al_syntax::ir::ObjectDecl.report_dataitems` exists but is consumed only by the legacy L2 engine,
-`src/engine/l2/ir_walk.rs` — see the Task 4 report's static var-extraction audit). This fixture therefore
-uses a genuine `VarDecl` (`"File Blob": Text[100]` declared as a real local variable), which is exactly
-what the quote-parity fix operates on regardless of why a real-world declaration happens to be named that
-way.
+**Correction:** the Task 4 report's framing here was backwards. `"Sales Header Filter"` is NOT merely a
+naming convention that echoes a Report dataitem — it IS a real `dataitem(...)` construct in production CDO
+source: `Report 6175283 "CDO Update Output Profile"`, line 15, `dataitem("Sales Header Filter"; "Sales
+Header")`, referenced bare as `"Sales Header Filter".GetView()` (line 426) and
+`"Sales Header Filter".GetFilters()` (line 507). Verified directly against `CDO_WS`.
+
+The `quote_parity_quoted_var_receiver_resolves_as_var` unit test reuses that name only to exercise the
+GENERIC mechanism under test — Step 2's quote-parity fix compares a quoted receiver against `VarDecl`/
+`Param`/global names and is receiver-name-agnostic; it does not, and was never intended to, claim the real
+report-dataitem site resolves through this path. The fresh engine (`src/program`) does not model Report
+dataitems as record vars at all (`al_syntax::ir::ObjectDecl.report_dataitems` exists but is consumed only
+by the legacy L2 engine, `src/engine/l2/ir_walk.rs` — see the Task 4 report's static var-extraction audit),
+and Report/ReportExtension objects are excluded from Step 3a's `ObjectKind::Table | TableExtension` gate
+entirely. Consequence: the real `"Sales Header Filter"`-shaped sites (and the ~27 like it) sit HONESTLY
+unresolved in the 37-site `UntrackedReceiver` residual after Task 4 — this is sound fail-closed behavior,
+not a gap this fixture papers over. Report-dataitem receiver modeling (teaching the fresh engine to treat
+`ObjectDecl.report_dataitems` entries as implicit record-typed receivers, the way `VarDecl` already is) is
+a real, currently-deferred roadmap lever for a future task, not something claimed here.

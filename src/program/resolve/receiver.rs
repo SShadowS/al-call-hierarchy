@@ -5122,13 +5122,27 @@ codeunit 50100 "C"
     // VAR, never fall through past Step 2.
     // -----------------------------------------------------------------------
 
-    /// POSITIVE (c): a quoted RECORD VAR receiver with no colliding field —
-    /// `"Sales Header Filter"` is a LOCAL var (not a report dataitem
-    /// construct; the fresh engine does not model those — see the Task 4
-    /// report's static var-extraction audit), and resolves as the var's
-    /// declared `Record` type. Pre-fix, the raw quote-retaining
-    /// `receiver_lc` never matched the unquoted `VarDecl` name and this
-    /// fell through to `Unknown` (`UntrackedReceiver`).
+    /// POSITIVE (c): a quoted RECORD VAR receiver with no colliding field.
+    /// Correction (Task 5 review): `"Sales Header Filter"` is NOT a
+    /// made-up name — it IS a real Report dataitem in production CDO source
+    /// (`Report 6175283 "CDO Update Output Profile"`, line 15:
+    /// `dataitem("Sales Header Filter"; "Sales Header")`, referenced bare as
+    /// `"Sales Header Filter".GetFilters()`/`.GetView()` at lines 507/426).
+    /// This fixture reuses that name only to model the GENERIC mechanism
+    /// under test (Step 2's quote-parity fix is receiver-name-agnostic and
+    /// applies identically to any quoted `VarDecl`) — it does NOT claim the
+    /// real report-dataitem site resolves via this path. The fresh engine
+    /// does not model Report dataitems as record vars at all
+    /// (`al_syntax::ir::ObjectDecl.report_dataitems` is parsed but consumed
+    /// only by the legacy L2 engine), and Report/ReportExtension objects are
+    /// excluded from Step 3a's `ObjectKind::Table | TableExtension` gate
+    /// entirely — so genuine dataitem-named receivers like the real
+    /// `"Sales Header Filter"` sit honestly unresolved in the
+    /// `UntrackedReceiver` residual (sound fail-closed, not a bug); modeling
+    /// report-dataitem receivers is a real deferred roadmap lever, not
+    /// covered here. Pre-fix, the raw quote-retaining `receiver_lc` never
+    /// matched the unquoted `VarDecl` name and this fell through to
+    /// `Unknown` (`UntrackedReceiver`).
     #[test]
     fn quote_parity_quoted_var_receiver_resolves_as_var() {
         let (graph, app) = build_test_graph();

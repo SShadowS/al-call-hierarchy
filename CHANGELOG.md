@@ -8,6 +8,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Applicability-checker fix + ABI param-Subtype fidelity + record-field chains complete
+  — real-`unknown` 1.75%→0.99%, SUB-1% for the first time (applicability-param-subtype-
+  recfield plan v2.1, Task 5, FINAL — arc capstone).** Closes the plan Task 1 opened.
+  Full re-measure on CDO (`CDO_WS`, `ENFORCE_CDO_WS=1`, single-threaded, `--release`),
+  byte-identical to Task 4's own measurement (Task 5 makes no resolver changes): primary
+  `real_unknown_rate`=0.99% (raw 180/18104=0.009943), whole-program rate=0.41%
+  (180/43404), primary/whole `unknown`=180/180, `genuine_wrong`=0, `fresh_missing`=3,
+  `fresh_wrong`=149 (all `fresh_ahead_dispatch`), `unknownByReason`={CompoundReceiver: 61,
+  UntrackedReceiver: 37, OverloadAmbiguous: 56, BuiltinPrecedenceCollision: 1,
+  MemberNotFound: 25} (sum=180=`unknown`, verified both scopes). Full 7-gate CDO harness
+  green in one combined process: `cdo_full_program_coverage_and_self_reported_metric`,
+  `cdo_l3_semantic_audit_no_fresh_wrong`, `fan_out_applicability_zero_violations`
+  (event_violations=0, non-vacuity interface=28/instance_builtin=463/
+  implicit_trigger=1183/event=3404), `route_applicability_zero_violations`
+  (violations=0, abi_unmapped=0), `cdo_unknown_include_sender_plus1_subscribers_
+  preflight_is_zero` (count=0), `cdo_genuine_wrong_is_precedence_adjudicated`
+  (`l3_error_intrinsic`=52, `fresh_false_builtin`=0, `needs_manual_review`=0),
+  `committed_goldens_metadata_is_valid` (52/52). **Net across the whole T1-T4 arc:
+  1.75% (317) → 0.99% (180), −137 count / −0.76pp, `genuine_wrong` stays 0 through every
+  task.** Trajectory: **T1** — the pre-existing broken `event_violations=200` applicability
+  gate root-caused to `ae35e90`'s Sender-tolerant `+1` wiring predating the checker's
+  still-strict arity invariant (a synchronized-wrongness risk closed by making the
+  tolerance CONDITIONAL on the publisher's actual `IncludeSender` attribute value, never a
+  blanket `+1`, via one shared `event::subscriber_arity_bound` helper consumed by both
+  wiring and checker) — `event_violations` 200→0, CDO byte-identical (both gates were
+  dormant on real over-wired routes; the 200 were exactly the legitimately-wired
+  `IncludeSender=true` population), full CDO harness 126/128→128/128. **T2** — ABI
+  param/field Subtype fidelity (`parse_method`/`parse_field` carrying the full
+  `Codeunit "Dep A"`-shaped text instead of the bare outer keyword, plus a
+  discriminator-bearing `param_type_fp` closing the Id-only-subtype collapse sliver, plus
+  a plain-dispatch collapse-marker guard) — **CDO-DORMANT plumbing, not a metric mover**:
+  every CDO dependency is `EmbeddedSource`, never `SymbolOnly`, so zero routines are ever
+  collapse-marked on this corpus; proven exclusively by fixtures against a real
+  no-embedded-source probe `.app`, exactly like the prior plan's Task 1 protected-ABI fix.
+  A same-task review fix extended the marker guard to all five route-construction sites
+  (plain dispatch + Run/trigger/event paths), also CDO-dormant. **T3** — the table-field
+  type index (`FieldNode` on `ObjectNode`, populated from source `FieldDecl` and ABI
+  `AbiField`) + the non-method `Member{object, member}` record-field arm in
+  `infer_compound_member_receiver` (`Rec."Field".X()` and any `Record`-typed base, not
+  only literal `Rec`) + EnumType-as-chain-base (`Ordinals()`/`Names()` → `Framework(List)`)
+  — the largest single-task drop of the arc: `CompoundReceiver` 144→61 (−83), rate
+  1.75%→1.29%. **T4** — bare implicit-Rec QUOTED-field receivers (`"Field".X()` with no
+  `Rec.` prefix inside a Table/TableExtension's own procedure) + a Step-2 quote-parity
+  fix (a quoted identifier naming a real local var previously never matched the
+  already-unquoted `VarDecl` name and silently fell through) — `UntrackedReceiver`
+  91→37 (−54), rate 1.29%→0.99%. **The round-2 proc-shadow guard correction**
+  (`ResolveIndex::table_scope_has_routine`, applied to both T3's and T4's field arms):
+  AL's parens are optional on a zero-argument procedure call (`Rec.Insert;` compiles —
+  Code Cop AA0008 flags the missing parens as a STYLE issue, not a compile error), so a
+  bare `Member` AST node — and a bare quoted receiver used as the base of a further call
+  — is structurally AMBIGUOUS between a field/property access and a parens-less
+  procedure-call chain; a same-named routine anywhere in the visibility-scoped table
+  surface now declines field-typing rather than guessing. Measured CDO delta from the
+  guard alone: zero (the exhaustive edge-diffs for both T3 and T4 showed no site
+  regressed) — a soundness correction that happened to cost nothing on this corpus, not a
+  metric-neutral no-op by construction. **Exhaustive adjudication sign-off (re-confirmed,
+  not re-sampled):** T3's 83 newly-`Catalog` edges and T4's 54 newly-`Catalog` edges were
+  each hand-adjudicated against real CDO source during their own task (full before/after
+  edge-dump diffs, zero site additions/removals/collateral changes — see
+  `.superpowers/sdd/task-3-report.md` and `task-4-report.md`); 83+54=137 equals the exact
+  net `unknown` count drop (317→180) and the exact sum of the two bucket drops
+  (`CompoundReceiver` −83, `UntrackedReceiver` −54); no dataitem/var was mis-typed as a
+  field anywhere (the var/param/global lookup and the routine-shadow guard both run and
+  win BEFORE any field lookup, per fixture). **Ratchets:** already at the measured floor
+  from Task 4 (rate ceiling `0.00995` vs. measured `0.009943`; count ceilings `180` vs.
+  measured `180` exactly) — re-confirmed byte-identical this task, no further tightening
+  needed; `fresh_missing`/`fresh_wrong` ceilings (5/149) likewise unchanged and
+  re-confirmed. **Two review-doc fixes folded in:** (1) `tests/r0-corpus/
+  ws-bare-implicit-rec-field/PROOF.md` and the `quote_parity_quoted_var_receiver_resolves_
+  as_var` test doc comment previously claimed `"Sales Header Filter"` was merely a naming
+  convention echoing a Report dataitem, not an actual one — CORRECTED: it IS a real
+  `dataitem("Sales Header Filter"; "Sales Header")` construct (`Report 6175283 "CDO
+  Update Output Profile"`, line 15, verified against `CDO_WS`); the fixture only reuses
+  the name to exercise the name-agnostic quote-parity mechanism, and real sites like it
+  sit honestly unresolved in the 37-site `UntrackedReceiver` residual because Report
+  objects are excluded from Step 3a's `Table | TableExtension` gate (sound, not a gap);
+  report-dataitem receiver modeling is now documented as a real roadmap lever. (2) Added
+  a `sig_fp` stability doc note on `RoutineNodeId` (`src/program/node.rs`): ABI node
+  identity is not stable across a fidelity change to the Subtype-reconstruction logic
+  (T2's own persistence-audit conclusion) — a future consumer that persists a
+  `RoutineNodeId` must version its own cache rather than assume forward/backward
+  stability. **DEFERRED (next plan, unchanged from the prior arc's roadmap plus new
+  findings this arc):** report-dataitem receivers (`ObjectDecl.report_dataitems` unmodeled
+  in `src/program`, ~27+ real CDO sites); dot-quoted field names (e.g. `"No."`, not yet
+  covered by any quoted-field arm); unquoted bare field receivers (`MyBlob.
+  CreateInStream()`-shaped, deliberately deferred by both T3 and T4); the remaining
+  `UntrackedReceiver` non-field residual; honest-taxonomy reclassification of
+  `OverloadAmbiguous`=56/`MemberNotFound`=25 into charter §5 sub-states; protected
+  `Variables[]` (dependency page/table variables, once var-access modelling exists);
+  deeper cross-object chains; risk-weighted centrality reporting (charter §8).
 - **Bare implicit-Rec quoted-field receivers + var-lookup quote parity, fail-closed
   (applicability-param-subtype-recfield plan v2.1, Task 4).** CDO primary real-`unknown`
   **1.29% (234) → 0.99% (180)**, `UntrackedReceiver` **91→37 (−54)**, every other

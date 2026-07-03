@@ -1639,6 +1639,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // alone — every one of the 54 flips is Step 3a's field arm) — framed
     // honestly as defensive/soundness plumbing (like Task 2's ABI fix),
     // proven correct by dedicated unit + r0-corpus fixtures instead.
+    //
+    // RE-CONFIRMED 2026-07-03 (applicability-param-subtype-recfield plan
+    // v2.1, Task 5, FINAL — arc capstone): byte-identical 0.99%
+    // (180/18104=0.009943…) by an independent single-threaded re-run under
+    // `ENFORCE_CDO_WS=1` (`unknownByReason`={CompoundReceiver: 61,
+    // UntrackedReceiver: 37, OverloadAmbiguous: 56,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==180). Task 5
+    // makes no resolver changes — this ceiling is already at the plan's
+    // FINAL floor, no further tightening. Net across the whole T1-T4 arc:
+    // 1.75% (317) → 0.99% (180), sub-1% for the first time.
     let primary_rate = ph.real_unknown_rate();
     assert!(
         primary_rate <= 0.00995,
@@ -1804,6 +1814,11 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // 54-edge adjudication). `unknownByReason`={CompoundReceiver: 61,
     // UntrackedReceiver: 37, OverloadAmbiguous: 56,
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 25}, sum==180.
+    //
+    // RE-CONFIRMED 2026-07-03 (applicability-param-subtype-recfield plan
+    // v2.1, Task 5, FINAL — arc capstone): byte-identical 180/180
+    // (primary/whole), no resolver changes this task — already at the
+    // plan's FINAL floor.
     assert!(
         ph.unknown <= 180,
         "primary unknown count {} exceeds ceiling 180 (recorded 2026-07-03 \
@@ -1841,6 +1856,10 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-03 (applicability-param-subtype-recfield plan v2.1,
     // Task 4): 234→180, alongside the primary ceiling above; whole-program
     // `unknown`=180, same value as primary today.
+    //
+    // RE-CONFIRMED 2026-07-03 (applicability-param-subtype-recfield plan
+    // v2.1, Task 5, FINAL — arc capstone): byte-identical 180, no resolver
+    // changes this task.
     assert!(
         h.unknown <= 180,
         "whole-program unknown count {} exceeds ceiling 180 (recorded \
