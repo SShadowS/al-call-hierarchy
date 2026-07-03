@@ -156,11 +156,17 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
     //
     // Routines need more care: two DISTINCT source procedures sharing
     // `(object, name_lc, params_count)` also collide onto one `RoutineNodeId`
-    // (source `sig_fp` is always `0` — see node.rs) — a genuine same-arity
-    // SOURCE overload collision (beyond-1B.3b Task 2), not a duplicate. A
-    // blanket `dedup_by` would silently drop one of them with no record, and a
-    // later confident `Source` route to the survivor would be a false-positive
-    // (the cardinal sin this engine exists to avoid).
+    // whenever their `sig_fp` matches too (see node.rs). Post-Task-2
+    // (sigfp-and-ambiguous-reclassification plan) `sig_fp` is a REAL
+    // fingerprint of the parameter-type tuple — a genuine same-arity SOURCE
+    // overload pair with distinguishable parameter types now gets DISTINCT
+    // `sig_fp`s and sorts into separate runs entirely, so an id collision here
+    // means either a true re-parse DUPLICATE (identical param types) or,
+    // rarely, a residual fnv1a fingerprint COLLISION between two genuinely
+    // different overloads — not a duplicate either way. A blanket `dedup_by`
+    // would silently drop one of them with no record, and a later confident
+    // `Source` route to the survivor would be a false-positive (the cardinal
+    // sin this engine exists to avoid).
     // `dedup_routines_preserving_genuine_overloads` (below) tells the two
     // apart by parameter-type CONTENT rather than by counting how many times
     // the enclosing object was duplicated (beyond-1B.3b Task 2 review fix: the
@@ -290,12 +296,19 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 /// one canonical entry PER DISTINCT parameter-type signature.
 ///
 /// Two SOURCE routines collide onto the same `RoutineNodeId` whenever they
-/// share `(object, name_lc, enclosing_member_lc, params_count)` — source
-/// `sig_fp` is always `0` (see node.rs) — so the id alone cannot tell a
-/// re-parsed DUPLICATE of one routine (e.g. its owning object embedded both
-/// as workspace source and as an embedded dep; see the Step 4 comment above)
-/// apart from a genuine same-name/same-arity SOURCE overload PAIR (two
-/// textually distinct declarations differing only by parameter type).
+/// share `(object, name_lc, enclosing_member_lc, params_count)` AND `sig_fp`
+/// (see node.rs). Post-Task-2 (sigfp-and-ambiguous-reclassification plan)
+/// `sig_fp` is a REAL fingerprint of the parameter-type tuple, so a genuine
+/// same-name/same-arity SOURCE overload PAIR (two textually distinct
+/// declarations differing only by parameter type) now almost always gets
+/// DISTINCT ids and never reaches this run-grouping at all. The id alone
+/// still cannot tell a re-parsed DUPLICATE of one routine (e.g. its owning
+/// object embedded both as workspace source and as an embedded dep; see the
+/// Step 4 comment above) apart from the RARE case where two genuinely
+/// different overloads' normalized parameter tuples happen to hash to the
+/// same `sig_fp` (a residual fnv1a collision) — this function's
+/// `param_sig_key` text-based grouping (below) resolves both cases without
+/// relying on `sig_fp` alone.
 ///
 /// Within a run, entries are grouped by [`RoutineNode::param_sig_key`] — the
 /// lowercased, `|`-joined parameter-type-text sequence (mirrors
@@ -310,13 +323,16 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 /// in the COMPOUND case where an object is both duplicated AND declares a
 /// genuine overload pair (beyond-1B.3b Task 2 review fix: the previous
 /// dup-factor heuristic under-collapsed that case, e.g. 2 overloads × 2
-/// object copies = 4 raw entries kept instead of the canonical 2). The two
-/// canonical entries preserved for a genuine overload pair still share one
-/// `RoutineNodeId` (source `sig_fp` stays `0`) — `resolve_in_object`'s `>1`
-/// arm still returns an honest `Unresolved` rather than guessing; only the
-/// CANONICAL COUNT is fixed here, not distinct node identity (deferred
-/// overload-dispatch work). Never drops a genuine collision silently for a
-/// SOURCE routine.
+/// object copies = 4 raw entries kept instead of the canonical 2). Pre-Task-2
+/// (source `sig_fp` was always `0`) the two canonical entries for a genuine
+/// overload pair always shared one `RoutineNodeId`; post-Task-2 they only
+/// still share one when a residual `sig_fp` collision applies (the common
+/// case now gets distinct ids straight from sorting — see the doc comment
+/// above). Either way `resolve_in_object`'s `>1` arm still returns an honest
+/// `Unresolved` rather than guessing when a shared id survives with >1
+/// canonical entry; only the CANONICAL COUNT is fixed here, not distinct node
+/// identity (deferred overload-dispatch work). Never drops a genuine
+/// collision silently for a SOURCE routine.
 ///
 /// **ABI routines are a narrower case (Task 3 review fix; fp fidelity fixed
 /// Task 2).** An ABI routine's `param_sig_key` is hardcoded `String::new()`
@@ -348,13 +364,19 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
 /// duplicate of the identical declaration.
 ///
 /// **Source-overload alias marking (sigfp-and-ambiguous-reclassification
-/// plan, Task 1).** A run with ≥2 DISTINCT `param_sig_key`s surviving under
-/// one `RoutineNodeId` is the source-tier mirror of the ABI case above: a
-/// genuine same-name/same-arity overload PAIR that source `sig_fp` (always
-/// `0`) cannot distinguish at the id level. Neither survivor collapses (both
-/// are real, both are kept — this function's whole point), but EVERY
-/// survivor in such a run is marked [`RoutineNode::source_overload_aliased`]
-/// — a same-id/different-key COLLISION GUARD consumed by
+/// plan, Task 1; reframed by Task 2).** A run with ≥2 DISTINCT
+/// `param_sig_key`s surviving under one `RoutineNodeId` is the source-tier
+/// mirror of the ABI case above. Pre-Task-2 (source `sig_fp` was always `0`)
+/// this was the GENERAL case for every same-name/same-arity overload pair;
+/// post-Task-2 (`sig_fp` is a real parameter-type fingerprint) a genuine
+/// overload pair almost always gets distinct ids and never reaches this
+/// function at all — a run surviving here with ≥2 distinct keys now means
+/// the two overloads' `sig_fp`s themselves collided (a residual fnv1a
+/// fingerprint collision `source_param_sig_fp` cannot rule out; see
+/// `sig_fp.rs`'s module doc). Neither survivor collapses (both are real, both
+/// are kept — this function's whole point), but EVERY survivor in such a run
+/// is marked [`RoutineNode::source_overload_aliased`] — a same-id/different-key
+/// COLLISION GUARD consumed by
 /// `resolver::emit_event_flow_edges`. A TRUE re-parse duplicate (one
 /// distinct key in the run) collapses to a single unmarked survivor, same as
 /// always. The two marker fields are mutually exclusive by construction:

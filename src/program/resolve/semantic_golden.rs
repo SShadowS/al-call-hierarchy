@@ -75,7 +75,7 @@ use sha2::{Digest, Sha256};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::l3_mint::{project_l3, project_l3_implicit_trigger_in_scope};
-use crate::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId, RoutineNodeId};
+use crate::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::abi_check::{
     RawAbiIndex, abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
@@ -96,6 +96,7 @@ use crate::program::resolve::extract::{CalleeShape, extract_sites_for_routine};
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::member_catalog::{MemberCatalogKind, member_builtin};
 use crate::program::resolve::receiver::{FrameworkKind, ReceiverType, infer_receiver_type};
+use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::ParsedUnit;
 
 // ---------------------------------------------------------------------------
@@ -1668,16 +1669,7 @@ fn build_fan_out_site_context(
                     .collect();
 
                 for (routine_idx, routine) in obj.routines.iter().enumerate() {
-                    let caller = RoutineNodeId {
-                        object: obj_node_id.clone(),
-                        name_lc: routine.name.to_ascii_lowercase(),
-                        enclosing_member_lc: routine
-                            .enclosing_member
-                            .as_ref()
-                            .map(|(n, _)| n.to_ascii_lowercase()),
-                        params_count: routine.params.len(),
-                        sig_fp: 0,
-                    };
+                    let caller = source_routine_node_id(obj_node_id.clone(), routine);
 
                     let sites = extract_sites_for_routine(
                         &pf.file,
@@ -2502,7 +2494,7 @@ mod tests {
 
     use crate::engine::deps::symbol_reference::SymbolReferenceAbi;
     use crate::program::graph::ObjectIndex;
-    use crate::program::node::AppRegistry;
+    use crate::program::node::{AppRegistry, RoutineNodeId};
     use crate::program::node_extract::{Access, RoutineNode, extract_nodes};
     use crate::program::resolve::edge::{
         BuiltinId, CanonicalSpan, Evidence, OpenWorldReason, Route, SetCompleteness, SourcePos,

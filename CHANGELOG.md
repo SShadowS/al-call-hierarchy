@@ -335,6 +335,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fixed entry for the corrected accounting and final post-fix numbers.
 
 ### Fixed
+- **`build_fan_out_site_context` missed the Task 2 `source_routine_node_id`
+  unification — the 6th live `RoutineNodeId` construction site, still
+  hardcoding `sig_fp: 0` (Task 2 review fix).** Task 2 (above) migrated 4 live
+  reconstruction sites onto the shared `source_routine_node_id` constructor
+  but missed `semantic_golden.rs::build_fan_out_site_context` — production
+  code that re-walks the same call sites `resolve_full_program` resolves to
+  recover `FanOutSiteContext` for `route_applicability`'s fan-out soundness
+  teeth. Because `SiteId.caller: RoutineNodeId` participates in `Eq`/`Hash`,
+  the map this function built could never be looked up by
+  `route_applicability` for any caller with ≥1 parameter (real `sig_fp` on
+  one side, hardcoded `0` on the other), silently falling into the
+  fail-closed `None` branch and flagging every such route a VIOLATION on
+  CDO: `interface_applicability_violations=24`,
+  `implicit_trigger_violations=324` — both gates (`route_applicability_
+  zero_violations`, `fan_out_applicability_zero_violations`) were broken
+  while still reporting green, because the in-repo `fanout-applicability`
+  fixture's only caller (`Go()`) happened to be zero-param, where a
+  hardcoded `0` and a real `sig_fp` are indistinguishable. Fixed:
+  `build_fan_out_site_context` now calls `source_routine_node_id` like every
+  other live site (true 6-site unification). The fixture was hardened so
+  this class of bug can never pass silently again:
+  `tests/fixtures/fanout-applicability/Interface.al` and `Trigger.al`'s
+  callers are now PARAMETERIZED (`Go(Dummy: Integer)`), forcing the map
+  lookup to depend on a genuinely non-zero, correctly-agreeing `sig_fp` —
+  this fixture change reproduces the bug (proven failing before the fix,
+  passing after). CDO re-verified post-fix: both applicability gates at 0
+  violations with NON-VACUOUS route counts
+  (`interface_routes_checked=28`, `implicit_trigger_routes_checked=1183`,
+  `instance_builtin_routes_checked=463`, `event_routes_checked=3404`);
+  `cdo_full_program_coverage_and_self_reported_metric` unchanged
+  (`unknown=151` / `real_unknown_rate=0.0083`); `genuine_wrong=0`; frozen
+  event/trigger digests byte-identical; the pinned source-overload
+  collision-guard group count unchanged at 0/0. Also updated `build.rs`'s
+  now-stale "source `sig_fp` is always `0`" doc comments (present-tense,
+  written before Task 2 landed) to describe the post-Task-2 reality: `sig_fp`
+  is now a real parameter-type fingerprint, and a same-id survivor run means
+  either a true re-parse duplicate or a rare residual fnv1a collision, not
+  the general case. `sig_fp.rs` gained an explicit doc note on the `by_ref`
+  fold's over-split-never-alias asymmetry rationale, honestly flagging as an
+  open question whether AL itself treats a var-only-differing parameter list
+  as a legal distinct overload.
 - **`is_atomic_receiver_token` judged a well-formed QUOTED receiver token on its
   UNQUOTED-branch `(` call-shape exclusion before its own quote-parity check — 8
   real-field CDO sites false-demoted to `Unknown` (dataitem-receivers plan, Task 1

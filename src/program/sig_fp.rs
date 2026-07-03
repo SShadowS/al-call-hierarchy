@@ -82,6 +82,38 @@ fn normalize_type_text(s: &str) -> String {
 /// grammar field (`Param::by_ref`), not embedded in `ty`'s text — unlike
 /// array rank / subtype qualifiers, which ARE already part of the verbatim
 /// type-clause text.
+///
+/// **AL overload-identity note on `by_ref` (Task 2 review fix addendum.)**
+/// Folding `by_ref` in unconditionally means two otherwise-identical
+/// parameter lists differing ONLY in a `var` modifier fingerprint to
+/// DIFFERENT `sig_fp`s — this fold is deliberately biased toward
+/// OVER-SPLITTING (treating the pair as distinct overloads) rather than
+/// UNDER-SPLITTING (aliasing them onto one shared id). That asymmetry is the
+/// correct conservative direction for this engine's cardinal invariant: an
+/// under-split (false alias) can make a confident `Source` route resolve to
+/// the WRONG declaration — a genuine false positive, the exact failure mode
+/// the sigfp-and-ambiguous-reclassification plan exists to close. An
+/// over-split, at worst, gives two real declarations distinct ids when a
+/// looser identity would have merged them; the engine then either resolves
+/// each honestly to its own id or, in the pathological case, fails closed to
+/// `Unresolved` — never a confidently wrong answer. Over-split never
+/// false-aliases; under-split can.
+///
+/// Open question, noted honestly rather than assumed away: whether the AL
+/// compiler actually PERMITS declaring two overloads of the same procedure
+/// name/arity/parameter-types differing ONLY by a `var` modifier is not
+/// independently verified here (no compiler-backed corpus check was run for
+/// this specific case). If AL's own overload resolution does NOT key on
+/// `by_ref` — i.e. a var-only-differing pair is a compile-time
+/// duplicate-signature conflict in real AL source, not a legal overload —
+/// then this fold's extra split is harmless in practice: no genuine AL
+/// source can ever produce two survivors differing only by `by_ref` for
+/// [`source_param_sig_fp`] to distinguish, so the split costs nothing. If AL
+/// DOES treat it as a legal overload, the split is required for correctness.
+/// Either way, folding `by_ref` in is the safe choice under the
+/// over-split/under-split asymmetry above; this fold's direction was chosen
+/// specifically so that open question does not need to be resolved before
+/// shipping.
 pub(crate) fn source_param_sig_fp(params: &[Param]) -> u64 {
     if params.is_empty() {
         return 0;
