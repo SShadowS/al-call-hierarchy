@@ -40,7 +40,9 @@ use crate::program::resolve::edge::{
 };
 use crate::program::resolve::extract::{CalleeShape, WithState, extract_sites_for_routine};
 use crate::program::resolve::index::ResolveIndex;
-use crate::program::resolve::receiver::{ReceiverType, infer_receiver_type};
+use crate::program::resolve::receiver::{
+    ReceiverType, infer_receiver_type, is_atomic_receiver_token,
+};
 use crate::program::resolve::resolver::{
     emit_event_flow_edges, resolve_bare, resolve_implicit_trigger, resolve_member,
     resolve_object_run,
@@ -361,14 +363,24 @@ fn resolve_call_site_obligation(
                     vec![unknown_route(UnknownReason::IndexIntegrationGap)],
                 )
             };
-            // Task 3: a dotted `receiver_text` (`A.B.C`) means Phase A was
-            // asked to type a multi-segment/compound receiver chain — AL
-            // variable/singleton/framework names never contain a dot, so
+            // Task 3: a COMPOUND `receiver_text` (`A.B.C`, an UNQUOTED `.`
+            // segment separator) means Phase A was asked to type a
+            // multi-segment/compound receiver chain — AL variable/singleton/
+            // framework/dataitem names never contain an unquoted dot, so
             // `infer_receiver_type` structurally cannot match one (except the
             // narrow `CurrPage.<part>.Page` shape, which resolves and never
             // reaches here). Relabel the generic `UntrackedReceiver` tag with
             // the more specific `CompoundReceiver` in that case.
-            if receiver_lc.contains('.') {
+            //
+            // `is_atomic_receiver_token` (dataitem-receivers plan, Task 1)
+            // replaces the naive `receiver_lc.contains('.')` check here: a
+            // QUOTED receiver with an EMBEDDED period
+            // (`"Sales Cr.Memo Header Filter"`) is a single ATOMIC identifier,
+            // not a compound chain, so it must NOT be relabeled
+            // `CompoundReceiver` — the naive check mislabeled it before this
+            // fix, hiding a real dataitem-name receiver behind the wrong
+            // Unknown reason.
+            if !is_atomic_receiver_token(&receiver_lc) {
                 for r in &mut routes {
                     if matches!(
                         r.evidence,

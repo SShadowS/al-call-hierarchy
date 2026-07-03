@@ -8,6 +8,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Report-dataitem receivers + trigger implicit-Rec + quote-aware token guard + additive
+  `modify()` lowering — real-`unknown` 0.99%→0.88% (dataitem-receivers plan, Task 1).**
+  Models `al_syntax::ir::ObjectDecl.report_dataitems`/`RoutineDecl.dataitem_source_table`
+  as first-class receiver-typing inputs in the fresh engine (previously consumed only by
+  the legacy L2 engine): `node_extract::DataitemNode` on `ObjectNode` (Report/
+  ReportExtension only, mirrors `page_controls`); a new Step 2b in `infer_receiver_type`
+  (`src/program/resolve/receiver.rs`) — a unique dataitem-NAME receiver match (case-
+  insensitive, unquoted), strictly after Step 2's var/param/global miss (vars always
+  shadow a dataitem), fail-closed on a same-named report procedure collision or a
+  duplicate name across the own+extended-base dataitem maps; the Report/ReportExtension
+  arm of `infer_implicit_rec` is now ROUTINE-CONTEXTUAL (binds from the enclosing
+  `RoutineDecl.dataitem_source_table`, or the new `modify()` resolve-time fallback below —
+  never object-level, never for a `requestpage` trigger). Two pre-existing defects fixed
+  alongside: (1) **the naive dot-substring quote guard** — `receiver_lc.contains('.')`
+  mislabeled a QUOTED dataitem name with an embedded period (`"Sales Cr.Memo Header
+  Filter"`, a real CDO name) `CompoundReceiver`; replaced by one centralized
+  `is_atomic_receiver_token` helper (quote-aware: atomic iff no unquoted `.`) shared by
+  `receiver.rs`'s Step 2/3a/4 guards and `full.rs`'s `CompoundReceiver` relabeling; (2)
+  **the ReportExtension `modify()` lowerer gap** — `RawKind::ModifyModification` carries
+  its target in the grammar's `target` field, not `name`, so `collect_routines`'s
+  Name-based member-wrapper gate never recognized it, losing `enclosing_member` for every
+  trigger nested in `modify(X) { .. }`. Fixed additively: `collect_routines`
+  (`crates/al-syntax/src/lower/mod.rs`) gets a dedicated `ModifyModification` arm (reads
+  `Target`) plus a new `RoutineDecl.in_dataset_modify_context: bool` field — `true` only
+  for a CONFIRMED report/report-extension `dataset { modify(X) { .. } }` member (forced
+  `false` descending into `requestpage`, REQUESTPAGE ISOLATION, and for every other
+  `modify()` context — fields/layout/views); the resolver's dataitem-map fallback
+  (`resolve_dataitem_source_table`, reused by both Step 2b and the `modify()` case) fires
+  only when that flag is set. New fixtures `tests/r0-corpus/ws-report-dataitem/` (5
+  positive scenarios + 5 negatives: var-shadow, procedure-name collision, duplicate-
+  across-own-and-base, requestpage isolation, genuinely-compound-stays-compound) + 12 new
+  `receiver.rs` unit tests + 3 focused `al-syntax` lowerer unit tests for
+  `ModifyModification.Target`. Existing `ws-page-rec/src/ReportWithDataitem.Report.al`
+  fixture's `Rec.GetDisplayName()` (previously an intentional NEGATIVE, per the old
+  per-dataitem-scoping gap) now correctly resolves `Evidence::Source` — updated, not a
+  regression. CDO (`CDO_WS`, single-threaded, `--release`): primary `real_unknown_rate`
+  0.99%→0.88% (raw 159/18104=0.008782), primary/whole `unknown` 180→159,
+  `unknownByReason` delta `UntrackedReceiver` 37→17 (−20) + `CompoundReceiver` 61→60
+  (−1), every other bucket byte-identical (`OverloadAmbiguous`=56,
+  `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25); `genuine_wrong`=0 and
+  `fresh_wrong`=149 both UNCHANGED (companion audit gates); `fresh_missing`=3 unchanged.
+  All 9 CDO gates green: metric, audit, ABI integrity, both applicability teeth
+  (interface/instance_builtin/implicit_trigger/event all 0 violations, non-vacuous route
+  counts), the include-Sender preflight, the trigger/event frozen audits, and the
+  genuine-wrong precedence adjudication. Real-CDO-source-grounded: the dot-bearing
+  `"Sales Cr.Memo Header Filter".GetView()`/`.GetFilters()` pattern (Report 6175283 "CDO
+  Update Output Profile", lines 435/510) spot-verified — both are platform `Record`
+  catalog methods, so once Step 2b types the receiver, the pre-existing builtin-catalog
+  dispatch (untouched by this task) resolves them safely regardless of table identity.
+  Metric/count ratchets tightened (0.00995→0.00879 / 180→159, dated 2026-07-03); the
+  `FRESH_MISSING_CEILING`/`FRESH_WRONG_CEILING` audit ratchets are unchanged (measured
+  values didn't move). Out of scope (deferred, per the plan): unquoted bare
+  implicit-Rec dataitem-name fields; XmlPort/Query dataitem modeling (zero on CDO).
+
 - **Applicability-checker fix + ABI param-Subtype fidelity + record-field chains complete
   — real-`unknown` 1.75%→0.99%, SUB-1% for the first time (applicability-param-subtype-
   recfield plan v2.1, Task 5, FINAL — arc capstone).** Closes the plan Task 1 opened.

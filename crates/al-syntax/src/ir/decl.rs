@@ -170,6 +170,21 @@ pub struct RoutineDecl {
     /// `None` for a procedure or an object-level trigger (OnRun / OnOpenPage). Mirrors
     /// the legacy `enclosing_member_of` (E1 — additive, never serialized into a golden).
     pub enclosing_member: Option<(String, Origin)>,
+    /// `true` when this routine's `enclosing_member` is a report/report-extension
+    /// DATASET `modify(<Dataitem>)` node (dataitem-receivers plan, Task 1) — i.e. the
+    /// routine is nested inside `dataset { modify(X) { trigger .. } }` (directly, or
+    /// under an `add*dataset_modification` wrapper), as opposed to a `modify()` inside
+    /// `fields`/`layout`/`requestpage`/`views`. A `modify_modification` node carries its
+    /// target in the grammar's `target` field, not `name` (see `RawModifyModification`),
+    /// so the lowerer cannot itself resolve WHICH dataitem the target names (that needs
+    /// the full own+base dataitem map — a resolve-time, cross-object concern). This flag
+    /// is the ADDITIVE signal that lets the engine's resolve-time fallback (looking the
+    /// name up via `enclosing_member`) apply ONLY to confirmed dataset `modify()`
+    /// context — REQUESTPAGE ISOLATION: always `false` inside `requestpage` (the lowerer
+    /// forces dataset-context off descending into it), and always `false` for every
+    /// non-Report/ReportExtension object (they never contain a `dataset` section).
+    /// Always `false` when `enclosing_member` is not itself a `modify_modification`.
+    pub in_dataset_modify_context: bool,
     /// `None` for a forward/external declaration with no body.
     pub body: Option<BlockId>,
     pub origin: Origin,

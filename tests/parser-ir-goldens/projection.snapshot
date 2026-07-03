@@ -344,7 +344,7 @@ ws-page-rec/src/Customer.Table.al	eb081b12693177ea
 ws-page-rec/src/CustomerCard.Page.al	e5840568492d77c3
 ws-page-rec/src/NoSourceTablePage.Page.al	d4791795ae3898e1
 ws-page-rec/src/OtherTable.Table.al	d570942c233e50e1
-ws-page-rec/src/ReportWithDataitem.Report.al	0b69610e3158fed9
+ws-page-rec/src/ReportWithDataitem.Report.al	611f5ea596dd274e
 ws-page-rec/src/ShadowVarPage.Page.al	e12258e2f1cdc8c7
 ws-paramfx/src/enricher.al	f60fcb48d285ac70
 ws-paramfx/src/salesline.al	38265ef16e982612
@@ -403,6 +403,10 @@ ws-record-field-chain/src/RFCPage.Page.al	b111dcf4ca8355c9
 ws-record-field-chain/src/RFCService.Enum.al	42ca1c05f90f927d
 ws-recursive/src/customer.al	0022db5d7a079d98
 ws-recursive/src/cycle.al	266497c3f9f2b857
+ws-report-dataitem/RDBase.Report.al	48ba7fc06f424746
+ws-report-dataitem/RDCustomer.Table.al	e2ca2c8fd7889bbc
+ws-report-dataitem/RDExt.ReportExtension.al	38accbf3e5a2ecd1
+ws-report-dataitem/RDSalesHeader.Table.al	0f141e7fd0df83f9
 ws-report-trigger/src/report.al	6599c9763f9e6638
 ws-resolve/src/customer.al	0022db5d7a079d98
 ws-resolve/src/processor.al	15e74153ab1827a2

@@ -579,7 +579,7 @@ ws-page-rec/src/Customer.Table.al::0::GetDisplayName	33b105c13fd7f47a
 ws-page-rec/src/CustomerCard.Page.al::0::OnOpenPage	b53a45d13e38370e
 ws-page-rec/src/NoSourceTablePage.Page.al::0::OnOpenPage	d20a3e9ce85fa3f3
 ws-page-rec/src/OtherTable.Table.al::0::OtherProc	2e1479de48e4e77b
-ws-page-rec/src/ReportWithDataitem.Report.al::0::OnAfterGetRecord	d75e606300fa62f8
+ws-page-rec/src/ReportWithDataitem.Report.al::0::OnAfterGetRecord	c2080bbb1677c123
 ws-page-rec/src/ShadowVarPage.Page.al::0::OnOpenPage	0323ddb1bcfbcbe1
 ws-paramfx/src/enricher.al::0::EnrichLine	edbb72d935103cb6
 ws-paramfx/src/enricher.al::0::AdjustLine	dcbc10f7fb883bec
@@ -698,6 +698,18 @@ ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestPageReceiverQuotedMember
 ws-record-field-chain/src/RFCCaller.Codeunit.al::0::TestVarNameShadowsFieldNameNonFieldWins	44c798241b204d78
 ws-recursive/src/cycle.al::0::Ping	caa2d815ab0d5e6f
 ws-recursive/src/cycle.al::0::Pong	7a6274adb6586d10
+ws-report-dataitem/RDBase.Report.al::0::OnAfterGetRecord	0495d9f68b3f1680
+ws-report-dataitem/RDBase.Report.al::0::OnOpenPage	a29ed5ad5ea6e8b3
+ws-report-dataitem/RDBase.Report.al::0::RD Collide	e73bae3c9d109ccc
+ws-report-dataitem/RDBase.Report.al::0::TestCollisionDeclines	9adeffd1ef8124d8
+ws-report-dataitem/RDBase.Report.al::0::TestVarShadowsDataitem	d17d30692d586476
+ws-report-dataitem/RDBase.Report.al::0::TestBareCustName	dbfffa5b4acc2d5f
+ws-report-dataitem/RDBase.Report.al::0::TestBareDotBearingName	a20b1daf36e4f7fc
+ws-report-dataitem/RDBase.Report.al::0::TestGenuinelyCompoundReceiverStaysUnknown	62ce4911dc2b8565
+ws-report-dataitem/RDCustomer.Table.al::0::GetDisplayName	4fc21fd5c800546b
+ws-report-dataitem/RDExt.ReportExtension.al::0::OnAfterGetRecord	05bbe4a1919fde63
+ws-report-dataitem/RDExt.ReportExtension.al::0::ExtTestBaseDataitemName	4dc74c4e2e53bcd6
+ws-report-dataitem/RDSalesHeader.Table.al::0::GetFilters	7a9826e4e6d4eb10
 ws-report-trigger/src/report.al::0::OnPreReport	b31d2a5b3e173e36
 ws-report-trigger/src/report.al::0::OnPostReport	f88db06c59e9f60e
 ws-report-trigger/src/report.al::0::ReportHelper	8aafbefaccda4416

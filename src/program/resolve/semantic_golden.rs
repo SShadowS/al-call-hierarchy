@@ -2548,6 +2548,7 @@ mod tests {
             source_table_temporary: false,
             page_controls: vec![],
             fields: vec![],
+            dataitems: vec![],
         }
     }
 

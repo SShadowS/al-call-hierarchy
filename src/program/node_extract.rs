@@ -67,6 +67,23 @@ pub struct PageControlNode {
     pub target: ObjectRef,
 }
 
+/// One report `dataitem(Name; "Source Table")` declaration — Report /
+/// ReportExtension only, document order (dataitem-receivers plan, Task 1).
+/// Mirrors [`PageControlNode`]: `name_lc` is the lowercased UNQUOTED dataitem
+/// name (`al_syntax::ir::ObjectDecl.report_dataitems` is already
+/// outer-quote-stripped, `ident_text`); `source_table` is the RAW `ObjectRef`
+/// parsed exactly like `SourceTable`/`TableNo` — resolved lazily via
+/// [`crate::program::resolve::receiver::resolve_source_table_ref`] at the
+/// same fail-closed call sites Page/PageExtension/Codeunit already use, never
+/// pre-resolved here (keeps `ObjectNode` topology-independent, matching every
+/// other `*Ref` field on this struct).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataitemNode {
+    pub name_lc: String,
+    pub name: String,
+    pub source_table: ObjectRef,
+}
+
 /// One table field surface entry (Table / TableExtension only) — Task 3
 /// (record-field chains). `name_lc` is the lowercased, UNQUOTED field name
 /// (mirrors [`RoutineNode`]'s `name_lc`/`RoutineNodeId::name_lc` convention —
@@ -116,6 +133,12 @@ pub struct ObjectNode {
     /// `ResolveIndex::field_in_table` for the `Rec."Field".X()` record-field
     /// chain arm in `receiver::infer_compound_member_receiver`.
     pub fields: Vec<FieldNode>,
+    /// Report `dataitem(Name; "Source Table")` declarations (Report /
+    /// ReportExtension only), document order — dataitem-receivers plan
+    /// (Task 1). Empty for every other object kind. Consumed by
+    /// `receiver::resolve_dataitem_source_table` (Step 2b's dataitem-NAME
+    /// receiver lookup, and the report implicit-Rec fallback).
+    pub dataitems: Vec<DataitemNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -366,6 +389,24 @@ pub fn extract_nodes(
             Vec::new()
         };
 
+        // Report dataitems — Report/ReportExtension only, document order (Task 1,
+        // dataitem-receivers plan). `d.0`/`d.1` are already outer-quote-stripped
+        // (`ident_text`, `al_syntax::lower::collect_report_dataitems`); the shared
+        // `parse_object_ref_value` still normalizes the table half losslessly
+        // (numeric vs quoted-name), mirroring `SourceTable`/`TableNo` above.
+        let dataitems = if matches!(obj.kind, ObjectKind::Report | ObjectKind::ReportExtension) {
+            obj.report_dataitems
+                .iter()
+                .map(|(name, table)| DataitemNode {
+                    name_lc: name.to_ascii_lowercase(),
+                    name: name.clone(),
+                    source_table: parse_object_ref_value(table).0,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         objects.push(ObjectNode {
             id: obj_id.clone(),
             name: obj.name.clone(),
@@ -378,6 +419,7 @@ pub fn extract_nodes(
             source_table_temporary,
             page_controls,
             fields,
+            dataitems,
         });
         // Computed once per object — same value for every routine in the object.
         let subscriber_instance_manual = read_event_subscriber_instance(obj);

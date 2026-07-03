@@ -1649,19 +1649,41 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // makes no resolver changes — this ceiling is already at the plan's
     // FINAL floor, no further tightening. Net across the whole T1-T4 arc:
     // 1.75% (317) → 0.99% (180), sub-1% for the first time.
+    //
+    // TIGHTENED 2026-07-03 (dataitem-receivers plan, Task 1): 0.00995→0.00879,
+    // measured 0.88% (exact raw value 159/18104=0.008782…). Task 1 adds
+    // report-dataitem receivers: `infer_receiver_type`'s new Step 2b
+    // (dataitem-NAME receiver lookup), the routine-contextual Report/
+    // ReportExtension arm of `infer_implicit_rec` (`RoutineDecl.
+    // dataitem_source_table` threaded from the lowerer), the centralized
+    // quote-aware `is_atomic_receiver_token` guard (replaces the naive
+    // dot-substring check that mislabeled a dot-bearing quoted dataitem name
+    // `CompoundReceiver`), and the additive `modify()` lowerer fix + its
+    // resolve-time dataset-context fallback. Measured CDO delta:
+    // `UntrackedReceiver` 37→17 (−20), `CompoundReceiver` 61→60 (−1), every
+    // other bucket BYTE-IDENTICAL (`OverloadAmbiguous`=56,
+    // `BuiltinPrecedenceCollision`=1, `MemberNotFound`=25 — confirming this
+    // task's changes are surgically scoped to the receiver/dataitem paths,
+    // zero collateral effect). `genuine_wrong` stays 0 and `fresh_wrong`
+    // stays 149 (companion audit gate, byte-identical) — the drop is smaller
+    // than the plan's "~27" dataitem-named-site estimate because several of
+    // those sites correctly stay `Unknown` under the fail-closed collision/
+    // requestpage-isolation/var-shadow guards, per design (see
+    // `.superpowers/sdd/task-1-report.md`).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.00995,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.00995 \
-         (recorded 2026-07-03 post applicability-param-subtype-recfield \
-         Task 4: 0.99% [180/18104=0.009943], bare implicit-Rec quoted-field \
-         receivers — UntrackedReceiver 91→37, all 54 flips exhaustively \
-         adjudicated; was 1.29% post Task 3, 1.75% post plan v2.1 Task 5 \
-         FINAL, 1.81% post plan v2.1 Task 3, 1.82% post \
-         uniform-access-and-compound-receiver Task 4, 1.88% post-Task-1.5, \
-         2.25% post-Task-1-only [a transient over-decline], 1.91% \
-         pre-Task-1, 2.81% pre-follow-up, 6.46% pre-beyond-1B.3b) — engine \
-         regressed; investigate before raising the ceiling"
+        primary_rate <= 0.00879,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.00879 \
+         (recorded 2026-07-03 post dataitem-receivers Task 1: 0.88% \
+         [159/18104=0.008782], report-dataitem receivers — UntrackedReceiver \
+         37→17 + CompoundReceiver 61→60; was 0.99% post \
+         applicability-param-subtype-recfield Task 4/5 [180/18104=0.009943], \
+         1.29% post Task 3, 1.75% post plan v2.1 Task 5 FINAL, 1.81% post \
+         plan v2.1 Task 3, 1.82% post uniform-access-and-compound-receiver \
+         Task 4, 1.88% post-Task-1.5, 2.25% post-Task-1-only [a transient \
+         over-decline], 1.91% pre-Task-1, 2.81% pre-follow-up, 6.46% \
+         pre-beyond-1B.3b) — engine regressed; investigate before raising \
+         the ceiling"
     );
 
     // ── Regression guard: primary real-`unknown` COUNT ceiling ───────────────
@@ -1819,16 +1841,22 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // v2.1, Task 5, FINAL — arc capstone): byte-identical 180/180
     // (primary/whole), no resolver changes this task — already at the
     // plan's FINAL floor.
+    //
+    // TIGHTENED 2026-07-03 (dataitem-receivers plan, Task 1): 180→159,
+    // measured 159/159 (primary/whole) — report-dataitem receivers (see the
+    // rate-ceiling comment above for the full delta and adjudication
+    // summary). `unknownByReason`={CompoundReceiver: 60, UntrackedReceiver:
+    // 17, OverloadAmbiguous: 56, BuiltinPrecedenceCollision: 1,
+    // MemberNotFound: 25}, sum==159.
     assert!(
-        ph.unknown <= 180,
-        "primary unknown count {} exceeds ceiling 180 (recorded 2026-07-03 \
-         post applicability-param-subtype-recfield Task 4: 180 — bare \
-         implicit-Rec quoted-field receivers, UntrackedReceiver 91→37, all \
-         54 flips exhaustively adjudicated via a full before/after \
-         edge-dump diff; was 234 post Task 3, 317 post plan v2.1 Task 5 \
-         FINAL, 327 post plan v2.1 Task 3, 329 post \
-         uniform-access-and-compound-receiver Task 4, 340 post Task 1.5/3, \
-         407 post Task 1 alone [transient over-decline], 356 post \
+        ph.unknown <= 159,
+        "primary unknown count {} exceeds ceiling 159 (recorded 2026-07-03 \
+         post dataitem-receivers Task 1: 159 — report-dataitem receivers, \
+         UntrackedReceiver 37→17 + CompoundReceiver 61→60; was 180 post \
+         applicability-param-subtype-recfield Task 4/5, 234 post Task 3, \
+         317 post plan v2.1 Task 5 FINAL, 327 post plan v2.1 Task 3, 329 \
+         post uniform-access-and-compound-receiver Task 4, 340 post Task \
+         1.5/3, 407 post Task 1 alone [transient over-decline], 356 post \
          soundness completion plan v2.1 Task 1.5, 346 post follow-up plan \
          v2.1 Task 4, 508 pre-follow-up) — engine regressed; investigate \
          before raising the ceiling",
@@ -1860,13 +1888,17 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // RE-CONFIRMED 2026-07-03 (applicability-param-subtype-recfield plan
     // v2.1, Task 5, FINAL — arc capstone): byte-identical 180, no resolver
     // changes this task.
+    //
+    // TIGHTENED 2026-07-03 (dataitem-receivers plan, Task 1): 180→159,
+    // alongside the primary ceiling above; whole-program `unknown`=159,
+    // same value as primary today.
     assert!(
-        h.unknown <= 180,
-        "whole-program unknown count {} exceeds ceiling 180 (recorded \
-         2026-07-03 post applicability-param-subtype-recfield Task 4: 180 \
-         — see the primary-scoped ceiling comment above for the full \
-         history and adjudication) — engine regressed; investigate before \
-         raising the ceiling",
+        h.unknown <= 159,
+        "whole-program unknown count {} exceeds ceiling 159 (recorded \
+         2026-07-03 post dataitem-receivers Task 1: 159 — see the \
+         primary-scoped ceiling comment above for the full history and \
+         adjudication) — engine regressed; investigate before raising the \
+         ceiling",
         h.unknown,
     );
 
@@ -4760,21 +4792,35 @@ fn ws_page_rec_local_var_shadows_implicit_source_table() {
     );
 }
 
-/// Test 22e (fixture e, NEGATIVE): Report/ReportExtension are EXCLUDED —
-/// `ReportWithDataitem`'s dataitem sources `Customer` (which DOES declare
-/// `GetDisplayName`), but the Report/ReportExtension arm of
-/// `infer_implicit_rec` unconditionally returns `Record{table: None}`
-/// (per-dataitem scoping is a future task), so `Rec.GetDisplayName()` stays
-/// honest `Unknown` — it must NOT resolve just because the same-named
-/// procedure happens to exist on the dataitem's source table.
+/// Test 22e (fixture e, UPDATED — dataitem-receivers plan, Task 1):
+/// Report/ReportExtension implicit-Rec is now ROUTINE-CONTEXTUAL —
+/// `ReportWithDataitem`'s `OnAfterGetRecord` trigger is nested inside
+/// `dataitem(Cust; Customer)`, so the lowerer threads
+/// `RoutineDecl.dataitem_source_table = Some("Customer")` and
+/// `infer_implicit_rec`'s Report/ReportExtension arm resolves it exactly like
+/// Page's `SourceTable` precedent. `Rec.GetDisplayName()` now correctly
+/// resolves `Evidence::Source` to `Customer.GetDisplayName` — this is the
+/// intended fix, not a regression (see `tests/r0-corpus/ws-report-dataitem/`
+/// for the dedicated fixture set, and `receiver.rs`'s
+/// `infer_rec_in_report_dataitem_trigger_resolves_dataitem_table` unit test
+/// for the isolated mechanism).
 #[test]
-fn ws_page_rec_report_dataitem_stays_excluded_and_unknown() {
+fn ws_page_rec_report_dataitem_resolves_via_dataitem_source_table() {
     let report = ws_page_rec_report();
     let edges = edges_for_object_routine(&report, 50966, "onaftergetrecord");
     assert_eq!(edges.len(), 1);
     let route = &edges[0].edge.routes[0];
-    assert_eq!(route.target, RouteTarget::Unresolved);
-    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getdisplayname");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert!(
+        rid.object.id_equals_number(50960),
+        "must resolve to the Customer table (id 50960); got {:?}",
+        rid.object
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -7591,4 +7637,190 @@ fn ws_bare_implicit_rec_field_non_table_scope_stays_unknown() {
     let route = rfc_outer_route(&report, 51522, "testbarefieldreceivernontablescope");
     assert_eq!(route.target, RouteTarget::Unresolved);
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+// ---------------------------------------------------------------------------
+// Dataitem-receivers plan, Task 1: report-dataitem receivers end to end,
+// over `ws-report-dataitem/`. See that fixture's `PROOF.md` for the full
+// real-CDO-source grounding of every positive fixture.
+//
+// Root features: `infer_receiver_type`'s new Step 2b (dataitem-NAME
+// receiver, `src/program/resolve/receiver.rs`); the routine-contextual
+// Report/ReportExtension arm of `infer_implicit_rec`; the centralized
+// quote-aware `is_atomic_receiver_token` guard (replaces the naive
+// dot-substring check that mislabeled a dot-bearing quoted dataitem name
+// `CompoundReceiver`); the additive `modify()` lowerer fix
+// (`crates/al-syntax/src/lower/mod.rs`) + its resolve-time dataset-context
+// fallback.
+// ---------------------------------------------------------------------------
+
+/// Loads `tests/r0-corpus/ws-report-dataitem` and returns the full
+/// `resolve_full_program` report — shared by the tests below.
+fn ws_report_dataitem_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-report-dataitem");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-report-dataitem")
+}
+
+/// Fixtures (a)+(c), POSITIVE: a trigger nested inside `dataitem(Cust; "RD
+/// Customer")` types the explicit `Rec.GetDisplayName()` receiver by the
+/// dataitem's source table (`RoutineDecl.dataitem_source_table` threaded
+/// into `infer_implicit_rec`'s Report arm) — resolves `Evidence::Source` to
+/// `"RD Customer".GetDisplayName`, a NON-builtin table procedure.
+#[test]
+fn ws_report_dataitem_trigger_resolves_via_dataitem_source_table() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "onaftergetrecord");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getdisplayname");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
+    assert!(
+        rid.object.id_equals_number(51710),
+        "must resolve to \"RD Customer\" (id 51710); got {:?}",
+        rid.object
+    );
+}
+
+/// Fixture (a), POSITIVE (Step 2b): a bare dataitem-NAME receiver
+/// (`Cust.GetDisplayName()`), called from a routine with NO enclosing
+/// dataitem context at all — proves the lookup is routine-independent (a
+/// dataitem name is in scope as a record var across ALL the report's
+/// routines).
+#[test]
+fn ws_report_dataitem_bare_name_receiver_resolves() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "testbarecustname");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getdisplayname");
+    assert!(rid.object.id_equals_number(51710));
+}
+
+/// Fixture (b), POSITIVE (the quote-guard fix): a QUOTED dataitem name with
+/// an EMBEDDED PERIOD (`"Sales Cr.Memo Header Filter"`, the real CDO shape)
+/// resolves via Step 2b — the naive dot-substring guard this task replaces
+/// would have mislabeled this `CompoundReceiver` before it ever reached the
+/// dataitem-name lookup.
+#[test]
+fn ws_report_dataitem_dot_bearing_quoted_name_resolves() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "testbaredotbearingname");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getfilters");
+    assert!(
+        rid.object.id_equals_number(51711),
+        "must resolve to \"RD Sales Header\" (id 51711); got {:?}",
+        rid.object
+    );
+}
+
+/// REQUESTPAGE ISOLATION (binding, round-1 addendum), NEGATIVE: a
+/// requestpage trigger's implicit Rec must NEVER bind a report dataitem's
+/// table — even though the SAME report has a dataitem-bearing dataset,
+/// `Rec.GetDisplayName()` inside `requestpage { trigger OnOpenPage() .. }`
+/// stays honest `Unknown`.
+#[test]
+fn ws_report_dataitem_requestpage_trigger_never_binds_dataitem_table() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "onopenpage");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// NEGATIVE (var shadows dataitem, AL scoping): a LOCAL var (`Cust: Record
+/// "RD Sales Header"`) of a DIFFERENT table than the "Cust" dataitem's own
+/// (`"RD Customer"`) must win — Step 2 (var lookup) runs strictly before
+/// Step 2b (dataitem lookup). A mistaken Step-2b hit would resolve against
+/// `"RD Customer"` instead, observably distinguishable from the correct
+/// Step-2 var hit against `"RD Sales Header"`.
+#[test]
+fn ws_report_dataitem_local_var_shadows_dataitem_name() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "testvarshadowsdataitem");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getfilters");
+    assert!(
+        rid.object.id_equals_number(51711),
+        "the local var must win, resolving to \"RD Sales Header\" (51711) \
+         not the dataitem's \"RD Customer\" (51710); got {:?}",
+        rid.object
+    );
+}
+
+/// NEGATIVE (collision guard, fail-closed): a dataitem name ("RD Collide")
+/// that is ALSO a report procedure name must decline — AL's parens-optional
+/// zero-arg call makes the receiver structurally ambiguous between "the
+/// dataitem record" and "a parens-less call to the procedure".
+#[test]
+fn ws_report_dataitem_collision_with_procedure_declines() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "testcollisiondeclines");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// NEGATIVE (a genuinely compound receiver stays compound): an unquoted
+/// `A.B` shaped receiver must never be mis-routed into the atomic
+/// dataitem-name lookup.
+#[test]
+fn ws_report_dataitem_genuinely_compound_receiver_stays_unknown() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51700, "testgenuinelycompoundreceiverstaysunknown");
+    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+}
+
+/// Fixture (d), POSITIVE (the `modify()` lowerer gap + resolve-time
+/// fallback): a ReportExtension's `dataset { modify(Cust) { trigger
+/// OnAfterGetRecord .. } }` — pre-fix, `enclosing_member` AND
+/// `dataitem_source_table` were both `None` for this trigger (the lowerer's
+/// generic Name-based member-wrapper gate never recognized
+/// `modify_modification`, whose target lives in the `target` field). Post-
+/// fix, the additive `Target` read populates `enclosing_member` +
+/// `in_dataset_modify_context`, and the resolver's confirmed-dataset-context
+/// fallback resolves the implicit Rec via the merged own+base dataitem map
+/// (here: the BASE report's own "Cust" -> "RD Customer").
+#[test]
+fn ws_report_dataitem_extension_modify_trigger_resolves_via_fallback() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51701, "onaftergetrecord");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getdisplayname");
+    assert!(
+        rid.object.id_equals_number(51710),
+        "must resolve to \"RD Customer\" (id 51710) via the base report's \
+         \"Cust\" dataitem; got {:?}",
+        rid.object
+    );
+}
+
+/// Fixture (e), POSITIVE (ReportExtension base-dataitem fallback): the
+/// extension has NO dataitems of its own — a bare dataitem-NAME receiver
+/// naming the BASE report's "Cust" dataitem still resolves, via the
+/// extends-target base-dataitem fallback (mirrors the PageExtension
+/// `SourceTable` inheritance pattern).
+#[test]
+fn ws_report_dataitem_extension_resolves_base_dataitem_name() {
+    let report = ws_report_dataitem_report();
+    let route = rfc_outer_route(&report, 51701, "exttestbasedataitemname");
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "getdisplayname");
+    assert!(rid.object.id_equals_number(51710));
 }

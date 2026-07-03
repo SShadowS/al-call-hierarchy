@@ -102,13 +102,27 @@ fn lower_object(
     // Routines: every procedure/trigger anywhere in the object subtree (incl. field
     // /action triggers nested in sections, and both #if/#else branches). A dataitem
     // trigger carries its enclosing dataitem's source table (implicit-`Rec` type).
+    // `dataset_ctx` starts `false` (Task 1, dataitem-receivers plan) — it only ever
+    // becomes `true` while descending a report/report-extension `dataset` section, and
+    // is force-reset to `false` on entering `requestpage` (REQUESTPAGE ISOLATION).
     let mut routine_nodes = Vec::new();
-    collect_routines(node, None, None, source, &mut routine_nodes);
+    collect_routines(node, None, None, false, source, &mut routine_nodes);
     let routines = routine_nodes
         .into_iter()
-        .map(|(r, attr_items, di_table, member)| {
-            lower_routine(r, attr_items, di_table, member, source, ir, issues)
-        })
+        .map(
+            |(r, attr_items, di_table, member, in_dataset_modify_context)| {
+                lower_routine(
+                    r,
+                    attr_items,
+                    di_table,
+                    member,
+                    in_dataset_modify_context,
+                    source,
+                    ir,
+                    issues,
+                )
+            },
+        )
         .collect();
 
     // Report dataitems (name, source-table) — a dataitem name is in scope as a record
@@ -352,23 +366,34 @@ fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProper
     })
 }
 
-/// DFS collecting `(routine, attribute items, enclosing-dataitem-source-table)`
-/// triples. AL has no nested routines, so we do not descend into a routine once found.
-/// `attribute_item` nodes are SIBLINGS preceding the routine (grammar v2+); accumulate
-/// them and attach to the next routine, resetting on any other node. When the walk
-/// crosses into a report `dataitem(Name; "Source Table")`, the (innermost) dataitem's
-/// source table is threaded down so a dataitem trigger gets its implicit-`Rec` type.
+/// DFS collecting `(routine, attribute items, enclosing-dataitem-source-table,
+/// enclosing-member, in-dataset-modify-context)` 5-tuples. AL has no nested routines, so
+/// we do not descend into a routine once found. `attribute_item` nodes are SIBLINGS
+/// preceding the routine (grammar v2+); accumulate them and attach to the next routine,
+/// resetting on any other node. When the walk crosses into a report `dataitem(Name;
+/// "Source Table")`, the (innermost) dataitem's source table is threaded down so a
+/// dataitem trigger gets its implicit-`Rec` type.
+///
+/// `dataset_ctx` (Task 1, dataitem-receivers plan) tracks whether the walk is currently
+/// inside a report/report-extension `dataset` section: `true` on entering
+/// `dataset_section`/`report_dataitem`, force-reset to `false` on entering
+/// `requestpage_section` (REQUESTPAGE ISOLATION — binding, never leaks a dataset
+/// `modify()`'s context into a requestpage trigger), inherited unchanged otherwise. Used
+/// only to compute `in_dataset_modify_context` at push time — see that tuple field's doc
+/// and [`crate::ir::RoutineDecl::in_dataset_modify_context`].
 #[allow(clippy::type_complexity)]
 fn collect_routines<'t>(
     node: RawNode<'t>,
     dataitem_table: Option<&str>,
     member: Option<RawNode<'t>>,
+    dataset_ctx: bool,
     source: &str,
     out: &mut Vec<(
         RawNode<'t>,
         Vec<RawNode<'t>>,
         Option<String>,
         Option<RawNode<'t>>,
+        bool,
     )>,
 ) {
     let mut pending: Vec<RawNode<'t>> = Vec::new();
@@ -376,11 +401,19 @@ fn collect_routines<'t>(
         match child.kind() {
             RawKind::AttributeItem => pending.push(child),
             RawKind::Procedure | RawKind::TriggerDeclaration => {
+                // `in_dataset_modify_context` is only ever meaningful when the enclosing
+                // member is itself a `modify_modification` (an actual `dataitem(...)`
+                // block already threads its own table via `dataitem_table` above — this
+                // flag exists purely for the resolve-time fallback that case doesn't
+                // need). See `RoutineDecl::in_dataset_modify_context`'s doc.
+                let in_dataset_modify_context =
+                    dataset_ctx && member.is_some_and(|m| m.kind() == RawKind::ModifyModification);
                 out.push((
                     child,
                     std::mem::take(&mut pending),
                     dataitem_table.map(str::to_string),
                     member,
+                    in_dataset_modify_context,
                 ));
             }
             RawKind::ReportDataitem => {
@@ -390,8 +423,33 @@ fn collect_routines<'t>(
                 // legacy `report_dataitem_source_table`, which takes the first (innermost)
                 // enclosing dataitem's `table_name?` and stops (never inherits an outer).
                 // A dataitem is also a named member → its triggers' enclosing member.
+                // Being inside an actual dataitem is inherently dataset context (`true`
+                // unconditionally — defensive, in practice already `true` by construction:
+                // `report_dataitem` only appears under `dataset_section`/`report_body`).
                 let inner = dataitem_table_name(child, source);
-                collect_routines(child, inner.as_deref(), Some(child), source, out);
+                collect_routines(child, inner.as_deref(), Some(child), true, source, out);
+            }
+            RawKind::DatasetSection => {
+                pending.clear();
+                collect_routines(child, dataitem_table, member, true, source, out);
+            }
+            RawKind::RequestpageSection => {
+                // REQUESTPAGE ISOLATION (binding, dataitem-receivers plan round-1
+                // addendum): force dataset context OFF regardless of the ambient value —
+                // a requestpage trigger (or a requestpage/layout `modify()`) must NEVER
+                // be treated as report-dataset context, even under a pathological/
+                // decompiled nesting the real AL compiler would never accept ("parse
+                // structure, don't validate").
+                pending.clear();
+                collect_routines(child, dataitem_table, member, false, source, out);
+            }
+            RawKind::ModifyModification => {
+                pending.clear();
+                // `modify_modification` carries the modified member's name in its
+                // `target` field, not `name` — always treated as a named member wrapper
+                // (unlike the generic gate below, no `Name`-field probe needed). See
+                // `lower_routine`'s enclosing-member fallback for the name extraction.
+                collect_routines(child, dataitem_table, Some(child), dataset_ctx, source, out);
             }
             _ => {
                 pending.clear();
@@ -407,7 +465,14 @@ fn collect_routines<'t>(
                 } else {
                     member
                 };
-                collect_routines(child, dataitem_table, child_member, source, out);
+                collect_routines(
+                    child,
+                    dataitem_table,
+                    child_member,
+                    dataset_ctx,
+                    source,
+                    out,
+                );
             }
         }
     }
@@ -435,20 +500,39 @@ fn collect_globals(node: RawNode, source: &str, out: &mut Vec<VarDecl>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `in_dataset_modify_context`
+// (dataitem-receivers plan, Task 1); each is a distinct piece of context
+// `collect_routines`'s DFS threads down — grouping would obscure the call
+// site, mirrors `infer_receiver_type`'s identical precedent.
 fn lower_routine<'t>(
     node: RawNode<'t>,
     attr_items: Vec<RawNode<'t>>,
     dataitem_source_table: Option<String>,
     member: Option<RawNode<'t>>,
+    in_dataset_modify_context: bool,
     source: &str,
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
 ) -> RoutineDecl {
     // Enclosing-member capture (E1): a member wrapper with a `name` → its (stripped)
     // name + the wrapper's origin (range). The engine unescapes the name + anchors.
+    //
+    // `modify_modification` carries the modified member's name in its `target` field,
+    // not `name` (`RawModifyModification` has no `name()` accessor at all — Task 1,
+    // dataitem-receivers plan), so it needs a fallback. Deliberately scoped to THIS node
+    // kind only: sibling `addafter`/`addbefore`/`moveafter`/`movebefore` modification
+    // nodes also carry a `target` field, but theirs is an INSERTION ANCHOR (a reference
+    // to a different, already-existing member), never the identity of the member being
+    // declared — extending this fallback to them would be semantically wrong.
     let enclosing_member = member.and_then(|m| {
-        m.field(FieldName::Name)
-            .map(|n| (ident_text(n, source), origin_of(m)))
+        let name_node = m.field(FieldName::Name).or_else(|| {
+            if m.kind() == RawKind::ModifyModification {
+                m.field(FieldName::Target)
+            } else {
+                None
+            }
+        });
+        name_node.map(|n| (ident_text(n, source), origin_of(m)))
     });
     let kind = if node.kind() == RawKind::TriggerDeclaration {
         RoutineKind::Trigger
@@ -545,6 +629,7 @@ fn lower_routine<'t>(
         parse_incomplete: node.has_error(),
         dataitem_source_table,
         enclosing_member,
+        in_dataset_modify_context,
         body,
         origin: origin_of(node),
     }
@@ -1258,5 +1343,124 @@ codeunit 50000 T
             .find(|r| matches!(r.kind, crate::ir::RoutineKind::Trigger))
             .expect("a trigger routine");
         assert_eq!(routine.name, "UserTours::ShowTourWizard");
+    }
+
+    /// Dataitem-receivers plan, Task 1: `modify_modification` carries the
+    /// modified member's name in its `target` field, not `name`
+    /// (`RawModifyModification` has no `name()` accessor). Pre-fix, a
+    /// trigger nested in `dataset { modify(X) { trigger .. } }` lost BOTH
+    /// `enclosing_member` and any path to `dataitem_source_table` — the
+    /// lowerer's generic Name-based member-wrapper gate never recognized the
+    /// node at all. A report `dataset` `modify()` must ALSO set
+    /// `in_dataset_modify_context = true` (the confirmed-dataset-context
+    /// signal the resolver's fallback requires).
+    #[test]
+    fn modify_modification_target_becomes_enclosing_member_and_sets_dataset_context() {
+        let src = r#"
+report 50100 T
+{
+    dataset
+    {
+        modify(BaseDataitem)
+        {
+            trigger OnAfterGetRecord()
+            begin
+            end;
+        }
+    }
+}
+"#;
+        let af = parse(src);
+        let routine = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .find(|r| r.name.eq_ignore_ascii_case("OnAfterGetRecord"))
+            .expect("the trigger nested in modify() must still be lowered");
+        let (member_name, _origin) = routine
+            .enclosing_member
+            .as_ref()
+            .expect("modify()'s Target must populate enclosing_member");
+        assert_eq!(member_name, "BaseDataitem");
+        assert!(
+            routine.in_dataset_modify_context,
+            "a dataset modify() must set the confirmed dataset-context flag"
+        );
+    }
+
+    /// REQUESTPAGE ISOLATION (binding, dataitem-receivers plan round-1
+    /// addendum): a `modify()` nested inside `requestpage { layout { .. } }`
+    /// still gets its `enclosing_member` populated (the Target-field fix is
+    /// general, not dataset-specific), but `in_dataset_modify_context` MUST
+    /// stay `false` — this is NOT a report dataset `modify()`, and the
+    /// resolver's dataitem-map fallback must never fire for it.
+    #[test]
+    fn modify_modification_inside_requestpage_never_sets_dataset_context() {
+        let src = r#"
+report 50101 T
+{
+    requestpage
+    {
+        layout
+        {
+            modify(SomeField)
+            {
+                trigger OnValidate()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#;
+        let af = parse(src);
+        let routine = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .find(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+            .expect("the trigger nested in the requestpage modify() must still be lowered");
+        let (member_name, _origin) = routine
+            .enclosing_member
+            .as_ref()
+            .expect("modify()'s Target must populate enclosing_member even outside dataset");
+        assert_eq!(member_name, "SomeField");
+        assert!(
+            !routine.in_dataset_modify_context,
+            "a requestpage/layout modify() must NEVER set dataset context"
+        );
+    }
+
+    /// A dataitem trigger's `dataitem_source_table` (the direct, non-fallback
+    /// path) is unaffected by the `modify()` fix — sanity guard against
+    /// regressing the existing mechanism while adding the new one.
+    #[test]
+    fn report_dataitem_trigger_still_carries_dataitem_source_table_directly() {
+        let src = r#"
+report 50102 T
+{
+    dataset
+    {
+        dataitem(Cust; Customer)
+        {
+            trigger OnAfterGetRecord()
+            begin
+            end;
+        }
+    }
+}
+"#;
+        let af = parse(src);
+        let routine = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .find(|r| r.name.eq_ignore_ascii_case("OnAfterGetRecord"))
+            .expect("the dataitem trigger must be lowered");
+        assert_eq!(routine.dataitem_source_table.as_deref(), Some("Customer"));
+        assert!(
+            !routine.in_dataset_modify_context,
+            "a real dataitem(...) trigger is not a modify() member — the flag stays false"
+        );
     }
 }

@@ -1,0 +1,8 @@
+{
+	"id": "ffff8888-0000-0000-0000-00000000000c",
+	"name": "ReportDataitem Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 51700, "to": 51799 }]
+}

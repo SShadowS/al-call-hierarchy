@@ -640,7 +640,7 @@ pub fn infer_receiver_type(
     // its own documented "bare identifier" scope).
     // -----------------------------------------------------------------------
 
-    let lookup_lc: String = if !receiver_lc.contains('.') && !receiver_lc.contains('(') {
+    let lookup_lc: String = if is_atomic_receiver_token(receiver_lc) {
         unquote_identifier(receiver_lc)
     } else {
         receiver_lc.to_string()
@@ -667,6 +667,44 @@ pub fn infer_receiver_type(
 
     if let Some(ty) = declared_ty {
         return parsed_type_to_receiver(classify_type_text(ty), from_object, graph, index);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 2b — report DATAITEM-NAME receiver (dataitem-receivers plan, Task
+    // 1). Reached ONLY on a Step 2 miss — a var/param/global of the same name
+    // ALWAYS shadows a dataitem (AL scoping; mirrors L2's `report_dataitem_
+    // record_vars` skip-on-collision seeding, `ir_walk.rs:1864-1883` — a
+    // precedent this fresh-engine step deliberately does NOT import, see the
+    // module doc's clean-room note). Report/ReportExtension only.
+    //
+    // `lookup_lc` is the SAME quote-aware unquoted lookup key Step 2 just
+    // computed, so a dot-bearing QUOTED dataitem name
+    // (`"Sales Cr.Memo Header Filter"`, 5/16 of a real CDO report's dataitem
+    // names) matches correctly here too — the naive dot-substring guard this
+    // task's `is_atomic_receiver_token` replaces mislabeled it
+    // `CompoundReceiver` before it could ever reach this step. A dataitem
+    // name is in scope as a record var across ALL the report's routines (not
+    // merely the enclosing dataitem's own trigger — see `ObjectDecl.
+    // report_dataitems`'s doc), so this lookup is routine-independent.
+    //
+    // Fail-closed collisions (`resolve_dataitem_source_table`, below): a
+    // same-named report PROCEDURE anywhere in the visible object(s) declines
+    // (AL's parens-optional zero-arg call makes `Name.X()` structurally
+    // ambiguous between "the dataitem record" and "a parens-less call to a
+    // same-named procedure" — mirrors Step 3a's `table_scope_has_routine`
+    // guard); a name duplicated across the own+extended-base dataitem maps
+    // also declines (an unprovable ambiguity, never pick one).
+    // -----------------------------------------------------------------------
+
+    if matches!(
+        from_object.id.kind,
+        ObjectKind::Report | ObjectKind::ReportExtension
+    ) && let Some(table_id) =
+        resolve_dataitem_source_table(&lookup_lc, from_object, graph, index)
+    {
+        return ReceiverType::Record {
+            table: Some(table_id),
+        };
     }
 
     // -----------------------------------------------------------------------
@@ -715,10 +753,10 @@ pub fn infer_receiver_type(
     // exists to avoid — deferred to a future task (roadmap).
     // -----------------------------------------------------------------------
 
-    if receiver_lc.len() >= 2
+    if is_atomic_receiver_token(receiver_lc)
+        && receiver_lc.len() >= 2
         && receiver_lc.starts_with('"')
         && receiver_lc.ends_with('"')
-        && !receiver_lc.contains('.')
         && let Some((_, with_state)) = bare_ctx
         && with_state == WithState::NoWithProven
         && matches!(
@@ -754,7 +792,7 @@ pub fn infer_receiver_type(
     // -----------------------------------------------------------------------
 
     if receiver_lc == "rec" || receiver_lc == "xrec" {
-        return infer_implicit_rec(from_object, graph, index);
+        return infer_implicit_rec(routine, from_object, graph, index);
     }
 
     // -----------------------------------------------------------------------
@@ -766,9 +804,11 @@ pub fn infer_receiver_type(
     // Step 2 and would shadow this path. Only framework value types classify
     // here; Record/Object/Interface/Enum type names fall through to Unknown.
     //
-    // BARE-IDENTIFIER GUARD (Task 4 fix): `classify_type_text` only runs when
-    // `receiver_lc` is a genuine bare identifier — no `.`/`(` — never on a
-    // COMPOUND receiver text. Without this guard, a chained call whose
+    // BARE-IDENTIFIER GUARD (Task 4 fix; centralized as `is_atomic_receiver_
+    // token` by the dataitem-receivers plan, Task 1): `classify_type_text`
+    // only runs when `receiver_lc` is a genuine ATOMIC identifier (bare, or a
+    // single quoted token with no unquoted `.`) — never on a COMPOUND
+    // receiver text. Without this guard, a chained call whose
     // receiver is itself a further call/member expression rooted in an
     // `Xml*`-named base (e.g. the OUTER `.AsXmlNode()` in `XmlElement.
     // Create('root').AsXmlNode()`, whose `receiver_lc` is the WHOLE inner
@@ -791,8 +831,7 @@ pub fn infer_receiver_type(
     // `Identifier` arm), which was never subject to this bug.
     // -----------------------------------------------------------------------
 
-    if !receiver_lc.contains('.')
-        && !receiver_lc.contains('(')
+    if is_atomic_receiver_token(receiver_lc)
         && let ParsedType::Framework(kind) = classify_type_text(receiver_lc)
     {
         return ReceiverType::Framework(kind);
@@ -1572,8 +1611,11 @@ fn infer_call_result_receiver(
 // ---------------------------------------------------------------------------
 
 /// Resolve the implicit record type for `Rec`/`xRec` based on the enclosing
-/// object's kind.
+/// object's kind. `routine` is consulted ONLY by the Report/ReportExtension
+/// arm (dataitem-receivers plan, Task 1) — every other arm is unchanged and
+/// routine-independent, exactly as before.
 fn infer_implicit_rec(
+    routine: &RoutineDecl,
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
@@ -1651,17 +1693,180 @@ fn infer_implicit_rec(
             },
             None => ReceiverType::Unknown,
         },
-        // Report / ReportExtension: EXCLUDED for now. A report's implicit Rec
-        // is scoped PER-DATAITEM (each `dataitem(...)` block sources its own
-        // table; a report can have several, nested), not a single object-level
-        // `SourceTable` the way Page/PageExtension are. Resolving this
-        // correctly needs dataitem-scope tracking (which dataitem encloses the
-        // routine) that the graph does not carry yet — a future task. Until
-        // then this stays the honest `Record{table: None}` rather than
-        // guessing e.g. the outermost dataitem's table.
-        ObjectKind::Report | ObjectKind::ReportExtension => ReceiverType::Record { table: None },
+        // Report / ReportExtension (dataitem-receivers plan, Task 1): a
+        // report's implicit Rec is scoped PER-DATAITEM (each `dataitem(...)`
+        // block sources its own table; a report can have several, nested),
+        // not a single object-level `SourceTable` the way Page/PageExtension
+        // are — so this arm is ROUTINE-CONTEXTUAL ONLY, never an
+        // object-level fallback (see `resolve_report_implicit_rec_table`'s
+        // doc). REQUESTPAGE ISOLATION holds by construction: a requestpage
+        // trigger's `dataitem_source_table` is always `None` and its
+        // `in_dataset_modify_context` is always `false` (the lowerer forces
+        // dataset-context off descending into `requestpage`), so this arm
+        // correctly declines to `Record{table: None}` for it — never
+        // guessing the report's outermost/any dataitem's table.
+        ObjectKind::Report | ObjectKind::ReportExtension => ReceiverType::Record {
+            table: resolve_report_implicit_rec_table(routine, from_object, graph, index),
+        },
         // All other object kinds have no implicit Rec.
         _ => ReceiverType::Unknown,
+    }
+}
+
+/// Resolve a report/report-extension dataitem trigger's implicit-Rec table
+/// (dataitem-receivers plan, Task 1) — ROUTINE-CONTEXTUAL ONLY. Two sources,
+/// in order:
+/// 1. `routine.dataitem_source_table` — set directly by the lowerer when the
+///    trigger is nested inside an ACTUAL `dataitem(Name; Table)` block (the
+///    common case; `al_syntax::lower::collect_routines`).
+/// 2. The resolve-time fallback (Task 1's additive `modify()` lowering fix):
+///    when (1) is absent but `routine.in_dataset_modify_context` is `true` (a
+///    CONFIRMED report/report-extension `dataset { modify(<Name>) {..} }`
+///    block — never a requestpage/layout/field/view `modify()`, per that
+///    field's doc) and `routine.enclosing_member` names the modified
+///    dataitem, look `<Name>` up via the SAME fail-closed
+///    [`resolve_dataitem_source_table`] Step 2b uses (own + extended-base
+///    dataitem maps, collision-guarded).
+///
+/// `enclosing_member`'s name text is already outer-quote-stripped
+/// (`al_syntax::lower::ident_text`) — the SAME convention
+/// [`node_extract::DataitemNode::name_lc`] storage uses — so a direct
+/// lowercase comparison is consistent on both sides without re-unquoting.
+fn resolve_report_implicit_rec_table(
+    routine: &RoutineDecl,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    if let Some(table_name) = routine.dataitem_source_table.as_deref() {
+        let table_ref = ObjectRef::Name {
+            raw: table_name.to_string(),
+            normalized_lc: table_name.to_ascii_lowercase(),
+        };
+        return resolve_source_table_ref(from_object.id.clone(), &table_ref, graph, index);
+    }
+    if routine.in_dataset_modify_context
+        && let Some((member_name, _)) = routine.enclosing_member.as_ref()
+    {
+        let name_lc = member_name.to_ascii_lowercase();
+        return resolve_dataitem_source_table(&name_lc, from_object, graph, index);
+    }
+    None
+}
+
+/// Resolve the DATAITEM-NAME lookup (Step 2b, dataitem-receivers plan Task 1)
+/// and the report implicit-Rec `modify()` fallback (above): a unique
+/// (case-insensitive, unquoted) name match among the VISIBLE report
+/// dataitems — own `from_object.dataitems`, plus (ReportExtension only) the
+/// extended BASE report's own dataitems, resolved via `extends_target` —
+/// mirrors the PageExtension `SourceTable` fallback pattern
+/// ([`resolve_pageext_base_source_table`]).
+///
+/// Fail-closed collisions (never guess, per the plan's binding round-1
+/// addendum):
+/// - a routine (ANY arity/access) of the SAME NAME exists in the report's own
+///   routine set, or (ReportExtension) the extended base report's own routine
+///   set ([`ResolveIndex::routines_in_object`]) — AL's parens-optional
+///   zero-arg call makes `Name.X()` structurally ambiguous between "the
+///   dataitem record" and "a parens-less call to a same-named procedure";
+///   mirrors Step 3a's `table_scope_has_routine` guard. Over-declining here is
+///   always the safe direction.
+/// - the name resolves to more than one DISTINCT (own ∪ base) source-table
+///   `ObjectRef` — an unprovable duplicate, decline rather than pick one.
+///   IDENTICAL duplicates (harmless `#if`/`#else` re-parse duplication —
+///   `collect_report_dataitems` walks both branches, mirroring `globals`/
+///   `locals`; see `ObjectDecl.report_dataitems`'s doc) are deduped first, so
+///   they never manufacture an artificial ambiguity.
+fn resolve_dataitem_source_table(
+    name_lc: &str,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    if !matches!(
+        from_object.id.kind,
+        ObjectKind::Report | ObjectKind::ReportExtension
+    ) {
+        return None;
+    }
+
+    let base_id = if from_object.id.kind == ObjectKind::ReportExtension {
+        resolve_reportext_base_report(from_object, graph, index)
+    } else {
+        None
+    };
+
+    // Routine-name collision guard — own object's routines, plus the
+    // extended base report's own routines for a ReportExtension (a direct
+    // extension may reach the base's visible procedures bare — see
+    // `ObjectKind::is_extension_kind`'s doc; over-declining is always safe).
+    if !index
+        .routines_in_object(&from_object.id, name_lc)
+        .is_empty()
+    {
+        return None;
+    }
+    if let Some(base_id) = &base_id
+        && !index.routines_in_object(base_id, name_lc).is_empty()
+    {
+        return None;
+    }
+
+    let mut matches: Vec<&ObjectRef> = from_object
+        .dataitems
+        .iter()
+        .filter(|d| d.name_lc == name_lc)
+        .map(|d| &d.source_table)
+        .collect();
+
+    if let Some(base_id) = &base_id
+        && let Some(base_obj) = graph.objects.iter().find(|o| o.id == *base_id)
+    {
+        matches.extend(
+            base_obj
+                .dataitems
+                .iter()
+                .filter(|d| d.name_lc == name_lc)
+                .map(|d| &d.source_table),
+        );
+    }
+
+    // Dedupe IDENTICAL source-table refs — see this function's doc.
+    let mut distinct: Vec<&ObjectRef> = Vec::new();
+    for m in matches {
+        if !distinct.contains(&m) {
+            distinct.push(m);
+        }
+    }
+
+    match distinct.as_slice() {
+        [only] => resolve_source_table_ref(from_object.id.clone(), only, graph, index),
+        _ => None,
+    }
+}
+
+/// Resolve a ReportExtension's `extends_target` to the base Report's
+/// `ObjectNodeId`, scoped from `from_object`'s own dependency closure via the
+/// fail-closed [`ResolveIndex::resolve_object_ref`]. `None` when there is no
+/// `extends_target`, or resolution is anything other than `Unique`
+/// (ambiguous, out-of-closure, unresolved) — never guess. Mirrors
+/// [`resolve_pageext_base_page`]'s template, `ObjectKind::Report` instead of
+/// `ObjectKind::Page`.
+fn resolve_reportext_base_report(
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<ObjectNodeId> {
+    let extends = from_object.extends_target.as_deref()?;
+    let base_ref = ObjectRef::Name {
+        raw: extends.to_string(),
+        normalized_lc: extends.to_ascii_lowercase(),
+    };
+    match index.resolve_object_ref(graph, from_object.id.clone(), ObjectKind::Report, &base_ref) {
+        ObjectRefResolution::Unique(id) => Some(id),
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => None,
     }
 }
 
@@ -1959,6 +2164,51 @@ fn parse_object_kind_type(kind: ObjectKind, name_rest: &str) -> ParsedType {
     ParsedType::Object { kind, object_ref }
 }
 
+/// Whether `s` (a lowercased receiver-text token, quote characters preserved
+/// exactly as written) is an ATOMIC AL identifier — a single bare/quoted name
+/// — as opposed to a COMPOUND receiver chain (`A.B`, `A.B()`, `A."B.C"`, …).
+/// Centralized (dataitem-receivers plan, Task 1; round-1 review addendum) —
+/// the single predicate shared by every atomic-vs-compound receiver guard:
+/// [`infer_receiver_type`]'s Step 2 (`lookup_lc`), Step 3a (bare quoted-field
+/// receiver), Step 4 (framework-name guard), and `full.rs`'s
+/// `CompoundReceiver` relabeling.
+///
+/// Replaces the naive `!s.contains('.')` check those call sites used before
+/// this task: a QUOTED identifier may legally contain an EMBEDDED period
+/// (`"Sales Cr.Memo Header Filter"` — 5/16 of a real CDO report's dataitem
+/// names), and the naive check mislabeled it compound, since the interior dot
+/// sits inside quotes and is therefore NOT a segment separator at all.
+///
+/// Two atomic shapes:
+/// - **Unquoted**: no `.` and no `(` anywhere (unchanged from before).
+/// - **Quoted**: the ENTIRE string is a single quoted token — `len() > 2`
+///   (excludes the degenerate empty-quote `""`), starts AND ends with `"`,
+///   those are the ONLY two `"` characters in the string (excludes an
+///   escaped-quote AL identifier — `""` doubling to embed a literal quote,
+///   e.g. `"a""b"` — from this fast path; an unusual doubled-quote-escaped
+///   name fails closed to COMPOUND here, never silently mishandled), and no
+///   `(` anywhere (a quoted name is never itself a call target). `"A.B".C`
+///   and `"A.B"."C.D"` both have an UNQUOTED `.` after/between the quoted
+///   span(s) — a real segment separator — and so correctly stay COMPOUND.
+///
+/// Unsupported/malformed forms (unequal quote counts, a lone `"`, …) fail
+/// closed to COMPOUND — never guessed atomic.
+pub(crate) fn is_atomic_receiver_token(s: &str) -> bool {
+    if s.contains('(') {
+        return false;
+    }
+    if s.starts_with('"') {
+        // Any quoted-shaped token — with or without an interior dot — must be
+        // well-formed to count as atomic: closes with exactly the matching
+        // pair of quotes (no stray/escaped quote chars) and is non-degenerate
+        // (`len() > 2` excludes the empty quoted identifier `""`). A
+        // malformed/unsupported quoted shape fails closed to COMPOUND here,
+        // consistent with every other decline in this module.
+        return s.len() > 2 && s.ends_with('"') && s.matches('"').count() == 2;
+    }
+    !s.contains('.')
+}
+
 /// Strip surrounding double-quotes from an identifier token.  Returns the
 /// token unchanged if not quoted; returns an empty string for an empty input.
 ///
@@ -1997,7 +2247,7 @@ mod tests {
 
     use crate::program::graph::{ObjectIndex, ProgramGraph};
     use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
-    use crate::program::node_extract::{Access, ObjectNode};
+    use crate::program::node_extract::{Access, DataitemNode, ObjectNode};
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::topology::DependencyGraph;
     use crate::snapshot::{AppId, TrustTier};
@@ -2052,6 +2302,7 @@ mod tests {
                 source_table_temporary: false,
                 page_controls: vec![],
                 fields: vec![],
+                dataitems: vec![],
             };
 
         let mut objects = vec![
@@ -2139,6 +2390,7 @@ mod tests {
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         }
@@ -2171,6 +2423,7 @@ mod tests {
             source_table_temporary: false,
             page_controls: vec![],
             fields: vec![],
+            dataitems: vec![],
         }
     }
 
@@ -2654,6 +2907,7 @@ mod tests {
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         }
@@ -2803,6 +3057,7 @@ mod tests {
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         }
@@ -3376,6 +3631,7 @@ mod tests {
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         };
@@ -3493,11 +3749,16 @@ mod tests {
 
     #[test]
     fn infer_rec_in_report_stays_none_even_if_source_table_were_present() {
-        // Defensive: Report/ReportExtension are EXCLUDED (Task 5 scope), so
-        // even if a Report ObjectNode somehow carried a `source_table` (real
-        // extraction never sets one from a per-dataitem source — this
-        // constructs it directly to lock in the exclusion regardless of data
-        // presence), the implicit Rec must stay honest `Record{table: None}`.
+        // Defensive: a Report's implicit Rec is ROUTINE-CONTEXTUAL ONLY
+        // (dataitem-receivers plan, Task 1) — it is NEVER seeded from the
+        // object-level `SourceTable` property (real extraction never sets one
+        // from a per-dataitem source; this constructs it directly to lock in
+        // the exclusion regardless of data presence). `build_test_routine()`
+        // carries no `dataitem_source_table`/`in_dataset_modify_context`, so
+        // the implicit Rec must stay honest `Record{table: None}` even though
+        // `report.source_table` is (deliberately, artificially) populated —
+        // see `infer_rec_in_report_dataitem_trigger_resolves_dataitem_table`
+        // below for the POSITIVE routine-contextual case.
         let (graph, w) = build_page_rec_fixture();
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
@@ -3510,6 +3771,374 @@ mod tests {
 
         let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    // -----------------------------------------------------------------------
+    // Dataitem-receivers plan, Task 1: report-dataitem receivers.
+    // -----------------------------------------------------------------------
+
+    fn dataitem(name: &str, table_lc: &str, table_raw: &str) -> DataitemNode {
+        DataitemNode {
+            name_lc: name.to_ascii_lowercase(),
+            name: name.to_string(),
+            source_table: ObjectRef::Name {
+                raw: table_raw.to_string(),
+                normalized_lc: table_lc.to_string(),
+            },
+        }
+    }
+
+    /// POSITIVE (routine-contextual implicit Rec): a trigger nested inside an
+    /// ACTUAL `dataitem(Cust; Customer)` block — `routine.dataitem_source_table
+    /// = Some("Customer")` — types the explicit `Rec.` receiver by the
+    /// dataitem's source table, mirrors `ws-page-rec`'s Page/SourceTable
+    /// precedent but for the per-dataitem Report case.
+    #[test]
+    fn infer_rec_in_report_dataitem_trigger_resolves_dataitem_table() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = RoutineDecl {
+            dataitem_source_table: Some("Customer".to_string()),
+            ..build_test_routine()
+        };
+        let report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50221), None);
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    /// REQUESTPAGE ISOLATION (binding, round-1 addendum): a requestpage
+    /// trigger carries NEITHER `dataitem_source_table` NOR
+    /// `in_dataset_modify_context` (the lowerer never threads either while
+    /// descending `requestpage`) — even with an `enclosing_member` present
+    /// (a requestpage control's own name), the implicit Rec must stay
+    /// `Record{table: None}`, never fabricate a dataitem's table.
+    #[test]
+    fn infer_rec_in_report_requestpage_trigger_never_binds_dataitem_table() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = RoutineDecl {
+            dataitem_source_table: None,
+            in_dataset_modify_context: false,
+            enclosing_member: Some(("SomeControl".to_string(), test_origin())),
+            ..build_test_routine()
+        };
+        let report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50222), None);
+
+        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    /// POSITIVE (the `modify()` lowerer fallback): NO `dataitem_source_table`
+    /// (the lowerer cannot itself resolve a `modify(Cust)` target to a
+    /// table), but `in_dataset_modify_context = true` + `enclosing_member =
+    /// "Cust"` — the resolve-time fallback looks `Cust` up in the report's
+    /// own dataitem map and resolves the implicit Rec exactly as the direct
+    /// case does.
+    #[test]
+    fn infer_rec_in_report_modify_fallback_resolves_via_enclosing_member() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = RoutineDecl {
+            dataitem_source_table: None,
+            in_dataset_modify_context: true,
+            enclosing_member: Some(("Cust".to_string(), test_origin())),
+            ..build_test_routine()
+        };
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50223), None);
+        report.dataitems = vec![dataitem("Cust", "customer", "Customer")];
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    /// NEGATIVE: `in_dataset_modify_context = false` (a requestpage/layout/
+    /// field/view `modify()`, or no confirmed dataset context at all) must
+    /// NEVER trigger the fallback, even with a matching `enclosing_member`
+    /// name and a real dataitem of that name on the report.
+    #[test]
+    fn infer_rec_in_report_modify_fallback_declines_without_dataset_context() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = RoutineDecl {
+            dataitem_source_table: None,
+            in_dataset_modify_context: false,
+            enclosing_member: Some(("Cust".to_string(), test_origin())),
+            ..build_test_routine()
+        };
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50224), None);
+        report.dataitems = vec![dataitem("Cust", "customer", "Customer")];
+
+        let result = infer_receiver_type("rec", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(result, ReceiverType::Record { table: None });
+    }
+
+    /// POSITIVE (Step 2b): a bare dataitem-name receiver
+    /// (`Cust.GetDisplayName()`) resolves `Record{table: Customer}` — the
+    /// dataitem name is in scope as a record var across ALL the report's
+    /// routines (not merely inside its own trigger), so a routine with NO
+    /// dataitem context at all still resolves it. `routine_with_locals(vec![])`
+    /// (not `build_test_routine()`, which declares an UNRELATED local also
+    /// named `Cust: Record Customer` — that would shadow this receiver at
+    /// Step 2 before Step 2b ever ran, silently testing the wrong step).
+    #[test]
+    fn infer_receiver_type_step2b_dataitem_name_resolves() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50225), None);
+        report.dataitems = vec![dataitem("Cust", "customer", "Customer")];
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result =
+            infer_receiver_type("cust", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    /// POSITIVE (Step 2b, quoted + embedded period — the naive dot-guard
+    /// fix): a QUOTED dataitem name containing an embedded period resolves,
+    /// exactly like the real CDO `"Sales Cr.Memo Header Filter"` shape.
+    #[test]
+    fn infer_receiver_type_step2b_dot_bearing_quoted_dataitem_name_resolves() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50226), None);
+        report.dataitems = vec![dataitem(
+            "Sales Cr.Memo Header Filter",
+            "customer",
+            "Customer",
+        )];
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type(
+            "\"sales cr.memo header filter\"",
+            &routine,
+            &[],
+            &report,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    /// NEGATIVE (a genuinely compound receiver stays compound): `"A.B".C` —
+    /// an UNQUOTED dot AFTER the closing quote — must never be treated as an
+    /// atomic dataitem-name lookup, even if a dataitem happened to be named
+    /// exactly `A.B` (it structurally can't be reached: `lookup_lc` stays the
+    /// raw compound text, which no `name_lc` can ever equal).
+    #[test]
+    fn infer_receiver_type_step2b_unquoted_compound_receiver_stays_unknown() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50227), None);
+        report.dataitems = vec![dataitem("A.B", "a.b", "Customer")];
+
+        let result = infer_receiver_type(
+            "\"a.b\".c",
+            &routine,
+            &[],
+            &report,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE (var shadows dataitem, AL scoping): a local var of the SAME
+    /// name as a real dataitem must win — Step 2 runs strictly before Step
+    /// 2b.
+    #[test]
+    fn infer_receiver_type_step2b_local_var_shadows_dataitem_name() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("Cust", "Record Customer")]);
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50228), None);
+        // A DIFFERENT table than the var's declared type, so a mistaken
+        // Step-2b hit would be observably distinguishable from the correct
+        // Step-2 var hit.
+        report.dataitems = vec![dataitem("Cust", "orphan", "Orphan")];
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result =
+            infer_receiver_type("cust", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            },
+            "the local var must win over the same-named dataitem"
+        );
+    }
+
+    /// NEGATIVE (collision guard, fail-closed): a dataitem name that is ALSO
+    /// a report procedure name must decline — AL's parens-optional zero-arg
+    /// call makes `Name.X()` structurally ambiguous between the dataitem
+    /// record and a parens-less call to the procedure. `routine_with_locals(
+    /// vec![])`, NOT `build_test_routine()` — see the sibling positive test's
+    /// doc for why (an unrelated `Cust` local would shadow this receiver at
+    /// Step 2, making the collision guard below untested).
+    #[test]
+    fn infer_receiver_type_step2b_declines_when_same_named_routine_exists() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let report_id = ObjectNodeId {
+            app: w,
+            kind: ObjectKind::Report,
+            key: ObjKey::Id(50229),
+        };
+        let mut report = make_object_node(w, ObjectKind::Report, "SomeReport", Some(50229), None);
+        report.dataitems = vec![dataitem("Cust", "customer", "Customer")];
+        graph.objects.push(report.clone());
+        graph.objects.sort_by(|a, b| a.id.cmp(&b.id));
+        graph.routines = vec![make_routine_node(report_id, "Cust")];
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+
+        let result =
+            infer_receiver_type("cust", &routine, &[], &report, &graph, &index, None, None);
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE (duplicate-across-own-and-base guard, fail-closed): a
+    /// ReportExtension declares its OWN dataitem with the same name as one
+    /// on its extended BASE report, resolving to a DIFFERENT table — an
+    /// unprovable ambiguity, never pick one. `routine_with_locals(vec![])` —
+    /// see the sibling positive test's doc for why not `build_test_routine()`.
+    #[test]
+    fn infer_receiver_type_step2b_declines_on_duplicate_name_across_own_and_base() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let mut base = make_object_node(w, ObjectKind::Report, "BaseReport", Some(50230), None);
+        base.dataitems = vec![dataitem("Cust", "customer", "Customer")];
+        let mut ext = make_object_node(
+            w,
+            ObjectKind::ReportExtension,
+            "ExtReport",
+            Some(50231),
+            Some("BaseReport".to_string()),
+        );
+        ext.dataitems = vec![dataitem("Cust", "orphan", "Orphan")];
+        graph.objects.push(base);
+        graph.objects.push(ext.clone());
+        graph.objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+
+        let result = infer_receiver_type("cust", &routine, &[], &ext, &graph, &index, None, None);
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// POSITIVE (ReportExtension base fallback): an extension with NO
+    /// dataitems of its own still resolves a dataitem-name receiver naming
+    /// the extended BASE report's dataitem — mirrors the PageExtension
+    /// `SourceTable` fallback pattern. `routine_with_locals(vec![])` — see
+    /// the first Step 2b positive test's doc for why not `build_test_routine()`.
+    #[test]
+    fn infer_receiver_type_step2b_reportextension_resolves_via_base_dataitem() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let mut base = make_object_node(w, ObjectKind::Report, "BaseReport", Some(50232), None);
+        base.dataitems = vec![dataitem("Cust", "customer", "Customer")];
+        let ext = make_object_node(
+            w,
+            ObjectKind::ReportExtension,
+            "ExtReport",
+            Some(50233),
+            Some("BaseReport".to_string()),
+        );
+        graph.objects.push(base);
+        graph.objects.push(ext.clone());
+        graph.objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let customer_id = graph
+            .resolve_object(w, ObjectKind::Table, "Customer")
+            .unwrap()
+            .id
+            .clone();
+
+        let result = infer_receiver_type("cust", &routine, &[], &ext, &graph, &index, None, None);
+        assert_eq!(
+            result,
+            ReceiverType::Record {
+                table: Some(customer_id)
+            }
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // `is_atomic_receiver_token` (centralized quote-aware token guard).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_atomic_receiver_token_cases() {
+        assert!(is_atomic_receiver_token("cust"), "plain unquoted");
+        assert!(is_atomic_receiver_token("\"file blob\""), "quoted, no dot");
+        assert!(
+            is_atomic_receiver_token("\"sales cr.memo header filter\""),
+            "quoted, embedded dot"
+        );
+        assert!(!is_atomic_receiver_token("a.b"), "unquoted compound");
+        assert!(
+            !is_atomic_receiver_token("\"a.b\".c"),
+            "quoted dot then trailing unquoted segment"
+        );
+        assert!(
+            !is_atomic_receiver_token("\"a.b\".\"c.d\""),
+            "two quoted segments joined by an unquoted dot"
+        );
+        assert!(!is_atomic_receiver_token("foo()"), "call form");
+        assert!(!is_atomic_receiver_token("\"\""), "degenerate empty quote");
+        assert!(
+            !is_atomic_receiver_token("\"a\"\"b\""),
+            "escaped-quote identifier fails closed to compound"
+        );
     }
 
     #[test]
@@ -3773,6 +4402,7 @@ mod tests {
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         };
@@ -3820,6 +4450,7 @@ mod tests {
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         };
@@ -4396,6 +5027,7 @@ codeunit 50100 "C"
             parse_incomplete: false,
             dataitem_source_table: None,
             enclosing_member: None,
+            in_dataset_modify_context: false,
             body: None,
             origin: o,
         }
@@ -5123,26 +5755,27 @@ codeunit 50100 "C"
     // -----------------------------------------------------------------------
 
     /// POSITIVE (c): a quoted RECORD VAR receiver with no colliding field.
-    /// Correction (Task 5 review): `"Sales Header Filter"` is NOT a
-    /// made-up name — it IS a real Report dataitem in production CDO source
-    /// (`Report 6175283 "CDO Update Output Profile"`, line 15:
-    /// `dataitem("Sales Header Filter"; "Sales Header")`, referenced bare as
-    /// `"Sales Header Filter".GetFilters()`/`.GetView()` at lines 507/426).
-    /// This fixture reuses that name only to model the GENERIC mechanism
-    /// under test (Step 2's quote-parity fix is receiver-name-agnostic and
-    /// applies identically to any quoted `VarDecl`) — it does NOT claim the
-    /// real report-dataitem site resolves via this path. The fresh engine
-    /// does not model Report dataitems as record vars at all
-    /// (`al_syntax::ir::ObjectDecl.report_dataitems` is parsed but consumed
-    /// only by the legacy L2 engine), and Report/ReportExtension objects are
-    /// excluded from Step 3a's `ObjectKind::Table | TableExtension` gate
-    /// entirely — so genuine dataitem-named receivers like the real
-    /// `"Sales Header Filter"` sit honestly unresolved in the
-    /// `UntrackedReceiver` residual (sound fail-closed, not a bug); modeling
-    /// report-dataitem receivers is a real deferred roadmap lever, not
-    /// covered here. Pre-fix, the raw quote-retaining `receiver_lc` never
-    /// matched the unquoted `VarDecl` name and this fell through to
-    /// `Unknown` (`UntrackedReceiver`).
+    /// `"Sales Header Filter"` is NOT a made-up name — it IS a real Report
+    /// dataitem in production CDO source (`Report 6175283 "CDO Update Output
+    /// Profile"`, line 15: `dataitem("Sales Header Filter"; "Sales Header")`,
+    /// referenced bare as `"Sales Header Filter".GetFilters()`/`.GetView()`
+    /// at lines 507/426). This fixture reuses that name only to model the
+    /// GENERIC mechanism under test (Step 2's quote-parity fix is
+    /// receiver-name-agnostic and applies identically to any quoted
+    /// `VarDecl`) — the object here is a Codeunit, not a Report, so Step 2b's
+    /// dataitem-name lookup (dataitem-receivers plan, Task 1 — see
+    /// `resolve_dataitem_source_table`'s tests below for THAT mechanism)
+    /// never engages; this test exercises Step 2's var lookup only. Pre-fix,
+    /// the raw quote-retaining `receiver_lc` never matched the unquoted
+    /// `VarDecl` name and this fell through to `Unknown`
+    /// (`UntrackedReceiver`).
+    ///
+    /// UPDATE (dataitem-receivers plan, Task 1): the real
+    /// `"Sales Header Filter"` site this name is grounded in is now modeled
+    /// end to end — see `tests/r0-corpus/ws-report-dataitem/` for the
+    /// Report-object integration coverage (Step 2b resolves the dataitem
+    /// NAME receiver directly; a local var of the identical name would still
+    /// shadow it, exactly as Step 2's precedence over Step 2b requires).
     #[test]
     fn quote_parity_quoted_var_receiver_resolves_as_var() {
         let (graph, app) = build_test_graph();

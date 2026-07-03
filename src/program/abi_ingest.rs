@@ -417,6 +417,10 @@ pub fn ingest_abi(
             source_table_temporary: false,
             page_controls: vec![],
             fields,
+            // ABI/SymbolOnly ingestion does not (yet) project report dataitems either —
+            // same additive gap as SourceTable/TableNo/page-controls above (dataitem
+            // receivers, Task 1: source `extract_nodes` path only).
+            dataitems: vec![],
         });
 
         for routine in &abi_obj.routines {
