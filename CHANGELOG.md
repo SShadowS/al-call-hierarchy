@@ -8,6 +8,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Report-dataitem receivers + Unknown reason-split complete — real-`unknown`
+  0.99%→0.83% (dataitem-depscope-reason-split plan, Task 3, FINAL — arc capstone).**
+  Full re-measure on CDO (`CDO_WS`, `ENFORCE_CDO_WS=1`, single-threaded, `--release`,
+  combined 156/156-test `program_resolve_harness` run): primary `real_unknown_rate`
+  **0.83%** (raw 151/18104=0.008341), whole-program rate 0.35% (151/43404),
+  primary/whole `unknown`=151/151, `unknownByReason`={`compoundReceiver`: 51,
+  `untrackedReceiver`: 18, `overloadAmbiguous`: 56, `builtinPrecedenceCollision`: 1,
+  `memberNotFound`: 25} (sum=151, verified both scopes via `aldump
+  --program-call-graph-stats` directly against `CDO_WS`), `unknownReceiverTier`
+  splits the 25 `memberNotFound` sites `embedded_source: 12` / `workspace: 13`.
+  `genuine_wrong`=0, `fresh_missing`=3, `fresh_wrong`=149 (all `fresh_ahead_dispatch`).
+  All 9 CDO gates green (metric, audit, ABI integrity, both applicability teeth
+  non-vacuous — interface=28/instance_builtin=463/implicit_trigger=1183/event=3404 —
+  the Sender+1 preflight, both frozen trigger/event audits byte-identical digests, the
+  precedence-adjudicated `genuine_wrong` breakdown `l3_error_intrinsic`=52/
+  `fresh_false_builtin`=0/`needs_manual_review`=0). `cargo test --workspace`: 2031
+  passed, 0 failed; `cargo fmt --check` and `cargo clippy --release --all-features -- -D
+  warnings` both clean. **Net across the T1-T2 arc (this plan): 0.99% (180) → 0.83%
+  (151), −29 count / −0.16pp, `genuine_wrong` stays 0 through both tasks.** Trajectory:
+  **T1** (report-dataitem receivers) modeled `ObjectDecl.report_dataitems`/
+  `RoutineDecl.dataitem_source_table` as first-class receiver-typing inputs — a new
+  Step 2b dataitem-name lookup in `infer_receiver_type`, a routine-contextual
+  Report/ReportExtension arm of `infer_implicit_rec`, a centralized quote-aware
+  `is_atomic_receiver_token` guard (fixing the naive dot-substring check that
+  mislabeled quoted dataitem names with embedded periods `CompoundReceiver`), and an
+  additive `modify()` lowerer fix (`RawKind::ModifyModification` carries `Target`, not
+  `Name` — `collect_routines`'s Name-based gate never saw it). Landed in TWO commits:
+  the initial implementation (`78ff3e4`, 180→159) then a review-fix (`5b1bb94`,
+  159→151) that caught and corrected its OWN regression — the centralized guard's
+  unquoted-branch `(`-exclusion ran before its quote-parity check, so a QUOTED field
+  name containing an interior paren (`"View (Blob)"`, `"Request Page (XML)"`, real BC
+  shapes) wrongly fell to `Unknown(CompoundReceiver)`. The corrected accounting: the
+  dataitem mechanism's real, unmasked yield is 19 distinct dataitem-name receivers
+  resolving across 29 total call-site edges (spanning both the `UntrackedReceiver` and
+  the quote-fix-enabled `CompoundReceiver` paths), netted against the review-fix's own
+  8 site restorations (`Unknown(CompoundReceiver)`→`Catalog`, `Blob::createinstream`/
+  `createoutstream`) + 1 relabel (`CompoundReceiver`→`UntrackedReceiver`, genuinely
+  `Unknown` before and after) — reconciling exactly to the measured bucket movement
+  `CompoundReceiver` 61→51 (−10) / `UntrackedReceiver` 37→18 (−19) = −29 = 180−151.
+  Exhaustive pre/post edge-dump diffs (all 18,586 CDO routes, not a sample) back both
+  the initial implementation and the review-fix; `genuine_wrong`=0 held throughout.
+  **T2** (Unknown reason-split, diagnostic-only) split `OverloadAmbiguous` into its 4
+  conflated emission shapes (`ArityMismatch`, `AbiCollapsedOverload`,
+  `AccessFilteredOverload`, and the residual genuine `>1`-visible-candidate case) and
+  `MemberNotFound` into `ObjectNotInGraph` (receiver object itself absent) vs.
+  `MemberNotFound` (member absent on a resolved surface, now tagged with an additive
+  `Route::receiver_tier`) — count-preserving by construction, verified
+  **zero-movement**: every one of CDO's 151 residual sites landed in the SAME reason
+  bucket before and after (0 `ArityMismatch`, 0 `AbiCollapsedOverload`, 0
+  `AccessFilteredOverload`, 0 `ObjectNotInGraph`). **What the zero-movement result
+  MEANS** (the actual deliverable, not a null result): CDO's residual `OverloadAmbiguous`
+  population (56 sites) is uniformly the textbook case — genuine multi-candidate,
+  same-arity, visible-to-the-caller ambiguity (e.g. `HttpMgt.DownloadFile(ReadStream,
+  Url)` vs. two real 2-arg source overloads) — which VALIDATES the deferred
+  outcome-reclassification plan's `OverloadAmbiguous`-targeting design (a
+  candidate-carrying, non-default-reachable `ObligationOutcome`, the
+  `ConditionalResolved`/`fires_by_default` precedent) as aimed at the right population;
+  it is not chasing a phantom. And the new `receiver_tier` diagnostic's `memberNotFound`
+  split (`embedded_source: 12` / `workspace: 13`) tier-PROVES the 13 `workspace`-tier
+  sites are honest-empty candidates (only a source-complete tier can ever prove member
+  absence — `SymbolOnly` never can), a data-backed target for that same future plan.
+  **The plan's original `.dependencies/` ingestion-scope task was DELETED before this
+  arc started** (binding user correction, recorded in the plan header 2026-07-03):
+  `.dependencies/` folders in the CDO workspace are normal AL source (an old CAL→AL
+  conversion naming convention), not a stray decompiled cache — excluding them would
+  have dropped real source from the graph. No code in this arc touches the ingestion
+  walker; the 9/25 `.dependencies/`-resident `MemberNotFound` sites documented in the
+  plan's grounding report are honest workspace reality, not a bug. Ratchets confirmed
+  AT the measured floor (rate ceiling `0.008341`, primary/whole `unknown` ceiling `151`
+  — tightened in `bd5d900`, re-confirmed byte-identical this task, no further
+  tightening needed); `fresh_missing`/`fresh_wrong` ceilings (3/149) unchanged.
+  **DEFERRED (next plan, now data-backed):** the outcome-reclassification proper (a new
+  `ObligationOutcome` for genuine `OverloadAmbiguous`, candidate-carrying;
+  tier-proven-empty treatment for the 13 `workspace`-tier `MemberNotFound` sites) — its
+  own plan + review; report-dataitem leftovers (none — all 29 real CDO dataitem uses
+  now resolve); unquoted bare implicit-Rec fields (still deferred, unrelated to
+  dataitems); the source-tier `sig_fp=0` overload-identity degeneracy (two
+  same-arity, different-parameter-TYPE source overloads alias one `RoutineNodeId` —
+  root-caused this arc, fixed nowhere, flagged as pre-existing and out of scope);
+  the `.dependencies/`-special-casing audit (user-requested follow-up: a quick grep
+  found no other special-casing of that directory name in the ingestion path, but a
+  thorough sweep of the full walker/dependency-resolution surface is still owed);
+  protected `Variables[]`; Sender param-TYPE validation (only arity is currently
+  checked).
 - **`UnknownReason` reason-split: `ArityMismatch`/`AbiCollapsedOverload`/
   `AccessFilteredOverload` (out of `OverloadAmbiguous`) + `ObjectNotInGraph` (out of
   `MemberNotFound`) + the additive `Route::receiver_tier` diagnostic
@@ -47,13 +131,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ObligationOutcome`/`classify_obligation` change, `Evidence::kind()`'s projection
   untouched, committed semantic goldens byte-identical (no regen needed), per-site
   bijection holds (every pre-Task-2 `Unknown` site maps 1:1 to a post-Task-2 `Unknown`
-  site with only the reason/`receiver_tier` diagnostic fields changed). 6 new
-  collision-free unit fixtures in `resolver.rs` (one per new shape, including a manually
+  site with only the reason/`receiver_tier` diagnostic fields changed). **3** new
+  collision-free unit fixtures in `resolver.rs` (corrected 2026-07-03, Task 3 doc-count
+  fix — the genuine `>1`-visible-ambiguity control, and a manually
   constructed distinct-`sig_fp` fixture for `AccessFilteredOverload` — two SOURCE-tier
   same-arity, different-PARAMETER-TYPE overloads share one `RoutineNodeId` since source
   `sig_fp` is always 0, so an AL-source-text fixture for that shape is unreliable; see
   `resolve_member_object_two_distinct_sig_fp_overloads_access_narrowed_to_one_declines`'s
-  doc) plus 2 new `edge.rs` unit tests (`as_str()` key uniqueness,
+  doc, and the Step-5-default `MemberNotFound`+tier fixture; the `ArityMismatch`/
+  `AbiCollapsedOverload`/`ObjectNotInGraph`-×2 shapes were exercised by TIGHTENING 4
+  pre-existing tests instead of adding new ones) plus 2 new `edge.rs` unit tests (`as_str()` key uniqueness,
   `unknown_receiver_tier_breakdown`'s sum/stratification invariants). Measured on CDO
   (`CDO_WS`, single-threaded, `--release`): `real_unknown_rate`/`unknown` count BYTE-
   IDENTICAL at 0.83% / 151 (both primary and whole-program) — a genuine, measured
