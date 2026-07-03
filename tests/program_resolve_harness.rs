@@ -1343,6 +1343,84 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
         report.abi_integrity.abi_unmapped, report.abi_integrity.abi_unmapped_sites
     );
 
+    // ── ParseStatus::Recovered diagnostic (Task 3, preproc foundations
+    // plan) ───────────────────────────────────────────────────────────────
+    // MEASURED 2026-07-04: NOT empty — this new diagnostic immediately
+    // proved its worth by surfacing TWO real, previously-invisible
+    // tree-sitter-al grammar defects, both confined to DEPENDENCY (embedded
+    // ShowMyCode) source, NEVER the CDO primary workspace itself:
+    //
+    // 1. `OptionMembers = TableData,...` (bare, unquoted, case-insensitive
+    //    `tabledata`) as the FIRST member immediately after `=` collides
+    //    with the `tabledata` keyword that also starts the
+    //    `tabledata_permission_list` alternative of `_property_value` —
+    //    tree-sitter drops the first token as an ERROR and resumes
+    //    `option_member_list` from the second member onward. Reproduced
+    //    minimally: `OptionMembers = TableData,Table,Report;` errors;
+    //    `OptionMembers = Foo,TableData,Bar;` (same keyword, non-first
+    //    position) parses clean — confirms this is a first-position-only
+    //    ambiguity, not a general keyword-as-option-member gap (the grammar
+    //    already special-cases several OTHER keywords, e.g. `local`/
+    //    `internal`/`protected`, as valid `option_member`s). Hits the
+    //    Microsoft `System` app's `Object.Table.al` (field `Type: Option`),
+    //    `NAVAppObjectPrerequisites.Table.al` (same shape), and
+    //    `DatabaseLocks.Table.al` (same shape) — all three are variants of
+    //    the platform's standard NAV-object-type option list.
+    // 2. `# pragma warning disable LC0088` (a SPACE between `#` and
+    //    `pragma`) is not recognized as a pragma directive at all — only
+    //    `#pragma` (no space) is. Hits Continia System Application's
+    //    `Http.Codeunit.al` (one stray `# pragma` amid otherwise-consistent
+    //    `#pragma` usage in the same file).
+    //
+    // Both are genuine `tree-sitter-al` grammar gaps (this project owns that
+    // grammar), OUT OF SCOPE for this plan (preprocessor foundations for the
+    // RESOLUTION engine, not grammar hardening) — filed as a dated note for
+    // a future dedicated grammar-fix task, NOT fixed here. Per this
+    // diagnostic's own documented invariant (see `recovered_file_paths`'s
+    // doc): the affected files' `#if` union-read may be silently incomplete,
+    // so any FUTURE absence/`ProvenAbsent`-shaped claim about
+    // `System::Object`/`NAVAppObjectPrerequisites`/`DatabaseLocks` or
+    // `Continia System Application::Http` must consult this diagnostic
+    // first. `genuine_wrong=0` is unaffected — none of these 4 files
+    // contribute a wrongly-resolved edge; this is purely an
+    // absence-proof-soundness caveat, and it is CONFINED TO DEPENDENCY
+    // source, never CDO's own primary workspace code.
+    //
+    // Each distinct file appears TWICE — a PRE-EXISTING, unrelated artifact:
+    // `parse_snapshot` parses per `AppUnit`, and `build_program_graph`'s own
+    // Step-4 dedup comment already documents that the same app can appear as
+    // both a `.alpackages` entry and an implicitly-injected MS-tier
+    // dependency in one snapshot (`build.rs`'s "Same app can appear as both
+    // a workspace source and an embedded dep" comment) — `recovered_file_
+    // paths` runs over the PRE-dedup `ParsedUnit`s (dedup happens later, in
+    // `build_program_graph`, over `ObjectNode`/`RoutineNode`, not files), so
+    // it honestly reflects that duplication rather than hiding it.
+    //
+    // Pinned exact — a threshold alert (any FUTURE movement, including a
+    // reduction, means either the grammar changed underfoot or the CDO
+    // dependency set changed; investigate, don't silently re-pin without
+    // understanding why).
+    let mut recovered = report.recovered_files.clone();
+    recovered.sort();
+    let expected_recovered = vec![
+        "Continia System Application::src/Source/Http/Source/Http.Codeunit.al".to_string(),
+        "Continia System Application::src/Source/Http/Source/Http.Codeunit.al".to_string(),
+        "System::src/Application%20Database%20Tables/NAVAppObjectPrerequisites.Table.al"
+            .to_string(),
+        "System::src/Application%20Database%20Tables/NAVAppObjectPrerequisites.Table.al"
+            .to_string(),
+        "System::src/Application%20Database%20Tables/Object.Table.al".to_string(),
+        "System::src/Application%20Database%20Tables/Object.Table.al".to_string(),
+        "System::src/Virtual%20Tables/DatabaseLocks.Table.al".to_string(),
+        "System::src/Virtual%20Tables/DatabaseLocks.Table.al".to_string(),
+    ];
+    assert_eq!(
+        recovered, expected_recovered,
+        "recovered_files moved from the pinned CDO baseline (8 entries, 4 \
+         distinct files — 2 known tree-sitter-al grammar gaps, see the \
+         comment above) — investigate before re-pinning"
+    );
+
     // ── Self-reported taxonomy'd histogram (print for record) ────────────────
     let h = &report.histogram;
     let ph = &report.primary_histogram;

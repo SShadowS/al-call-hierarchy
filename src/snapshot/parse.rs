@@ -43,6 +43,41 @@ pub struct ParsedUnit {
 /// codebase complexity grows substantially.
 const SNAPSHOT_PARSE_STACK_SIZE: usize = 32 * 1024 * 1024;
 
+/// File paths (`"<app name>::<virtual_path>"`, sorted) of every parsed source
+/// file whose [`al_syntax::ir::ParseStatus`] is `Recovered` — tree-sitter hit
+/// error recovery, so that file's IR is PARTIAL (Task 3, preprocessor
+/// foundations plan).
+///
+/// # The invariant this diagnostic exists to serve
+///
+/// `al_syntax::lower`'s `#if` union-read (see `al_syntax::lower::
+/// is_preproc_wrapper`'s doc) is sound for an ABSENCE proof only when the
+/// parse itself was `Clean` — a `Recovered` file may have silently DROPPED
+/// content tree-sitter could not parse, so "not found in this file's union"
+/// is NOT a valid non-existence witness for it. **Any current or future
+/// absence/`ProvenAbsent`-shaped claim in this engine MUST consult this
+/// diagnostic (or an equivalent per-file `ParseStatus` check) before treating
+/// a file's content as complete.** As of Task 3, no such claim exists yet in
+/// `src/program` (`ParseStatus::Clean` had ZERO consultation there before this
+/// function), so this ships as an ADDITIVE, non-gating diagnostic — a full
+/// per-file resolution gate (declining a specific claim once one exists) is
+/// deferred until a real consumer needs it.
+#[must_use]
+pub fn recovered_file_paths(units: &[ParsedUnit]) -> Vec<String> {
+    let mut paths: Vec<String> = units
+        .iter()
+        .flat_map(|unit| {
+            let app_name = unit.app.name.clone();
+            unit.files
+                .iter()
+                .filter(|pf| pf.file.parse_status == al_syntax::ir::ParseStatus::Recovered)
+                .map(move |pf| format!("{app_name}::{}", pf.virtual_path))
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
 /// Parse every source file of every source-bearing app in `snap` in parallel.
 ///
 /// Units whose `source` is `None` (symbol-only boundary apps) are skipped;
@@ -110,6 +145,115 @@ mod tests {
         assert!(
             total_files > 1000,
             "deep parse should cover many files, got {total_files}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (preprocessor foundations plan): `recovered_file_paths`.
+    // -----------------------------------------------------------------------
+
+    use crate::snapshot::TrustTier;
+    use crate::snapshot::compilation::CompilationContext;
+    use crate::snapshot::embedded::SourceFile;
+    use crate::snapshot::identity::AppId;
+    use crate::snapshot::provider::SourceRoot;
+    use crate::snapshot::snapshot::{AppUnit, World};
+
+    fn app_id(name: &str) -> AppId {
+        AppId {
+            guid: String::new(),
+            name: name.to_string(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        }
+    }
+
+    fn unit_with_files(id: &AppId, files: Vec<(&str, &str)>) -> AppUnit {
+        AppUnit {
+            id: id.clone(),
+            provenance: Provenance {
+                app: id.clone(),
+                tier: TrustTier::Workspace,
+                content_hash: String::new(),
+            },
+            source: Some(SourceRoot {
+                files: files
+                    .into_iter()
+                    .map(|(path, text)| SourceFile {
+                        virtual_path: path.to_string(),
+                        text: text.to_string(),
+                    })
+                    .collect(),
+                tier: TrustTier::Workspace,
+                content_hash: String::new(),
+            }),
+            compilation: CompilationContext::default(),
+            declared_deps: vec![],
+            internals_visible_to: vec![],
+            abi: None,
+            app_path: None,
+        }
+    }
+
+    const CLEAN_SRC: &str = r#"
+codeunit 50000 T
+{
+    procedure Foo()
+    begin
+    end;
+}
+"#;
+
+    /// An unbalanced `#if` (no matching `#endif`) forces tree-sitter error
+    /// recovery — `al_syntax::parse`'s `ParseStatus::Recovered`. Mirrors
+    /// `al_syntax::lower::tests::unbalanced_if_directive_yields_recovered_
+    /// parse_status`, but exercised end to end through `parse_snapshot` +
+    /// this diagnostic.
+    const RECOVERED_SRC: &str = r#"
+codeunit 50001 T
+{
+    procedure Foo()
+    begin
+#if NEVER_CLOSED
+        Bar();
+    end;
+}
+"#;
+
+    #[test]
+    fn recovered_file_paths_fires_only_for_the_broken_file_with_its_path() {
+        let ws_id = app_id("Ws");
+        let unit = unit_with_files(
+            &ws_id,
+            vec![("Clean.al", CLEAN_SRC), ("Broken.al", RECOVERED_SRC)],
+        );
+        let snap = AppSetSnapshot {
+            apps: vec![unit],
+            workspace_app: ws_id,
+            world: World::Closed,
+        };
+        let parsed = parse_snapshot(&snap);
+        let recovered = recovered_file_paths(&parsed);
+        assert_eq!(
+            recovered,
+            vec!["Ws::Broken.al".to_string()],
+            "only the file with the unbalanced #if must be reported, with its path"
+        );
+    }
+
+    #[test]
+    fn recovered_file_paths_empty_when_every_file_parses_clean() {
+        let ws_id = app_id("Ws");
+        let unit = unit_with_files(&ws_id, vec![("Clean.al", CLEAN_SRC)]);
+        let snap = AppSetSnapshot {
+            apps: vec![unit],
+            workspace_app: ws_id,
+            world: World::Closed,
+        };
+        let parsed = parse_snapshot(&snap);
+        assert!(
+            recovered_file_paths(&parsed).is_empty(),
+            "a whole-clean snapshot must report zero recovered files"
         );
     }
 }

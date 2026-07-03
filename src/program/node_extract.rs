@@ -338,6 +338,51 @@ fn strip_temporary_marker(s: &str) -> (&str, bool) {
     (remaining, true)
 }
 
+/// Read a SINGULAR object-level property (`SourceTable` / `TableNo`) with a
+/// fail-closed conflict degrade (Task 3, preproc foundations plan).
+///
+/// `al_syntax::lower`'s preproc union-read now surfaces a `#if`-wrapped
+/// property from EVERY branch (see `al_syntax::lower::collect_properties`'s
+/// doc) — so `obj.properties` may legitimately contain more than one entry
+/// named `name` when the source conditionally declares different values
+/// (`#if A SourceTable = X #else SourceTable = Y #endif`). Picking the FIRST
+/// (or last) occurrence would silently treat one compile-time-conditional
+/// branch's value as unconditional truth — exactly the kind of guess that can
+/// produce a false `Source` edge (the cardinal sin this engine exists to
+/// avoid). So:
+/// - Zero occurrences → `None` (property genuinely absent).
+/// - All occurrences parse to the SAME value → that value (not a conflict —
+///   e.g. identical duplication across `#if`/`#else`, or a redundant repeat).
+/// - Two-or-more DIFFERING values → `None`, degraded (ambiguous — "no
+///   confident value" is the honest answer under a genuine conditional
+///   disagreement).
+///
+/// Contrast with `ObjectDecl.implements` (a LIST-valued property): that one
+/// stays a plain ADDITIVE union with no degrade, because every consumer only
+/// ever asks "might this object implement `iface`?" (may-fire fan-out, never
+/// a singular pick) — see `al_syntax::lower::extract_implements`'s doc. A
+/// singular property like `SourceTable` is different: it feeds a SINGLE
+/// implicit-Rec table decision (`receiver::infer_implicit_rec`), so silently
+/// picking either conflicting branch would fabricate a false single-target
+/// confidence — the thing the degrade exists to prevent.
+fn singular_property_value(
+    obj: &al_syntax::ir::ObjectDecl,
+    name: &str,
+) -> Option<(ObjectRef, bool)> {
+    let mut values = obj
+        .properties
+        .iter()
+        .filter(|p| p.name == name)
+        .map(|p| parse_object_ref_value(&p.value));
+    let first = values.next()?;
+    for v in values {
+        if v != first {
+            return None; // conflicting #if-branch values — degrade, never guess
+        }
+    }
+    Some(first)
+}
+
 /// Map a raw page-control kind string (`"part"` / `"systempart"` /
 /// `"usercontrol"` — the only values the lowerer emits) to [`PageControlKind`].
 /// Returns `None` for anything else (defensive — never expected in practice).
@@ -369,27 +414,28 @@ pub fn extract_nodes(
         };
 
         // SourceTable — Page/PageExtension/Report/ReportExtension only.
-        let mut source_table = None;
-        let mut source_table_temporary = false;
-        if matches!(
+        // `singular_property_value` fail-closed degrades a `#if`-conditional
+        // conflict (differing SourceTable per branch) to `None` rather than
+        // guessing (Task 3, preproc foundations plan) — see its doc.
+        let (source_table, source_table_temporary) = if matches!(
             obj.kind,
             ObjectKind::Page
                 | ObjectKind::PageExtension
                 | ObjectKind::Report
                 | ObjectKind::ReportExtension
-        ) && let Some(prop) = obj.properties.iter().find(|p| p.name == "sourcetable")
-        {
-            let (r, is_temp) = parse_object_ref_value(&prop.value);
-            source_table = Some(r);
-            source_table_temporary = is_temp;
-        }
+        ) {
+            match singular_property_value(obj, "sourcetable") {
+                Some((r, is_temp)) => (Some(r), is_temp),
+                None => (None, false),
+            }
+        } else {
+            (None, false)
+        };
 
-        // TableNo — Codeunit only.
+        // TableNo — Codeunit only. Same fail-closed conflict degrade as
+        // SourceTable above.
         let table_no = if obj.kind == ObjectKind::Codeunit {
-            obj.properties
-                .iter()
-                .find(|p| p.name == "tableno")
-                .map(|p| parse_object_ref_value(&p.value).0)
+            singular_property_value(obj, "tableno").map(|(r, _)| r)
         } else {
             None
         };
@@ -716,5 +762,90 @@ table 50105 "Plain Table"
         assert_eq!(objs[0].table_no, None);
         assert!(!objs[0].source_table_temporary);
         assert!(objs[0].page_controls.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (preprocessor foundations plan): singular-property conflict
+    // degrade — `al_syntax::lower`'s union-read now surfaces a `#if`-wrapped
+    // SourceTable/TableNo from EVERY branch; this layer must fail-closed
+    // degrade a genuine cross-branch DISAGREEMENT rather than pick one
+    // (first/last-wins is the cardinal sin this fix exists to prevent).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn conflicting_preproc_source_table_branches_degrade_to_none() {
+        let src = r#"
+page 50106 "Conflicting Prop"
+{
+#if FOO
+    SourceTable = Customer;
+#else
+    SourceTable = Vendor;
+#endif
+
+    layout
+    {
+    }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].source_table, None,
+            "conflicting #if/#else SourceTable values must degrade to None, \
+             never silently pick the first (or last) branch"
+        );
+        assert!(
+            !objs[0].source_table_temporary,
+            "a degraded SourceTable must never carry a stale temporary flag"
+        );
+    }
+
+    #[test]
+    fn conflicting_preproc_table_no_branches_degrade_to_none() {
+        let src = r#"
+codeunit 50107 "Conflicting TableNo"
+{
+#if FOO
+    TableNo = Customer;
+#else
+    TableNo = Vendor;
+#endif
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].table_no, None,
+            "conflicting #if/#else TableNo values must degrade to None"
+        );
+    }
+
+    #[test]
+    fn identical_preproc_source_table_branches_are_not_a_conflict() {
+        // Both #if/#else branches declare the SAME value — a textual
+        // duplication, not a genuine disagreement — so this must resolve
+        // normally (never degrade a non-conflict).
+        let src = r#"
+page 50108 "Same Value Both Branches"
+{
+#if FOO
+    SourceTable = Customer;
+#else
+    SourceTable = Customer;
+#endif
+
+    layout
+    {
+    }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].source_table,
+            Some(ObjectRef::Name {
+                raw: "Customer".to_string(),
+                normalized_lc: "customer".to_string(),
+            }),
+            "identical values across branches must resolve, not degrade"
+        );
     }
 }

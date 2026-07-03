@@ -8,6 +8,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Preprocessor foundations: `#if`-wrapped object properties + a defensive
+  `implements` descend; program-layer conflict degradation; a
+  `ParseStatus::Recovered` diagnostic (Task 3, argtype-dispatch-and-page-
+  catalog plan).** `al_syntax::lower`'s `#if` union-read was verified TRUE
+  for objects/routines/globals but had two flat-loop gaps:
+  - **Properties (real, verified gap).** `lower_object`'s property collection
+    was a flat loop over `body.named_children()` checking `member.kind() ==
+    RawKind::Property` directly — a `#if`-wrapped property (e.g.
+    `SourceTable`) is a child of a `preproc_conditional` wrapper, never a
+    direct `Property` node, so it was silently DROPPED ENTIRELY (verified
+    failing-first: zero properties captured, not even a first-wins pick).
+    Fixed with a new `collect_properties` helper mirroring `collect_globals`'s
+    established descend pattern.
+  - **`implements` (defensive fix, no live gap found).** Ground-truthed via
+    `tree-sitter parse` dumps of `tree-sitter-al/grammar.js`: the only
+    grammar-reachable `#if`-conditional `implements` shape
+    (`preproc_split_declaration`, a whole-object header split) is already
+    flattened by the grammar itself — no wrapper node exists between the
+    object and either branch's `implements_clause`, so the original flat
+    loop already found both unaided. Refactored into a recursive
+    `extract_implements_walk` that also descends `is_preproc_wrapper` anyway
+    (the same pattern used everywhere else) — documented honestly as
+    defensive/future-proofing, not a bug fix.
+  - **Program-layer conflict degradation (`node_extract.rs`).** After the
+    properties fix, `#if A SourceTable=X #else SourceTable=Y #endif` now
+    surfaces BOTH values — the old `.iter().find(...)` read would have
+    silently first-wins-picked `X` (verified failing-first). New
+    `singular_property_value` collects every matching property and returns
+    the value iff ALL occurrences agree, else fail-closed `None` — applied to
+    both `SourceTable` and `TableNo`. `ObjectDecl.implements` (a list-valued,
+    additive-fan-out-only property) is INTENTIONALLY never degraded — every
+    consumer (`interface_route_applicable`, `ResolveIndex`'s implementer
+    index) only ever asks "might this object implement `iface`?", so a wider
+    union is sound; a singular property feeds a SINGLE implicit-Rec
+    decision, so silently picking a conflicting branch would fabricate a
+    false single-target confidence.
+  - **`ParseStatus::Recovered` diagnostic.** New `snapshot::parse::
+    recovered_file_paths` (count + file paths, additive, non-gating) wired
+    into `ProgramReport.recovered_files` and aldump's
+    `--program-call-graph-stats` JSON (`recoveredFiles: {count, paths}`).
+    Doc-pinned invariant: any future absence/`ProvenAbsent`-shaped claim must
+    consult this before treating a file's content as complete; the full
+    per-file resolution gate is deferred (no absence claim exists yet to
+    gate). **Immediately proved its worth**: the new CDO-gated assertion
+    surfaced TWO real, previously-invisible `tree-sitter-al` grammar defects
+    — (1) `OptionMembers = TableData,...` (the bare identifier `TableData`
+    as the FIRST option member collides with the `tabledata` keyword that
+    also starts `tabledata_permission_list`, a sibling `_property_value`
+    alternative — reproduced minimally, confirmed first-position-only), on
+    Microsoft `System`'s `Object`/`NAVAppObjectPrerequisites`/
+    `DatabaseLocks` tables; (2) `# pragma warning disable LC0088` (a space
+    between `#` and `pragma`) is not recognized, only `#pragma` (no space)
+    is, on Continia System Application's `Http.Codeunit.al`. Both are
+    confined to DEPENDENCY (embedded) source, never CDO's own primary
+    workspace code, and are filed as a dated note for a future dedicated
+    `tree-sitter-al` grammar task — fixing them is out of this plan's scope.
+    Pinned exact in `tests/program_resolve_harness.rs`
+    (`cdo_full_program_coverage_and_self_reported_metric`): 8 entries (4
+    distinct files, each doubled by a pre-existing, unrelated
+    app-duplication artifact in `parse_snapshot`'s per-`AppUnit` parsing).
+  - **CDO harness** (`CDO_WS`, `ENFORCE_CDO_WS=1`, release,
+    `--test-threads=1`, full 174-test suite, twice): BYTE-IDENTICAL
+    resolution — `unknown`=77 (primary/whole), `real_unknown_rate`=0.43%,
+    `unknownByReason`={CompoundReceiver: 51, UntrackedReceiver: 18,
+    BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, `genuine_wrong`=0 —
+    CDO's dependency closure contains zero live `#if`-conditional
+    `SourceTable`/`TableNo`/`implements` declarations, so the fixes are
+    correctness-complete but inert on this corpus; the only CDO-visible
+    change is the new `recoveredFiles` diagnostic itself (0→8, both grammar
+    defects above, confirmed as recorded, not silently masked). Full
+    workspace suite (`cargo test --workspace`, no CDO_WS): 159 green
+    `test result: ok` blocks, zero failures, zero golden movement anywhere.
+  - 21 new unit/integration tests across `crates/al-syntax/src/lower/mod.rs`
+    (7), `src/program/node_extract.rs` (3), `src/program/build.rs` (2),
+    `src/program/resolve/applicability.rs` (1), `src/snapshot/parse.rs` (2),
+    `src/program/resolve/full.rs` (2), plus the CDO-gated ratchet in
+    `tests/program_resolve_harness.rs`. See `.superpowers/sdd/task-3-report-
+    preproc.md` for the full writeup.
+
 - **`with`-scope gate for bare-identifier arg typing — closes a dormant
   wrong-pick vector in fail-closed arg-type dispatch (Task 2 review fix,
   argtype-dispatch-and-page-catalog plan v2.1).** `arg_dispatch::

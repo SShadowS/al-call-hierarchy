@@ -805,4 +805,117 @@ mod tests {
              marker — a source routine must never be abi_overload_collapsed"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (preprocessor foundations plan): the dedup interplay half of the
+    // both-arms union-read pin. `al_syntax::lower` always emits TWO distinct
+    // `RoutineDecl`s for a `#if`/`#else`-split procedure (see
+    // `al_syntax::lower::tests::preproc_both_arms_distinct_signature_yield_
+    // two_routine_decls`); THIS module's `dedup_routines_preserving_genuine_
+    // overloads` is what decides whether they survive as two nodes (distinct
+    // param types → distinct `sig_fp` → distinct `RoutineNodeId`, never even
+    // reach a shared dedup run) or collapse to one (identical param types →
+    // identical `sig_fp` → a true re-parse-shaped duplicate).
+    // -----------------------------------------------------------------------
+
+    /// Real AL text (not a hand-built fixture) through the FULL
+    /// parse → extract_nodes → dedup pipeline: a `#if`/`#else` procedure pair
+    /// with DIFFERING parameter types must survive as two distinct, UNMARKED
+    /// `RoutineNode`s.
+    #[test]
+    fn preproc_both_arms_distinct_signature_yield_two_unmarked_source_overloads() {
+        let src = r#"
+codeunit 50300 "Preproc Overloads"
+{
+#if SOME_UNDEFINED_SYMBOL
+    procedure Bar(X: Integer)
+    begin
+    end;
+#else
+    procedure Bar(Y: Text)
+    begin
+    end;
+#endif
+}
+"#;
+        let file = al_syntax::parse(src);
+        let mut objects = Vec::new();
+        let mut routines = Vec::new();
+        extract_nodes(
+            AppRef(0),
+            &file,
+            TrustTier::Workspace,
+            &mut objects,
+            &mut routines,
+        );
+        routines.sort_by(|a, b| a.id.cmp(&b.id));
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        let bar: Vec<_> = routines.iter().filter(|r| r.id.name_lc == "bar").collect();
+        assert_eq!(
+            bar.len(),
+            2,
+            "both #if/#else Bar arms are genuinely different-signature \
+             overloads — both must survive; got: {:?}",
+            bar.iter().map(|r| &r.param_sig_key).collect::<Vec<_>>()
+        );
+        assert_ne!(
+            bar[0].id.sig_fp, bar[1].id.sig_fp,
+            "Integer vs Text params must fingerprint distinctly"
+        );
+        assert!(
+            bar.iter().all(|r| !r.source_overload_aliased),
+            "distinct sig_fp means neither shares a dedup run — never marked"
+        );
+    }
+
+    /// The other half: IDENTICAL parameter types across both `#if`/`#else`
+    /// arms is the union-read's honest "same text, duplicated" case — the two
+    /// `RoutineDecl`s share one `RoutineNodeId` (same `sig_fp`) and must
+    /// collapse to ONE canonical, UNMARKED survivor (a true duplicate, not an
+    /// overload — `source_overload_aliased` must never fire for it).
+    #[test]
+    fn preproc_same_signature_arms_collapse_to_one_unmarked_survivor() {
+        let src = r#"
+codeunit 50301 "Preproc Dup Sig"
+{
+#if SOME_UNDEFINED_SYMBOL
+    procedure Baz(X: Integer)
+    begin
+    end;
+#else
+    procedure Baz(X: Integer)
+    begin
+    end;
+#endif
+}
+"#;
+        let file = al_syntax::parse(src);
+        let mut objects = Vec::new();
+        let mut routines = Vec::new();
+        extract_nodes(
+            AppRef(0),
+            &file,
+            TrustTier::Workspace,
+            &mut objects,
+            &mut routines,
+        );
+        routines.sort_by(|a, b| a.id.cmp(&b.id));
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        let baz: Vec<_> = routines.iter().filter(|r| r.id.name_lc == "baz").collect();
+        assert_eq!(
+            baz.len(),
+            1,
+            "identical-signature #if/#else arms are the SAME procedure \
+             textually duplicated by the union-read — must collapse to one \
+             canonical entry, not survive as two"
+        );
+        assert!(
+            !baz[0].source_overload_aliased,
+            "a true re-parse-shaped duplicate must never be marked \
+             source_overload_aliased (that marker is for genuine overload \
+             collisions only)"
+        );
+    }
 }

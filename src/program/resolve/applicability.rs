@@ -498,6 +498,68 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // Task 3 (preprocessor foundations plan): the `implements` union-is-sound
+    // design decision. A `#if`-conditional `implements` clause (only ever
+    // reachable via a whole-object `preproc_split_declaration` header split —
+    // see `al_syntax::lower::extract_implements`'s doc) now unions BOTH
+    // branches' interface names into `ObjectDecl.implements`/`ObjectNode.
+    // implements`, even when they name DIFFERENT (conflicting) interfaces —
+    // unlike a singular property (`SourceTable`/`TableNo`), this is
+    // INTENTIONALLY NEVER degraded to "no confident value": every consumer of
+    // `implements` (this function) only ever asks "MIGHT this object
+    // implement `iface`?" for additive may-fire fan-out, never "which ONE
+    // interface does it implement?" — so unioning two conditional branches
+    // together only WIDENS the implementer set (a sound over-approximation:
+    // one branch is always dead at compile time, but nothing here ever
+    // fabricates a false SINGLE-target confidence the way a wrongly-picked
+    // SourceTable would). This test proves the sound-without-degrade claim:
+    // an object unioning `["IThing", "IOther"]` from conflicting `#if`
+    // branches is a valid fan-out route target for EITHER interface.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn interface_applicable_conflicting_preproc_union_is_sound_for_both_interfaces() {
+        let (apps, app) = make_app();
+
+        let ithing = make_obj(app, ObjectKind::Interface, "IThing", vec![], None);
+        let iother = make_obj(app, ObjectKind::Interface, "IOther", vec![], None);
+        // Simulates the POST-fix union-read outcome of a `#if COND codeunit 1
+        // X implements IThing #else codeunit 1 X implements IOther #endif`
+        // split declaration: BOTH conditional interface names land in one
+        // `implements` list, never just the first/last branch.
+        let impl_obj = make_obj(
+            app,
+            ObjectKind::Codeunit,
+            "SplitImpl",
+            vec!["IThing", "IOther"],
+            None,
+        );
+        let impl_id = impl_obj.id.clone();
+        let run = make_routine(&impl_id, "run", 0, None);
+
+        let (graph, index) = build_graph(apps, vec![ithing, iother, impl_obj], vec![run]);
+
+        let target = RoutineNodeId {
+            object: impl_id,
+            name_lc: "run".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        assert!(
+            interface_route_applicable("ithing", "run", 0, &target, &graph, &index),
+            "the union must still route-apply for IThing (one of the two \
+             conditional branches)"
+        );
+        assert!(
+            interface_route_applicable("iother", "run", 0, &target, &graph, &index),
+            "the union must ALSO still route-apply for IOther (the OTHER \
+             conditional branch) — no false narrowing to only the first \
+             branch captured"
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // implicit_trigger_route_applicable fixture
     // -------------------------------------------------------------------------
 

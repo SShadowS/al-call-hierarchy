@@ -125,6 +125,14 @@ pub struct ProgramReport {
     /// those signatures is a threshold alert (investigate, don't mask —
     /// collision-guard-observability addendum).
     pub event_flow_dual_publisher_alias_skips: usize,
+    /// File paths of every parsed source file whose parse hit tree-sitter
+    /// error recovery (`ParseStatus::Recovered`) — Task 3 (preprocessor
+    /// foundations plan). ADDITIVE diagnostic, never gates resolution: see
+    /// [`crate::snapshot::parse::recovered_file_paths`]'s doc for the
+    /// absence-claim invariant this surfaces. Expected empty on a
+    /// well-formed workspace; any entry means that file's IR may be missing
+    /// content tree-sitter could not parse.
+    pub recovered_files: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -675,6 +683,10 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
     let event_flow_dual_publisher_alias_skips =
         crate::program::resolve::resolver::dual_publisher_alias_skip_count(&graph.routines);
 
+    // Task 3 (preprocessor foundations plan): additive Recovered-parse
+    // diagnostic — surfaced, never gating (see `recovered_files`'s doc).
+    let recovered_files = crate::snapshot::parse::recovered_file_paths(parsed);
+
     Some(ProgramReport {
         edges,
         coverage,
@@ -683,6 +695,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         abi_integrity,
         primary_app_ref,
         event_flow_dual_publisher_alias_skips,
+        recovered_files,
     })
 }
 
@@ -908,6 +921,66 @@ mod tests {
         assert_eq!(
             h, h2,
             "count_into_histogram must mirror Histogram::of_edges"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (preprocessor foundations plan): the `recovered_files`
+    // diagnostic, wired end to end through `resolve_full_program` — no
+    // CDO_WS needed, a bare on-disk temp workspace suffices (mirrors
+    // `snapshot::tests::write_minimal_app_json`'s pattern).
+    // -----------------------------------------------------------------------
+
+    fn write_minimal_workspace(dir: &std::path::Path) {
+        let app_json = r#"{
+    "id": "22222222-0000-0000-0000-000000000002",
+    "name": "Task3 Recovered Probe",
+    "publisher": "probe",
+    "version": "1.0.0.0"
+}"#;
+        std::fs::write(dir.join("app.json"), app_json).expect("write app.json");
+    }
+
+    #[test]
+    fn resolve_full_program_reports_recovered_file_with_its_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_workspace(dir.path());
+        std::fs::write(
+            dir.path().join("Clean.al"),
+            "codeunit 50000 T { procedure Foo() begin end; }",
+        )
+        .expect("write Clean.al");
+        // An unbalanced #if forces tree-sitter error recovery.
+        std::fs::write(
+            dir.path().join("Broken.al"),
+            "codeunit 50001 T { procedure Foo() begin\n#if NEVER_CLOSED\nBar();\nend; }",
+        )
+        .expect("write Broken.al");
+
+        let report = resolve_full_program(dir.path()).expect("resolve_full_program");
+        assert_eq!(
+            report.recovered_files,
+            vec!["Task3 Recovered Probe::Broken.al".to_string()],
+            "only Broken.al must be reported, with its path — got {:?}",
+            report.recovered_files
+        );
+    }
+
+    #[test]
+    fn resolve_full_program_recovered_files_empty_when_workspace_is_clean() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_workspace(dir.path());
+        std::fs::write(
+            dir.path().join("Clean.al"),
+            "codeunit 50000 T { procedure Foo() begin end; }",
+        )
+        .expect("write Clean.al");
+
+        let report = resolve_full_program(dir.path()).expect("resolve_full_program");
+        assert!(
+            report.recovered_files.is_empty(),
+            "a whole-clean workspace must report zero recovered files; got {:?}",
+            report.recovered_files
         );
     }
 }

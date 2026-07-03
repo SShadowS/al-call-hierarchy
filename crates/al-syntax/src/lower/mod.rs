@@ -56,6 +56,30 @@ fn collect_objects(
 
 /// A `preproc_conditional*` wrapper node (`#if`/`#else` region). The lowerer
 /// descends BOTH branches (legacy indexes both for BC version-compat).
+///
+/// **Union-read semantics, stated honestly (Task 3, preproc foundations
+/// plan).** Every collector that calls this (objects via `collect_objects`,
+/// routines via `collect_routines`, globals/locals via `collect_globals`,
+/// statements via `lower_block_child`, object properties via
+/// `collect_properties`, `implements` via `extract_implements`) treats `#if`
+/// as TRANSPARENT: it unions the content of every branch — including a dead
+/// `#if UNDEFINED_SYMBOL .. #endif` branch that would never compile in for
+/// ANY real build — into one flat IR. This is a deliberate SUPERSET
+/// over-approximation:
+/// - **Sound for absence proofs** — if a member is absent from the union, it
+///   is absent from every possible build, so "not found anywhere in the
+///   union" is a valid non-existence witness.
+/// - **NOT sound for resolution CONFIDENCE** — a resolved call route may
+///   target dead-branch code that never actually compiles into the running
+///   app. Nothing downstream should read "the engine resolved this call" as
+///   proof the target is reachable in a specific build without also
+///   accounting for `#if` conditionality.
+/// - A singular per-branch VALUE (an object property like `SourceTable`) can
+///   therefore disagree across branches after this union-read — the
+///   consuming layer (`crate::program`) must degrade a genuine disagreement
+///   rather than pick one (see `collect_properties`'s doc); a purely additive
+///   list-valued union (`implements`) needs no such degrade (see
+///   `extract_implements`'s doc).
 fn is_preproc_wrapper(n: RawNode) -> bool {
     n.kind_str().starts_with("preproc_conditional")
 }
@@ -164,16 +188,17 @@ fn lower_object(
 
     // Object globals: var_sections under the declaration_body (not inside routines).
     // Object-level properties (SourceTable / TableNo / PageType / …) are siblings.
+    // Both collectors descend preproc wrappers (both `#if`/`#else` branches) —
+    // `collect_properties` mirrors `collect_globals`'s established pattern (Task
+    // 3, preproc foundations plan: a `#if`-wrapped property was previously
+    // silently dropped by a flat `body.named_children()` scan; see that
+    // function's doc for the union-read + program-layer-degrade contract).
     let mut globals = Vec::new();
     let mut properties = Vec::new();
     if let Some(body) = node.field(FieldName::Body) {
         for member in body.named_children() {
             collect_globals(member, source, &mut globals);
-            if member.kind() == RawKind::Property
-                && let Some(p) = lower_property(member, source)
-            {
-                properties.push(p);
-            }
+            collect_properties(member, source, &mut properties);
         }
     }
 
@@ -197,12 +222,51 @@ fn lower_object(
 /// `implements` interface names (unquoted, document order). Mirrors the legacy
 /// `extract_implements_interfaces`: names after the `implements` keyword, or the
 /// members of an `implements_clause` wrapper.
+///
+/// Descends preproc wrappers (Task 3, preproc foundations plan) — defensive
+/// rather than fixing a live gap: the only grammar-reachable `#if`-conditional
+/// `implements` shape today is `preproc_split_declaration` (`#if COND
+/// codeunit 1 X implements A #else codeunit 1 X implements B #endif { .. }`),
+/// which the grammar itself flattens — both branches' `_object_header`s
+/// (hence both `implements_clause` nodes) are already direct siblings of
+/// `node` with no wrapper in between, so the ORIGINAL flat loop already found
+/// both unaided (verified: `implements_clause` is only ever reachable from
+/// `_object_header`, which is never a `_body_element` — a generic
+/// `preproc_conditional` cannot wrap it). The descend below keeps this walk
+/// consistent with every other collector (`collect_globals`/
+/// `collect_properties`/`lower_block_child`) and future-proofs against a
+/// grammar evolution that wraps a body-scoped conditional interface clause.
+///
+/// A conflicting union (a different interface name per `#if` branch) is
+/// captured as-is — BOTH names land in the result — and is intentionally
+/// NEVER degraded at the program layer, unlike a singular property
+/// (`SourceTable`/`TableNo`): every consumer of `ObjectDecl.implements`
+/// (`ResolveIndex`'s interface-implementer index, `interface_route_
+/// applicable`) only ever asks "does this object POSSIBLY implement
+/// `iface`?" for ADDITIVE may-fire fan-out — never "pick the one interface
+/// this object implements". Including an object under both of its
+/// conditional interfaces over-approximates the implementer set (one branch
+/// is always dead at compile time) but never fabricates a false SINGLE-
+/// target confidence, so the union is sound without a degrade.
 fn extract_implements(node: RawNode, source: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut saw_implements = false;
+    extract_implements_walk(node, source, &mut saw_implements, &mut out);
+    out
+}
+
+/// Recursive walk backing [`extract_implements`]. Returns `true` once a
+/// declaration/code body boundary was crossed (propagated up so every
+/// enclosing call also stops — mirrors the original flat loop's `break`).
+fn extract_implements_walk(
+    node: RawNode,
+    source: &str,
+    saw_implements: &mut bool,
+    out: &mut Vec<String>,
+) -> bool {
     for child in node.named_children() {
         match child.kind() {
-            RawKind::ImplementsKeyword => saw_implements = true,
+            RawKind::ImplementsKeyword => *saw_implements = true,
             RawKind::ImplementsClause => {
                 for sub in child.named_children() {
                     if matches!(sub.kind(), RawKind::Identifier | RawKind::QuotedIdentifier) {
@@ -210,15 +274,20 @@ fn extract_implements(node: RawNode, source: &str) -> Vec<String> {
                     }
                 }
             }
-            RawKind::Identifier | RawKind::QuotedIdentifier if saw_implements => {
+            RawKind::Identifier | RawKind::QuotedIdentifier if *saw_implements => {
                 out.push(ident_text(child, source));
             }
             // Stop at the object body / a routine body.
-            RawKind::DeclarationBody | RawKind::CodeBlock if saw_implements => break,
+            RawKind::DeclarationBody | RawKind::CodeBlock if *saw_implements => return true,
+            _ if is_preproc_wrapper(child)
+                && extract_implements_walk(child, source, saw_implements, out) =>
+            {
+                return true;
+            }
             _ => {}
         }
     }
-    out
+    false
 }
 
 /// Collect page `part` / `systempart` / `usercontrol` sections (name, kind, target),
@@ -364,6 +433,34 @@ fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProper
         value,
         origin: origin_of(node),
     })
+}
+
+/// Collect object-level `property` declarations, descending preproc wrappers
+/// (both `#if`/`#else` branches) — mirrors [`collect_globals`]'s established
+/// pattern. Union-read: a `#if`-wrapped singular property (e.g. `SourceTable`,
+/// `TableNo`) now surfaces EVERY syntactically-present value, one per branch —
+/// this lowering layer never resolves the `#if` condition, it only reports
+/// what is textually there (same superset semantics as objects/routines/
+/// globals; see [`is_preproc_wrapper`]'s module-level doc). A singular
+/// property with two DIFFERING branch values is therefore ambiguous at this
+/// layer by construction; [`crate::program`] (the consumer) is responsible
+/// for degrading such a conflict rather than silently picking one (first/
+/// last-wins is the cardinal sin this fix exists to prevent) — see
+/// `node_extract::singular_property_value`.
+fn collect_properties(node: RawNode, source: &str, out: &mut Vec<crate::ir::ObjectProperty>) {
+    match node.kind() {
+        RawKind::Property => {
+            if let Some(p) = lower_property(node, source) {
+                out.push(p);
+            }
+        }
+        _ if is_preproc_wrapper(node) => {
+            for c in node.named_children() {
+                collect_properties(c, source, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// DFS collecting `(routine, attribute items, enclosing-dataitem-source-table,
@@ -1510,6 +1607,220 @@ report 50102 T
         assert!(
             !routine.in_dataset_modify_context,
             "a real dataitem(...) trigger is not a modify() member — the flag stays false"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (preprocessor foundations plan): union-read pins + the two
+    // flat-loop fixes (properties, implements) + the ParseStatus::Recovered
+    // diagnostic fixture.
+    // -----------------------------------------------------------------------
+
+    /// The base union-read pin: a procedure declared inside a `#if
+    /// UNDEFINED_SYMBOL .. #endif` branch (never true for any real build) is
+    /// STILL lowered into `ObjectDecl.routines` — `is_preproc_wrapper`'s
+    /// descent is unconditional, it never evaluates the condition. Documents
+    /// the honest superset semantics: sound for an absence proof ("not found
+    /// anywhere in the union" implies "absent from every build"), but this
+    /// specific routine is NOT proof the call is reachable in any actual
+    /// compiled build (see `is_preproc_wrapper`'s doc).
+    #[test]
+    fn preproc_undefined_branch_procedure_still_lowered_union_read() {
+        let src = r#"
+codeunit 50200 "Union Read"
+{
+    procedure Caller()
+    begin
+        Foo();
+    end;
+
+#if NEVER_DEFINED_SYMBOL
+    procedure Foo()
+    begin
+    end;
+#endif
+}
+"#;
+        let af = parse(src);
+        let names: Vec<&str> = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .map(|r| r.name.as_str())
+            .collect();
+        assert!(
+            names.iter().any(|n| n.eq_ignore_ascii_case("Foo")),
+            "a #if-UNDEFINED-branch procedure must still surface in the union-read \
+             (sound-for-absence, not-sound-for-reachability); got routines: {names:?}"
+        );
+        assert!(names.iter().any(|n| n.eq_ignore_ascii_case("Caller")));
+    }
+
+    /// Both-arms `#if`/`#else` with DIFFERING signatures yields TWO distinct
+    /// `RoutineDecl`s at the al-syntax layer (no dedup happens here at all —
+    /// that is a `crate::program` (build.rs) concern, driven by `sig_fp`; see
+    /// `preproc_both_arms_distinct_signature_yield_two_unmarked_source_
+    /// overloads` / `preproc_same_signature_arms_collapse_to_one_unmarked_
+    /// survivor` in `src/program/build.rs`'s test module for that half of the
+    /// dedup interplay).
+    #[test]
+    fn preproc_both_arms_distinct_signature_yield_two_routine_decls() {
+        let src = r#"
+codeunit 50201 "Both Arms"
+{
+#if SOME_SYMBOL
+    procedure Foo(X: Integer)
+    begin
+    end;
+#else
+    procedure Foo(Y: Text)
+    begin
+    end;
+#endif
+}
+"#;
+        let af = parse(src);
+        let foos: Vec<_> = af
+            .objects
+            .iter()
+            .flat_map(|o| &o.routines)
+            .filter(|r| r.name.eq_ignore_ascii_case("Foo"))
+            .collect();
+        assert_eq!(
+            foos.len(),
+            2,
+            "both #if/#else arms must lower to distinct RoutineDecls, not one \
+             overwriting the other"
+        );
+        let param_types: Vec<Option<&str>> = foos
+            .iter()
+            .map(|r| r.params.first().and_then(|p| p.ty.as_deref()))
+            .collect();
+        assert!(
+            param_types.contains(&Some("Integer")),
+            "got param types: {param_types:?}"
+        );
+        assert!(
+            param_types.contains(&Some("Text")),
+            "got param types: {param_types:?}"
+        );
+    }
+
+    /// The properties flat-loop fix: a `#if`-wrapped `SourceTable` property
+    /// (previously silently dropped by `lower_object`'s flat
+    /// `body.named_children()` scan — the ORIGINAL, now-fixed gap) is
+    /// captured from BOTH branches. The program layer
+    /// (`node_extract::singular_property_value`) is responsible for the
+    /// fail-closed conflict degrade this union-read now enables; this test
+    /// only pins the lowering-layer union-read itself.
+    #[test]
+    fn preproc_wrapped_source_table_property_captured_both_branches() {
+        let src = r#"
+page 50202 "Preproc Prop"
+{
+#if FOO
+    SourceTable = Customer;
+#else
+    SourceTable = Vendor;
+#endif
+
+    layout
+    {
+    }
+}
+"#;
+        let af = parse(src);
+        let props: Vec<&crate::ir::ObjectProperty> = af.objects[0]
+            .properties
+            .iter()
+            .filter(|p| p.name == "sourcetable")
+            .collect();
+        assert_eq!(
+            props.len(),
+            2,
+            "both #if/#else SourceTable branches must be captured (union-read), \
+             not just the first — got: {:?}",
+            props.iter().map(|p| &p.value).collect::<Vec<_>>()
+        );
+        let values: Vec<&str> = props.iter().map(|p| p.value.as_str()).collect();
+        assert!(values.contains(&"Customer"));
+        assert!(values.contains(&"Vendor"));
+    }
+
+    /// Control: a NON-conditional property is unaffected by the fix (sanity
+    /// guard against a regression in the common, unconditional case).
+    #[test]
+    fn plain_source_table_property_still_captured_control() {
+        let src = r#"
+page 50203 "Plain Prop"
+{
+    SourceTable = Customer;
+    layout
+    {
+    }
+}
+"#;
+        let af = parse(src);
+        let props: Vec<&crate::ir::ObjectProperty> = af.objects[0]
+            .properties
+            .iter()
+            .filter(|p| p.name == "sourcetable")
+            .collect();
+        assert_eq!(props.len(), 1);
+        assert_eq!(props[0].value, "Customer");
+    }
+
+    /// The implements flat-loop's defensive descend fix, pinned against the
+    /// only grammar-reachable `#if`-conditional `implements` shape
+    /// (`preproc_split_declaration` — a whole-object header split): both
+    /// branches' interface names are captured (a UNION, never degraded — see
+    /// `extract_implements`'s doc for why this is sound without a
+    /// program-layer conflict-degrade, unlike `SourceTable`/`TableNo`).
+    #[test]
+    fn preproc_split_declaration_implements_captured_both_branches() {
+        let src = r#"
+#if FOO
+codeunit 50204 "Preproc Impl" implements IThing
+#else
+codeunit 50204 "Preproc Impl" implements IOther
+#endif
+{
+}
+"#;
+        let af = parse(src);
+        assert_eq!(af.objects.len(), 1, "one (preproc-split) object");
+        let implements = &af.objects[0].implements;
+        assert!(
+            implements.iter().any(|i| i.eq_ignore_ascii_case("IThing")),
+            "got implements: {implements:?}"
+        );
+        assert!(
+            implements.iter().any(|i| i.eq_ignore_ascii_case("IOther")),
+            "got implements: {implements:?}"
+        );
+    }
+
+    /// The `ParseStatus::Recovered` diagnostic fixture: an unbalanced `#if`
+    /// (no matching `#endif`) forces tree-sitter error recovery — the whole
+    /// file's `parse_status` must report `Recovered`, the signal
+    /// `crate::program`'s Recovered-file diagnostic (count + paths) consumes.
+    #[test]
+    fn unbalanced_if_directive_yields_recovered_parse_status() {
+        let src = r#"
+codeunit 50205 "Unbalanced"
+{
+    procedure Foo()
+    begin
+#if NEVER_CLOSED
+        Bar();
+    end;
+}
+"#;
+        let af = parse(src);
+        assert_eq!(
+            af.parse_status,
+            crate::ir::ParseStatus::Recovered,
+            "an unbalanced #if must force error recovery, never report Clean"
         );
     }
 }

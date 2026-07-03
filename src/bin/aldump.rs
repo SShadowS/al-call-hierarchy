@@ -1370,6 +1370,15 @@ fn main() -> ExitCode {
             // source-overload-alias guard (`resolver::emit_event_flow_edges`).
             // Expected 0 outside the CDO-measured known dual-publisher pairs.
             "eventFlowDualPublisherAliasSkips": r.event_flow_dual_publisher_alias_skips,
+            // Task 3 (preprocessor foundations plan): additive, non-gating
+            // ParseStatus::Recovered diagnostic — see `recovered_files`'s doc
+            // on `ProgramReport`. Expected `count: 0` on a well-formed
+            // workspace; a nonzero count means that many files' IR may be
+            // missing content tree-sitter could not parse.
+            "recoveredFiles": {
+                "count": r.recovered_files.len(),
+                "paths": r.recovered_files,
+            },
         });
 
         return match serde_json::to_string_pretty(&value) {
