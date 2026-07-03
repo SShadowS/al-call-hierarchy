@@ -556,8 +556,10 @@ ws-overload-char/src/Target.Codeunit.al::0::P	99f57b4cd039062d
 ws-overload-char/src/Target.Codeunit.al::0::P	2a999fe0eb92f57a
 ws-overload-collision/Ambiguous.Codeunit.al::0::Resolve	68af312f10993ee8
 ws-overload-collision/Ambiguous.Codeunit.al::0::Resolve	1f1460a1671f7f24
-ws-overload-collision/Caller.Codeunit.al::0::CallAmbiguous	5c69967912830cd7
-ws-overload-collision/Caller.Codeunit.al::0::CallControl	0da36bac58fd8d27
+ws-overload-collision/Caller.Codeunit.al::0::CallAmbiguous	ee4ffd65d90597bf
+ws-overload-collision/Caller.Codeunit.al::0::CallAmbiguousUntyped	806fa5b9d53b4cc5
+ws-overload-collision/Caller.Codeunit.al::0::CallControl	b33f4f5cf80f1b03
+ws-overload-collision/Caller.Codeunit.al::0::GetValue	4944e9aa88e1a2d9
 ws-overload-collision/Control.Codeunit.al::0::Solo	bf3886e7ca5f9dc9
 ws-overload-enum-discriminator/src/Caller.Codeunit.al::0::Run	bb5888c6ca564e9b
 ws-overload-enum-discriminator/src/Target.Codeunit.al::0::P	d22654c0b847835b

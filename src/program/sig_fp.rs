@@ -64,7 +64,7 @@ pub(crate) fn write_len_prefixed(buf: &mut String, s: &str) {
 /// declares each overload's parameter types with exactly one spelling in its
 /// source; over-normalization risks ALIASING two genuinely different
 /// overloads onto one id, the cardinal risk this whole plan closes.
-fn normalize_type_text(s: &str) -> String {
+pub(crate) fn normalize_type_text(s: &str) -> String {
     s.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")

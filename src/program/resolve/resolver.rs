@@ -52,6 +52,9 @@ use crate::program::abi_ingest::object_kind_from_abi_type;
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
+use crate::program::resolve::arg_dispatch::{
+    ArgDispatchInfo, candidate_param_infos, pick_candidate,
+};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
 use crate::program::resolve::edge::{
@@ -322,7 +325,7 @@ fn routine_is_source_aliased(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool 
 /// visible, prevalidated-concrete candidate case, which is
 /// `(DispatchShape::AmbiguousOverload, vec![one route per candidate])` — see
 /// the `_` arm's doc below for the prevalidation contract.
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `from_object` (Task 1); each is a distinct identity/lookup input, grouping would obscure call sites.
+#[allow(clippy::too_many_arguments)] // 8 pre-existing params + `args` (Task 2, argtype-dispatch-and-page-catalog plan); each is a distinct identity/lookup input, grouping would obscure call sites.
 fn resolve_in_object(
     obj_id: &ObjectNodeId,
     obj_tier: TrustTier,
@@ -332,6 +335,14 @@ fn resolve_in_object(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
+    // Task 2 (argtype-dispatch-and-page-catalog plan): the call site's typed
+    // arguments, consulted ONLY by the `_` arm's fail-closed pick (see
+    // `arg_dispatch`'s module doc) — every other arm ignores this entirely.
+    // Empty for every 0-arity call and for every call site that has no
+    // argument-typing context available (bare-call/receiver type-query
+    // helpers below — see `resolve_bare`/`resolve_member`'s `args = &[]`
+    // wrappers).
+    args: &[ArgDispatchInfo],
 ) -> Option<(DispatchShape, Vec<Route>)> {
     let candidates = index.routines_in_object(obj_id, name_lc);
     if candidates.is_empty() {
@@ -517,6 +528,42 @@ fn resolve_in_object(
                     vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
                 ));
             }
+
+            // Task 2 (argtype-dispatch-and-page-catalog plan): attempt a
+            // fail-closed arg-type pick over `visible` BEFORE constructing
+            // the AmbiguousOverload route set — see `arg_dispatch`'s module
+            // doc for the full hardened rule set. SOURCE tier only: a
+            // SymbolOnly `obj_tier` means every candidate here is ABI-tier,
+            // which carries no `BodyMap` entry (no retained param
+            // type+mode metadata) — gate explicitly rather than rely on that
+            // incidentally (clean skip, not partial). `visible` already
+            // passed the `degraded` prevalidation above, so every candidate
+            // reaching the pick is individually CONCRETE (non-collapse-
+            // marked, non-source-aliased) by construction.
+            if obj_tier != TrustTier::SymbolOnly && !args.is_empty() {
+                let mut candidate_params = Vec::with_capacity(visible.len());
+                let mut all_known = true;
+                for rid in &visible {
+                    match body_map
+                        .get(rid)
+                        .and_then(|decl| candidate_param_infos(decl, &rid.object, graph, index))
+                    {
+                        Some(p) => candidate_params.push(p),
+                        None => {
+                            all_known = false;
+                            break;
+                        }
+                    }
+                }
+                if all_known && let Some(picked_idx) = pick_candidate(args, &candidate_params) {
+                    let rid0 = visible[picked_idx];
+                    return Some((
+                        DispatchShape::Exact,
+                        vec![make_routine_route(rid0, obj_tier, body_map, graph)],
+                    ));
+                }
+            }
+
             let candidate_routes: Vec<Route> = visible
                 .iter()
                 .map(|rid| make_routine_route(rid, obj_tier, body_map, graph))
@@ -903,6 +950,7 @@ enum TableScopeOutcome {
 ///
 /// Deterministic: `scope` is explicitly sorted by `ObjectNodeId` before
 /// cardinality is counted.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args` (Task 2, argtype-dispatch-and-page-catalog plan).
 fn resolve_in_table_scope(
     from_object: &ObjectNode,
     table_id: ObjectNodeId,
@@ -911,6 +959,7 @@ fn resolve_in_table_scope(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
+    args: &[ArgDispatchInfo],
 ) -> TableScopeOutcome {
     let closure = graph.topology.closure(from_object.id.app);
 
@@ -987,6 +1036,7 @@ fn resolve_in_table_scope(
                 graph,
                 index,
                 body_map,
+                args,
             ) {
                 Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
                 // Defensive: `object_has_visible_member_candidate` already
@@ -1099,6 +1149,37 @@ pub fn resolve_bare(
     body_map: &BodyMap<'_>,
     with_state: WithState,
 ) -> (DispatchShape, Vec<Route>) {
+    resolve_bare_with_args(
+        from_object,
+        name_lc,
+        arity,
+        graph,
+        index,
+        body_map,
+        with_state,
+        &[],
+    )
+}
+
+/// The arg-typed variant of [`resolve_bare`] — `resolve_full_program`'s real
+/// call-site resolution uses this so Task 2's fail-closed pick
+/// (`resolve_in_object`'s `_` arm) has the call's typed arguments available.
+/// [`resolve_bare`] is a thin `args = &[]` wrapper kept for every pre-Task-2
+/// call site (every unit test in this module, `receiver.rs`'s bare-call type
+/// query) that has no argument-typing context available or relevant — an
+/// empty `args` slice is behavior-neutral (Task 2's pick never fires without
+/// arguments to type).
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args` (Task 2, argtype-dispatch-and-page-catalog plan).
+pub(crate) fn resolve_bare_with_args(
+    from_object: &ObjectNode,
+    name_lc: &str,
+    arity: usize,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    with_state: WithState,
+    args: &[ArgDispatchInfo],
+) -> (DispatchShape, Vec<Route>) {
     // 1. Own object.
     if let Some((shape, routes)) = resolve_in_object(
         &from_object.id,
@@ -1109,6 +1190,7 @@ pub fn resolve_bare(
         graph,
         index,
         body_map,
+        args,
     ) {
         return (shape, routes);
     }
@@ -1158,6 +1240,7 @@ pub fn resolve_bare(
                 graph,
                 index,
                 body_map,
+                args,
             ) {
                 return (shape, routes);
             }
@@ -1210,6 +1293,7 @@ pub fn resolve_bare(
                     graph,
                     index,
                     body_map,
+                    args,
                 ) {
                     TableScopeOutcome::Resolved(shape, routes) => {
                         // (4) Builtin/intrinsic PROBE-THEN-DECIDE: the probe
@@ -1736,6 +1820,32 @@ pub fn resolve_member(
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
 ) -> (DispatchShape, Vec<Route>) {
+    resolve_member_with_args(
+        receiver,
+        method_lc,
+        arity,
+        from_object,
+        graph,
+        index,
+        body_map,
+        &[],
+    )
+}
+
+/// The arg-typed variant of [`resolve_member`] — see [`resolve_bare_with_args`]'s
+/// doc for the identical `resolve_bare`/`resolve_bare_with_args` split
+/// rationale; [`resolve_member`] is the thin `args = &[]` wrapper.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args` (Task 2, argtype-dispatch-and-page-catalog plan).
+pub(crate) fn resolve_member_with_args(
+    receiver: &ReceiverType,
+    method_lc: &str,
+    arity: usize,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    args: &[ArgDispatchInfo],
+) -> (DispatchShape, Vec<Route>) {
     match receiver {
         ReceiverType::RecordRef => {
             // Catalog-only by construction (Item 4 — see the `Record` arm's
@@ -1812,6 +1922,7 @@ pub fn resolve_member(
                     graph,
                     index,
                     body_map,
+                    args,
                 ) {
                     TableScopeOutcome::Resolved(shape, routes) => return (shape, routes),
                     TableScopeOutcome::Ambiguous => {
@@ -1920,6 +2031,7 @@ pub fn resolve_member(
                 graph,
                 index,
                 body_map,
+                args,
             ) {
                 (shape, routes)
             } else {
@@ -1956,6 +2068,7 @@ pub fn resolve_member(
                 graph,
                 index,
                 body_map,
+                args,
             ) {
                 (shape, routes)
             } else {
@@ -2013,6 +2126,7 @@ pub fn resolve_member(
                         graph,
                         index,
                         body_map,
+                        args,
                     );
                     // The implementer object itself IS resolved (`impl_id`/
                     // `impl_tier` above) — tag its tier (reason-split Task 2)
@@ -2062,6 +2176,7 @@ pub fn resolve_member(
                                     graph,
                                     index,
                                     body_map,
+                                    args,
                                 );
                                 let route = interface_delegate_route(
                                     result,

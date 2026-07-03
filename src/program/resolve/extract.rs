@@ -147,6 +147,11 @@ pub struct RawSiteV2 {
     /// `resolve_bare`'s Step 3 (beyond-1B.3b Task 3): a bare call is only
     /// eligible for implicit-`Rec` fallback when this is `NoWithProven`.
     pub with_state: WithState,
+    /// The call's argument expression ids, in source order (argtype-dispatch-
+    /// and-page-catalog plan, Task 2). Consumed by `resolve_call_site_
+    /// obligation` to build the [`crate::program::resolve::arg_dispatch::
+    /// ArgDispatchInfo`] list a fail-closed overload-dispatch pick needs.
+    pub args: Vec<ExprId>,
 }
 
 /// Tri-state guard for whether a call site sits lexically inside a `with X do`
@@ -527,6 +532,7 @@ fn collect_calls_v2(
                 span,
                 callee_text,
                 with_state: ctx.state(),
+                args: arg_ids.clone(),
             });
 
             // Recurse: function expression (catches chained calls), then args.

@@ -5,6 +5,7 @@
 pub mod abi_check;
 pub mod anon;
 pub mod applicability;
+pub mod arg_dispatch;
 pub mod body_map;
 pub mod builtins;
 pub mod differential;

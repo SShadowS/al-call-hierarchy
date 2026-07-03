@@ -56,6 +56,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `genuine_wrong=0` held throughout.
 
 ### Added
+- **Fail-closed argument-type overload dispatch (Task 2, argtype-dispatch-
+  and-page-catalog plan v2.1).** `resolve_in_object`'s `_` arm (the
+  prevalidated, same-name/same-arity `AmbiguousOverload` candidate set) now
+  attempts one additional fail-closed step before falling back to
+  `AmbiguousResolved`: type the call's arguments (SOURCE tier only — literals
+  of a fixture-proven family, and bare identifiers resolved via the SAME
+  caller-scope-EXACT `params → locals → globals` lookup `receiver.rs`'s Step
+  2 uses) and, iff EXACTLY ONE candidate's full parameter list is
+  dispatch-compatible and every OTHER candidate is PROVEN incompatible at
+  some position, pick it. New module `program::resolve::arg_dispatch`
+  (`ArgDispatchInfo`/`ParamDispatchInfo`/`CanonicalArgType`, 17 unit tests):
+  - **Dispatch-canonical identity, not text identity:** object-bearing types
+    (Record/Page/Report/Codeunit/Query/XmlPort/Interface/Enum) canonicalize
+    via the EXISTING fail-closed `ResolveIndex::resolve_object_ref` semantic
+    identity; Text/Code length brackets are stripped (non-discriminating for
+    by-value compatibility); scalar families compare by exact base keyword
+    (`integer` != `decimal` != `biginteger`, `text` != `code`) — an
+    UNRESOLVABLE object-bearing type leaves that position untyped rather
+    than guessing.
+  - **`var` parameters are ByRef-EXACT** (length INCLUDED — `var Text[30]`
+    never matches `var Text[50]`); a literal/call-result argument is never
+    var-passable (a `var` parameter is a sound elimination against it, not a
+    degrade).
+  - **A `Variant`/`Any` candidate at a discriminating position degrades the
+    whole call**, computed from the FULL candidate set before any
+    compatibility filtering — a naive "exclusion" matcher would otherwise
+    leave Variant as an unproven "sole survivor."
+  - **Call-level degradation:** ANY untyped argument position (every
+    expression shape beyond a bare identifier/literal is deferred — call-
+    result, `Rec.Field`, `Enum::Value` — to a documented future increment)
+    or ANY candidate with unresolvable/missing parameter metadata degrades
+    the WHOLE call; an unknown-metadata candidate is never filtered OUT of
+    the competition to let the rest resolve.
+  - **A same-"soft-family" mismatch (Text/Code/Char/Label, or
+    Integer/Decimal/BigInteger) is UNDECIDED, not eliminated** — AL's own
+    conversions between these mean a mismatch there cannot be proven
+    incompatible; an undecided candidate blocks a confident pick exactly
+    like a second exact match would. The plan's C6 literal-typing rule
+    (a STRING literal degrades whenever a Code/Char candidate is present; an
+    INTEGER literal degrades whenever a Decimal/BigInteger candidate is
+    present — except the compiler-proven Integer-literal-vs-`Code[N]` pair,
+    where ordinary exact-mismatch elimination already applies) is
+    additionally encoded verbatim for direct traceability.
+  - **Tier-gated to SOURCE** (`obj_tier != SymbolOnly`): a SymbolOnly
+    candidate carries no `BodyMap` entry, so it can never supply parameter
+    metadata — the gate is explicit (clean skip), not incidental.
+  - Plumbing: `RawSiteV2.args: Vec<ExprId>` (`extract.rs`); `arg_dispatch::
+    type_call_args` built ONCE per call-site obligation in
+    `resolve_call_site_obligation` (`full.rs`) and threaded through new
+    `resolve_bare_with_args`/`resolve_member_with_args`/`resolve_in_
+    table_scope` variants (`resolver.rs`) — the pre-existing `resolve_bare`/
+    `resolve_member` stay thin `args = &[]` wrappers, so none of this
+    module's ~90 existing unit tests needed touching. `sig_fp::
+    normalize_type_text` is now `pub(crate)`.
+  - Wired the pre-authored ORPHANED fixture banks `ws-overload-arg-type`/
+    `-arg-pos2`/`-negatives` (commit `b4ff081`) plus the deferred-increment
+    guard banks `-enum-discriminator`/`-field-discriminator`/
+    `-callexpr-discriminator` (assert NOT-yet-flipped — those argument
+    shapes stay untyped in this increment). Rebaselined `ws-overload-
+    collision`'s `Resolve(5)` call: the Integer literal now confidently
+    picks the `Resolve(X: Integer)` overload (an Integer literal structurally
+    cannot bind `Code[20]` — the compiler-proven exemplar named in the plan's
+    C6 addendum); added a new `CallAmbiguousUntyped` control (a call-result
+    argument) proving the pick does not over-fire when there is genuinely no
+    evidence.
+  - **CDO measurement** (`CDO_WS`, `ENFORCE_CDO_WS=1`, release,
+    `--test-threads=1`): `ambiguousResolved` 56→**12** (44 sites flip to
+    `Resolved`) — a MAJORITY, not the "minority" the plan anticipated;
+    `unknown`/`real_unknown_rate` byte-identical at 77/0.43% (a DIFFERENT
+    histogram bucket; arg-type dispatch never touches `Unknown`).
+    **Adjudication** (`.superpowers/sdd/argtype-dispatch-task-2-report.md`
+    has the full table; `task2_dump_argtype_dispatch_flips_on_cdo`, a new
+    `#[ignore]`d diagnostic, reproduces the raw dump): the 44 flips are overwhelmingly
+    Object/Record EXACT-IDENTITY eliminations — CDO's real code very
+    commonly overloads a procedure BY RECORD TYPE (`CheckAndSetHandled`,
+    `PrintPDFFile`, `RunPrePostValidation`, the obsoleted
+    `SendElectronicDocument` shim family that funnels a `Code[20]` into a
+    local `Record "CDO Send Code"` before dispatching) — the SOUNDEST
+    elimination category in the whole design (two different AL record types
+    are never assignment-compatible without an explicit `RecordRef`/
+    `Variant` detour). A smaller set are cross-family Base eliminations
+    (hand-traced exemplar: `GetJsonAttribute`'s 3-overload family, where a
+    `var returnValue: Text` argument eliminates both a `Text`-first-param
+    sibling and a `var Integer`-typed sibling by two INDEPENDENT
+    discriminating positions). NONE of the 44 touch the "undecided"
+    soft-family gate (no Text-vs-Code or Integer-vs-Decimal pick fired on
+    real CDO code). `genuine_wrong=0` and the L3 semantic audit
+    (`cdo_l3_semantic_audit_no_fresh_wrong`) both HARD gates, both re-run
+    green on the identical snapshot. `ambiguous_resolved` ratchet re-pinned
+    56→12 (both scopes); `unknown`/`real_unknown_rate` ceilings unchanged.
+  - **Out of scope (deferred, documented in the plan's roadmap):**
+    Enum::Value / call-result / `Rec.Field` argument typing; ABI-tier
+    (SymbolOnly) parameter-type retention; implicit-conversion modeling.
+
+### Added
 - **Source `sig_fp` identity + `AmbiguousResolved` reclassification — arc
   complete (Task 5 FINAL, sigfp-and-ambiguous-reclassification plan). Primary
   real-`unknown` moves 0.83%→0.52% (`unknown` 151→95, `realUnknownRate`

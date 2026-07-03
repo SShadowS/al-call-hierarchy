@@ -42,6 +42,7 @@ use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::abi_check::{
     AbiIntegrityReport, abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
 };
+use crate::program::resolve::arg_dispatch::{self, ArgDispatchInfo};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::{
     CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind, Histogram,
@@ -54,8 +55,8 @@ use crate::program::resolve::receiver::{
     ReceiverType, infer_receiver_type, is_atomic_receiver_token,
 };
 use crate::program::resolve::resolver::{
-    emit_event_flow_edges, resolve_bare, resolve_implicit_trigger, resolve_member,
-    resolve_object_run,
+    emit_event_flow_edges, resolve_bare, resolve_bare_with_args, resolve_implicit_trigger,
+    resolve_member_with_args, resolve_object_run,
 };
 use crate::program::sig_fp::source_routine_node_id;
 use crate::snapshot::{AppSetSnapshot, ParsedUnit, SnapshotBuilder, parse_snapshot};
@@ -215,7 +216,29 @@ fn resolve_call_site_obligation(
     // Task 3 is the first consumer (Step 5, `Func().Method()` compound
     // receivers) — Steps 0-4 remain unaffected.
     file: &al_syntax::ir::AlFile,
+    // argtype-dispatch-and-page-catalog plan, Task 2: the call site's raw
+    // argument expression ids (`RawSiteV2::args`), typed ONCE below into
+    // `ArgDispatchInfo` and threaded to `resolve_bare_with_args`/
+    // `resolve_member_with_args` so `resolve_in_object`'s fail-closed pick
+    // has real argument evidence to work with.
+    call_args: &[al_syntax::ir::ExprId],
 ) -> (EdgeKind, DispatchShape, SetCompleteness, Vec<Route>) {
+    // Built ONCE per obligation (not per-arm): SOURCE-tier only (`arg_
+    // dispatch`'s own SymbolOnly gate lives in `resolve_in_object`, but
+    // there is nothing to type at all without a resolved calling object).
+    let args_info: Vec<ArgDispatchInfo> = match obj_node_opt {
+        Some(obj_node) => arg_dispatch::type_call_args(
+            call_args,
+            file,
+            routine,
+            &obj.globals,
+            &obj_node.id,
+            graph,
+            index,
+        ),
+        None => Vec::new(),
+    };
+
     match shape {
         CalleeShape::Bare { name } => {
             let name_lc = name.to_ascii_lowercase();
@@ -230,8 +253,8 @@ fn resolve_call_site_obligation(
             // Complete`, so this is behavior-preserving for every other
             // shape.
             let (shape, routes) = if let Some(obj_node) = obj_node_opt {
-                resolve_bare(
-                    obj_node, &name_lc, arity, graph, index, body_map, with_state,
+                resolve_bare_with_args(
+                    obj_node, &name_lc, arity, graph, index, body_map, with_state, &args_info,
                 )
             } else {
                 (
@@ -260,7 +283,9 @@ fn resolve_call_site_obligation(
                     receiver.map(|id| (file, id)),
                     Some((body_map, with_state)),
                 );
-                resolve_member(&recv, &method_lc, arity, obj_node, graph, index, body_map)
+                resolve_member_with_args(
+                    &recv, &method_lc, arity, obj_node, graph, index, body_map, &args_info,
+                )
             } else {
                 (
                     DispatchShape::Exact,
@@ -506,6 +531,7 @@ fn resolve_full_program_from_parts(
                             &body_map,
                             site.with_state,
                             &pf.file,
+                            &site.args,
                         );
 
                         classified_edges.push(ClassifiedEdge {

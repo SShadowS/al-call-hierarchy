@@ -1763,6 +1763,14 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // SetSelectionFilter on Page vars; SetTableView on Report vars; SaveRecord
     // stays CurrPage-only) resolved 18 MemberNotFound sites (25→7); the 7
     // remaining are the eCandidates verified-real absences (honest Unknown).
+    //
+    // UNCHANGED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1, Task
+    // 2 — fail-closed arg-type dispatch): byte-identical 0.43%
+    // [77/18104=0.0042532] — Task 2 disambiguates `AmbiguousResolved`
+    // candidate sets (56→12, see the `ambiguous_resolved` ratchet below), a
+    // DIFFERENT histogram bucket entirely; it never touches `Unknown`. This
+    // ceiling's re-measurement on the identical CDO snapshot is the direct
+    // confirmation of that non-interaction.
     let primary_rate = ph.real_unknown_rate();
     assert!(
         primary_rate <= 0.004254,
@@ -1969,6 +1977,9 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // the instance-catalog completion; `unknownByReason`={CompoundReceiver:
     // 51, UntrackedReceiver: 18, BuiltinPrecedenceCollision: 1,
     // MemberNotFound: 7}, sum==77.
+    // UNCHANGED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1, Task
+    // 2): byte-identical 77 — the arg-type dispatch pick moves
+    // `AmbiguousResolved` sites to `Resolved`, never touches `Unknown`.
     assert!(
         ph.unknown <= 77,
         "primary unknown count {} exceeds ceiling 77 (recorded 2026-07-03 \
@@ -2032,6 +2043,8 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // scope).
     // TIGHTENED 2026-07-03 (argtype-dispatch-and-page-catalog Task 1): 95→77,
     // alongside the primary ceiling above.
+    // UNCHANGED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1, Task
+    // 2): byte-identical 77, alongside the primary ceiling above.
     assert!(
         h.unknown <= 77,
         "whole-program unknown count {} exceeds ceiling 77 (recorded \
@@ -2045,27 +2058,59 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 
     // ── `ambiguous_resolved` ratchet (round-1 addendum: "ambiguous_resolved
     // gets its own histogram count + ratchet") ───────────────────────────────
-    // NEW 2026-07-03 (sigfp-and-ambiguous-reclassification plan, Task 4): a
-    // FLOOR (not a ceiling) — this task's producer must keep classifying the
-    // full same-object same-arity ambiguity population honestly; a DROP means
-    // a regression (fewer candidates recognized, or a producer bug silently
-    // degrading a formerly-clean candidate set back to `Unknown`), a RISE
-    // means a genuine expansion (e.g. a future task reclassifying the
-    // currently-out-of-scope cross-object/interface populations too) —
-    // either way, investigate before moving this exact-pinned value. 56 is
-    // the full measured CDO population (both scopes — every reclassified
-    // site originates in the workspace/primary scope).
+    // NEW 2026-07-03 (sigfp-and-ambiguous-reclassification plan, Task 4): 56,
+    // the full measured CDO same-object same-arity ambiguity population.
+    //
+    // TIGHTENED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1,
+    // Task 2 — fail-closed arg-type dispatch): 56 -> 12 (44 flips to
+    // `Resolved`). This is now a DOWNWARD-moving count as arg-type dispatch
+    // coverage improves — no longer a pure "producer regressed" floor the
+    // way it was under Task 4's metric-definition change alone. A further
+    // DROP is expected as future increments (Enum::Value / `Rec.Field` /
+    // call-result argument typing — see the plan's roadmap) disambiguate
+    // more of the residual 12; investigate before RAISING this pin (a rise
+    // means the pick regressed — a producer bug silently degrading a
+    // formerly-picked site back to ambiguous, or fewer candidates
+    // recognized) or before an UNEXPECTED further drop not attributable to a
+    // known increment (verify `genuine_wrong` stays 0 first).
+    //
+    // 44-flip per-site adjudication (see `.superpowers/sdd/task-2-report.md`
+    // for the full table; `task2_dump_argtype_dispatch_flips_on_cdo`, an
+    // `#[ignore]`d one-off diagnostic below, reproduces the raw dump):
+    // overwhelmingly Object/Record EXACT-IDENTITY eliminations (a `Record
+    // "CDO Send Code"`-typed local can never bind a `Code[20]` parameter, or
+    // vice versa — two disjoint AL runtime representations, the SOUNDEST
+    // elimination category in the whole design) — e.g. `CheckAndSetHandled`
+    // (2 Record-typed overloads, 5 call sites), `PrintPDFFile` (2 Record-
+    // typed overloads, 4 sites), `RunPrePostValidation` (`Record "Sales
+    // Header"` vs `Record "Service Header"`, 2 sites), the obsoleted
+    // `SendElectronicDocument` shim family (4 arities all funnel through a
+    // local `Record "CDO Send Code"` var into the one Record-typed 7-arg
+    // overload, elimination against the sibling `Code[20]`-typed overload).
+    // A smaller set are cross-family Base eliminations (Text vs Integer/
+    // InStream/JsonObject — e.g. `GetJsonAttribute`'s 3-overload family,
+    // hand-traced: a `var returnValue: Text` argument eliminates BOTH the
+    // `Text`-first-param overload [position 0 mismatch] AND the `var
+    // Integer`-typed overload [position 2 mismatch], leaving the
+    // `(JsonObject, Text, var Text)` overload as the sole survivor). Every
+    // hand-traced site is a case an AL compiler would resolve identically —
+    // and NONE touch the "undecided" text-ish/numeric soft-family gate (no
+    // Text-vs-Code or Integer-vs-Decimal pick fired on CDO). `genuine_wrong`
+    // stays 0 (`cdo_genuine_wrong_is_precedence_adjudicated`, unchanged) and
+    // the L3 semantic audit stays clean (`cdo_l3_semantic_audit_no_fresh_
+    // wrong`, unchanged) — both HARD gates, both re-run and green on this
+    // exact CDO snapshot.
     assert_eq!(
-        ph.ambiguous_resolved, 56,
+        ph.ambiguous_resolved, 12,
         "primary ambiguousResolved count {} != the recorded 2026-07-03 value \
-         56 (sigfp-and-ambiguous-reclassification plan Task 4) — investigate \
-         before updating this ratchet",
+         12 (argtype-dispatch-and-page-catalog plan v2.1, Task 2 — 44 sites \
+         flipped to Resolved) — investigate before updating this ratchet",
         ph.ambiguous_resolved,
     );
     assert_eq!(
-        h.ambiguous_resolved, 56,
+        h.ambiguous_resolved, 12,
         "whole-program ambiguousResolved count {} != the recorded 2026-07-03 \
-         value 56, same value as primary today",
+         value 12, same value as primary today",
         h.ambiguous_resolved,
     );
 
@@ -2394,6 +2439,100 @@ fn route_applicability_zero_violations() {
         "Test 15 (CDO) — applicability: total_routes={} violations=0 abi_unmapped=0",
         appl_cdo.total_routes,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Test 15c (CDO env-gated, IGNORED — one-off diagnostic dump only, no gate):
+// argtype-dispatch-and-page-catalog plan, Task 2 — lists every CDO call site
+// where the fail-closed arg-type pick fired (a same-name/same-arity SOURCE
+// overload set that Task 2's `resolve_in_object`'s `_` arm picked down to a
+// single confident `Source` route) — the per-site adjudication basis for the
+// Task 2 CDO gate's `ambiguousResolved` 56->12 movement (44 flips). Mirrors
+// the "observed via a one-off `--ignored` dump — see git history — then
+// pinned here" convention already used elsewhere in this file (see
+// `unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons`'s
+// doc). Run with `CDO_WS=... cargo test --release --test
+// program_resolve_harness task2_dump_argtype_dispatch_flips_on_cdo --
+// --ignored --nocapture`.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn task2_dump_argtype_dispatch_flips_on_cdo() {
+    use al_call_hierarchy::program::abi_ingest::AbiCache;
+    use al_call_hierarchy::program::build::build_program_graph;
+    use al_call_hierarchy::program::resolve::index::ResolveIndex;
+    use al_call_hierarchy::snapshot::SnapshotBuilder;
+
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+    let snap = (SnapshotBuilder {
+        workspace_root: ws.clone(),
+        local_providers: vec![],
+    })
+    .build()
+    .expect("snapshot build must succeed on CDO_WS");
+    let cache = AbiCache::new();
+    let graph = build_program_graph(&snap, &cache);
+    let index = ResolveIndex::build(&graph);
+
+    let mut flips: Vec<String> = Vec::new();
+    for ce in &report.edges {
+        if ce.edge.kind != EdgeKind::Call {
+            continue;
+        }
+        if ce.edge.shape != DispatchShape::Exact || ce.edge.routes.len() != 1 {
+            continue;
+        }
+        let route = &ce.edge.routes[0];
+        if route.evidence != Evidence::Source || !route.conditions.is_empty() {
+            continue;
+        }
+        let RouteTarget::Routine(ref rid) = route.target else {
+            continue;
+        };
+        let candidates = index.routines_in_object(&rid.object, &rid.name_lc);
+        let matched: usize = candidates
+            .iter()
+            .filter(|r| r.params_count == rid.params_count)
+            .count();
+        if matched > 1 {
+            let Witness::SourceSpan { ref file, span } = route.witness else {
+                continue;
+            };
+            let src = std::fs::read_to_string(ws.join(file)).unwrap_or_default();
+            let decl_text: String = src
+                .get(span.0 as usize..span.1 as usize)
+                .unwrap_or("<unreadable>")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            flips.push(format!(
+                "caller={} span={}:{}:{} target_object={:?} target={}({} params) picked_decl=[{decl_text}]",
+                ce.edge.from.name_lc,
+                ce.edge.site.span.unit,
+                ce.edge.site.span.start.line,
+                ce.edge.site.span.start.col,
+                rid.object.key,
+                rid.name_lc,
+                rid.params_count,
+            ));
+        }
+    }
+    flips.sort();
+    eprintln!(
+        "Task 2 CDO flip dump: {} confident picks over a >1-candidate set",
+        flips.len()
+    );
+    for f in &flips {
+        eprintln!("{f}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4487,21 +4626,26 @@ fn ws_overload_collision_report() -> ProgramReport {
 }
 
 /// Test 23a: `Target.Resolve(5)` against a same-name/same-arity SOURCE
-/// overload pair must NOT resolve to a confident SINGLE `Source` route — no
-/// arg-type evidence exists to pick between the two overloads (full arg-type
-/// dispatch remains out of scope). REBASELINED (Task 4,
-/// sigfp-and-ambiguous-reclassification plan — the metric-definition change,
-/// correctness over backwards compatibility): this is no longer honest
-/// `Unknown` — it is candidate-carrying `ObligationOutcome::AmbiguousResolved`,
-/// TWO concrete `Source` routes (one per overload, distinct post-T2
-/// `RoutineNodeId`s), each carrying `Condition::AmbiguousDispatch` and
-/// `fires_by_default() == false`. Never a guessed pick-first SINGLE route to
-/// either overload — the closed candidate SET is the honest answer.
+/// overload pair (`Resolve(X: Integer)` / `Resolve(X: Code[20])`).
+/// REBASELINED (argtype-dispatch-and-page-catalog plan v2.1, Task 2 —
+/// "correctness over backwards compatibility": Task 4 of the sigfp-and-
+/// ambiguous-reclassification plan is superseded here for THIS specific
+/// call site, not the general AmbiguousResolved mechanism, which stays live
+/// for every OTHER unresolved same-arity collision).
+///
+/// The literal argument `5` is an INTEGER literal — the compiler-proven
+/// exemplar named directly in the plan's C6 addendum: an Integer literal
+/// structurally CANNOT bind a `Code[20]` parameter (an integer constant is
+/// not textual data at all, not even via implicit conversion — AL has no
+/// Integer->Code conversion), so eliminating the `Code[20]` overload is a
+/// SOUND, compiler-correct elimination, leaving `Resolve(X: Integer)` as the
+/// unique, exact-canonical-match survivor. This is no longer honest
+/// `AmbiguousResolved` for this call site — the fail-closed arg-type pick
+/// (`resolve_in_object`'s `_` arm, `arg_dispatch::pick_candidate`) resolves
+/// it to a confident single `Source` route, `DispatchShape::Exact`.
 #[test]
-fn ws_overload_collision_ambiguous_call_becomes_ambiguous_resolved_with_two_candidates() {
-    use al_call_hierarchy::program::resolve::edge::{
-        Condition, ObligationOutcome, classify_obligation,
-    };
+fn ws_overload_collision_ambiguous_call_becomes_resolved_to_the_integer_overload() {
+    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
     let report = ws_overload_collision_report();
     let edges = edges_for_caller(&report, "callambiguous");
@@ -4511,6 +4655,89 @@ fn ws_overload_collision_ambiguous_call_becomes_ambiguous_resolved_with_two_cand
         "CallAmbiguous must have exactly one call obligation"
     );
     let edge = &edges[0].edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::Exact,
+        "the Integer literal `5` fail-closed-picks the Integer overload — \
+         single-route Exact, not AmbiguousOverload; got {:?}",
+        edge.shape
+    );
+    let routes = &edge.routes;
+    assert_eq!(
+        routes.len(),
+        1,
+        "a confident pick emits exactly one route; got {routes:?}"
+    );
+    let route = &routes[0];
+    assert_eq!(route.evidence, Evidence::Source, "got {route:?}");
+    assert!(
+        route.conditions.is_empty(),
+        "a fail-closed pick is a plain Source route — no AmbiguousDispatch \
+         condition; got {route:?}"
+    );
+    assert!(
+        route.fires_by_default(),
+        "a confident pick must fire by default; got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected a Routine target; got {route:?}");
+    };
+    assert_eq!(rid.params_count, 1);
+    let Witness::SourceSpan { ref file, span } = route.witness else {
+        panic!("expected SourceSpan witness; got {route:?}");
+    };
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-collision");
+    let src = std::fs::read_to_string(fixture.join(file))
+        .unwrap_or_else(|e| panic!("cannot read witness file {file}: {e}"));
+    let decl_text = &src[span.0 as usize..span.1 as usize];
+    assert!(
+        decl_text.to_ascii_lowercase().contains("integer"),
+        "the picked routine's own declaration text must be the Integer \
+         overload; got {decl_text:?}"
+    );
+    assert!(
+        !decl_text.to_ascii_lowercase().contains("code"),
+        "the picked routine must NOT be the Code[20] overload; got {decl_text:?}"
+    );
+
+    assert_eq!(
+        classify_obligation(edge),
+        ObligationOutcome::Resolved,
+        "a fail-closed single Source route to a proven-compatible overload \
+         is Resolved, not AmbiguousResolved"
+    );
+}
+
+/// Test 23a-control: `CallControl2` (added alongside the arg-type dispatch
+/// rebaseline) mirrors the ORIGINAL "no evidence to pick" shape the
+/// pre-Task-2 `ws_overload_collision_ambiguous_call_becomes_ambiguous_
+/// resolved_with_two_candidates` test used to pin: a call whose argument is
+/// UNTYPED (a call-result — this increment's typing is literals + declared
+/// vars only) against the SAME `Resolve` overload pair must stay honest
+/// `ObligationOutcome::AmbiguousResolved` — proving the fail-closed pick
+/// does NOT over-fire when there is genuinely no argument evidence.
+#[test]
+fn ws_overload_collision_untyped_arg_call_stays_ambiguous_resolved_with_two_candidates() {
+    use al_call_hierarchy::program::resolve::edge::{
+        Condition, ObligationOutcome, classify_obligation,
+    };
+
+    let report = ws_overload_collision_report();
+    let edges = edges_for_caller(&report, "callambiguousuntyped");
+    assert_eq!(
+        edges.len(),
+        2,
+        "CallAmbiguousUntyped has two call obligations: the outer \
+         Resolve(...) call and the nested GetValue() argument call"
+    );
+    // The outer `Resolve(GetValue())` call's span strictly CONTAINS the
+    // nested `GetValue()` call's span — select the widest.
+    let edge = &edges
+        .iter()
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("at least one call obligation")
+        .edge;
     assert_eq!(
         edge.shape,
         DispatchShape::AmbiguousOverload,
@@ -4551,9 +4778,9 @@ fn ws_overload_collision_ambiguous_call_becomes_ambiguous_resolved_with_two_cand
     assert_eq!(
         classify_obligation(edge),
         ObligationOutcome::AmbiguousResolved,
-        "no arg-type evidence exists to disambiguate the two `Resolve` \
-         overloads, but the CLOSED candidate set is a proven-exhaustive \
-         enumeration, not a resolution gap — AmbiguousResolved, never Unknown"
+        "an untyped (call-result) argument carries no evidence to \
+         disambiguate the two `Resolve` overloads — AmbiguousResolved, \
+         never a guessed pick, never Unknown"
     );
 }
 
@@ -4651,6 +4878,283 @@ fn ws_overload_collision_control_single_overload_resolves_cleanly() {
         "witness must be SourceSpan; got {:?}",
         route.witness
     );
+}
+
+// ---------------------------------------------------------------------------
+// Tests 23f+: argtype-dispatch-and-page-catalog plan (v2.1), Task 2 —
+// fail-closed arg-type overload dispatch. Wires the pre-authored ORPHANED
+// fixture banks `ws-overload-arg-type` / `ws-overload-arg-pos2` /
+// `ws-overload-negatives` (commit `b4ff081`) plus the deferred-increment
+// guard banks `-enum-discriminator` / `-field-discriminator` /
+// `-callexpr-discriminator`.
+// ---------------------------------------------------------------------------
+
+fn ws_overload_argtype_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-arg-type");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-arg-type")
+}
+
+/// The OUTERMOST call obligation for `caller_name_lc` — selects the WIDEST
+/// span, so a call whose own argument list contains a NESTED call
+/// obligation (e.g. `T.P(GetCount())`, where `GetCount()` is itself a
+/// separate obligation `collect_calls_v2` recurses into) always returns the
+/// outer call, never the inner one. Trivially correct when there is only one
+/// call obligation for `caller_name_lc` (mirrors the widest-span selection
+/// pattern used throughout this file for compound-receiver fixtures).
+fn outer_call_edge<'a>(report: &'a ProgramReport, caller_name_lc: &str) -> &'a ClassifiedEdge {
+    edges_for_caller(report, caller_name_lc)
+        .into_iter()
+        .filter(|ce| ce.edge.kind == EdgeKind::Call)
+        .max_by_key(|ce| ce.edge.site.span.end.col as i64 - ce.edge.site.span.start.col as i64)
+        .expect("at least one Call-kind edge")
+}
+
+/// Test 23f: `RunImport(InStr: InStream; Setup: Record "Probe Ovl Setup")`
+/// calls `Importer.ImportToFileArchive(InStr, Setup)` — position 0's
+/// declared `InStream` var EXACTLY matches only the `(InStream, Record)`
+/// overload (`(Text, Record)` is eliminated — `InStream` and `Text` are
+/// fully disjoint runtime representations, no AL conversion bridges them);
+/// position 1 (`Record "Probe Ovl Setup"`) resolves to the SAME table on
+/// both candidates (non-discriminating, but not blocking). A confident
+/// single `Source` pick.
+#[test]
+fn ws_overload_argtype_run_import_picks_instream_overload() {
+    let report = ws_overload_argtype_report();
+    let edge = &outer_call_edge(&report, "runimport").edge;
+    assert_eq!(edge.shape, DispatchShape::Exact, "got {:?}", edge.shape);
+    assert_eq!(edge.routes.len(), 1, "got {:?}", edge.routes);
+    let route = &edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source, "got {route:?}");
+    assert!(route.fires_by_default(), "got {route:?}");
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected a Routine target; got {route:?}");
+    };
+    assert_eq!(rid.params_count, 2);
+    let Witness::SourceSpan { ref file, span } = route.witness else {
+        panic!("expected SourceSpan witness; got {route:?}");
+    };
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-arg-type");
+    let src = std::fs::read_to_string(fixture.join(file)).expect("read witness file");
+    let decl_text = src[span.0 as usize..span.1 as usize].to_ascii_lowercase();
+    assert!(
+        decl_text.contains("instream"),
+        "picked routine must be the InStream overload; got {decl_text:?}"
+    );
+}
+
+/// Test 23g: `RunAmbiguous(Setup)` calls `Importer.ImportToFileArchive
+/// (Anything, Setup)` where `Anything: Variant` — the FIRST candidate
+/// param (`Text`) genuinely could not be eliminated by the naive
+/// text-identity model, but under exact-canonical-match neither `Text` nor
+/// `InStream` equals `Variant` — 0 exact matches, never a fabricated pick.
+/// Must stay `AmbiguousResolved` — this is the fixture's own documented
+/// "must not fabricate a resolution here" guard.
+#[test]
+fn ws_overload_argtype_run_ambiguous_stays_ambiguous_resolved() {
+    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+
+    let report = ws_overload_argtype_report();
+    let edge = &outer_call_edge(&report, "runambiguous").edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::AmbiguousOverload,
+        "got {:?}",
+        edge.shape
+    );
+    assert_eq!(edge.routes.len(), 2, "got {:?}", edge.routes);
+    assert_eq!(
+        classify_obligation(edge),
+        ObligationOutcome::AmbiguousResolved,
+        "a Variant-typed argument proves nothing about either candidate — \
+         no arg-type evidence exists to disambiguate"
+    );
+}
+
+fn ws_overload_argpos2_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-arg-pos2");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-arg-pos2")
+}
+
+/// Test 23h: `RunWithPlainArg(InStr, Acc)` calls `Sha.M(Tok, InStr, Acc)` —
+/// the DISCRIMINATING position is position 1 (`Tok: Integer` at position 0
+/// is identical on both `M` overloads, non-discriminating; `Acc: Code[20]`
+/// at position 2 is ALSO identical on both). Position 1's declared
+/// `InStream` var picks `M(Tok: Integer; S: InStream; Acc: Code[20])`.
+#[test]
+fn ws_overload_argpos2_run_with_plain_arg_picks_instream_overload() {
+    let report = ws_overload_argpos2_report();
+    let edge = &outer_call_edge(&report, "runwithplainarg").edge;
+    assert_eq!(edge.shape, DispatchShape::Exact, "got {:?}", edge.shape);
+    assert_eq!(edge.routes.len(), 1, "got {:?}", edge.routes);
+    let route = &edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source, "got {route:?}");
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected a Routine target; got {route:?}");
+    };
+    assert_eq!(rid.name_lc, "m");
+    assert_eq!(rid.params_count, 3);
+    let Witness::SourceSpan { ref file, span } = route.witness else {
+        panic!("expected SourceSpan witness; got {route:?}");
+    };
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-arg-pos2");
+    let src = std::fs::read_to_string(fixture.join(file)).expect("read witness file");
+    let decl_text = src[span.0 as usize..span.1 as usize].to_ascii_lowercase();
+    assert!(
+        decl_text.contains("instream"),
+        "picked routine must be the InStream overload; got {decl_text:?}"
+    );
+}
+
+/// Test 23i (deferred-shape guard, NOT the enum/field/callexpr banks): `Run
+/// WithCallExprArg(InStr, Acc)` calls `Sha.InsertWithSha1(GetLog(), InStr,
+/// Acc)` — position 0 (`GetLog()`, a call-result) is UNTYPED in this
+/// increment; per the Call-level degradation rule, ANY untyped argument
+/// degrades the WHOLE call, even though position 1 (`InStr: InStream`)
+/// would otherwise cleanly discriminate. Must stay `AmbiguousResolved`.
+#[test]
+fn ws_overload_argpos2_run_with_call_expr_arg_stays_ambiguous_resolved() {
+    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+
+    let report = ws_overload_argpos2_report();
+    let edge = &outer_call_edge(&report, "runwithcallexprarg").edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::AmbiguousOverload,
+        "got {:?}",
+        edge.shape
+    );
+    assert_eq!(edge.routes.len(), 2, "got {:?}", edge.routes);
+    assert_eq!(
+        classify_obligation(edge),
+        ObligationOutcome::AmbiguousResolved,
+        "an untyped call-result argument at position 0 degrades the whole \
+         call, even though position 1 would otherwise discriminate cleanly"
+    );
+}
+
+fn ws_overload_negatives_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-negatives");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-negatives")
+}
+
+/// Shared assertion for every `ws-overload-negatives` case: the call must
+/// stay honest `AmbiguousResolved` — two concrete `Source` routes, each
+/// carrying `Condition::AmbiguousDispatch`, never a guessed pick.
+fn assert_stays_ambiguous_resolved(report: &ProgramReport, caller_name_lc: &str) {
+    use al_call_hierarchy::program::resolve::edge::{
+        Condition, ObligationOutcome, classify_obligation,
+    };
+
+    let edge = &outer_call_edge(report, caller_name_lc).edge;
+    assert_eq!(
+        edge.shape,
+        DispatchShape::AmbiguousOverload,
+        "{caller_name_lc}: got {:?}",
+        edge.shape
+    );
+    let routes = &edge.routes;
+    assert_eq!(routes.len(), 2, "{caller_name_lc}: got {routes:?}");
+    for route in routes {
+        assert_eq!(
+            route.evidence,
+            Evidence::Source,
+            "{caller_name_lc}: got {route:?}"
+        );
+        assert!(
+            route.conditions.contains(&Condition::AmbiguousDispatch),
+            "{caller_name_lc}: got {route:?}"
+        );
+        assert!(!route.fires_by_default(), "{caller_name_lc}: got {route:?}");
+    }
+    assert_eq!(
+        classify_obligation(edge),
+        ObligationOutcome::AmbiguousResolved,
+        "{caller_name_lc}: must stay AmbiguousResolved, never a guessed pick"
+    );
+}
+
+/// Test 23j: `CallVariant(S: InStream)` calls `T.V(S)` where `V` overloads
+/// on `(Variant)` / `(Integer)` — the Round-1 addendum's Variant-wildcard
+/// rule (I5): a Variant candidate at a discriminating position degrades the
+/// WHOLE call, even though a naive exclusion-style matcher would have
+/// eliminated `Integer` (InStream vs Integer are disjoint) and left Variant
+/// as an UNPROVEN "sole survivor" — that is not a confident pick.
+#[test]
+fn ws_overload_negatives_call_variant_stays_ambiguous_resolved() {
+    assert_stays_ambiguous_resolved(&ws_overload_negatives_report(), "callvariant");
+}
+
+/// Test 23k: `CallIndistinct(A: Integer; B: Text)` calls `T.I(A, B)` where
+/// `I` overloads on `(Integer, Text)` / `(Integer, Code[20])` — position 0
+/// is identical on both (non-discriminating); position 1's declared `Text`
+/// arg EXACTLY matches the `Text` candidate, but `Code[20]` is NOT
+/// eliminated (Text and Code are the SAME "text-ish" soft family — AL's own
+/// Text<->Code conversions mean a declared Text var is not PROVEN
+/// incompatible with a `Code[20]` parameter). The undecided `Code[20]`
+/// candidate blocks the pick.
+#[test]
+fn ws_overload_negatives_call_indistinct_stays_ambiguous_resolved() {
+    assert_stays_ambiguous_resolved(&ws_overload_negatives_report(), "callindistinct");
+}
+
+/// Test 23l: `CallObject(L: Codeunit "Neg Target")` calls `T.O(L)` where `O`
+/// overloads on `(Interface "Neg ILog")` / `(Text)` — `L`'s canonical type
+/// (`Codeunit "Neg Target"`, which does NOT implement `"Neg ILog"`) exactly
+/// matches NEITHER candidate — 0 exact matches, never a fabricated pick.
+#[test]
+fn ws_overload_negatives_call_object_stays_ambiguous_resolved() {
+    assert_stays_ambiguous_resolved(&ws_overload_negatives_report(), "callobject");
+}
+
+/// Test 23m (deferred-increment guard): `ws-overload-enum-discriminator`'s
+/// `Run()` calls `T.P("Probe Kind"::Open)` — a qualified-enum-value
+/// argument (`ExprKind::QualifiedEnum`) is NOT a bare identifier/param/local/
+/// global reference NOR a literal; this increment's `type_one_arg` leaves it
+/// untyped (deferred — Enum::Value arg typing is a documented future
+/// increment). Must stay `AmbiguousResolved`, proving the deferral is
+/// honored rather than silently mistyped.
+#[test]
+fn ws_overload_enum_discriminator_stays_ambiguous_resolved() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-enum-discriminator");
+    let report = resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-enum-discriminator");
+    assert_stays_ambiguous_resolved(&report, "run");
+}
+
+/// Test 23n (deferred-increment guard): `ws-overload-field-discriminator`'s
+/// `Run(var Rec)` calls `T.P(Rec.Amount)` — a `Rec.Field` member-expression
+/// argument is NOT a bare identifier/literal; stays untyped (deferred —
+/// `Rec.Field` arg typing is a documented future increment). Must stay
+/// `AmbiguousResolved`.
+#[test]
+fn ws_overload_field_discriminator_stays_ambiguous_resolved() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-field-discriminator");
+    let report = resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-field-discriminator");
+    assert_stays_ambiguous_resolved(&report, "run");
+}
+
+/// Test 23o (deferred-increment guard): `ws-overload-callexpr-discriminator`'s
+/// `Run()` calls `T.P(GetCount())` — a call-result argument is NOT a bare
+/// identifier/literal; stays untyped (deferred — call-result arg typing is a
+/// documented future increment). Must stay `AmbiguousResolved`.
+#[test]
+fn ws_overload_callexpr_discriminator_stays_ambiguous_resolved() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-overload-callexpr-discriminator");
+    let report = resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-overload-callexpr-discriminator");
+    assert_stays_ambiguous_resolved(&report, "run");
 }
 
 // ---------------------------------------------------------------------------
