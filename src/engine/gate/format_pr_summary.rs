@@ -234,15 +234,6 @@ mod tests {
         }
     }
 
-    /// Minimal `FindingConfidence` — complete coverage.
-    fn confidence_complete() -> FindingConfidence {
-        FindingConfidence {
-            level: "high".to_string(),
-            capped_by: None,
-            evidence: vec![],
-        }
-    }
-
     /// Build a minimal `Finding` with `severity`, `primary_location` keyed on
     /// `primary_routine_id`, and optional `actionable_anchor`.
     fn make_finding(

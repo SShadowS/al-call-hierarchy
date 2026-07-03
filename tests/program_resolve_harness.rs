@@ -2774,17 +2774,14 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
             .saturating_sub(audit.fresh_wrong_count)
             .saturating_sub(audit.fresh_missing_count)
             .saturating_sub(audit.fresh_extra_count),
-        if audit.paired > 0 {
-            (audit
-                .paired
-                .saturating_sub(audit.fresh_wrong_count)
-                .saturating_sub(audit.fresh_missing_count)
-                .saturating_sub(audit.fresh_extra_count)
-                * 100)
-                / audit.paired
-        } else {
-            0
-        },
+        audit
+            .paired
+            .saturating_sub(audit.fresh_wrong_count)
+            .saturating_sub(audit.fresh_missing_count)
+            .saturating_sub(audit.fresh_extra_count)
+            .saturating_mul(100)
+            .checked_div(audit.paired)
+            .unwrap_or(0),
         audit.fresh_wrong_count,
         audit.fresh_ahead_dispatch_count,
         audit.genuine_wrong_count,

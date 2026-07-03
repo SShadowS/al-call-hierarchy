@@ -376,11 +376,42 @@ fn singular_property_value(
         .map(|p| parse_object_ref_value(&p.value));
     let first = values.next()?;
     for v in values {
-        if v != first {
+        if object_ref_pair_conflicts(&v, &first) {
             return None; // conflicting #if-branch values — degrade, never guess
         }
     }
     Some(first)
+}
+
+/// Semantic-identity conflict check for two parsed `(ObjectRef, is_temporary)`
+/// values of the SAME singular property (used only to decide whether two
+/// `#if`-branch values genuinely disagree). Deliberately NOT the derived
+/// `PartialEq` on `(ObjectRef, bool)` — that compares `ObjectRef::Name`'s
+/// `raw` field too, so `SourceTable = Customer` vs `SourceTable = CUSTOMER`
+/// in two conditional branches (the same AL table — object-name references
+/// are case-insensitive; `normalized_lc` is the identity component, `raw` is
+/// display-only, see [`ObjectRef`]'s doc) would be misclassified as a
+/// conflict and spuriously degrade to `None`. Identity here is:
+/// `normalized_lc` for a name reference, the numeric id for an id reference,
+/// an `Id`/`Name` pair is always a conflict (no id<->name resolution happens
+/// at this syntactic layer), and a differing `temporary` marker is always a
+/// real conflict regardless of the reference shape.
+fn object_ref_pair_conflicts(a: &(ObjectRef, bool), b: &(ObjectRef, bool)) -> bool {
+    if a.1 != b.1 {
+        return true;
+    }
+    match (&a.0, &b.0) {
+        (ObjectRef::Id(x), ObjectRef::Id(y)) => x != y,
+        (
+            ObjectRef::Name {
+                normalized_lc: x, ..
+            },
+            ObjectRef::Name {
+                normalized_lc: y, ..
+            },
+        ) => x != y,
+        _ => true,
+    }
 }
 
 /// Map a raw page-control kind string (`"part"` / `"systempart"` /
@@ -846,6 +877,70 @@ page 50108 "Same Value Both Branches"
                 normalized_lc: "customer".to_string(),
             }),
             "identical values across branches must resolve, not degrade"
+        );
+    }
+
+    #[test]
+    fn preproc_same_table_different_case_branches_are_not_a_conflict() {
+        // AL object-name references are case-insensitive: two `#if` branches
+        // naming the SAME table with different casing (`Customer` vs
+        // `CUSTOMER`) must resolve, not degrade — a derived `PartialEq` on
+        // `(ObjectRef, bool)` would compare the `raw` display text too and
+        // wrongly treat this as a genuine conflict (review nit fix,
+        // `object_ref_pair_conflicts` compares `normalized_lc` identity, not
+        // raw text).
+        let src = r#"
+page 50109 "Same Table Different Case"
+{
+#if FOO
+    SourceTable = Customer;
+#else
+    SourceTable = CUSTOMER;
+#endif
+
+    layout
+    {
+    }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].source_table,
+            Some(ObjectRef::Name {
+                raw: "Customer".to_string(),
+                normalized_lc: "customer".to_string(),
+            }),
+            "same-table-different-case across branches must resolve (semantic \
+             identity via normalized_lc), never degrade on raw-text case \
+             difference"
+        );
+    }
+
+    #[test]
+    fn preproc_differing_temporary_marker_is_still_a_conflict() {
+        // Same table name, but one branch marks `temporary` and the other
+        // doesn't — a real semantic difference the `is_temporary` bool
+        // component must still catch after switching the name comparison
+        // to normalized_lc-only.
+        let src = r#"
+page 50110 "Temporary Marker Conflict"
+{
+#if FOO
+    SourceTable = Customer;
+#else
+    SourceTable = Customer temporary;
+#endif
+
+    layout
+    {
+    }
+}
+"#;
+        let objs = extract_objs(src);
+        assert_eq!(
+            objs[0].source_table, None,
+            "a differing temporary marker across branches must still degrade \
+             to None even though the table name identity matches"
         );
     }
 }

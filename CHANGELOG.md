@@ -8,6 +8,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Arc capstone — catalog completion + arg-type dispatch + preproc
+  foundations: real-`unknown` 0.52%→0.43%, `ambiguousResolved` 56→13 (Task 4,
+  FINAL, argtype-dispatch-and-page-catalog plan).** Full CDO re-measure
+  confirms the 3-task arc at its floors: primary `unknown`=77/18104
+  (`real_unknown_rate`=0.43%; whole-program `unknown`=77/43404=0.18%),
+  `unknownByReason`={CompoundReceiver: 51, UntrackedReceiver: 18,
+  BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, `ambiguousResolved`=13
+  (primary/whole), `genuine_wrong`=0, `route_applicability`/
+  `fan_out_applicability` violations=0 with non-vacuous `routes_checked`
+  (interface=28, instance_builtin=481, implicit_trigger=1183, event=3404),
+  `recoveredFiles`=8 (pinned), the sig_fp collision-guard group count 0/0 —
+  all byte-identical across two full single-threaded 174-test CDO runs
+  (before and after this task's own nit fixes below). The
+  **legacy-comparable rate** (the pre-sigfp-reclassification-plan metric
+  definition, `unknown + ambiguousResolved` treated as one undecided
+  population) moves 0.83%→0.50% ((77+13)/18104) — the dispatch increment's
+  real, if modest, contribution once folded back into the older
+  denominator.
+  - **The falsified-`ProvenAbsent` premise, told honestly.** This plan
+    originally set out to build `ProvenAbsent` machinery for the 13
+    workspace-tier `MemberNotFound` sites inherited from the prior arc's
+    grounding report. Task 1's own preflight investigation falsified that
+    premise BEFORE any such machinery was built: all 13 (+5 embedded
+    siblings) were never absences — they were ONE deliberate engine catalog
+    gap (`is_metadata_sensitive_instance_method` excluding real, always-present
+    Page/Report instance intrinsics). Building a "proven absent" proof for a
+    member that actually exists would have codified a false claim. The
+    lesson, worth generalizing: **measure the population before building
+    taxonomy for it.** The real fix was catalog completion (18 sites →
+    `Resolved`/`Catalog`, `unknown` 95→77), an ordinary correctness fix, not a
+    new ObligationOutcome. Only the 7 CDOeCandidates sites are genuine,
+    independently-verified absences (the target members provably don't exist
+    in the installed dependency at any visibility) — they remain honest
+    `Unknown(MemberNotFound)` and are now the documented, and only, real
+    `ProvenAbsent` prototype population for a future plan.
+  - **The dispatch increment.** Task 2's fail-closed arg-type overload
+    dispatch (source tier: literals + declared vars, exact semantic-identity
+    matching only — Text/Code length brackets non-discriminating,
+    object-bearing types via the existing fail-closed `resolve_object_ref`,
+    `Variant` candidates always degrade, `var`-mode requires exact
+    by-ref-compatible typing, literal typing is candidate-set-aware per
+    fixture-proven family) picked 44 of the 56 CDO `ambiguousResolved` sites
+    to `Resolved` (56→12). A same-task review fix then closed a dormant
+    wrong-pick vector (a `with`-scope gate mirroring `resolve_bare`'s
+    existing Step 3 guard, since arg typing had no visibility into
+    `with`-block identifier rebinding) and, in doing so, honestly reverted
+    ONE of the 44 picks (`UseContiniaAuthorization`, a `WithState::Unknown`
+    routine whose comment-vs-AST with-detection signals disagree) back to
+    `AmbiguousResolved` — 12→13, **43 net picks**, every one fail-closed-
+    guarded and individually adjudicated against the real CDO source (see
+    `.superpowers/sdd/task-2-report.md`). `genuine_wrong` stayed 0 throughout.
+  - **The preprocessor foundations** (Task 3): the `#if` union-read verified
+    TRUE for objects/routines/globals and PINNED; two flat-loop gaps found
+    and dispositioned (a real, previously-silent property-drop bug fixed via
+    a new `collect_properties` descend helper; a defensive `implements`
+    descend where grounding proved no live gap exists); a program-layer
+    `singular_property_value` conflict degrade (fail-closed `None` on a
+    genuine cross-`#if`-branch disagreement, never first/last-wins); a new
+    `ParseStatus::Recovered` diagnostic that immediately proved its worth by
+    surfacing 2 real, previously-invisible `tree-sitter-al` grammar defects
+    confined to dependency (embedded) source — an `OptionMembers =
+    TableData,...` first-position keyword collision (Microsoft `System`'s
+    `Object`/`NAVAppObjectPrerequisites`/`DatabaseLocks` tables) and a
+    `# pragma` (space after `#`) not recognized (Continia System
+    Application's `Http.Codeunit.al`) — both out of this plan's scope, filed
+    for a future dedicated grammar task. All CDO-inert (zero live conditional
+    `SourceTable`/`TableNo`/`implements` on this corpus) except the new
+    diagnostic itself.
+  - **This task's own review-nit fixes** (cheap, mechanical, no resolution
+    behavior change on CDO): (1) `node_extract::singular_property_value`'s
+    conflict check now compares `ObjectRef` on **semantic identity**
+    (`normalized_lc` for a name reference, the numeric id for an id
+    reference) via a new `object_ref_pair_conflicts` helper, instead of the
+    derived `PartialEq` on `(ObjectRef, bool)` — the old comparison also
+    matched `ObjectRef::Name`'s display-only `raw` text, so two `#if`
+    branches naming the SAME table with different casing (`Customer` vs
+    `CUSTOMER` — AL object-name references are case-insensitive) would have
+    been misclassified as a conflict and spuriously degraded to `None`. 2 new
+    unit tests: `preproc_same_table_different_case_branches_are_not_a_conflict`
+    (must resolve) and `preproc_differing_temporary_marker_is_still_a_conflict`
+    (a differing `temporary` marker is still a real conflict, control). (2) A
+    CHANGELOG test-count correction for the Task 3 entry: `lower/mod.rs`
+    contributed 6 new tests, not 7 (git-diff-verified against commit
+    `dbf2c56`); the itemized total corrected 21→16. (3) The **new clippy
+    bar**: `cargo clippy --release --all-features --all-targets -- -D
+    warnings` is now CLEAN (previously only the narrower `--all-features`
+    gate, without `--tests`, was enforced) — fixed 4 pre-existing findings:
+    a dead `confidence_complete` test helper in `format_pr_summary.rs`
+    (zero call sites, removed); a `useless_vec` in `edge.rs`'s
+    `edge_constructs_and_is_orderable` test (`vec![e.clone(), e]` → an array
+    literal); a `manual_checked_ops` division in
+    `program_resolve_harness.rs`'s L3-audit percentage print (now
+    `.saturating_mul(100).checked_div(audit.paired).unwrap_or(0)`); a
+    `ptr_arg` on `cli_a_json_differential.rs`'s `run_json_path(ws: &PathBuf,
+    ..)` (→ `&Path`, newly surfaced by the wider `--all-targets` scope, not
+    in the plan's original 3-finding list). `cargo fmt --check` and
+    `cargo test --workspace` (159 green `test result: ok` blocks, including
+    the 2 new node_extract tests) both stayed green throughout.
+  - **Deferred roadmap** (unclaimed, in rough priority order):
+    `ProvenAbsent` machinery prototyped against the 7 CDOeCandidates sites
+    (the now-confirmed real absence population); a comment-aware
+    `with`-token scan (would restore the `UseContiniaAuthorization` pick and
+    close the same dormant gap in `resolve_bare`'s pre-existing Step 3
+    implicit-Rec decline); the 2 newly-found `tree-sitter-al` grammar defects
+    (a `grammar.js` fix + a full BC.History 15k-file revalidation pass — a
+    genuinely separate undertaking); the deferred arg-typing increments
+    (`Enum::Value`, call-result, `Rec.Field` argument typing — would
+    disambiguate more of the residual 13 `ambiguousResolved`); ABI
+    param-type retention (unlocks `SymbolOnly`-tier arg dispatch, currently
+    tier-gated out entirely); implicit-conversion modeling
+    (compiler-backed); the full `ParseStatus::Clean` per-file gate (today
+    only a surfaced diagnostic); and `CompoundReceiver`=51 — now the single
+    largest `unknown` bucket and the natural next lever.
+  - See `.superpowers/sdd/task-4-report-close.md` for the full re-measure
+    writeup.
+
 - **Preprocessor foundations: `#if`-wrapped object properties + a defensive
   `implements` descend; program-layer conflict degradation; a
   `ParseStatus::Recovered` diagnostic (Task 3, argtype-dispatch-and-page-
@@ -80,8 +196,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     defects above, confirmed as recorded, not silently masked). Full
     workspace suite (`cargo test --workspace`, no CDO_WS): 159 green
     `test result: ok` blocks, zero failures, zero golden movement anywhere.
-  - 21 new unit/integration tests across `crates/al-syntax/src/lower/mod.rs`
-    (7), `src/program/node_extract.rs` (3), `src/program/build.rs` (2),
+  - 16 new unit/integration tests across `crates/al-syntax/src/lower/mod.rs`
+    (6, not 7 — corrected count, Task 4 review nit), `src/program/
+    node_extract.rs` (3), `src/program/build.rs` (2),
     `src/program/resolve/applicability.rs` (1), `src/snapshot/parse.rs` (2),
     `src/program/resolve/full.rs` (2), plus the CDO-gated ratchet in
     `tests/program_resolve_harness.rs`. See `.superpowers/sdd/task-3-report-

@@ -887,7 +887,7 @@ mod tests {
         };
         assert_eq!(e.routes.len(), 1);
         // Hashable + comparable (needed by the differential).
-        let mut v = vec![e.clone(), e];
+        let mut v = [e.clone(), e];
         v.sort();
         assert_eq!(v.len(), 2);
     }

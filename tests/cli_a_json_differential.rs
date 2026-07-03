@@ -16,7 +16,7 @@
 //! `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-json.ts`
 //! (under `AL_SEM_DIR`) to regenerate the goldens from the TS reference.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use al_call_hierarchy::engine::gate::filter::Scope;
@@ -534,7 +534,7 @@ fn scratch_ws(tag: &str) -> PathBuf {
 
 /// Run the JSON pipeline directly over an arbitrary workspace path (not a corpus
 /// fixture). Caller sets `AL_SEM_VERSION_OVERRIDE` and holds `ENV_LOCK`.
-fn run_json_path(ws: &PathBuf, detector_csv: &str) -> String {
+fn run_json_path(ws: &Path, detector_csv: &str) -> String {
     let args = AnalyzeArgs {
         workspace: ws.to_string_lossy().to_string(),
         min_severity: None,
