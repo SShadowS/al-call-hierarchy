@@ -186,6 +186,12 @@ fn completeness_for_shape(shape: DispatchShape) -> SetCompleteness {
         DispatchShape::Multicast => SetCompleteness::Partial {
             reason: OpenWorldReason::ReverseDependentExtensions,
         },
+        // Task 3 (sigfp-and-ambiguous-reclassification plan): a same-object
+        // overload-ambiguity candidate set is a SNAPSHOT-ENUMERATED, CLOSED
+        // set — unlike Polymorphic's open-world reverse-dependent
+        // implementers, no future dependent app can add another overload
+        // candidate to an already-compiled object. `Complete`, not `Partial`.
+        DispatchShape::AmbiguousOverload => SetCompleteness::Complete,
     }
 }
 
@@ -742,5 +748,118 @@ fn count_into_histogram(h: &mut Histogram, e: &Edge) {
         ObligationOutcome::HonestDynamic => h.honest_dynamic += 1,
         ObligationOutcome::HonestEmpty => h.honest_empty += 1,
         ObligationOutcome::Unknown => h.unknown += 1,
+        ObligationOutcome::AmbiguousResolved => h.ambiguous_resolved += 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::program::node::ObjKey;
+    use crate::program::resolve::edge::{Condition, SourcePos};
+
+    fn rid(name: &str) -> RoutineNodeId {
+        RoutineNodeId {
+            object: ObjectNodeId {
+                app: AppRef(0),
+                kind: ObjectKind::Codeunit,
+                key: ObjKey::Id(1),
+            },
+            name_lc: name.to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        }
+    }
+
+    fn ambiguous_route(name: &str) -> Route {
+        Route {
+            target: RouteTarget::Routine(rid(name)),
+            evidence: Evidence::Source,
+            conditions: vec![Condition::AmbiguousDispatch],
+            witness: Witness::SourceSpan {
+                file: "f.al".into(),
+                span: (0, 1),
+            },
+            receiver_tier: None,
+        }
+    }
+
+    fn edge_with(shape: DispatchShape, completeness: SetCompleteness, routes: Vec<Route>) -> Edge {
+        let caller = rid("c");
+        Edge {
+            from: caller.clone(),
+            site: SiteId {
+                caller,
+                span: CanonicalSpan {
+                    unit: "u".into(),
+                    start: SourcePos { line: 1, col: 1 },
+                    end: SourcePos { line: 1, col: 2 },
+                },
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::Call,
+            shape,
+            completeness,
+            routes,
+        }
+    }
+
+    /// `completeness_for_shape(AmbiguousOverload) == Complete` (Task 3): the
+    /// candidate set is a snapshot-enumerated CLOSED set, unlike
+    /// Polymorphic's open-world `Partial { ReverseDependentImplementers }`.
+    #[test]
+    fn completeness_for_ambiguous_overload_shape_is_complete() {
+        assert_eq!(
+            completeness_for_shape(DispatchShape::AmbiguousOverload),
+            SetCompleteness::Complete
+        );
+    }
+
+    /// `count_into_histogram` is a DOCUMENTED duplicate of
+    /// `Histogram::of_edges` (full.rs's own module doc calls this out) — Task
+    /// 3 requires BOTH copies stay in lockstep. Pins the `ambiguous_resolved`
+    /// arm here independently of `edge.rs`'s own `Histogram::of_edges` test.
+    #[test]
+    fn count_into_histogram_counts_ambiguous_resolved_like_of_edges() {
+        let edges = vec![
+            edge_with(
+                DispatchShape::AmbiguousOverload,
+                SetCompleteness::Complete,
+                vec![ambiguous_route("overload_a"), ambiguous_route("overload_b")],
+            ),
+            edge_with(
+                DispatchShape::Exact,
+                SetCompleteness::Complete,
+                vec![Route {
+                    target: RouteTarget::Routine(rid("helper")),
+                    evidence: Evidence::Source,
+                    conditions: vec![],
+                    witness: Witness::SourceSpan {
+                        file: "f.al".into(),
+                        span: (0, 1),
+                    },
+                    receiver_tier: None,
+                }],
+            ),
+        ];
+
+        // The `count_into_histogram`-driven path (what `resolve_full_program`
+        // actually calls).
+        let mut h = Histogram::default();
+        for e in &edges {
+            count_into_histogram(&mut h, e);
+        }
+        assert_eq!(h.ambiguous_resolved, 1);
+        assert_eq!(h.resolved_source, 1);
+        assert_eq!(h.unknown, 0);
+        assert_eq!(h.total, 2);
+
+        // The two copies must agree exactly (the "documented duplicate" contract).
+        let h2 = Histogram::of_edges(&edges);
+        assert_eq!(
+            h, h2,
+            "count_into_histogram must mirror Histogram::of_edges"
+        );
     }
 }

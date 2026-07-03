@@ -108,6 +108,14 @@ pub struct GEdge {
     /// other `unknown` reasons.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unknown_receiver_tier: Option<&'static str>,
+    /// Task 3, ADDITIVE key (appended last — never reorders the fields
+    /// above): the explicit may-fire signal for [`Condition::AmbiguousDispatch`]
+    /// routes (BC-Brain contract — see [`may_fire_str`]'s doc). `Some(true)`
+    /// on a route one of an `AmbiguousOverload` candidate set; `None`
+    /// (omitted) on every other edge, so pre-Task-3 exports stay
+    /// byte-identical. NEVER `Some(false)`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub may_fire: Option<bool>,
 }
 
 /// A graphify extraction document. Fed to `build_from_json` / `build_merge`.
@@ -218,6 +226,7 @@ pub fn build_graphify_document(
             open_world_reason: None,
             unknown_reason: None,
             unknown_receiver_tier: None,
+            may_fire: None,
         });
     }
 
@@ -398,6 +407,44 @@ fn project_edge(
                     open_world_reason: None,
                     unknown_reason: None,
                     unknown_receiver_tier: None,
+                    may_fire: may_fire_str(&route.conditions),
+                });
+            }
+        }
+        // Task 3 (mechanics only — no producer constructs this outcome yet):
+        // one graphify edge per candidate route, same per-route shape as the
+        // `Resolved` arm above, but distinctly labelled `ambiguous_resolved`/
+        // `ambiguous_overload` and carrying the explicit `may_fire` signal so
+        // BC-Brain never reads these as dead code (round-2 closer #3 —
+        // BINDING). INFERRED, not AMBIGUOUS: the candidate set is a proven,
+        // closed enumeration (unlike `Unknown`'s true failure) — exactly one
+        // of these WILL run, this engine just cannot name which.
+        ObligationOutcome::AmbiguousResolved => {
+            for route in &edge.routes {
+                let target = ensure_target_node(
+                    &route.target,
+                    graph,
+                    obj_by_id,
+                    rtn_by_id,
+                    loc_by_rtn,
+                    emitted_ids,
+                    extra_nodes,
+                );
+                edges_out.push(GEdge {
+                    source: source.clone(),
+                    target,
+                    relation: relation_for(edge.kind, &route.target),
+                    confidence: "INFERRED",
+                    confidence_score: 0.5,
+                    source_file: site_file.clone(),
+                    obligation: Some("ambiguous_resolved"),
+                    evidence: Some(evidence_str(route.evidence)),
+                    dispatch_shape,
+                    condition: condition_str(&route.conditions),
+                    open_world_reason: None,
+                    unknown_reason: None,
+                    unknown_receiver_tier: None,
+                    may_fire: may_fire_str(&route.conditions),
                 });
             }
         }
@@ -430,6 +477,7 @@ fn project_edge(
                 open_world_reason: open_world_reason_str(edge.completeness),
                 unknown_reason: None,
                 unknown_receiver_tier: None,
+                may_fire: None,
             });
         }
         ObligationOutcome::Unknown => {
@@ -470,6 +518,7 @@ fn project_edge(
                     })
                     .flatten()
                     .map(|t| t.as_str()),
+                may_fire: None,
             });
         }
     }
@@ -790,6 +839,7 @@ fn dispatch_shape_str(s: DispatchShape) -> &'static str {
         DispatchShape::Polymorphic => "polymorphic",
         DispatchShape::Multicast => "multicast",
         DispatchShape::DynamicOpen => "dynamic_open",
+        DispatchShape::AmbiguousOverload => "ambiguous_overload",
     }
 }
 
@@ -802,6 +852,24 @@ fn condition_str(conditions: &[Condition]) -> Option<&'static str> {
         Some("skip_on_missing_permission")
     } else if conditions.contains(&Condition::RunTriggerGuarded) {
         Some("run_trigger_guarded")
+    } else if conditions.contains(&Condition::AmbiguousDispatch) {
+        Some("ambiguous_dispatch")
+    } else {
+        None
+    }
+}
+
+/// `Condition::AmbiguousDispatch` MAY-FIRE projection (Task 3 round-2 closer
+/// #3, BINDING): `graphify_export` must never let BC-Brain read
+/// `fires_by_default:false`-shaped output as dead code for these routes —
+/// exactly one candidate of an `AmbiguousOverload` set WILL run at runtime.
+/// `Some(true)` for a route carrying the condition; `None` (skipped by
+/// `#[serde(skip_serializing_if = "Option::is_none")]`) for every other
+/// route, so every pre-Task-3 export stays byte-identical. ADDITIVE ONLY —
+/// never emits `Some(false)` (there is no "may not fire" claim to make).
+fn may_fire_str(conditions: &[Condition]) -> Option<bool> {
+    if conditions.contains(&Condition::AmbiguousDispatch) {
+        Some(true)
     } else {
         None
     }
@@ -1312,5 +1380,108 @@ mod tests {
         // Manifest must be run-stable (prerequisite for change detection).
         let fs2 = build_fragment_set(&g, &edges, primary);
         assert_eq!(fs.manifest, fs2.manifest, "manifest must be deterministic");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (sigfp-and-ambiguous-reclassification plan): the DTO mapping for
+    // `ObligationOutcome::AmbiguousResolved` — pinned NOW (round-2 closer #3,
+    // BINDING) even though no producer constructs this outcome yet.
+    // -----------------------------------------------------------------------
+
+    /// One GEdge per candidate route; `dispatch_shape`/`condition`/`obligation`
+    /// carry the new taxonomy strings, and EVERY `AmbiguousDispatch` route
+    /// carries the explicit `may_fire: true` signal so BC-Brain cannot read
+    /// `fires_by_default:false`-shaped output as dead code (exactly one
+    /// candidate IS guaranteed to run). `confidence: "INFERRED"`, never
+    /// `"AMBIGUOUS"` — that tier is reserved for `Unknown`'s TRUE failure
+    /// (see `project_edge`'s `ObligationOutcome::Unknown` arm doc); a closed,
+    /// proven candidate set is not a failure.
+    #[test]
+    fn ambiguous_resolved_projects_one_gedge_per_candidate_with_may_fire_signal() {
+        let (mut g, _edges, primary) = fixture();
+        let caller = rid(primary, 50100, "Foo", 0);
+        let cand_a = rid(primary, 50101, "Bar", 0);
+        let cand_b = rid(primary, 50101, "Bar", 1);
+        // A second overload candidate under the same callee object (params_count
+        // distinguishes it here; real overloads differ by sig_fp — irrelevant to
+        // this projection-shape test).
+        g.routines.push(rtn(primary, 50101, "Bar", 1));
+        g.routines.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let mk_route = |nid: RoutineNodeId| Route {
+            target: RouteTarget::Routine(nid),
+            evidence: Evidence::Source,
+            conditions: vec![Condition::AmbiguousDispatch],
+            witness: Witness::SourceSpan {
+                file: "src/Callee.al".into(),
+                span: (10, 20),
+            },
+            receiver_tier: None,
+        };
+        let edge = Edge {
+            from: caller.clone(),
+            site: site(caller.clone(), 99),
+            kind: EdgeKind::Call,
+            shape: DispatchShape::AmbiguousOverload,
+            completeness: SetCompleteness::Complete,
+            routes: vec![mk_route(cand_a), mk_route(cand_b)],
+        };
+        let ce = ClassifiedEdge {
+            obligation_id: crate::program::resolve::full::ObligationId::CallSite {
+                caller,
+                span: edge.site.span.clone(),
+                callee_fp: 99,
+            },
+            edge,
+        };
+        let doc = build_graphify_document(&g, &[ce], primary);
+
+        let amb: Vec<&GEdge> = doc
+            .edges
+            .iter()
+            .filter(|e| e.obligation == Some("ambiguous_resolved"))
+            .collect();
+        assert_eq!(amb.len(), 2, "one GEdge per candidate route");
+        for e in &amb {
+            assert_eq!(e.dispatch_shape, Some("ambiguous_overload"));
+            assert_eq!(e.condition, Some("ambiguous_dispatch"));
+            assert_eq!(
+                e.may_fire,
+                Some(true),
+                "AmbiguousDispatch routes MUST carry the explicit may-fire signal"
+            );
+            assert_eq!(
+                e.confidence, "INFERRED",
+                "a closed candidate set is not the AMBIGUOUS true-failure tier"
+            );
+            assert_eq!(e.evidence, Some("source"));
+        }
+
+        // Serde-level pin: `may_fire` actually SERIALIZES for these edges (not
+        // just present as a Rust struct field).
+        let v = serde_json::to_value(amb[0]).unwrap();
+        assert_eq!(v["may_fire"], serde_json::json!(true));
+    }
+
+    /// Negative / inertness pin: a plain pre-Task-3 resolved edge (no
+    /// `AmbiguousDispatch` route anywhere) must NEVER carry the `may_fire`
+    /// key — proves the new field is additive-only and every existing export
+    /// shape stays byte-identical (the field is skipped, not `false`).
+    #[test]
+    fn may_fire_absent_on_every_pre_task3_edge_shape() {
+        let (g, edges, primary) = fixture();
+        let doc = build_graphify_document(&g, &edges, primary);
+        assert!(
+            doc.edges.iter().all(|e| e.may_fire.is_none()),
+            "may_fire must stay None on every edge shape Task 3 didn't touch"
+        );
+        // And it must not appear in the serialized JSON at all.
+        for e in &doc.edges {
+            let v = serde_json::to_value(e).unwrap();
+            assert!(
+                v.get("may_fire").is_none(),
+                "may_fire key must be OMITTED (skip_serializing_if), not null: {v}"
+            );
+        }
     }
 }

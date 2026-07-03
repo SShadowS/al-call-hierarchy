@@ -262,6 +262,9 @@ fn conditions(conds: &[Condition]) -> Vec<&'static str> {
             Condition::SkipOnMissingLicense => "skip_on_missing_license",
             Condition::SkipOnMissingPermission => "skip_on_missing_permission",
             Condition::RunTriggerGuarded => "run_trigger_guarded",
+            // Task 3 (sigfp-and-ambiguous-reclassification plan): compiler-forced
+            // arm — no producer emits this condition yet (mechanics only).
+            Condition::AmbiguousDispatch => "ambiguous_dispatch",
         });
     }
     out

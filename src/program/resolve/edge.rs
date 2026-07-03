@@ -5,13 +5,20 @@
 //!
 //! Routes stored in `Edge.routes` encode ALL possible dispatch targets, including
 //! routes that only fire when the caller explicitly calls `BindSubscription` at
-//! runtime (`Condition::ManualBinding`).  Code that builds a "who actually fires by
-//! default" reachability set **MUST** use [`Edge::default_reachable_routes`] (only
-//! unconditionally-bound routes) and **MUST NOT** traverse `ManualBinding` routes as
-//! unconditional edges.
+//! runtime (`Condition::ManualBinding`) and routes that are one of a closed
+//! `DispatchShape::AmbiguousOverload` candidate set, exactly one of which WILL fire
+//! at runtime via argument-type dispatch this engine cannot perform
+//! (`Condition::AmbiguousDispatch`; Task 3). Code that builds a "who actually fires
+//! by default" reachability set **MUST** use [`Edge::default_reachable_routes`] (only
+//! unconditionally-bound routes) and **MUST NOT** traverse `ManualBinding` or
+//! `AmbiguousDispatch` routes as unconditional edges.
 //!
 //! Use [`Edge::may_reachable_routes`] for opt-in "could this fire" queries (includes
-//! `ManualBinding`).  Use [`Edge::all_routes`] exclusively for resolution/gate/
+//! `ManualBinding` AND `AmbiguousDispatch` routes — the latter is NOT optional to
+//! include for change-impact/may-traversal: unlike an unbound `ManualBinding`
+//! subscriber, exactly one `AmbiguousDispatch` candidate is GUARANTEED to run, so
+//! excluding all of them from a may-reachability query would understate, not just
+//! decline, reachability). Use [`Edge::all_routes`] exclusively for resolution/gate/
 //! classification context (classify_obligation, differential projection).
 //!
 //! The `routes` field itself is kept `pub` to allow struct-literal construction
@@ -95,6 +102,18 @@ pub enum DispatchShape {
     Polymorphic,
     Multicast,
     DynamicOpen,
+    /// Direct same-object overload ambiguity this engine cannot break by
+    /// name+arity+visibility alone: `>1` visible, arity-matched, DISTINCT
+    /// candidate routines, each reachable only via runtime argument-type
+    /// dispatch (sigfp-and-ambiguous-reclassification plan, Task 3). The
+    /// candidate set is CLOSED (snapshot-enumerated, not open-world) —
+    /// [`crate::program::resolve::full`]'s `completeness_for_shape` maps this
+    /// to [`SetCompleteness::Complete`], unlike `Polymorphic`'s
+    /// `Partial { ReverseDependentImplementers }`. Every route on an edge of
+    /// this shape carries [`Condition::AmbiguousDispatch`]. NOTHING
+    /// constructs this shape yet (Task 3 is mechanics-only; Task 4 wires the
+    /// candidate-carrying producer in `resolver::resolve_in_object`).
+    AmbiguousOverload,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -336,6 +355,21 @@ pub enum Condition {
     SkipOnMissingLicense,
     /// As `SkipOnMissingLicense` but for permission checks.
     SkipOnMissingPermission,
+    /// Exactly ONE of this [`DispatchShape::AmbiguousOverload`] candidate set's
+    /// routes fires at runtime, chosen by argument-type dispatch this engine
+    /// cannot perform — the target is NOT user-conditional (no `BindSubscription`,
+    /// no license/permission gate; a real one WILL run, this engine just cannot
+    /// name which). Routes with this condition do NOT fire by default (see
+    /// [`Route::fires_by_default`]) and MUST be excluded from default/must
+    /// reachability traversal, but DO belong in
+    /// [`Edge::may_reachable_routes`]-style "could this fire" queries — an
+    /// all-`ManualBinding` edge overstates nothing by being excluded from a
+    /// may-traversal (a caller must still act to bind it), but an
+    /// all-`AmbiguousDispatch` edge WOULD understate reachability if excluded,
+    /// since one candidate is GUARANTEED to run. Never conflate with
+    /// `ManualBinding` (a factual runtime-binding claim) — see
+    /// [`ObligationOutcome::AmbiguousResolved`].
+    AmbiguousDispatch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -393,14 +427,18 @@ pub struct Route {
 impl Route {
     /// Returns `true` when this route fires by default (no explicit binding required).
     ///
-    /// Returns `false` iff `conditions` contains [`Condition::ManualBinding`] — meaning
-    /// the subscriber fires only when `BindSubscription` is explicitly called at runtime.
+    /// Returns `false` iff `conditions` contains [`Condition::ManualBinding`] or
+    /// [`Condition::AmbiguousDispatch`] — meaning either the subscriber fires only
+    /// when `BindSubscription` is explicitly called at runtime, or this route is one
+    /// of an `AmbiguousOverload` candidate set where argument-type dispatch (not
+    /// modeled) picks the actual target.
     ///
     /// `SkipOnMissingLicense` and `SkipOnMissingPermission` fire by default (they are
     /// bound; they may runtime-skip but are NOT deferred by a caller binding step).
-    /// Only `ManualBinding` causes the route to not fire by default.
+    /// Only `ManualBinding`/`AmbiguousDispatch` cause the route to not fire by default.
     pub fn fires_by_default(&self) -> bool {
         !self.conditions.contains(&Condition::ManualBinding)
+            && !self.conditions.contains(&Condition::AmbiguousDispatch)
     }
 }
 
@@ -424,20 +462,28 @@ impl Edge {
         self.routes.iter()
     }
 
-    /// Routes that fire by default — excludes [`Condition::ManualBinding`] routes.
+    /// Routes that fire by default — excludes [`Condition::ManualBinding`] and
+    /// [`Condition::AmbiguousDispatch`] routes (both make
+    /// [`Route::fires_by_default`] return `false`; this is a MUST-traversal set).
     ///
     /// Use for default reachability traversal: "what fires without any explicit
     /// caller action?"  A `ManualBinding` subscriber does NOT fire unless
-    /// `BindSubscription` is called; including it in unconditional traversal would
-    /// overstate reachability.
+    /// `BindSubscription` is called; an `AmbiguousDispatch` candidate is one of
+    /// several routes where this engine cannot name WHICH fires. Including either
+    /// in unconditional traversal would overstate reachability.
     pub fn default_reachable_routes(&self) -> impl Iterator<Item = &Route> {
         self.routes.iter().filter(|r| r.fires_by_default())
     }
 
     /// All routes that **could** fire, including those requiring explicit
-    /// `BindSubscription` (`ManualBinding`).
+    /// `BindSubscription` (`ManualBinding`) and every candidate of a closed
+    /// `AmbiguousOverload` set (`AmbiguousDispatch`) — a MAY-traversal set.
     ///
-    /// Use for opt-in / "may reach" reachability queries.
+    /// Use for opt-in / "may reach" reachability queries (e.g. change-impact
+    /// analysis). Unlike `ManualBinding`, an `AmbiguousDispatch` candidate set is
+    /// NOT optional to include here: exactly one candidate is GUARANTEED to run at
+    /// runtime, so omitting any of them would understate reachability, not just
+    /// decline to assert it.
     pub fn may_reachable_routes(&self) -> impl Iterator<Item = &Route> {
         self.routes.iter()
     }
@@ -458,10 +504,65 @@ pub enum ObligationOutcome {
     HonestDynamic,
     HonestEmpty,
     Unknown,
+    /// Every route is a concrete, exact candidate of a closed
+    /// `DispatchShape::AmbiguousOverload` set, each carrying
+    /// [`Condition::AmbiguousDispatch`]: exactly ONE fires at runtime, chosen
+    /// by argument-type dispatch this engine cannot perform. Treated as
+    /// **resolved-for-resolution** (the candidate set is a proven-closed
+    /// enumeration, not a hole) but distinct from `Resolved`/
+    /// `ConditionalResolved`: no route fires by default (see
+    /// [`Route::fires_by_default`]) and `real_unknown_rate` does NOT count
+    /// this as Unknown — see the sigfp-and-ambiguous-reclassification plan's
+    /// metric-definition addendum (Task 4) for the "both-ways" reporting
+    /// requirement (a legacy/advisory rate that DOES count these, so the
+    /// change is never stat-juked). Never conflated with `ConditionalResolved`
+    /// (a `ManualBinding` edge's routes are factually bound targets awaiting
+    /// an explicit caller action; an `AmbiguousResolved` edge's routes are
+    /// ALL live targets, exactly one of which the runtime picks NOW).
+    AmbiguousResolved,
+}
+
+/// The strict [`ObligationOutcome::AmbiguousResolved`] precondition
+/// (sigfp-and-ambiguous-reclassification plan, Task 3 — Round-1 review
+/// addendum "T4 — strict `AmbiguousResolved` preconditions", enforced here so
+/// `classify_obligation` never trusts a producer's shape choice alone):
+///
+/// - `e.shape == DispatchShape::AmbiguousOverload`
+/// - the candidate set is non-empty
+/// - EVERY route carries [`Condition::AmbiguousDispatch`]
+/// - NO route has [`Evidence::Unknown`] evidence (this alone excludes any
+///   collapse-marked candidate too: a collapse-marked candidate contributes
+///   an `Evidence::Unknown(UnknownReason::AbiCollapsedOverload)`-flavored
+///   `Unresolved` route, never a false concrete route — see Task 4's design)
+/// - NO route's target is `RouteTarget::Unresolved`
+///
+/// i.e. every candidate is a concrete exact route (`Source`, or exact
+/// `Opaque`+`AbiSymbol`/`Abi`). A mixed/degraded set fails this check and
+/// falls through to the pre-existing generic classification below, UNCHANGED
+/// by this function's addition.
+fn is_ambiguous_resolved(e: &Edge) -> bool {
+    e.shape == DispatchShape::AmbiguousOverload
+        && !e.routes.is_empty()
+        && e.routes.iter().all(|r| {
+            r.conditions.contains(&Condition::AmbiguousDispatch)
+                && r.evidence.kind() != EvidenceKind::Unknown
+                && r.target != RouteTarget::Unresolved
+        })
 }
 
 /// Classify one edge's resolution obligation (spec §3.2).
 pub fn classify_obligation(e: &Edge) -> ObligationOutcome {
+    // Task 3: an all-concrete `AmbiguousOverload` candidate set classifies as
+    // `AmbiguousResolved` BEFORE the generic has-real/all-manual logic below —
+    // see `is_ambiguous_resolved`'s doc for the strict precondition and why a
+    // mixed/degraded set must NOT take this branch (it falls through instead;
+    // `Route::fires_by_default` now also excludes `Condition::AmbiguousDispatch`
+    // routes, so a degraded set still correctly never overstates reachability
+    // via the untouched ManualBinding-style fallback path below).
+    if is_ambiguous_resolved(e) {
+        return ObligationOutcome::AmbiguousResolved;
+    }
+
     // Collect real routes: non-Unknown evidence AND non-Unresolved target.
     let mut has_real = false;
     let mut all_manual = true; // only meaningful when has_real is true
@@ -547,6 +648,11 @@ pub struct Histogram {
     pub honest_dynamic: usize,
     pub honest_empty: usize,
     pub unknown: usize,
+    /// Edges classified [`ObligationOutcome::AmbiguousResolved`] (Task 3):
+    /// closed same-object overload-ambiguity candidate sets, honestly
+    /// excluded from `unknown` (not a failure — see the variant's doc) but
+    /// counted separately so the reclassification is never invisible.
+    pub ambiguous_resolved: usize,
 }
 
 impl Histogram {
@@ -592,6 +698,7 @@ impl Histogram {
                 ObligationOutcome::HonestDynamic => h.honest_dynamic += 1,
                 ObligationOutcome::HonestEmpty => h.honest_empty += 1,
                 ObligationOutcome::Unknown => h.unknown += 1,
+                ObligationOutcome::AmbiguousResolved => h.ambiguous_resolved += 1,
             }
         }
         h
@@ -1293,5 +1400,229 @@ mod tests {
             Some(&1),
             "ObjectNotInGraph must report under a `None` tier key"
         );
+    }
+
+    // ---- Task 3: AmbiguousDispatch / AmbiguousOverload / AmbiguousResolved ----
+    // (sigfp-and-ambiguous-reclassification plan — taxonomy MECHANICS only;
+    // nothing in the resolver constructs these shapes yet. See
+    // `is_ambiguous_resolved`'s doc for the strict precondition this section
+    // pins.)
+
+    fn ambiguous_route(nid: RoutineNodeId) -> Route {
+        Route {
+            target: RouteTarget::Routine(nid),
+            evidence: Evidence::Source,
+            conditions: vec![Condition::AmbiguousDispatch],
+            witness: Witness::SourceSpan {
+                file: "f.al".into(),
+                span: (0, 1),
+            },
+            receiver_tier: None,
+        }
+    }
+
+    #[test]
+    fn ambiguous_dispatch_route_does_not_fire_by_default() {
+        let r = ambiguous_route(rid(0, "overload_a"));
+        assert!(
+            !r.fires_by_default(),
+            "AmbiguousDispatch route must NOT fire by default"
+        );
+    }
+
+    #[test]
+    fn may_reachable_routes_includes_ambiguous_dispatch_routes() {
+        // Task 3 Round-1 addendum ("the inverse cardinal sin"): a may-traversal
+        // consumer must see BOTH ambiguous candidates, even though neither is
+        // in `default_reachable_routes` — exactly one WILL fire at runtime.
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![
+                ambiguous_route(rid(0, "overload_a")),
+                ambiguous_route(rid(0, "overload_b")),
+            ],
+        );
+
+        let default_r: Vec<_> = edge.default_reachable_routes().collect();
+        assert_eq!(
+            default_r.len(),
+            0,
+            "AmbiguousDispatch routes must NOT be default-reachable"
+        );
+
+        let may_r: Vec<_> = edge.may_reachable_routes().collect();
+        assert_eq!(
+            may_r.len(),
+            2,
+            "may_reachable_routes must include BOTH AmbiguousDispatch candidates"
+        );
+
+        let all_r: Vec<_> = edge.all_routes().collect();
+        assert_eq!(all_r.len(), 2, "all_routes must include all routes");
+    }
+
+    #[test]
+    fn completeness_for_ambiguous_overload_is_complete() {
+        // `completeness_for_shape` lives in `full.rs` (member-call resolution
+        // helper); the mapping is pinned there
+        // (`full::completeness_for_ambiguous_overload_shape_is_complete`).
+        // This test only pins that the SHAPE itself is distinct from the other
+        // fan-out shapes at the `edge.rs` level (never equal to Polymorphic/
+        // Multicast/DynamicOpen/Exact).
+        assert_ne!(DispatchShape::AmbiguousOverload, DispatchShape::Exact);
+        assert_ne!(DispatchShape::AmbiguousOverload, DispatchShape::Polymorphic);
+        assert_ne!(DispatchShape::AmbiguousOverload, DispatchShape::Multicast);
+        assert_ne!(DispatchShape::AmbiguousOverload, DispatchShape::DynamicOpen);
+    }
+
+    /// POSITIVE: an all-concrete-`AmbiguousDispatch` candidate set under
+    /// `AmbiguousOverload` classifies `AmbiguousResolved`.
+    #[test]
+    fn all_concrete_ambiguous_dispatch_routes_classify_ambiguous_resolved() {
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![
+                ambiguous_route(rid(0, "overload_a")),
+                ambiguous_route(rid(0, "overload_b")),
+            ],
+        );
+        assert_eq!(
+            classify_obligation(&edge),
+            ObligationOutcome::AmbiguousResolved
+        );
+    }
+
+    /// NEGATIVE: mixed conditions — one route is AmbiguousDispatch, the other
+    /// fires unconditionally. The strict precondition ("EVERY route carries
+    /// AmbiguousDispatch") fails, so this is NOT AmbiguousResolved; it falls
+    /// through unchanged to the pre-existing has-real/all-manual logic, which
+    /// sees >=1 default-firing real route → Resolved.
+    #[test]
+    fn mixed_ambiguous_and_default_route_is_not_ambiguous_resolved() {
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![ambiguous_route(rid(0, "overload_a")), src_route()],
+        );
+        let outcome = classify_obligation(&edge);
+        assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
+        assert_eq!(
+            outcome,
+            ObligationOutcome::Resolved,
+            "a mixed set with >=1 default-firing route keeps the pre-existing Resolved outcome"
+        );
+    }
+
+    /// NEGATIVE: an Unknown-evidence route inside the candidate set. The
+    /// strict precondition ("NO route has Evidence::Unknown") fails, so this
+    /// is NOT AmbiguousResolved; the sole remaining real route is
+    /// AmbiguousDispatch-flavored (not default-firing), so the pre-existing
+    /// fallback (same has-real/all-manual shape as an all-ManualBinding edge)
+    /// yields ConditionalResolved, never Unknown or AmbiguousResolved.
+    #[test]
+    fn unknown_evidence_route_inside_candidate_set_is_not_ambiguous_resolved() {
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![
+                ambiguous_route(rid(0, "overload_a")),
+                unknown_route_with(UnknownReason::OverloadAmbiguous),
+            ],
+        );
+        let outcome = classify_obligation(&edge);
+        assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
+        assert_eq!(outcome, ObligationOutcome::ConditionalResolved);
+    }
+
+    /// NEGATIVE: a collapse-marked candidate (`AbiCollapsedOverload`-flavored
+    /// Unresolved route) inside the set — same shape of failure as the
+    /// Unknown-evidence case above (subsumed by "NO route has
+    /// Evidence::Unknown"), pinned separately because Task 4's design
+    /// document calls it out as its own explicit scenario.
+    #[test]
+    fn collapse_marked_candidate_inside_set_is_not_ambiguous_resolved() {
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![
+                ambiguous_route(rid(0, "overload_a")),
+                unknown_route_with(UnknownReason::AbiCollapsedOverload),
+            ],
+        );
+        let outcome = classify_obligation(&edge);
+        assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
+        assert_eq!(outcome, ObligationOutcome::ConditionalResolved);
+    }
+
+    /// NEGATIVE: an empty candidate set under `AmbiguousOverload` +
+    /// `Complete` — precondition fails (`!routes.is_empty()`), and since
+    /// `AmbiguousOverload` is not a fan-out shape (`is_fanout` only matches
+    /// Polymorphic/Multicast) the pre-existing fallback yields the honest
+    /// `Unknown` (mirrors the plain "Exact Call with no target" case).
+    #[test]
+    fn empty_candidate_set_is_not_ambiguous_resolved() {
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![],
+        );
+        let outcome = classify_obligation(&edge);
+        assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
+        assert_eq!(outcome, ObligationOutcome::Unknown);
+    }
+
+    /// NEGATIVE: ManualBinding-only routes under `AmbiguousOverload` shape —
+    /// proves shape alone is insufficient; without the `AmbiguousDispatch`
+    /// condition the precondition fails and the untouched
+    /// ManualBinding→ConditionalResolved path applies exactly as it did
+    /// before Task 3.
+    #[test]
+    fn manual_binding_only_under_ambiguous_overload_shape_stays_conditional_resolved() {
+        let edge = edge_with(
+            EdgeKind::Call,
+            DispatchShape::AmbiguousOverload,
+            SetCompleteness::Complete,
+            vec![manual_route()],
+        );
+        let outcome = classify_obligation(&edge);
+        assert_ne!(outcome, ObligationOutcome::AmbiguousResolved);
+        assert_eq!(outcome, ObligationOutcome::ConditionalResolved);
+    }
+
+    /// `Histogram` gains a dedicated `ambiguous_resolved` counter (Task 3),
+    /// separate from `unknown` — the reclassification must never be
+    /// invisible.
+    #[test]
+    fn histogram_counts_ambiguous_resolved_separately_from_unknown() {
+        let edges = vec![
+            edge_with(
+                EdgeKind::Call,
+                DispatchShape::AmbiguousOverload,
+                SetCompleteness::Complete,
+                vec![
+                    ambiguous_route(rid(0, "overload_a")),
+                    ambiguous_route(rid(0, "overload_b")),
+                ],
+            ),
+            edge_with(
+                EdgeKind::Call,
+                DispatchShape::Exact,
+                SetCompleteness::Complete,
+                vec![src_route()],
+            ),
+        ];
+        let hist = Histogram::of_edges(&edges);
+        assert_eq!(hist.ambiguous_resolved, 1);
+        assert_eq!(hist.resolved_source, 1);
+        assert_eq!(hist.unknown, 0);
+        assert_eq!(hist.total, 2);
     }
 }

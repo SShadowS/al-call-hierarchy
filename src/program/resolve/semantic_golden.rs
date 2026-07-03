@@ -3449,4 +3449,95 @@ codeunit 50808 "EvSub4"
              be tolerated; the +1 Sender bound is conditional, never blanket"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Task 3 (sigfp-and-ambiguous-reclassification plan): `route_applicability`
+    // must fall through to `_ => {}` for `DispatchShape::AmbiguousOverload` —
+    // verified green here, not assumed (the plan's explicit instruction).
+    // -----------------------------------------------------------------------
+
+    fn ambiguous_dispatch_route(target: RoutineNodeId) -> Route {
+        Route {
+            target: RouteTarget::Routine(target),
+            evidence: Evidence::Source,
+            conditions: vec![crate::program::resolve::edge::Condition::AmbiguousDispatch],
+            witness: Witness::SourceSpan {
+                file: "f.al".into(),
+                span: (0, 1),
+            },
+            receiver_tier: None,
+        }
+    }
+
+    #[test]
+    fn ambiguous_overload_edge_falls_through_route_applicability_cleanly() {
+        let (apps, app) = make_app();
+        let caller_obj = make_obj(app, ObjectKind::Codeunit, "Caller", vec![]);
+        let caller_id = caller_obj.id.clone();
+        let callee_obj = make_obj(app, ObjectKind::Codeunit, "Callee", vec![]);
+        let callee_id = callee_obj.id.clone();
+        let overload_a = make_routine_node(&callee_id, "bar", 0);
+        let overload_a_id = overload_a.id.clone();
+        let mut overload_b = make_routine_node(&callee_id, "bar", 0);
+        // Distinguish the second candidate (real overloads differ by sig_fp; the
+        // exact discriminator is irrelevant to this applicability-fallthrough test).
+        overload_b.id.params_count = 1;
+        let overload_b_id = overload_b.id.clone();
+
+        let (graph, index) = build_synth_graph(
+            apps,
+            vec![caller_obj, callee_obj],
+            vec![overload_a, overload_b],
+        );
+
+        let caller_rid = RoutineNodeId {
+            object: caller_id,
+            name_lc: "go".into(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        };
+        let edge = Edge {
+            from: caller_rid.clone(),
+            site: SiteId {
+                caller: caller_rid,
+                span: test_span(1),
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::Call,
+            shape: DispatchShape::AmbiguousOverload,
+            completeness: SetCompleteness::Complete,
+            routes: vec![
+                ambiguous_dispatch_route(overload_a_id),
+                ambiguous_dispatch_route(overload_b_id),
+            ],
+        };
+
+        let raw_abi = empty_raw_abi();
+        let report = route_applicability(&[edge], &raw_abi, &graph, &index, &HashMap::new(), &[]);
+
+        // Route-level: both Source/SourceSpan routes pass the witness contract
+        // regardless of the AmbiguousDispatch condition (witness_contract_holds
+        // is per-route, unaffected by cardinality/shape).
+        assert_eq!(report.total_routes, 2);
+        assert_eq!(report.witness_contract_violations, 0);
+
+        // None of the shape-specific SOUNDNESS checks must fire — a `Call` edge
+        // with `AmbiguousOverload` shape matches none of `EdgeKind::Call if
+        // shape==Polymorphic` / `EdgeKind::ImplicitTrigger if shape==Multicast` /
+        // `EdgeKind::EventFlow`, so it structurally falls through to `_ => {}`.
+        assert_eq!(report.interface_applicability_violations, 0);
+        assert_eq!(report.implicit_trigger_violations, 0);
+        assert_eq!(report.instance_builtin_violations, 0);
+        assert_eq!(report.event_violations, 0);
+
+        // NON-VACUITY: none of the shape-specific checks RAN either (proves the
+        // zero-violations above is a genuine fallthrough, not a vacuous pass).
+        assert_eq!(report.interface_routes_checked, 0);
+        assert_eq!(report.implicit_trigger_routes_checked, 0);
+        assert_eq!(report.instance_builtin_routes_checked, 0);
+        assert_eq!(report.event_routes_checked, 0);
+
+        assert!(report.is_clean());
+    }
 }

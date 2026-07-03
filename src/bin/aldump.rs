@@ -1315,6 +1315,12 @@ fn main() -> ExitCode {
                 "honestDynamic": h.honest_dynamic,
                 "honestEmpty": h.honest_empty,
                 "unknown": h.unknown,
+                // Task 3 (sigfp-and-ambiguous-reclassification plan): closed
+                // same-object overload-ambiguity candidate sets, honestly
+                // excluded from `unknown`/`realUnknownRate` — see
+                // `ObligationOutcome::AmbiguousResolved`'s doc. Zero on CDO
+                // until Task 4 wires a producer (mechanics-only this task).
+                "ambiguousResolved": h.ambiguous_resolved,
                 "realUnknownRate": h.real_unknown_rate(),
                 "unknownByReason": whole_by_reason,
                 "unknownReceiverTier": whole_tier_by_reason,
@@ -1330,6 +1336,7 @@ fn main() -> ExitCode {
                 "honestDynamic": ph.honest_dynamic,
                 "honestEmpty": ph.honest_empty,
                 "unknown": ph.unknown,
+                "ambiguousResolved": ph.ambiguous_resolved,
                 "realUnknownRate": ph.real_unknown_rate(),
                 "unknownByReason": primary_by_reason,
                 "unknownReceiverTier": primary_tier_by_reason,

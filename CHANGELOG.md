@@ -8,6 +8,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`AmbiguousDispatch`/`AmbiguousOverload`/`AmbiguousResolved` taxonomy trio —
+  inert mechanics (Task 3, sigfp-and-ambiguous-reclassification plan).** Lays
+  the honest vocabulary for reclassifying genuine same-object overload
+  ambiguity (Task 4) OUT of `unknown` without ever calling it "resolved" in
+  the misleading sense: `Condition::AmbiguousDispatch` ("exactly one of these
+  routes fires at runtime, chosen by argument-type dispatch this engine
+  cannot perform; not user-conditional") makes `Route::fires_by_default`
+  return `false`, same as `ManualBinding`, and is included in the new
+  `Edge::may_reachable_routes` may-traversal set (`default_reachable_routes`
+  unchanged — a must-traversal set that correctly excludes both). Every
+  `default_reachable_routes()` consumer was audited: none exist outside
+  `edge.rs`'s/`resolver.rs`'s own reachability-contract tests, so no
+  must-vs-may switch was needed. `DispatchShape::AmbiguousOverload` maps to
+  `SetCompleteness::Complete` in `completeness_for_shape` — the candidate set
+  is snapshot-enumerated and CLOSED, unlike `Polymorphic`'s open-world
+  `Partial`. `ObligationOutcome::AmbiguousResolved` is a new `classify_obligation`
+  branch with a STRICT precondition, checked before the pre-existing
+  has-real/all-manual logic and never trusting a producer's shape choice
+  alone: shape is `AmbiguousOverload`, the route set is non-empty, EVERY
+  route carries `AmbiguousDispatch`, no route has `Evidence::Unknown`, and no
+  route's target is `Unresolved` (i.e. every candidate is a concrete exact
+  route — this alone excludes any collapse-marked candidate too, since a
+  collapse-marked candidate manifests as an `Evidence::Unknown` route). A
+  mixed/degraded candidate set fails this precondition and falls through
+  UNCHANGED to the existing classification (e.g. a mix of one
+  `AmbiguousDispatch` route + one Unknown-evidence route lands
+  `ConditionalResolved` via the same not-fires-by-default fallback path
+  `ManualBinding`-only sets already used — never misclassified as
+  `AmbiguousResolved`, never silently dropped). `Histogram` gains an
+  `ambiguous_resolved` counter (both `edge.rs`'s `Histogram::of_edges` AND
+  `full.rs`'s documented-duplicate `count_into_histogram` — pinned
+  byte-identical via a cross-check test), `graphify_export` gains a
+  `project_edge` arm (`obligation:"ambiguous_resolved"`,
+  `dispatch_shape:"ambiguous_overload"`, `condition:"ambiguous_dispatch"`,
+  `confidence:"INFERRED"` — never `"AMBIGUOUS"`, which is reserved for
+  `Unknown`'s true failure) plus an ADDITIVE, additive-only `GEdge.may_fire`
+  field: `Some(true)` on every `AmbiguousDispatch` route so BC-Brain can
+  never read the `fires_by_default:false` shape as dead code (exactly one
+  candidate IS guaranteed to run) — pinned with an export fixture NOW even
+  though no producer constructs these shapes yet (Task 4). `aldump`'s
+  hand-built `--program-call-graph-stats` JSON (the one NON-compiler-forced
+  surface) gains `ambiguousResolved` in both `wholeProgram` and
+  `primaryScoped`. `integration_report.rs`'s `conditions()` mapping and
+  `semantic_golden.rs`'s `route_applicability` gate both audited: the latter
+  falls through to its `_ => {}` arm for the new shape (unit-tested, not
+  assumed — an `AmbiguousOverload` `Call` edge matches neither the
+  `Polymorphic` nor `Multicast` fan-out arms). **Inert by construction**:
+  nothing in the resolver constructs `AmbiguousOverload`/`AmbiguousDispatch`
+  yet, so this is mechanics only — CDO-confirmed byte-identical (primary
+  `unknown=151`, `realUnknownRate=0.83%`, `genuine_wrong=0`,
+  `ambiguousResolved=0` in both scopes, the `--graphify-export` output
+  contains zero occurrences of `may_fire`/`ambiguous_overload`/
+  `ambiguous_dispatch`/`ambiguous_resolved`) and the full 160-test CDO-gated
+  harness green.
 - **Real source `sig_fp` via ONE shared `RoutineNodeId` constructor — distinct
   overload identity (Task 2, sigfp-and-ambiguous-reclassification plan).**
   Source-tier `sig_fp` was hardcoded `0` at 5 independent reconstruction
