@@ -2575,26 +2575,28 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
         manifest_keys.len(),
     );
     // beyond-1B.3b Task 3 (grown to 52 entries by record-field chains plan
-    // Task 4): ALL manifest entries are now adjudicated `l3_error_intrinsic`
-    // and overlaid (`run_cdo_semantic_audit` applies
-    // `adjudicated-overrides.json` in-memory before diffing) — fresh is
-    // compared against the ADJUDICATED target for these sites, which fresh
-    // matches by construction (that agreement is what the independent
-    // adjudication in `cdo_genuine_wrong_is_precedence_adjudicated`
-    // confirms). So `genuine_wrong_count` must now be EXACTLY 0: a nonzero
-    // count means either the overlay failed to apply (a wiring bug) or a
-    // genuinely NEW disjoint divergence appeared that is not one of the 52
+    // Task 4, then to 54 by argtype-dispatch-and-page-catalog plan Task 1's
+    // 2 `PageInstanceVar` duplicate-trigger-name sites): ALL manifest
+    // entries are now adjudicated `l3_error_intrinsic` and overlaid
+    // (`run_cdo_semantic_audit` applies `adjudicated-overrides.json` in-memory
+    // before diffing) — fresh is compared against the ADJUDICATED target for
+    // these sites, which fresh matches by construction (that agreement is
+    // what the independent adjudication in
+    // `cdo_genuine_wrong_is_precedence_adjudicated` confirms). So
+    // `genuine_wrong_count` must now be EXACTLY 0: a nonzero count means
+    // either the overlay failed to apply (a wiring bug) or a genuinely NEW
+    // disjoint divergence appeared that is not one of the 54
     // known/adjudicated sites — both are real bugs, not "still-acceptable
     // known wrongness". The manifest/set-membership checks above stay as
     // defense-in-depth for that second case.
     assert_eq!(
         audit.genuine_wrong_count, 0,
-        "genuine_wrong_count={} (expected 0): all 52 known-genuine-divergences.json sites \
+        "genuine_wrong_count={} (expected 0): all 54 known-genuine-divergences.json sites \
          are adjudicated l3_error_intrinsic and should have been overlaid to match fresh \
          exactly (see adjudicated-overrides.json / apply_adjudicated_overrides). A nonzero \
          count means either the overlay didn't apply (check for an \
-         'Adjudication overlay: N/52' log line above — N should be 52) or a genuinely NEW \
-         divergence appeared beyond the 52 adjudicated ones.",
+         'Adjudication overlay: N/54' log line above — N should be 54) or a genuinely NEW \
+         divergence appeared beyond the 54 adjudicated ones.",
         audit.genuine_wrong_count,
     );
 
@@ -3034,20 +3036,22 @@ fn committed_goldens_metadata_is_valid() {
     }
     assert_eq!(
         manifest_entries.len(),
-        52,
-        "known-genuine-divergences.json must carry exactly 52 adjudicated entries \
+        54,
+        "known-genuine-divergences.json must carry exactly 54 adjudicated entries \
          (beyond-1B.3b Task 3: 42 builtin-catalog-fp-collision; beyond-1B.3b Task 5.5: \
          +2 CrossAppSourceProcedure; follow-up plan v2.1 Task 3 (bare implicit-Rec): \
          +7 CrossAppSourceProcedure (bare callee shape); record-field chains plan Task 4: \
-         +1 builtin-catalog-fp-collision (Text::trim, receiver_kind=Framework) — all 52 \
+         +1 builtin-catalog-fp-collision (Text::trim, receiver_kind=Framework); \
+         argtype-dispatch-and-page-catalog plan Task 1: +2 builtin-catalog-fp-collision \
+         (receiver_kind=PageInstanceVar, duplicate-trigger-name variant) — all 54 \
          l3_error_intrinsic / 0 fresh_false_builtin / 0 needs_manual_review) — this \
          assertion is UNCONDITIONAL (no CDO_WS needed)"
     );
     assert_eq!(
         manifest_intrinsic_keys.len(),
-        52,
-        "expected all 52 known-genuine-divergences.json entries to be adjudicated \
-         l3_error_intrinsic; a non-52 count means a fresh_false_builtin or \
+        54,
+        "expected all 54 known-genuine-divergences.json entries to be adjudicated \
+         l3_error_intrinsic; a non-54 count means a fresh_false_builtin or \
          needs_manual_review survivor slipped through — investigate before relying \
          on the overlay"
     );
@@ -3126,10 +3130,11 @@ fn committed_goldens_metadata_is_valid() {
     );
     assert_eq!(
         overrides.entries.len(),
-        52,
-        "adjudicated-overrides.json must carry exactly 52 entries (one per adjudicated \
+        54,
+        "adjudicated-overrides.json must carry exactly 54 entries (one per adjudicated \
          known-genuine-divergences.json site; beyond-1B.3b Task 3 + Task 5.5 + follow-up \
-         plan v2.1 Task 3 + record-field chains plan Task 4)"
+         plan v2.1 Task 3 + record-field chains plan Task 4 + argtype-dispatch-and-page-\
+         catalog plan Task 1)"
     );
 
     // ── Non-circularity invariant (testable): overlay entries hold CANONICAL
@@ -3227,6 +3232,41 @@ fn unit_declares_procedure_named(unit_content: &str, name_lc: &str) -> bool {
     false
 }
 
+/// Case-insensitive, quote-agnostic, LINE-based scan for a `<var_name>: Page
+/// ...` variable declaration anywhere in `unit_content` — the independent
+/// (source-only) confirmation that a bare member-call receiver token really
+/// is a Page-typed variable, for the `PageInstanceVar` adjudication shape
+/// (argtype-dispatch-and-page-catalog plan, Task 1: general declared
+/// Page-typed variables, as opposed to the `CurrPage`/`Page` singleton
+/// `PageInstance` shape [`assert_shape_matches_receiver_kind`] already
+/// checks).
+///
+/// AL variable declarations are one per line (`Name: Page "X";` / `Name:
+/// Page X;`, optionally quoted on the name side) inside a `var` section, so a
+/// per-line `<name> :` prefix match followed immediately by `page` (after
+/// stripping an optional quote and whitespace) is sound for the declaration
+/// shapes this overlay's sites use. Deliberately whole-unit (not scoped to
+/// one routine's `var` section) — same conservative-permissive stance as
+/// [`unit_declares_procedure_named`]: a false POSITIVE only pushes a site
+/// toward re-investigation via a mismatched independent verdict elsewhere,
+/// never toward a false PASS of an otherwise-unverified claim.
+fn unit_declares_page_typed_var(unit_content: &str, var_name: &str) -> bool {
+    let needle_name = var_name.trim_matches('"').to_ascii_lowercase();
+    for line in unit_content.lines() {
+        let lc_line = line.trim().trim_start_matches('"').to_ascii_lowercase();
+        let Some(rest) = lc_line.strip_prefix(&needle_name) else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start_matches('"').trim_start().strip_prefix(':') else {
+            continue;
+        };
+        if rest.trim_start().starts_with("page") {
+            return true;
+        }
+    }
+    false
+}
+
 /// Independently re-derive an [`AdjudicatedOverride`]'s verdict from LIVE
 /// `unit_content` plus the structural builtin catalog — see
 /// `semantic_golden.rs`'s `AdjudicatedOverride` doc comment for the full
@@ -3247,6 +3287,18 @@ fn unit_declares_procedure_named(unit_content: &str, name_lc: &str) -> bool {
 /// `RecordRef`, the receiver is not a fixed keyword, so
 /// [`assert_shape_matches_receiver_kind`] does not apply a fixed-token check
 /// to it (only the catalog-membership + shadow checks below apply).
+///
+/// `"PageInstanceVar"` (argtype-dispatch-and-page-catalog plan, Task 1):
+/// SAME catalog (`PAGE_INSTANCE` is one shared platform-intrinsic catalog
+/// regardless of whether the receiver is the `CurrPage`/`Page` singleton or a
+/// general declared `Page`-typed variable — see
+/// `resolver::is_metadata_sensitive_instance_method`'s doc), so this arm
+/// delegates to the exact same `member_builtin` check as `"PageInstance"`.
+/// The two receiver_kinds differ only in what
+/// [`assert_shape_matches_receiver_kind`] independently verifies about the
+/// receiver TOKEN (a fixed CurrPage/Page keyword vs. a declared-variable
+/// name) — the catalog-membership question this function answers is
+/// identical either way.
 fn derive_verdict(ov: &AdjudicatedOverride, unit_content: &str) -> &'static str {
     let method_lc = ov
         .catalog_key
@@ -3257,7 +3309,7 @@ fn derive_verdict(ov: &AdjudicatedOverride, unit_content: &str) -> &'static str 
 
     let catalog_match = match ov.receiver_kind.as_str() {
         "Global" => is_global_builtin(&method_lc),
-        "PageInstance" => member_builtin(
+        "PageInstance" | "PageInstanceVar" => member_builtin(
             MemberCatalogKind::Framework(&FrameworkKind::PageInstance),
             &method_lc,
         ),
@@ -3326,18 +3378,27 @@ fn parse_callee_shape(callee_text: &str) -> CallShape<'_> {
 /// catalog-membership checks in `derive_verdict` already bound that; this
 /// only needs to catch a Global-vs-member/page-instance MISLABEL):
 /// - `Global` receiver_kind ⟺ `callee_text` has no `.`.
-/// - `PageInstance`/`Record`/`RecordRef` receiver_kind ⟺ `callee_text` has a
-///   `.` (a member call).
+/// - `PageInstance`/`PageInstanceVar`/`Record`/`RecordRef` receiver_kind ⟺
+///   `callee_text` has a `.` (a member call).
 /// - For a member call with `receiver_kind == "PageInstance"`, the receiver
 ///   token (text before the final `.`) must be `CurrPage` or `Page` — the
-///   only page-instance forms this overlay uses.
+///   only page-instance-SINGLETON forms this overlay uses.
+/// - For a member call with `receiver_kind == "PageInstanceVar"` (argtype-
+///   dispatch-and-page-catalog plan, Task 1): the receiver token must NOT be
+///   `CurrPage`/`Page` (that shape is `"PageInstance"`) and `unit_content`
+///   (independent source text, the SAME unit the caller already read for the
+///   `source_sha256`/callee_text checks — never a fresh-computed value) must
+///   declare a `<receiver>: Page ...` variable somewhere in the unit
+///   ([`unit_declares_page_typed_var`]) — the source-only confirmation that
+///   this really is a Page-typed receiver, not merely a name that happens to
+///   end in "Page".
 /// - In both shapes, the parsed method token must match `catalog_key`'s
 ///   method component (the part after `::`, or the whole key for a bare
 ///   global).
 ///
 /// Panics via `assert!`/`assert_eq!` on any mismatch — a hard, load-bearing
 /// check, not advisory.
-fn assert_shape_matches_receiver_kind(ov: &AdjudicatedOverride) {
+fn assert_shape_matches_receiver_kind(ov: &AdjudicatedOverride, unit_content: &str) {
     let expected_method_lc = ov
         .catalog_key
         .rsplit("::")
@@ -3366,10 +3427,11 @@ fn assert_shape_matches_receiver_kind(ov: &AdjudicatedOverride) {
             assert!(
                 matches!(
                     ov.receiver_kind.as_str(),
-                    "PageInstance" | "Record" | "RecordRef" | "Framework"
+                    "PageInstance" | "PageInstanceVar" | "Record" | "RecordRef" | "Framework"
                 ),
                 "{}:{}: callee_text {:?} is a member call (`<receiver>.<method>`), but \
-                 receiver_kind is {:?} — expected PageInstance/Record/RecordRef/Framework",
+                 receiver_kind is {:?} — expected \
+                 PageInstance/PageInstanceVar/Record/RecordRef/Framework",
                 ov.unit,
                 ov.line,
                 ov.callee_text,
@@ -3381,6 +3443,29 @@ fn assert_shape_matches_receiver_kind(ov: &AdjudicatedOverride) {
                         || receiver.eq_ignore_ascii_case("Page"),
                     "{}:{}: PageInstance member call {:?} has receiver token {:?}, expected \
                      CurrPage or Page (the page-instance forms this overlay uses)",
+                    ov.unit,
+                    ov.line,
+                    ov.callee_text,
+                    receiver,
+                );
+            }
+            if ov.receiver_kind == "PageInstanceVar" {
+                assert!(
+                    !receiver.eq_ignore_ascii_case("CurrPage")
+                        && !receiver.eq_ignore_ascii_case("Page"),
+                    "{}:{}: PageInstanceVar member call {:?} has receiver token {:?} — the \
+                     CurrPage/Page singleton shape must use receiver_kind \"PageInstance\" \
+                     instead",
+                    ov.unit,
+                    ov.line,
+                    ov.callee_text,
+                    receiver,
+                );
+                assert!(
+                    unit_declares_page_typed_var(unit_content, receiver),
+                    "{}:{}: PageInstanceVar member call {:?} has receiver token {:?}, but no \
+                     `{receiver}: Page ...` variable declaration was found anywhere in the \
+                     unit — cannot independently verify this is a Page-instance receiver",
                     ov.unit,
                     ov.line,
                     ov.callee_text,
@@ -3787,7 +3872,7 @@ fn cdo_genuine_wrong_is_precedence_adjudicated() {
         }
 
         // ── shape / receiver_kind cross-check — BEFORE trusting either ──────
-        assert_shape_matches_receiver_kind(ov);
+        assert_shape_matches_receiver_kind(ov, &content);
 
         // ── arity cross-check — BEFORE trusting `arity` ─────────────────────
         // Only where source-level comma counting is a sound oracle for the

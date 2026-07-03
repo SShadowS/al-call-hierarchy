@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Page/Report instance-catalog completion — `SetTableView`/`SetRecord`/
+  `GetRecord`/`SetSelectionFilter` exist unconditionally (Task 1,
+  argtype-dispatch-and-page-catalog plan).** `resolver::
+  is_metadata_sensitive_instance_method` previously excluded ALL of
+  `Page.{SetTableView,SetRecord,GetRecord,SetSelectionFilter,SaveRecord}` and
+  `Report.SetTableView` from the instance-builtin catalog fallback, reasoning
+  that "argument/return types depend on the object's source table, so we
+  can't validate the call" — a conflation of argument-type validation with
+  member EXISTENCE (the resolver has never validated any catalog method's
+  arguments). These are real, unconditional platform intrinsics present on
+  every Page/Report object regardless of source table (MS Learn-documented;
+  L3's own `PAGE_INSTANCE`/`REPORT_INSTANCE` catalogs already listed them).
+  The exclusion now narrows to `SaveRecord` only, which genuinely IS
+  CurrPage-only (a compiler error on a declared Page-typed variable) — kept
+  excluded from the general `Object{Page}` catalog fallback; `CurrPage.
+  SaveRecord()` was already unconditionally resolved via the separate
+  `Framework(PageInstance)` receiver arm (the CurrPage-origin distinction is
+  structural — a different `ReceiverType` variant entirely — never inferred
+  from a resolved page id/type, per round-2 review). Primary real-`unknown`
+  moves 0.52%→0.43% (`unknown` 95→77, `MemberNotFound` 25→7): 18 CDO sites
+  (10 `Page.SetTableView`, 4 `Report.SetTableView`, 1 `Page.SetRecord`, 3
+  `Page.GetRecord` including the `CurrPage.<part>.Page` subpage-instance
+  chain) move from `Unknown(MemberNotFound)` to `Resolved`/`Catalog`; the
+  remaining 7 `MemberNotFound` sites (the CDOeCandidatesEventHandler
+  `OnlyVendorsAreHandled`/`OnlyCustomersAreHandled`/`GetOutputProfile` calls)
+  stay honest `Unknown` — independently verified ABSENT from the installed
+  dependency's page source at any visibility, the future `ProvenAbsent`
+  prototype population.
+  - **Adjudication:** all 18 flips' targets were cross-checked against the
+    frozen L3-validated semantic golden. 16/18 land cleanly in `matches`. 2
+    sites (`FieldsWithRelationPage.SetTableView(Field)` on Page 6175276 and
+    Page 6175425) surfaced a PRE-EXISTING L3 golden site-collision defect —
+    both pages declare TWO field controls with their own same-named `trigger
+    OnAssistEdit()`, and L3's frozen `(unit, line, callee_fp)` golden key
+    carries no per-control qualifier, so it mis-pairs the site with the
+    OTHER same-named trigger's unrelated call. Fresh's `RoutineNodeId`
+    (which carries `enclosing_member_lc`) disambiguates correctly; this is
+    the same `builtin-catalog-fp-collision` class already documented for 43
+    prior sites, now with a duplicate-trigger-name variant. Added 2 entries
+    to `known-genuine-divergences.json`/`adjudicated-overrides.json` (42→54
+    total; a new `receiver_kind: "PageInstanceVar"` shape, extending
+    `tests/program_resolve_harness.rs`'s independent source-adjudication
+    harness to verify a declared-Page-variable receiver via a `<name>: Page
+    ...` source-text scan, as opposed to the fixed `CurrPage`/`Page`
+    singleton token the pre-existing `"PageInstance"` shape checks).
+    `genuine_wrong=0` held throughout.
+
 ### Added
 - **Source `sig_fp` identity + `AmbiguousResolved` reclassification — arc
   complete (Task 5 FINAL, sigfp-and-ambiguous-reclassification plan). Primary

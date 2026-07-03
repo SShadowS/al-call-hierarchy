@@ -1636,25 +1636,68 @@ fn object_instance_framework_kind(kind: ObjectKind) -> Option<FrameworkKind> {
     }
 }
 
-/// Returns `true` when `method_lc` is an object-metadata-sensitive method for the
-/// given object `kind`.
+/// Returns `true` when `method_lc` is a CurrPage-ONLY instance method that must
+/// stay excluded from the general `Object{kind}` catalog fallback for the given
+/// object `kind`.
 ///
-/// Metadata-sensitive methods are present in the instance-builtin catalog but their
-/// argument or return type depends on the specific object's source table (e.g.
-/// `Page.SetRecord` takes a `Record <SourceTable>` argument, not a generic record).
-/// These are EXCLUDED from the Catalog fast-path in Phase 4 Task 1 and remain
-/// `Unknown` until per-object source-table constraint modelling is in place.
+/// # History — the Phase 4 Task 1 rationale was WRONG, corrected by the
+/// argtype-dispatch-and-page-catalog plan (Task 1)
+///
+/// Phase 4 Task 1 excluded `SetRecord`/`SetTableView`/`GetRecord`/
+/// `SetSelectionFilter` (Page) and `SetTableView` (Report) here, reasoning that
+/// "their argument/return type depends on the object's source table, so we
+/// can't validate the argument." That conflated ARGUMENT-type validation with
+/// member EXISTENCE — the resolver has never validated any catalog method's
+/// argument types (`RunModal()`, `SaveAsPdf()`, etc. are accepted with zero
+/// arity/type checking too), so the exclusion was withholding a `Catalog` edge
+/// for a member that unconditionally EXISTS on every Page/Report object,
+/// regardless of its source table. All 18 real-world CDO sites hitting this
+/// exclusion (13 workspace-tier + 5 embedded-tier, all `SetTableView`/
+/// `SetRecord`/`GetRecord` calls on ordinary declared Page/Report variables)
+/// confirm this: L3's own `PAGE_INSTANCE`/`REPORT_INSTANCE` catalogs
+/// (`engine::l3::member_builtins.rs:731-786`) already list every one of these
+/// methods, and MS Learn documents them as unconditional Page/Report
+/// instance-method members present since the earliest AL/NAV releases these
+/// docs cover (no version gate needed — `SetTableView`/`SetRecord`/
+/// `GetRecord`/`SetSelectionFilter` are ancient platform intrinsics, present
+/// in every supported Business Central version):
+/// - `Page.SetTableView` — <https://learn.microsoft.com/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-settableview-method>
+/// - `Page.SetRecord` — <https://learn.microsoft.com/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-setrecord-method>
+/// - `Page.GetRecord` — <https://learn.microsoft.com/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-getrecord-method>
+/// - `Page.SetSelectionFilter` — <https://learn.microsoft.com/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-setselectionfilter-method>
+/// - `Report.SetTableView` — <https://learn.microsoft.com/dynamics365/business-central/dev-itpro/developer/methods-auto/report/report-settableview-method>
+///
+/// # `SaveRecord` stays excluded — CurrPage-ONLY (round-2 closer I8, BINDING)
+///
+/// `Page.SaveRecord` (<https://learn.microsoft.com/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-saverecord-method>)
+/// is documented and compiler-enforced as a member of the CURRENT PAGE CONTEXT
+/// only — calling `.SaveRecord()` on a Page-typed VARIABLE (as opposed to the
+/// `CurrPage` singleton) is a genuine AL compile error, not merely an
+/// under-modelled edge case. `CurrPage`/bare `Page` singleton receivers never
+/// reach this function at all — `infer_receiver_type`'s Step 1
+/// (`receiver.rs:588-604`) types them `ReceiverType::Framework(PageInstance)`,
+/// which `resolve_member`'s `Framework(kind)` arm resolves via an
+/// UNCONDITIONAL catalog lookup (no exclusion check of any kind) — so
+/// `CurrPage.SaveRecord()` already resolves via `Catalog` independent of this
+/// function. This function is consulted ONLY by the `Object{kind}` arm, which
+/// covers every OTHER Page-typed receiver: a declared Page variable/param/
+/// global (`id: None`) and Step 0's `CurrPage.<part>.Page` subpage-instance
+/// shape (`id: Some(..)`, a MECHANICALLY resolved page identity — see
+/// `receiver.rs:560-577`). Keying the exclusion on the METHOD name alone
+/// (never on whether an `id` happens to be carried) is deliberate: a resolved
+/// page identity is NOT proof of CurrPage origin (a subpage instance has an
+/// id too, and is not CurrPage either) — inferring CurrPage-ness from the
+/// resolved page type/id would be the exact false-positive vector round-2
+/// review flagged. The origin distinction is structural (which
+/// `ReceiverType` variant Phase A produced), never data carried on the
+/// variant.
 ///
 /// Exclusion list:
-/// - Page: `setrecord`, `settableview`, `setselectionfilter`, `getrecord`, `saverecord`
-/// - Report: `settableview`
+/// - Page: `saverecord` only.
+/// - Report: none.
 fn is_metadata_sensitive_instance_method(kind: ObjectKind, method_lc: &str) -> bool {
     match kind {
-        ObjectKind::Page => matches!(
-            method_lc,
-            "setrecord" | "settableview" | "setselectionfilter" | "getrecord" | "saverecord"
-        ),
-        ObjectKind::Report => matches!(method_lc, "settableview"),
+        ObjectKind::Page => method_lc == "saverecord",
         _ => false,
     }
 }
@@ -1882,9 +1925,13 @@ pub fn resolve_member(
             } else {
                 // Method name absent from target object's declared procedures.
                 // Fall through to the instance-builtin catalog for kinds that have one
-                // (Page→PageInstance, Report→ReportInstance), EXCLUDING metadata-sensitive
-                // methods whose argument/return types depend on the object's source table
-                // (SetRecord / SetTableView-class).
+                // (Page→PageInstance, Report→ReportInstance), EXCLUDING only the
+                // CurrPage-only `SaveRecord` (see `is_metadata_sensitive_instance_
+                // method`'s doc — argtype-dispatch-and-page-catalog plan, Task 1):
+                // every other Page/Report instance-catalog method (SetTableView/
+                // SetRecord/GetRecord/SetSelectionFilter-class) EXISTS
+                // unconditionally on every Page/Report object and is not withheld
+                // here.
                 if !is_metadata_sensitive_instance_method(*kind, method_lc)
                     && let Some(fk) = object_instance_framework_kind(*kind)
                     && let Some(bid) =
@@ -7109,9 +7156,25 @@ codeunit 50613 "ReportCaller"
         assert_eq!(routes[0].witness, Witness::None);
     }
 
-    // Test 6: Page Object receiver + `setrecord` → Unknown (metadata-sensitive exclusion)
+    // -----------------------------------------------------------------------
+    // Task 1 (argtype-dispatch-and-page-catalog plan): Page/Report
+    // instance-catalog completion. `SetTableView`/`SetRecord`/`GetRecord`/
+    // `SetSelectionFilter` (Page) and `SetTableView` (Report) are REAL,
+    // always-present platform intrinsics — see `is_metadata_sensitive_
+    // instance_method`'s doc for the MS Learn citations and the L3
+    // `PAGE_INSTANCE`/`REPORT_INSTANCE` catalog precedent
+    // (`engine::l3::member_builtins`). `SaveRecord` stays excluded from the
+    // general `Object{Page}` catalog fallback — it is a CurrPage-ONLY
+    // intrinsic (a compiler error on any other Page-typed expression); see
+    // the two `..._saverecord_..._currpage_only` tests below for the positive
+    // (Framework(PageInstance), the CurrPage singleton) / negative
+    // (Object{Page}, a declared Page var — INCLUDING the id-carrying subpage
+    // shape) split.
+    // -----------------------------------------------------------------------
+
+    // Test 6a: Page Object receiver + `settableview` → Catalog route.
     #[test]
-    fn resolve_member_page_setrecord_emits_unknown_metadata_sensitive() {
+    fn resolve_member_page_settableview_emits_catalog_route() {
         use crate::program::resolve::receiver::ReceiverType;
 
         let src_page: &'static str = r#"
@@ -7143,6 +7206,62 @@ codeunit 50615 "AnotherPageCaller"
         };
         let (shape, routes) = resolve_member(
             &receiver,
+            "settableview",
+            1,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin (a genuine platform intrinsic); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "PageInstance::settableview");
+    }
+
+    // Test 6b: Page Object receiver + `setrecord` → Catalog route.
+    #[test]
+    fn resolve_member_page_setrecord_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50620 "SetRecordPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50621 "SetRecordPageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "SetRecordPage.al", src_page);
+        let unit_caller = make_unit(app_id, "SetRecordPageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SetRecordPageCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "setrecordpage".into(),
+            id: None,
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
             "setrecord",
             1,
             from_obj,
@@ -7153,9 +7272,320 @@ codeunit 50615 "AnotherPageCaller"
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
-        assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
-        assert_eq!(routes[0].witness, Witness::None);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "PageInstance::setrecord");
+    }
+
+    // Test 6c: Page Object receiver + `getrecord` → Catalog route (both the
+    // plain declared-var shape, `id: None`, AND the id-CARRYING subpage-
+    // instance shape, `id: Some(..)` — Step 0's `CurrPage.<part>.Page`
+    // mechanically resolved id — must be treated identically: the exclusion
+    // narrowing must not depend on how the `Object{Page}` receiver was
+    // constructed, only on the METHOD name).
+    #[test]
+    fn resolve_member_page_getrecord_emits_catalog_route_plain_and_id_carrying() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50622 "GetRecordPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50623 "GetRecordPageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "GetRecordPage.al", src_page);
+        let unit_caller = make_unit(app_id, "GetRecordPageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "GetRecordPageCaller");
+        let page_id = find_obj(&graph, "GetRecordPage").id.clone();
+
+        for receiver in [
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "getrecordpage".into(),
+                id: None,
+            },
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "getrecordpage".into(),
+                id: Some(page_id.clone()),
+            },
+        ] {
+            let (shape, routes) = resolve_member(
+                &receiver,
+                "getrecord",
+                1,
+                from_obj,
+                &graph,
+                &index,
+                &body_map,
+            );
+
+            assert_eq!(shape, DispatchShape::Exact);
+            assert_eq!(routes.len(), 1);
+            assert!(
+                matches!(routes[0].target, RouteTarget::Builtin(_)),
+                "target must be Builtin for receiver {:?}; got {:?}",
+                receiver,
+                routes[0].target
+            );
+            assert_eq!(routes[0].evidence, Evidence::Catalog);
+            let RouteTarget::Builtin(ref bid) = routes[0].target else {
+                unreachable!()
+            };
+            assert_eq!(bid.0, "PageInstance::getrecord");
+        }
+    }
+
+    // Test 6d: Page Object receiver + `setselectionfilter` → Catalog route.
+    #[test]
+    fn resolve_member_page_setselectionfilter_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50624 "SelFilterPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50625 "SelFilterPageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "SelFilterPage.al", src_page);
+        let unit_caller = make_unit(app_id, "SelFilterPageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SelFilterPageCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "selfilterpage".into(),
+            id: None,
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "setselectionfilter",
+            1,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "PageInstance::setselectionfilter");
+    }
+
+    // Test 6e: Report Object receiver + `settableview` → Catalog route.
+    #[test]
+    fn resolve_member_report_settableview_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 50626 "SetTableViewReport"
+{
+    dataset
+    {
+    }
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50627 "SetTableViewReportCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_report = make_unit(app_id.clone(), "SetTableViewReport.al", src_report);
+        let unit_caller = make_unit(app_id, "SetTableViewReportCaller.al", src_caller);
+        let units = [unit_report, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SetTableViewReportCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "settableviewreport".into(),
+            id: None,
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "settableview",
+            1,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "target must be Builtin; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "ReportInstance::settableview");
+    }
+
+    // Test 6f (NEGATIVE/CONTROL, round-2 closer I8): `SaveRecord` on a
+    // declared Page-typed VARIABLE — `Object{Page}` — is a compiler error in
+    // real AL (SaveRecord only exists on the CurrPage context) and MUST stay
+    // `Unknown`. Covers BOTH the plain shape (`id: None`, an ordinary
+    // declared var) and the id-CARRYING shape (`id: Some(..)`, mechanically
+    // identical to what Step 0's `CurrPage.<part>.Page` subpage-instance
+    // receiver produces) — proving the exclusion is keyed on the METHOD
+    // name alone, never on whether a page identity happens to be known. A
+    // future implementation that tried to special-case "id is Some ⇒ this
+    // must be CurrPage" would be exactly the false inference (gemini
+    // round-2) this fixture forbids: a subpage instance is NOT CurrPage
+    // either, so both `id` shapes must decline identically.
+    #[test]
+    fn resolve_member_page_saverecord_stays_unknown_currpage_only() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 50628 "SaveRecordPage"
+{
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50629 "SaveRecordPageCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "SaveRecordPage.al", src_page);
+        let unit_caller = make_unit(app_id, "SaveRecordPageCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "SaveRecordPageCaller");
+        let page_id = find_obj(&graph, "SaveRecordPage").id.clone();
+
+        for receiver in [
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "saverecordpage".into(),
+                id: None,
+            },
+            ReceiverType::Object {
+                kind: ObjectKind::Page,
+                name_lc: "saverecordpage".into(),
+                id: Some(page_id),
+            },
+        ] {
+            let (shape, routes) = resolve_member(
+                &receiver,
+                "saverecord",
+                0,
+                from_obj,
+                &graph,
+                &index,
+                &body_map,
+            );
+
+            assert_eq!(shape, DispatchShape::Exact);
+            assert_eq!(routes.len(), 1);
+            assert_eq!(
+                routes[0].target,
+                RouteTarget::Unresolved,
+                "a Page-VARIABLE receiver (never CurrPage itself) must never \
+                 get SaveRecord, regardless of a carried id; receiver={receiver:?}"
+            );
+            assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+            assert_eq!(routes[0].witness, Witness::None);
+        }
+    }
+
+    // Test 6g (POSITIVE, round-2 closer I8): `CurrPage.SaveRecord()` — the
+    // literal CurrPage singleton, `ReceiverType::Framework(PageInstance)` per
+    // `infer_receiver_type`'s Step 1 — resolves via the unconditional
+    // Framework-arm catalog lookup (`resolve_member`'s `Framework(kind)` arm
+    // never consulted `is_metadata_sensitive_instance_method` — only the
+    // `Object{kind}` arm's fallback did), so this passes BEFORE this task's
+    // code change too. Pinned here as the explicit CurrPage-origin positive
+    // counterpart to Test 6f's negative: the two tests together prove the
+    // origin distinction is STRUCTURAL (a different `ReceiverType` variant
+    // entirely — `Framework(PageInstance)` vs `Object{Page}` — never a flag
+    // inferred from a resolved page id).
+    #[test]
+    fn resolve_member_framework_pageinstance_saverecord_emits_catalog_route() {
+        use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::Framework(FrameworkKind::PageInstance);
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "saverecord",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "CurrPage.SaveRecord() must resolve via the Framework catalog; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "PageInstance::saverecord");
     }
 
     // Test 7: Page Object receiver + declared proc (shadows catalog) → Source route

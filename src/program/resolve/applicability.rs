@@ -240,11 +240,17 @@ pub fn implicit_trigger_route_applicable(
 /// - All other kinds → `false`.
 ///
 /// This predicate is kind-uniform (no per-object-instance data), which covers
-/// the `RunModal`/`Run`/`Close`/`SaveAsPdf`-class category methods.
-/// Object-metadata-sensitive methods (`SetRecord`/`SetTableView`, which depend
-/// on the object's specific source table) are in the catalog but Task 1 keeps
-/// them OUT of confident fan-out until the per-object table constraint is
-/// modelled.
+/// every catalog member uniformly — `RunModal`/`Run`/`Close`/`SaveAsPdf`-class
+/// category methods AND `SetRecord`/`SetTableView`/`GetRecord`/
+/// `SetSelectionFilter`-class methods alike (argtype-dispatch-and-page-catalog
+/// plan, Task 1: these are real, unconditional platform intrinsics — see
+/// `resolver::is_metadata_sensitive_instance_method`'s doc for the
+/// provenance). This predicate only checks CATALOG MEMBERSHIP of an already-
+/// emitted route's method name (the `semantic_golden` applicability teeth's
+/// soundness check) — it does not decide which methods `resolve_member`
+/// emits a route for; that decision (the `SaveRecord`-only CurrPage
+/// exclusion) lives entirely in `resolver::is_metadata_sensitive_instance_
+/// method`, consulted only by the `Object{kind}` catalog-fallback arm.
 pub fn instance_builtin_route_applicable(kind: ObjectKind, method_lc: &str) -> bool {
     match kind {
         ObjectKind::Page => member_builtin(
