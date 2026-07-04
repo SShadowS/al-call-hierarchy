@@ -386,8 +386,47 @@ static SESSION_INFORMATION: phf::Set<&'static str> = phf_set! {
     "aitokensused", "callstack", "sqlrowsread", "sqlstatementsexecuted"
 };
 
+/// Enum VALUE-instance surface (Task 4, receiver-closure-and-arg-increments
+/// plan — the SPLIT-catalog round-2 closer). Callable on an enum VALUE: a
+/// declared `Enum "X"`-typed var/field, or an enum-value-literal chain
+/// (`X::Y`) — `ReceiverType::EnumType`.
+///
+/// Provenance: MS Learn `enum-data-type` (fetched 2026-07-04), "Instance
+/// methods" table — `AsInteger()` ("Get the enum value as an integer
+/// value"), `Names()` ("Gets the value names"), `Ordinals()` ("Gets the
+/// ordinal numbers/ID's for the values"). `FromInteger` is DELIBERATELY
+/// ABSENT here — MS Learn lists it under "Static methods" only (see
+/// `ENUM_TYPE_STATIC` below); converting FROM an integer produces a NEW enum
+/// value and needs no existing value to invoke it against.
 static ENUM_VALUE: phf::Set<&'static str> = phf_set! {
-    "asinteger", "frominteger", "names", "ordinals"
+    "asinteger", "names", "ordinals"
+};
+
+/// Enum TYPE-static surface (Task 4). Callable on the enum TYPE reference
+/// itself: `Enum::"Type"` (`ReceiverType::EnumTypeStatic`, an
+/// `ExprKind::QualifiedEnum` whose `enum_type` is the literal `Enum` keyword)
+/// or a bare (quoted or not) enum-type-name receiver that passed the
+/// programmatic collision rule.
+///
+/// Provenance: MS Learn `enum-data-type` (fetched 2026-07-04), "Static
+/// methods" table — `FromInteger(Integer)` ("Returns an enum with the
+/// integer value"; its own doc page's syntax example is literally
+/// `Enum::YesNo.FromInteger(10)`, the type-reference-receiver shape). `Names`
+/// and `Ordinals` are ALSO real on this surface — confirmed by production AL
+/// (`Enum::"CDO Module Type".Ordinals()`, real CDO sites, `Codeunit 6175279`
+/// line 28 / `Codeunit 6175317` line 26) even though MS Learn's own
+/// "instance methods" categorization would suggest otherwise: AL resolves
+/// these purely by STATIC TYPE (no real object-instance dispatch), so the
+/// enum-enumeration pair (`Names`/`Ordinals`, always documented together,
+/// same "gets ... for/of the values" wording) is callable via EITHER
+/// receiver shape identically — only `AsInteger`/`FromInteger` are
+/// receiver-shape-specific (one needs an existing value to convert, the
+/// other produces one). `AsInteger` is DELIBERATELY ABSENT here (round-2
+/// closer, BINDING: "AsInteger is VALUE-surface... not TYPE-surface") — a
+/// bare TYPE reference carries no specific value to convert, and no CDO
+/// grounding contradicts excluding it.
+static ENUM_TYPE_STATIC: phf::Set<&'static str> = phf_set! {
+    "frominteger", "names", "ordinals"
 };
 
 // ---------------------------------------------------------------------------
@@ -452,6 +491,7 @@ fn framework_lookup(fk: &FrameworkKind, method_lc: &str) -> bool {
         FrameworkKind::CompanyProperty => COMPANY_PROPERTY.contains(method_lc),
         FrameworkKind::SessionInformation => SESSION_INFORMATION.contains(method_lc),
         FrameworkKind::Enum => ENUM_VALUE.contains(method_lc),
+        FrameworkKind::EnumTypeStatic => ENUM_TYPE_STATIC.contains(method_lc),
         // Unknown/programmatic type — not in catalog.
         FrameworkKind::Other(_) => false,
     }
@@ -643,5 +683,54 @@ mod tests {
             total >= 200,
             "catalog must have ≥200 entries across key sets; got {total}"
         );
+    }
+
+    // -- Enum catalog split (Task 4, receiver-closure-and-arg-increments plan) --
+
+    /// VALUE-instance surface: AsInteger/Names/Ordinals resolve; FromInteger
+    /// is ABSENT (MS Learn: static-only — see `ENUM_VALUE`'s doc).
+    #[test]
+    fn enum_value_surface_has_asinteger_names_ordinals_not_frominteger() {
+        let kind = FrameworkKind::Enum;
+        assert!(member_builtin(
+            MemberCatalogKind::Framework(&kind),
+            "asinteger"
+        ));
+        assert!(member_builtin(MemberCatalogKind::Framework(&kind), "names"));
+        assert!(member_builtin(
+            MemberCatalogKind::Framework(&kind),
+            "ordinals"
+        ));
+        assert!(!member_builtin(
+            MemberCatalogKind::Framework(&kind),
+            "frominteger"
+        ));
+    }
+
+    /// TYPE-static surface: FromInteger/Names/Ordinals resolve; AsInteger is
+    /// ABSENT (round-2 closer, BINDING — see `ENUM_TYPE_STATIC`'s doc).
+    #[test]
+    fn enum_type_static_surface_has_frominteger_names_ordinals_not_asinteger() {
+        let kind = FrameworkKind::EnumTypeStatic;
+        assert!(member_builtin(
+            MemberCatalogKind::Framework(&kind),
+            "frominteger"
+        ));
+        assert!(member_builtin(MemberCatalogKind::Framework(&kind), "names"));
+        assert!(member_builtin(
+            MemberCatalogKind::Framework(&kind),
+            "ordinals"
+        ));
+        assert!(!member_builtin(
+            MemberCatalogKind::Framework(&kind),
+            "asinteger"
+        ));
+    }
+
+    #[test]
+    fn enum_type_static_builtin_id_format() {
+        let kind = FrameworkKind::EnumTypeStatic;
+        let id = member_builtin_id(MemberCatalogKind::Framework(&kind), "frominteger").unwrap();
+        assert_eq!(id.0, "EnumTypeStatic::frominteger");
     }
 }

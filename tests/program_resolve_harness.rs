@@ -1942,12 +1942,49 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // further ahead of the retired reference). See `ambiguous_resolved`'s
     // ratchet below for the SIBLING #9/#10 flip (13→11) this same task
     // produced in a disjoint histogram bucket.
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 4
+    // — enum-shape receivers + member-field arg dispatch + comment-aware
+    // with scan): 0.072% → 0.05%, measured 0.0497% [9/18104=0.0004971].
+    // `CompoundReceiver` 1→0 (the (D) enum-value-literal-chain site,
+    // `EMailLog."Linked to Table"::Customer.AsInteger()` in `Codeunit
+    // 6175403 "CDO Auto-Send Log Runner"` line 38, now resolves via the new
+    // `QualifiedEnum` receiver arm's VALUE-instance branch). `UntrackedReceiver`
+    // 4→1 (-3): the 2 `Enum::"Type".Ordinals()` static enum-type-reference
+    // sites (category F, `Codeunit 6175279 "CDO Module Manager"` line 28 +
+    // `Codeunit 6175317 "CDO Core Event Handler"` line 26) resolve via the
+    // new `QualifiedEnum` receiver arm's TYPE-static branch
+    // (`ReceiverType::EnumTypeStatic`, existence-checked against the real
+    // `Enum "CDO Module Type"` object); the bare enum-type-name receiver
+    // `"CDO Send on Posting".FromInteger(...)` (category G, `Codeunit
+    // 6175288 "CDO Data Upgrade"` line 625) resolves via the new Step 4b
+    // bare-enum-type-name gate (unique `Enum "CDO Send on Posting"` match,
+    // zero same-name non-Enum objects anywhere, no routine/value-symbol
+    // shadow). The residual `UntrackedReceiver`=1 is the HONEST Page-gap
+    // (`"View (Blob)".CreateInStream(...)` in
+    // `.dependencies/CDO/Page/CDOPageDefaultFilters.Page.al` line 88 —
+    // Step 3a is Table/TableExtension-only by design, explicitly out of this
+    // plan's scope). `BuiltinPrecedenceCollision` stays 1;
+    // `MemberNotFound` stays 7 (the honest eCandidates absences).
+    // `unknownByReason`={UntrackedReceiver: 1, BuiltinPrecedenceCollision: 1,
+    // MemberNotFound: 7}, sum==9 (`CompoundReceiver` no longer appears —
+    // zero sites). `genuine_wrong` stays 0
+    // (`cdo_genuine_wrong_is_precedence_adjudicated`, re-run and green); the
+    // L3 semantic audit stays clean (`cdo_l3_semantic_audit_no_fresh_wrong`,
+    // re-run and green — all 4 newly-resolved sites' frozen L3 golden was
+    // already empty for them). See `ambiguous_resolved`'s ratchet below for
+    // the 4 SIBLING member-field-arg + with-scan flips (11→7) this same task
+    // produced in a disjoint histogram bucket, each individually adjudicated
+    // compiler-correct against real CDO field declarations (see that
+    // ratchet's comment).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.000719,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.000719 \
+        primary_rate <= 0.000498,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.000498 \
          (recorded 2026-07-04 post receiver-closure-and-arg-increments plan \
-         Task 3: 0.0718% [13/18104=0.0007181], named-return-value bindings + \
+         Task 4: 0.0497% [9/18104=0.0004971], enum-shape receivers + \
+         member-field arg dispatch + comment-aware with scan; was 0.072% \
+         [13/18104=0.0007181] post Task 3, named-return-value bindings + \
          implicit-self table fields; was 0.15% [27/18104=0.0014914] post \
          Task 2, parens-optional zero-arg framework members + \
          ErrorInfo.CustomDimensions rows; was 0.22% \
@@ -2171,15 +2208,23 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // ErrorInfo.CustomDimensions sites resolved, `unknownByReason`=
     // {CompoundReceiver: 1, UntrackedReceiver: 18,
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==27).
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 4
+    // — enum-shape receivers): 27→9 — see the rate-ceiling comment above for
+    // the full delta and adjudication (the (D)/(F)/(G) enum-shape sites all
+    // resolve, `unknownByReason`={UntrackedReceiver: 1,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==9 —
+    // `CompoundReceiver` no longer appears).
     assert!(
-        ph.unknown <= 27,
-        "primary unknown count {} exceeds ceiling 27 (recorded 2026-07-04 \
-         post receiver-closure-and-arg-increments plan Task 2: 27, \
-         parens-optional zero-arg framework members + \
-         ErrorInfo.CustomDimensions rows; was 40 post Task 1, CurrPage \
-         UserControl / direct-var ControlAddIn closed-if-known gating; was \
-         77 post argtype-dispatch-and-page-catalog Task 1, the Page/Report \
-         instance-catalog completion; was 95 post \
+        ph.unknown <= 9,
+        "primary unknown count {} exceeds ceiling 9 (recorded 2026-07-04 \
+         post receiver-closure-and-arg-increments plan Task 4: 9, \
+         enum-shape receivers + member-field arg dispatch + comment-aware \
+         with scan; was 27 post Task 2, parens-optional zero-arg framework \
+         members + ErrorInfo.CustomDimensions rows; was 40 post Task 1, \
+         CurrPage UserControl / direct-var ControlAddIn closed-if-known \
+         gating; was 77 post argtype-dispatch-and-page-catalog Task 1, the \
+         Page/Report instance-catalog completion; was 95 post \
          sigfp-and-ambiguous-reclassification plan Task 4 — the \
          metric-definition change: 95, the full 56-site same-object \
          OverloadAmbiguous population reclassified AmbiguousResolved; was \
@@ -2248,13 +2293,18 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task
     // 2): 40→27, alongside the primary ceiling above; whole-program
     // `unknown`=27, same value as primary today.
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task
+    // 4): 27→9, alongside the primary ceiling above; whole-program
+    // `unknown`=9, same value as primary today.
     assert!(
-        h.unknown <= 27,
-        "whole-program unknown count {} exceeds ceiling 27 (recorded \
-         2026-07-04 post receiver-closure-and-arg-increments plan Task 2: 27, \
-         parens-optional zero-arg framework members + \
-         ErrorInfo.CustomDimensions rows; was 40 post Task 1, CurrPage \
-         UserControl / direct-var ControlAddIn closed-if-known \
+        h.unknown <= 9,
+        "whole-program unknown count {} exceeds ceiling 9 (recorded \
+         2026-07-04 post receiver-closure-and-arg-increments plan Task 4: 9, \
+         enum-shape receivers + member-field arg dispatch + comment-aware \
+         with scan; was 27 post Task 2, parens-optional zero-arg framework \
+         members + ErrorInfo.CustomDimensions rows; was 40 post Task 1, \
+         CurrPage UserControl / direct-var ControlAddIn closed-if-known \
          gating; was 77 post argtype-dispatch-and-page-catalog Task 1; was 95 \
          post sigfp-and-ambiguous-reclassification plan Task 4 — see the \
          primary-scoped ceiling comment above for the full history and \
@@ -2379,20 +2429,89 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // bucket, exactly like the Task-2-review-fix precedent above) —
     // `genuine_wrong` stays 0, the L3 semantic audit stays clean (both
     // re-run and green on this exact CDO snapshot).
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 4
+    // — member-field arg dispatch + comment-aware with scan): 11 -> 7 (4 of
+    // the 45 undecided sites become confident picks, 45->49 — reproduced via
+    // a `git stash`-isolated diff of `task2_dump_argtype_dispatch_flips_on_cdo`'s
+    // dump before/after this task on the SAME warm CDO snapshot; ZERO
+    // previously-picked site regressed — `comm -23`/`comm -13` on the sorted
+    // `caller/span/target` keys confirmed 45 held byte-identical, only 4
+    // additions). All 4 individually adjudicated against the real CDO field
+    // declarations (source-verified, not merely plausible):
+    //   - `CreateReportUsingTemplateLineReports` (`Codeunit 6175296 "CDO
+    //     E-Mail Template Management"` line 408) calls
+    //     `DOFile.CreateDocumentFromReport(EMailTemplLineReport."Output
+    //     Format", EMailTemplLineReport."Report-ID", ReportLayout,
+    //     EMailTemplLineReport."Report Layout Name",
+    //     EMailTemplLineReport."Report Layout AppID", ...)` against a
+    //     2-overload family differing ONLY in their first param
+    //     (`DocumentType: Integer` vs `OutputFormat: Enum "CDO Report Output
+    //     Format"`) — position 0's field `"Output Format"` IS declared `Enum
+    //     "CDO Report Output Format"` on `Table 6175307 "CDO E-Mail Templ.
+    //     Line Report"` (source-verified, field 253) — the SAME enum object
+    //     the candidate param names, exact Object-identity match, provably
+    //     eliminating the Integer-first-param sibling (disjoint canonical
+    //     families). Positions 1/3/4 (`"Report-ID"`/`"Report Layout
+    //     Name"`/`"Report Layout AppID"`, Integer/Text[250]/Guid
+    //     respectively, source-verified identical on both overloads) are
+    //     non-discriminating but MUST type too (the module doc's "ALL args
+    //     typed" call-level degradation) — the new Member arm supplies
+    //     exactly that.
+    //   - `CreateReportUsingReportSelection` (same codeunit, line 473) calls
+    //     the SAME overload family with `DocumentType: Integer` (a bare local
+    //     var — pre-existing typing, unaffected) discriminating at position
+    //     0, but positions 3/4
+    //     (`EMailTemplateLine."Report Layout Name"`/`"Report Layout
+    //     AppID"`, Text[250]/Guid on `Table 6175284 "CDO E-Mail Template
+    //     Line"`, source-verified identical to the param types) were
+    //     PREVIOUSLY untyped member-field args blocking the whole call —
+    //     the new Member arm unblocks it.
+    //   - `PrintPDFFile`'s own 1-arg overload body (`Page 6175389 "CDO Local
+    //     Print Service Part"` line 225) calls `PrintPDFFile(DOPrintDocument,
+    //     DOPrintDocument.Printername)` against a 2-overload family
+    //     (`DOFile: Record "CDO File"` vs `DOPrintDocument: Record "CDO
+    //     Print document"`, BOTH with `PrinterName: Text` at position 1) —
+    //     position 0 (`DOPrintDocument`, a declared Record var — pre-existing
+    //     typing) already discriminates via Record-object identity;
+    //     `Printername` IS declared `Text[250]` on `CDOPrintdocument.Table.al`
+    //     (source-verified, field 14) — matches `PrinterName: Text` on BOTH
+    //     overloads (non-discriminating, but the new Member arm's typing of
+    //     it is what unblocks the previously-degraded whole call).
+    //   - `UseContiniaAuthorization` (`Codeunit 6175322 "CDO Http
+    //     Management"` line 32) calls `ContiniaOnlineAuth.Authorize(HttpClient,
+    //     false)` — this is NOT a member-field flip at all: `HttpClient` is
+    //     the codeunit's OWN object-level global (bare identifier, ordinary
+    //     pre-existing typing), and this is the RESTORATION the comment-aware
+    //     with-scan fixes — the routine's own leading comment ("...share the
+    //     same \"CDO Http Management\" instance WITH an outside-TryFunction
+    //     warmup call...") contains a standalone "with" that the OLD
+    //     comment-blind scan mis-flagged as `scan_hit=true`, forcing
+    //     `WithState::Unknown` for the whole routine and blocking the
+    //     bare-identifier arg-typing gate; the new comment-aware scan
+    //     correctly excludes it, restoring `WithState::NoWithProven` and
+    //     un-blocking the (already-typeable) `HttpClient` argument. This is
+    //     the SAME site the Task-2-review-fix ratchet (above) originally
+    //     documented losing this exact pick to the comment-blind scan —
+    //     Task 4 is its intended restoration, not a new mechanism.
+    // Every pick is a case a real AL compiler resolves identically —
+    // adjudicated compiler-correct, not a guess. `genuine_wrong` stays 0
+    // (`cdo_genuine_wrong_is_precedence_adjudicated`, re-run and green); the
+    // L3 semantic audit stays clean (`cdo_l3_semantic_audit_no_fresh_wrong`,
+    // re-run and green).
     assert_eq!(
-        ph.ambiguous_resolved, 11,
+        ph.ambiguous_resolved, 7,
         "primary ambiguousResolved count {} != the recorded 2026-07-04 value \
-         11 (Task 3 — the #9/#10 named-return-binding arg-typing flip, \
-         GetJsonAttribute's 3-overload family in Page 6175389 \"CDO Local \
-         Print Service Part\"; investigated + adjudicated compiler-correct — \
-         see the comment above; was 13 post Task 2 review fix, Finding 1) — \
-         investigate before updating this ratchet",
+         7 (Task 4 — 3 member-field-arg flips + the with-scan comment-fix \
+         restoration; see the comment above for the full per-site \
+         adjudication against real CDO field declarations; was 11 post \
+         Task 3) — investigate before updating this ratchet",
         ph.ambiguous_resolved,
     );
     assert_eq!(
-        h.ambiguous_resolved, 11,
+        h.ambiguous_resolved, 7,
         "whole-program ambiguousResolved count {} != the recorded 2026-07-04 \
-         value 11, same value as primary today",
+         value 7, same value as primary today",
         h.ambiguous_resolved,
     );
 
@@ -5468,17 +5587,45 @@ fn ws_overload_enum_discriminator_stays_ambiguous_resolved() {
 }
 
 /// Test 23n (deferred-increment guard): `ws-overload-field-discriminator`'s
-/// `Run(var Rec)` calls `T.P(Rec.Amount)` — a `Rec.Field` member-expression
-/// argument is NOT a bare identifier/literal; stays untyped (deferred —
-/// `Rec.Field` arg typing is a documented future increment). Must stay
-/// `AmbiguousResolved`.
+/// CORRECTED (Task 4, receiver-closure-and-arg-increments plan — a
+/// documented rebaseline, not a regression; renamed per this codebase's M1
+/// convention "rename, don't just flip"): `Run(var Rec)` calls
+/// `T.P(Rec.Amount)` — `Rec.Amount` is now a `Rec.Field` member-expression
+/// arg-typing increment's home turf (`arg_dispatch::type_one_arg`'s new
+/// `Member` arm): `"Amount"` is a real `Integer`-typed field on `"FD Rec"`,
+/// exact-matching `P(N: Integer)` and PROVABLY eliminating `P(S: Text)`
+/// (disjoint canonical families, `same_soft_family` returns false for
+/// integer/text) — exactly what a real AL compiler resolves, unambiguously
+/// (no implicit conversion needed; an exact-type overload always wins). This
+/// fixture pre-dates the increment (comment previously: "stays untyped —
+/// deferred"); the increment landing is the mechanism, this pick is the
+/// expected, adjudicated consequence.
 #[test]
-fn ws_overload_field_discriminator_stays_ambiguous_resolved() {
+fn ws_overload_field_discriminator_picks_integer_overload_via_member_field_arg() {
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/r0-corpus/ws-overload-field-discriminator");
     let report = resolve_full_program(&fixture)
         .expect("resolve_full_program must succeed on ws-overload-field-discriminator");
-    assert_stays_ambiguous_resolved(&report, "run");
+    let edge = &outer_call_edge(&report, "run").edge;
+    assert_eq!(edge.shape, DispatchShape::Exact, "got {:?}", edge.shape);
+    assert_eq!(edge.routes.len(), 1, "got {:?}", edge.routes);
+    let route = &edge.routes[0];
+    assert_eq!(route.evidence, Evidence::Source, "got {route:?}");
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected a Routine target; got {route:?}");
+    };
+    assert_eq!(rid.name_lc, "p");
+    assert_eq!(rid.params_count, 1);
+    let Witness::SourceSpan { ref file, span } = route.witness else {
+        panic!("expected SourceSpan witness; got {route:?}");
+    };
+    let src = std::fs::read_to_string(fixture.join(file)).expect("read witness file");
+    let decl_text = src[span.0 as usize..span.1 as usize].to_ascii_lowercase();
+    assert!(
+        decl_text.contains("integer"),
+        "picked routine must be the Integer overload (Rec.Amount is Integer); \
+         got {decl_text:?}"
+    );
 }
 
 /// Test 23o (deferred-increment guard): `ws-overload-callexpr-discriminator`'s

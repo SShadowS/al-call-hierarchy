@@ -221,8 +221,25 @@ pub enum FrameworkKind {
     System,
     CompanyProperty,
     SessionInformation,
-    // Enum — static enum type used as a receiver (FromInteger / Names / Ordinals)
+    // Enum VALUE-instance surface (Task 4, receiver-closure-and-arg-increments
+    // plan — the SPLIT catalog closer): `AsInteger()`/`Names()`/`Ordinals()`,
+    // callable on an enum VALUE (a declared `Enum "X"`-typed var/field, or an
+    // enum-value-literal chain `X::Y`) — see `ReceiverType::EnumType`.
+    // `FromInteger` moved OFF this surface to `EnumTypeStatic` below (MS Learn
+    // `enum-data-type`: "Static methods: FromInteger(Integer)" vs "Instance
+    // methods: AsInteger()/Names()/Ordinals()" — see `member_catalog.rs`'s
+    // `ENUM_VALUE`/`ENUM_TYPE_STATIC` split for the full citation).
     Enum,
+    /// Enum TYPE-static surface (Task 4): `FromInteger(Integer)`/`Names()`/
+    /// `Ordinals()`, callable on the enum TYPE reference itself — an
+    /// `Enum::"Type"` chain (`ExprKind::QualifiedEnum` whose `enum_type` is the
+    /// literal `Enum` keyword) or a bare (quoted or not) enum-type-name
+    /// receiver that passes the programmatic collision rule — see
+    /// `ReceiverType::EnumTypeStatic`. `AsInteger` is deliberately NOT on this
+    /// surface (round-2 closer, BINDING: "AsInteger is VALUE-surface... not
+    /// TYPE-surface") — there is no specific value to convert via a bare type
+    /// reference.
+    EnumTypeStatic,
     /// Programmatic-construction catch-all for less-common types encountered at
     /// Phase-B dispatch time.  Carries the lowercased first token of the declared
     /// type string.
@@ -263,8 +280,26 @@ pub enum ReceiverType {
     },
     /// An `Interface IFoo` receiver — Phase B fans out to every implementer.
     Interface { name_lc: String },
-    /// An `Enum "Color"` receiver — enum statics (FromInteger/Names/Ordinals).
+    /// A declared `Enum "Color"`-typed VALUE (a var/field), OR an enum-value-
+    /// literal chain (`X::Y` — `ExprKind::QualifiedEnum` whose `enum_type` is
+    /// NOT the literal `Enum` keyword) — the VALUE-instance surface
+    /// (`AsInteger`/`Names`/`Ordinals`; see `FrameworkKind::Enum`).  `name_lc`
+    /// is carried for parity with the declared-type case but is NOT consulted
+    /// by dispatch (every arm matches `{ .. }`) — the VALUE-instance catalog
+    /// applies uniformly regardless of which enum's value this is.
     EnumType { name_lc: String },
+    /// The enum TYPE reference itself, TASK 4 (receiver-closure-and-arg-
+    /// increments plan) — `Enum::"Type"` (an `ExprKind::QualifiedEnum` whose
+    /// `enum_type` derefs to the literal `Enum` keyword identifier) or a bare
+    /// (quoted or not) enum-type-name receiver that passed the programmatic
+    /// collision rule (`infer_receiver_type`'s Step 4b). Dispatches via the
+    /// TYPE-static catalog (`FrameworkKind::EnumTypeStatic`) — a DISTINCT
+    /// surface from `EnumType` above: `FromInteger`/`Names`/`Ordinals`, never
+    /// `AsInteger`. `name_lc` is the enum's declared name, lowercased — unlike
+    /// `EnumType`, this one WAS existence-checked (`ObjectKind::Enum`
+    /// resolved uniquely) before construction, since a raw quoted string here
+    /// has no parser-level type guarantee the declared-var case enjoys.
+    EnumTypeStatic { name_lc: String },
     /// A `ControlAddIn "Foo"` receiver — either a direct-var declaration
     /// (`var X: ControlAddIn "Foo"`) or a `CurrPage.<usercontrol>` reference
     /// (receiver-closure plan, Task 1). `name_lc` is the declared addin type
@@ -934,6 +969,56 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
+    // Step 4b — bare enum-type-name receiver (Task 4, receiver-closure-and-
+    // arg-increments plan — site (G): `"CDO Send on Posting".FromInteger(...)`).
+    //
+    // AL lets an Enum TYPE be referenced by its bare name (quoted or not, no
+    // `Enum::` prefix) as a receiver for the TYPE-static surface
+    // (`FromInteger`/`Names`/`Ordinals`) — but UNLIKE `Enum::"Type"`
+    // (`infer_receiver_type_for_expr`'s `QualifiedEnum` arm, unambiguous by
+    // construction: `Enum::` is reserved grammar, no variable/field/routine
+    // could ever be named that), a BARE name is syntactically identical to a
+    // var/field/routine reference. Steps 2/3a above already prove there is no
+    // param/local/named-return/global/field shadow for `receiver_lc` (a hit
+    // there would have returned already) — this step adds the two checks
+    // Steps 2/3a do NOT cover: a same-named ROUTINE reachable via a
+    // parens-less bare call, and the programmatic Enum-name collision rule.
+    //
+    // Gate (round-2 closer, BINDING — ALL must hold, fail-closed):
+    // 1. Exactly ONE `Enum` object resolves to this name in `from_object`'s
+    //    dependency closure (`ResolveIndex::resolve_object_ref`, the SAME
+    //    fail-closed primitive `infer_receiver_type_for_expr`'s `Enum::"Type"`
+    //    arm uses).
+    // 2. Zero objects of ANY OTHER kind share the identical normalized name,
+    //    ANYWHERE in the whole graph (`enum_type_name_collision_free` —
+    //    deliberately NOT closure-scoped, per the round-2 closer's literal
+    //    "over the whole object index": a same-name Table in an unrelated app
+    //    is still a real naming collision this engine has no compiler-level
+    //    disambiguation for, so it must decline rather than assume the Enum
+    //    reading).
+    // 3. No same-named routine reachable via a parens-less bare call
+    //    (`object_scope_has_bare_routine_shadow` — mirrors Step 3a's
+    //    `table_scope_has_routine` precedent, generalized to every object
+    //    kind since a routine-name shadow is not table-specific).
+    // -----------------------------------------------------------------------
+
+    if is_atomic_receiver_token(receiver_lc) {
+        let name_raw = unquote_identifier(receiver_lc);
+        let name_lc = name_raw.to_ascii_lowercase();
+        let object_ref = ObjectRef::Name {
+            raw: name_raw,
+            normalized_lc: name_lc.clone(),
+        };
+        if let ObjectRefResolution::Unique(_) =
+            index.resolve_object_ref(graph, from_object.id.clone(), ObjectKind::Enum, &object_ref)
+            && enum_type_name_collision_free(&name_lc, graph)
+            && !object_scope_has_bare_routine_shadow(from_object, &name_lc, graph, index)
+        {
+            return ReceiverType::EnumTypeStatic { name_lc };
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Step 5 — compound call-result receiver (`Func().Method()`, Task 3).
     //
     // Only engages when BOTH `receiver_expr` (the parsed receiver node, Task
@@ -998,6 +1083,60 @@ pub fn infer_receiver_type(
     // -----------------------------------------------------------------------
 
     ReceiverType::Unknown
+}
+
+/// The programmatic Enum collision rule (Task 4, receiver-closure-and-arg-
+/// increments plan, round-2 closer — BINDING: `same_normalized_name &&
+/// object_kind != Enum` over the WHOLE object index, never a hardcoded kind
+/// subset). Returns `true` when NO object of any non-`Enum` kind anywhere in
+/// `graph.objects` shares `name_lc` — i.e. it is safe to interpret a bare
+/// name as the enum TYPE reference. Deliberately whole-graph, not
+/// closure-scoped: a same-name Table in an app `from_object` doesn't even
+/// depend on is still a genuine naming collision this engine cannot resolve
+/// the real AL compiler's disambiguation for, so it must decline rather than
+/// assume the Enum reading.
+fn enum_type_name_collision_free(name_lc: &str, graph: &ProgramGraph) -> bool {
+    !graph
+        .objects
+        .iter()
+        .any(|o| o.id.kind != ObjectKind::Enum && o.name.eq_ignore_ascii_case(name_lc))
+}
+
+/// Whether a same-named ROUTINE is reachable from `from_object` via a
+/// parens-less bare call — the routine-shadow half of Step 4b's gate. A bare
+/// enum-type-name receiver is syntactically identical to a parens-less call
+/// to a same-named procedure (AL's parens-optional rule), so this must
+/// decline exactly like Step 3a's `ResolveIndex::table_scope_has_routine`
+/// precedent for fields — generalized here to every object kind (a routine
+/// shadow is not table-specific the way a FIELD shadow is): for
+/// Table/TableExtension, mirrors `table_scope_has_routine`'s base+extension
+/// visibility-scoped search; for every other object kind, checks the
+/// object's OWN declared routines directly (`ResolveIndex::routines_in_object`).
+fn object_scope_has_bare_routine_shadow(
+    from_object: &ObjectNode,
+    name_lc: &str,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> bool {
+    match from_object.id.kind {
+        ObjectKind::Table => {
+            index.table_scope_has_routine(graph, from_object, &from_object.id, name_lc)
+        }
+        ObjectKind::TableExtension => {
+            match resolve_tableext_base_table(from_object, graph, index) {
+                Some(table_id) => {
+                    index.table_scope_has_routine(graph, from_object, &table_id, name_lc)
+                }
+                // Base table unresolvable: conservative — cannot PROVE no
+                // routine shadow exists, so treat as a shadow (decline the
+                // whole Step 4b gate) rather than risk a wrong pick.
+                None => true,
+            }
+        }
+        _ => !index
+            .routines_in_object(&from_object.id, name_lc)
+            .is_empty(),
+    }
 }
 
 /// Step 6's AST-native entry point: type an arbitrary `Expr` node directly
@@ -1149,6 +1288,59 @@ fn infer_receiver_type_for_expr(
                 ReceiverType::Unknown
             }
         }
+        // `Enum::Value` / `Enum::"Type"` (Task 4, receiver-closure-and-arg-
+        // increments plan — sites (D)/(F)). By AL grammar construction
+        // (`qualified_enum_value` in tree-sitter-al's grammar.js), the ONLY
+        // legitimate uses of `X::Y` outside the dedicated `database_reference`
+        // rule (Database/Page/Report/Codeunit/XmlPort/Query — a SEPARATE
+        // grammar rule) are: (a) `Enum::"Type"`, the TYPE reference itself
+        // (`enum_type` derefs to the literal `Enum` keyword — lowered as
+        // `ExprKind::Identifier("Enum")` per `RawKind::KeywordIdentifier`'s
+        // lowering), and (b) an enum VALUE literal (`enum_type` is anything
+        // else — a field/member chain, a nested `QualifiedEnum` for
+        // `Enum::"Type"::"Value"`, a subscript/call-result base, …). This is a
+        // GRAMMAR-level guarantee, not a probabilistic guess — every other
+        // `enum_type` shape reaching here is, by construction, enum-VALUE-typed.
+        ExprKind::QualifiedEnum { enum_type, value } => {
+            let is_enum_keyword = matches!(
+                &file.ir.expr(*enum_type).kind,
+                ExprKind::Identifier(n) if n.eq_ignore_ascii_case("enum")
+            );
+            if is_enum_keyword {
+                // `Enum::"Type"` — the TYPE-static receiver. Fail-closed
+                // existence check (task brief: "resolve the enum object,
+                // fail-closed") — `value` is a raw string sliced from source
+                // with no parser-level guarantee it names a real Enum object
+                // (unlike a declared var's type text, which the AL compiler
+                // itself already validated), so a typo'd/renamed enum name
+                // must decline here, never be trusted blind.
+                let name_raw = unquote_identifier(value);
+                let name_lc = name_raw.to_ascii_lowercase();
+                let object_ref = ObjectRef::Name {
+                    raw: name_raw,
+                    normalized_lc: name_lc.clone(),
+                };
+                return match index.resolve_object_ref(
+                    graph,
+                    from_object.id.clone(),
+                    ObjectKind::Enum,
+                    &object_ref,
+                ) {
+                    ObjectRefResolution::Unique(_) => ReceiverType::EnumTypeStatic { name_lc },
+                    ObjectRefResolution::Ambiguous
+                    | ObjectRefResolution::OutOfClosure
+                    | ObjectRefResolution::Unresolved => ReceiverType::Unknown,
+                };
+            }
+            // Any other `X::Value` shape: an enum VALUE literal by grammar
+            // construction (see this arm's doc) — the VALUE-instance surface.
+            // `name_lc` is not consulted by dispatch (every `EnumType` arm
+            // matches `{ .. }`), so no further typing of `enum_type` itself is
+            // needed or attempted here.
+            ReceiverType::EnumType {
+                name_lc: String::new(),
+            }
+        }
         _ => ReceiverType::Unknown,
     }
 }
@@ -1287,6 +1479,25 @@ fn infer_compound_member_receiver(
     // `EnumType` base has no source/ABI procedures to type-query either, so a
     // table miss never falls through to the cross-object-chain arm below.
     if let ReceiverType::EnumType { .. } = &base_ty {
+        if let Some(returned) = zero_arg_aware_lookup(is_method, arity, |m, a| {
+            enum_chain_return_kind(&member_lc, m, a)
+        }) {
+            return ReceiverType::Framework(returned);
+        }
+        return ReceiverType::Unknown;
+    }
+
+    // EnumTypeStatic-as-chain-base (Task 4, receiver-closure-and-arg-
+    // increments plan): `Ordinals()`/`Names()` invoked on the enum TYPE
+    // reference itself (`Enum::"Type".Ordinals()`, real CDO sites (F)) return
+    // the SAME `List of [...]` shape as the VALUE-instance chain just above —
+    // reuses the identical `enum_chain_return_kind` table (both surfaces agree
+    // on Ordinals/Names; only `AsInteger`/`FromInteger` differ between the two
+    // — see `member_catalog.rs`'s split). `FromInteger`'s own chain-return
+    // (the type itself) stays OUT of this table by the SAME deliberate
+    // exclusion `enum_chain_return_kind`'s doc already documents for the
+    // VALUE-instance case — no measured CDO need to chain PAST it.
+    if let ReceiverType::EnumTypeStatic { .. } = &base_ty {
         if let Some(returned) = zero_arg_aware_lookup(is_method, arity, |m, a| {
             enum_chain_return_kind(&member_lc, m, a)
         }) {
@@ -1603,7 +1814,10 @@ fn receiver_from_routine_node(
 /// `graph.routines.binary_search_by(|probe| probe.id.cmp(rid))` already uses
 /// throughout `resolver.rs`, replacing an O(n) linear `.find` (Task 3 review
 /// finding 2).
-fn object_by_id<'g>(graph: &'g ProgramGraph, oid: &ObjectNodeId) -> Option<&'g ObjectNode> {
+pub(crate) fn object_by_id<'g>(
+    graph: &'g ProgramGraph,
+    oid: &ObjectNodeId,
+) -> Option<&'g ObjectNode> {
     graph
         .objects
         .binary_search_by(|probe| probe.id.cmp(oid))
@@ -6862,6 +7076,361 @@ codeunit 50100 "C"
             None,
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::List));
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 4 (receiver-closure-and-arg-increments plan): enum-shape receivers
+    // — sites (D)/(F)/(G).
+    // -----------------------------------------------------------------------
+
+    /// Extends `build_test_graph`'s graph with extra objects (Task 4's
+    /// enum-shape fixtures need a real `Enum` object, and sometimes a
+    /// same-name collision object, the base fixture doesn't carry) —
+    /// re-sorts + rebuilds `obj_index` so the additions are visible to every
+    /// graph-based lookup exactly like the base three.
+    fn build_test_graph_with(extra: Vec<ObjectNode>) -> (ProgramGraph, AppRef) {
+        let (mut graph, app) = build_test_graph();
+        graph.objects.extend(extra);
+        graph.objects.sort_by(|a, b| a.id.cmp(&b.id));
+        graph.obj_index = ObjectIndex::build(&graph.objects);
+        (graph, app)
+    }
+
+    /// POSITIVE, site (D) shape: `EMailLog."Linked to Table"::Customer.AsInteger()`
+    /// — an enum-VALUE-literal chain (`ExprKind::QualifiedEnum` whose
+    /// `enum_type` is the field-access `EMailLog."Linked to Table"`, NOT the
+    /// literal `Enum` keyword). By grammar construction this is always
+    /// enum-VALUE-typed, regardless of whether the field's declared type can
+    /// be further resolved — `infer_receiver_type_for_expr`'s new
+    /// `QualifiedEnum` arm returns the VALUE-instance `EnumType` unconditionally
+    /// for this shape.
+    #[test]
+    fn qualified_enum_value_literal_chain_resolves_enum_type() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        EMailLog: Record Customer;
+        N: Integer;
+    begin
+        N := EMailLog."Linked to Table"::Customer.AsInteger();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "asinteger");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "emaillog.\"linked to table\"::customer"
+        );
+
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .expect("Customer table must exist in build_test_graph");
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "linked to table".to_string(),
+            type_text: "Enum \"Linked To Table Type\"".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("EMailLog", "Record Customer"),
+            var_decl("N", "Integer"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::EnumType {
+                name_lc: String::new()
+            }
+        );
+    }
+
+    /// POSITIVE, site (F) shape: `Enum::"CDO Module Type".Ordinals()` — the
+    /// `Enum::"Type"` TYPE-reference receiver, existence-checked against a
+    /// real `Enum` object in the graph.
+    #[test]
+    fn qualified_enum_type_reference_resolves_enum_type_static() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        N: Integer;
+    begin
+        N := Enum::"CDO Module Type".Ordinals().Count();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "ordinals");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "enum::\"cdo module type\""
+        );
+
+        let (graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "CDO Module Type",
+            None,
+            None,
+        )]);
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("N", "Integer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::EnumTypeStatic {
+                name_lc: "cdo module type".to_string()
+            }
+        );
+    }
+
+    /// NEGATIVE, site (F) shape: `Enum::"No Such Enum".Ordinals()` where NO
+    /// `Enum` object anywhere matches the name — the fail-closed existence
+    /// check declines rather than trust the raw quoted string blind.
+    #[test]
+    fn qualified_enum_type_reference_unresolvable_enum_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        N: Integer;
+    begin
+        N := Enum::"No Such Enum".Ordinals().Count();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "ordinals");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("N", "Integer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// POSITIVE, site (G) shape: a bare QUOTED enum-type-name receiver,
+    /// `"CDO Send on Posting".FromInteger(...)` — unique Enum match, zero
+    /// same-name objects of any other kind, no routine shadow. Reduces to a
+    /// single atomic token, so this is tested directly through
+    /// `infer_receiver_type` with no AST/`receiver_expr` needed at all.
+    #[test]
+    fn bare_quoted_enum_type_name_resolves_enum_type_static_when_unique_and_unshadowed() {
+        let (graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "CDO Send on Posting",
+            None,
+            None,
+        )]);
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            "\"cdo send on posting\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::EnumTypeStatic {
+                name_lc: "cdo send on posting".to_string()
+            }
+        );
+    }
+
+    /// POSITIVE, site (G) shape with an UNQUOTED bare name (no spaces) — the
+    /// gate accepts either spelling identically.
+    #[test]
+    fn bare_unquoted_enum_type_name_resolves_enum_type_static() {
+        let (graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "SendStatus",
+            None,
+            None,
+        )]);
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            "sendstatus",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::EnumTypeStatic {
+                name_lc: "sendstatus".to_string()
+            }
+        );
+    }
+
+    /// NEGATIVE (collision rule): a same-named TABLE exists elsewhere in the
+    /// whole object index — the programmatic collision rule
+    /// (`same_normalized_name && kind != Enum`) declines even though the Enum
+    /// itself resolves uniquely too. Proves the rule is whole-index, not
+    /// closure-scoped or kind-hardcoded — the colliding Table lives in a
+    /// DIFFERENT app that `from_object`'s app does not even depend on.
+    #[test]
+    fn bare_enum_type_name_collision_with_other_kind_declines() {
+        let mut apps = crate::program::node::AppRegistry::default();
+        let enum_app = apps.intern(&AppId {
+            guid: String::new(),
+            name: "EnumApp".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        });
+        let stranger_app = apps.intern(&AppId {
+            guid: String::new(),
+            name: "StrangerApp".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        });
+        let (mut graph, app) = build_test_graph_with(vec![make_object_node(
+            enum_app,
+            ObjectKind::Enum,
+            "Ambiguous Name",
+            None,
+            None,
+        )]);
+        graph.apps = apps;
+        graph.objects.push(make_object_node(
+            stranger_app,
+            ObjectKind::Table,
+            "Ambiguous Name",
+            None,
+            None,
+        ));
+        graph.objects.sort_by(|a, b| a.id.cmp(&b.id));
+        graph.obj_index = ObjectIndex::build(&graph.objects);
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            "\"ambiguous name\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE (routine shadow): the SAME name is ALSO a declared procedure
+    /// on `from_object` — a parens-less bare call to that routine is exactly
+    /// as syntactically plausible as the enum-type reading, so this must
+    /// decline rather than guess.
+    #[test]
+    fn bare_enum_type_name_routine_shadow_declines() {
+        let (mut graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "Send Status",
+            None,
+            None,
+        )]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        graph
+            .routines
+            .push(make_routine_node(from_obj.id.clone(), "Send Status"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+
+        let result = infer_receiver_type(
+            "\"send status\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE (local shadow, defense-in-depth): a LOCAL var of the identical
+    /// name already shadows via Step 2, long before Step 4b ever runs — proves
+    /// the ordering holds end-to-end (not merely by code-review inspection).
+    #[test]
+    fn bare_enum_type_name_local_var_shadow_declines() {
+        let (graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "MyStatus",
+            None,
+            None,
+        )]);
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![var_decl("MyStatus", "Integer")]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            "mystatus",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(result, ReceiverType::Primitive);
     }
 
     // -----------------------------------------------------------------------

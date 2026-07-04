@@ -8,6 +8,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Enum-shape receivers, member-field arg dispatch, comment-aware with
+  scan: real-`unknown` 0.072%→0.05%, `ambiguousResolved` 11→7
+  (receiver-closure-and-arg-increments plan, Task 4).** Closes the 4-site
+  (D)/(F)/(G) enum-shape receiver population, adds member-field argument
+  typing, and fixes a comment-blindness bug in the `with`-scope raw-text
+  scan:
+  - **Split enum catalogs (round-2 closer, BINDING):** a new
+    `FrameworkKind::EnumTypeStatic` + `ReceiverType::EnumTypeStatic{name_lc}`
+    represent the enum TYPE reference itself (`Enum::"Type"` / a bare
+    enum-type-name receiver), distinct from the existing `EnumType`
+    (a declared `Enum "X"`-typed VALUE, or an enum-value-literal chain).
+    Two closed catalogs, per MS Learn `enum-data-type` (fetched 2026-07-04):
+    VALUE-instance = `AsInteger`/`Names`/`Ordinals` (`FromInteger` removed —
+    it was WRONGLY reachable from a value receiver pre-fix, a real
+    correctness bug); TYPE-static = `FromInteger`/`Names`/`Ordinals`
+    (`AsInteger` excluded — no value to convert via a bare type reference).
+  - **Receiver arms:** `infer_receiver_type_for_expr` gains an
+    `ExprKind::QualifiedEnum` arm — `Enum::"Type"` (fail-closed existence
+    check against a real `Enum` object) → `EnumTypeStatic`; any other
+    `X::Value` shape (grammar-guaranteed enum-value-literal, e.g.
+    `Rec."Field"::Value`) → `EnumType`. `infer_receiver_type` gains a new
+    Step 4b: a bare (quoted or not) enum-type-name receiver resolves to
+    `EnumTypeStatic` ONLY when the programmatic collision rule passes
+    (`same_normalized_name && kind != Enum`, checked over the WHOLE object
+    index, never closure-scoped) AND no routine shadow exists
+    (`object_scope_has_bare_routine_shadow`, generalizing the existing
+    `table_scope_has_routine` precedent to every object kind).
+  - **Member-field arg typing:** `arg_dispatch::type_one_arg` gains an
+    `ExprKind::Member` arm — `Foo(Rec.Field)` / `Foo(Rec."Quoted Field")`
+    types via the SAME `field_in_table` + `table_scope_has_routine`
+    machinery `receiver.rs`'s record-field arm uses, gated on
+    `WithState::NoWithProven`, a bare (not multi-hop) declared-var
+    (not implicit-Rec) Record base. `var_passable: false` HARDCODED (AL
+    requires a variable for a `var` argument — a field expression never
+    qualifies) — a fixture proves this ELIMINATES a sibling `var`-mode
+    overload candidate that would otherwise degrade the pick.
+  - **Comment-aware with-scan:** `extract::routine_has_with_token` rewritten
+    from a raw substring search into a lexer-lite scanner that excludes
+    `// ...` line comments, non-nested `/* ... */` block comments, `'...'`
+    string literals (AL `''` escaping), and `"..."` quoted identifiers
+    (`""` escaping) before checking for a standalone `with` token;
+    unterminated comments/strings/quoted-identifiers conservatively count as
+    a hit (uncertain → conservative, never a false negative). The two-signal
+    AST-depth + raw-text-scan design is unchanged — only the text signal's
+    precision improved.
+  - **CDO gate:** primary real-`unknown` 13→9 (0.072%→0.0497%
+    [9/18104=0.0004971]); `CompoundReceiver` 1→0 (site D), `UntrackedReceiver`
+    4→1 (sites F×2 + G — the residual 1 is the honest Page-SourceTable
+    implicit-field gap, out of scope by design); `BuiltinPrecedenceCollision`
+    stays 1; `MemberNotFound` stays 7 (honest eCandidates absences).
+    `ambiguousResolved` 11→7: 3 member-field-arg flips
+    (`CreateReportUsingTemplateLineReports`'s `."Output Format"` enum-typed
+    field discriminator + `."Report Layout Name"`/`"AppID"` non-discriminating
+    fields; `CreateReportUsingReportSelection`'s equivalent quoted-field
+    args; `PrintPDFFile`'s own `DOPrintDocument.Printername`) plus the
+    `UseContiniaAuthorization`/`Authorize` restoration (the with-scan
+    comment-blindness fix) — every flip individually adjudicated against
+    real CDO field declarations (source-verified, not merely plausible; see
+    the harness ratchet comment and `.superpowers/sdd/task-4-report.md`).
+    `genuine_wrong`=0, L3 semantic audit unchanged. Ratchets re-derived
+    (rate ceiling 0.000719→0.000498, unknown-count ceilings 27→9,
+    ambiguousResolved 11→7), dated 2026-07-04.
 - **Named-return-value bindings + implicit-self table fields — receiver and
   arg typing: real-`unknown` 0.15%→0.072%, `UntrackedReceiver` 18→4,
   `ambiguousResolved` 13→11 (receiver-closure-and-arg-increments plan,

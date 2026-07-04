@@ -2230,9 +2230,24 @@ pub(crate) fn resolve_member_with_args(
             (DispatchShape::Polymorphic, routes)
         }
         ReceiverType::EnumType { .. } => {
-            // Enum instance statics: AsInteger / FromInteger / Names / Ordinals.
+            // Enum VALUE-instance surface: AsInteger / Names / Ordinals (Task
+            // 4, receiver-closure-and-arg-increments plan — the split-catalog
+            // closer). `FromInteger` is NOT on this surface — see
+            // `member_catalog.rs`'s `ENUM_VALUE`/`ENUM_TYPE_STATIC` split doc.
             if let Some(bid) = member_builtin_id(
                 MemberCatalogKind::Framework(&FrameworkKind::Enum),
+                method_lc,
+            ) {
+                member_catalog_route(bid)
+            } else {
+                member_unknown_route(UnknownReason::CatalogMiss)
+            }
+        }
+        ReceiverType::EnumTypeStatic { .. } => {
+            // Enum TYPE-static surface: FromInteger / Names / Ordinals (Task
+            // 4). `AsInteger` is NOT on this surface (round-2 closer, BINDING).
+            if let Some(bid) = member_builtin_id(
+                MemberCatalogKind::Framework(&FrameworkKind::EnumTypeStatic),
                 method_lc,
             ) {
                 member_catalog_route(bid)
@@ -7475,14 +7490,52 @@ codeunit 50613 "ReportCaller"
         assert_eq!(bid.0, "Enum::asinteger");
     }
 
-    // Test 4: EnumType receiver + `frominteger` → Catalog route Enum::frominteger
+    // Test 4 (CORRECTED, Task 4 — receiver-closure-and-arg-increments plan,
+    // the enum catalog SPLIT): `frominteger` on an EnumType VALUE receiver is
+    // now UNKNOWN, not Catalog. Pre-Task-4, `FromInteger` was wrongly
+    // reachable from a VALUE-instance receiver via the single undifferentiated
+    // `FrameworkKind::Enum` catalog — MS Learn (`enum-data-type`) documents
+    // `FromInteger` as a STATIC method only; this was the exact bug the
+    // round-2 closer's "SPLIT enum catalogs" mandate fixes. The TYPE-static
+    // surface test immediately below covers the (now correctly gated)
+    // positive case.
     #[test]
-    fn resolve_member_enum_frominteger_emits_catalog_route() {
+    fn resolve_member_enum_value_frominteger_is_unknown_not_catalog() {
         use crate::program::resolve::receiver::ReceiverType;
 
         let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::EnumType {
+            name_lc: "myenum".into(),
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "frominteger",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::CatalogMiss)
+        );
+    }
+
+    // Test 4b (Task 4): EnumTypeStatic receiver + `frominteger` → Catalog
+    // route EnumTypeStatic::frominteger — the TYPE-static surface's real home.
+    #[test]
+    fn resolve_member_enum_type_static_frominteger_emits_catalog_route() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::EnumTypeStatic {
             name_lc: "myenum".into(),
         };
         let (shape, routes) = resolve_member(
@@ -7506,7 +7559,50 @@ codeunit 50613 "ReportCaller"
         let RouteTarget::Builtin(ref bid) = routes[0].target else {
             unreachable!()
         };
-        assert_eq!(bid.0, "Enum::frominteger");
+        assert_eq!(bid.0, "EnumTypeStatic::frominteger");
+    }
+
+    // Test 4c (Task 4): EnumTypeStatic receiver + `ordinals`/`names` also
+    // resolve (real CDO shape, `Enum::"Type".Ordinals()`); `asinteger` does
+    // NOT (round-2 closer, BINDING: value-surface only).
+    #[test]
+    fn resolve_member_enum_type_static_ordinals_names_resolve_asinteger_declines() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let receiver = ReceiverType::EnumTypeStatic {
+            name_lc: "myenum".into(),
+        };
+
+        for member in ["ordinals", "names"] {
+            let (shape, routes) =
+                resolve_member(&receiver, member, 0, &from_obj, &graph, &index, &body_map);
+            assert_eq!(shape, DispatchShape::Exact);
+            assert_eq!(routes.len(), 1);
+            assert_eq!(
+                routes[0].evidence,
+                Evidence::Catalog,
+                "{member} must resolve on the TYPE-static surface"
+            );
+        }
+
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "asinteger",
+            0,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::CatalogMiss),
+            "asinteger must NOT resolve on the TYPE-static surface"
+        );
     }
 
     // Test 5: EnumType receiver + unknown method → Unknown

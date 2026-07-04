@@ -181,6 +181,15 @@ pub struct RawSiteV2 {
 /// current site at depth 0, that DISAGREEMENT is treated as `Unknown` (skip)
 /// rather than trusted — a false positive (over-skip) is always safe, a false
 /// negative is fatal.
+///
+/// Task 4 (receiver-closure-and-arg-increments plan) made the raw-text scan
+/// comment/string/quoted-identifier AWARE (see [`routine_has_with_token`]'s
+/// doc) — a `with` token appearing only in a comment (the exact shape that
+/// caused a real CDO false-`Unknown`: `UseContiniaAuthorization`'s leading
+/// comment, see the CDO harness ratchet history) no longer disagrees with the
+/// AST signal. The two-signal ANDed design itself is UNCHANGED — only the
+/// text signal's precision improved; an uncertain (unterminated) comment/
+/// string/quoted-identifier still conservatively counts as a hit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WithState {
     /// Both the AST-depth walk and the raw-text scan agree: this call site is
@@ -433,9 +442,12 @@ struct WithCtx {
     depth: u32,
     /// Whole-routine raw-text scan result, computed ONCE before the walk
     /// starts (see [`routine_has_with_token`]): `true` when the routine's
-    /// source text contains a standalone `with` token anywhere (deliberately
-    /// including inside strings/comments/quoted-identifiers — a
-    /// false-positive-safe over-approximation).
+    /// source text contains a standalone `with` token anywhere OUTSIDE a
+    /// comment/string-literal/quoted-identifier (Task 4, receiver-closure-
+    /// and-arg-increments plan: the scan is comment/string/quoted-identifier
+    /// AWARE — see that function's doc), OR when a comment/string/quoted-
+    /// identifier is itself UNTERMINATED (uncertain -> conservative
+    /// over-approximation, never a false negative).
     scan_hit: bool,
 }
 
@@ -468,29 +480,121 @@ fn is_al_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-/// Conservative whole-routine raw-text scan (ASCII case-insensitive,
-/// word-bounded) for a standalone `with` token anywhere in `routine_span`'s
-/// source text — the redundant safety net [`WithCtx::state`] ANDs with the
-/// AST-depth signal (see [`WithState`]'s doc for why). Deliberately does NOT
-/// exclude string/comment/quoted-identifier text: a `with` token inside a
-/// string literal or comment still trips this (a false positive), which only
-/// makes Step 3 skip MORE — never less. `routine_span` is expected to be a
-/// valid UTF-8 char-boundary byte range (a tree-sitter node's byte span, as
-/// used throughout this module).
+/// Whole-routine raw-text scan (ASCII case-insensitive, word-bounded) for a
+/// standalone `with` token anywhere in `routine_span`'s source text — the
+/// redundant safety net [`WithCtx::state`] ANDs with the AST-depth signal (see
+/// [`WithState`]'s doc for why).
+///
+/// # Comment/string/quoted-identifier aware (Task 4, receiver-closure-and-
+/// arg-increments plan — the round-2 closer, BINDING)
+///
+/// The `AlFile`/`Ir` layer this module otherwise consumes drops comments as
+/// trivia at lowering time (`schema::kind_policy`'s Trivia classification —
+/// they never reach the IR at all), and `AlFile` retains no reference to the
+/// raw tree-sitter tree either (see `al_syntax::ir::AlFile`'s fields) — so
+/// there is no lexer/token layer available at this point; this function is a
+/// hand-rolled LEXER-LITE over the raw bytes, excluding exactly the four AL
+/// lexical shapes that can hide a "with" substring without it being the real
+/// keyword:
+/// - `// ...` line comments (to end of line).
+/// - `/* ... */` block comments — NON-NESTED (AL, like C#, does not nest
+///   block comments; the first `*/` closes it).
+/// - `'...'` string literals, with AL's `''` doubled-quote escape for a
+///   literal `'` inside the string.
+/// - `"..."` quoted identifiers, with the same `""` doubled-quote escape for
+///   a literal `"` inside the name.
+///
+/// A REAL `with` keyword outside all four of these shapes still hits, exactly
+/// as before. **Uncertain → conservative**: an UNTERMINATED comment/string/
+/// quoted-identifier (runs off the end of `routine_span` without its closing
+/// delimiter — malformed input, should not happen for a real parsed routine
+/// span, but this function must not silently under-detect if it does) returns
+/// `true` immediately — the same "a false positive is always safe, a false
+/// negative is fatal" direction the original comment-blind scan relied on,
+/// now scoped to genuinely uncertain cases only rather than every comment.
+///
+/// `routine_span` is expected to be a valid UTF-8 char-boundary byte range (a
+/// tree-sitter node's byte span, as used throughout this module); the scan is
+/// byte-wise (ASCII-focused, mirrors [`is_al_ident_byte`]) — safe over UTF-8
+/// text since none of the delimiter/keyword bytes checked here ever appear as
+/// a continuation byte of a multi-byte UTF-8 sequence.
 fn routine_has_with_token(src: &str, routine_span: std::ops::Range<usize>) -> bool {
     let text = &src[routine_span];
     let bytes = text.as_bytes();
-    if bytes.len() < 4 {
-        return false;
-    }
-    for i in 0..=bytes.len() - 4 {
-        if bytes[i..i + 4].eq_ignore_ascii_case(b"with") {
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        // `// ...` line comment — skip to end of line (or end of text).
+        if bytes[i] == b'/' && i + 1 < len && bytes[i + 1] == b'/' {
+            while i < len && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        // `/* ... */` block comment — non-nested; unterminated -> conservative.
+        if bytes[i] == b'/' && i + 1 < len && bytes[i + 1] == b'*' {
+            let mut j = i + 2;
+            let mut closed = false;
+            while j + 1 < len {
+                if bytes[j] == b'*' && bytes[j + 1] == b'/' {
+                    closed = true;
+                    break;
+                }
+                j += 1;
+            }
+            if !closed {
+                return true; // unterminated -> uncertain -> conservative
+            }
+            i = j + 2;
+            continue;
+        }
+        // `'...'` string literal — AL `''` doubled-quote escape.
+        if bytes[i] == b'\'' {
+            i += 1;
+            loop {
+                if i >= len {
+                    return true; // unterminated -> uncertain -> conservative
+                }
+                if bytes[i] == b'\'' {
+                    if i + 1 < len && bytes[i + 1] == b'\'' {
+                        i += 2; // escaped quote, string continues
+                        continue;
+                    }
+                    i += 1; // real closing quote
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        // `"..."` quoted identifier — same `""` doubled-quote escape.
+        if bytes[i] == b'"' {
+            i += 1;
+            loop {
+                if i >= len {
+                    return true; // unterminated -> uncertain -> conservative
+                }
+                if bytes[i] == b'"' {
+                    if i + 1 < len && bytes[i + 1] == b'"' {
+                        i += 2; // escaped quote, identifier continues
+                        continue;
+                    }
+                    i += 1; // real closing quote
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        // Real code text: the standalone `with` keyword check, unchanged.
+        if i + 4 <= len && bytes[i..i + 4].eq_ignore_ascii_case(b"with") {
             let before_ok = i == 0 || !is_al_ident_byte(bytes[i - 1]);
-            let after_ok = i + 4 == bytes.len() || !is_al_ident_byte(bytes[i + 4]);
+            let after_ok = i + 4 == len || !is_al_ident_byte(bytes[i + 4]);
             if before_ok && after_ok {
                 return true;
             }
         }
+        i += 1;
     }
     false
 }
@@ -1020,5 +1124,154 @@ codeunit 50100 "C"
         assert!(run.iter().any(
             |s| matches!(&s.shape, CalleeShape::Bare { name } if name.eq_ignore_ascii_case("getresponse"))
         ));
+    }
+
+    // -- routine_has_with_token: comment/string/quoted-identifier aware
+    // (Task 4, receiver-closure-and-arg-increments plan) --------------------
+
+    #[test]
+    fn with_token_line_comment_excluded() {
+        let src = "begin\n  // with something\n  X := 1;\nend;";
+        assert!(!routine_has_with_token(src, 0..src.len()));
+    }
+
+    #[test]
+    fn with_token_block_comment_excluded() {
+        let src = "begin\n  /* with something */\n  X := 1;\nend;";
+        assert!(!routine_has_with_token(src, 0..src.len()));
+    }
+
+    #[test]
+    fn with_token_string_literal_excluded() {
+        let src = "begin\n  Msg := 'with something';\nend;";
+        assert!(!routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// AL's `''` doubled-quote escape: the escaped quote must NOT prematurely
+    /// close the string, so the "with" that follows it inside the SAME
+    /// string literal still counts as excluded.
+    #[test]
+    fn with_token_string_escaped_quote_still_excludes_embedded_with() {
+        let src = "begin\n  Msg := 'it''s with you';\nend;";
+        assert!(!routine_has_with_token(src, 0..src.len()));
+    }
+
+    #[test]
+    fn with_token_quoted_identifier_excluded() {
+        // A field/var literally named "with" (quoted identifier), not the
+        // keyword.
+        let src = "begin\n  X := \"with\";\nend;";
+        assert!(!routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// The SAME `""` doubled-quote escape, for a quoted identifier.
+    #[test]
+    fn with_token_quoted_identifier_escaped_quote_still_excludes_embedded_with() {
+        let src = "begin\n  X := \"a \"\"with\"\" b\";\nend;";
+        assert!(!routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// A REAL `with` keyword outside every excluded shape still hits.
+    #[test]
+    fn with_token_real_keyword_still_hits() {
+        let src = "begin\n  with Rec do X := 1;\nend;";
+        assert!(routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// A comment mentioning "with" AND a real `with` statement later in the
+    /// SAME routine — must still hit (the real `with` is the true positive).
+    #[test]
+    fn with_token_comment_and_real_with_both_present_still_hits() {
+        let src = "begin\n  // with something\n  with Rec do X := 1;\nend;";
+        assert!(routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// Uncertain -> conservative: an unterminated block comment must NOT
+    /// silently swallow the rest of the routine — treated as a hit.
+    #[test]
+    fn with_token_unterminated_block_comment_is_conservative() {
+        let src = "begin\n  /* comment never closes";
+        assert!(routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// Uncertain -> conservative: an unterminated string literal likewise
+    /// counts as a hit rather than silently declining to scan the rest.
+    #[test]
+    fn with_token_unterminated_string_is_conservative() {
+        let src = "begin\n  Msg := 'never closes";
+        assert!(routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// Uncertain -> conservative: an unterminated quoted identifier likewise
+    /// counts as a hit.
+    #[test]
+    fn with_token_unterminated_quoted_identifier_is_conservative() {
+        let src = "begin\n  X := \"never closes";
+        assert!(routine_has_with_token(src, 0..src.len()));
+    }
+
+    /// The real CDO regression shape (`UseContiniaAuthorization`, `Codeunit
+    /// 6175322 "CDO Http Management"`, see the CDO harness's ratchet history
+    /// for the Task-2-review-fix that first surfaced this): a routine's
+    /// LEADING COMMENT mentions "with" as a standalone word, but the routine
+    /// has no real `with` block at all — end-to-end through `extract_sites`,
+    /// the comment-aware scan must no longer disagree with the AST-depth
+    /// signal, restoring `WithState::NoWithProven` for calls inside it.
+    #[test]
+    fn comment_with_no_real_with_block_is_no_with_proven_end_to_end() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure UseSomeAuth()
+    var
+        Auth: Codeunit "Auth Helper";
+    begin
+        // Callers running inside a TryFunction must share the same instance
+        // with an outside-TryFunction warmup call so this short-circuit
+        // takes effect.
+        Auth.Authorize(Auth, false);
+    end;
+}
+"#;
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "C.al", &std::collections::HashSet::new());
+        let site = sites
+            .iter()
+            .find(|s| s.caller_routine == "usesomeauth")
+            .expect("must find the Authorize call site");
+        assert_eq!(
+            site.with_state,
+            WithState::NoWithProven,
+            "a 'with' inside a COMMENT must no longer disagree with the \
+             AST-depth signal (fixed comment-blindness — the exact real CDO \
+             shape); got {:?}",
+            site.with_state
+        );
+    }
+
+    /// Control: a REAL `with` block still gates end-to-end (the two-signal
+    /// design is unchanged — only the text signal's precision improved).
+    #[test]
+    fn real_with_block_still_gates_end_to_end() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Item;
+    begin
+        with Rec do
+            Foo();
+    end;
+    procedure Foo() begin end;
+}
+"#;
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "C.al", &std::collections::HashSet::new());
+        let site = sites
+            .iter()
+            .find(|s| matches!(&s.shape, CalleeShape::Bare { name } if name.eq_ignore_ascii_case("foo")))
+            .expect("must find the Foo() call site");
+        assert_eq!(site.with_state, WithState::InsideWith);
     }
 }

@@ -100,7 +100,8 @@ use crate::program::node_extract::ObjectRef;
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 use crate::program::resolve::receiver::{
-    CallerScopeSymbol, ParsedType, caller_scope_symbol, classify_type_text,
+    CallerScopeSymbol, ParsedType, caller_scope_symbol, classify_type_text, object_by_id,
+    unquote_identifier,
 };
 use crate::program::sig_fp::normalize_type_text;
 
@@ -326,6 +327,7 @@ pub(crate) fn type_call_args(
     args.iter()
         .map(|&id| {
             type_one_arg(
+                file,
                 file.ir.expr(id),
                 routine,
                 object_globals,
@@ -338,7 +340,9 @@ pub(crate) fn type_call_args(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)] // 6 pre-existing params + `file` (Task 4, receiver-closure-and-arg-increments plan — the new Member arm needs to deref the base `ExprId`).
 fn type_one_arg(
+    file: &AlFile,
     expr: &Expr,
     routine: &RoutineDecl,
     object_globals: &[VarDecl],
@@ -407,8 +411,83 @@ fn type_one_arg(
             }
             None => ArgDispatchInfo::untyped(),
         },
-        // Deferred (increment-1 scope, module doc): call-result / `Rec.Field`
-        // / `Enum::Value` / any other expression shape stays untyped.
+        // Member-field arg (Task 4, receiver-closure-and-arg-increments plan
+        // — `Foo(Rec.Field)` / `Foo(Rec."Quoted Field")`): types the field's
+        // DECLARED type via the SAME `field_in_table` machinery
+        // `receiver.rs`'s record-field arm uses, gated identically:
+        // - `with`-scope gate (module doc): the base identifier could be
+        //   `with`-rebound, exactly like the bare-identifier arm above.
+        // - Multi-hop guard: `object` must be a BARE Identifier/
+        //   QuotedIdentifier — `Foo(A.B.Field)` (base itself a Member)
+        //   declines, never partially typed.
+        // - The base is resolved via caller-scope-EXACT `caller_scope_symbol`
+        //   ONLY — deliberately NOT the implicit-Rec fallback
+        //   (`receiver.rs`'s Step 3b): an implicit `Rec` with no DECLARED var
+        //   in scope declines here (task brief: "implicit-Rec-without-
+        //   declared-var base" is an explicit decline).
+        // - The base's declared type must classify to `ParsedType::Record`
+        //   and resolve to a real table in `from`'s dependency closure — a
+        //   non-Record base or an unresolvable table declines.
+        // - Routine-shadow guard (mirrors `receiver.rs`'s record-field arm
+        //   EXACTLY): a same-named routine anywhere in the table's
+        //   visibility-scoped surface declines — AL's parens-optional
+        //   zero-arg call makes a bare `Member` structurally ambiguous
+        //   between a field access and a parens-less routine call.
+        // - `var_passable: false` HARDCODED (round-2 closer, BINDING: AL
+        //   requires a VARIABLE for a `var` argument — "A variable is
+        //   required" — `Rec.Amount` cannot bind a `var` parameter; a field
+        //   expression is never itself a variable).
+        ExprKind::Member { object, member, .. } => {
+            if with_state != WithState::NoWithProven {
+                return ArgDispatchInfo::untyped();
+            }
+            let base_name = match &file.ir.expr(*object).kind {
+                ExprKind::Identifier(n) | ExprKind::QuotedIdentifier(n) => n,
+                // Multi-hop base (itself a Member/Call/…) — out of this
+                // increment's scope, decline rather than guess.
+                _ => return ArgDispatchInfo::untyped(),
+            };
+            let CallerScopeSymbol::Found(Some(base_ty_text)) =
+                caller_scope_symbol(base_name, routine, object_globals)
+            else {
+                // NotFound / Found(None) / MalformedDuplicate — includes the
+                // implicit-Rec-without-declared-var case (task brief):
+                // `caller_scope_symbol` never sees the implicit-Rec fallback.
+                return ArgDispatchInfo::untyped();
+            };
+            let ParsedType::Record { table_ref } = classify_type_text(base_ty_text) else {
+                return ArgDispatchInfo::untyped();
+            };
+            let table_id = match index.resolve_object_ref(
+                graph,
+                from.clone(),
+                ObjectKind::Table,
+                &table_ref,
+            ) {
+                ObjectRefResolution::Unique(id) => id,
+                ObjectRefResolution::Ambiguous
+                | ObjectRefResolution::OutOfClosure
+                | ObjectRefResolution::Unresolved => return ArgDispatchInfo::untyped(),
+            };
+            let Some(from_object) = object_by_id(graph, from) else {
+                return ArgDispatchInfo::untyped();
+            };
+            let field_lc = unquote_identifier(member).to_ascii_lowercase();
+            if index.table_scope_has_routine(graph, from_object, &table_id, &field_lc) {
+                return ArgDispatchInfo::untyped();
+            }
+            let Some(field) = index.field_in_table(graph, from_object, &table_id, &field_lc) else {
+                return ArgDispatchInfo::untyped();
+            };
+            ArgDispatchInfo {
+                canonical: dispatch_canonical_type_text(&field.type_text, from, graph, index),
+                exact_text: Some(normalize_type_text(&field.type_text)),
+                literal_kind: None,
+                var_passable: false,
+            }
+        }
+        // Deferred (increment-1 scope, module doc): call-result / `Enum::Value`
+        // / any other expression shape stays untyped.
         _ => ArgDispatchInfo::untyped(),
     }
 }
@@ -1005,6 +1084,19 @@ mod tests {
         }
     }
 
+    /// A minimal empty `AlFile` for `type_one_arg` tests that don't exercise
+    /// the Member arm (Task 4 — `type_one_arg` now takes `file: &AlFile` so
+    /// that arm can dereference the base `ExprId`; every OTHER arm never
+    /// touches `file` at all, so an empty one is behavior-neutral here).
+    fn empty_file() -> AlFile {
+        AlFile {
+            objects: vec![],
+            ir: al_syntax::ir::Ir::new(),
+            issues: vec![],
+            parse_status: al_syntax::ir::ParseStatus::Clean,
+        }
+    }
+
     /// A local var of the same name shadows a same-named global — the
     /// caller-scope lookup must resolve to the LOCAL's declared type, never
     /// fall through to the global.
@@ -1019,6 +1111,7 @@ mod tests {
 
         let e = ident_expr("X");
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &globals,
@@ -1048,6 +1141,7 @@ mod tests {
 
         let e = ident_expr("X");
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &globals,
@@ -1076,6 +1170,7 @@ mod tests {
             origin: test_origin(),
         };
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &[],
@@ -1111,6 +1206,7 @@ mod tests {
 
         let e = ident_expr("SomeField");
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &[],
@@ -1138,7 +1234,16 @@ mod tests {
         let from = test_object_id();
 
         let e = ident_expr("SomeField");
-        let info = type_one_arg(&e, &routine, &[], &from, &graph, &index, WithState::Unknown);
+        let info = type_one_arg(
+            &empty_file(),
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::Unknown,
+        );
         assert_eq!(
             info.canonical, None,
             "the with-detection-signal-disagreement case must also fail \
@@ -1161,6 +1266,7 @@ mod tests {
             origin: test_origin(),
         };
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &[],
@@ -1232,6 +1338,7 @@ mod tests {
 
         let e = ident_expr("ReturnValue");
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &[],
@@ -1268,6 +1375,7 @@ mod tests {
             origin: test_origin(),
         };
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &[],
@@ -1298,6 +1406,7 @@ mod tests {
 
         let e = ident_expr("Ret");
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &globals,
@@ -1328,6 +1437,7 @@ mod tests {
 
         let e = ident_expr("Ret");
         let info = type_one_arg(
+            &empty_file(),
             &e,
             &routine,
             &[],
@@ -1363,6 +1473,7 @@ mod tests {
         // discriminating. Position 1 (`ReturnValue`): typed via the binding.
         let attr_arg = base_arg("text");
         let return_value_arg = type_one_arg(
+            &empty_file(),
             &ident_expr("ReturnValue"),
             &routine,
             &[],
@@ -1400,6 +1511,7 @@ mod tests {
 
         let attr_arg = base_arg("text");
         let return_value_arg = type_one_arg(
+            &empty_file(),
             &ident_expr("ReturnValue"),
             &routine,
             &[],
@@ -1422,6 +1534,362 @@ mod tests {
             pick_candidate(&args, &candidates),
             None,
             "an untyped arg position must degrade the WHOLE call — no pick"
+        );
+    }
+
+    // -- type_one_arg: member-field args (Task 4, receiver-closure-and-arg-
+    // increments plan) -------------------------------------------------------
+
+    /// Builds a graph with one Table (`Customer`, id 18, carrying the given
+    /// field) and one Codeunit (`CallerCu`, id 999) in the SAME app — the
+    /// minimal shape the new Member arm needs (`object_by_id`/
+    /// `field_in_table`/`resolve_object_ref` all require a real graph, unlike
+    /// every OTHER `type_one_arg` arm tested above, which never touched one).
+    fn build_member_arg_graph(
+        field_name_lc: &str,
+        field_type_text: &str,
+    ) -> (ProgramGraph, ObjectNodeId) {
+        use crate::program::graph::ObjectIndex;
+        use crate::program::node_extract::{FieldNode, ObjectNode};
+        use crate::program::topology::DependencyGraph;
+        use crate::snapshot::{AppId, TrustTier};
+
+        let mut apps = crate::program::node::AppRegistry::default();
+        let app = apps.intern(&AppId {
+            guid: String::new(),
+            name: "TestApp".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        });
+        let table = ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind: al_syntax::ir::ObjectKind::Table,
+                key: ObjKey::Id(18),
+            },
+            name: "Customer".to_string(),
+            declared_id: Some(18),
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
+            fields: vec![FieldNode {
+                name_lc: field_name_lc.to_string(),
+                type_text: field_type_text.to_string(),
+            }],
+            dataitems: vec![],
+            parse_incomplete: false,
+        };
+        let caller = ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind: al_syntax::ir::ObjectKind::Codeunit,
+                key: ObjKey::Id(999),
+            },
+            name: "CallerCu".to_string(),
+            declared_id: Some(999),
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::Workspace,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
+            fields: vec![],
+            dataitems: vec![],
+            parse_incomplete: false,
+        };
+        let from_id = caller.id.clone();
+        let mut objects = vec![table, caller];
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology: DependencyGraph::default(),
+            objects,
+            routines: vec![],
+            obj_index,
+            ..Default::default()
+        };
+        (graph, from_id)
+    }
+
+    /// Parses `src`, finds the call site whose raw callee text matches
+    /// `callee_lc` (case-insensitive), and returns the parsed file plus its
+    /// argument `ExprId`s and `WithState` — the real-AST fixture builder
+    /// `type_one_arg`'s Member arm needs (it dereferences `object: ExprId`
+    /// via `file.ir`, unlike every other arm's hand-built `Expr`).
+    fn parse_call_args(
+        src: &str,
+        callee_lc: &str,
+    ) -> (al_syntax::ir::AlFile, Vec<ExprId>, WithState) {
+        use crate::program::resolve::extract::extract_sites;
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "T.al", &std::collections::HashSet::new());
+        let site = sites
+            .iter()
+            .find(|s| s.callee_text.eq_ignore_ascii_case(callee_lc))
+            .unwrap_or_else(|| panic!("no call site with callee {callee_lc:?} found"));
+        (file, site.args.clone(), site.with_state)
+    }
+
+    /// POSITIVE: `Foo(Rec.Blob)` — a bare-var-based member-field arg types via
+    /// the field's declared type, exactly like `receiver.rs`'s record-field
+    /// receiver arm.
+    #[test]
+    fn type_one_arg_member_field_bare_var_resolves_declared_field_type() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Foo(Rec.Blob);
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        assert_eq!(args.len(), 1);
+        assert_eq!(with_state, WithState::NoWithProven);
+
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let mut routine = empty_routine();
+        routine.locals.push(var("Rec", "Record Customer"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("blob".to_string()))
+        );
+        assert!(
+            !info.var_passable,
+            "member-field args are never var-passable (round-2 closer, hardcoded)"
+        );
+    }
+
+    /// POSITIVE: `Foo(X."Quoted Field")` — the quoted-field spelling resolves
+    /// identically to the unquoted one.
+    #[test]
+    fn type_one_arg_member_quoted_field_resolves_declared_field_type() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        X: Record Customer;
+    begin
+        Foo(X."Quoted Field");
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("quoted field", "Text[50]");
+        let index = ResolveIndex::build(&graph);
+        let mut routine = empty_routine();
+        routine.locals.push(var("X", "Record Customer"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("text".to_string()))
+        );
+        assert!(!info.var_passable);
+    }
+
+    /// NEGATIVE: an implicit `Rec` with NO declared var in scope declines —
+    /// this arm deliberately does NOT use `receiver.rs`'s Step 3b implicit-Rec
+    /// identity fallback (task brief: "implicit-Rec-without-declared-var
+    /// base" is an explicit decline).
+    #[test]
+    fn type_one_arg_member_field_implicit_rec_without_declared_var_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    begin
+        Foo(Rec.Blob);
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let routine = empty_routine(); // no `Rec` declared at all
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "an implicit Rec with no DECLARED var in scope must decline"
+        );
+    }
+
+    /// NEGATIVE: a multi-hop base (`A.B.Field`, the base itself a Member) —
+    /// out of this increment's scope, declines rather than partially type.
+    #[test]
+    fn type_one_arg_member_field_multi_hop_base_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Foo(Rec.Something.Blob);
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let mut routine = empty_routine();
+        routine.locals.push(var("Rec", "Record Customer"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a multi-hop base (itself a Member) must decline, never partially type"
+        );
+    }
+
+    /// NEGATIVE: a non-Record base (`SomeText.Blob` where `SomeText: Text`) —
+    /// declines rather than guess at a field on a non-Record type.
+    #[test]
+    fn type_one_arg_member_field_non_record_base_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        SomeText: Text;
+    begin
+        Foo(SomeText.Blob);
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let mut routine = empty_routine();
+        routine.locals.push(var("SomeText", "Text"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a non-Record base must decline, never guess at a field"
+        );
+    }
+
+    /// NEGATIVE: an unresolvable field name (`Rec.NoSuchField`) — the base IS
+    /// a Record, but `field_in_table` misses, so this declines exactly like
+    /// `receiver.rs`'s record-field arm does for the same miss.
+    #[test]
+    fn type_one_arg_member_field_unresolvable_field_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Foo(Rec.NoSuchField);
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let mut routine = empty_routine();
+        routine.locals.push(var("Rec", "Record Customer"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "an unresolvable field name must decline, never guess"
+        );
+    }
+
+    /// THE OVERLOAD FIXTURE (round-2 closer, BINDING): a member-field arg's
+    /// canonical type EXACT-MATCHES a by-value overload while its
+    /// `var_passable: false` ELIMINATES the sibling `var`-mode overload of the
+    /// identical type — proves the hardcoded `false` is load-bearing, not
+    /// inert (a wrong `true` here would make BOTH candidates exact-match,
+    /// degrading this to an unpicked ambiguity instead of a clean pick).
+    #[test]
+    fn pick_candidate_member_field_arg_eliminates_var_param_candidate() {
+        let args = vec![ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Base("text".into())),
+            exact_text: Some("text".into()),
+            literal_kind: None,
+            var_passable: false,
+        }];
+        let candidates = vec![
+            vec![base_param("text", false)], // by-value Text overload
+            vec![base_param("text", true)],  // var Text overload
+        ];
+        assert_eq!(
+            pick_candidate(&args, &candidates),
+            Some(0),
+            "the var Text overload must be ELIMINATED (a member-field expr is \
+             never var-passable) while the by-value Text overload is picked"
         );
     }
 }
