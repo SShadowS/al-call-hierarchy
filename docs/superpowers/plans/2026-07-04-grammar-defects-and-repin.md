@@ -41,7 +41,9 @@
   at minimum). Sufficient to protect THIS engine repin; not claimed as ecosystem-equivalent.
 - **The `# if` route matches the claim (gpt M1):** if the scanner route is taken → horizontal-only skip with boundary
   checks (full whitespace tolerance); if literal variants → the CHANGELOG scopes the claim to exactly the accepted
-  forms (single-space), no over-claiming. Twelfth arc — infrastructure (master `5e4ee0c`, CDO real-unknown 0.0000%,
+  forms (single-space), no over-claiming.
+
+> Context: Twelfth arc — infrastructure (master `5e4ee0c`, CDO real-unknown 0.0000%,
 > ambiguousResolved 0, `recoveredFiles=8` pinned). TWO REPOS: the grammar submodule `tree-sitter-al/` (HEAD `f150581` =
 > origin/main tip, `SShadowS/tree-sitter-al` — WE OWN IT; pushing to origin correct per the push policy) and the engine.
 > The grounding report (this session) is authoritative; anchors below.
