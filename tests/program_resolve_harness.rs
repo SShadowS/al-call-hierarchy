@@ -2564,7 +2564,8 @@ fn route_applicability_zero_violations() {
 // where the fail-closed arg-type pick fired (a same-name/same-arity SOURCE
 // overload set that Task 2's `resolve_in_object`'s `_` arm picked down to a
 // single confident `Source` route) — the per-site adjudication basis for the
-// Task 2 CDO gate's `ambiguousResolved` 56->12 movement (44 flips). Mirrors
+// Task 2 CDO gate's `ambiguousResolved` 56->13 movement (43 net flips after
+// the 2026-07-04 with-scope review fix reverted one). Mirrors
 // the "observed via a one-off `--ignored` dump — see git history — then
 // pinned here" convention already used elsewhere in this file (see
 // `unknown_reason_breakdown_over_real_fixtures_sums_and_spans_reasons`'s
