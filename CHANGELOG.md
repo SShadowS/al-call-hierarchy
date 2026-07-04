@@ -65,6 +65,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bespoke, not a mechanical index swap, and needs its own dedicated fixtures +
   a fresh CDO measurement; the population motivating this task is 100% Page,
   zero measured Report-typed cross-extension receiver calls on CDO.
+- **The Page implicit-Rec field arm + global suppression of instance-only
+  names from bare-builtin probing — real-`unknown` 0.011%→0.0000%, the FLOOR
+  (Task 2, pageext-merge-and-final-residual plan).** Two independent fixes.
+  (a) Widened `receiver.rs` Step 3a (the bare implicit-Rec quoted/unquoted
+  FIELD arm) from `Table | TableExtension` to also cover `Page |
+  PageExtension`, via the existing `resolver::implicit_rec_table_id` (now
+  `pub(crate)`) — the same per-kind lookup `resolve_bare`'s Step 3 already
+  used for the analogous bare-CALL case, so the two paths can't drift apart.
+  Closed a soundness gap the widening exposed: for Page/PageExtension the
+  implicit-Rec table is a DIFFERENT object than the caller, so the
+  pre-existing `table_scope_has_routine` shadow guard alone can't see a
+  same-named routine the PAGE ITSELF declares; added
+  `ResolveIndex::routines_in_object` as an additional OR'd guard (a no-op for
+  Table/TableExtension, the missing half for Page/PageExtension). Fixes the
+  real site `"View (Blob)".CreateInStream(ReadStream)` in Page 6175411
+  (`.dependencies/CDO/Page/CDOPageDefaultFilters.Page.al:88`, `SourceTable`
+  field(28)). (b) A compiler-grounded, GLOBAL suppression of 19
+  `member_catalog::PAGE_INSTANCE` names (`Run`/`RunModal`/`Close`/`Update`/
+  `Activate`/`CancelBackgroundTask`/`Caption`/`Editable`/
+  `EnqueueBackgroundTask`/`GetBackgroundParameters`/`GetRecord`/`LookupMode`/
+  `ObjectId`/`PromptMode`/`SaveRecord`/`SetBackgroundTaskResult`/`SetRecord`/
+  `SetSelectionFilter`/`SetTableView`) from the BARE-call builtin candidate
+  set (`resolver::INSTANCE_ONLY_NEVER_BARE`, MS-Learn-cited per name):
+  `GLOBAL_BUILTIN_METHODS` (785 names) is a straight union of ALL 97
+  AL-compiler-documented types' methods with zero regard for receiver
+  requirements — cross-referencing the generator's own per-type dump
+  (`tools/gen-al-builtins/out/member_builtins.json`) proves every one of
+  these 19 names is owned EXCLUSIVELY by receiver-qualified instance types
+  (Page/Codeunit/Report/Xmlport/Dialog/RecordRef/…), never the "System"
+  pseudo-bucket the same dump shows houses genuinely bare-global names
+  (`Format`/`Today`/`GuiAllowed`) — confirmed against MS Learn per name.
+  `Message`/`Error`/`Confirm` are the deliberate near-miss (also filed under
+  a receiver-shaped `Dialog` bucket, but MS Learn is explicit they're
+  callable "without specifying the data type name") and are correctly NOT
+  suppressed. The suppression gates BOTH of `resolve_bare`'s consuming call
+  sites — the Step 3 PROBE-THEN-DECIDE collision guard
+  (`is_bare_builtin_or_page_intrinsic`) and the Step 4 plain catalog
+  fallback — never `resolve_member` (the qualified path is structurally
+  untouched: only 2 `global_builtin_id` call sites exist in `resolver.rs`,
+  both inside `resolve_bare`). Fixes the real site
+  `CDOEMailJobs.Page.al:125`'s bare `Run()` (previously an unproven
+  `Unknown(BuiltinPrecedenceCollision)` against `CDOEMailJob.Table.al:192`'s
+  `procedure Run()`) to resolve correctly to the table's own procedure; a
+  bare call to one of the 19 names with NO source candidate anywhere now
+  correctly declines to `Unknown` instead of a false `Catalog`/`Builtin`
+  route (verified in both a Page and a Codeunit context — the Codeunit case
+  exercises Step 4's guard in isolation, since Step 3 is structurally
+  skipped for Codeunit). An ungrounded name (e.g. `Rename`, a real
+  `Record.Rename` also present in the 785-name union but never individually
+  grounded) keeps the pre-existing fail-closed collision behavior unchanged
+  — scope discipline, not a blanket "any collision wins" change. 11 new TDD
+  fixtures across `receiver.rs`/`resolver.rs`. Discovered and corrected a
+  STALE adjudication in the process: the CDO L3-audit manifest already
+  carried an entry for this exact site, adjudicated long ago as a
+  `builtin-catalog-fp-collision` (fresh's OWN disposition there WAS
+  `Catalog`/`Builtin(run)` at the time, because that adjudication checked
+  only the SAME UNIT for a competing procedure, never the page's own
+  SourceTable) — corrected IN PLACE (same site key, entry count unchanged at
+  54) to a new `SameAppSourceProcedure` adjudication shape (the same-app
+  analog of the existing `CrossAppSourceProcedure` shape, verified against
+  the live workspace source tree directly since a workspace never carries
+  its own compiled `.app` in `.alpackages`), never duplicated. Full CDO
+  harness (173 tests, single-threaded): primary/whole `unknown` 2→0
+  (`real_unknown_rate` 0.011%→0.0000%, the floor), `unknownByReason`
+  becomes `{}` (empty — first time ANY reason bucket is empty), every OTHER
+  bucket (`ambiguousResolved`=7, `resolved_catalog`, `resolved_source`)
+  byte-identical, `genuine_wrong`=0 throughout (the one stale entry
+  corrected, not newly failing). A dedicated blast-radius sweep of the
+  entire CDO workspace (both `Al/` and `.dependencies/` folders) for every
+  bare occurrence of the 19 suppressed names confirmed these are the only 2
+  real behavior-changing sites in the whole corpus. Both `unknown`
+  count-ceiling ratchets and the rate ceiling re-derived and tightened to
+  the new measured floor.
 - **Receiver-closure arc complete — real-`unknown` 0.43%→0.05%, `ambiguousResolved`
   13→7 (Task 5, FINAL, receiver-closure-and-arg-increments plan).** Full CDO
   re-measure confirms the 4-task arc at its floors, byte-identical to Task 4's

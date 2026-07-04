@@ -878,32 +878,52 @@ pub struct AdjudicatedOverride {
     /// unrelated target — see `target_*` fields below). Entries of this NEW
     /// shape carry an empty `catalog_key` (not a builtin) and populate
     /// `target_kind`/`target_app_guid`/`target_object_lc`/`target_routine_lc`
-    /// instead.
+    /// instead. pageext-merge-and-final-residual plan Task 2 adds a THIRD
+    /// shape, `SameAppSourceProcedure` — the SAME target_* population as
+    /// `CrossAppSourceProcedure`, but the target routine is declared in the
+    /// CALLER'S OWN app (never a compiled `.alpackages` dependency), so
+    /// verification reads `target_unit` directly from the live workspace
+    /// source tree instead of extracting embedded source from a dependency
+    /// `.app`. Used for the compiler-grounded bare-implicit-Rec suppression
+    /// fix: a bare call L3 (minted before the grounding existed) paired with
+    /// an unrelated/no target, that fresh now correctly resolves, WITH SOURCE
+    /// EVIDENCE, to the SAME-APP SourceTable's own procedure.
     pub receiver_kind: String,
     /// Canonical catalog string (`builtin-catalog-fp-collision` shape only);
-    /// empty for `CrossAppSourceProcedure` entries.
+    /// empty for `CrossAppSourceProcedure`/`SameAppSourceProcedure` entries.
     #[serde(default)]
     pub catalog_key: String,
-    /// `CrossAppSourceProcedure` shape ONLY (beyond-1B.3b Task 5.5): the
-    /// REAL resolved target's `object_kind_tag` (`differential.rs`'s
+    /// `CrossAppSourceProcedure`/`SameAppSourceProcedure` shape ONLY
+    /// (beyond-1B.3b Task 5.5; pageext-merge-and-final-residual plan Task 2):
+    /// the REAL resolved target's `object_kind_tag` (`differential.rs`'s
     /// `object_kind_str_to_tag` encoding — codeunit=0, table=1, …), matching
     /// how `differential::project_target` encodes a `RouteTarget::Routine`.
     #[serde(default)]
     pub target_kind: Option<u8>,
-    /// `CrossAppSourceProcedure` shape ONLY: the target routine's owning
-    /// app's GUID (independently verified — the TARGET app's own real
-    /// embedded source, e.g. re-extracted from its `.app`, NOT read from any
-    /// fresh-computed edge).
+    /// `CrossAppSourceProcedure`/`SameAppSourceProcedure` shape ONLY: the
+    /// target routine's owning app's GUID (independently verified). For
+    /// `CrossAppSourceProcedure` this is a genuine dependency app (re-derived
+    /// from its own real `.app`); for `SameAppSourceProcedure` it is
+    /// IDENTICAL to `from_app_guid` (the target lives in the caller's own
+    /// app) — never read from any fresh-computed edge either way.
     #[serde(default)]
     pub target_app_guid: Option<String>,
-    /// `CrossAppSourceProcedure` shape ONLY: the target object's declared
-    /// numeric id (as a decimal string) or lowercased name.
+    /// `CrossAppSourceProcedure`/`SameAppSourceProcedure` shape ONLY: the
+    /// target object's declared numeric id (as a decimal string) or
+    /// lowercased name.
     #[serde(default)]
     pub target_object_lc: Option<String>,
-    /// `CrossAppSourceProcedure` shape ONLY: the target routine's lowercased
-    /// name.
+    /// `CrossAppSourceProcedure`/`SameAppSourceProcedure` shape ONLY: the
+    /// target routine's lowercased name.
     #[serde(default)]
     pub target_routine_lc: Option<String>,
+    /// `SameAppSourceProcedure` shape ONLY (pageext-merge-and-final-residual
+    /// plan, Task 2): the target routine's OWN file, relative to the CDO
+    /// workspace root — read DIRECTLY from the live source tree (never
+    /// `.alpackages`, since the target is same-app, not a compiled
+    /// dependency package).
+    #[serde(default)]
+    pub target_unit: Option<String>,
     pub verdict: String,
     pub source_sha256: String,
     pub note: String,

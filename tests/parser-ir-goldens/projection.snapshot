@@ -25,9 +25,9 @@ ws-bare-implicit-rec/IRPageExt2SrcTable.Table.al	572146ad4602cafd
 ws-bare-implicit-rec/IRPageExtBasePage.Page.al	64cfeb6a2d37380b
 ws-bare-implicit-rec/IRPageExtJ.PageExtension.al	6111b09da5b2b3cd
 ws-bare-implicit-rec/IRPageExtSrcTable.Table.al	cd13d73187425c4a
-ws-bare-implicit-rec/IRPageF.Page.al	f39c669e0378a4cf
+ws-bare-implicit-rec/IRPageF.Page.al	78f12cbe1fb942f5
 ws-bare-implicit-rec/IRPageG.Page.al	cbfec2c0c3b691c2
-ws-bare-implicit-rec/IRPageIntrinsicTable.Table.al	158956744789c60b
+ws-bare-implicit-rec/IRPageIntrinsicTable.Table.al	5a3560bf1ca98dab
 ws-bare-implicit-rec/IRSelfTable.Table.al	62306b698f48a513
 ws-bare-implicit-rec/IRStrictKindCU2.Codeunit.al	3659f462dc4887f9
 ws-bare-implicit-rec/IRStrictKindReport.Report.al	9fd10e3b8e729e22

@@ -14,10 +14,22 @@
 //!    inside a `with X do` is NEVER eligible — see [`crate::program::resolve::
 //!    extract::WithState`]) and on [`resolve_in_table_scope`] (Task 2's
 //!    visibility-scoped table∪extensions search). A table-scope candidate that
-//!    collides in name+arity with a global builtin or a bare-callable
-//!    page/instance intrinsic (`Update`/`Close`/…) is an UNPROVEN precedence —
-//!    fail closed to `Unknown` rather than assume the table wins.
-//! 4. **Global builtin** — `is_global_builtin(name_lc)` → `Catalog` route.
+//!    collides in name+arity with a global builtin is an UNPROVEN precedence —
+//!    fail closed to `Unknown` rather than assume the table wins — UNLESS the
+//!    colliding name is compiler-GROUNDED as never having a bare-call form
+//!    anywhere in AL (pageext-merge-and-final-residual plan, Task 2 — see
+//!    [`INSTANCE_ONLY_NEVER_BARE`]'s doc), in which case the table candidate
+//!    wins outright (no collision at all — the "global"/"page intrinsic"
+//!    reading was never a real option). `Update`/`Close`/`Run`/`RunModal`/…
+//!    are exactly this proven-never-bare case: real AL methods, but on
+//!    Page/Codeunit/Report/… INSTANCES, always reached through an explicit
+//!    receiver (`CurrPage.Update()`, `MyCodeunit.Run()`) — never a bare
+//!    unqualified call.
+//! 4. **Global builtin** — `is_global_builtin(name_lc)` → `Catalog` route,
+//!    UNLESS `name_lc` is in [`INSTANCE_ONLY_NEVER_BARE`] (same grounding as
+//!    step 3 — a name with no bare form anywhere skips the catalog on this
+//!    unqualified path too, falling through to `Unknown` instead of a false
+//!    `Catalog` route).
 //! 5. **Unknown** — genuine resolution failure.
 //!
 //! # Arity matching (Phase 2 / Phase 3 Task 0; ambiguity guard beyond-1B.3b Task 2)
@@ -47,6 +59,7 @@
 //! `Evidence::Unknown`⇒ `Witness::None`
 
 use al_syntax::ir::ObjectKind;
+use phf::phf_set;
 
 use crate::program::abi_ingest::object_kind_from_abi_type;
 use crate::program::graph::ProgramGraph;
@@ -1282,7 +1295,14 @@ fn resolve_in_page_scope(
 /// Returns `None` when there is no unique in-closure table (no declared
 /// property, ambiguous cross-app name, out-of-closure, unresolved) — the
 /// caller falls through to Step 4 rather than guess.
-fn implicit_rec_table_id(
+///
+/// `pub(crate)`: also reused by `receiver.rs`'s Step 3a (pageext-merge-and-
+/// final-residual plan, Task 2) — the implicit-Rec bare-FIELD arm widened
+/// from Table/TableExtension to also cover Page/PageExtension needs the
+/// EXACT same per-kind table lookup this function already establishes for
+/// the bare-CALL case; re-deriving it a second time would risk the two
+/// falling out of sync on a future kind addition.
+pub(crate) fn implicit_rec_table_id(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
@@ -1299,6 +1319,96 @@ fn implicit_rec_table_id(
     }
 }
 
+/// Names compiler-GROUNDED to have **no bare-call form anywhere in AL**
+/// (pageext-merge-and-final-residual plan, Task 2 — the round-1 review
+/// addenda's GLOBAL, unconditional narrowing). Every entry here is a
+/// documented AL method that is ALWAYS reached through an explicit receiver
+/// (`CurrPage.Update()`, `MyCodeunit.Run()`, `Page.RunModal(...)`) — never a
+/// bare unqualified call — in EVERY context checked: page trigger/action/
+/// procedure, pageextension, table/tableextension, report/reportextension
+/// (+`CurrReport` analogs), XmlPort, codeunit `OnRun`.
+///
+/// # The compiler-grounding matrix
+///
+/// This set is EXACTLY `member_catalog::PAGE_INSTANCE` (verified: every one
+/// of its 19 members is ALSO in `GLOBAL_BUILTIN_METHODS` — the union-of-all-
+/// 97-types catalog `is_global_builtin` treats as a sound bare-callable
+/// allowlist). The generator (`tools/gen-al-builtins/Program.cs`) extracts
+/// `TypeName_MethodName` keys from the AL compiler DLL's
+/// `ClassDocumentationResources` and unions the method name across ALL 97
+/// types with ZERO regard for whether that type's methods require a
+/// receiver — the doc's own soundness rationale ("no other bare-call target
+/// in the language") is true ONLY for names whose SOLE owning type is a
+/// true global bucket. Cross-referencing the generator's own per-type dump
+/// (`tools/gen-al-builtins/out/member_builtins.json`) shows every one of
+/// these 19 names is owned EXCLUSIVELY by receiver-qualified instance types
+/// (`Page`, `RequestPage`, `Codeunit`/`CodeunitInstance`, `Report`/
+/// `ReportInstance`, `Xmlport`/`XmlportInstance`, `Dialog`, `File`,
+/// `QueryInstance`, `RecordRef`, `TestPage`, `Debugger`, `TestField`,
+/// `RecordId`, `FilterPageBuilder`) — NEVER by the "System" pseudo-bucket
+/// the same JSON shows houses genuinely bare-global names (`Format`,
+/// `Today`, `GuiAllowed`, `CreateGuid`). `Message`/`Error`/`Confirm` are the
+/// one deliberate near-miss: also documented under a receiver-shaped bucket
+/// (`Dialog`), but MS Learn's own text is explicit that they "can be
+/// invoked without specifying the data type name" — i.e. genuinely global —
+/// so they are NOT in this set (left probing/colliding, honest per an
+/// UNCERTAIN name's rule below).
+///
+/// | Name (PAGE_INSTANCE) | Owning types (compiler DLL) | Bare form? | Citation |
+/// |---|---|---|---|
+/// | `run` | Codeunit, CodeunitInstance, Page, Report, ReportInstance, Xmlport, XmlportInstance | No — always `Obj.Run(...)` / `Type.Run(...)` static | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-run--method>, <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/codeunit/codeunit-run-method> |
+/// | `runmodal` | FilterPageBuilder, Page, Report, ReportInstance | No — `CurrPage.RunModal()`/`Page.RunModal(...)`/`Report.RunModal(...)` | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-runmodal--method> |
+/// | `close` | Dialog, File, Page, QueryInstance, RecordRef, RequestPage, TestPage | No — `CurrPage.Close()`/`MyDialog.Close()` | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-close-method> |
+/// | `update` | Dialog, Page, RequestPage | No — `CurrPage.Update([Boolean])` idiom is ALWAYS receiver-qualified (riskiest per the round-1 addenda; explicitly verified) | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-update-method> |
+/// | `activate` | Page, RequestPage, Debugger, TestField | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-activate-method> |
+/// | `cancelbackgroundtask` | Page | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-cancelbackgroundtask-method> |
+/// | `caption` | FieldRef, Page, RecordRef, RequestPage, TestField, TestPage, TestPart, TestRequestPage | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-caption-method> |
+/// | `editable` | Page, RequestPage, TestField, TestPage, TestPart, TestRequestPage | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-editable-method> |
+/// | `enqueuebackgroundtask` | Page | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-enqueuebackgroundtask-method> |
+/// | `getbackgroundparameters` | Page | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-getbackgroundparameters-method> |
+/// | `getrecord` | Page, RecordId | No — `CurrPage.GetRecord(Rec)` | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-getrecord-method> |
+/// | `lookupmode` | Page, RequestPage | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-lookupmode-method> |
+/// | `objectid` | Page, ReportInstance, RequestPage | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-objectid-method> |
+/// | `promptmode` | Page | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-promptmode-method> |
+/// | `saverecord` | Page, RequestPage | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-saverecord-method> |
+/// | `setbackgroundtaskresult` | Page | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-setbackgroundtaskresult-method> |
+/// | `setrecord` | Page | No — `CurrPage.SetRecord(Rec)` | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-setrecord-method> |
+/// | `setselectionfilter` | Page, RequestPage | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-setselectionfilter-method> |
+/// | `settableview` | Page, ReportInstance, XmlportInstance | No | <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/page/page-settableview-method> |
+///
+/// # Scope discipline (an uncertain name is left colliding, honest)
+///
+/// This set is INTENTIONALLY narrow — exactly the grounded 19, not every
+/// name in `GLOBAL_BUILTIN_METHODS` that "looks" instance-scoped (e.g.
+/// `Insert`/`Modify`/`Validate` are real `Record` methods AND also appear in
+/// the 785-name union, but have NOT been individually grounded per-context
+/// here — a table-scope candidate colliding with one of THOSE still fails
+/// closed to `BuiltinPrecedenceCollision`, unchanged). Widening this set to
+/// any NEW name requires the same per-name × per-context grounding (page
+/// trigger/action/procedure, pageextension, table/tableextension, report/
+/// reportextension, XmlPort, codeunit `OnRun`) and an MS Learn citation —
+/// never a guess by naming-convention resemblance.
+static INSTANCE_ONLY_NEVER_BARE: phf::Set<&'static str> = phf_set! {
+    "activate", "cancelbackgroundtask", "caption", "close", "editable",
+    "enqueuebackgroundtask", "getbackgroundparameters", "getrecord",
+    "lookupmode", "objectid", "promptmode", "run", "runmodal", "saverecord",
+    "setbackgroundtaskresult", "setrecord", "setselectionfilter",
+    "settableview", "update",
+};
+
+/// Whether `name_lc` is compiler-GROUNDED to have no bare-call form anywhere
+/// in AL (see [`INSTANCE_ONLY_NEVER_BARE`]'s doc for the full per-name
+/// citation table). Consumed by BOTH `resolve_bare` sites that currently
+/// treat ANY `GLOBAL_BUILTIN_METHODS`/`PageInstance` catalog hit as a valid
+/// bare-call reading: the Step 3 PROBE-THEN-DECIDE collision guard
+/// ([`is_bare_builtin_or_page_intrinsic`], below) and the Step 4 plain
+/// catalog fallback (`resolve_bare_with_args`'s own body). A proven name
+/// short-circuits BOTH to "not a builtin reading" — never a partial fix
+/// applied to only one of the two call sites.
+fn is_proven_never_bare_call(name_lc: &str) -> bool {
+    INSTANCE_ONLY_NEVER_BARE.contains(name_lc)
+}
+
 /// Whether `name_lc` is a global builtin OR a bare-callable page/instance
 /// intrinsic (`member_catalog`'s `PageInstance` set: `Update`/`Close`/
 /// `SetRecord`/…) — the collision set `resolve_bare`'s Step 3 PROBE-THEN-
@@ -1308,6 +1418,20 @@ fn implicit_rec_table_id(
 /// between "the implicit-Rec table's own procedure" and "the platform
 /// intrinsic" — with no compiler-verified precedence rule captured here,
 /// fail-closed to `Unknown` on any such collision rather than pick a side.
+///
+/// # GLOBAL suppression (pageext-merge-and-final-residual plan, Task 2 —
+/// round-1 review addenda, BINDING)
+///
+/// [`is_proven_never_bare_call`] is checked FIRST and short-circuits this
+/// whole function to `false` — a proven-never-bare name is not a real
+/// "global or page-intrinsic" reading AT ALL, so there is no collision to
+/// detect: the table-scope candidate simply wins (Step 3's caller returns
+/// its routes directly, never reaching this guard's `Unknown` branch). This
+/// is the fix for the real CDO site (`CDOEMailJobs.Page.al:125`'s bare
+/// `Run()` vs `CDOEMailJob.Table.al:192`'s `procedure Run()`): `run` ∈
+/// `PAGE_INSTANCE` ∧ ∈ `GLOBAL_BUILTIN_METHODS`, but is compiler-grounded to
+/// have NO bare form anywhere — the table's own procedure was always the
+/// only real candidate.
 ///
 /// # Why this checks `Global`/`Framework(PageInstance)` only, never `Record`
 /// (beyond-1B.3b Task 1, Item 4 — NOT a bug, do not "fix" by adding a
@@ -1326,6 +1450,9 @@ fn implicit_rec_table_id(
 /// beyond-1B.3b Task 1 source-shadows-catalog fix back into a false
 /// `Unknown`.
 fn is_bare_builtin_or_page_intrinsic(name_lc: &str) -> bool {
+    if is_proven_never_bare_call(name_lc) {
+        return false;
+    }
     global_builtin_id(name_lc).is_some()
         || member_builtin(
             MemberCatalogKind::Framework(&FrameworkKind::PageInstance),
@@ -1555,8 +1682,18 @@ pub(crate) fn resolve_bare_with_args(
         reason = UnknownReason::ReportRecExcluded;
     }
 
-    // 4. Global builtin.
-    if let Some(builtin_id) = global_builtin_id(name_lc) {
+    // 4. Global builtin. GLOBAL suppression (pageext-merge-and-final-residual
+    // plan, Task 2 — round-1 addenda, BINDING): `is_proven_never_bare_call`
+    // gates this catalog fallback too, not just Step 3's collision guard
+    // above — a name with NO bare form anywhere in AL must never win a
+    // `Catalog` route here either, even with zero table-scope candidate in
+    // play (e.g. a bare `Run()` in a Codeunit with no own `Run` procedure:
+    // Step 3 never runs at all for a Codeunit, so this Step 4 fallback was
+    // the ONLY place the false `Catalog` route could have come from — see
+    // [`is_proven_never_bare_call`]'s doc).
+    if !is_proven_never_bare_call(name_lc)
+        && let Some(builtin_id) = global_builtin_id(name_lc)
+    {
         return (
             DispatchShape::Exact,
             vec![Route {
@@ -3196,6 +3333,243 @@ codeunit 50101 "CallerCU"
         };
         assert_eq!(id.0, "message");
         assert!(!catalog_version.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // pageext-merge-and-final-residual plan, Task 2: the GLOBAL suppression
+    // of compiler-grounded instance-only names (`INSTANCE_ONLY_NEVER_BARE`)
+    // from the bare-call builtin candidate set — both the Step 3 collision
+    // guard and the Step 4 plain catalog fallback. Real site:
+    // `CDOEMailJobs.Page.al:125`'s bare `Run()` vs `CDOEMailJob.Table.al:192`'s
+    // `procedure Run()`.
+    // -----------------------------------------------------------------------
+
+    /// POSITIVE (Site B): a Page's own action-trigger-style procedure calls
+    /// bare `Run()`; the page's SourceTable declares its OWN `procedure
+    /// Run()`. Pre-fix this collided (`run` ∈ `PAGE_INSTANCE` ∧ ∈
+    /// `GLOBAL_BUILTIN_METHODS`) and fell back to
+    /// `Unknown(BuiltinPrecedenceCollision)`; post-fix, `run` is
+    /// compiler-grounded never-bare, so the table's own procedure wins
+    /// outright.
+    #[test]
+    fn bare_run_on_page_resolves_to_sourcetable_procedure() {
+        let src_table: &'static str = r#"
+table 50900 "EMailJob"
+{
+    procedure Run()
+    begin
+    end;
+}
+"#;
+        let src_page: &'static str = r#"
+page 50901 "EMailJobsPage"
+{
+    SourceTable = EMailJob;
+
+    procedure Test()
+    begin
+        Run();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "EMailJob.al", src_table);
+        let unit_page = make_unit(app_id, "EMailJobsPage.al", src_page);
+        let units = [unit_table, unit_page];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "EMailJobsPage");
+        let (shape, routes) = resolve_bare(
+            from_obj,
+            "run",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "the table's own Run() procedure must win, no collision; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(rid.object.kind, ObjectKind::Table);
+    }
+
+    /// NEGATIVE (the critical fix): a Page's SourceTable does NOT declare
+    /// `Run()` at all — no table-scope candidate exists. Pre-fix this fell
+    /// through Step 3 (NotVisible, no collision to even detect) straight
+    /// into Step 4's UNGUARDED `global_builtin_id("run")` fallback →
+    /// `Catalog`/`Builtin` (a false edge — `run` has no bare-call form in
+    /// AL). Post-fix: Step 4 is ALSO suppressed for a proven-never-bare
+    /// name, so this correctly falls all the way to `Unknown`.
+    #[test]
+    fn bare_run_on_page_with_no_sourcetable_candidate_is_unknown_not_builtin() {
+        let src_table: &'static str = r#"
+table 50910 "Baz"
+{
+    procedure Foo()
+    begin
+    end;
+}
+"#;
+        let src_page: &'static str = r#"
+page 50911 "BazPage"
+{
+    SourceTable = Baz;
+
+    procedure Test()
+    begin
+        Run();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Baz.al", src_table);
+        let unit_page = make_unit(app_id, "BazPage.al", src_page);
+        let units = [unit_table, unit_page];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "BazPage");
+        let (shape, routes) = resolve_bare(
+            from_obj,
+            "run",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            !matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "must NEVER resolve to Builtin — `run` has no bare form in AL; got {:?}",
+            routes[0].target
+        );
+        assert!(
+            matches!(routes[0].evidence, Evidence::Unknown(_)),
+            "expected Unknown evidence; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    /// NEGATIVE (the SAME suppression, GLOBAL not page-scoped): a Codeunit
+    /// with no own `Run` procedure calls bare `Run()`. `resolve_bare`'s Step
+    /// 3 is structurally skipped for every Codeunit (no implicit-Rec table),
+    /// so pre-fix Step 1's miss fell straight to Step 4's unguarded
+    /// `global_builtin_id("run")` → `Catalog` (false edge, page-collision
+    /// logic never even in play here). Post-fix: `Unknown`.
+    #[test]
+    fn bare_run_on_codeunit_with_no_candidate_is_unknown_not_builtin() {
+        let src: &'static str = r#"
+codeunit 50920 "CallerCU2"
+{
+    procedure Test()
+    begin
+        Run();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit = make_unit(app_id, "CallerCU2.al", src);
+        let units = [unit];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "CallerCU2");
+        let (shape, routes) = resolve_bare(
+            from_obj,
+            "run",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            !matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "must NEVER resolve to Builtin in a Codeunit either; got {:?}",
+            routes[0].target
+        );
+        assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
+    }
+
+    /// REGRESSION GUARD (scope discipline): an UNGROUNDED name that also
+    /// happens to collide (`rename` ∈ `GLOBAL_BUILTIN_METHODS` — a real
+    /// `Record.Rename` method — but NOT in `INSTANCE_ONLY_NEVER_BARE`, since
+    /// it was never individually grounded per-context) must keep the
+    /// PRE-EXISTING fail-closed collision behavior — this task's narrowing
+    /// is deliberately scoped to the 19 grounded names only, never a
+    /// blanket "any table-scope collision wins" change.
+    #[test]
+    fn bare_ungrounded_name_collision_on_page_remains_unproven_precedence() {
+        let src_table: &'static str = r#"
+table 50930 "Bar2"
+{
+    procedure Rename()
+    begin
+    end;
+}
+"#;
+        let src_page: &'static str = r#"
+page 50931 "Bar2Page"
+{
+    SourceTable = Bar2;
+
+    procedure Test()
+    begin
+        Rename();
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_table = make_unit(app_id.clone(), "Bar2.al", src_table);
+        let unit_page = make_unit(app_id, "Bar2Page.al", src_page);
+        let units = [unit_table, unit_page];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "Bar2Page");
+        let (shape, routes) = resolve_bare(
+            from_obj,
+            "rename",
+            0,
+            &graph,
+            &index,
+            &body_map,
+            WithState::NoWithProven,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "an ungrounded name's collision guard must remain unchanged; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::BuiltinPrecedenceCollision)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -8327,6 +8701,41 @@ codeunit 50629 "SaveRecordPageCaller"
             unreachable!()
         };
         assert_eq!(bid.0, "PageInstance::saverecord");
+    }
+
+    // Task 2 blast-radius regression guard: `CurrPage.Update()` — the
+    // QUALIFIED/receiver-explicit form of the SAME name
+    // (`INSTANCE_ONLY_NEVER_BARE` suppresses only the UNQUALIFIED bare-call
+    // path in `resolve_bare`; `resolve_member`'s `Framework(kind)` arm never
+    // touches `global_builtin_id`/`is_bare_builtin_or_page_intrinsic` at
+    // all, so this must resolve identically before and after Task 2).
+    // `Update` is the round-1 addenda's explicitly-flagged "riskiest" name
+    // (the ubiquitous `CurrPage.Update(...)` idiom) — pinned here as its own
+    // dedicated regression, not just inferred from `SaveRecord`'s sibling
+    // test above.
+    #[test]
+    fn resolve_member_framework_pageinstance_update_emits_catalog_route() {
+        use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
+
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::Framework(FrameworkKind::PageInstance);
+        let (shape, routes) =
+            resolve_member(&receiver, "update", 0, &from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Builtin(_)),
+            "CurrPage.Update() must still resolve via the Framework catalog \
+             after Task 2's bare-call-only suppression; got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        let RouteTarget::Builtin(ref bid) = routes[0].target else {
+            unreachable!()
+        };
+        assert_eq!(bid.0, "PageInstance::update");
     }
 
     // Test 7: Page Object receiver + declared proc (shadows catalog) → Source route

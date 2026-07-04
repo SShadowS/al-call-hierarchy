@@ -1978,6 +1978,32 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // compiler-correct against real CDO field declarations (see that
     // ratchet's comment).
     //
+    // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual plan, Task 2):
+    // 0.000111 → 0.0, measured 0.0000% (0/18104). Both Task-2 targets closed:
+    // (a) the Page implicit-Rec field arm (Step 3a widened Table|TableExtension
+    // -> also Page|PageExtension via `resolver::implicit_rec_table_id`) resolved
+    // the honest Page-gap `"View (Blob)".CreateInStream(...)` (`.dependencies/
+    // CDO/Page/CDOPageDefaultFilters.Page.al:88`) to `Framework(Blob)`'s Catalog
+    // route via the page's SourceTable's own field, closing `UntrackedReceiver`
+    // 1->0; (b) the GLOBAL compiler-grounded suppression
+    // (`resolver::INSTANCE_ONLY_NEVER_BARE` — 19 `PAGE_INSTANCE` names, MS
+    // Learn-cited, proven to have NO bare-call form anywhere in AL) removed
+    // `run` from the bare-call builtin candidate set, so the real CDO site
+    // (`CDOEMailJobs.Page.al:125`'s bare `Run()` vs `CDOEMailJob.Table.al:192`'s
+    // `procedure Run()`) resolves to the table's own procedure instead of
+    // colliding, closing `BuiltinPrecedenceCollision` 1->0. `unknownByReason`=
+    // {} (EMPTY on both primary and whole-program — first time ANY `Unknown`
+    // reason bucket exists at all). CDO real-unknown rate reaches the FLOOR:
+    // 0.0000% (0/18104). `genuine_wrong` stays 0 (the manifest's stale
+    // `.dependencies/CDO/Page/CDOEMailJobs.Page.al:124` entry — pre-dating the
+    // collision-detection code, adjudicated when fresh's OWN disposition there
+    // WAS `Catalog`/Builtin(`run`) — was CORRECTED IN PLACE to the new
+    // `SameAppSourceProcedure` shape, not removed; see
+    // `known-genuine-divergences.json`'s entry-9 description and
+    // `cdo_l3_semantic_audit_no_fresh_wrong`'s doc comment for the full
+    // adjudication). `ambiguousResolved` stays 7 (unaffected — a disjoint
+    // histogram bucket).
+    //
     // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual plan, Task 1):
     // 0.000498 → 0.000111, measured 0.011% (2/18104=0.0001105). The
     // Page/PageExtension routine merge (the missing resolve_in_table_scope
@@ -1987,10 +2013,13 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // BuiltinPrecedenceCollision 1 (both Task-2 targets).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.000111,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.000111 \
-         (recorded 2026-07-04 post pageext-merge-and-final-residual Task 1: \
-         0.011% [2/18104=0.0001105], the PageExtension routine merge; was \
+        primary_rate <= 0.0,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.0 \
+         (recorded 2026-07-04 post pageext-merge-and-final-residual Task 2: \
+         0.0000% [0/18104], the Page implicit-Rec field arm + the GLOBAL \
+         compiler-grounded bare-call suppression; was 0.011% \
+         [2/18104=0.0001105] post Task 1, the PageExtension routine merge; \
+         was \
          0.0497% post receiver-closure-and-arg-increments plan \
          Task 4: 0.0497% [9/18104=0.0004971], enum-shape receivers + \
          member-field arg dispatch + comment-aware with scan; was 0.072% \
@@ -2229,12 +2258,17 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // the PageExtension routine merge closed all 7 MemberNotFound sites;
     // `unknownByReason`={UntrackedReceiver: 1, BuiltinPrecedenceCollision: 1},
     // sum==2 — `MemberNotFound` no longer appears.
+    // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual, Task 2): 2→0 —
+    // the Page implicit-Rec field arm + the GLOBAL compiler-grounded bare-call
+    // suppression closed BOTH residual sites; `unknownByReason`={} (EMPTY) —
+    // the FLOOR. See the rate-ceiling comment above for the full adjudication.
     assert!(
-        ph.unknown <= 2,
-        "primary unknown count {} exceeds ceiling 2 (recorded 2026-07-04 \
-         post pageext-merge-and-final-residual Task 1: 2, the PageExtension \
-         routine merge; was 9 post receiver-closure-and-arg-increments plan \
-         Task 4: 9, \
+        ph.unknown == 0,
+        "primary unknown count {} exceeds ceiling 0 (recorded 2026-07-04 \
+         post pageext-merge-and-final-residual Task 2: 0, the Page \
+         implicit-Rec field arm + the GLOBAL bare-call suppression; was 2 \
+         post Task 1, the PageExtension routine merge; was 9 post \
+         receiver-closure-and-arg-increments plan Task 4: 9, \
          enum-shape receivers + member-field arg dispatch + comment-aware \
          with scan; was 27 post Task 2, parens-optional zero-arg framework \
          members + ErrorInfo.CustomDimensions rows; was 40 post Task 1, \
@@ -2317,11 +2351,17 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual, Task 1): 9→2,
     // alongside the primary ceiling above; whole-program `unknown`=2, same
     // value as primary today.
+    //
+    // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual, Task 2): 2→0,
+    // alongside the primary ceiling above; whole-program `unknown`=0, the
+    // FLOOR (same value as primary today — every closed site originates in
+    // the workspace/primary scope).
     assert!(
-        h.unknown <= 2,
-        "whole-program unknown count {} exceeds ceiling 2 (recorded \
-         2026-07-04 post pageext-merge-and-final-residual Task 1: 2, the \
-         PageExtension routine merge; was 9 post \
+        h.unknown == 0,
+        "whole-program unknown count {} exceeds ceiling 0 (recorded \
+         2026-07-04 post pageext-merge-and-final-residual Task 2: 0, the \
+         Page implicit-Rec field arm + the GLOBAL bare-call suppression; was \
+         2 post Task 1, the PageExtension routine merge; was 9 post \
          receiver-closure-and-arg-increments plan Task 4: 9, \
          enum-shape receivers + member-field arg dispatch + comment-aware \
          with scan; was 27 post Task 2, parens-optional zero-arg framework \
@@ -3220,10 +3260,28 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // `cdo_genuine_wrong_is_precedence_adjudicated` confirms). So
     // `genuine_wrong_count` must now be EXACTLY 0: a nonzero count means
     // either the overlay failed to apply (a wiring bug) or a genuinely NEW
-    // disjoint divergence appeared that is not one of the 54
-    // known/adjudicated sites — both are real bugs, not "still-acceptable
-    // known wrongness". The manifest/set-membership checks above stay as
-    // defense-in-depth for that second case.
+    // disjoint divergence appeared that is not one of the 54 known/adjudicated
+    // sites — both are real bugs, not "still-acceptable known wrongness". The
+    // manifest/set-membership checks above stay as defense-in-depth for that
+    // second case.
+    //
+    // pageext-merge-and-final-residual plan, Task 2: entry index 9 (site
+    // `.dependencies/CDO/Page/CDOEMailJobs.Page.al:124`, `callee_fp
+    // 2876017921644654500`, bare `Run()`) was CORRECTED IN PLACE (the entry
+    // COUNT stays 54) from its stale `builtin-catalog-fp-collision`
+    // adjudication (`receiver_kind: Global`, `catalog_key: run` — adjudicated
+    // when fresh's own disposition for this site WAS `Catalog`/`Builtin`,
+    // because `resolve_bare`'s Step 3 either predated this site or its
+    // PROBE-THEN-DECIDE guard already fired to `Unknown` at the time, either
+    // way never reaching `genuine_wrong`) to the NEW `SameAppSourceProcedure`
+    // shape: Task 2's grounded suppression makes fresh now resolve this bare
+    // `Run()` to the SourceTable's OWN `procedure Run()`
+    // (`Table 6175280 "CDO E-Mail Job"`), a REAL, MORE SPECIFIC, and MORE
+    // CORRECT target than the stale Builtin-catalog adjudication — L3's
+    // frozen golden (which predates bare-implicit-Rec dispatch, same as the
+    // `Navigate()` entries) still pairs this site with an unrelated/no
+    // target, so the entry stays `l3_error_intrinsic`, just with a corrected
+    // override target.
     assert_eq!(
         audit.genuine_wrong_count, 0,
         "genuine_wrong_count={} (expected 0): all 54 known-genuine-divergences.json sites \
@@ -3693,7 +3751,11 @@ fn committed_goldens_metadata_is_valid() {
          argtype-dispatch-and-page-catalog plan Task 1: +2 builtin-catalog-fp-collision \
          (receiver_kind=PageInstanceVar, duplicate-trigger-name variant) — all 54 \
          l3_error_intrinsic / 0 fresh_false_builtin / 0 needs_manual_review) — this \
-         assertion is UNCONDITIONAL (no CDO_WS needed)"
+         assertion is UNCONDITIONAL (no CDO_WS needed). pageext-merge-and-final-\
+         residual plan Task 2 CORRECTED entry index 9 IN PLACE (stale \
+         builtin-catalog-fp-collision -> SameAppSourceProcedure; see the doc \
+         comment on `cdo_l3_semantic_audit_no_fresh_wrong`'s genuine_wrong_count \
+         assertion) — the count is unchanged, only that one entry's shape."
     );
     assert_eq!(
         manifest_intrinsic_keys.len(),
@@ -3720,17 +3782,20 @@ fn committed_goldens_metadata_is_valid() {
     for ov in &overrides.entries {
         assert!(!ov.callee_text.is_empty(), "override missing callee_text");
         // `catalog_key` is required for the `builtin-catalog-fp-collision` shape;
-        // the `CrossAppSourceProcedure` shape (beyond-1B.3b Task 5.5) carries an
-        // empty `catalog_key` and populates `target_*` instead.
+        // the `CrossAppSourceProcedure` shape (beyond-1B.3b Task 5.5) and the
+        // `SameAppSourceProcedure` shape (pageext-merge-and-final-residual
+        // plan Task 2) both carry an empty `catalog_key` and populate
+        // `target_*` instead.
         assert!(
             !ov.catalog_key.is_empty()
-                || (ov.receiver_kind == "CrossAppSourceProcedure"
+                || ((ov.receiver_kind == "CrossAppSourceProcedure"
+                    || ov.receiver_kind == "SameAppSourceProcedure")
                     && ov.target_kind.is_some()
                     && ov.target_app_guid.is_some()
                     && ov.target_object_lc.is_some()
                     && ov.target_routine_lc.is_some()),
             "override missing catalog_key (and not a fully-populated \
-             CrossAppSourceProcedure target)"
+             CrossAppSourceProcedure/SameAppSourceProcedure target)"
         );
         assert!(
             !ov.receiver_kind.is_empty(),
@@ -3782,7 +3847,9 @@ fn committed_goldens_metadata_is_valid() {
         "adjudicated-overrides.json must carry exactly 54 entries (one per adjudicated \
          known-genuine-divergences.json site; beyond-1B.3b Task 3 + Task 5.5 + follow-up \
          plan v2.1 Task 3 + record-field chains plan Task 4 + argtype-dispatch-and-page-\
-         catalog plan Task 1)"
+         catalog plan Task 1). pageext-merge-and-final-residual plan Task 2 corrected \
+         entry index 9's SHAPE in place (Global/catalog_key -> SameAppSourceProcedure) \
+         without changing the count."
     );
 
     // ── Non-circularity invariant (testable): overlay entries hold CANONICAL
@@ -4406,6 +4473,125 @@ fn verify_cross_app_source_procedure_override(ov: &AdjudicatedOverride, ws: &std
     let _ = target_kind;
 }
 
+/// The `SameAppSourceProcedure` analog of [`verify_cross_app_source_procedure_override`]
+/// (pageext-merge-and-final-residual plan, Task 2): the target routine lives
+/// in the CALLER'S OWN app, so `target_app_guid` is never looked up via
+/// `.alpackages` (a workspace never carries its OWN compiled `.app` as one of
+/// its own dependency packages — only genuine dependencies live there,
+/// verified: CDO_WS's `.alpackages` contains only its Continia dependency
+/// apps, never a copy of Continia Document Output itself). Instead
+/// `target_unit` names the target's OWN file directly in the live workspace
+/// source tree, read the SAME way `ov.unit` (the caller's file) already is.
+fn verify_same_app_source_procedure_override(ov: &AdjudicatedOverride, ws: &std::path::Path) {
+    let target_kind = ov.target_kind.unwrap_or_else(|| {
+        panic!(
+            "{}:{}: SameAppSourceProcedure override missing target_kind",
+            ov.unit, ov.line
+        )
+    });
+    let target_app_guid = ov.target_app_guid.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: SameAppSourceProcedure override missing target_app_guid",
+            ov.unit, ov.line
+        )
+    });
+    let target_object_lc = ov.target_object_lc.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: SameAppSourceProcedure override missing target_object_lc",
+            ov.unit, ov.line
+        )
+    });
+    let target_routine_lc = ov.target_routine_lc.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: SameAppSourceProcedure override missing target_routine_lc",
+            ov.unit, ov.line
+        )
+    });
+    let target_unit = ov.target_unit.as_deref().unwrap_or_else(|| {
+        panic!(
+            "{}:{}: SameAppSourceProcedure override missing target_unit",
+            ov.unit, ov.line
+        )
+    });
+
+    // ── same-app sanity: this shape is ONLY for a target in the caller's own
+    // app — a genuine cross-app target belongs in a CrossAppSourceProcedure
+    // entry instead, never this one. ──────────────────────────────────────
+    assert_eq!(
+        target_app_guid, ov.from_app_guid,
+        "{}:{}: SameAppSourceProcedure requires target_app_guid == from_app_guid \
+         (a cross-app target belongs in a CrossAppSourceProcedure entry instead)",
+        ov.unit, ov.line
+    );
+
+    // ── shape sanity: callee_text's method/name matches target_routine_lc ───
+    // Mirrors `verify_cross_app_source_procedure_override`'s identical check
+    // — both a qualified MEMBER call and a BARE call (AL's implicit-Rec
+    // fallback) are admissible shapes here.
+    match parse_callee_shape(&ov.callee_text) {
+        CallShape::Member { method, .. } => assert_eq!(
+            method.to_ascii_lowercase(),
+            target_routine_lc,
+            "{}:{}: callee_text {:?}'s method does not match target_routine_lc {:?}",
+            ov.unit,
+            ov.line,
+            ov.callee_text,
+            target_routine_lc,
+        ),
+        CallShape::Global(name) => assert_eq!(
+            name.to_ascii_lowercase(),
+            target_routine_lc,
+            "{}:{}: bare callee_text {:?} does not match target_routine_lc {:?}",
+            ov.unit,
+            ov.line,
+            ov.callee_text,
+            target_routine_lc,
+        ),
+    }
+
+    // ── target object + routine really exist in the target's OWN unit,
+    // read directly from the live workspace (never `.alpackages`) ──────────
+    let target_path = ws.join(target_unit);
+    let target_content = std::fs::read_to_string(&target_path).unwrap_or_else(|e| {
+        panic!(
+            "{}:{}: cannot read SameAppSourceProcedure target_unit {}: {e}",
+            ov.unit,
+            ov.line,
+            target_path.display(),
+        )
+    });
+    let target_lc = target_content.to_ascii_lowercase();
+    assert!(
+        target_lc.contains(&format!(" {target_object_lc} "))
+            || target_lc.contains(&format!(" {target_object_lc}\r"))
+            || target_lc.contains(&format!(" {target_object_lc}\n")),
+        "{}:{}: target_unit {} does not appear to declare object id/name {:?} \
+         (object-header sanity check failed)",
+        ov.unit,
+        ov.line,
+        target_unit,
+        target_object_lc,
+    );
+    assert!(
+        unit_declares_procedure_named(&target_content, target_routine_lc),
+        "{}:{}: target_unit {} has no `procedure {}(` declaration — the \
+         SameAppSourceProcedure override target is unverifiable",
+        ov.unit,
+        ov.line,
+        target_unit,
+        target_routine_lc,
+    );
+    eprintln!(
+        "SameAppSourceProcedure verified: {}:{} -> target_app={target_app_guid} \
+         target_object={target_object_lc} target_routine={target_routine_lc} \
+         (found in {target_unit})",
+        ov.unit, ov.line,
+    );
+    // Same non-independently-checkable note as the CrossAppSourceProcedure
+    // sibling: `target_kind` has no independent source-side representation.
+    let _ = target_kind;
+}
+
 /// beyond-1B.3b Task 3: for every entry in the committed adjudication overlay
 /// (`adjudicated-overrides.json`), INDEPENDENTLY re-derive/cross-check it
 /// from LIVE CDO source + the structural builtin catalog (never from
@@ -4513,6 +4699,23 @@ fn cdo_genuine_wrong_is_precedence_adjudicated() {
             assert_eq!(
                 ov.verdict, VERDICT_L3_ERROR_INTRINSIC,
                 "{}:{}: CrossAppSourceProcedure entries must be verdict l3_error_intrinsic",
+                ov.unit, ov.line
+            );
+            l3_error_intrinsic += 1;
+            continue;
+        }
+
+        // ── SameAppSourceProcedure shape (pageext-merge-and-final-residual
+        // plan, Task 2): the same-app analog of CrossAppSourceProcedure — the
+        // target routine lives in the CALLER'S OWN app (a compiler-grounded
+        // bare-implicit-Rec dispatch that L3's frozen golden mis-paired or
+        // missed), so it is verified against the LIVE workspace source tree
+        // directly (`target_unit`), never `.alpackages`. ─────────────────────
+        if ov.receiver_kind == "SameAppSourceProcedure" {
+            verify_same_app_source_procedure_override(ov, &ws);
+            assert_eq!(
+                ov.verdict, VERDICT_L3_ERROR_INTRINSIC,
+                "{}:{}: SameAppSourceProcedure entries must be verdict l3_error_intrinsic",
                 ov.unit, ov.line
             );
             l3_error_intrinsic += 1;
@@ -7707,22 +7910,35 @@ fn ws_bare_implicit_rec_builtin_collision_is_unknown_not_catalog() {
     );
 }
 
-/// Test 27f (fixture f, NEGATIVE — page-instance intrinsic collision):
-/// `IR Page F` calls bare `Update();` (arity 0), which collides in
-/// name+arity between the implicit table's own `Update` procedure and the
-/// bare-callable `PageInstance` intrinsic `Update`. Must stay honest
-/// `Unknown`.
+/// Test 27f (fixture f, REBASELINED — pageext-merge-and-final-residual plan,
+/// Task 2): `IR Page F` calls bare `Update();` (arity 0), which collides in
+/// name+arity between the implicit table's own `Update` procedure and
+/// `PageInstance`'s catalog entry `Update`. PRE-Task-2 this failed closed to
+/// `Unknown` (no compiler-verified precedence captured). Task 2 grounded
+/// `Update` (MS Learn: <https://learn.microsoft.com/en-us/dynamics365/
+/// business-central/dev-itpro/developer/methods-auto/page/page-update-method>)
+/// as having NO bare-call form anywhere in AL — always receiver-qualified
+/// (`CurrPage.Update()`) — so the "PageInstance intrinsic" reading was never
+/// real: the table's own `Update` procedure now correctly wins. This is a
+/// DELIBERATE rebaseline (the false-`Unknown` this test used to pin was
+/// itself the bug), not a regression — see
+/// `resolver::INSTANCE_ONLY_NEVER_BARE`'s doc for the full grounding matrix.
 #[test]
-fn ws_bare_implicit_rec_page_intrinsic_collision_is_unknown() {
+fn ws_bare_implicit_rec_page_intrinsic_now_resolves_via_grounded_suppression() {
     let report = ws_bare_implicit_rec_report();
     let edges = edges_for_object_routine(&report, 50981, "onopenpage");
     assert_eq!(edges.len(), 1, "IR Page F.OnOpenPage has 1 call obligation");
     let route = &edges[0].edge.routes[0];
-    assert_eq!(route.target, RouteTarget::Unresolved);
+    assert_eq!(route.evidence, Evidence::Source);
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "update");
+    assert_eq!(rid.object.kind, ObjectKind::Table);
     assert!(
-        matches!(route.evidence, Evidence::Unknown(_)),
-        "Update() table-proc/page-intrinsic collision must fail closed to \
-         Unknown; got {route:?}"
+        rid.object.id_equals_number(50980),
+        "must resolve to \"IR Page Intrinsic Table\" (id 50980); got {:?}",
+        rid.object
     );
 }
 

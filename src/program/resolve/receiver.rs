@@ -145,7 +145,7 @@ use crate::program::resolve::recordref_returns::{
     RecordRefFamilyKind, recordref_family_return_kind,
 };
 use crate::program::resolve::resolver::{
-    resolve_bare, resolve_member, routine_node_for_type_query,
+    implicit_rec_table_id, resolve_bare, resolve_member, routine_node_for_type_query,
 };
 
 // ---------------------------------------------------------------------------
@@ -846,17 +846,26 @@ pub fn infer_receiver_type(
     // `Attachment.CreateInStream(Stream)` (unquoted) inside a Table's
     // procedure means exactly `Rec."File Blob"`/`Rec.Attachment...`. This
     // mirrors `resolver.rs`'s `resolve_bare` Step 3 implicit-Rec precedent for
-    // BARE CALLS: the same STRICT `ObjectKind` guard (Table/TableExtension
-    // only — Page/PageExtension/Codeunit/Report never expose this bare-field
-    // shorthand here, even though some of them DO have an implicit-Rec
-    // RECORD; out of this task's measured/fixture-proven scope, deliberately
-    // not widened) and the same `with_state` with-guard (a bare reference
-    // inside an un-modeled `with` block could silently mean a DIFFERENT
-    // record's field — a false `Source` edge, the cardinal sin — so this
-    // step requires the same `WithState::NoWithProven` proof `resolve_bare`'s
-    // Step 3 requires, sourced from the same `bare_ctx` Steps 5/6 already
-    // thread through; a caller supplying no `bare_ctx` — unit tests,
-    // `semantic_golden.rs` — makes this step a no-op, exactly like Step 5).
+    // BARE CALLS: the same STRICT `ObjectKind` guard, the same `with_state`
+    // with-guard, and (as of pageext-merge-and-final-residual plan, Task 2)
+    // the SAME per-kind table lookup (`resolver::implicit_rec_table_id`) —
+    // widened from Table/TableExtension to ALSO cover Page/PageExtension via
+    // the page's own `SourceTable` (Codeunit/Report(Extension) remain
+    // excluded, exactly like `resolve_bare`'s Step 3 — a Codeunit's
+    // `TableNo`/a Report's dataitems are a DIFFERENT mechanism, out of this
+    // step's scope). The known real site:
+    // `"View (Blob)".CreateInStream(ReadStream)` in Page 6175411's own
+    // procedure (`CDOPageDefaultFilters.Page.al:88`), `"View (Blob)"` =
+    // `field(28; ...; Blob)` on the page's SourceTable
+    // (`CDOPageDefaultfilter.Table.al:35`).
+    //
+    // The with-guard requires the same `WithState::NoWithProven` proof
+    // `resolve_bare`'s Step 3 requires — a bare reference inside an
+    // un-modeled `with` block could silently mean a DIFFERENT record's
+    // field — a false `Source` edge, the cardinal sin — sourced from the
+    // same `bare_ctx` Steps 5/6 already thread through; a caller supplying
+    // no `bare_ctx` — unit tests, `semantic_golden.rs` — makes this step a
+    // no-op, exactly like Step 5.
     //
     // AMBIGUITY GUARD (round-2 soundness correction, PROVEN precedence layer
     // per T3's closer — "insert the arm AFTER the routine-shadow check"):
@@ -872,11 +881,25 @@ pub fn infer_receiver_type(
     // named-return binding/globals) and this routine-shadow check both run
     // BEFORE the field lookup below ever executes.
     //
+    // PAGE/PAGEEXTENSION SELF-SHADOW (Task 2 widening, closes a gap
+    // `table_scope_has_routine` alone does not cover): for Table/
+    // TableExtension, `table_id` IS (or directly extends) `from_object`
+    // itself, so `table_scope_has_routine` checking `table_id`'s own routine
+    // surface incidentally ALSO checks the calling object's own routines.
+    // For Page/PageExtension, `table_id` is a DIFFERENT object (the page's
+    // SourceTable) — a routine the PAGE ITSELF declares (not the table)
+    // sharing the bare name is a same-object precedence question
+    // `table_scope_has_routine` cannot see, since it never inspects
+    // `from_object`'s own routine set when `from_object` isn't table-kind.
+    // `index.routines_in_object(&from_object.id, ..)` closes this
+    // independently — a no-op for Table/TableExtension (already covered) and
+    // the missing half for Page/PageExtension.
+    //
     // `ResolveIndex::field_in_table` is itself the fail-closed gate (unique
     // visible match across base + closure-visible extensions, or `None`);
     // an unknown field name, an ambiguous duplicate, or a same-named routine
-    // all fall through to Step 3b / eventually `Unknown` — never a partial
-    // guess.
+    // (table-scope OR the calling object's own) all fall through to Step 3b
+    // / eventually `Unknown` — never a partial guess.
     //
     // UNQUOTED WIDENING (T3): `receiver_lc != "rec" && receiver_lc !=
     // "xrec"` defensively excludes the two identity spellings from this
@@ -895,17 +918,21 @@ pub fn infer_receiver_type(
         && with_state == WithState::NoWithProven
         && matches!(
             from_object.id.kind,
-            ObjectKind::Table | ObjectKind::TableExtension
+            ObjectKind::Table
+                | ObjectKind::TableExtension
+                | ObjectKind::Page
+                | ObjectKind::PageExtension
         )
     {
-        let table_id = match from_object.id.kind {
-            ObjectKind::Table => Some(from_object.id.clone()),
-            ObjectKind::TableExtension => resolve_tableext_base_table(from_object, graph, index),
-            _ => None,
-        };
+        let table_id = implicit_rec_table_id(from_object, graph, index);
         if let Some(table_id) = table_id {
             let field_lc = unquote_identifier(receiver_lc);
-            if !index.table_scope_has_routine(graph, from_object, &table_id, &field_lc)
+            let routine_shadowed =
+                index.table_scope_has_routine(graph, from_object, &table_id, &field_lc)
+                    || !index
+                        .routines_in_object(&from_object.id, &field_lc)
+                        .is_empty();
+            if !routine_shadowed
                 && let Some(field) = index.field_in_table(graph, from_object, &table_id, &field_lc)
             {
                 return parsed_type_to_receiver(
@@ -7895,9 +7922,295 @@ codeunit 50100 "C"
         assert_eq!(result_base, ReceiverType::Framework(FrameworkKind::Blob));
     }
 
+    // -----------------------------------------------------------------------
+    // pageext-merge-and-final-residual plan, Task 2: Step 3a widened to
+    // Page/PageExtension via `resolver::implicit_rec_table_id` — the SAME
+    // bare-field-chain machinery Table/TableExtension already had, now
+    // reachable through a Page's/PageExtension's own `SourceTable`. Real
+    // site: `"View (Blob)".CreateInStream(ReadStream)` in Page 6175411's own
+    // procedure (`.dependencies/CDO/Page/CDOPageDefaultFilters.Page.al:88`),
+    // `"View (Blob)"` = `field(28; ...; Blob)` on the page's SourceTable
+    // (`CDOPageDefaultfilter.Table.al:35`).
+    // -----------------------------------------------------------------------
+
+    /// POSITIVE: a Page's own procedure references its SourceTable's Blob
+    /// field by bare quoted name — the Site-A shape.
+    #[test]
+    fn step3a_bare_quoted_field_on_page_with_sourcetable_resolves_blob() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "view (blob)".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let mut page = make_object_node(
+            w,
+            ObjectKind::Page,
+            "DefaultFiltersPage",
+            Some(6175411),
+            None,
+        );
+        page.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        let result = infer_receiver_type(
+            "\"view (blob)\"",
+            &routine,
+            &[],
+            &page,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
+    }
+
+    /// POSITIVE: the SAME shape inside a PageExtension of a base Page that
+    /// declares `SourceTable` — the base-lookup hop
+    /// (`resolve_pageext_base_source_table`) is exercised, not just the
+    /// direct Page case above.
+    #[test]
+    fn step3a_bare_quoted_field_on_pageextension_with_sourcetable_resolves_blob() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "view (blob)".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        // `build_page_rec_fixture` already declares Page "CustomerPage" (id
+        // 50200, `SourceTable = Customer`) in `graph.objects` — the base
+        // this extension must resolve THROUGH (`graph.objects.iter().find`
+        // inside `resolve_pageext_base_source_table`).
+        let page_ext = make_object_node(
+            w,
+            ObjectKind::PageExtension,
+            "CustomerPageExt",
+            Some(50210),
+            Some("CustomerPage".to_string()),
+        );
+
+        let result = infer_receiver_type(
+            "\"view (blob)\"",
+            &routine,
+            &[],
+            &page_ext,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
+    }
+
+    /// NEGATIVE: a Page WITHOUT a `SourceTable` declared has no implicit-Rec
+    /// table to search at all — `implicit_rec_table_id` returns `None` and
+    /// this step declines to `Unknown` rather than guess.
+    #[test]
+    fn step3a_page_without_sourcetable_declines() {
+        let (graph, w) = build_page_rec_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let page = make_object_node(w, ObjectKind::Page, "NoSourcePage", Some(50299), None);
+
+        let result = infer_receiver_type(
+            "\"view (blob)\"",
+            &routine,
+            &[],
+            &page,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE: the with-guard applies to the Page arm exactly like the
+    /// Table arm — `InsideWith`/`Unknown` `WithState` must decline, never
+    /// silently type a field inside an un-modeled `with` block.
+    #[test]
+    fn step3a_page_declines_when_with_unproven() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "view (blob)".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let mut page = make_object_node(
+            w,
+            ObjectKind::Page,
+            "DefaultFiltersPage",
+            Some(6175411),
+            None,
+        );
+        page.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        for ws in [WithState::InsideWith, WithState::Unknown] {
+            let result = infer_receiver_type(
+                "\"view (blob)\"",
+                &routine,
+                &[],
+                &page,
+                &graph,
+                &index,
+                None,
+                Some((&body_map, ws)),
+            );
+            assert_eq!(
+                result,
+                ReceiverType::Unknown,
+                "Step 3a must decline on a Page under WithState {ws:?}"
+            );
+        }
+    }
+
+    /// NEGATIVE: the routine-shadow guard — the page's SOURCE TABLE ALSO
+    /// declares a routine of the identical bare name (AL's parens-optional
+    /// zero-arg call ambiguity) — must decline, mirroring the pre-existing
+    /// Table-scope guard (`step3a_declines_when_same_named_routine_exists`).
+    #[test]
+    fn step3a_page_declines_when_sourcetable_routine_shadows_field() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "view (blob)".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let customer_id = graph.objects[customer_idx].id.clone();
+        graph
+            .routines
+            .push(make_routine_node(customer_id, "View (Blob)"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let mut page = make_object_node(
+            w,
+            ObjectKind::Page,
+            "DefaultFiltersPage",
+            Some(6175411),
+            None,
+        );
+        page.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+
+        let result = infer_receiver_type(
+            "\"view (blob)\"",
+            &routine,
+            &[],
+            &page,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Unknown,
+            "a same-named routine on the page's SourceTable must block field-typing"
+        );
+    }
+
+    /// NEGATIVE (Task 2 self-shadow closer): the PAGE ITSELF — not its
+    /// SourceTable — declares a routine of the identical bare name. Unlike
+    /// Table/TableExtension (where `table_id == from_object.id`, so
+    /// `table_scope_has_routine` incidentally covers this), a Page's
+    /// SourceTable is a DIFFERENT object — this exercises the added
+    /// `index.routines_in_object(&from_object.id, ..)` guard that closes
+    /// that gap.
+    #[test]
+    fn step3a_page_declines_when_pages_own_routine_shadows_sourcetable_field() {
+        let (mut graph, w) = build_page_rec_fixture();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "view (blob)".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let mut page = make_object_node(
+            w,
+            ObjectKind::Page,
+            "DefaultFiltersPage",
+            Some(6175411),
+            None,
+        );
+        page.source_table = Some(ObjectRef::Name {
+            raw: "Customer".into(),
+            normalized_lc: "customer".into(),
+        });
+        graph
+            .routines
+            .push(make_routine_node(page.id.clone(), "View (Blob)"));
+        graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let result = infer_receiver_type(
+            "\"view (blob)\"",
+            &routine,
+            &[],
+            &page,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Unknown,
+            "the PAGE's OWN routine of the identical name must block field-typing too, \
+             not just the source table's own routine surface"
+        );
+    }
+
     /// NEGATIVE (e): a quoted-field-shaped receiver in a NON-Table/
-    /// TableExtension object (no implicit-Rec field surface reachable this
-    /// way) must decline to `Unknown`, even with a fully-wired `bare_ctx`.
+    /// TableExtension/Page/PageExtension object (no implicit-Rec field
+    /// surface reachable this way — Codeunit's `TableNo` is a different
+    /// mechanism, out of this step's scope) must decline to `Unknown`, even
+    /// with a fully-wired `bare_ctx`.
     #[test]
     fn step3a_non_table_scope_declines() {
         let (graph, app) = build_test_graph();
