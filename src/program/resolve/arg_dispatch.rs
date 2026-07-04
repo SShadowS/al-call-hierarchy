@@ -92,16 +92,23 @@
 //! [`BodyMap`]: crate::program::resolve::body_map::BodyMap
 //! [`resolver::resolve_in_object`]: crate::program::resolve::resolver
 
-use al_syntax::ir::{AlFile, Expr, ExprId, ExprKind, Literal, ObjectKind, RoutineDecl, VarDecl};
+use al_syntax::ir::{
+    AlFile, BinaryOp, Expr, ExprId, ExprKind, Literal, ObjectKind, RoutineDecl, VarDecl,
+};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::ObjectNodeId;
-use crate::program::node_extract::ObjectRef;
+use crate::program::node_extract::{ObjectRef, RoutineNode};
+use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::edge::{BuiltinId, RouteTarget};
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
 use crate::program::resolve::receiver::{
     CallerScopeSymbol, ParsedType, caller_scope_symbol, classify_type_text, object_by_id,
-    unquote_identifier,
+    parsed_type_to_receiver, unquote_identifier,
+};
+use crate::program::resolve::resolver::{
+    resolve_bare, resolve_member, routine_node_for_type_query,
 };
 use crate::program::sig_fp::normalize_type_text;
 
@@ -312,8 +319,12 @@ pub(crate) struct ParamDispatchInfo {
 /// against). `with_state` is the call site's [`WithState`] (Task 2 review
 /// fix) — a bare-identifier arg is typed from caller scope ONLY when this is
 /// `NoWithProven`; see the module doc's "`with`-scope gate for
-/// bare-identifier args" entry.
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `with_state` (Task 2 review fix).
+/// bare-identifier args" entry. `body_map` (T3, pageext-merge-and-final-
+/// residual plan) is threaded ONLY so the new `Call` arm can re-run
+/// `resolve_bare`/`resolve_member` on an INNER call-result expression — the
+/// SAME `BodyMap` `resolve_call_site_obligation` already has in scope for
+/// the OUTER obligation.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `body_map` (T3, pageext-merge-and-final-residual plan).
 pub(crate) fn type_call_args(
     args: &[ExprId],
     file: &AlFile,
@@ -322,6 +333,7 @@ pub(crate) fn type_call_args(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
     with_state: WithState,
 ) -> Vec<ArgDispatchInfo> {
     args.iter()
@@ -334,13 +346,14 @@ pub(crate) fn type_call_args(
                 from,
                 graph,
                 index,
+                body_map,
                 with_state,
             )
         })
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)] // 6 pre-existing params + `file` (Task 4, receiver-closure-and-arg-increments plan — the new Member arm needs to deref the base `ExprId`).
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `body_map` (T3, pageext-merge-and-final-residual plan — the new `Call` arm's inner resolve_bare/resolve_member query).
 fn type_one_arg(
     file: &AlFile,
     expr: &Expr,
@@ -349,6 +362,7 @@ fn type_one_arg(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
     with_state: WithState,
 ) -> ArgDispatchInfo {
     match &expr.kind {
@@ -486,10 +500,368 @@ fn type_one_arg(
                 var_passable: false,
             }
         }
-        // Deferred (increment-1 scope, module doc): call-result / `Enum::Value`
-        // / any other expression shape stays untyped.
+        // Call-result arg (T3, pageext-merge-and-final-residual plan): `Foo
+        // (GetCount())` / `Foo(X.Method())` — types the INNER call's return
+        // value, dispatching on the inner call's OWN `function` shape:
+        // - Bare `Identifier`/`QuotedIdentifier` — mirrors Step 5's guards
+        //   (`receiver::infer_call_result_receiver`): the local/param/global
+        //   SHADOW guard, then a SINGLE-route `resolve_bare` query. See
+        //   `type_call_result_arg_bare`'s doc.
+        // - `Member{object, member}` — mirrors Step 6's cross-object-chain
+        //   base typing (`receiver::infer_cross_object_chain_receiver`): the
+        //   base is typed via the SAME caller-scope-EXACT path the plain
+        //   `Member` arm above uses (WithState-gated), then a SINGLE-route
+        //   `resolve_member` query. See `type_call_result_arg_member`'s doc.
+        // - Anything else (a further-nested `Call`/`Index`/… as the
+        //   function) — out of this increment's scope, declines.
+        ExprKind::Call {
+            function,
+            args: inner_args,
+        } => match &file.ir.expr(*function).kind {
+            ExprKind::Identifier(fname) | ExprKind::QuotedIdentifier(fname) => {
+                type_call_result_arg_bare(
+                    fname,
+                    inner_args.len(),
+                    routine,
+                    object_globals,
+                    from,
+                    graph,
+                    index,
+                    body_map,
+                    with_state,
+                )
+            }
+            ExprKind::Member {
+                object: base_expr,
+                member,
+                ..
+            } => type_call_result_arg_member(
+                file,
+                *base_expr,
+                member,
+                inner_args.len(),
+                routine,
+                object_globals,
+                from,
+                graph,
+                index,
+                body_map,
+                with_state,
+            ),
+            _ => ArgDispatchInfo::untyped(),
+        },
+        // Boolean comparison/logical operators (T3, part b): AL defines
+        // Eq/Ne/Lt/Le/Gt/Ge/And/Or/Xor/In UNCONDITIONALLY as Boolean-yielding
+        // — no operand inspection needed or wanted (typing them from the
+        // OPERATOR alone is exactly as sound as typing a literal, and avoids
+        // recursing into arbitrarily complex operand sub-expressions). Every
+        // other operator (arithmetic `Add`/`Sub`/`Mul`/`Div`/`IntDiv`/`Mod`,
+        // and the catch-all `Other`) stays untyped — including a Text `+`
+        // concatenation, which is NOT boolean-typed just because it shares
+        // the `Add` variant with numeric addition (module doc's cardinal
+        // rule: no guessing). Not itself a literal (`literal_kind: None` —
+        // the C6 literal-forbidden-family gate never applies to a computed
+        // Boolean) and never var-passable (an operator result is never a
+        // variable).
+        ExprKind::Binary { op, .. } => match op {
+            BinaryOp::Eq
+            | BinaryOp::Ne
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Gt
+            | BinaryOp::Ge
+            | BinaryOp::And
+            | BinaryOp::Or
+            | BinaryOp::Xor
+            | BinaryOp::In => ArgDispatchInfo {
+                canonical: Some(CanonicalArgType::Base("boolean".to_string())),
+                exact_text: Some("boolean".to_string()),
+                literal_kind: None,
+                var_passable: false,
+            },
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::Div
+            | BinaryOp::IntDiv
+            | BinaryOp::Mod
+            | BinaryOp::Other => ArgDispatchInfo::untyped(),
+        },
+        // Parenthesized unwrap (T3, part b): `Foo((A = B))` types identically
+        // to its unwrapped inner expression — parens carry no type
+        // information of their own.
+        ExprKind::Parenthesized(inner) => type_one_arg(
+            file,
+            file.ir.expr(*inner),
+            routine,
+            object_globals,
+            from,
+            graph,
+            index,
+            body_map,
+            with_state,
+        ),
+        // Deferred (increment-1 scope, module doc): `Enum::Value` / any
+        // other expression shape stays untyped.
         _ => ArgDispatchInfo::untyped(),
     }
+}
+
+/// (a) bare-Identifier call-result arg (T3, pageext-merge-and-final-residual
+/// plan, part a): mirrors `receiver::infer_call_result_receiver`'s (Step 5)
+/// guards EXACTLY —
+/// 1. **Local-shadowing guard FIRST**: a same-named param/local/global
+///    SHADOWS a same-named procedure in AL (a local variable named
+///    `GetCount` makes `GetCount()` an indexed/call-adjacent read on the
+///    VARIABLE, never a routine call) — checked BEFORE ever consulting
+///    `resolve_bare`, which cannot see this shadowing itself.
+/// 2. **`resolve_bare` SINGLE-route query** (empty `args` — module doc:
+///    "no recursion into `pick_candidate`"; `resolve_bare` is the thin
+///    `args = &[]` wrapper, so this is automatic): a genuine same-object
+///    overload ambiguity in the INNER call yields >1 routes, which the
+///    `[route]` slice pattern declines on (the "2 same-arity inner
+///    overloads -> untyped" negative fixture).
+/// 3. **`RouteTarget::Routine`/`RouteTarget::AbiSymbol`** — read the
+///    resolved routine's return type via [`call_result_arg_from_routine_node`]
+///    (the Primitive-decline BYPASS — see that function's doc).
+/// 4. **`RouteTarget::Builtin`** (part c) — consult the passive builtin-
+///    return catalog ([`builtin_return_base_keyword`]), gated on
+///    `resolve_bare` having POSITIVELY reported `Builtin` for this exact
+///    name (never a bare name-string match — a source procedure that
+///    SHADOWS one of the catalog's names resolves to `RouteTarget::Routine`
+///    via Step 1 above, long before `resolve_bare` would ever report
+///    `Builtin` for it, so the catalog is structurally unreachable for a
+///    shadowed name).
+/// 5. **`RouteTarget::Unresolved`** — untyped (name absent / arity mismatch
+///    / an unproven builtin-precedence collision).
+#[allow(clippy::too_many_arguments)]
+fn type_call_result_arg_bare(
+    fname: &str,
+    inner_arity: usize,
+    routine: &RoutineDecl,
+    object_globals: &[VarDecl],
+    from: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    with_state: WithState,
+) -> ArgDispatchInfo {
+    let fname_lc = fname.to_ascii_lowercase();
+    let shadowed = routine
+        .params
+        .iter()
+        .any(|p| p.name.to_ascii_lowercase() == fname_lc)
+        || routine
+            .locals
+            .iter()
+            .any(|v| v.name.to_ascii_lowercase() == fname_lc)
+        || object_globals
+            .iter()
+            .any(|v| v.name.to_ascii_lowercase() == fname_lc);
+    if shadowed {
+        return ArgDispatchInfo::untyped();
+    }
+    let Some(from_object) = object_by_id(graph, from) else {
+        return ArgDispatchInfo::untyped();
+    };
+    let (_shape, routes) = resolve_bare(
+        from_object,
+        &fname_lc,
+        inner_arity,
+        graph,
+        index,
+        body_map,
+        with_state,
+    );
+    let [route] = routes.as_slice() else {
+        return ArgDispatchInfo::untyped();
+    };
+    if let RouteTarget::Builtin(BuiltinId(name)) = &route.target {
+        return match builtin_return_base_keyword(name) {
+            Some(kw) => ArgDispatchInfo {
+                canonical: Some(CanonicalArgType::Base(kw.to_string())),
+                exact_text: Some(kw.to_string()),
+                literal_kind: None,
+                var_passable: false,
+            },
+            None => ArgDispatchInfo::untyped(),
+        };
+    }
+    let Some(node) = routine_node_for_type_query(route, inner_arity, from_object, graph, index)
+    else {
+        return ArgDispatchInfo::untyped();
+    };
+    call_result_arg_from_routine_node(node, from, graph, index)
+}
+
+/// (b) `Member`-function call-result arg (T3, part b): `Foo(X.Method())` —
+/// mirrors `receiver::infer_cross_object_chain_receiver`'s (Step 6) base
+/// typing + single-route contract:
+/// 1. **`with`-scope gate FIRST** (mirrors the plain `Member`-field arm
+///    above EXACTLY): the base identifier could be `with`-rebound, which the
+///    caller-scope-EXACT lookup below structurally cannot see.
+/// 2. **Bare-identifier base guard**: `object` must be a bare
+///    `Identifier`/`QuotedIdentifier` — a multi-hop base (`A.B.Method()`)
+///    declines rather than guess.
+/// 3. **Caller-scope-EXACT base typing**: the base's declared type, via the
+///    SAME `caller_scope_symbol` lookup the plain `Member` arm uses —
+///    deliberately NOT the implicit-Rec fallback (same rationale as that
+///    arm: an implicit `Rec` with no declared var in scope declines here).
+/// 4. **`resolve_member` SINGLE-route query**: `base_receiver.Method()`'s
+///    resolved route set must be EXACTLY one route (an interface fan-out or
+///    a genuine same-object overload ambiguity — >1 routes — declines,
+///    never a guessed pick); a `RouteTarget::Unresolved`/`Builtin` target
+///    also declines (no member-builtin return catalog exists in this
+///    increment — the passive catalog is bare-global-function-only, part
+///    c).
+/// 5. **Return-type read** via [`call_result_arg_from_routine_node`] (the
+///    Primitive-decline bypass).
+#[allow(clippy::too_many_arguments)]
+fn type_call_result_arg_member(
+    file: &AlFile,
+    base_expr: ExprId,
+    member: &str,
+    inner_arity: usize,
+    routine: &RoutineDecl,
+    object_globals: &[VarDecl],
+    from: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    with_state: WithState,
+) -> ArgDispatchInfo {
+    if with_state != WithState::NoWithProven {
+        return ArgDispatchInfo::untyped();
+    }
+    let base_name = match &file.ir.expr(base_expr).kind {
+        ExprKind::Identifier(n) | ExprKind::QuotedIdentifier(n) => n,
+        // Multi-hop base (itself a Member/Call/…) — out of this increment's
+        // scope, decline rather than guess.
+        _ => return ArgDispatchInfo::untyped(),
+    };
+    let CallerScopeSymbol::Found(Some(base_ty_text)) =
+        caller_scope_symbol(base_name, routine, object_globals)
+    else {
+        return ArgDispatchInfo::untyped();
+    };
+    let Some(from_object) = object_by_id(graph, from) else {
+        return ArgDispatchInfo::untyped();
+    };
+    let base_receiver =
+        parsed_type_to_receiver(classify_type_text(base_ty_text), from_object, graph, index);
+    let member_lc = unquote_identifier(member).to_ascii_lowercase();
+    let (_shape, routes) = resolve_member(
+        &base_receiver,
+        &member_lc,
+        inner_arity,
+        from_object,
+        graph,
+        index,
+        body_map,
+    );
+    let [route] = routes.as_slice() else {
+        return ArgDispatchInfo::untyped();
+    };
+    if matches!(
+        route.target,
+        RouteTarget::Unresolved | RouteTarget::Builtin(_)
+    ) {
+        return ArgDispatchInfo::untyped();
+    }
+    let Some(node) = routine_node_for_type_query(route, inner_arity, from_object, graph, index)
+    else {
+        return ArgDispatchInfo::untyped();
+    };
+    call_result_arg_from_routine_node(node, from, graph, index)
+}
+
+/// Read a resolved call-result routine's return type as an
+/// [`ArgDispatchInfo`], applying the SAME structural safety guards
+/// [`receiver::receiver_from_routine_node`] (private to that module) applies
+/// to a call-result RECEIVER base — the `abi_overload_collapsed` short-
+/// circuit AND the `return_type_id` ABI structured cross-validation (Task 2,
+/// cross-object-chains plan: the ABI's own declared Subtype `(name, id)`
+/// pair must agree with the object the NAME resolves to, or the signal is
+/// untrustworthy and declines) — WITHOUT that function's Primitive-decline
+/// (T3 plan addendum, BINDING: "the Primitive-decline bypass keeps every
+/// other guard verbatim" — an ARGUMENT position WANTS exactly the
+/// scalar/primitive shapes a receiver dispatch base would reject, since a
+/// primitive has no further members to dispatch on but is exactly what an
+/// argument position needs).
+///
+/// `routine_node_for_type_query` (the caller's own choke point) ALREADY
+/// applies the `abi_overload_collapsed` check and the ABI-PREFIX UNIQUENESS
+/// GUARD before this function ever sees `node` — the check here is defense-
+/// in-depth (mirrors `receiver_from_routine_node`'s own re-check for the
+/// `interface_own_routine_node` path it must cover).
+fn call_result_arg_from_routine_node(
+    node: &RoutineNode,
+    from: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> ArgDispatchInfo {
+    if node.abi_overload_collapsed {
+        return ArgDispatchInfo::untyped();
+    }
+    let Some(ty_text) = node.return_type.as_deref() else {
+        return ArgDispatchInfo::untyped();
+    };
+    let canonical = dispatch_canonical_type_text(ty_text, from, graph, index);
+    if let Some((_name, id)) = &node.return_type_id {
+        match &canonical {
+            Some(CanonicalArgType::Object(oid)) => match object_by_id(graph, oid) {
+                Some(obj) if obj.declared_id == Some(*id) => {}
+                _ => return ArgDispatchInfo::untyped(),
+            },
+            _ => return ArgDispatchInfo::untyped(),
+        }
+    }
+    match canonical {
+        Some(c) => ArgDispatchInfo {
+            canonical: Some(c),
+            exact_text: Some(normalize_type_text(ty_text)),
+            literal_kind: None,
+            var_passable: false,
+        },
+        None => ArgDispatchInfo::untyped(),
+    }
+}
+
+/// Passive builtin-return catalog (T3, part c): the return TYPE (base
+/// keyword, length-independent) of a small, high-value set of ubiquitous AL
+/// GLOBAL builtin functions. Consulted ONLY after `resolve_bare` has
+/// POSITIVELY reported `RouteTarget::Builtin` for the SAME name (never a
+/// bare name-string match — see [`type_call_result_arg_bare`]'s doc for why
+/// a shadowed name never reaches this catalog at all). Per-entry cited
+/// against the `methods-auto` Microsoft Learn reference (mirrors
+/// `framework_returns.rs`'s per-entry citation discipline); an uncataloged
+/// builtin name (`RouteTarget::Builtin` for a name not listed here) stays
+/// untyped, never guessed.
+///
+/// - `StrSubstNo`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/text/text-strsubstno-method>
+/// - `Format`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/system/system-format-joker-integer-integer-method>
+/// - `CopyStr`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/text/text-copystr-method>
+/// - `LowerCase`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/text/text-lowercase-method>
+/// - `UpperCase`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/text/text-uppercase-method>
+/// - `Round`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/system/system-round-method>
+/// - `StrLen`: <https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/text/text-strlen-method>
+const BUILTIN_RETURN_TEXT_CATALOG: &[(&str, &str)] = &[
+    ("strsubstno", "text"),
+    ("format", "text"),
+    ("copystr", "text"),
+    ("lowercase", "text"),
+    ("uppercase", "text"),
+    ("round", "decimal"),
+    ("strlen", "integer"),
+];
+
+/// Look up `name_lc` in [`BUILTIN_RETURN_TEXT_CATALOG`] — `None` for any
+/// name not listed (fail-closed: absence is untyped, never a guess).
+fn builtin_return_base_keyword(name_lc: &str) -> Option<&'static str> {
+    BUILTIN_RETURN_TEXT_CATALOG
+        .iter()
+        .find(|(n, _)| *n == name_lc)
+        .map(|(_, t)| *t)
 }
 
 /// Build the full [`ParamDispatchInfo`] list for one candidate's parameters,
@@ -1107,6 +1479,7 @@ mod tests {
         let globals = vec![var("X", "Text")];
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("X");
@@ -1118,6 +1491,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1137,6 +1511,7 @@ mod tests {
         let globals = vec![var("X", "Text")];
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("X");
@@ -1148,6 +1523,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1163,6 +1539,7 @@ mod tests {
         let routine = empty_routine();
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = Expr {
@@ -1177,6 +1554,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1202,6 +1580,7 @@ mod tests {
         routine.locals.push(var("SomeField", "Integer"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("SomeField");
@@ -1213,6 +1592,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::InsideWith,
         );
         assert_eq!(
@@ -1231,6 +1611,7 @@ mod tests {
         routine.locals.push(var("SomeField", "Integer"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("SomeField");
@@ -1242,6 +1623,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::Unknown,
         );
         assert_eq!(
@@ -1259,6 +1641,7 @@ mod tests {
         let routine = empty_routine();
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = Expr {
@@ -1273,6 +1656,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::InsideWith,
         );
         assert_eq!(
@@ -1334,6 +1718,7 @@ mod tests {
         routine.return_type = Some("JsonValue".to_string());
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("ReturnValue");
@@ -1345,6 +1730,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1368,6 +1754,7 @@ mod tests {
         routine.return_type = Some("Text".to_string());
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = Expr {
@@ -1382,6 +1769,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1402,6 +1790,7 @@ mod tests {
         let globals = vec![var("Ret", "Text")];
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("Ret");
@@ -1413,6 +1802,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1433,6 +1823,7 @@ mod tests {
         routine.locals.push(var("Ret", "Text"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("Ret");
@@ -1444,6 +1835,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1467,6 +1859,7 @@ mod tests {
         routine.return_type = Some("JsonValue".to_string());
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         // Position 0 ("AttrName"): identical across both candidates — never
@@ -1480,6 +1873,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         let args = vec![attr_arg, return_value_arg];
@@ -1507,6 +1901,7 @@ mod tests {
         let routine = empty_routine(); // no return_name at all
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let from = test_object_id();
 
         let attr_arg = base_arg("text");
@@ -1518,6 +1913,7 @@ mod tests {
             &from,
             &graph,
             &index,
+            &body_map,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -1658,6 +2054,7 @@ codeunit 50100 "C"
 
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -1669,6 +2066,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
+            &body_map,
             with_state,
         );
         assert_eq!(
@@ -1699,6 +2097,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("quoted field", "Text[50]");
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("X", "Record Customer"));
 
@@ -1710,6 +2109,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
+            &body_map,
             with_state,
         );
         assert_eq!(
@@ -1737,6 +2137,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let routine = empty_routine(); // no `Rec` declared at all
 
         let info = type_one_arg(
@@ -1747,6 +2148,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
+            &body_map,
             with_state,
         );
         assert_eq!(
@@ -1773,6 +2175,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -1784,6 +2187,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
+            &body_map,
             with_state,
         );
         assert_eq!(
@@ -1810,6 +2214,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("SomeText", "Text"));
 
@@ -1821,6 +2226,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
+            &body_map,
             with_state,
         );
         assert_eq!(
@@ -1848,6 +2254,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -1859,6 +2266,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
+            &body_map,
             with_state,
         );
         assert_eq!(
@@ -1890,6 +2298,431 @@ codeunit 50100 "C"
             Some(0),
             "the var Text overload must be ELIMINATED (a member-field expr is \
              never var-passable) while the by-value Text overload is picked"
+        );
+    }
+
+    // -- type_one_arg: call-result args (T3, pageext-merge-and-final-residual
+    // plan) — Call/Binary/Parenthesized arms ---------------------------------
+
+    /// Every lowered `BinaryOp` token class AL defines as UNCONDITIONALLY
+    /// Boolean-typed (Eq/Ne/Lt/Le/Gt/Ge/And/Or/Xor/In) types cleanly
+    /// regardless of operand shape; the arithmetic family (`Add`) declines —
+    /// including a TEXT `+` concatenation (the SAME `Add` variant, non-
+    /// numeric operands), proving the decline is OPERATOR-driven, never
+    /// "looks numeric"-driven.
+    #[test]
+    fn type_one_arg_binary_operators_type_boolean_or_decline_per_token_class() {
+        let cases: &[(&str, bool)] = &[
+            ("1 = 1", true),          // Eq
+            ("1 <> 1", true),         // Ne
+            ("1 < 2", true),          // Lt
+            ("1 <= 2", true),         // Le
+            ("2 > 1", true),          // Gt
+            ("2 >= 1", true),         // Ge
+            ("TRUE AND FALSE", true), // And
+            ("TRUE OR FALSE", true),  // Or
+            ("TRUE XOR FALSE", true), // Xor
+            ("1 IN [1, 2, 3]", true), // In
+            ("1 + 1", false),         // Add (arithmetic decline)
+            ("'a' + 'b'", false),     // Add (text-concat decline — same
+                                      // variant as arithmetic; proves the decline is per-OPERATOR, not
+                                      // per-operand-"numeric-ness").
+        ];
+        for (expr_src, expect_boolean) in cases {
+            let src = format!(
+                r#"
+codeunit 50100 "C"
+{{
+    procedure Run()
+    begin
+        Foo({expr_src});
+    end;
+}}
+"#
+            );
+            let (file, args, with_state) = parse_call_args(&src, "Foo");
+            assert_eq!(args.len(), 1, "case {expr_src:?}");
+            let routine = empty_routine();
+            let graph = ProgramGraph::default();
+            let index = ResolveIndex::build(&graph);
+            let body_map = BodyMap::build(&graph, &[]);
+            let from = test_object_id();
+            let info = type_one_arg(
+                &file,
+                file.ir.expr(args[0]),
+                &routine,
+                &[],
+                &from,
+                &graph,
+                &index,
+                &body_map,
+                with_state,
+            );
+            if *expect_boolean {
+                assert_eq!(
+                    info.canonical,
+                    Some(CanonicalArgType::Base("boolean".into())),
+                    "case {expr_src:?} must type Boolean; got {info:?}"
+                );
+                assert!(
+                    !info.var_passable,
+                    "case {expr_src:?}: a computed Boolean is never var-passable"
+                );
+                assert_eq!(
+                    info.literal_kind, None,
+                    "case {expr_src:?}: a computed Boolean is not itself a literal"
+                );
+            } else {
+                assert_eq!(
+                    info.canonical, None,
+                    "case {expr_src:?} must stay untyped; got {info:?}"
+                );
+            }
+        }
+    }
+
+    /// Parenthesized unwrap: `Foo((1 = 1))` types identically to its
+    /// unwrapped inner expression — parens carry no type information of
+    /// their own.
+    #[test]
+    fn type_one_arg_parenthesized_unwraps_to_inner_typing() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    begin
+        Foo((1 = 1));
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let routine = empty_routine();
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        let from = test_object_id();
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            &body_map,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("boolean".into())),
+            "a parenthesized comparison must unwrap to its inner Boolean typing; got {info:?}"
+        );
+    }
+
+    /// Shadow guard (bare-Call arm, mirrors Step 5's guard EXACTLY): a LOCAL
+    /// var named `GetCount` shadows a same-named procedure — `GetCount()` is
+    /// then a variable reference, never a routine call, so this position
+    /// must decline rather than guess. No real graph dispatch is ever
+    /// attempted (the guard fires first).
+    #[test]
+    fn type_one_arg_call_result_bare_shadowed_by_local_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        GetCount: Integer;
+    begin
+        Foo(GetCount());
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let mut routine = empty_routine();
+        routine.locals.push(var("GetCount", "Integer"));
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        let from = test_object_id();
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            &body_map,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a local shadowing the called name must decline, never guess; got {info:?}"
+        );
+    }
+
+    /// `with`-scope gate (Member-Call arm, mirrors the plain `Member`-field
+    /// arm's gate EXACTLY): the base identifier could be `with`-rebound,
+    /// which the caller-scope-EXACT lookup structurally cannot see — the
+    /// SAME technique `type_one_arg_bare_identifier_degrades_inside_with`
+    /// uses (manually overriding `with_state` on an otherwise-clean parse,
+    /// since the gate must fire on the PROVEN with-state signal alone,
+    /// independent of whether this particular snippet has a real `with`
+    /// block).
+    #[test]
+    fn type_call_result_arg_member_degrades_inside_with() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Foo(Rec.ToBase64String());
+    end;
+}
+"#;
+        let (file, args, _with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        let mut routine = empty_routine();
+        routine.locals.push(var("Rec", "Record Customer"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            &body_map,
+            WithState::InsideWith,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a Member-function call-result base must degrade to untyped inside \
+             a proven `with` block; got {info:?}"
+        );
+    }
+
+    /// Multi-hop base decline (Member-Call arm): `Foo(Rec.Sub.Method())` —
+    /// the outer Call's function is `Member{object: Member{..}, ..}`, not a
+    /// bare identifier — out of this increment's scope, declines rather
+    /// than guess.
+    #[test]
+    fn type_call_result_arg_member_multi_hop_base_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Rec: Record Customer;
+    begin
+        Foo(Rec.Sub.Method());
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        let (graph, from_id) = build_member_arg_graph("blob", "Blob");
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        let mut routine = empty_routine();
+        routine.locals.push(var("Rec", "Record Customer"));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            &body_map,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a multi-hop base (itself a Member) must decline, never partially type; got {info:?}"
+        );
+    }
+
+    /// Builds a cross-app graph: a Workspace-tier `Caller` Codeunit + a
+    /// SymbolOnly-tier dependency `Dep Worker` Codeunit declaring one
+    /// arity-0 routine `GetValue` whose `return_type` is `None` — the common
+    /// real-world ABI-ingestion gap (a SymbolReference entry that did not
+    /// capture a return type). Mirrors `resolver.rs`'s
+    /// `entry_trigger_marker_guard_fixture` pattern.
+    fn build_symbol_only_member_call_graph() -> (ProgramGraph, ObjectNodeId) {
+        use crate::program::graph::ObjectIndex;
+        use crate::program::node::{AppRegistry, RoutineNodeId};
+        use crate::program::node_extract::{Access, ObjectNode};
+        use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
+        use crate::program::topology::DependencyGraph;
+        use crate::snapshot::{AppId, TrustTier};
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&AppId {
+            guid: String::new(),
+            name: "WS".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        });
+        let dep_ref = apps.intern(&AppId {
+            guid: String::new(),
+            name: "DepApp".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        });
+
+        let caller_id = ObjectNodeId {
+            app: ws_ref,
+            kind: al_syntax::ir::ObjectKind::Codeunit,
+            key: ObjKey::Id(50700),
+        };
+        let dep_id = ObjectNodeId {
+            app: dep_ref,
+            kind: al_syntax::ir::ObjectKind::Codeunit,
+            key: ObjKey::Id(60700),
+        };
+
+        let mut objects = vec![
+            ObjectNode {
+                id: caller_id.clone(),
+                name: "Caller".into(),
+                declared_id: Some(50700),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+                parse_incomplete: false,
+            },
+            ObjectNode {
+                id: dep_id.clone(),
+                name: "Dep Worker".into(),
+                declared_id: Some(60700),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+                parse_incomplete: false,
+            },
+        ];
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let routines = vec![RoutineNode {
+            id: RoutineNodeId {
+                object: dep_id.clone(),
+                name_lc: "getvalue".into(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            },
+            name: "GetValue".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+            source_overload_aliased: false,
+        }];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        (graph, caller_id)
+    }
+
+    /// SymbolOnly inner (T3 negative): the call-result base resolves to a
+    /// cross-app SymbolOnly (ABI) object whose target routine carries NO
+    /// captured return type (`return_type: None`) — a real-world ABI-
+    /// ingestion gap. Must decline to untyped, never guess/panic.
+    #[test]
+    fn type_call_result_arg_member_symbol_only_inner_with_no_return_type_declines() {
+        let src = r#"
+codeunit 50700 "Caller"
+{
+    procedure Run()
+    var
+        DepVar: Codeunit "Dep Worker";
+    begin
+        Foo(DepVar.GetValue());
+    end;
+}
+"#;
+        let (file, args, with_state) = parse_call_args(src, "Foo");
+        assert_eq!(with_state, WithState::NoWithProven);
+        let (graph, from_id) = build_symbol_only_member_call_graph();
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        let mut routine = empty_routine();
+        routine
+            .locals
+            .push(var("DepVar", "Codeunit \"Dep Worker\""));
+
+        let info = type_one_arg(
+            &file,
+            file.ir.expr(args[0]),
+            &routine,
+            &[],
+            &from_id,
+            &graph,
+            &index,
+            &body_map,
+            with_state,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a SymbolOnly inner call with no captured return type must decline; got {info:?}"
+        );
+    }
+
+    // -- builtin_return_base_keyword (T3, part c) ----------------------------
+
+    /// Every catalog entry resolves to its documented base keyword; an
+    /// uncataloged builtin name (e.g. `Message`, which returns nothing) is
+    /// `None` — fail-closed, never a guess.
+    #[test]
+    fn builtin_return_base_keyword_catalog_lookup() {
+        assert_eq!(builtin_return_base_keyword("strsubstno"), Some("text"));
+        assert_eq!(builtin_return_base_keyword("format"), Some("text"));
+        assert_eq!(builtin_return_base_keyword("copystr"), Some("text"));
+        assert_eq!(builtin_return_base_keyword("lowercase"), Some("text"));
+        assert_eq!(builtin_return_base_keyword("uppercase"), Some("text"));
+        assert_eq!(builtin_return_base_keyword("round"), Some("decimal"));
+        assert_eq!(builtin_return_base_keyword("strlen"), Some("integer"));
+        assert_eq!(
+            builtin_return_base_keyword("message"),
+            None,
+            "an uncataloged builtin must be None, never a guess"
         );
     }
 }

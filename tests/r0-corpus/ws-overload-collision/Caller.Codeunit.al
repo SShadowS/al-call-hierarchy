@@ -8,11 +8,17 @@
 // LITERAL argument is now compiler-proven evidence (an Integer literal
 // cannot bind `Code[20]`) — REBASELINED to a confident pick of the Integer
 // overload (see `ws_overload_collision_ambiguous_call_becomes_resolved_to_
-// the_integer_overload`). `CallAmbiguousUntyped` is the NEW control proving
-// the fail-closed pick does not over-fire when the argument carries no
-// evidence at all (a call-result, deferred/untyped in this increment) — it
-// pins the ORIGINAL "no evidence to disambiguate" shape the pre-Task-2 test
-// used to assert for the literal call.
+// the_integer_overload`).
+//
+// pageext-merge-and-final-residual plan, Task 3 (a SECOND rebaseline of the
+// SAME fixture): `CallAmbiguousUntyped`'s `GetValue()` call-result argument
+// — deferred/untyped through Task 2 — is now typed by `arg_dispatch::
+// type_one_arg`'s new `Call` arm (`GetValue(): Integer`, unshadowed,
+// unambiguous). `Integer` exact-matches `Resolve(X: Integer)` and PROVABLY
+// eliminates `Resolve(X: Code[20])` — REBASELINED to the SAME confident
+// pick `CallAmbiguous`'s literal already gets (see
+// `ws_overload_collision_untyped_arg_call_picks_integer_overload_via_call_
+// result_arg`).
 codeunit 50962 "Overload Collision Caller"
 {
     procedure CallAmbiguous()

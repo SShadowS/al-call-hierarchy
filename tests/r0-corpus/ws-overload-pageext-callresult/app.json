@@ -1,0 +1,8 @@
+{
+	"id": "ffffffff-1111-2222-3333-444444444444",
+	"name": "ProbePCR",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50150, "to": 50169 }]
+}

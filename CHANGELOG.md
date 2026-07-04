@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Call-result + boolean argument typing — `ambiguousResolved` 7→0, a FULL
+  closure (Task 3, pageext-merge-and-final-residual plan).** Extends
+  `arg_dispatch::type_one_arg` with three new arms so an argument that is
+  itself a CALL or a comparison/logical expression can now be typed, feeding
+  the UNCHANGED `pick_candidate` guard stack from Task 2:
+  - **`ExprKind::Call` arm** (`type_call_result_arg_bare`/
+    `type_call_result_arg_member`): (a) a bare-identifier call-result
+    (`Foo(GetCount())`) mirrors Step 5's guards
+    (`receiver::infer_call_result_receiver`) — the local/param/global SHADOW
+    guard, then a SINGLE-route `resolve_bare` query (empty `args` — no
+    recursion into `pick_candidate`); (b) a Member-function call-result
+    (`Foo(X.Method())`) mirrors Step 6's cross-object-chain base typing — the
+    base types via the SAME caller-scope-EXACT path the existing `Member`-
+    field arm uses (`with`-scope-gated), then a SINGLE-route `resolve_member`
+    query. Both read the resolved routine's return type via a new
+    `call_result_arg_from_routine_node` — the SAME `abi_overload_collapsed` +
+    `return_type_id` ABI structured-cross-validation guards
+    `receiver::receiver_from_routine_node` applies to a call-result RECEIVER
+    base, but WITHOUT that function's Primitive-decline (an argument WANTS
+    exactly the scalar/primitive shapes a receiver dispatch base would
+    reject). (c) `RouteTarget::Builtin` additionally consults a new passive,
+    per-entry-cited builtin-return catalog (`strsubstno`/`format`/`copystr`/
+    `lowercase`/`uppercase`→`text`, `round`→`decimal`, `strlen`→`integer`),
+    gated on `resolve_bare` POSITIVELY reporting `Builtin` for the exact
+    name — a source procedure shadowing one of these names resolves to
+    `RouteTarget::Routine` at Step 1, long before the catalog is ever
+    reachable, so a shadowed name is NEVER mistyped by the catalog (proven by
+    two mandatory shadowed-name fixtures, `Format`/`CopyStr` declared as
+    source procedures with a DIFFERENT return type).
+  - **`ExprKind::Binary`/`Parenthesized` arms**: `Eq`/`Ne`/`Lt`/`Le`/`Gt`/`Ge`/
+    `And`/`Or`/`Xor`/`In` type UNCONDITIONALLY as `Boolean` (no operand
+    inspection — AL defines these operators as Boolean-yielding regardless of
+    operand type); every arithmetic operator (`Add`/`Sub`/`Mul`/`Div`/
+    `IntDiv`/`Mod`) and the catch-all `Other` decline — including a TEXT `+`
+    concatenation (the SAME `Add` variant as numeric addition), proving the
+    decline is operator-driven, never "looks numeric"-driven.
+    `Parenthesized` unwraps recursively.
+  - **A companion `al-syntax` lowerer fix** (`crates/al-syntax/src/lower/
+    mod.rs`): `RawKind::InExpression` (`X in [..]`/`X in Y..Z` as an ORDINARY
+    expression, not a case pattern) was NOT included in the four-`RawKind`
+    union that lowers to `ExprKind::Binary` — it fell into the generic
+    catch-all, becoming `ExprKind::Unknown` (a payload-less variant), which
+    made any CALL nested inside it (e.g. `Session.CurrentClientType() in
+    [ClientType::Web, ..]`) structurally UNREACHABLE to a tree walker
+    descending from the statement root, even though the lowerer's own
+    "for completeness" recursion had already registered the nested call in
+    the arena. A genuine, pre-existing modeling gap (explicitly documented as
+    such by the `in_expression_case_pattern_is_a_single_pattern` test, now
+    updated) — root-caused and fixed by adding `RawKind::InExpression` to the
+    same lowering arm as the other four comparison/logical kinds (identical
+    `left`/`operator`/`right` field shape). Required for the `In` operator to
+    ever reach the new Boolean-typing arm at all for a plain call argument.
+  - **The remaining-ambiguous dump diagnostic**
+    (`task3_dump_remaining_ambiguous_resolved_sites_on_cdo`, `#[ignore]`d,
+    mirrors the `task2_dump_argtype_dispatch_flips_on_cdo`/
+    `task3_dump_untracked_receiver_sites_on_cdo` precedent): dumps every
+    `AmbiguousResolved` edge — site, every candidate's target identity, and
+    the raw call-site source text — for future mechanical re-grounding.
+  - New fixture banks (`tests/r0-corpus/`): `ws-overload-membercall-
+    discriminator` (the PrintPDFFile Member-call-result shape, POSITIVE);
+    `ws-overload-callresult-guards` (the inner-same-arity-overload-set
+    decline NEGATIVE + the two mandatory shadowed-`Format`/`CopyStr`
+    POSITIVE proofs); `ws-overload-pageext-callresult` (the addenda-mandatory
+    PageExtension-merge-single-route POSITIVE + two-visible-extensions
+    NEGATIVE decline — proves Task 3 composes correctly with Task 1's merge
+    through the SAME `resolve_member` call). The orphaned
+    `ws-overload-callexpr-discriminator` bank is now WIRED to its positive
+    outcome (documented rebaseline, not a regression — "rename, don't just
+    flip").
+  - Full CDO harness (single-threaded): `ambiguousResolved` 7→0 — EVERY
+    remaining site flipped, exceeding the plan's own "~4-5" grounding
+    estimate. That estimate's "3 sites are SymbolOnly-receiver-blocked"
+    premise was FALSIFIED by measurement (CDO's dependencies ship embedded/
+    ShowMyCode source, so their receivers are ordinary `RouteTarget::Routine`
+    candidates, never `AbiSymbol`) — all 7 sites individually hand-traced
+    against real embedded/workspace source (2× `PrintPDFFile`, 1×
+    `SendElectronicDocument`, 1× `LogMessage` — a Continia dependency, source
+    extracted directly from its `.app` zip package —, 2× `AddUserMessage`
+    against Microsoft's real `AOAI Chat Messages` System Application object,
+    1× `AddAttachment` against Microsoft's real `Email Message` object); see
+    `cdo_full_program_coverage_and_self_reported_metric`'s updated ratchet
+    comment for the full per-site adjudication. `real_unknown_rate`/`unknown`
+    stay at the floor (0), `genuine_wrong`=0 throughout
+    (`cdo_genuine_wrong_is_precedence_adjudicated` +
+    `cdo_l3_semantic_audit_no_fresh_wrong`, both re-run and green). Coverage
+    (`total`) grows 18104→18108 (primary) / 43404→43408 (whole-program) — an
+    honest, additive side effect of the `in_expression` lowerer completeness
+    fix surfacing previously-invisible nested call obligations;
+    `coverage.holds` stays `true` throughout (no orphaned obligation).
+
 ### Fixed
 - **PageExtension routine merge into base-Page member resolution — real-`unknown`
   0.0497%→0.0110%, `MemberNotFound` 7→0 (Task 1, pageext-merge-and-final-residual

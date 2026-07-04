@@ -248,6 +248,7 @@ fn resolve_call_site_obligation(
             &obj_node.id,
             graph,
             index,
+            body_map,
             with_state,
         ),
         None => Vec::new(),

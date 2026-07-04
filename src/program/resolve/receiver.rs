@@ -2552,7 +2552,14 @@ fn parse_currpage_bare_control_segment(rest: &str) -> Option<String> {
 /// arm can drive [`ResolveIndex::resolve_object_ref`] (needs the full
 /// `ObjectNodeId`, not just the app) — the fail-closed, shape-preserving
 /// resolution Caller A needs (I1).
-fn parsed_type_to_receiver(
+///
+/// `pub(crate)`: T3 (pageext-merge-and-final-residual plan) reuses this
+/// EXACT conversion in `arg_dispatch::type_one_arg`'s new `Call{function:
+/// Member{..}}` arm to type a `Var.Method()` call-RESULT argument's base —
+/// the SAME "declared type text -> ReceiverType" step Step 2's declared-
+/// variable receiver typing and Step 6's cross-object-chain base typing both
+/// already use, just needed one module over.
+pub(crate) fn parsed_type_to_receiver(
     pt: ParsedType,
     from_object: &ObjectNode,
     graph: &ProgramGraph,

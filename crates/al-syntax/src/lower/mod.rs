@@ -1234,7 +1234,8 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         RawKind::AdditiveExpression
         | RawKind::MultiplicativeExpression
         | RawKind::ComparisonExpression
-        | RawKind::LogicalExpression => ExprKind::Binary {
+        | RawKind::LogicalExpression
+        | RawKind::InExpression => ExprKind::Binary {
             op: binary_op(node, source),
             lhs: lower_opt_field(node, FieldName::Left, ir, issues, source),
             rhs: lower_opt_field(node, FieldName::Right, ir, issues, source),
@@ -1437,10 +1438,11 @@ codeunit 50000 T
     /// `X in [..]` as a case pattern now binds the `pattern` field to a SINGLE named
     /// `in_expression` node, instead of the old inline `seq` that spread `left` /
     /// `operator` / `right` fields onto the branch. So the branch has exactly ONE
-    /// pattern (not three), and lowering does not panic. (`in_expression` itself is an
-    /// unmodelled container today → `ExprKind::Unknown` with its `[..]`/identifier
-    /// children captured in the arena — a separate, pre-existing modeling gap, not a
-    /// field-pollution regression.)
+    /// pattern (not three), and lowering does not panic. (Call-result/boolean arg
+    /// typing plan, Task 3: `in_expression` is now MODELED as `ExprKind::Binary{op:
+    /// BinaryOp::In, ..}` — same as the other four comparison/logical RawKinds — so
+    /// this pattern lowers to a real `Binary` node, not `Unknown`; the previously-
+    /// documented "separate, pre-existing modeling gap" is closed.)
     #[test]
     fn in_expression_case_pattern_is_a_single_pattern() {
         let src = r#"
