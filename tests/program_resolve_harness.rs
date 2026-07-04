@@ -1977,11 +1977,21 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // produced in a disjoint histogram bucket, each individually adjudicated
     // compiler-correct against real CDO field declarations (see that
     // ratchet's comment).
+    //
+    // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual plan, Task 1):
+    // 0.000498 → 0.000111, measured 0.011% (2/18104=0.0001105). The
+    // Page/PageExtension routine merge (the missing resolve_in_table_scope
+    // analog) resolved all 7 MemberNotFound sites — CDO's own pageextension
+    // declares the members (the "verified-real absences" premise falsified);
+    // residual 2 = UntrackedReceiver 1 (the honest Page-gap) +
+    // BuiltinPrecedenceCollision 1 (both Task-2 targets).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.000498,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.000498 \
-         (recorded 2026-07-04 post receiver-closure-and-arg-increments plan \
+        primary_rate <= 0.000111,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.000111 \
+         (recorded 2026-07-04 post pageext-merge-and-final-residual Task 1: \
+         0.011% [2/18104=0.0001105], the PageExtension routine merge; was \
+         0.0497% post receiver-closure-and-arg-increments plan \
          Task 4: 0.0497% [9/18104=0.0004971], enum-shape receivers + \
          member-field arg dispatch + comment-aware with scan; was 0.072% \
          [13/18104=0.0007181] post Task 3, named-return-value bindings + \
@@ -2215,10 +2225,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // resolve, `unknownByReason`={UntrackedReceiver: 1,
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==9 —
     // `CompoundReceiver` no longer appears).
+    // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual, Task 1): 9→2 —
+    // the PageExtension routine merge closed all 7 MemberNotFound sites;
+    // `unknownByReason`={UntrackedReceiver: 1, BuiltinPrecedenceCollision: 1},
+    // sum==2 — `MemberNotFound` no longer appears.
     assert!(
-        ph.unknown <= 9,
-        "primary unknown count {} exceeds ceiling 9 (recorded 2026-07-04 \
-         post receiver-closure-and-arg-increments plan Task 4: 9, \
+        ph.unknown <= 2,
+        "primary unknown count {} exceeds ceiling 2 (recorded 2026-07-04 \
+         post pageext-merge-and-final-residual Task 1: 2, the PageExtension \
+         routine merge; was 9 post receiver-closure-and-arg-increments plan \
+         Task 4: 9, \
          enum-shape receivers + member-field arg dispatch + comment-aware \
          with scan; was 27 post Task 2, parens-optional zero-arg framework \
          members + ErrorInfo.CustomDimensions rows; was 40 post Task 1, \
@@ -2297,10 +2313,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task
     // 4): 27→9, alongside the primary ceiling above; whole-program
     // `unknown`=9, same value as primary today.
+    //
+    // TIGHTENED 2026-07-04 (pageext-merge-and-final-residual, Task 1): 9→2,
+    // alongside the primary ceiling above; whole-program `unknown`=2, same
+    // value as primary today.
     assert!(
-        h.unknown <= 9,
-        "whole-program unknown count {} exceeds ceiling 9 (recorded \
-         2026-07-04 post receiver-closure-and-arg-increments plan Task 4: 9, \
+        h.unknown <= 2,
+        "whole-program unknown count {} exceeds ceiling 2 (recorded \
+         2026-07-04 post pageext-merge-and-final-residual Task 1: 2, the \
+         PageExtension routine merge; was 9 post \
+         receiver-closure-and-arg-increments plan Task 4: 9, \
          enum-shape receivers + member-field arg dispatch + comment-aware \
          with scan; was 27 post Task 2, parens-optional zero-arg framework \
          members + ErrorInfo.CustomDimensions rows; was 40 post Task 1, \
