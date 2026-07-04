@@ -8,6 +8,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Zero-arg framework members resolve parens-less — parens are OPTIONAL in
+  AL: real-`unknown` 0.22%→0.15%, `CompoundReceiver` 14→1 (receiver-closure-
+  and-arg-increments plan, Task 2).** Closes the 9-site (A) population
+  (`Response.Content.ReadAs(X)`-style — the zero-arg framework getter written
+  WITHOUT parens, idiomatic AL) plus the 4-site (B) population
+  (`ErrorInfo.CustomDimensions.{ContainsKey,Get}`):
+  - **Root cause (the (A) 9):** a parens-less zero-arg call parses as
+    `ExprKind::Member` (`is_method: false`) — structurally IDENTICAL to a
+    property/field read — but the framework/RecordRef-family/enum-chain
+    return-type tables were keyed strictly on `(.., is_method, arity)`, so a
+    bare `Member` hop missed every `is_method: true, arity: 0` row and the
+    chain declined. The module doc (`framework_returns.rs`) claimed "AL
+    procedures ALWAYS require parens" — FALSE (the standing
+    parens-are-optional correction, third recurrence; `Response.Content;`
+    compiles, Code Cop AA0008 is style-only) — and the negative tests
+    `framework_chain_wrong_form_property_instead_of_method_declines` /
+    `ws_compound_framework_wrong_form_property_instead_of_method_stays_unknown` /
+    `ws_chain_tables_xml_wrong_form_property_instead_of_method_stays_unknown`
+    enforced the wrong behavior.
+  - **Fix — context-sensitive lookup at the inference boundary, keeping the
+    `is_method` schema** (round-1 addendum C3 design, BINDING): a new
+    `zero_arg_aware_lookup` wrapper in `receiver.rs` wraps all three table
+    probes in `infer_compound_member_receiver`. A genuine zero-arg `Call`
+    (`X.Content()`) looks up the method row directly, unchanged. A bare READ
+    `Member` (`X.Content`) tries the exact property row (`is_method: false`)
+    FIRST, then the `is_method: true, arity: 0` method row as the
+    parens-less-call fallback. Both-rows-exist-with-conflicting-return-kinds
+    → `None` (fail-closed decline, never a guess) — currently unreachable
+    (the pre-flip audit confirmed ZERO `is_method: false` rows exist in any
+    of the three tables, so the fallback is unambiguous today), branch-proven
+    by direct unit tests for when a future property row lands.
+  - **Assignment-LHS can never become a call edge** (round-1 addendum,
+    verified + pinned): the normalization lives entirely inside receiver
+    TYPING of already-extracted call obligations; `collect_calls_v2`'s
+    `Member` arm never emits a call site for a bare `Member`, so
+    `X.Content := Y` is structurally invisible to extraction. Two new
+    extraction tests pin this invariant.
+  - **ErrorInfo rows (the (B) 4):** `(ErrorInfo, "customdimensions", true, 0)
+    → Dictionary` added to `framework_return_kind` with MS Learn provenance
+    (methods-auto/errorinfo, fetched 2026-07-04: `CustomDimensions([Dictionary
+    of [Text, Text]])`, runtime 3.0) — the arity-1 SETTER form deliberately
+    not tabled (no chainable return, same shape as `HttpRequestMessage.
+    Content`). **Representability: YES** — `FrameworkKind::Dictionary`
+    already exists and `member_catalog`'s DICTIONARY set already lists
+    `containskey`/`get`; the Dictionary's generic VALUE type is untracked but
+    irrelevant here because the leaf `ContainsKey`/`Get` calls ARE the edges
+    (builtin Catalog) — no chaining past `Get`'s result is needed at any real
+    site; if it were, that deeper hop would decline fail-closed.
+  - **Documented rebaselines (correctness over compatibility):** the three
+    wrong-form negative tests flipped + renamed (`..parens_less_property_form
+    _resolves..`), each citing the parens memory; the false module doc
+    corrected.
+  - **CDO gate:** primary real-`unknown` 40→27 (0.22%→0.15%
+    [27/18104=0.0014914]), `CompoundReceiver` 14→1 (the residual 1 is the (D)
+    enum-chain site deferred to Task 4), every other bucket byte-identical
+    (`UntrackedReceiver`=18, `MemberNotFound`=7,
+    `BuiltinPrecedenceCollision`=1). All 13 sites individually adjudicated
+    against real CDO source (9 in `Codeunit 6175322 "CDO Http Management"`,
+    4 in Codeunits 6175309/6175376). L3 semantic audit: matches 6158→6145 /
+    fresh_extra 5069→5082 (the frozen L3 golden held these 13 leaf sites
+    unresolved too — fresh is now AHEAD of the retired reference;
+    `fresh_extra_verified` per-site), `fresh_missing` stays 1, `fresh_wrong`
+    stays 149/149 adjudicated, `genuine_wrong`=0, `ambiguousResolved`=13
+    unchanged. Ratchets re-derived (rate ceiling 0.002210→0.001492,
+    unknown-count ceilings 40→27), dated 2026-07-04.
 - **`CurrPage.<usercontrol>` ControlAddIn receivers — closed-if-known gating:
   real-`unknown` 0.43%→0.22%, `CompoundReceiver` 51→14 (receiver-closure-and-
   arg-increments plan, Task 1).** Closes the 37-site mechanical population

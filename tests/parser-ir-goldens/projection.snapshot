@@ -58,7 +58,7 @@ ws-calls/src/caller.al	96c344c8ad622918
 ws-calls/src/worker.al	36e57bc4b9025574
 ws-callsite-resolutions/src/Broken.Codeunit.al	675b915643c6ceee
 ws-callsite-resolutions/src/Caller.Codeunit.al	11592eb4b5aab4d8
-ws-chain-tables/src/CTCaller.Codeunit.al	6e593a96da86436e
+ws-chain-tables/src/CTCaller.Codeunit.al	85dac1f3d1d75b7d
 ws-chain-tables/src/CTItem.Table.al	d83ab04386d49034
 ws-codeunit-rec/src/AmbiguousCodeunit.Codeunit.al	574276894fa24cb4
 ws-codeunit-rec/src/Item.Table.al	761acfca04cdb031
@@ -76,7 +76,7 @@ ws-compound-call-result/src/CRHelper.Codeunit.al	8c8471d83b196f16
 ws-compound-call-result/src/CallResultCaller.Codeunit.al	d828a2e155a5f57d
 ws-compound-call-result/src/CallResultPage.Page.al	27673218cf5458a3
 ws-compound-call-result/src/ICRFoo.Interface.al	efe4de7f76fceb54
-ws-compound-framework/src/CFCaller.Codeunit.al	30f1d125aaeec22e
+ws-compound-framework/src/CFCaller.Codeunit.al	db073f266c9439f5
 ws-compound-framework/src/CFCustomer.Table.al	0688ea85a49da061
 ws-compound-receiver/src/CustomerCard.Page.al	46c52066a8a0909f
 ws-compound-receiver/src/CustomerCardPart.Page.al	75cf772e7882c46c

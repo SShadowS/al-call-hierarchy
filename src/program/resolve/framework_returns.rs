@@ -35,10 +35,25 @@
 //! arity)` overload with a different return kind — see [`MIN_SUPPORTED_RUNTIME`]
 //! for the version-gating policy this implies).
 //!
-//! `is_method` encodes real AL syntax, not a caller choice: AL procedures ALWAYS
-//! require parens (even zero-arg — `Response.Content()`, not `Response.Content`),
-//! so a source site's parenthesization alone determines which table row applies;
-//! there is no "property vs method" ambiguity to resolve at the call site.
+//! `is_method` reflects the AST shape the SOURCE SITE happened to use
+//! (`ExprKind::Call` vs a bare `ExprKind::Member`), not a claim about AL
+//! grammar. **Correction (receiver-closure plan v2.1 Task 2 — the third
+//! recurrence of this same standing mistake; see the
+//! al-parens-optional-procedure-calls memory):** AL procedures do NOT always
+//! require parens — a zero-arg call is legal parens-less (`Response.Content;`
+//! compiles; the Code Cop AA0008 flags the missing parens as a STYLE issue,
+//! not a compile error), and a parens-less zero-arg call to a real procedure
+//! parses to the IDENTICAL `ExprKind::Member{is_method: false}` shape a
+//! genuine property/field read does. So `is_method` alone does NOT determine
+//! which table row a bare `Member` site means — the caller
+//! ([`crate::program::resolve::receiver::infer_compound_member_receiver`],
+//! via its `zero_arg_aware_lookup` wrapper) tries BOTH the exact
+//! `is_method: false` row and the `is_method: true, arity: 0` fallback row
+//! for a bare `Member`, and only a genuine `ExprKind::Call` (real args,
+//! unambiguous parens) is looked up directly with no fallback. Every table
+//! row below is still written as a real AL zero-arg METHOD
+//! (`is_method: true`) — that part of the doc was accurate; only the
+//! "parens are never optional so no ambiguity exists" conclusion was wrong.
 
 use crate::program::resolve::receiver::FrameworkKind;
 
@@ -221,6 +236,38 @@ pub fn framework_return_kind(
         // an `XmlNodeList`, which also collapses to `Xml`. Real CDO site
         // (confirmed above): `Node.AsXmlElement().GetChildNodes()`.
         (Xml, "getchildnodes", true, 0) => Some(Xml),
+
+        // ---------------------------------------------------------------
+        // ErrorInfo.CustomDimensions (receiver-closure plan v2.1 Task 2) —
+        // an ARITY-OVERLOADED getter/setter, the identical shape as
+        // `HttpRequestMessage.Content` above: `CustomDimensions()` (arity 0,
+        // GETTER, returns `Dictionary of [Text, Text]`) vs
+        // `CustomDimensions(Dictionary of [Text, Text])` (arity 1, SETTER, no
+        // chainable return — deliberately NOT tabled, same reasoning as the
+        // `Content(HttpContent)` setter).
+        //
+        // Provenance: methods-auto/errorinfo (Microsoft Learn, fetched
+        // 2026-07-04) — `CustomDimensions([Dictionary of [Text, Text]])`,
+        // "Set of additional dimensions, specified as a dictionary that
+        // relates to the error." ErrorInfo itself is "Available or changed
+        // with runtime version 3.0" (above this table's `MIN_SUPPORTED_
+        // RUNTIME` floor of 1.0 — every BC runtime this engine targets is
+        // 3.0+, so no dynamic gate is needed, same policy as every other
+        // entry per this module's runtime-pin doc). Cross-checked against
+        // `member_catalog.rs`'s `ERRORINFO` phf set: `customdimensions` is
+        // present as a validated member.
+        //
+        // The Dictionary's VALUE-type parameter (`[Text, Text]`) is NOT
+        // tracked by `FrameworkKind::Dictionary` (a bare, non-generic
+        // variant) — deliberately: the 4 real CDO sites this closes
+        // (`ErrInfo.CustomDimensions.ContainsKey(K)` /
+        // `ErrInfo.CustomDimensions.Get(K)`) never need to chain PAST the
+        // `ContainsKey`/`Get` call itself (per the Task 2 report's
+        // representability analysis — those calls are the LEAF edge,
+        // dispatched by `member_catalog`'s `DICTIONARY` phf set, which
+        // already lists `containskey`/`get`); only the CONTAINER kind needs
+        // representing here, not its generic parameters.
+        (ErrorInfo, "customdimensions", true, 0) => Some(Dictionary),
 
         _ => None,
     }
@@ -437,6 +484,22 @@ mod tests {
     fn xml_untabled_member_declines() {
         assert_eq!(
             framework_return_kind(&FrameworkKind::Xml, "attributes", true, 0),
+            None
+        );
+    }
+
+    /// `ErrorInfo.CustomDimensions()` (Task 2, the 4 ErrorInfo sites) —
+    /// arity-0 GETTER resolves to `Dictionary`; the arity-1 SETTER form has
+    /// no chainable return and must NOT resolve (same shape as
+    /// `HttpRequestMessage.Content`/`Content(HttpContent)` above).
+    #[test]
+    fn errorinfo_customdimensions_getter_resolves_but_setter_arity_does_not() {
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::ErrorInfo, "customdimensions", true, 0),
+            Some(FrameworkKind::Dictionary)
+        );
+        assert_eq!(
+            framework_return_kind(&FrameworkKind::ErrorInfo, "customdimensions", true, 1),
             None
         );
     }

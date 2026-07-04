@@ -113,7 +113,7 @@ because none of its base names happen to start with the one wildcarded framework
 | (b) POSITIVE: `KeyIndex`->`KeyRef`, `FieldIndex`->`FieldRef`, `Value` leaf | `TestRecordRefKeyIndexFieldIndexValue` | `ws_chain_tables_recordref_keyindex_fieldindex_value_resolves_catalog` |
 | (c) POSITIVE: `Field`->`FieldRef`, `Caption` leaf | `TestRecordRefFieldCaption` | `ws_chain_tables_recordref_field_caption_resolves_catalog` |
 | (n1) NEGATIVE: un-tabled Xml member (`Attributes`) | `TestXmlUntabledMemberChain` | `ws_chain_tables_xml_untabled_member_chain_stays_unknown` |
-| (n2) NEGATIVE: wrong form (`AsXmlElement` no parens) | `TestXmlWrongFormPropertyInsteadOfMethod` | `ws_chain_tables_xml_wrong_form_property_instead_of_method_stays_unknown` |
+| (n2) REBASELINE (Task 2): parens-less `AsXmlElement` resolves like `AsXmlElement()` | `TestXmlParensLessPropertyFormResolvesToMethod` | `ws_chain_tables_xml_parens_less_property_form_resolves_catalog` |
 | (n3) NEGATIVE: wrong arity (`Create()`, 0 args) | `TestXmlWrongArityCreate` | `ws_chain_tables_xml_wrong_arity_create_stays_unknown` |
 | (n4) NEGATIVE: wrong arity (`KeyIndex(1,2)`) | `TestRecordRefFamilyWrongArity` | `ws_chain_tables_recordref_family_wrong_arity_stays_unknown` |
 | (n5) NEGATIVE: same-named member, non-RecordRef-family receiver | `TestRecordFieldIndexNotRecordRefFamily` | `ws_chain_tables_record_fieldindex_not_recordref_family_stays_unknown` |

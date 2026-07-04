@@ -1165,18 +1165,23 @@ fn infer_receiver_type_for_expr(
 ///   [`infer_this_member`] against the SELF-ONLY `object_globals` scope.
 /// - **Framework chain**: recursively type `object_expr_id` via
 ///   [`infer_receiver_type_for_expr`]; if it resolves to `Framework(kind)`,
-///   look up `(kind, member_lc, is_method, arity)` in the versioned
-///   [`framework_return_kind`] table. A table miss declines IMMEDIATELY
-///   (correction, Task 4: does NOT fall through to the cross-object-chain
-///   arm below — a `Framework` base has no source/ABI procedures to
-///   type-query, so falling through could never resolve anything there
-///   anyway; this arm's `if let` unconditionally `return`s either the
-///   mapped kind or `Unknown`).
+///   look up `(kind, member_lc, is_method, arity)` via the CONTEXT-SENSITIVE
+///   [`zero_arg_aware_lookup`] wrapper around the versioned
+///   [`framework_return_kind`] table (receiver-closure plan v2.1 Task 2 — see
+///   that function's doc for the parens-optional fallback rule). A lookup
+///   miss declines IMMEDIATELY (correction, Task 4: does NOT fall through to
+///   the cross-object-chain arm below — a `Framework` base has no
+///   source/ABI procedures to type-query, so falling through could never
+///   resolve anything there anyway; this arm's `if let` unconditionally
+///   `return`s either the mapped kind or `Unknown`).
 /// - **`RecordRef`/`FieldRef`/`KeyRef` chain** (Task 4, chain-tables plan):
 ///   the SAME recursive base-typing; if it resolves to one of the three
-///   `*Ref` unit variants, look up `(kind, member_lc, is_method, arity)` in
-///   the versioned [`recordref_family_return_kind`] table (a DISTINCT
-///   family from `framework_return_kind`). A table miss also declines
+///   `*Ref` unit variants, look up `(kind, member_lc, is_method, arity)` via
+///   the SAME [`zero_arg_aware_lookup`] wrapper around the versioned
+///   [`recordref_family_return_kind`] table (a DISTINCT family from
+///   `framework_return_kind`; every entry there is currently arity ≥1, so
+///   the wrapper is a behavior-preserving no-op for this family today — see
+///   the Task 2 report's pre-flip audit). A lookup miss also declines
 ///   IMMEDIATELY, for the identical reason — a `*Ref` base has no
 ///   source/ABI procedures to type-query either.
 /// - **Cross-object call-result chain** (plan v2.1 Task 3): STRICTLY the
@@ -1188,6 +1193,23 @@ fn infer_receiver_type_for_expr(
 ///   [`infer_cross_object_chain_receiver`] for the full guard. Untyped/
 ///   `Unknown`/`Primitive`/`Dynamic`/`*Ref` bases, or any decline along the
 ///   way, fall through to `Unknown` — never a partial guess.
+///
+/// # Context-sensitive zero-arg lookup (receiver-closure plan v2.1 Task 2)
+///
+/// [`zero_arg_aware_lookup`] wraps every `(.., is_method, arity)` table probe
+/// this function makes ([`framework_return_kind`], [`recordref_family_return_kind`],
+/// [`enum_chain_return_kind`]) — see its doc for the parens-optional fallback
+/// rule. It replaces this function's PRIOR contract, which passed `is_method`/
+/// `arity` straight through unmodified: that was WRONG for a bare `Member`
+/// hop, because AL's parens are OPTIONAL on a zero-arg procedure call (the
+/// user's standing correction — see the al-parens-optional-procedure-calls
+/// memory; also documented in this module's ROUND-2 SOUNDNESS CORRECTION
+/// above, which fixed the identical error for the record-field arm below).
+/// `Response.Content.ReadAs(X)` (no parens on `Content`) is structurally
+/// IDENTICAL AST to a genuine `Content` FIELD/property read — both parse to
+/// `ExprKind::Member{is_method: false}` — so a bare `Member` hop must ALSO
+/// try the table's zero-arg METHOD row before declining, not just the exact
+/// (`is_method: false`) row.
 #[allow(clippy::too_many_arguments)] // mirrors infer_receiver_type_for_expr's identity/lookup inputs plus member/is_method/arity — grouping would obscure the dispatch.
 fn infer_compound_member_receiver(
     file: &AlFile,
@@ -1230,7 +1252,9 @@ fn infer_compound_member_receiver(
     );
 
     if let ReceiverType::Framework(kind) = &base_ty {
-        if let Some(returned) = framework_return_kind(kind, &member_lc, is_method, arity) {
+        if let Some(returned) = zero_arg_aware_lookup(is_method, arity, |m, a| {
+            framework_return_kind(kind, &member_lc, m, a)
+        }) {
             return ReceiverType::Framework(returned);
         }
         return ReceiverType::Unknown;
@@ -1244,8 +1268,9 @@ fn infer_compound_member_receiver(
     // base has no source/ABI procedures to type-query either, exactly like
     // `Framework`).
     if let Some(family) = RecordRefFamilyKind::from_receiver_type(&base_ty) {
-        if let Some(returned) = recordref_family_return_kind(&family, &member_lc, is_method, arity)
-        {
+        if let Some(returned) = zero_arg_aware_lookup(is_method, arity, |m, a| {
+            recordref_family_return_kind(&family, &member_lc, m, a)
+        }) {
             return returned.to_receiver_type();
         }
         return ReceiverType::Unknown;
@@ -1260,7 +1285,9 @@ fn infer_compound_member_receiver(
     // `EnumType` base has no source/ABI procedures to type-query either, so a
     // table miss never falls through to the cross-object-chain arm below.
     if let ReceiverType::EnumType { .. } = &base_ty {
-        if let Some(returned) = enum_chain_return_kind(&member_lc, is_method, arity) {
+        if let Some(returned) = zero_arg_aware_lookup(is_method, arity, |m, a| {
+            enum_chain_return_kind(&member_lc, m, a)
+        }) {
             return ReceiverType::Framework(returned);
         }
         return ReceiverType::Unknown;
@@ -1342,6 +1369,66 @@ fn infer_compound_member_receiver(
     }
 
     ReceiverType::Unknown
+}
+
+/// Context-sensitive AL zero-arg member-table lookup (receiver-closure plan
+/// v2.1 Task 2; the parens-optional correction — see the
+/// al-parens-optional-procedure-calls memory, and this module's ROUND-2
+/// SOUNDNESS CORRECTION doc comment on the record-field arm, which fixed the
+/// identical error for a DIFFERENT arm earlier).
+///
+/// AL's parens are OPTIONAL on a zero-arg procedure call: `Response.Content`
+/// (no parens) and `Response.Content()` (parens) invoke the SAME zero-arg
+/// procedure when `Content` is one — and the no-parens form is INDISTINGUISHABLE
+/// at the AST level from a genuine property/field read (both parse to
+/// `ExprKind::Member`, `is_method: false`). Every table in this family
+/// ([`framework_return_kind`], [`recordref_family_return_kind`],
+/// [`enum_chain_return_kind`]) is keyed on `(.., is_method, arity)`, so a bare
+/// `Member` node must be tried against BOTH the exact property row
+/// (`is_method: false`, kept for a future table that adds one — see the Task
+/// 2 report's pre-flip audit: neither table has one today) AND the zero-arg
+/// METHOD row (`is_method: true, arity: 0`, the parens-less-call case) as a
+/// fallback — trying only one silently drops real call sites.
+///
+/// - A genuine `Call` node (`is_method: true`) is UNCHANGED: `lookup` is
+///   invoked with the caller's real `(is_method, arity)` directly, no
+///   fallback — the `Call` AST shape already proves a procedure invocation
+///   (parenthesized, real args), so there is no property-vs-method ambiguity
+///   left to resolve. A zero-arg `Call` (`Response.Content()`) still reaches
+///   `lookup(true, 0)` exactly as before.
+/// - A bare `Member` (`is_method: false`, `arity` is always `0` at every call
+///   site — see [`infer_receiver_type_for_expr`]'s `Member` arm) tries the
+///   property row (`lookup(false, 0)`) FIRST, then the method row
+///   (`lookup(true, 0)`) as a fallback.
+/// - Both rows existing with DIFFERING return kinds is a fail-closed conflict
+///   (`None` — the caller declines this arm, same as a table miss): the
+///   table cannot honestly claim which the source site means without deeper
+///   AST evidence this lookup doesn't have. UNREACHABLE today (audited: no
+///   `is_method: false` row exists in any of the three tables yet), but the
+///   branch exists so a FUTURE property-row addition can't silently
+///   mis-resolve a real ambiguity.
+/// - Both rows existing with the SAME return kind resolves normally — no
+///   ambiguity, both readings agree.
+fn zero_arg_aware_lookup<T: PartialEq>(
+    is_method: bool,
+    arity: usize,
+    lookup: impl Fn(bool, usize) -> Option<T>,
+) -> Option<T> {
+    if is_method {
+        return lookup(true, arity);
+    }
+    match (lookup(false, 0), lookup(true, 0)) {
+        (Some(prop), Some(method)) => {
+            if prop == method {
+                Some(prop)
+            } else {
+                None // conflicting return kinds -> fail closed, never guess
+            }
+        }
+        (Some(prop), None) => Some(prop),
+        (None, Some(method)) => Some(method),
+        (None, None) => None,
+    }
 }
 
 /// Cross-object call-result chain (plan v2.1 Task 3): type a `Var.Method()`
@@ -6058,12 +6145,22 @@ codeunit 50100 "C"
         assert_eq!(result, ReceiverType::Unknown);
     }
 
-    /// NEGATIVE: wrong FORM — a table method-entry invoked as a property (no
-    /// parens): `Response.Content.ReadAs(X)` (property form, `is_method:
-    /// false`) never matches the table's `(HttpResponseMessage, "content",
-    /// true, 0)` method-form entry.
+    /// REBASELINE (receiver-closure plan v2.1 Task 2 — corrects a WRONG
+    /// negative test): `Response.Content.ReadAs(X)` (parens-less, idiomatic
+    /// AL — `Content` written as a property, `is_method: false`) MUST
+    /// resolve exactly like the parens'd form
+    /// (`framework_chain_http_response_content_resolves_to_http_content`
+    /// above), because AL's parens are OPTIONAL on a zero-arg procedure call
+    /// (the user's standing correction — see the
+    /// al-parens-optional-procedure-calls memory; this is its THIRD
+    /// recurrence in this codebase). This test PREVIOUSLY asserted the
+    /// opposite (`ReceiverType::Unknown`) under the false premise "AL
+    /// procedures ALWAYS require parens" — that premise was wrong, so the
+    /// old assertion was wrong too; this is a correctness rebaseline, not a
+    /// behavior regression (per this project's "correctness over
+    /// compatibility" working principle).
     #[test]
-    fn framework_chain_wrong_form_property_instead_of_method_declines() {
+    fn framework_chain_parens_less_property_form_resolves_to_method() {
         let src = r#"
 codeunit 50100 "C"
 {
@@ -6097,7 +6194,224 @@ codeunit 50100 "C"
             Some((&file, receiver_id)),
             None,
         );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::HttpContent));
+    }
+
+    /// NEGATIVE (still holds post-Task-2): a genuinely-absent zero-arg
+    /// member in PROPERTY form (no parens) still declines — the parens-less
+    /// fallback tries the method row too, but a member that's in NEITHER
+    /// form's table (`"foo"` is not a `HttpResponseMessage` entry at all)
+    /// stays fail-closed, exactly like the call-form
+    /// `framework_chain_table_miss_declines` above. Proves the fallback
+    /// doesn't fabricate coverage — it only rescues a real table entry
+    /// written without parens, never an absent one.
+    #[test]
+    fn framework_chain_parens_less_table_miss_still_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        X: Text;
+    begin
+        Response.Foo.ReadAs(X);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "readas");
+        assert_eq!(receiver_text.to_ascii_lowercase(), "response.foo");
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("Response", "HttpResponseMessage"),
+            var_decl("X", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
         assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// POSITIVE (Task 2, the 4 ErrorInfo sites): `ErrInfo.CustomDimensions.
+    /// ContainsKey(K)` — `ErrInfo: ErrorInfo` -> `CustomDimensions` (bare,
+    /// parens-less property form, resolved via the SAME parens-optional
+    /// fallback as the HTTP case above) -> `Framework(Dictionary)`, so the
+    /// receiver of `.ContainsKey(...)` types `Framework(Dictionary)`.
+    #[test]
+    fn framework_chain_errorinfo_customdimensions_parens_less_resolves_to_dictionary() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        ErrInfo: ErrorInfo;
+        K: Text;
+    begin
+        ErrInfo.CustomDimensions.ContainsKey(K);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "containskey");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "errinfo.customdimensions"
+        );
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("ErrInfo", "ErrorInfo"),
+            var_decl("K", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Dictionary));
+    }
+
+    /// POSITIVE: the explicit-parens form of the same chain
+    /// (`ErrInfo.CustomDimensions().Get(K)`) resolves identically — one
+    /// table key serves both AST shapes via the `is_method: true` direct
+    /// path (unchanged, no fallback needed).
+    #[test]
+    fn framework_chain_errorinfo_customdimensions_explicit_parens_resolves_to_dictionary() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        ErrInfo: ErrorInfo;
+        K: Text;
+    begin
+        ErrInfo.CustomDimensions().Get(K);
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "get");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "errinfo.customdimensions()"
+        );
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("ErrInfo", "ErrorInfo"),
+            var_decl("K", "Text"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Framework(FrameworkKind::Dictionary));
+    }
+
+    // -----------------------------------------------------------------------
+    // zero_arg_aware_lookup — the context-sensitive boundary helper itself
+    // (Task 2). Exercised directly with synthetic closures so every branch
+    // (including the "both rows exist, conflicting kinds -> fail closed"
+    // branch that is UNREACHABLE via the real tables today, per the Task 2
+    // report's pre-flip audit) is proven, not just the real-table cases.
+    // -----------------------------------------------------------------------
+
+    /// A genuine `Call` (`is_method: true`) looks up directly — no fallback,
+    /// even when a differently-keyed "property" entry exists (proves the
+    /// `Call` path never consults the fallback branch at all).
+    #[test]
+    fn zero_arg_lookup_call_form_uses_direct_lookup_only() {
+        let result = zero_arg_aware_lookup(true, 0, |is_method, arity| match (is_method, arity) {
+            (true, 0) => Some("method"),
+            (false, 0) => Some("property"),
+            _ => None,
+        });
+        assert_eq!(result, Some("method"));
+    }
+
+    /// A bare `Member` (`is_method: false`) with ONLY a method-form row
+    /// (the real-world case today — the parens-less-call rescue).
+    #[test]
+    fn zero_arg_lookup_bare_member_falls_back_to_method_row() {
+        let result = zero_arg_aware_lookup(false, 0, |is_method, arity| match (is_method, arity) {
+            (true, 0) => Some("method"),
+            _ => None,
+        });
+        assert_eq!(result, Some("method"));
+    }
+
+    /// A bare `Member` with ONLY a property-form row resolves via the
+    /// property row directly (no method row to fall back to).
+    #[test]
+    fn zero_arg_lookup_bare_member_uses_property_row_when_present() {
+        let result = zero_arg_aware_lookup(false, 0, |is_method, arity| match (is_method, arity) {
+            (false, 0) => Some("property"),
+            _ => None,
+        });
+        assert_eq!(result, Some("property"));
+    }
+
+    /// Both a property row AND a method row exist with the SAME kind — no
+    /// ambiguity, resolves (both readings agree).
+    #[test]
+    fn zero_arg_lookup_bare_member_both_rows_agree_resolves() {
+        let result = zero_arg_aware_lookup(false, 0, |is_method, arity| match (is_method, arity) {
+            (false, 0) => Some("same"),
+            (true, 0) => Some("same"),
+            _ => None,
+        });
+        assert_eq!(result, Some("same"));
+    }
+
+    /// Both a property row AND a method row exist with CONFLICTING kinds —
+    /// fail-closed (`None`), never a guess. Unreachable via the real tables
+    /// today (audited: zero `is_method: false` rows exist in
+    /// `framework_return_kind`/`recordref_family_return_kind`/
+    /// `enum_chain_return_kind`) — this proves the guard holds for when a
+    /// FUTURE property row is added.
+    #[test]
+    fn zero_arg_lookup_bare_member_conflicting_rows_declines() {
+        let result = zero_arg_aware_lookup(false, 0, |is_method, arity| match (is_method, arity) {
+            (false, 0) => Some("property_kind"),
+            (true, 0) => Some("method_kind"),
+            _ => None,
+        });
+        assert_eq!(result, None);
+    }
+
+    /// Neither row exists — a genuine table miss, unaffected by the
+    /// fallback machinery.
+    #[test]
+    fn zero_arg_lookup_bare_member_neither_row_declines() {
+        let result: Option<&str> =
+            zero_arg_aware_lookup(false, 0, |_is_method, _arity| None::<&str>);
+        assert_eq!(result, None);
     }
 
     /// NEGATIVE: wrong ARITY — `Response.Content(X).ReadAs(Y)` (1 arg) never

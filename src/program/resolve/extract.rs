@@ -951,4 +951,74 @@ codeunit 50100 "C"
             _ => panic!("expected ExprKind::Call for the Func(...) receiver"),
         }
     }
+
+    /// Receiver-closure plan v2.1 Task 2 addendum ("assignment-LHS never
+    /// becomes a call"): `Response.Content := X;` — a plain assignment whose
+    /// TARGET is a bare `ExprKind::Member` (no parens, no args ANYWHERE) —
+    /// must produce ZERO call sites for that target. This is not a NEW gate
+    /// Task 2 had to add: `collect_calls_v2`'s `ExprKind::Member` arm only
+    /// ever RECURSES into `object` looking for a nested `Call`, it never
+    /// itself emits a `RawSiteV2` for a bare `Member` — so a target with no
+    /// `Call` anywhere in it (like this one) is structurally invisible to
+    /// call-site extraction, regardless of Task 2's parens-optional
+    /// normalization (which lives entirely inside `infer_receiver_type`'s
+    /// RECEIVER-TYPING of an ALREADY-EXTRACTED real call, never inside
+    /// extraction itself). This test pins that invariant so a future change
+    /// to `collect_calls_v2` can't silently start fabricating call edges
+    /// from assignment targets.
+    #[test]
+    fn assignment_lhs_bare_member_produces_no_call_site() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        Response: HttpResponseMessage;
+        X: HttpContent;
+    begin
+        Response.Content := X;
+    end;
+}
+"#;
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "C.al", &std::collections::HashSet::new());
+        let run: Vec<_> = sites.iter().filter(|s| s.caller_routine == "run").collect();
+        assert!(
+            run.is_empty(),
+            "a bare-Member assignment target (no Call anywhere) must yield NO call sites, got: {run:?}"
+        );
+    }
+
+    /// The SAME invariant, but with a genuine call NESTED inside the
+    /// assignment target (`GetResponse().Content := X;`) — the nested
+    /// `GetResponse()` call IS extracted (it is a real procedure
+    /// invocation, unrelated to whether the outer `.Content` is read or
+    /// written), while `.Content` itself still produces no separate call
+    /// site. Proves the LHS gate is about "no Call node" (this test), not
+    /// "no Member node can ever appear in an LHS" (assignment targets with
+    /// real calls inside them are unaffected either way).
+    #[test]
+    fn assignment_lhs_with_nested_call_still_extracts_only_the_real_call() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    begin
+        GetResponse().Content := X;
+    end;
+    procedure GetResponse(): HttpResponseMessage begin end;
+}
+"#;
+        let file = al_syntax::parse(src);
+        let sites = extract_sites(&file, src, "C.al", &std::collections::HashSet::new());
+        let run: Vec<_> = sites.iter().filter(|s| s.caller_routine == "run").collect();
+        assert_eq!(
+            run.len(),
+            1,
+            "only the nested GetResponse() call is a real call site, got: {run:?}"
+        );
+        assert!(run.iter().any(
+            |s| matches!(&s.shape, CalleeShape::Bare { name } if name.eq_ignore_ascii_case("getresponse"))
+        ));
+    }
 }

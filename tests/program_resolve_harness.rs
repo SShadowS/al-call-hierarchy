@@ -1877,12 +1877,38 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==40.
     // `genuine_wrong` stays 0 (companion audit gate); `ambiguous_resolved`
     // stays 13 (untouched bucket).
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 2
+    // — parens-optional zero-arg framework members + ErrorInfo.CustomDimensions
+    // rows): 0.22% → 0.15%, measured 0.15% [27/18104=0.0014914].
+    // `CompoundReceiver` 14→1 (-13): 9 parens-less zero-arg framework-member
+    // chain sites (all in `Codeunit 6175322 "CDO Http Management"` —
+    // `HttpClient.DefaultRequestHeaders.{Contains,Remove,Add}` ×4 and
+    // `Response/ResponseMsg.Content.ReadAs` ×5, the zero-arg getter written
+    // WITHOUT parens, legal AL — resolved via the new `zero_arg_aware_lookup`
+    // property-row→zero-arg-method-row fallback in `receiver.rs`) + 4
+    // `ErrorInfo.CustomDimensions.{ContainsKey,Get}` sites (Codeunits
+    // 6175309/6175376 — the new `(ErrorInfo, "customdimensions", true, 0) →
+    // Dictionary` row in `framework_returns.rs`; the Dictionary VALUE-type
+    // generic is untracked but irrelevant — the leaf `ContainsKey`/`Get`
+    // calls are the edges, dispatched by `member_catalog`'s DICTIONARY set).
+    // The remaining `CompoundReceiver`=1 is the (D) enum-chain site deferred
+    // to Task 4. Every other bucket byte-identical (`UntrackedReceiver`=18,
+    // `MemberNotFound`=7, `BuiltinPrecedenceCollision`=1). L3 semantic
+    // audit: matches 6158→6145 (-13) / fresh_extra 5069→5082 (+13) — the
+    // frozen L3 golden held these 13 leaf sites unresolved too, so fresh is
+    // now AHEAD of the retired reference (fresh_extra_verified per-site, see
+    // `.superpowers/sdd/task-2-report.md`); fresh_missing stays 1,
+    // fresh_wrong stays 149/149 adjudicated, `genuine_wrong` stays 0;
+    // `ambiguous_resolved` stays 13 (untouched bucket).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.002210,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.002210 \
+        primary_rate <= 0.001492,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.001492 \
          (recorded 2026-07-04 post receiver-closure-and-arg-increments plan \
-         Task 1: 0.22% [40/18104=0.0022095], CurrPage UserControl / \
+         Task 2: 0.15% [27/18104=0.0014914], parens-optional zero-arg \
+         framework members + ErrorInfo.CustomDimensions rows; was 0.22% \
+         [40/18104=0.0022095] post Task 1, CurrPage UserControl / \
          direct-var ControlAddIn closed-if-known gating; was 0.43% \
          [77/18104=0.0042532] post argtype-dispatch-and-page-catalog Task 1, \
          Page/Report instance-catalog completion; was 0.52% post \
@@ -2095,10 +2121,19 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // adjudication (all 37 `CurrPage.<usercontrol>` sites resolved,
     // `unknownByReason`={CompoundReceiver: 14, UntrackedReceiver: 18,
     // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==40).
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 2):
+    // 40→27 — see the rate-ceiling comment above for the full delta and
+    // adjudication (9 parens-less framework-member sites + 4
+    // ErrorInfo.CustomDimensions sites resolved, `unknownByReason`=
+    // {CompoundReceiver: 1, UntrackedReceiver: 18,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==27).
     assert!(
-        ph.unknown <= 40,
-        "primary unknown count {} exceeds ceiling 40 (recorded 2026-07-04 \
-         post receiver-closure-and-arg-increments plan Task 1: 40, CurrPage \
+        ph.unknown <= 27,
+        "primary unknown count {} exceeds ceiling 27 (recorded 2026-07-04 \
+         post receiver-closure-and-arg-increments plan Task 2: 27, \
+         parens-optional zero-arg framework members + \
+         ErrorInfo.CustomDimensions rows; was 40 post Task 1, CurrPage \
          UserControl / direct-var ControlAddIn closed-if-known gating; was \
          77 post argtype-dispatch-and-page-catalog Task 1, the Page/Report \
          instance-catalog completion; was 95 post \
@@ -2166,11 +2201,17 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task
     // 1): 77→40, alongside the primary ceiling above; whole-program
     // `unknown`=40, same value as primary today.
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task
+    // 2): 40→27, alongside the primary ceiling above; whole-program
+    // `unknown`=27, same value as primary today.
     assert!(
-        h.unknown <= 40,
-        "whole-program unknown count {} exceeds ceiling 40 (recorded \
-         2026-07-04 post receiver-closure-and-arg-increments plan Task 1: 40, \
-         CurrPage UserControl / direct-var ControlAddIn closed-if-known \
+        h.unknown <= 27,
+        "whole-program unknown count {} exceeds ceiling 27 (recorded \
+         2026-07-04 post receiver-closure-and-arg-increments plan Task 2: 27, \
+         parens-optional zero-arg framework members + \
+         ErrorInfo.CustomDimensions rows; was 40 post Task 1, CurrPage \
+         UserControl / direct-var ControlAddIn closed-if-known \
          gating; was 77 post argtype-dispatch-and-page-catalog Task 1; was 95 \
          post sigfp-and-ambiguous-reclassification plan Task 4 — see the \
          primary-scoped ceiling comment above for the full history and \
@@ -8036,22 +8077,34 @@ fn ws_compound_framework_table_miss_stays_unknown() {
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
-/// Test 30f (fixture f, NEGATIVE — wrong form): `Response.Content.ReadAs(Body)`
-/// (property form, no parens) never matches the table's method-form entry.
-/// Exactly 1 call obligation (`Response.Content` has no parens, so no inner
-/// call).
+/// Test 30f REBASELINE (receiver-closure plan v2.1 Task 2 — corrects a WRONG
+/// negative test): `Response.Content.ReadAs(Body)` (property form, no
+/// parens) resolves EXACTLY like the parens'd form (fixture a) — AL's
+/// parens are OPTIONAL on a zero-arg procedure call (the standing
+/// al-parens-optional-procedure-calls correction), so `Content` written
+/// without parens is the SAME call as `Content()`. Exactly 1 call
+/// obligation (`Response.Content` has no parens, so no inner call node —
+/// the fallback lookup happens entirely inside `infer_receiver_type`'s
+/// receiver-typing of this ONE call, it does not add a second obligation).
+/// This test previously asserted `Unknown` under the false premise "AL
+/// procedures ALWAYS require parens"; corrected per this project's
+/// correctness-over-compatibility working principle.
 #[test]
-fn ws_compound_framework_wrong_form_property_instead_of_method_stays_unknown() {
+fn ws_compound_framework_parens_less_property_form_resolves_catalog() {
     let report = ws_compound_framework_report();
-    let edges = edges_for_object_routine(&report, 51101, "testwrongformpropertyinsteadofmethod");
+    let edges =
+        edges_for_object_routine(&report, 51101, "testparenslesspropertyformresolvestomethod");
     assert_eq!(
         edges.len(),
         1,
         "Response.Content.ReadAs(Body) has exactly 1 call obligation (Content has no parens)"
     );
     let route = &edges[0].edge.routes[0];
-    assert_eq!(route.target, RouteTarget::Unresolved);
-    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "HttpContent::readas");
 }
 
 /// Test 30g (fixture g, NEGATIVE — wrong arity): `Response.Content(X).ReadAs(Body)`
@@ -8243,22 +8296,33 @@ fn ws_chain_tables_xml_untabled_member_chain_stays_unknown() {
     assert!(matches!(route.evidence, Evidence::Unknown(_)));
 }
 
-/// Fixture (n2, NEGATIVE — wrong form): `Node.AsXmlElement.GetChildNodes()`
-/// (`AsXmlElement` with no parens) never matches the table's method-form
-/// entry. Exactly 1 call obligation (`AsXmlElement` has no parens, so no
-/// inner call).
+/// Fixture (n2) REBASELINE (receiver-closure plan v2.1 Task 2 — corrects a
+/// WRONG negative test): `Node.AsXmlElement.GetChildNodes()` (`AsXmlElement`
+/// with no parens) resolves EXACTLY like the parens'd form (fixture a3) — AL's
+/// parens are OPTIONAL on a zero-arg procedure call. Exactly 1 call
+/// obligation (`AsXmlElement` has no parens, so no inner call node). This
+/// test previously asserted `Unknown` under the false premise "AL procedures
+/// ALWAYS require parens"; corrected per this project's
+/// correctness-over-compatibility working principle.
 #[test]
-fn ws_chain_tables_xml_wrong_form_property_instead_of_method_stays_unknown() {
+fn ws_chain_tables_xml_parens_less_property_form_resolves_catalog() {
     let report = ws_chain_tables_report();
-    let edges = edges_for_object_routine(&report, 51201, "testxmlwrongformpropertyinsteadofmethod");
+    let edges = edges_for_object_routine(
+        &report,
+        51201,
+        "testxmlparenslesspropertyformresolvestomethod",
+    );
     assert_eq!(
         edges.len(),
         1,
         "Node.AsXmlElement.GetChildNodes() has exactly 1 call obligation (AsXmlElement has no parens)"
     );
     let route = &edges[0].edge.routes[0];
-    assert_eq!(route.target, RouteTarget::Unresolved);
-    assert!(matches!(route.evidence, Evidence::Unknown(_)));
+    assert_eq!(route.evidence, Evidence::Catalog);
+    let RouteTarget::Builtin(ref bid) = route.target else {
+        panic!("expected RouteTarget::Builtin, got {:?}", route.target);
+    };
+    assert_eq!(bid.0, "Xml::getchildnodes");
 }
 
 /// Fixture (n3, NEGATIVE — wrong arity): `XmlElement.Create().AsXmlNode()`

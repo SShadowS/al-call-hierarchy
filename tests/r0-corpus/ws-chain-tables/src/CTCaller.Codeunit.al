@@ -96,9 +96,15 @@ codeunit 51201 "CT Caller"
         Cnt := Node.Attributes().Count();
     end;
 
-    // (n2) Wrong FORM: a table METHOD-entry (`AsXmlElement()`, `is_method:
-    // true`) invoked as a PROPERTY (no parens) — never matches.
-    procedure TestXmlWrongFormPropertyInsteadOfMethod()
+    // (n2) REBASELINE (receiver-closure plan v2.1 Task 2): parens are
+    // OPTIONAL on a zero-arg AL procedure call, so `Node.AsXmlElement` (no
+    // parens) is the SAME call as `Node.AsXmlElement()` — the table's
+    // method-form entry now resolves via the parens-optional fallback
+    // (`zero_arg_aware_lookup`). PREVIOUSLY named
+    // `TestXmlWrongFormPropertyInsteadOfMethod` and asserted `Unknown` under
+    // the false premise "AL procedures ALWAYS require parens" — corrected
+    // here.
+    procedure TestXmlParensLessPropertyFormResolvesToMethod()
     var
         Node: XmlNode;
         NodeList: XmlNodeList;

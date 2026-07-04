@@ -68,9 +68,15 @@ codeunit 51101 "CF Caller"
         Response.Bar().ReadAs(Body);
     end;
 
-    // (f) Wrong FORM: a table METHOD-entry (`HttpResponseMessage.Content()`,
-    // `is_method: true`) invoked as a PROPERTY (no parens) — never matches.
-    procedure TestWrongFormPropertyInsteadOfMethod()
+    // (f) REBASELINE (receiver-closure plan v2.1 Task 2): parens are OPTIONAL
+    // on a zero-arg AL procedure call, so `Response.Content` (no parens) is
+    // the SAME call as `Response.Content()` — the table's `(HttpResponseMessage,
+    // "content", true, 0)` method-form entry now resolves via the
+    // parens-optional fallback (`zero_arg_aware_lookup`), exactly like the
+    // parens'd form (fixture a). PREVIOUSLY named
+    // `TestWrongFormPropertyInsteadOfMethod` and asserted `Unknown` under the
+    // false premise "AL procedures ALWAYS require parens" — corrected here.
+    procedure TestParensLessPropertyFormResolvesToMethod()
     var
         Response: HttpResponseMessage;
         Body: Text;
