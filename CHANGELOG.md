@@ -99,6 +99,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `coverage.holds` stays `true` throughout (no orphaned obligation).
 
 ### Fixed
+- **`tree-sitter-al` repinned to `v3.1.0` (local, pre-publish) — `recoveredFiles` 8→0, zero-metric strictness held
+  (grammar-defects-and-repin plan, Task 1).** The `ParseStatus::Recovered` diagnostic (introduced in the preproc
+  foundations plan's Task 3) surfaced two genuine `tree-sitter-al` grammar gaps, both confined to dependency
+  (embedded ShowMyCode) source — this task fixes them at the grammar source rather than filing them as a caveat:
+  - **`OptionMembers = TableData,...` first-position collision** (bare, unquoted, case-insensitive `tabledata` as
+    the FIRST option member lexically collided with the `tabledata` keyword — hit MS `System`'s `Object.Table.al`,
+    `NAVAppObjectPrerequisites.Table.al`, `DatabaseLocks.Table.al`) and **`# pragma` whitespace intolerance** (a
+    single space between `#` and `pragma` was rejected outright — hit Continia System Application's
+    `Http.Codeunit.al`). Grammar fix: a hidden `_tabledata_keyword` rule aliased to `identifier` in `option_member`
+    (no new visible node kind); `pragma`/`preproc_region`/`preproc_endregion` tightened to `[ \t]*` (horizontal-only
+    — an audit found `preproc_region`/`preproc_endregion` shared the identical `\s*` cross-line hazard, closed in
+    the same pass).
+  - **Reviewed and reverted:** a preventive fourth fix — `# if`/`# elif` (single space) as literal variants mirroring
+    the existing `# else`/`# endif` precedent — was drafted (zero corpus instances) but DROPPED after empirical
+    review found it introduced genuine GLR non-determinism (the pre-existing
+    `preproc_split_if_then_begin_else_shared` construct, given a spaced open, produced two mutually-exclusive
+    stable parses across process states for byte-identical input — `tree-sitter test`'s own pass count flapped
+    1453↔1463 with zero source change) plus a silent shape defect under `#if`-nesting (the literal-variant token
+    doesn't participate in the scanner's depth counter, so a nested spaced `# if` undercounted depth and lost its
+    enclosing `begin_keyword`/`end_keyword` naming). Current, intentional behavior: a spaced `# if`/`# elif` is NOT
+    recognized — the file `Recover`s (this diagnostic's designed detection path) instead of parsing silently wrong
+    or non-deterministically. Post-revert stability protocol: OS tree-sitter parser cache cleared, `tree-sitter test`
+    repeated 5× clean — 1463/1463 every time (byte-stable, non-determinism gone); the reviewer's exact
+    `preproc_split_if_then_begin_else_shared`-with-spaced-open repro and a `#if`-nesting-with-inner-spaced-`# if`
+    repro both re-parsed 5× with identical tree-hash every time.
+  - **Validation, LOCAL only (grammar submodule `f150581`→`6d87aee`, not yet pushed):** `tree-sitter test`
+    1463/1463 (1448 pre-existing + 15 new, incl. cross-line LF negatives and the `# if`/`# elif`
+    documented-non-support fixtures); `tools/tree-harness.sh` byte-identical before/after on CDO source (551 files)
+    and BC.History (this checkout's corpus, 15,358 files) — zero shape change outside the 4 previously-Recovered
+    dependency files, and manifest-identical with vs. without the reverted `# if`/`# elif` variants (proving the
+    revert changed zero previously-parsed trees); `parse-al-parallel.sh` re-run on the same BC.History corpus:
+    15358/15358, 0 errors, 100.0% success; `cargo run -p xtask -- gen-syntax` produced a byte-for-byte identical
+    RawKind vocabulary (388 named kinds / 73 fields / 388 typed structs / 13 union enums — after the spaced-if
+    revert the generated directory is byte-identical to the pre-plan baseline, `GRAMMAR_NODE_TYPES_HASH` included);
+    `cargo test --workspace` zero divergence (159 `test result: ok` blocks); the FULL CDO harness
+    (`CDO_WS`/`ENFORCE_CDO_WS=1`, release, single-threaded) confirms `recoveredFiles` 8→0 with **nothing else
+    moving**: primary/whole-program `real_unknown_rate`/`unknown` stay at the floor (0/18108, 0/43408),
+    `ambiguousResolved` stays 0 (both scopes), `genuine_wrong` stays 0, coverage/determinism gates unchanged, all
+    companion CDO gates (`cdo_genuine_wrong_is_precedence_adjudicated`, `cdo_l3_semantic_audit_no_fresh_wrong`,
+    applicability) green.
+  - Publishing (grammar `origin main` + tag `v3.1.0`, engine pin bump to the public SHA) is a separate follow-up
+    task — this entry covers the local-only validation.
 - **pageext-merge-and-final-residual arc complete — CDO primary real-`unknown` reaches THE ZERO: 0.0000%
   (0/18108), and `ambiguousResolved` also reaches 0 (Task 4, FINAL — contingent close).** Full re-measure
   (`CDO_WS`/`ENFORCE_CDO_WS=1`, release, single-threaded, 182-test suite) confirms the 3-task arc at its floor,

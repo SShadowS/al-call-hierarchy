@@ -1345,80 +1345,106 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
 
     // ── ParseStatus::Recovered diagnostic (Task 3, preproc foundations
     // plan) ───────────────────────────────────────────────────────────────
-    // MEASURED 2026-07-04: NOT empty — this new diagnostic immediately
-    // proved its worth by surfacing TWO real, previously-invisible
-    // tree-sitter-al grammar defects, both confined to DEPENDENCY (embedded
-    // ShowMyCode) source, NEVER the CDO primary workspace itself:
+    // MEASURED 2026-07-04: NOT empty at introduction — this new diagnostic
+    // immediately proved its worth by surfacing TWO real, previously-
+    // invisible tree-sitter-al grammar defects, both confined to DEPENDENCY
+    // (embedded ShowMyCode) source, NEVER the CDO primary workspace itself:
     //
     // 1. `OptionMembers = TableData,...` (bare, unquoted, case-insensitive
-    //    `tabledata`) as the FIRST member immediately after `=` collides
+    //    `tabledata`) as the FIRST member immediately after `=` collided
     //    with the `tabledata` keyword that also starts the
     //    `tabledata_permission_list` alternative of `_property_value` —
-    //    tree-sitter drops the first token as an ERROR and resumes
+    //    tree-sitter dropped the first token as an ERROR and resumed
     //    `option_member_list` from the second member onward. Reproduced
-    //    minimally: `OptionMembers = TableData,Table,Report;` errors;
+    //    minimally: `OptionMembers = TableData,Table,Report;` errored;
     //    `OptionMembers = Foo,TableData,Bar;` (same keyword, non-first
-    //    position) parses clean — confirms this is a first-position-only
+    //    position) parsed clean — confirmed this was a first-position-only
     //    ambiguity, not a general keyword-as-option-member gap (the grammar
-    //    already special-cases several OTHER keywords, e.g. `local`/
-    //    `internal`/`protected`, as valid `option_member`s). Hits the
+    //    already special-cased several OTHER keywords, e.g. `local`/
+    //    `internal`/`protected`, as valid `option_member`s). Hit the
     //    Microsoft `System` app's `Object.Table.al` (field `Type: Option`),
     //    `NAVAppObjectPrerequisites.Table.al` (same shape), and
     //    `DatabaseLocks.Table.al` (same shape) — all three are variants of
     //    the platform's standard NAV-object-type option list.
     // 2. `# pragma warning disable LC0088` (a SPACE between `#` and
-    //    `pragma`) is not recognized as a pragma directive at all — only
-    //    `#pragma` (no space) is. Hits Continia System Application's
+    //    `pragma`) was not recognized as a pragma directive at all — only
+    //    `#pragma` (no space) was. Hit Continia System Application's
     //    `Http.Codeunit.al` (one stray `# pragma` amid otherwise-consistent
     //    `#pragma` usage in the same file).
     //
-    // Both are genuine `tree-sitter-al` grammar gaps (this project owns that
-    // grammar), OUT OF SCOPE for this plan (preprocessor foundations for the
-    // RESOLUTION engine, not grammar hardening) — filed as a dated note for
-    // a future dedicated grammar-fix task, NOT fixed here. Per this
-    // diagnostic's own documented invariant (see `recovered_file_paths`'s
-    // doc): the affected files' `#if` union-read may be silently incomplete,
-    // so any FUTURE absence/`ProvenAbsent`-shaped claim about
-    // `System::Object`/`NAVAppObjectPrerequisites`/`DatabaseLocks` or
-    // `Continia System Application::Http` must consult this diagnostic
-    // first. `genuine_wrong=0` is unaffected — none of these 4 files
-    // contribute a wrongly-resolved edge; this is purely an
-    // absence-proof-soundness caveat, and it is CONFINED TO DEPENDENCY
-    // source, never CDO's own primary workspace code.
+    // FIXED 2026-07-04 (grammar-defects-and-repin plan, Task 1) — both were
+    // genuine `tree-sitter-al` grammar gaps (this project owns that
+    // grammar); fixed at the grammar source and repinned (submodule
+    // `f150581` -> `6d87aee`, engine tag v3.1.0):
+    //   1. A hidden `_tabledata_keyword` rule referenced both by
+    //      `tabledata_permission` (unchanged shape) and a new
+    //      `alias($._tabledata_keyword, $.identifier)` arm in
+    //      `option_member` (mirrors the existing `table_keyword`-via-
+    //      `keyword_as_identifier` precedent for the same keyword-as-
+    //      option-member class). No new visible node kind — `gen-syntax`
+    //      re-run confirmed a byte-for-byte identical RawKind vocabulary
+    //      (388 named kinds / 73 fields / 388 typed structs / 13 union
+    //      enums); after the spaced-if revert `node-types.json` is
+    //      byte-identical to the pre-plan baseline, so the whole generated
+    //      directory (hash included) is unchanged.
+    //   2. `pragma`/`preproc_region`/`preproc_endregion` tightened from zero-
+    //      tolerance / `\s*` to `[ \t]*` (horizontal-only — `\s*` would let
+    //      the extras token span a newline and silently swallow the next
+    //      line's real source; confirmed pre-fix via a scratch fixture that
+    //      `preproc_region` already had this exact cross-line hazard, closed
+    //      in the same pass).
+    // A THIRD, preventive fix — `# if`/`# elif` (single space) as literal
+    // variants mirroring the existing `# else`/`# endif` precedent — was
+    // drafted (zero corpus instances) but DROPPED after review found it
+    // introduced genuine GLR non-determinism (the pre-existing
+    // `preproc_split_if_then_begin_else_shared` construct, given a spaced
+    // open, produced two mutually-exclusive stable parses across process
+    // states for byte-identical input — `tree-sitter test`'s own pass count
+    // flapped 1453<->1463 with zero source change) plus a silent shape defect
+    // under `#if`-nesting (the literal-variant token doesn't participate in
+    // the scanner's depth counter, so a nested spaced `# if` undercounted
+    // depth and lost its enclosing `begin_keyword`/`end_keyword` naming).
+    // Current, intentional behavior: a spaced `# if`/`# elif` is NOT
+    // recognized — the file Recovers (this diagnostic's designed detection
+    // path) rather than parsing silently wrong or non-deterministically. See
+    // `tree-sitter-al`'s CHANGELOG.md ("Not supported") and
+    // `test/corpus/preproc_if_elif_whitespace_not_recognized_test.txt`.
+    // Both `tools/tree-harness.sh` (CDO source, 551 files; BC.History,
+    // 15,358 files) confirm byte-identical parse trees before/after outside
+    // the 4 previously-Recovered dependency files — zero blast radius
+    // beyond the targeted constructs. Per this diagnostic's own documented
+    // invariant (see `recovered_file_paths`'s doc), these 4 files' `#if`
+    // union-reads are no longer silently incomplete — any PRIOR
+    // absence/`ProvenAbsent`-shaped caveat about `System::Object`/
+    // `NAVAppObjectPrerequisites`/`DatabaseLocks` or `Continia System
+    // Application::Http` is retired along with the ERROR recovery that
+    // motivated it. `genuine_wrong=0` unaffected throughout (measured below).
     //
-    // Each distinct file appears TWICE — a PRE-EXISTING, unrelated artifact:
-    // `parse_snapshot` parses per `AppUnit`, and `build_program_graph`'s own
-    // Step-4 dedup comment already documents that the same app can appear as
-    // both a `.alpackages` entry and an implicitly-injected MS-tier
-    // dependency in one snapshot (`build.rs`'s "Same app can appear as both
-    // a workspace source and an embedded dep" comment) — `recovered_file_
-    // paths` runs over the PRE-dedup `ParsedUnit`s (dedup happens later, in
-    // `build_program_graph`, over `ObjectNode`/`RoutineNode`, not files), so
-    // it honestly reflects that duplication rather than hiding it.
+    // Each distinct file previously appeared TWICE — a PRE-EXISTING,
+    // unrelated artifact: `parse_snapshot` parses per `AppUnit`, and
+    // `build_program_graph`'s own Step-4 dedup comment already documents
+    // that the same app can appear as both a `.alpackages` entry and an
+    // implicitly-injected MS-tier dependency in one snapshot (`build.rs`'s
+    // "Same app can appear as both a workspace source and an embedded dep"
+    // comment) — `recovered_file_paths` runs over the PRE-dedup
+    // `ParsedUnit`s. That duplication artifact is now moot (both copies of
+    // all 4 files parse clean).
     //
-    // Pinned exact — a threshold alert (any FUTURE movement, including a
-    // reduction, means either the grammar changed underfoot or the CDO
-    // dependency set changed; investigate, don't silently re-pin without
+    // RETIGHTENED 2026-07-04 (grammar-defects-and-repin plan, Task 1):
+    // 8 -> 0 (empty). Measured EMPTY on the repinned grammar (`6d87aee`) —
+    // pinned exact as a threshold alert (any FUTURE non-empty value means
+    // either the grammar regressed or a NEW recoverable construct appeared
+    // in a CDO dependency; investigate, don't silently re-pin without
     // understanding why).
     let mut recovered = report.recovered_files.clone();
     recovered.sort();
-    let expected_recovered = vec![
-        "Continia System Application::src/Source/Http/Source/Http.Codeunit.al".to_string(),
-        "Continia System Application::src/Source/Http/Source/Http.Codeunit.al".to_string(),
-        "System::src/Application%20Database%20Tables/NAVAppObjectPrerequisites.Table.al"
-            .to_string(),
-        "System::src/Application%20Database%20Tables/NAVAppObjectPrerequisites.Table.al"
-            .to_string(),
-        "System::src/Application%20Database%20Tables/Object.Table.al".to_string(),
-        "System::src/Application%20Database%20Tables/Object.Table.al".to_string(),
-        "System::src/Virtual%20Tables/DatabaseLocks.Table.al".to_string(),
-        "System::src/Virtual%20Tables/DatabaseLocks.Table.al".to_string(),
-    ];
+    let expected_recovered: Vec<String> = vec![];
     assert_eq!(
         recovered, expected_recovered,
-        "recovered_files moved from the pinned CDO baseline (8 entries, 4 \
-         distinct files — 2 known tree-sitter-al grammar gaps, see the \
-         comment above) — investigate before re-pinning"
+        "recovered_files moved from the pinned CDO baseline (0 entries, \
+         post grammar-defects-and-repin Task 1 — the 2 known \
+         tree-sitter-al grammar gaps are fixed at the grammar source; see \
+         the comment above) — investigate before re-pinning"
     );
 
     // ── Self-reported taxonomy'd histogram (print for record) ────────────────
