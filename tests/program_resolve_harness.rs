@@ -3276,12 +3276,24 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // way never reaching `genuine_wrong`) to the NEW `SameAppSourceProcedure`
     // shape: Task 2's grounded suppression makes fresh now resolve this bare
     // `Run()` to the SourceTable's OWN `procedure Run()`
-    // (`Table 6175280 "CDO E-Mail Job"`), a REAL, MORE SPECIFIC, and MORE
-    // CORRECT target than the stale Builtin-catalog adjudication — L3's
-    // frozen golden (which predates bare-implicit-Rec dispatch, same as the
-    // `Navigate()` entries) still pairs this site with an unrelated/no
-    // target, so the entry stays `l3_error_intrinsic`, just with a corrected
-    // override target.
+    // (`Table 6175280 "CDO E-Mail Job"`), so the entry stays
+    // `l3_error_intrinsic`, just with a corrected override target.
+    //
+    // CORRECTED 2026-07-04 (pageext-merge-and-final-residual plan, Task 2
+    // REVIEW fix): the sentence this replaces claimed L3's frozen golden
+    // "still pairs this site with an unrelated/no target" — FALSE. An
+    // independent HMAC-based re-verification of the RAW, un-overridden L3
+    // golden (`cdo-anon.json`) for this exact site established that its
+    // recorded target has ALWAYS been `Table 6175280 "CDO E-Mail Job".Run` —
+    // IDENTICAL to fresh's post-Task-2 resolution. L3 was never wrong here;
+    // the actual (now-closed) defect was fresh's OWN pre-Task-2 answer
+    // (`Catalog`/`Builtin(run)`), which Task 2 fixed for an unrelated reason
+    // (the `INSTANCE_ONLY_NEVER_BARE` grounding). This site is consequently
+    // now a plain MATCH between fresh and the raw L3 golden — the
+    // `adjudicated-overrides.json` entry for this key is a documented NO-OP
+    // (it writes back the exact target the raw golden already supplies).
+    // Retained rather than deleted (see the manifest's own description field
+    // for the full rationale); entry count is unaffected either way.
     assert_eq!(
         audit.genuine_wrong_count, 0,
         "genuine_wrong_count={} (expected 0): all 54 known-genuine-divergences.json sites \
@@ -3351,10 +3363,23 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // before/after Task 2, so the drop predates Task 2 — most likely a side
     // effect of Task 1's CurrPage UserControl trigger-adjacent resolution,
     // not independently re-attributed here). Re-confirmed 1 again at this
-    // task's own capstone re-measure. The ceiling stays at 5 (no tightening
-    // this task — out of this nit's scope; still comfortably non-zero-
-    // tolerance over the true measured 1).
-    const FRESH_MISSING_CEILING: usize = 5;
+    // task's own capstone re-measure.
+    //
+    // CORRECTED 2026-07-04 (pageext-merge-and-final-residual plan, Task 2
+    // REVIEW fix): the "1" above was itself measured against a report-table
+    // ledger transcription that turned out to be wrong (see the dated
+    // correction section in `.superpowers/sdd/task-2-report.md` §4) — the
+    // TRUE post-Task-2 value is **0** (Site B, `.dependencies/CDO/Page/
+    // CDOEMailJobs.Page.al:124`'s bare `Run()`, was the sole `fresh_missing`
+    // occupant and moved into `matches` once Task 2's grounded suppression
+    // let it resolve to the SourceTable's own `procedure Run()` — an
+    // HMAC-verified exact match with L3's own frozen target; `matches`
+    // itself stayed flat at 6120 because Site A independently moved
+    // `matches` -> `fresh_extra` in the same commit, netting zero). Tightened
+    // 5 -> 2 (a small margin above the measured 0, same non-zero-tolerance
+    // policy this ceiling has always used — never a hard 0, since this is a
+    // completeness metric, not the hard-gated `genuine_wrong` invariant).
+    const FRESH_MISSING_CEILING: usize = 2;
     assert!(
         audit.fresh_missing_count <= FRESH_MISSING_CEILING,
         "COMPLETENESS REGRESSION: fresh_missing_count={} exceeds the recorded \
