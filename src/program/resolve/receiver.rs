@@ -280,13 +280,16 @@ pub enum ReceiverType {
     },
     /// An `Interface IFoo` receiver — Phase B fans out to every implementer.
     Interface { name_lc: String },
-    /// A declared `Enum "Color"`-typed VALUE (a var/field), OR an enum-value-
-    /// literal chain (`X::Y` — `ExprKind::QualifiedEnum` whose `enum_type` is
-    /// NOT the literal `Enum` keyword) — the VALUE-instance surface
-    /// (`AsInteger`/`Names`/`Ordinals`; see `FrameworkKind::Enum`).  `name_lc`
-    /// is carried for parity with the declared-type case but is NOT consulted
-    /// by dispatch (every arm matches `{ .. }`) — the VALUE-instance catalog
-    /// applies uniformly regardless of which enum's value this is.
+    /// A declared `Enum "Color"`-typed VALUE (a var/field), OR a VERIFIED
+    /// enum-value-literal chain (`X::Y` — `ExprKind::QualifiedEnum` whose
+    /// `enum_type` is NOT the literal `Enum` keyword, but WAS confirmed to
+    /// itself resolve to an Enum shape — see the `QualifiedEnum` arm of
+    /// `infer_receiver_type_for_expr`, Task 4 review fix) — the
+    /// VALUE-instance surface (`AsInteger`/`Names`/`Ordinals`; see
+    /// `FrameworkKind::Enum`). `name_lc` is carried for parity with the
+    /// declared-type case but is NOT consulted by dispatch (every arm
+    /// matches `{ .. }`) — the VALUE-instance catalog applies uniformly
+    /// regardless of which enum's value this is.
     EnumType { name_lc: String },
     /// The enum TYPE reference itself, TASK 4 (receiver-closure-and-arg-
     /// increments plan) — `Enum::"Type"` (an `ExprKind::QualifiedEnum` whose
@@ -1296,11 +1299,27 @@ fn infer_receiver_type_for_expr(
         // grammar rule) are: (a) `Enum::"Type"`, the TYPE reference itself
         // (`enum_type` derefs to the literal `Enum` keyword — lowered as
         // `ExprKind::Identifier("Enum")` per `RawKind::KeywordIdentifier`'s
-        // lowering), and (b) an enum VALUE literal (`enum_type` is anything
-        // else — a field/member chain, a nested `QualifiedEnum` for
-        // `Enum::"Type"::"Value"`, a subscript/call-result base, …). This is a
-        // GRAMMAR-level guarantee, not a probabilistic guess — every other
-        // `enum_type` shape reaching here is, by construction, enum-VALUE-typed.
+        // lowering), and (b) a QUALIFIED VALUE literal (`enum_type` is
+        // anything else — a field/member chain, a nested `QualifiedEnum` for
+        // `Enum::"Type"::"Value"`, a subscript/call-result base, …).
+        //
+        // TRUE INVARIANT (Task 4 review fix — corrects an earlier, FALSE
+        // "grammar-level guarantee" claim this comment used to make): the
+        // grammar only guarantees the SHAPE `X::Y`, not that `X` is
+        // Enum-typed. `qualified_enum_value.enum_type` also accepts a
+        // Member/field-access whose declared type is something else
+        // entirely — most notably an **Option**-typed field/var
+        // (`Rec."Legacy Status"::Open`, common legacy AL), which parses to
+        // the IDENTICAL `QualifiedEnum` shape as a genuine Enum field.
+        // Trusting every non-keyword shape as enum-VALUE-typed blind would
+        // be a guess, not a proof — so this arm now recurses the SAME
+        // base-typing every other compound-receiver arm here already uses
+        // ([`infer_receiver_type_for_expr`]) on `enum_type` itself, and only
+        // accepts the VALUE-instance surface when that base ACTUALLY
+        // resolves to an Enum shape (`EnumType` — a declared `Enum "X"`
+        // var/field, or `EnumTypeStatic` for the nested
+        // `Enum::"Type"::"Value"` case). Anything else (`Primitive` for an
+        // Option field, `Record`, `Unknown`, …) declines — never guess.
         ExprKind::QualifiedEnum { enum_type, value } => {
             let is_enum_keyword = matches!(
                 &file.ir.expr(*enum_type).kind,
@@ -1332,13 +1351,28 @@ fn infer_receiver_type_for_expr(
                     | ObjectRefResolution::Unresolved => ReceiverType::Unknown,
                 };
             }
-            // Any other `X::Value` shape: an enum VALUE literal by grammar
-            // construction (see this arm's doc) — the VALUE-instance surface.
-            // `name_lc` is not consulted by dispatch (every `EnumType` arm
-            // matches `{ .. }`), so no further typing of `enum_type` itself is
-            // needed or attempted here.
-            ReceiverType::EnumType {
-                name_lc: String::new(),
+            // Any other `X::Value` shape: verify `enum_type` ACTUALLY types
+            // Enum before accepting VALUE-instance dispatch (see this arm's
+            // doc — the TRUE invariant, not a grammar guarantee). `name_lc`
+            // is not consulted by dispatch (every `EnumType` arm matches
+            // `{ .. }`), so once the base is proven Enum-shaped no further
+            // typing of `enum_type` itself is needed.
+            match infer_receiver_type_for_expr(
+                file,
+                *enum_type,
+                routine,
+                object_globals,
+                from_object,
+                graph,
+                index,
+                body_map,
+            ) {
+                ReceiverType::EnumType { .. } | ReceiverType::EnumTypeStatic { .. } => {
+                    ReceiverType::EnumType {
+                        name_lc: String::new(),
+                    }
+                }
+                _ => ReceiverType::Unknown,
             }
         }
         _ => ReceiverType::Unknown,
@@ -7157,6 +7191,119 @@ codeunit 50100 "C"
                 name_lc: String::new()
             }
         );
+    }
+
+    /// NEGATIVE (Task 4 review fix): `EMailLog."Legacy Status"::Open.AsInteger()`
+    /// where `"Legacy Status"` is an **Option**-typed field, NOT an Enum —
+    /// common legacy AL. Pre-fix, the `QualifiedEnum` arm accepted ANY
+    /// non-`Enum::"Type"` qualified-value base as enum-VALUE-typed
+    /// unconditionally (the review-flagged soundness gap: the grammar's
+    /// `qualified_enum_value.enum_type` field is not itself constrained to
+    /// Enum-typed bases, so an Option-qualified value reaches the identical
+    /// branch a genuine Enum field does). The fix recurses
+    /// `infer_receiver_type_for_expr` on the `enum_type` base and requires an
+    /// ACTUAL Enum-shaped result (`EnumType`/`EnumTypeStatic`) before
+    /// accepting VALUE-instance dispatch — an Option-typed field classifies
+    /// `Primitive` (`classify_type_text`'s catch-all for unrecognized
+    /// leading tokens), which is neither, so this declines to `Unknown`
+    /// rather than guessing.
+    #[test]
+    fn qualified_enum_value_option_field_base_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        EMailLog: Record Customer;
+        N: Integer;
+    begin
+        N := EMailLog."Legacy Status"::Open.AsInteger();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "asinteger");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "emaillog.\"legacy status\"::open"
+        );
+
+        let (mut graph, app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .expect("Customer table must exist in build_test_graph");
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "legacy status".to_string(),
+            type_text: "Option Open,Closed".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("EMailLog", "Record Customer"),
+            var_decl("N", "Integer"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
+    }
+
+    /// NEGATIVE (Task 4 review fix): `EMailLog."No Such Field"::Open.AsInteger()`
+    /// where `"No Such Field"` does not exist on the base table (`Customer`)
+    /// at all — the `enum_type` base itself fails to type at all (falls
+    /// through `infer_compound_member_receiver`'s record-field arm, no field
+    /// match, to `Unknown`), so the fix's Enum-shaped-result check correctly
+    /// declines too, rather than the pre-fix behavior of blindly trusting
+    /// ANY non-keyword qualified-value base regardless of whether its base
+    /// even resolves to a real field/type.
+    #[test]
+    fn qualified_enum_value_unresolvable_field_base_declines() {
+        let src = r#"
+codeunit 50100 "C"
+{
+    procedure Run()
+    var
+        EMailLog: Record Customer;
+        N: Integer;
+    begin
+        N := EMailLog."No Such Field"::Open.AsInteger();
+    end;
+}
+"#;
+        let (file, receiver_text, receiver_id) = parse_member_site(src, "asinteger");
+        assert_eq!(
+            receiver_text.to_ascii_lowercase(),
+            "emaillog.\"no such field\"::open"
+        );
+
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![
+            var_decl("EMailLog", "Record Customer"),
+            var_decl("N", "Integer"),
+        ]);
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            &receiver_text.to_ascii_lowercase(),
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            Some((&file, receiver_id)),
+            None,
+        );
+        assert_eq!(result, ReceiverType::Unknown);
     }
 
     /// POSITIVE, site (F) shape: `Enum::"CDO Module Type".Ordinals()` — the

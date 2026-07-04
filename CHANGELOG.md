@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Qualified-value bases are now verified Enum-typed before VALUE-instance
+  dispatch — Option-qualified receivers decline (Task 4 review fix).** The
+  `QualifiedEnum` receiver arm's "else" branch (the (D) field::value chain
+  below) classified ANY non-`Enum::"Type"` qualified-value base as
+  `ReceiverType::EnumType` on the strength of a doc-comment claim that the
+  grammar guarantees every such shape is enum-VALUE-typed. That claim is
+  FALSE: the grammar only guarantees the `X::Y` SHAPE — an **Option**-typed
+  field base (`Rec."OptField"::Val`, common legacy AL) parses to the
+  identical `QualifiedEnum` node and reached the same unconditional accept.
+  Harmless today (Option values have zero auto-methods per MS Learn, so no
+  member call on one can resolve; CDO `genuine_wrong=0` throughout), but a
+  violation of the never-guess cardinal rule. The arm now recurses the same
+  base-typing every other compound-receiver arm uses
+  (`infer_receiver_type_for_expr` on the `enum_type` base) and accepts
+  VALUE-instance dispatch ONLY when the base actually types Enum-shaped
+  (`EnumType` — a declared `Enum "X"` field/var — or `EnumTypeStatic` for
+  nested `Enum::"Type"::"Value"`); anything else (an Option field's
+  `Primitive`, an unresolvable field's `Unknown`, `Record`, …) declines,
+  fail-closed. Doc comments corrected to the TRUE invariant. Two new
+  negative fixtures (Option-field base, unresolvable-field base) + the
+  existing (D)-shaped enum-field chain as the regression pin. CDO
+  byte-identical: real-`unknown` 9/18104 [0.0497%], `ambiguousResolved` 7,
+  `genuine_wrong` 0.
 - **Enum-shape receivers, member-field arg dispatch, comment-aware with
   scan: real-`unknown` 0.072%→0.05%, `ambiguousResolved` 11→7
   (receiver-closure-and-arg-increments plan, Task 4).** Closes the 4-site
