@@ -678,6 +678,31 @@ fn project_file(
         let object_global_record_vars =
             crate::engine::l2::ir_walk::ir_object_global_record_vars(o, &object_id);
 
+        // Interface / ControlAddIn: al-sem's L3Workspace never modeled these objects'
+        // signature-only members as routines — this frozen legacy pipeline (L2/L3/L4,
+        // still differential-gated against the al-sem TS reference) must keep matching
+        // that historical behavior byte-for-byte (see `tests/r3a1_vectors.rs`'s "the
+        // vectors are the ORACLE... fix is in the Rust code, NEVER the vector").
+        // `al_syntax::lower::collect_routines` NOW lowers `interface_procedure` nodes
+        // (receiver-closure plan, Task 1 — controladdin/interface signature-only
+        // procedures were previously invisible to `RoutineDecl` extraction entirely,
+        // a genuine al-syntax gap fixed for `program::resolve`'s NEW, Rust-owned
+        // `node_extract::extract_nodes` consumer, which correctly captures them for
+        // the `CurrPage.<usercontrol>` closed-if-known member gate). That fix is
+        // upstream of BOTH consumers (shared al-syntax IR) — this object-kind skip is
+        // what keeps the LEGACY consumer's parity contract intact without reverting
+        // the shared lowering fix the new consumer needs. `o.routines` for these two
+        // object kinds is, in every REAL AL file, populated ENTIRELY from
+        // `interface_procedure` nodes (the grammar's `interface_body`/
+        // `controladdin_body` rules permit an ordinary bodied `$.procedure` too, but
+        // no real controladdin/interface declares one — a theoretical decompiled edge
+        // case this skip would ALSO exclude, matching pre-fix behavior for that
+        // hypothetical shape too, since nothing in the differential corpus exercises
+        // it).
+        if object_type == "Interface" || object_type == "ControlAddIn" {
+            continue;
+        }
+
         for ir_routine in &o.routines {
             let rname = ir_routine.name.clone();
             if rname.is_empty() {

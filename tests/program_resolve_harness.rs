@@ -1851,14 +1851,43 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // re-measurement on the identical CDO snapshot is the direct
     // confirmation of that non-interaction (re-confirmed again after the
     // review fix).
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 1
+    // — CurrPage UserControl / direct-var ControlAddIn closed-if-known
+    // gating): 0.43% → 0.22%, measured 0.22% [40/18104=0.0022095].
+    // `CompoundReceiver` 51→14 (-37 — all 37 `CurrPage.<usercontrol>.
+    // Method(...)`/`CurrPage.<usercontrol>.SetContent(...)` sites: 30 on
+    // source-declared `CDO.Editor`/`CDO.PrintService` resolve via the
+    // closed-if-known declared-procedure+arity gate, 7 on platform
+    // `WebPageViewer` [no reachable declaration under its bare, unqualified
+    // AL reference — see `TRUE_PLATFORM_CONTROL_ADDINS`'s doc] via the
+    // `TruePlatform` open-accept). Every one of the 30 declared-addin calls
+    // was exhaustively hand-verified against the real `.al` declarations
+    // (`ControlAddin/HTMLEditor/HTML Editor.al`,
+    // `ControlAddin/PrintService/Print Service.al`) to call a REAL declared
+    // procedure at the REAL declared arity — zero Typos, zero arity
+    // mismatches, zero events called — so all 37 sites landed `Resolved`
+    // (Catalog), none in `MemberNotFound`/`UntrackedReceiver` (both
+    // byte-identical: `UntrackedReceiver`=18, `MemberNotFound`=7,
+    // `BuiltinPrecedenceCollision`=1 — unchanged). Direct-var `var X:
+    // ControlAddIn "Foo"` retrofit: ZERO CDO impact (grepped — no direct-var
+    // `ControlAddIn`-typed declaration anywhere in the real CDO corpus), a
+    // pure soundness fix validated by unit tests only.
+    // `unknownByReason`={CompoundReceiver: 14, UntrackedReceiver: 18,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==40.
+    // `genuine_wrong` stays 0 (companion audit gate); `ambiguous_resolved`
+    // stays 13 (untouched bucket).
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.004254,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.004254 \
-         (recorded 2026-07-03 post argtype-dispatch-and-page-catalog Task 1: \
-         0.43% [77/18104=0.0042532], Page/Report instance-catalog completion; \
-         was 0.52% post sigfp-and-ambiguous-reclassification plan \
-         Task 4 — the metric-definition change: 0.52% [95/18104=0.0052475], \
+        primary_rate <= 0.002210,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.002210 \
+         (recorded 2026-07-04 post receiver-closure-and-arg-increments plan \
+         Task 1: 0.22% [40/18104=0.0022095], CurrPage UserControl / \
+         direct-var ControlAddIn closed-if-known gating; was 0.43% \
+         [77/18104=0.0042532] post argtype-dispatch-and-page-catalog Task 1, \
+         Page/Report instance-catalog completion; was 0.52% post \
+         sigfp-and-ambiguous-reclassification plan Task 4 — the \
+         metric-definition change: 0.52% [95/18104=0.0052475], \
          the full 56-site same-object OverloadAmbiguous population \
          reclassified AmbiguousResolved; was 0.83% \
          [151/18104=0.008341] post dataitem-receivers Task 1 review fix, \
@@ -2060,10 +2089,18 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // UNCHANGED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1, Task
     // 2): byte-identical 77 — the arg-type dispatch pick moves
     // `AmbiguousResolved` sites to `Resolved`, never touches `Unknown`.
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 1):
+    // 77→40 — see the rate-ceiling comment above for the full delta and
+    // adjudication (all 37 `CurrPage.<usercontrol>` sites resolved,
+    // `unknownByReason`={CompoundReceiver: 14, UntrackedReceiver: 18,
+    // BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==40).
     assert!(
-        ph.unknown <= 77,
-        "primary unknown count {} exceeds ceiling 77 (recorded 2026-07-03 \
-         post argtype-dispatch-and-page-catalog Task 1: 77, the Page/Report \
+        ph.unknown <= 40,
+        "primary unknown count {} exceeds ceiling 40 (recorded 2026-07-04 \
+         post receiver-closure-and-arg-increments plan Task 1: 40, CurrPage \
+         UserControl / direct-var ControlAddIn closed-if-known gating; was \
+         77 post argtype-dispatch-and-page-catalog Task 1, the Page/Report \
          instance-catalog completion; was 95 post \
          sigfp-and-ambiguous-reclassification plan Task 4 — the \
          metric-definition change: 95, the full 56-site same-object \
@@ -2125,10 +2162,16 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // alongside the primary ceiling above.
     // UNCHANGED 2026-07-03 (argtype-dispatch-and-page-catalog plan v2.1, Task
     // 2): byte-identical 77, alongside the primary ceiling above.
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task
+    // 1): 77→40, alongside the primary ceiling above; whole-program
+    // `unknown`=40, same value as primary today.
     assert!(
-        h.unknown <= 77,
-        "whole-program unknown count {} exceeds ceiling 77 (recorded \
-         2026-07-03 post argtype-dispatch-and-page-catalog Task 1: 77; was 95 \
+        h.unknown <= 40,
+        "whole-program unknown count {} exceeds ceiling 40 (recorded \
+         2026-07-04 post receiver-closure-and-arg-increments plan Task 1: 40, \
+         CurrPage UserControl / direct-var ControlAddIn closed-if-known \
+         gating; was 77 post argtype-dispatch-and-page-catalog Task 1; was 95 \
          post sigfp-and-ambiguous-reclassification plan Task 4 — see the \
          primary-scoped ceiling comment above for the full history and \
          adjudication) — engine regressed; investigate before raising the \

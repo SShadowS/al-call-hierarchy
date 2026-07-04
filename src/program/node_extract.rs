@@ -1,6 +1,6 @@
 //! Extract object + routine nodes from one parsed `AlFile`.
 
-use al_syntax::ir::{AlFile, ObjectKind, Param, RoutineKind};
+use al_syntax::ir::{AlFile, ObjectKind, Param, ParseStatus, RoutineKind};
 
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
@@ -140,6 +140,23 @@ pub struct ObjectNode {
     /// `receiver::resolve_dataitem_source_table` (Step 2b's dataitem-NAME
     /// receiver lookup, and the report implicit-Rec fallback).
     pub dataitems: Vec<DataitemNode>,
+    /// `true` when the OWNING FILE's parse hit tree-sitter error recovery
+    /// (`AlFile::parse_status == ParseStatus::Recovered` — receiver-closure
+    /// plan, Task 1). File-level, not object- or routine-level: a `#if`
+    /// syntax error anywhere in the file can corrupt CST structure broadly
+    /// enough that even a routine list extracted from an apparently-healthy
+    /// region of the SAME file cannot be fully trusted, so this degrades the
+    /// whole object conservatively rather than trying to prove damage is
+    /// contained to one routine. Consumed by
+    /// `receiver::resolve_control_addin_receiver`'s Degraded tri-state arm
+    /// (a `ControlAddIn` object's declared-procedure surface is untrustworthy
+    /// when its file didn't parse cleanly — decline rather than risk a false
+    /// `MemberNotFound` OR a false Catalog built on a corrupted routine list).
+    /// Always `false` for every in-memory test fixture that doesn't
+    /// explicitly set it (`..Default::default()`-style construction isn't
+    /// available on this struct, but every non-extraction call site is a
+    /// hand-built fixture with no real parse to have recovered from).
+    pub parse_incomplete: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -534,6 +551,7 @@ pub fn extract_nodes(
             page_controls,
             fields,
             dataitems,
+            parse_incomplete: file.parse_status != ParseStatus::Clean,
         });
         // Computed once per object — same value for every routine in the object.
         let subscriber_instance_manual = read_event_subscriber_instance(obj);

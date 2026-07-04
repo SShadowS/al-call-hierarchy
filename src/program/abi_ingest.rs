@@ -398,6 +398,10 @@ pub fn ingest_abi(
             // same additive gap as SourceTable/TableNo/page-controls above (dataitem
             // receivers, Task 1: source `extract_nodes` path only).
             dataitems: vec![],
+            // ABI ingestion is a JSON deserialization, never a tree-sitter parse — the
+            // `parse_incomplete` concept (error-recovered CST) does not apply here; ABI's
+            // own honesty is already captured via `TrustTier::SymbolOnly` above.
+            parse_incomplete: false,
         });
 
         for routine in &abi_obj.routines {

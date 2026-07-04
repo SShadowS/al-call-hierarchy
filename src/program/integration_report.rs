@@ -337,6 +337,7 @@ mod tests {
             page_controls: vec![],
             fields: vec![],
             dataitems: vec![],
+            parse_incomplete: false,
         }
     }
 

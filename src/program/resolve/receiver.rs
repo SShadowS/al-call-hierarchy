@@ -221,8 +221,6 @@ pub enum FrameworkKind {
     System,
     CompanyProperty,
     SessionInformation,
-    // ControlAddIn — every method is a JS-side platform invocation → builtin
-    ControlAddIn,
     // Enum — static enum type used as a receiver (FromInteger / Names / Ordinals)
     Enum,
     /// Programmatic-construction catch-all for less-common types encountered at
@@ -267,6 +265,24 @@ pub enum ReceiverType {
     Interface { name_lc: String },
     /// An `Enum "Color"` receiver — enum statics (FromInteger/Names/Ordinals).
     EnumType { name_lc: String },
+    /// A `ControlAddIn "Foo"` receiver — either a direct-var declaration
+    /// (`var X: ControlAddIn "Foo"`) or a `CurrPage.<usercontrol>` reference
+    /// (receiver-closure plan, Task 1). `name_lc` is the declared addin type
+    /// name, lowercased, as written at the reference site (NOT necessarily
+    /// the resolved object's canonical name — see
+    /// [`resolve_control_addin_receiver`]'s doc on the real-world
+    /// short-name-vs-fully-qualified mismatch this tolerates). `surface`
+    /// carries what Phase A already proved about the addin's declaration,
+    /// closed-if-known — Phase B (`resolve_member`) gates the actual member
+    /// name+arity against it. This variant is ONLY ever constructed for a
+    /// [`ControlAddInSurface::Declared`] or [`ControlAddInSurface::TruePlatform`]
+    /// outcome — an ambiguous, out-of-closure, degraded, or genuinely-absent
+    /// (and non-platform) addin type declines to `Unknown` directly in Phase A
+    /// and never reaches here.
+    ControlAddIn {
+        name_lc: String,
+        surface: ControlAddInSurface,
+    },
     /// A `Record`-typed receiver.  `table` is the resolved `ObjectNodeId` of the
     /// table when it is in the workspace closure, else `None` (out-of-source table).
     ///
@@ -297,13 +313,45 @@ pub enum ReceiverType {
     Unknown,
 }
 
+/// What Phase A already proved about a `ControlAddIn` receiver's declaration —
+/// the closed-if-known tri-state (receiver-closure plan, Task 1 round-2
+/// closer). `Ambiguous`/`Degraded`/genuinely-absent-and-non-platform outcomes
+/// are NOT represented here — they decline directly to `ReceiverType::Unknown`
+/// in Phase A (see [`resolve_control_addin_receiver`]) and never construct a
+/// [`ReceiverType::ControlAddIn`] at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlAddInSurface {
+    /// The addin type is declared (source or ABI/SymbolOnly) and resolved to
+    /// exactly ONE object, whose declaration parsed cleanly. `procedures` is
+    /// its full declared procedure surface — `(name_lc, arity)` pairs, EVENTS
+    /// EXCLUDED (never AL-callable; see
+    /// `al_syntax::lower::collect_routines`'s `interface_procedure` handling,
+    /// which never lowers an `event_declaration` as a `RoutineDecl` in the
+    /// first place — there is nothing to filter out here, the exclusion is
+    /// structural at the source). Phase B's gate: `method_lc` + `arity` must
+    /// match ONE OF `procedures` OR the (currently EMPTY — see
+    /// [`resolve_control_addin_receiver`]'s doc) platform base-member union;
+    /// otherwise the call is a genuine `MemberNotFound`, never a guessed
+    /// Catalog.
+    Declared { procedures: Vec<(String, usize)> },
+    /// No source/symbol declaration is reachable ANYWHERE for this addin name,
+    /// but the name matches a known Microsoft-shipped platform addin CLASS
+    /// (currently only `WebPageViewer` — see the const doc) whose JS-side
+    /// method surface this engine cannot enumerate from here. Every method
+    /// call is accepted unconditionally as a real platform invocation — the
+    /// pre-Task-1 open policy, now scoped to just this small allowlist rather
+    /// than every `ControlAddIn`-typed receiver.
+    TruePlatform,
+}
+
 // ---------------------------------------------------------------------------
 // ParsedType — intermediate result of classify_type_text
 // ---------------------------------------------------------------------------
 
 /// Result of the pure string→shape parse in [`classify_type_text`].
 ///
-/// Names (table name, object name, interface name, enum name) are preserved as
+/// Names (table name, object name, interface name, enum name, controladdin
+/// name) are preserved as
 /// lowercased strings for subsequent graph-based resolution in
 /// [`infer_receiver_type`].  No graph access is performed here.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -334,6 +382,11 @@ pub enum ParsedType {
     Interface { name: String },
     /// `Enum <Name>` — lowercased enum name.
     EnumType { name: String },
+    /// `ControlAddIn <Name>` — lowercased addin type name, quotes stripped
+    /// (Task 1). Distinct from `Framework` because a `ControlAddIn`'s member
+    /// surface is gated on the SPECIFIC addin's declared procedures (closed-
+    /// if-known), unlike every other `Framework` kind's uniform catalog.
+    ControlAddIn { name: String },
     /// `RecordRef`
     RecordRef,
     /// `FieldRef`
@@ -466,7 +519,9 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
         "fileupload" => ParsedType::Framework(FrameworkKind::FileUpload),
         "numbersequence" => ParsedType::Framework(FrameworkKind::NumberSequence),
         "version" => ParsedType::Framework(FrameworkKind::Version),
-        "controladdin" => ParsedType::Framework(FrameworkKind::ControlAddIn),
+        "controladdin" => ParsedType::ControlAddIn {
+            name: unquote_identifier(rest).to_ascii_lowercase(),
+        },
         // Variant — runtime-typed, genuinely dynamic
         "variant" => ParsedType::Dynamic,
         // Primitive numeric / boolean types and anything else unrecognized
@@ -549,13 +604,16 @@ pub fn infer_receiver_type(
     // to the target Page object lets `resolve_member`'s ordinary `Object` arm
     // dispatch the subpage's user procedures. This is DISTINCT from
     // `CurrPage.<part>.<method>()` (no `.Page`), which addresses the CONTROL
-    // itself (structural methods like `.Update`/`.Visible`) — that shape
-    // falls through to `Unknown` here, never fabricated as a subpage call.
-    // `SystemPart`/`UserControl` controls and any chain deeper than one
-    // `.Page` accessor also fall through: a wrong subpage is a false
-    // `Source` edge, the cardinal sin, so anything short of an exact
-    // single-segment `<part>.Page` shape resolving to exactly one in-closure
-    // Page object declines rather than guesses.
+    // itself — that shape falls through to `Unknown` here, never fabricated
+    // as a subpage call (Step 0b below handles the analogous bare-control
+    // shape for `UserControl` controls specifically; a bare `Part` control
+    // reference has no equivalent — a subpage Part exposes no callable
+    // surface of its own, only through `.Page`). `SystemPart`/`UserControl`
+    // controls and any chain deeper than one `.Page` accessor also fall
+    // through here: a wrong subpage is a false `Source` edge, the cardinal
+    // sin, so anything short of an exact single-segment `<part>.Page` shape
+    // resolving to exactly one in-closure Page object declines rather than
+    // guesses.
     // -----------------------------------------------------------------------
     if let Some(rest) = receiver_lc.strip_prefix("currpage.")
         && let Some(part_name_lc) = parse_currpage_dot_page_segment(rest)
@@ -574,6 +632,34 @@ pub fn infer_receiver_type(
             name_lc: page_obj.name.to_ascii_lowercase(),
             id: Some(page_id),
         };
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 0b — `CurrPage.<usercontrol>` ControlAddIn receivers (receiver-
+    // closure plan, Task 1). A page's `usercontrol(<control>; <AddinType>)`
+    // control is addressed DIRECTLY as `CurrPage.<control>.<Method>(...)` —
+    // no `.Page` accessor (unlike the `Part` subpage-instance shape above, a
+    // usercontrol has no subpage OBJECT of its own; its JS-side add-in
+    // methods are invoked straight off the control reference). CLOSED-IF-
+    // KNOWN (round-2 closer, BINDING): see
+    // [`resolve_control_addin_receiver`]'s doc for the full tri-state gate —
+    // Ambiguous/Degraded/genuinely-unresolved-non-platform all decline to
+    // `Unknown` right there, never reaching `resolve_member`'s Catalog path.
+    // `SystemPart` controls are explicitly OUT of this arm (native platform
+    // components rendered by the client shell, not JS add-ins — no
+    // `controladdin` object backs them at all, so there is nothing to gate
+    // against; a closed SystemPart catalog is future work if real call sites
+    // ever surface). A bare single segment with NO further chain is required
+    // (`parse_currpage_bare_control_segment`) — a `.Page`-suffixed or deeper
+    // chain on a UserControl still falls through Step 0's decline above,
+    // never fabricated.
+    // -----------------------------------------------------------------------
+    if let Some(rest) = receiver_lc.strip_prefix("currpage.")
+        && let Some(control_name_lc) = parse_currpage_bare_control_segment(rest)
+        && let Some(control) = find_page_control(&control_name_lc, from_object, graph, index)
+        && control.kind == PageControlKind::UserControl
+    {
+        return resolve_control_addin_receiver(&control.target, from_object, graph, index);
     }
 
     // -----------------------------------------------------------------------
@@ -2054,6 +2140,33 @@ fn parse_currpage_dot_page_segment(rest: &str) -> Option<String> {
     Some(segment.to_string())
 }
 
+/// Parse the text following `"currpage."` (already lowercased by the caller)
+/// for a BARE, single, possibly-quoted control-name segment with NOTHING
+/// trailing it at all (Task 1's Step 0b — the `UserControl` sibling of
+/// [`parse_currpage_dot_page_segment`], which requires a trailing `.page`
+/// instead of nothing). Returns the control name, quotes stripped (already
+/// lowercase since the input is).
+///
+/// Returns `None` — decline, honest `Unknown`, never fabricated — for: an
+/// empty segment, or ANY trailing remainder at all (a `.page` accessor, a
+/// deeper chain, anything) — those shapes are Step 0's / a generic decline's
+/// territory, never this one's.
+fn parse_currpage_bare_control_segment(rest: &str) -> Option<String> {
+    let (segment, remainder) = if let Some(after_quote) = rest.strip_prefix('"') {
+        let close = after_quote.find('"')?;
+        (&after_quote[..close], &after_quote[close + 1..])
+    } else {
+        match rest.find('.') {
+            Some(i) => (&rest[..i], &rest[i..]),
+            None => (rest, ""),
+        }
+    };
+    if segment.is_empty() || !remainder.is_empty() {
+        return None;
+    }
+    Some(segment.to_string())
+}
+
 /// Convert a [`ParsedType`] (pure string parse) to a [`ReceiverType`] by
 /// resolving names against the graph.
 ///
@@ -2096,12 +2209,133 @@ fn parsed_type_to_receiver(
         }
         ParsedType::Interface { name } => ReceiverType::Interface { name_lc: name },
         ParsedType::EnumType { name } => ReceiverType::EnumType { name_lc: name },
+        ParsedType::ControlAddIn { name } => {
+            // Direct-var retrofit (Task 1 round-1 addendum): `var X: ControlAddIn
+            // "Foo"` gets the SAME closed-if-known gate as the `CurrPage.<usercontrol>`
+            // Step-0b arm — no separate open-accept path survives for this shape.
+            let target = ObjectRef::Name {
+                raw: name.clone(),
+                normalized_lc: name,
+            };
+            resolve_control_addin_receiver(&target, from_object, graph, index)
+        }
         ParsedType::RecordRef => ReceiverType::RecordRef,
         ParsedType::FieldRef => ReceiverType::FieldRef,
         ParsedType::KeyRef => ReceiverType::KeyRef,
         ParsedType::Framework(kind) => ReceiverType::Framework(kind),
         ParsedType::Primitive => ReceiverType::Primitive,
         ParsedType::Dynamic => ReceiverType::Dynamic,
+    }
+}
+
+/// Small, CLOSED allowlist of Microsoft-shipped platform `ControlAddIn`
+/// CLASSES whose JS-side method surface this engine treats as an
+/// unconditional `builtin` Catalog invocation when NO source/symbol
+/// declaration for the name is reachable from the caller (Task 1's
+/// `ControlAddInSurface::TruePlatform` outcome).
+///
+/// Currently just `webpageviewer`. Grounded empirically against the real CDO
+/// corpus (`grep -rn "usercontrol(" **/*.al`): every one of its 7
+/// `CurrPage.<control>.SetContent(...)` sites declares
+/// `usercontrol(WebPageViewer; WebPageViewer)` / `usercontrol(WebViewer;
+/// WebPageViewer)` — the BARE, unqualified identifier `WebPageViewer`, not
+/// the fully-qualified name Microsoft's System Application actually ships
+/// the object under
+/// (`"Microsoft.Dynamics.Nav.Client.WebPageViewer"` — verified directly from
+/// that dependency `.app`'s `SymbolReference.json`, `ControlAddIns[].Name`;
+/// see also
+/// <https://learn.microsoft.com/en-us/dynamics365/business-central/application/system-application/controladdin/microsoft.dynamics.nav.client.webpageviewer>).
+/// Since this engine's `ObjectIndex`/`ResolveIndex` key ABI-ingested objects
+/// by their SymbolReference `Name` verbatim, the bare `WebPageViewer`
+/// reference genuinely has ZERO reachable candidate from this engine's
+/// point of view — `Unresolved`, not `Unique` — even though the real AL
+/// compiler accepts it. `"microsoft.dynamics.nav.client.webpageviewer"` is
+/// ALSO listed, defensively, for the (currently unobserved in CDO) case
+/// where a caller writes the fully-qualified quoted name AND that
+/// dependency's SymbolReference somehow still isn't ingested/reachable —
+/// harmless to list twice, since a NAME THAT DOES resolve
+/// (`ObjectRefResolution::Unique`) always takes the `Declared` gate first,
+/// never this fallback.
+const TRUE_PLATFORM_CONTROL_ADDINS: &[&str] = &[
+    "webpageviewer",
+    "microsoft.dynamics.nav.client.webpageviewer",
+];
+
+/// Resolve a `ControlAddIn` receiver's tri-state surface (Task 1, round-2
+/// closer, BINDING): the SAME gate for both the `CurrPage.<usercontrol>` Step-0b
+/// arm and the direct-var `ControlAddIn "Foo"` retrofit.
+///
+/// - **Resolved, uniquely, cleanly** (`ObjectRefResolution::Unique`, and the
+///   resolved object's owning file parsed cleanly — [`ObjectNode::parse_incomplete`]
+///   `false`) → [`ReceiverType::ControlAddIn`] with
+///   [`ControlAddInSurface::Declared`], carrying every declared procedure's
+///   `(name_lc, arity)` (events already structurally excluded — see
+///   [`ControlAddInSurface::Declared`]'s doc). Phase B (`resolve_member`) does
+///   the actual member+arity gate.
+/// - **Resolved but Degraded** (`Unique`, `parse_incomplete: true`) → declines
+///   to `Unknown` UNCONDITIONALLY, even if the called member happens to
+///   textually match something in the (untrustworthy) routine list — a
+///   parse-recovered file's extracted routines could be spurious CST
+///   artifacts, so a "match" here is not provably a real declared procedure
+///   either. Never guess in either direction.
+/// - **Ambiguous** (`ObjectRefResolution::Ambiguous`, ≥2 reachable
+///   declarations) → `Unknown`. **OutOfClosure** (declared somewhere in the
+///   snapshot, but not in `from_object`'s dependency closure) → also
+///   `Unknown` — a real declared type we simply cannot verify the surface of
+///   from here; closed-if-known means never falling back to open-accept just
+///   because verification is unavailable.
+/// - **Unresolved** (no candidate anywhere) → open-accept
+///   ([`ControlAddInSurface::TruePlatform`]) ONLY when the name is on the
+///   [`TRUE_PLATFORM_CONTROL_ADDINS`] allowlist; otherwise `Unknown` (a
+///   genuinely-unknown control name — could be a typo, a dependency that
+///   isn't indexed, anything; never guessed open).
+fn resolve_control_addin_receiver(
+    target: &ObjectRef,
+    from_object: &ObjectNode,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> ReceiverType {
+    let name_lc = match target {
+        ObjectRef::Name { normalized_lc, .. } => normalized_lc.clone(),
+        ObjectRef::Id(n) => n.to_string(),
+    };
+    match index.resolve_object_ref(
+        graph,
+        from_object.id.clone(),
+        ObjectKind::ControlAddIn,
+        target,
+    ) {
+        ObjectRefResolution::Unique(oid) => {
+            let Some(obj) = graph.objects.iter().find(|o| o.id == oid) else {
+                // Defensive — `resolve_object_ref` only ever returns an id it read
+                // out of `graph.objects` itself; structurally unreachable.
+                return ReceiverType::Unknown;
+            };
+            if obj.parse_incomplete {
+                return ReceiverType::Unknown;
+            }
+            let procedures: Vec<(String, usize)> = graph
+                .routines
+                .iter()
+                .filter(|r| r.id.object == oid)
+                .map(|r| (r.id.name_lc.clone(), r.id.params_count))
+                .collect();
+            ReceiverType::ControlAddIn {
+                name_lc,
+                surface: ControlAddInSurface::Declared { procedures },
+            }
+        }
+        ObjectRefResolution::Ambiguous | ObjectRefResolution::OutOfClosure => ReceiverType::Unknown,
+        ObjectRefResolution::Unresolved => {
+            if TRUE_PLATFORM_CONTROL_ADDINS.contains(&name_lc.as_str()) {
+                ReceiverType::ControlAddIn {
+                    name_lc,
+                    surface: ControlAddInSurface::TruePlatform,
+                }
+            } else {
+                ReceiverType::Unknown
+            }
+        }
     }
 }
 
@@ -2330,6 +2564,7 @@ mod tests {
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             };
 
         let mut objects = vec![
@@ -2451,6 +2686,7 @@ mod tests {
             page_controls: vec![],
             fields: vec![],
             dataitems: vec![],
+            parse_incomplete: false,
         }
     }
 
@@ -4927,8 +5163,13 @@ mod tests {
     /// NEGATIVE — bare SystemPart/UserControl (no `.Page` at all) also stay
     /// `Unknown`, exercising the ordinary "no .page suffix" decline path for
     /// these control kinds too.
+    /// RENAMED (Task 1, M1 — was `infer_currpage_bare_systempart_and_usercontrol_stay_unknown`,
+    /// split in two): a `SystemPart` control's bare form ALWAYS declines —
+    /// `SystemPart` is explicitly OUT of the Step 0b `ControlAddIn` arm
+    /// entirely (native platform components, not JS add-ins; no `controladdin`
+    /// object could ever back one). This assertion is unaffected by Task 1.
     #[test]
-    fn infer_currpage_bare_systempart_and_usercontrol_stay_unknown() {
+    fn infer_currpage_bare_systempart_stays_unknown() {
         let (graph, _w) = build_currpage_fixture();
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
@@ -4952,6 +5193,32 @@ mod tests {
             ),
             ReceiverType::Unknown
         );
+    }
+
+    /// RENAMED (Task 1, M1 — was `infer_currpage_bare_systempart_and_usercontrol_stay_unknown`,
+    /// split in two): a bare `UserControl` whose declared addin type
+    /// (`"MyAddIn"`) has NO reachable source/symbol declaration in
+    /// `build_currpage_fixture` (only Page/PageExtension objects exist there)
+    /// AND is not on the `TRUE_PLATFORM_CONTROL_ADDINS` allowlist stays
+    /// `Unknown` — `ObjectRefResolution::Unresolved` + non-platform name,
+    /// Task 1's tri-state gate's genuinely-absent-and-non-platform outcome.
+    /// This is now a NARROWER claim than the old test's name implied — a
+    /// usercontrol whose addin type IS resolvable now resolves (see the
+    /// dedicated `infer_currpage_usercontrol_*` tests below) — so this test
+    /// exists specifically to prove the undeclared/non-platform case still
+    /// declines, not that usercontrols categorically never resolve.
+    #[test]
+    fn infer_currpage_bare_usercontrol_undeclared_nonplatform_name_stays_unknown() {
+        let (graph, _w) = build_currpage_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = graph
+            .objects
+            .iter()
+            .find(|o| o.name == "HostPage")
+            .unwrap()
+            .clone();
+
         assert_eq!(
             infer_receiver_type(
                 "currpage.myaddin",
@@ -5005,6 +5272,391 @@ mod tests {
                 id: Some(subpage_id),
             }
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // infer_receiver_type — Step 0b: `CurrPage.<usercontrol>` ControlAddIn
+    // receivers, closed-if-known gating (receiver-closure plan, Task 1)
+    //
+    // Fixture: workspace app `w` (depends on `Dep1`/`Dep2`, each declaring a
+    // `controladdin "Shared.Addin"` — the cross-app AMBIGUOUS collision case)
+    // with Page "AddinHost" (id 50320) with SIX usercontrol/systempart
+    // controls:
+    // - `Editor` -> "CDO.Editor" (source-declared IN `w`: `InitEditor(2
+    //   params)` / `GetHTML(0 params)` — mirrors the real CDO.Editor
+    //   controladdin exactly; an `OnSaveHTML` EVENT is deliberately absent
+    //   from the declared-routine list here, modeling
+    //   `al_syntax::lower::collect_routines`'s structural exclusion of
+    //   `event_declaration` nodes — see the al-syntax lowering tests for
+    //   proof events never become `RoutineDecl`s in the first place).
+    // - `Broken` -> "Broken.Addin" (source-declared IN `w`, but its owning
+    //   object's `parse_incomplete` is `true` — the Degraded case).
+    // - `Shared` -> "Shared.Addin" (declared in BOTH `Dep1` AND `Dep2` — the
+    //   Ambiguous case).
+    // - `Viewer` -> `WebPageViewer` (no declaration anywhere — the
+    //   TruePlatform allowlist case, grounded in the real CDO corpus).
+    // - `Nope` -> "Totally.Unknown" (no declaration anywhere, NOT on the
+    //   allowlist — genuinely-absent-and-non-platform).
+    // - `SysPart` (SystemPart kind — OUT of the arm entirely, regardless of
+    //   its target).
+    // -----------------------------------------------------------------------
+
+    fn build_control_addin_fixture() -> (ProgramGraph, AppRef) {
+        let mut apps = crate::program::node::AppRegistry::default();
+        let mk_id = |name: &str| crate::snapshot::AppId {
+            guid: String::new(),
+            name: name.into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let w = apps.intern(&mk_id("ControlAddInW"));
+        let dep1 = apps.intern(&mk_id("ControlAddInDep1"));
+        let dep2 = apps.intern(&mk_id("ControlAddInDep2"));
+        let mut topology = crate::program::topology::DependencyGraph::default();
+        topology.add_dependency(w, dep1);
+        topology.add_dependency(w, dep2);
+
+        let mk_target = |raw: &str| ObjectRef::Name {
+            raw: raw.to_string(),
+            normalized_lc: raw.to_ascii_lowercase(),
+        };
+
+        let mut host = make_object_node(w, ObjectKind::Page, "AddinHost", Some(50320), None);
+        host.page_controls = vec![
+            PageControlNode {
+                name_lc: "editor".into(),
+                kind: PageControlKind::UserControl,
+                target: mk_target("CDO.Editor"),
+            },
+            PageControlNode {
+                name_lc: "broken".into(),
+                kind: PageControlKind::UserControl,
+                target: mk_target("Broken.Addin"),
+            },
+            PageControlNode {
+                name_lc: "shared".into(),
+                kind: PageControlKind::UserControl,
+                target: mk_target("Shared.Addin"),
+            },
+            PageControlNode {
+                name_lc: "viewer".into(),
+                kind: PageControlKind::UserControl,
+                target: mk_target("WebPageViewer"),
+            },
+            PageControlNode {
+                name_lc: "nope".into(),
+                kind: PageControlKind::UserControl,
+                target: mk_target("Totally.Unknown"),
+            },
+            PageControlNode {
+                name_lc: "syspart".into(),
+                kind: PageControlKind::SystemPart,
+                target: mk_target("Whatever"),
+            },
+        ];
+
+        let editor = make_object_node(w, ObjectKind::ControlAddIn, "CDO.Editor", None, None);
+        let mut broken = make_object_node(w, ObjectKind::ControlAddIn, "Broken.Addin", None, None);
+        broken.parse_incomplete = true;
+        let shared_dep1 =
+            make_object_node(dep1, ObjectKind::ControlAddIn, "Shared.Addin", None, None);
+        let shared_dep2 =
+            make_object_node(dep2, ObjectKind::ControlAddIn, "Shared.Addin", None, None);
+
+        let routines = vec![
+            control_addin_routine(editor.id.clone(), "InitEditor", 2),
+            control_addin_routine(editor.id.clone(), "GetHTML", 0),
+            control_addin_routine(broken.id.clone(), "Foo", 0),
+        ];
+
+        let mut objects = vec![host, editor, broken, shared_dep1, shared_dep2];
+        objects.sort_by(|a, b| a.id.cmp(&b.id));
+        let obj_index = ObjectIndex::build(&objects);
+
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        (graph, w)
+    }
+
+    /// Minimal `RoutineNode` builder with a configurable arity — mirrors
+    /// `make_routine_node` (below) but that helper hardcodes `params_count: 0`,
+    /// which the ControlAddIn fixture's `InitEditor(2 params)` needs to defeat.
+    fn control_addin_routine(obj_id: ObjectNodeId, name: &str, params_count: usize) -> RoutineNode {
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id,
+                name_lc: name.to_ascii_lowercase(),
+                enclosing_member_lc: None,
+                params_count,
+                sig_fp: 0,
+            },
+            name: name.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::Workspace,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: None,
+            abi_event_kind: None,
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+            source_overload_aliased: false,
+        }
+    }
+
+    fn control_addin_host(graph: &ProgramGraph) -> ObjectNode {
+        graph
+            .objects
+            .iter()
+            .find(|o| o.name == "AddinHost")
+            .unwrap()
+            .clone()
+    }
+
+    /// POSITIVE — Resolved: a source-declared, cleanly-parsed usercontrol
+    /// types as `ControlAddIn { surface: Declared { procedures } }`, carrying
+    /// BOTH declared procedures with their real arity.
+    #[test]
+    fn infer_currpage_usercontrol_declared_resolves_control_addin_declared() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = control_addin_host(&graph);
+
+        let result = infer_receiver_type(
+            "currpage.editor",
+            &routine,
+            &[],
+            &host,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        match result {
+            ReceiverType::ControlAddIn { name_lc, surface } => {
+                assert_eq!(name_lc, "cdo.editor");
+                match surface {
+                    ControlAddInSurface::Declared { mut procedures } => {
+                        procedures.sort();
+                        assert_eq!(
+                            procedures,
+                            vec![("gethtml".to_string(), 0), ("initeditor".to_string(), 2)]
+                        );
+                    }
+                    other => panic!("expected Declared, got {other:?}"),
+                }
+            }
+            other => panic!("expected ControlAddIn, got {other:?}"),
+        }
+    }
+
+    /// NEGATIVE — Degraded: a source-declared usercontrol whose owning file
+    /// did not parse cleanly declines to `Unknown` UNCONDITIONALLY, even
+    /// though it resolved to exactly one object — a parse-recovered routine
+    /// list cannot be trusted enough to prove either presence or absence.
+    #[test]
+    fn infer_currpage_usercontrol_degraded_declines_unknown() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = control_addin_host(&graph);
+
+        assert_eq!(
+            infer_receiver_type(
+                "currpage.broken",
+                &routine,
+                &[],
+                &host,
+                &graph,
+                &index,
+                None,
+                None
+            ),
+            ReceiverType::Unknown
+        );
+    }
+
+    /// NEGATIVE — Ambiguous: two dependency apps in the closure both declare
+    /// `controladdin "Shared.Addin"` — an unprovable cross-app collision,
+    /// declines rather than guessing either one.
+    #[test]
+    fn infer_currpage_usercontrol_ambiguous_declines_unknown() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = control_addin_host(&graph);
+
+        assert_eq!(
+            infer_receiver_type(
+                "currpage.shared",
+                &routine,
+                &[],
+                &host,
+                &graph,
+                &index,
+                None,
+                None
+            ),
+            ReceiverType::Unknown
+        );
+    }
+
+    /// POSITIVE — TruePlatform: `WebPageViewer` has no reachable declaration
+    /// anywhere in the fixture, but IS on the platform allowlist — resolves
+    /// to `ControlAddIn { surface: TruePlatform }` (Phase B open-accepts any
+    /// method on this outcome, mirroring the pre-Task-1 policy scoped down to
+    /// just this allowlist).
+    #[test]
+    fn infer_currpage_usercontrol_true_platform_resolves() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = control_addin_host(&graph);
+
+        assert_eq!(
+            infer_receiver_type(
+                "currpage.viewer",
+                &routine,
+                &[],
+                &host,
+                &graph,
+                &index,
+                None,
+                None
+            ),
+            ReceiverType::ControlAddIn {
+                name_lc: "webpageviewer".into(),
+                surface: ControlAddInSurface::TruePlatform,
+            }
+        );
+    }
+
+    /// NEGATIVE — genuinely unknown control name: not declared anywhere, and
+    /// not on the platform allowlist either. Never guessed open.
+    #[test]
+    fn infer_currpage_usercontrol_unknown_nonplatform_name_declines_unknown() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = control_addin_host(&graph);
+
+        assert_eq!(
+            infer_receiver_type(
+                "currpage.nope",
+                &routine,
+                &[],
+                &host,
+                &graph,
+                &index,
+                None,
+                None
+            ),
+            ReceiverType::Unknown
+        );
+    }
+
+    /// NEGATIVE — `SystemPart` is explicitly OUT of the Step 0b arm entirely,
+    /// regardless of its target — no `controladdin` object backs a
+    /// SystemPart, so there is nothing to gate against. Default-decline
+    /// (dated note, Task 1): a closed SystemPart catalog is future work only
+    /// if real call sites ever surface.
+    #[test]
+    fn infer_currpage_systempart_bare_form_declines_unknown() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let host = control_addin_host(&graph);
+
+        assert_eq!(
+            infer_receiver_type(
+                "currpage.syspart",
+                &routine,
+                &[],
+                &host,
+                &graph,
+                &index,
+                None,
+                None
+            ),
+            ReceiverType::Unknown
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Direct-var `var X: ControlAddIn "Foo"` retrofit (Task 1, round-1
+    // addendum): the SAME closed-if-known gate applies via
+    // `classify_type_text` -> `parsed_type_to_receiver` -> `resolve_control_addin_receiver`.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn classify_controladdin_quoted_name() {
+        assert_eq!(
+            classify_type_text("ControlAddIn \"CDO.Editor\""),
+            ParsedType::ControlAddIn {
+                name: "cdo.editor".into()
+            }
+        );
+    }
+
+    /// POSITIVE — direct-var Resolved: `var X: ControlAddIn "CDO.Editor"`
+    /// (unquoted variable name aside — only the TYPE TEXT matters here)
+    /// gates identically to the `CurrPage.<usercontrol>` path — same
+    /// `Declared` surface, same procedures.
+    #[test]
+    fn direct_var_controladdin_declared_resolves_control_addin_declared() {
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let host = control_addin_host(&graph);
+
+        let parsed = classify_type_text("ControlAddIn \"CDO.Editor\"");
+        let result = parsed_type_to_receiver(parsed, &host, &graph, &index);
+        match result {
+            ReceiverType::ControlAddIn { name_lc, surface } => {
+                assert_eq!(name_lc, "cdo.editor");
+                assert!(matches!(surface, ControlAddInSurface::Declared { .. }));
+            }
+            other => panic!("expected ControlAddIn, got {other:?}"),
+        }
+    }
+
+    /// NEGATIVE, end-to-end — the direct-var retrofit's actual point: a
+    /// typo'd method call on `var X: ControlAddIn "CDO.Editor"` must decline,
+    /// not silently open-accept the way the pre-Task-1 `FrameworkKind::ControlAddIn`
+    /// blanket policy would have. Chains the FULL pipeline this fixture
+    /// proves each stage of individually: `classify_type_text` ->
+    /// `parsed_type_to_receiver` -> `resolve_member`.
+    #[test]
+    fn direct_var_controladdin_typo_end_to_end_declines_unknown() {
+        use crate::program::resolve::edge::{Evidence, RouteTarget, UnknownReason};
+        use crate::program::resolve::resolver::resolve_member;
+
+        let (graph, _w) = build_control_addin_fixture();
+        let index = ResolveIndex::build(&graph);
+        let host = control_addin_host(&graph);
+        let body_map = crate::program::resolve::body_map::BodyMap::build(&graph, &[]);
+
+        let parsed = classify_type_text("ControlAddIn \"CDO.Editor\"");
+        let receiver = parsed_type_to_receiver(parsed, &host, &graph, &index);
+
+        let (_, routes) =
+            resolve_member(&receiver, "inteditor", 2, &host, &graph, &index, &body_map);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::MemberNotFound)
+        );
+        assert!(matches!(routes[0].target, RouteTarget::Unresolved));
     }
 
     // -----------------------------------------------------------------------

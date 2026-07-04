@@ -167,6 +167,18 @@ fn extract_from_ir(file: &al_syntax::ir::AlFile, app_guid: &str, out: &mut Ident
             signature_fingerprint,
         });
 
+        // Interface / ControlAddIn: al-sem's R0 identity snapshot never modeled
+        // these objects' signature-only members as routines (a frozen, differential-
+        // gated historical baseline — `tests/differential.rs`'s R0 harness). See the
+        // identical, more-detailed comment in `engine::l3::l3_workspace.rs`'s routine
+        // loop (the same shared `al_syntax::lower::collect_routines` fix — receiver-
+        // closure plan, Task 1 — surfaces here too, since this module independently
+        // re-derives its own identity snapshot from the raw IR rather than reusing
+        // `L3Workspace`).
+        if object_type == "Interface" || object_type == "ControlAddIn" {
+            continue;
+        }
+
         for r in &obj.routines {
             let rname = strip_quotes(&r.name).to_string();
             if rname.is_empty() {

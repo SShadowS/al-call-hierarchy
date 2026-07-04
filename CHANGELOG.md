@@ -8,6 +8,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`CurrPage.<usercontrol>` ControlAddIn receivers — closed-if-known gating:
+  real-`unknown` 0.43%→0.22%, `CompoundReceiver` 51→14 (receiver-closure-and-
+  arg-increments plan, Task 1).** Closes the 37-site mechanical population
+  the prior arc's grounding report identified: `CurrPage.<usercontrol>.
+  Method(...)` (30 sites, on source-declared `CDO.Editor`/`CDO.PrintService`)
+  and `CurrPage.<usercontrol>.SetContent(...)` (7 sites, on platform
+  `WebPageViewer`) previously fell through the `CurrPage.<part>.Page`
+  subpage-instance Step 0 (which requires `PageControlKind::Part`) to a
+  generic 2-hop decline — `CompoundReceiver`. A new Step 0b matches the bare
+  `CurrPage.<usercontrol>` shape and dispatches through a **tri-state,
+  closed-if-known `ControlAddIn` gate** (round-2-closer BINDING design):
+  - **Resolved** (the addin type resolves to exactly one cleanly-parsed
+    object) → the called member must match ONE of the addin's declared
+    procedures (name + **arity**; events structurally excluded — see below)
+    UNIONED with the platform base-member surface. That union is
+    **researched and found EMPTY**: MS Learn's `Visible` property page
+    confirms control properties like `Visible`/`Editable`/`Enabled` are
+    page-LAYOUT DESIGN-TIME properties, never `CurrPage.<control>.<member>`
+    RUNTIME member calls, and no generic AL-callable base method is
+    documented for any control add-in beyond its own declared procedures —
+    an executable test (`resolve_member_controladdin_declared_no_platform_
+    base_members_silently_resolve`) proves the empty union is enforced, not
+    assumed. A name/arity miss is an honest `Unknown(MemberNotFound)`, never
+    a guessed `Catalog`.
+  - **TruePlatform** (zero reachable declaration, but the name is on a small,
+    MS-Learn-grounded allowlist — currently just `webpageviewer`, matching
+    the real CDO corpus's bare, unqualified reference to
+    `"Microsoft.Dynamics.Nav.Client.WebPageViewer"`) → open-accept `Catalog`
+    unconditionally, same `BuiltinId` text as before
+    (`"ControlAddIn::<method>"` — the real CDO golden
+    `cdo-deanon-map.json` already carries this shape).
+  - **Ambiguous** (≥2 reachable declarations) / **Degraded**
+    (`parse_incomplete`) / genuinely-unresolved-and-non-platform → `Unknown`,
+    never open-accepted.
+  - The pre-existing **direct-var `var X: ControlAddIn "Foo"` open-accept
+    path is retrofitted to the SAME gate** (it was itself a latent
+    false-`Catalog` vector — `FrameworkKind::ControlAddIn`'s blanket
+    "every method is builtin" policy is REMOVED; `ControlAddIn` moved to a
+    dedicated `ReceiverType::ControlAddIn { name_lc, surface }` variant so
+    the specific addin's identity survives into Phase B). Zero CDO impact
+    (no direct-var `ControlAddIn` declaration exists anywhere in the real
+    corpus) — a pure soundness fix, unit-tested only.
+  - `SystemPart` controls are explicitly OUT of the arm (native platform
+    components, not JS add-ins — default-decline, dated note; a closed
+    SystemPart catalog is future work if real sites appear).
+  - **Root-cause al-syntax fix required first**: `al_syntax::lower::
+    collect_routines` never lowered `interface_procedure` nodes (the
+    grammar rule BOTH `controladdin_body` and `interface_body` use for
+    signature-only procedure declarations — no body, sometimes no trailing
+    `;`) — controladdin/interface procedures were completely invisible to
+    `RoutineDecl`/`RoutineNode` extraction, with zero name/arity to gate on.
+    Fixed at the source: `interface_procedure` now lowers identically to
+    `procedure` (name + arity via the same inlined `_procedure_name_and_
+    params`; a bonus fidelity fix recovers the return-type spec from the
+    nested `interface_procedure_suffix` child too). `RoutineNodeId.
+    params_count` (already a first-class field) gives arity gating for
+    free. Since `event_declaration` is a structurally DISTINCT grammar node
+    `collect_routines` still never matches, events are excluded from the
+    declared-procedure surface by construction, not by a filter. This is a
+    SHARED, correctness-improving fix (al-syntax is a foundation crate) —
+    it also, as a genuine bonus, makes `Interface` object procedure
+    signatures visible to the LSP call-hierarchy front-end
+    (`parser::parse_file_ir`, Rust-owned golden rebaselined) for the first
+    time. The frozen, differential-gated LEGACY `engine::l2`/`engine::l3`/
+    `engine::l4` port-parity pipeline (a SEPARATE consumer of the same
+    shared IR, still byte-compared against committed al-sem-derived
+    goldens/vectors) explicitly excludes `Interface`/`ControlAddIn` object
+    routines at its own ingestion points (`l3_workspace.rs`,
+    `l2_workspace.rs`, `engine::snapshot.rs`) to preserve that historical
+    parity contract untouched — zero legacy golden/vector edits needed.
+  - New `ObjectNode::parse_incomplete` field (file-level
+    `ParseStatus::Recovered`, additive) backs the Degraded tri-state arm.
+  - **Measured on the real CDO workspace**: `CompoundReceiver` 51→14 (-37,
+    every one of the 37 sites individually source-adjudicated: all 30
+    `CDO.Editor`/`CDO.PrintService` calls match a real declared procedure at
+    the real declared arity — zero typos, zero arity mismatches, zero events
+    called — and all 7 `WebPageViewer` calls hit the open `TruePlatform`
+    path), primary `unknown` 77→40 (`real_unknown_rate` 0.43%→0.22%),
+    `unknownByReason`={CompoundReceiver: 14, UntrackedReceiver: 18,
+    BuiltinPrecedenceCollision: 1, MemberNotFound: 7} — every other bucket
+    byte-identical. `ambiguousResolved` stays 13 (untouched). `genuine_wrong`
+    stays 0 (`cdo_l3_semantic_audit_no_fresh_wrong`); all 37 sites classify
+    `matches_l3` (L3's own legacy `PageControlKind::UserControl` inference
+    already open-accepted these as `ControlAddIn`/builtin, so fresh's
+    NEWLY-gated-but-still-Catalog result agrees) — no L3 disagreement, no
+    ratchet regression. Ratchets re-derived and dated in
+    `tests/program_resolve_harness.rs` (`primary_rate` ceiling
+    0.004254→0.002210, `ph.unknown`/`h.unknown` ceilings 77→40).
 - **Arc capstone — catalog completion + arg-type dispatch + preproc
   foundations: real-`unknown` 0.52%→0.43%, `ambiguousResolved` 56→13 (Task 4,
   FINAL, argtype-dispatch-and-page-catalog plan).** Full CDO re-measure

@@ -124,6 +124,7 @@ ws-compound-call-result/src/CallResultCaller.Codeunit.al::0::TestCrossObjectChai
 ws-compound-call-result/src/CallResultCaller.Codeunit.al::0::TestStringLiteralArg	a2ab8465d30b7dd6
 ws-compound-call-result/src/CallResultCaller.Codeunit.al::0::TestCrossAppAmbiguous	3922d73768d8bdbb
 ws-compound-call-result/src/CallResultPage.Page.al::0::OnOpenPage	7bbec47f95f28322
+ws-compound-call-result/src/ICRFoo.Interface.al::0::Bar	900d8a4c2c587e2b
 ws-compound-framework/src/CFCaller.Codeunit.al::0::TestHttpResponseContent	999bdc80ae3822b2
 ws-compound-framework/src/CFCaller.Codeunit.al::0::TestJsonTokenAsObject	a10b81255fe28050
 ws-compound-framework/src/CFCaller.Codeunit.al::0::TestThisStripDialogWindow	3d5a08587b39073e
@@ -161,6 +162,8 @@ ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestThreeLevelMiddleH
 ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestWrongArityAbiDeclines	9380975d0a35a457
 ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestObjectRunCollapsedTriggerDeclines	7fb1566759afbe8e
 ws-cross-object-chain/src/CrossChainCaller.Codeunit.al::0::TestAbiOverloadCollapsedDeclines	4e6ac1cd9b246915
+ws-cross-object-chain/src/ICCBar.Interface.al::0::GetHelper	900d8a4c2c587e2b
+ws-cross-object-chain/src/ICCFoo.Interface.al::0::GetHelper	900d8a4c2c587e2b
 ws-d1/src/jobs.al::0::ProcessAll	af6a5c415d2c7e87
 ws-d1/src/jobs.al::0::ProcessOne	242af8cdf28a7d3c
 ws-d1/src/jobs.al::0::DirectLoop	7cce302e7d60efeb
@@ -359,6 +362,7 @@ ws-diff-rename/a/src/sales-post.al::0::Post	b75144c9d54bd099
 ws-diff-rename/b/src/sales-posting.al::0::Post	b75144c9d54bd099
 ws-digest-pr49388/src/FileArchive.Codeunit.al::0::InsertFile	edd67f9ef987c8d5
 ws-digest-pr49388/src/FileArchive.Codeunit.al::0::ValidateAndError	688881c18ac68ab8
+ws-digest-pr49388/src/IImportProcessor.Interface.al::0::Process	900d8a4c2c587e2b
 ws-digest-pr49388/src/ImportDispatcher.Codeunit.al::0::DispatchImport	1277cf0fc73ce9e8
 ws-digest-pr49388/src/ImportMgt.Codeunit.al::0::ImportStream	807e9634d08db711
 ws-digest-pr49388/src/ImportValidator.Codeunit.al::0::ValidateImport	0230f2bb55b09f36
@@ -463,6 +467,8 @@ ws-install-codeunit/src/install.al::0::DoInstallWork	b31d2a5b3e173e36
 ws-install-codeunit/src/install.al::0::InternalHelper	f88db06c59e9f60e
 ws-interface-dispatch/src/Dispatcher.Codeunit.al::0::Dispatch	c0039a084a469476
 ws-interface-dispatch/src/EmptyCaller.Codeunit.al::0::CallNothing	cca1a3b4910fa9f5
+ws-interface-dispatch/src/IEmpty.Interface.al::0::Nothing	900d8a4c2c587e2b
+ws-interface-dispatch/src/IProcessor.Interface.al::0::Process	900d8a4c2c587e2b
 ws-interface-dispatch/src/ProcessorA.Codeunit.al::0::Process	705ef7e2d6a16736
 ws-interface-dispatch/src/ProcessorB.Codeunit.al::0::Process	b51bfc03ff8e8ede
 ws-may-facts/src/Codeunit.al::0::LoadsFromDb	28e43fe2025c24ac
@@ -537,6 +543,7 @@ ws-order-two-commits/src/TwoCommits.Codeunit.al::0::PostTwice	6eed12a7efb81b62
 ws-overload-arg-pos2/src/Caller.Codeunit.al::0::RunWithCallExprArg	1ce0ccad9f6cd6a9
 ws-overload-arg-pos2/src/Caller.Codeunit.al::0::RunWithPlainArg	52f6d42964d610eb
 ws-overload-arg-pos2/src/Caller.Codeunit.al::0::GetLog	e581f6a9db5696a7
+ws-overload-arg-pos2/src/ILog.Interface.al::0::Touch	900d8a4c2c587e2b
 ws-overload-arg-pos2/src/Log.Codeunit.al::0::Touch	b51bfc03ff8e8ede
 ws-overload-arg-pos2/src/Sha.Codeunit.al::0::InsertWithSha1	67a52fb1fc4eda50
 ws-overload-arg-pos2/src/Sha.Codeunit.al::0::InsertWithSha1	1344500e1fdef5ea
@@ -570,6 +577,7 @@ ws-overload-field-discriminator/src/Target.Codeunit.al::0::P	8a631f0d6cb095be
 ws-overload-negatives/src/Caller.Codeunit.al::0::CallVariant	751eac622714cbe7
 ws-overload-negatives/src/Caller.Codeunit.al::0::CallIndistinct	aa6850a04faebc0c
 ws-overload-negatives/src/Caller.Codeunit.al::0::CallObject	8121993b049c133f
+ws-overload-negatives/src/INeg.Interface.al::0::Touch	900d8a4c2c587e2b
 ws-overload-negatives/src/Target.Codeunit.al::0::V	1b60c992c61a1cd6
 ws-overload-negatives/src/Target.Codeunit.al::0::V	cd32dede9458d68e
 ws-overload-negatives/src/Target.Codeunit.al::0::I	301d29f40284c83d
@@ -624,6 +632,7 @@ ws-preset-txn/src/PresetTxn.Codeunit.al::0::DoWork	09a977a5d82116fc
 ws-preset-txn/src/PresetTxn.Codeunit.al::1::SendAfterModify	f062dd93c76f15d9
 ws-protected-abi/src/DepPageExtOk.PageExt.al::0::CallProtected	eadaa68c434ba499
 ws-protected-abi/src/DepPageExtStranger.TableExt.al::0::CallProtectedStranger	f8589878dfc74535
+ws-protected-abi/src/IProtWorker.Interface.al::0::DoIt	900d8a4c2c587e2b
 ws-protected-abi/src/IfaceImplWs.Codeunit.al::0::DoIt	1181af18ff0d5014
 ws-protected-abi/src/IfaceUser.Codeunit.al::0::TestInterfaceFanOut	1271176dd7528273
 ws-protected-abi/src/ProtCaller.Codeunit.al::0::TestProtectedExcluded	286a0b3aa372f5cf
@@ -637,6 +646,7 @@ ws-prove/src/CleanRoutine.Codeunit.al::0::CleanDoWork	02a7c32cd081d79d
 ws-prove/src/CleanRoutine.Codeunit.al::0::CleanHelper	93c1913504f893d0
 ws-prove/src/ConditionalCommit.Codeunit.al::0::ConditionalDoWork	35b76b516486974f
 ws-prove/src/EarlyExitGuarded.Codeunit.al::0::EarlyExitDoWork	4c3a57637eeb78fa
+ws-prove/src/InterfaceCaller.Codeunit.al::0::ProveProcess	900d8a4c2c587e2b
 ws-prove/src/InterfaceCaller.Codeunit.al::1::ProveProcess	1368ddd7b121ca5b
 ws-prove/src/InterfaceCaller.Codeunit.al::2::ProveProcess	6a83018195541f78
 ws-prove/src/InterfaceCaller.Codeunit.al::3::CallProcess	08260fec31fc35f0

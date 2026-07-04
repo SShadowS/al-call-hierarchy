@@ -68,8 +68,8 @@ use crate::program::resolve::member_catalog::{
     MemberCatalogKind, member_builtin, member_builtin_id,
 };
 use crate::program::resolve::receiver::{
-    FrameworkKind, ReceiverType, resolve_pageext_base_source_table, resolve_source_table_ref,
-    resolve_tableext_base_table,
+    ControlAddInSurface, FrameworkKind, ReceiverType, resolve_pageext_base_source_table,
+    resolve_source_table_ref, resolve_tableext_base_table,
 };
 use crate::snapshot::TrustTier;
 
@@ -1879,6 +1879,39 @@ pub(crate) fn resolve_member_with_args(
                 member_unknown_route(UnknownReason::CatalogMiss)
             }
         }
+        ReceiverType::ControlAddIn { surface, .. } => match surface {
+            // Unconditional accept — matches the pre-Task-1 open policy, now
+            // scoped to just the small platform allowlist
+            // (`TRUE_PLATFORM_CONTROL_ADDINS`) rather than every
+            // `ControlAddIn`-typed receiver. The `BuiltinId` text
+            // (`"ControlAddIn::{method_lc}"`) is unchanged from before the
+            // refactor — real CDO goldens already carry it
+            // (`tests/goldens/semantic-edges/cdo-deanon-map.json`,
+            // `object_lc=ControlAddIn::...`).
+            ControlAddInSurface::TruePlatform => {
+                member_catalog_route(BuiltinId(format!("ControlAddIn::{method_lc}")))
+            }
+            // Closed-if-known gate (Task 1): `method_lc`+`arity` must match a
+            // declared procedure. The platform base-member union this arm
+            // would ALSO check is, per MS-Learn research
+            // (`resolve_control_addin_receiver`'s doc — a control add-in's
+            // properties like `Visible`/`Editable` are page-layout DESIGN-TIME
+            // properties, never `CurrPage.<control>.<member>` runtime member
+            // calls, and no generic AL-callable base method is documented for
+            // any control add-in), EMPTY — there is nothing to union in
+            // beyond `procedures` itself. A future real base-member surface,
+            // if ever discovered, is added here.
+            ControlAddInSurface::Declared { procedures } => {
+                let declared_match = procedures
+                    .iter()
+                    .any(|(name_lc, params_count)| name_lc == method_lc && *params_count == arity);
+                if declared_match {
+                    member_catalog_route(BuiltinId(format!("ControlAddIn::{method_lc}")))
+                } else {
+                    member_unknown_route(UnknownReason::MemberNotFound)
+                }
+            }
+        },
         ReceiverType::Record { table } => {
             // Source-before-catalog (beyond-1B.3b Task 1 / Item 4 — see
             // `is_bare_builtin_or_page_intrinsic`'s doc for the mirror-image
@@ -3429,6 +3462,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: base_obj_id.clone(),
@@ -3443,6 +3477,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 
@@ -3588,6 +3623,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: dep_obj_id.clone(),
@@ -3602,6 +3638,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 
@@ -3801,6 +3838,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: dep_obj_id.clone(),
@@ -3815,6 +3853,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 
@@ -4025,6 +4064,7 @@ pageextension 52911 "ExtA" extends BasePage
             page_controls: vec![],
             fields: vec![],
             dataitems: vec![],
+            parse_incomplete: false,
         }];
 
         let routines = vec![RoutineNode {
@@ -4167,6 +4207,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: sub_obj_id.clone(),
@@ -4181,6 +4222,7 @@ pageextension 52911 "ExtA" extends BasePage
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 
@@ -4980,6 +5022,7 @@ codeunit 50300 "OverloadCU"
             page_controls: vec![],
             fields: vec![],
             dataitems: vec![],
+            parse_incomplete: false,
         };
         (graph, index, body_map, from_obj)
     }
@@ -5002,6 +5045,228 @@ codeunit 50300 "OverloadCU"
         assert!(matches!(routes[0].witness, Witness::CatalogEntry { .. }));
         if let RouteTarget::Builtin(ref bid) = routes[0].target {
             assert_eq!(bid.0, "JsonObject::add");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // `ReceiverType::ControlAddIn` dispatch (receiver-closure plan, Task 1) —
+    // closed-if-known gating: `Declared` gates on name+arity against the
+    // carried procedure list; `TruePlatform` open-accepts unconditionally.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_member_controladdin_declared_matching_call_is_catalog() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "cdo.editor".into(),
+            surface: ControlAddInSurface::Declared {
+                procedures: vec![("initeditor".to_string(), 2), ("gethtml".to_string(), 0)],
+            },
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "initeditor",
+            2,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        if let RouteTarget::Builtin(ref bid) = routes[0].target {
+            assert_eq!(bid.0, "ControlAddIn::initeditor");
+        } else {
+            panic!("expected Builtin route, got {:?}", routes[0].target);
+        }
+    }
+
+    /// A zero-arg declared procedure (`GetHTML()`) also resolves — the arity
+    /// gate is `==`, not just "name found somewhere".
+    #[test]
+    fn resolve_member_controladdin_declared_zero_arity_matching_call_is_catalog() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "cdo.editor".into(),
+            surface: ControlAddInSurface::Declared {
+                procedures: vec![("initeditor".to_string(), 2), ("gethtml".to_string(), 0)],
+            },
+        };
+        let (_, routes) = resolve_member(
+            &receiver, "gethtml", 0, &from_obj, &graph, &index, &body_map,
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+    }
+
+    /// NEGATIVE — a typo'd method name on a declared addin: not in the
+    /// declared list, not on the (empty) platform base-member union →
+    /// `Unknown(MemberNotFound)`, never a guessed Catalog.
+    #[test]
+    fn resolve_member_controladdin_declared_typo_is_unknown_member_not_found() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "cdo.editor".into(),
+            surface: ControlAddInSurface::Declared {
+                procedures: vec![("initeditor".to_string(), 2)],
+            },
+        };
+        let (_, routes) = resolve_member(
+            &receiver,
+            "inteditor",
+            2,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::MemberNotFound)
+        );
+        assert!(matches!(routes[0].target, RouteTarget::Unresolved));
+    }
+
+    /// NEGATIVE — arity gate: the NAME matches a declared procedure but the
+    /// call's arity does not — `Unknown(MemberNotFound)`, never a Catalog
+    /// built by name alone (the arity closer, T1 BINDING).
+    #[test]
+    fn resolve_member_controladdin_declared_name_matches_wrong_arity_is_unknown() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "cdo.editor".into(),
+            surface: ControlAddInSurface::Declared {
+                procedures: vec![("initeditor".to_string(), 2)],
+            },
+        };
+        let (_, routes) = resolve_member(
+            &receiver,
+            "initeditor",
+            1,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::MemberNotFound)
+        );
+    }
+
+    /// NEGATIVE — an EVENT name is structurally never in the `procedures`
+    /// list (events are never lowered as `RoutineDecl`s at all — see the
+    /// al-syntax lowering tests) — calling one on a declared addin declines,
+    /// exactly like any other undeclared member.
+    #[test]
+    fn resolve_member_controladdin_declared_event_name_is_unknown() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "cdo.editor".into(),
+            surface: ControlAddInSurface::Declared {
+                procedures: vec![("initeditor".to_string(), 2)],
+            },
+        };
+        let (_, routes) = resolve_member(
+            &receiver,
+            "onsavehtml",
+            1,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Unknown(UnknownReason::MemberNotFound)
+        );
+    }
+
+    /// POSITIVE — `TruePlatform` open-accepts ANY method/arity — mirrors the
+    /// pre-Task-1 universal-accept policy, now scoped to just the platform
+    /// allowlist (grounded in the real CDO `WebPageViewer.SetContent(...)`
+    /// call sites).
+    #[test]
+    fn resolve_member_controladdin_true_platform_any_method_is_catalog() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "webpageviewer".into(),
+            surface: ControlAddInSurface::TruePlatform,
+        };
+        let (_, routes) = resolve_member(
+            &receiver,
+            "setcontent",
+            1,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(routes[0].evidence, Evidence::Catalog);
+        if let RouteTarget::Builtin(ref bid) = routes[0].target {
+            assert_eq!(bid.0, "ControlAddIn::setcontent");
+        }
+        // A wholly made-up method name ALSO resolves — genuinely
+        // unconditional, since this engine cannot enumerate the JS-side
+        // surface of an unreachable platform addin declaration.
+        let (_, routes2) = resolve_member(
+            &receiver,
+            "totallymadeupmethod",
+            7,
+            &from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(routes2[0].evidence, Evidence::Catalog);
+    }
+
+    /// The platform base-member union closer (T1 round-2, gemini CRITICAL):
+    /// EXECUTABLE proof that the researched EMPTY union holds — none of the
+    /// candidate "generic control surface" names a reviewer might expect
+    /// (`Visible`/`Editable`/`Enabled`/`Update`/`Caption` — verified against
+    /// MS Learn's Visible-property page, which documents these as PAGE-LAYOUT
+    /// DESIGN-TIME properties set in the control's property sheet, never
+    /// `CurrPage.<control>.<member>` runtime member calls; no generic
+    /// AL-callable base method is documented for ANY control add-in beyond
+    /// its own declared procedures) silently resolve on a `Declared` addin
+    /// that doesn't itself declare them. If a real base surface is ever
+    /// found, `resolver::resolve_member_with_args`'s `ControlAddInSurface::Declared`
+    /// arm is where it gets unioned in — and this test's assertions would
+    /// need updating alongside it (a deliberate tripwire, not incidental).
+    #[test]
+    fn resolve_member_controladdin_declared_no_platform_base_members_silently_resolve() {
+        use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
+        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+
+        let receiver = ReceiverType::ControlAddIn {
+            name_lc: "cdo.editor".into(),
+            surface: ControlAddInSurface::Declared {
+                procedures: vec![("initeditor".to_string(), 2)],
+            },
+        };
+        for candidate in ["visible", "editable", "enabled", "update", "caption"] {
+            let (_, routes) = resolve_member(
+                &receiver, candidate, 1, &from_obj, &graph, &index, &body_map,
+            );
+            assert_eq!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::MemberNotFound),
+                "candidate base member {candidate:?} must NOT silently resolve"
+            );
         }
     }
 
@@ -8759,6 +9024,7 @@ codeunit 50000 "Caller"
             page_controls: vec![],
             fields: vec![],
             dataitems: vec![],
+            parse_incomplete: false,
         });
 
         // Event-publisher routine: abi_routine_kind=EventPublisher, abi_event_kind=Integration.
@@ -9776,6 +10042,7 @@ codeunit 53971 "OverloadNCaller"
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: target_obj_id.clone(),
@@ -9790,6 +10057,7 @@ codeunit 53971 "OverloadNCaller"
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 
@@ -10147,6 +10415,7 @@ codeunit 53975 "Overload3Caller"
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: dep_obj_id.clone(),
@@ -10161,6 +10430,7 @@ codeunit 53975 "Overload3Caller"
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 
@@ -10328,6 +10598,7 @@ codeunit 53975 "Overload3Caller"
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
             ObjectNode {
                 id: target_obj_id.clone(),
@@ -10342,6 +10613,7 @@ codeunit 53975 "Overload3Caller"
                 page_controls: vec![],
                 fields: vec![],
                 dataitems: vec![],
+                parse_incomplete: false,
             },
         ];
 

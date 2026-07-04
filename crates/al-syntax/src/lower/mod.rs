@@ -497,7 +497,25 @@ fn collect_routines<'t>(
     for child in node.named_children() {
         match child.kind() {
             RawKind::AttributeItem => pending.push(child),
-            RawKind::Procedure | RawKind::TriggerDeclaration => {
+            RawKind::Procedure | RawKind::TriggerDeclaration | RawKind::InterfaceProcedure => {
+                // `interface_procedure` (receiver-closure plan, Task 1): a SIGNATURE-ONLY
+                // procedure declaration — no body, no access modifier — used by BOTH
+                // `interface_body` and `controladdin_body` (the same grammar rule; a
+                // controladdin's AL-callable procedures are declared this way, e.g.
+                // `procedure InitEditor(x: Text)` with no trailing `begin/end` or even a
+                // semicolon). Previously UNHANDLED here — silently invisible to
+                // `RoutineDecl`/`RoutineNode` extraction (fell into the `_` catch-all
+                // below, which never emits a routine) — meaning a controladdin's declared
+                // procedure surface could never be checked at all. `lower_routine` already
+                // degrades gracefully for the fields this node lacks: `FieldName::Modifier`
+                // absent → `access_modifier: None`; `FieldName::Body` absent (or not a
+                // `CodeBlock`) → `body: None`. An `event` declaration inside the SAME
+                // body is a DISTINCT grammar node (`RawKind::EventDeclaration`) that this
+                // match still does not handle — it falls to the `_` catch-all and stays
+                // correctly unrepresented as a `RoutineDecl` (events are never
+                // AL-callable, so the gate's "declared procedures" set must never
+                // include them).
+                //
                 // `in_dataset_modify_context` is only ever meaningful when the enclosing
                 // member is itself a `modify_modification` (an actual `dataitem(...)`
                 // block already threads its own table via `dataitem_table` above — this
@@ -688,8 +706,22 @@ fn lower_routine<'t>(
         })
         .unwrap_or_default();
 
+    // `interface_procedure` (receiver-closure plan, Task 1): its return-type spec
+    // lives on a nested, NAMED `interface_procedure_suffix` child (grammar:
+    // `optional($.interface_procedure_suffix)`, not inlined — `interface_procedure`
+    // itself has no `return_type` field), unlike `_procedure_header`'s
+    // `_procedure_return_specification`/`_procedure_named_return`, which ARE
+    // hidden/inlined directly onto `node`. Fall back to that child when the direct
+    // field is absent, so a controladdin/interface procedure's declared return
+    // type is captured with the same fidelity as an ordinary procedure's.
     let return_type = node
         .field(FieldName::ReturnType)
+        .or_else(|| {
+            node.named_children()
+                .into_iter()
+                .find(|c| c.kind() == RawKind::InterfaceProcedureSuffix)
+                .and_then(|suffix| suffix.field(FieldName::ReturnType))
+        })
         .map(|n| n.text(source).trim().to_string());
 
     // Access modifier (`local`/`internal`/`protected`); None = public / trigger.
@@ -1821,6 +1853,99 @@ codeunit 50205 "Unbalanced"
             af.parse_status,
             crate::ir::ParseStatus::Recovered,
             "an unbalanced #if must force error recovery, never report Clean"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // `interface_procedure` lowering (receiver-closure plan, Task 1) —
+    // controladdin/interface signature-only procedures were previously
+    // INVISIBLE to `RoutineDecl` extraction (a distinct grammar node,
+    // `interface_procedure`, that `collect_routines` never matched).
+    // -------------------------------------------------------------------
+
+    /// A `controladdin` object's signature-only `procedure` declarations
+    /// (no body, no trailing `;`) must be captured as `RoutineDecl`s with
+    /// the right name + arity — the "declared procedures" surface Task 1's
+    /// closed-if-known `CurrPage.<usercontrol>` gate depends on.
+    #[test]
+    fn controladdin_procedures_are_lowered_as_routines() {
+        let src = r#"
+controladdin "CDO.Editor"
+{
+    RequestedHeight = 500;
+
+    event StartupCompleted();
+
+    procedure InitEditor(mergeItemsAsJson: Text; localizationAsJson: Text)
+    procedure GetHTML()
+}
+"#;
+        let af = parse(src);
+        assert_eq!(af.objects.len(), 1);
+        let obj = &af.objects[0];
+        assert_eq!(obj.routines.len(), 2, "two procedures, zero events");
+        let init = obj
+            .routines
+            .iter()
+            .find(|r| r.name.eq_ignore_ascii_case("InitEditor"))
+            .expect("InitEditor must be lowered");
+        assert_eq!(init.params.len(), 2, "arity must be captured");
+        assert!(init.body.is_none(), "a signature has no body");
+        assert!(!init.parse_incomplete);
+        let get_html = obj
+            .routines
+            .iter()
+            .find(|r| r.name.eq_ignore_ascii_case("GetHTML"))
+            .expect("GetHTML must be lowered");
+        assert_eq!(get_html.params.len(), 0);
+    }
+
+    /// An `event` declaration inside a controladdin is NEVER lowered as a
+    /// `RoutineDecl` — events are not AL-callable, and the gate's declared
+    /// surface must never accidentally admit one.
+    #[test]
+    fn controladdin_events_are_never_lowered_as_routines() {
+        let src = r#"
+controladdin "CDO.Editor"
+{
+    event OnSaveHTML(htmlString: Text);
+    procedure SetHTML(html: Text)
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        assert!(
+            obj.routines
+                .iter()
+                .all(|r| !r.name.eq_ignore_ascii_case("OnSaveHTML")),
+            "an event must never surface as a RoutineDecl: {:?}",
+            obj.routines.iter().map(|r| &r.name).collect::<Vec<_>>()
+        );
+        assert_eq!(obj.routines.len(), 1, "only the procedure lowers");
+    }
+
+    /// An `interface` object's signature-only procedures lower identically
+    /// (same grammar node, `interface_procedure`) — a bonus fidelity fix,
+    /// not itself consumed by any resolver yet (interface dispatch routes
+    /// through the implementer's own routine, not the interface's).
+    #[test]
+    fn interface_procedures_are_lowered_as_routines() {
+        let src = r#"
+interface "IFoo"
+{
+    procedure DoThing(x: Integer): Boolean;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        assert_eq!(obj.routines.len(), 1);
+        let do_thing = &obj.routines[0];
+        assert_eq!(do_thing.name, "DoThing");
+        assert_eq!(do_thing.params.len(), 1);
+        assert_eq!(
+            do_thing.return_type.as_deref(),
+            Some("Boolean"),
+            "return type must be recovered from the nested interface_procedure_suffix child"
         );
     }
 }

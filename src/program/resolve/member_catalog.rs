@@ -395,6 +395,13 @@ static ENUM_VALUE: phf::Set<&'static str> = phf_set! {
 // ---------------------------------------------------------------------------
 
 /// Return `true` if `method_lc` is a known member method for `fk`.
+///
+/// `ControlAddIn` is NOT a `FrameworkKind` variant (receiver-closure plan,
+/// Task 1) — it moved to a dedicated `ReceiverType::ControlAddIn { name_lc,
+/// surface }`, since (unlike every kind here) its member surface must be
+/// gated on the SPECIFIC addin's declared procedures, not a single uniform
+/// catalog. See `receiver::resolve_control_addin_receiver` and
+/// `resolver::resolve_member_with_args`'s `ReceiverType::ControlAddIn` arm.
 fn framework_lookup(fk: &FrameworkKind, method_lc: &str) -> bool {
     match fk {
         FrameworkKind::JsonObject => JSONOBJECT.contains(method_lc),
@@ -444,8 +451,6 @@ fn framework_lookup(fk: &FrameworkKind, method_lc: &str) -> bool {
         FrameworkKind::System => SYSTEM.contains(method_lc),
         FrameworkKind::CompanyProperty => COMPANY_PROPERTY.contains(method_lc),
         FrameworkKind::SessionInformation => SESSION_INFORMATION.contains(method_lc),
-        // Every method on a ControlAddIn is a JS-side platform invocation → builtin.
-        FrameworkKind::ControlAddIn => true,
         FrameworkKind::Enum => ENUM_VALUE.contains(method_lc),
         // Unknown/programmatic type — not in catalog.
         FrameworkKind::Other(_) => false,
@@ -557,22 +562,15 @@ mod tests {
         assert!(!member_builtin(MemberCatalogKind::KeyRef, "notamethod"));
     }
 
-    #[test]
-    fn controladdin_any_method_is_builtin() {
-        let kind = FrameworkKind::ControlAddIn;
-        assert!(member_builtin(
-            MemberCatalogKind::Framework(&kind),
-            "anymethod"
-        ));
-        assert!(member_builtin(
-            MemberCatalogKind::Framework(&kind),
-            "trigger"
-        ));
-        assert!(member_builtin(
-            MemberCatalogKind::Framework(&kind),
-            "invokeextensionmethod"
-        ));
-    }
+    // `controladdin_any_method_is_builtin` (the pre-Task-1 "every ControlAddIn
+    // method is unconditionally builtin" test) was REMOVED here, not flipped —
+    // `FrameworkKind::ControlAddIn` no longer exists (receiver-closure plan,
+    // Task 1: the addin's member surface is now gated per-instance, not a
+    // single uniform catalog entry). Its closed-if-known replacement lives in
+    // `resolver.rs`'s `ReceiverType::ControlAddIn` dispatch tests
+    // (`resolve_member_controladdin_*`), and the TRUE unconditional-accept
+    // case that survives (`ControlAddInSurface::TruePlatform`) is covered
+    // there too (`resolve_member_controladdin_true_platform_any_method_is_catalog`).
 
     #[test]
     fn other_kind_returns_false() {
