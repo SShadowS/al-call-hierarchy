@@ -49,7 +49,9 @@
 - Boolean-op fixtures cover each lowered token class (Eq/Ne/Lt/Le/Gt/Ge/And/Or/Xor/In) + an arithmetic and a
   text-concat decline.
 - Narrative corrections are APPEND-ONLY errata (dated correcting entries in CHANGELOG/charter/memory; no silent
-  rewrites of plan-10 claims). Eleventh resolution arc (master `9b5f3de`, CDO primary real-`unknown`
+  rewrites of plan-10 claims).
+
+> Context: Eleventh resolution arc (master `9b5f3de`, CDO primary real-`unknown`
 > 0.0497% / 9: MemberNotFound 7, UntrackedReceiver 1, BuiltinPrecedenceCollision 1; `ambiguousResolved=7`;
 > `genuine_wrong=0`). Two grounding reports (this session) — the first FALSIFIED the plan's original premise, the SECOND
 > time this class of lesson has struck (plan 9's "13 workspace absences" were a catalog gap; now):
