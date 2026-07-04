@@ -1664,6 +1664,20 @@ fn zero_arg_aware_lookup<T: PartialEq>(
     if is_method {
         return lookup(true, arity);
     }
+    // A bare `Member` (`is_method: false`) is structurally a zero-arg
+    // form by construction — the ONE call site that ever constructs one
+    // (`infer_receiver_type_for_expr`'s `ExprKind::Member` arm) hardcodes
+    // `arity: 0` literally, since `ExprKind::Member` carries no argument
+    // list at all to count. `arity` is therefore UNUSED below (both probes
+    // are hardcoded to `0`); this assertion documents and enforces that
+    // caller invariant so a future call site passing a stray non-zero arity
+    // for a bare Member is caught in debug builds rather than silently
+    // ignored.
+    debug_assert_eq!(
+        arity, 0,
+        "zero_arg_aware_lookup: a bare Member (is_method=false) must carry arity 0 \
+         by construction — got {arity}; a non-Member caller must pass is_method=true"
+    );
     match (lookup(false, 0), lookup(true, 0)) {
         (Some(prop), Some(method)) => {
             if prop == method {

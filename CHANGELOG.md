@@ -8,6 +8,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Receiver-closure arc complete — real-`unknown` 0.43%→0.05%, `ambiguousResolved`
+  13→7 (Task 5, FINAL, receiver-closure-and-arg-increments plan).** Full CDO
+  re-measure confirms the 4-task arc at its floors, byte-identical to Task 4's
+  own measurement: primary `unknown`=9/18104 (`real_unknown_rate`=0.0497%,
+  ceiling 0.000498); whole-program `unknown`=9/43404 (0.02%); the
+  **legacy-inclusive** rate (`unknown + ambiguousResolved`, the
+  pre-sigfp-reclassification-plan metric definition) is (9+7)/18104≈0.088%,
+  both scopes. `unknownByReason`={UntrackedReceiver: 1,
+  BuiltinPrecedenceCollision: 1, MemberNotFound: 7}, sum==9 —
+  `CompoundReceiver` no longer appears (0 sites). `ambiguousResolved`=7
+  (primary/whole, exact). `genuine_wrong`=0 throughout every task.
+  `route_applicability`/`fan_out_applicability` violations=0 with
+  non-vacuous `routes_checked`; `recoveredFiles`=8 (pinned, unchanged); the
+  sig_fp collision-guard group count stays 0/0 (inherited from the
+  sigfp-and-ambiguous-reclassification plan — untouched by this arc, which
+  never modifies ABI/source fingerprint fold logic; all sig_fp-related
+  fixture tests re-ran green). All of the above confirmed by an independent
+  single-threaded 173-test CDO re-run under `ENFORCE_CDO_WS=1`, byte-identical
+  before/after this task's own doc-only nit sweep.
+  - **The 100%-mechanical-population story, closed.** Two grounding reports
+    (session start) enumerated ALL 69 `CompoundReceiver`+`UntrackedReceiver`
+    sites against real CDO source and found them 100% mechanical — zero
+    genuinely-dynamic residue. Across Tasks 1-4: **68 of the 69 closed**
+    (Task 1: 37 `CurrPage.<usercontrol>` ControlAddIn sites, `CompoundReceiver`
+    51→14, via a closed-if-known tri-state gate + an `interface_procedure`
+    lowering foundation fix that also made Interface/ControlAddIn procedure
+    signatures visible to the LSP front-end for the first time; Task 2: 9
+    parens-less zero-arg framework members + 4 `ErrorInfo.CustomDimensions`
+    sites, `CompoundReceiver` 14→1, via a context-sensitive zero-arg lookup
+    that FALSIFIES this codebase's THIRD recurrence of the "AL procedures
+    ALWAYS require parens" premise (the module doc claim and its enforcing
+    negative test both corrected — see the al-parens-optional-procedure-calls
+    memory); Task 3: 11 named-return-binding sites + 3 implicit-self
+    table-field sites, `UntrackedReceiver` 18→4, via a cross-crate al-syntax
+    lowerer fix (`RoutineDecl.return_name`) plus a proven bare-identifier
+    precedence order; Task 4: the 4-site (D)/(F)/(G) enum-shape population,
+    `UntrackedReceiver` 4→1, via split enum TYPE-static/VALUE-instance
+    catalogs). **The 1 residual is an HONEST, explicitly out-of-scope gap**
+    (`"View (Blob)".CreateInStream(...)` on a Page's implicit-Rec
+    SourceTable-field shorthand — Step 3a is Table/TableExtension-only by
+    design, not a Page arm; see Roadmap below), not a failure to close.
+  - **The residual 9, stated plainly:** 0 `CompoundReceiver`; 1
+    `UntrackedReceiver` (the honest Page-gap above); 1
+    `BuiltinPrecedenceCollision` (a pre-existing, independently-adjudicated
+    collision, untouched by this arc); 7 `MemberNotFound` (verified-REAL
+    eCandidates absences — genuinely absent members, not an engine gap;
+    ProvenAbsent machinery to formalize that proof is deferred, see
+    Roadmap).
+  - **`ambiguousResolved` 13→7**, alongside: Task 3 flipped 2 (the
+    `GetJsonAttribute` family's named-return-typed `var` args); Task 4
+    flipped 4 (3 member-field-arg discriminators + the `with`-scan
+    comment-blindness restoration for `UseContiniaAuthorization`). Every
+    flip individually adjudicated compiler-correct against real CDO field
+    declarations (see `.superpowers/sdd/task-3-report.md` /
+    `task-4-report.md`).
+  - **Nit sweep (Task 5):** corrected 4 stale doc claims found while closing
+    out — (1) the CDO L3 semantic audit's `FRESH_MISSING_CEILING` doc-comment
+    still said "measured 3" from its 2026-07-03 pin, though the LIVE value was
+    already 1 by Task 2 of this plan (`task-2-report.md` independently
+    recorded it, byte-identical before/after that task); (2)
+    `zero_arg_aware_lookup`'s bare-`Member` branch gained a
+    `debug_assert_eq!(arity, 0)` documenting/enforcing the caller invariant
+    that a bare `Member` is always zero-arg by construction; (3) the Task 4
+    CHANGELOG entry's own receiver-arms bullet still described the
+    `QualifiedEnum` else-branch as "grammar-guaranteed enum-value-literal" —
+    the exact claim that same Task's review fix (above) proved FALSE
+    (an Option-typed field base parses identically); reworded to match the
+    corrected, final (recursive-verification) design; (4) two `resolver.rs`
+    test comments dating from before the sigfp-and-ambiguous-reclassification
+    plan's Task 2 still asserted "source `sig_fp` is always 0" as present
+    fact — verified false by direct measurement (`Foo(Integer)`/`Foo(Text)`
+    now fingerprint to genuinely distinct `sig_fp`s; the observed decline
+    reason is deterministically `AccessFilteredOverload`, not the
+    historically-described `InternalNotVisible`), corrected in both sites.
+    None of these were behavior changes — pure doc/comment corrections plus
+    one debug-only assertion; the CDO gate stayed provably byte-identical
+    before/after.
+  - **Deferred, visible (Roadmap below):** `ProvenAbsent` machinery for the
+    7 `MemberNotFound` sites (consult `recoveredFiles` per the completeness
+    invariant before any future absence claim); the Page-owned implicit-Rec
+    field arm (the 1-site residual); builtin/member call-result argument
+    typing; ABI parameter retention (SymbolOnly dispatch); the 2 pinned
+    tree-sitter-al grammar defects (`OptionMembers=TableData,...` keyword
+    collision, `# pragma` with a stray space); the `.dependencies/CDO`
+    same-slug double-include root cause; implicit-conversion modeling;
+    protected `Variables[]`; `Sender` parameter-TYPE validation.
 - **Qualified-value bases are now verified Enum-typed before VALUE-instance
   dispatch — Option-qualified receivers decline (Task 4 review fix).** The
   `QualifiedEnum` receiver arm's "else" branch (the (D) field::value chain
@@ -50,8 +136,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Receiver arms:** `infer_receiver_type_for_expr` gains an
     `ExprKind::QualifiedEnum` arm — `Enum::"Type"` (fail-closed existence
     check against a real `Enum` object) → `EnumTypeStatic`; any other
-    `X::Value` shape (grammar-guaranteed enum-value-literal, e.g.
-    `Rec."Field"::Value`) → `EnumType`. `infer_receiver_type` gains a new
+    `X::Value` shape (e.g. `Rec."Field"::Value`) recurses the SAME
+    base-typing every other compound-receiver arm uses and accepts
+    `EnumType` ONLY when that base actually verifies Enum-shaped (a doc
+    claim that the grammar alone GUARANTEES this shape is enum-VALUE-typed
+    turned out to be false — an Option-typed field base parses identically;
+    see this same Task's own "Fixed" review-fix entry above, landed in the
+    same commit range, for the full correction). `infer_receiver_type` gains a new
     Step 4b: a bare (quoted or not) enum-type-name receiver resolves to
     `EnumTypeStatic` ONLY when the programmatic collision rule passes
     (`same_normalized_name && kind != Enum`, checked over the WHOLE object

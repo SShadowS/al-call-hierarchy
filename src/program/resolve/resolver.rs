@@ -9998,15 +9998,26 @@ codeunit 53961 "LocNCaller"
 
     // (D-neg-3) THE OVERLOAD-NARROWING GUARD: two textually distinct
     // same-arity overloads of `Foo` (Integer vs Text) differing only in
-    // access modifier + param TYPE — `RoutineNodeId` collides for both
-    // (source `sig_fp` is always `0`; see node.rs /
-    // `build::dedup_routines_preserving_genuine_overloads`), so the
-    // pre-filter set is genuinely ambiguous (2 same-arity candidates).
-    // Calling cross-app with 1 (unproven-type) argument must NEVER resolve
-    // to Source, even though exactly one physical overload (`Foo(Integer)`,
-    // `public`) happens to be visible and the other (`Foo(Text)`,
-    // `internal`) is cross-app-excluded — access alone cannot prove which
-    // overload the call meant.
+    // access modifier + param TYPE. STALE-CLAIM CORRECTION (Task 5 nit
+    // sweep, 2026-07-04): this comment used to assert `RoutineNodeId`
+    // collides for both here because "source `sig_fp` is always `0`" —
+    // true only PRE the sigfp-and-ambiguous-reclassification plan's Task 2
+    // (2026-07-03); post-fix, source `sig_fp` is a REAL per-parameter-type
+    // fingerprint (`sig_fp::source_param_sig_fp`; see `resolve_in_object`'s
+    // doc a few thousand lines above, which already carries the accurate
+    // correction), so `Foo(Integer)`/`Foo(Text)` now get genuinely DISTINCT
+    // `RoutineNodeId`s (proved directly by `sig_fp.rs`'s
+    // `distinct_param_types_never_collide` unit test) — they do NOT
+    // collide today. The guard this fixture proves does not depend on id
+    // collision either way: `resolve_in_object`'s `pre_filter_count` counts
+    // every arity-matched candidate regardless of whether their ids are
+    // identical or distinct, so the pre-filter set is genuinely ambiguous
+    // (2 same-arity candidates) purely from that count. Calling cross-app
+    // with 1 (unproven-type) argument must NEVER resolve to Source, even
+    // though exactly one physical overload (`Foo(Integer)`, `public`)
+    // happens to be visible and the other (`Foo(Text)`, `internal`) is
+    // cross-app-excluded — access alone cannot prove which overload the
+    // call meant.
     #[test]
     fn resolve_member_object_mixed_access_same_arity_overload_never_resolves_to_source() {
         use crate::program::resolve::receiver::ReceiverType;
@@ -10073,32 +10084,45 @@ codeunit 53971 "OverloadNCaller"
             routes[0].target
         );
         assert_eq!(routes[0].target, RouteTarget::Unresolved);
-        // NOTE (reason-split Task 2 investigation): this fixture's TWO
-        // same-arity SOURCE overloads (`Foo(Integer)`/`Foo(Text)`) share an
-        // IDENTICAL `RoutineNodeId` (source `sig_fp` is always 0 — see
-        // `resolve_in_object`'s doc), so `graph.routines`'s sorted
-        // `binary_search_by` on that id is genuinely non-deterministic
-        // between the two id-colliding entries (Rust's own contract: "if
-        // there are multiple matches, any one could be returned") — a
-        // PRE-EXISTING, Task-2-independent degeneracy this fixture happens
-        // to observe as `InternalNotVisible`, not the `AccessFilteredOverload`
-        // shape (see `resolve_member_object_mixed_access_public_two_distinct_
-        // sig_fp_overloads_declines_as_access_filtered` below for a
-        // collision-free fixture of that shape). Left as the original
-        // generic assertion — asserting a SPECIFIC reason here would pin
-        // undefined behavior.
+        // NOTE (reason-split Task 2 investigation; STALE-CLAIM CORRECTED
+        // Task 5 nit sweep, 2026-07-04): this comment originally claimed
+        // the fixture's TWO same-arity SOURCE overloads (`Foo(Integer)`/
+        // `Foo(Text)`) shared an IDENTICAL `RoutineNodeId` because "source
+        // `sig_fp` is always 0" — true only PRE the
+        // sigfp-and-ambiguous-reclassification plan's Task 2 (2026-07-03).
+        // Verified directly (debug-printed `foo_candidates` on this exact
+        // fixture): post-fix the two DO get genuinely distinct `sig_fp`s
+        // (`69875687941676757` vs `7629489990184319135`), so there is no
+        // `binary_search_by` id-collision non-determinism here anymore —
+        // the observed reason today is deterministically
+        // `Unknown(AccessFilteredOverload)` (verified, not `InternalNotVisible`
+        // as this comment used to describe), matching the SAME
+        // `AccessFilteredOverload` shape the sibling
+        // `resolve_member_object_two_distinct_sig_fp_overloads_access_narrowed_to_one_declines`
+        // test below deliberately constructs — the two tests are no longer
+        // meaningfully different w.r.t. id-collision, only in HOW the
+        // distinct ids arise (real source fingerprinting here vs. manual
+        // construction there). Left as the original generic
+        // `Evidence::Unknown(_)` assertion regardless (pinning the specific
+        // reason isn't this fixture's job).
         assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
     }
 
-    /// Reason-split Task 2 fixture: a COLLISION-FREE `AccessFilteredOverload`
-    /// probe. Manually constructs the graph (mirrors
+    /// Reason-split Task 2 fixture: an `AccessFilteredOverload` probe that
+    /// manually constructs the graph (mirrors
     /// `plain_dispatch_marker_guard_fixture`'s pattern) with two DISTINCT
     /// `sig_fp` values so the two same-arity candidates get genuinely
-    /// DISTINCT `RoutineNodeId`s — sidestepping the source-tier same-`id`
-    /// collision the sibling test above documents (source `sig_fp` is always
-    /// 0, so two textually distinct source overloads of the same arity
-    /// legitimately alias one `RoutineNodeId`; ABI-shaped `sig_fp` does not).
-    /// One candidate `Public` (always visible), one `Internal` (excluded
+    /// DISTINCT `RoutineNodeId`s. (STALE-CLAIM CORRECTED, Task 5 nit sweep,
+    /// 2026-07-04: this doc used to frame that as "sidestepping" a
+    /// same-`id` collision the sibling test above "documents" — that framing
+    /// predates the sigfp-and-ambiguous-reclassification plan's Task 2 fix;
+    /// post-fix, source `sig_fp` is a real per-parameter-type fingerprint,
+    /// so the sibling test's real-source-parsed overloads ALSO get distinct
+    /// ids today, verified — see that test's own corrected NOTE. This
+    /// fixture's manual construction is no longer a workaround for a
+    /// collision the sibling test suffers; it is simply a more explicit,
+    /// hand-controlled probe of the identical `AccessFilteredOverload`
+    /// shape.) One candidate `Public` (always visible), one `Internal` (excluded
     /// cross-app, no friendship declared) — access narrows the ORIGINALLY
     /// `pre_filter_count == 2` set down to exactly ONE visible survivor, and
     /// the resolver must decline rather than select it.

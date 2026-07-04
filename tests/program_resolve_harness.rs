@@ -3262,12 +3262,25 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     // rather than `fresh_missing`; `genuine_wrong` stays 0). 5 keeps a small
     // margin above the measured 3 (same "tiny margin, not zero-tolerance"
     // policy this ceiling has always used).
+    //
+    // CORRECTED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 5
+    // nit sweep): the "measured 3" note above went STALE without anyone
+    // updating it — the live value is, and was already, **1** by the time
+    // Task 2 of this same plan ran (`.superpowers/sdd/task-2-report.md`
+    // independently recorded `fresh_missing (1)`, byte-identical
+    // before/after Task 2, so the drop predates Task 2 — most likely a side
+    // effect of Task 1's CurrPage UserControl trigger-adjacent resolution,
+    // not independently re-attributed here). Re-confirmed 1 again at this
+    // task's own capstone re-measure. The ceiling stays at 5 (no tightening
+    // this task — out of this nit's scope; still comfortably non-zero-
+    // tolerance over the true measured 1).
     const FRESH_MISSING_CEILING: usize = 5;
     assert!(
         audit.fresh_missing_count <= FRESH_MISSING_CEILING,
         "COMPLETENESS REGRESSION: fresh_missing_count={} exceeds the recorded \
          ceiling {} (baseline pinned 2026-07-03 post applicability-param-subtype-recfield \
-         Task 4 [bare implicit-Rec quoted-field receivers]: 3, was 4 post follow-up \
+         Task 4 [bare implicit-Rec quoted-field receivers]: measured 3 at pin time, but \
+         ACTUALLY 1 by 2026-07-04 — see the CORRECTED note above; was 4 post follow-up \
          plan v2.1 Task 4, 102 pre-follow-up; see CHANGELOG.md). The fresh resolver \
          lost an L3-resolved target it used to find — investigate before raising the \
          ceiling.",
