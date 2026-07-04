@@ -1050,6 +1050,219 @@ fn resolve_in_table_scope(
     }
 }
 
+/// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED Page **object**
+/// scope: the base Page `page_id` plus every `PageExtension` of it reachable
+/// in `from_object`'s compile-time app dependency closure — the `Page` analog
+/// of [`resolve_in_table_scope`] (pageext-merge-and-final-residual plan,
+/// Task 1). Closes the engine gap the plan's grounding report identified: a
+/// `PageExtension`'s routines are indexed under the EXTENSION's own
+/// `ObjectNodeId` (`node_extract::extract_nodes`), so a base-Page-typed
+/// receiver (`ReceiverType::Object{kind: Page, ..}`) could never reach them
+/// via a plain [`resolve_in_object`] call on the base alone.
+///
+/// # Visibility (round-1 review addenda, BINDING)
+///
+/// CALLER-closure-anchored, never receiver-object-closure-anchored: an
+/// extension is only a candidate when its OWN declaring app is reachable in
+/// `from_object`'s (the CALLING object's) transitive dependency closure —
+/// mirrors [`resolve_in_table_scope`]'s closure filter exactly (see that
+/// function's doc for the full "why closure, not receiver-object" rationale).
+/// Per-candidate member access (`Local`/`Internal`/`Protected`) is then
+/// checked by [`object_has_visible_member_candidate`]/[`resolve_in_object`]
+/// exactly as it already is for Table∪TableExtension — no separate rule, no
+/// new access model.
+///
+/// # Aggregate-then-adjudicate (round-1 addendum, BINDING)
+///
+/// Every visible candidate object (base ∪ every visible extension) is
+/// collected FIRST; a base-vs-extension or extension-vs-extension exact-
+/// duplicate same-arity pair is a genuine `>1` ambiguity fed to the SAME
+/// machinery [`resolve_in_table_scope`] uses (never first-wins). AL0115
+/// (base/extension duplicate) and AL0226 (cross-extension duplicate) make an
+/// EXACT duplicate signature a compile error in real AL — this ambiguity path
+/// is DEFENSIVE-ONLY against malformed/synthetic source, not a live
+/// production case.
+///
+/// # Divergence from [`resolve_in_table_scope`]: `ArityMismatch` preservation
+///
+/// Unlike the Table/Record arm — whose cardinality check folds arity-EXACT
+/// matching into object EXISTENCE, so a same-name-wrong-arity candidate never
+/// counts as "present" (meaning `resolve_in_object`'s own `ArityMismatch`
+/// branch is provably unreachable through that path — cardinality already
+/// guarantees an arity match before `resolve_in_object` is ever called; see
+/// that function's `Defensive:` comment) — this function preserves the
+/// PRE-TASK-1 per-object `ArityMismatch`/access-exclusion diagnostic quality:
+/// when NO scope object has an arity+visibility match ANYWHERE, but the
+/// routine NAME (any arity) is declared somewhere in scope, the first
+/// (deterministic, scope-order) name-bearing object is still forwarded to
+/// [`resolve_in_object`] so its own internal per-object diagnostic
+/// (`ArityMismatch`, `AccessFilteredOverload`, `LocalNotVisible`, …) survives
+/// exactly as the single-object dispatch produced it pre-merge — required so
+/// the merge is a pure ADDITIVE gain (extensions become reachable) and never
+/// a diagnostic regression for a base-only call whose arity happens to be
+/// wrong. This can never construct a false `Source` route: by construction,
+/// [`resolve_in_object`] on a name-bearing-but-non-arity-visible-matching
+/// object always returns an `Unknown`-shaped route (never a real match) —
+/// `object_has_visible_member_candidate`'s arity+visibility scan already
+/// proved no candidate on ANY scope object clears that bar, so this fallback
+/// object's own internal arity/visibility filter can only reach its
+/// `ArityMismatch` or `visible.len() == 0` (access-exclusion) branches.
+///
+/// # Cardinality
+///
+/// - `>1` DISTINCT scope objects each carrying a visible arity-EXACT match →
+///   [`TableScopeOutcome::Ambiguous`] (never pick-first).
+/// - Exactly 1 → [`TableScopeOutcome::Resolved`] via [`resolve_in_object`].
+/// - 0 arity+visibility matches, but the name exists (any arity) somewhere in
+///   scope → forward to the first (scope-order) name-bearing object for its
+///   own diagnostic (never `Source`, per the divergence note above) —
+///   returned as `TableScopeOutcome::Resolved` too (that variant means "
+///   `resolve_in_object` was invoked and returned `Some`", not literally "a
+///   real match was found" — the SAME convention [`resolve_in_table_scope`]
+///   already uses for its own `AccessFilteredOverload`/`AbiCollapsedOverload`
+///   `Some` outcomes).
+/// - The name absent from every scope object → [`TableScopeOutcome::
+///   NotVisible`] with `access_excluded: None` — nothing to fall through with
+///   a specific reason; the caller's own default (`MemberNotFound`) applies.
+///
+/// # Report/ReportExtension (deferred, per the plan's cross-task addendum)
+///
+/// `Report`-typed receivers (`ReceiverType::Object{kind: Report, ..}`) are NOT
+/// merged here or anywhere else — index inspection confirmed a
+/// `report_extensions_of` analog would be mechanically cheap to add (`extends_
+/// target` is already populated for `ReportExtension` objects identically to
+/// `PageExtension`), but the `ArityMismatch`-preserving resolution logic above
+/// is bespoke (not a mechanical index swap) and would need its OWN dedicated
+/// fixtures + a fresh CDO measurement to verify soundness — the measured CDO
+/// population motivating THIS task is 100% Page (the 7 `eCandidates` sites),
+/// zero measured Report-typed-receiver cross-extension calls. Deferred rather
+/// than done speculatively (dated 2026-07-04) — see the task report for the
+/// full note.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args`, mirrors resolve_in_table_scope's identical attribute.
+fn resolve_in_page_scope(
+    from_object: &ObjectNode,
+    page_id: ObjectNodeId,
+    name_lc: &str,
+    arity: usize,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    args: &[ArgDispatchInfo],
+) -> TableScopeOutcome {
+    let closure = graph.topology.closure(from_object.id.app);
+
+    if !closure.contains(&page_id.app) {
+        return TableScopeOutcome::NotVisible {
+            access_excluded: None,
+        };
+    }
+    let Some((page_tier, page_name_lc)) = graph
+        .objects
+        .iter()
+        .find(|o| o.id == page_id)
+        .map(|o| (o.tier, o.name.to_ascii_lowercase()))
+    else {
+        return TableScopeOutcome::NotVisible {
+            access_excluded: None,
+        };
+    };
+
+    // Visible scope: the base page plus every PageExtension of it that is
+    // reachable in `from_object`'s app dependency closure.
+    let mut scope: Vec<(ObjectNodeId, TrustTier)> = vec![(page_id.clone(), page_tier)];
+    for ext_id in index.page_extensions_of(&page_name_lc) {
+        if !closure.contains(&ext_id.app) {
+            // Outside from_object's dependency closure: invisible, not a
+            // candidate (mirrors resolve_in_table_scope's identical filter).
+            continue;
+        }
+        let Some(ext_tier) = graph
+            .objects
+            .iter()
+            .find(|o| &o.id == ext_id)
+            .map(|o| o.tier)
+        else {
+            continue;
+        };
+        scope.push((ext_id.clone(), ext_tier));
+    }
+    // Deterministic ordering (candidate vectors sorted by stable ObjectNodeId).
+    scope.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+    let mut arity_matched = scope.iter().filter(|(oid, tier)| {
+        object_has_visible_member_candidate(
+            oid,
+            *tier,
+            name_lc,
+            arity,
+            &from_object.id,
+            graph,
+            index,
+        )
+    });
+    let first = arity_matched.next();
+    let second = arity_matched.next();
+
+    match (first, second) {
+        (Some(_), Some(_)) => TableScopeOutcome::Ambiguous,
+        (Some((oid, tier)), None) => match resolve_in_object(
+            oid,
+            *tier,
+            name_lc,
+            arity,
+            &from_object.id,
+            graph,
+            index,
+            body_map,
+            args,
+        ) {
+            Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
+            // Defensive: `object_has_visible_member_candidate` already
+            // confirmed a visible arity match exists, so `resolve_in_object`
+            // should always return `Some` here.
+            None => TableScopeOutcome::NotVisible {
+                access_excluded: Some(UnknownReason::IndexIntegrationGap),
+            },
+        },
+        (None, _) => {
+            // No scope object has BOTH a matching arity and visibility for
+            // `name_lc`. Before declaring true absence, check whether the
+            // bare NAME (any arity, tier-agnostic existence — mirrors
+            // `resolve_in_object`'s own initial `index.routines_in_object`
+            // check) exists anywhere in scope, so a genuine arity/access
+            // diagnostic is preserved (see the `ArityMismatch` divergence
+            // note above) rather than collapsed into a bare "not found". A
+            // deterministic (scope-order) pick among multiple name-bearing-
+            // but-non-matching objects is safe — none of them can produce a
+            // `Source` route (see the doc above).
+            match scope
+                .iter()
+                .find(|(oid, _)| !index.routines_in_object(oid, name_lc).is_empty())
+            {
+                Some((oid, tier)) => match resolve_in_object(
+                    oid,
+                    *tier,
+                    name_lc,
+                    arity,
+                    &from_object.id,
+                    graph,
+                    index,
+                    body_map,
+                    args,
+                ) {
+                    Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
+                    None => TableScopeOutcome::NotVisible {
+                        access_excluded: None,
+                    },
+                },
+                None => TableScopeOutcome::NotVisible {
+                    access_excluded: None,
+                },
+            }
+        }
+    }
+}
+
 /// Compute the implicit-`Rec` table `ObjectNodeId` for `resolve_bare`'s Step 3
 /// (bare unqualified calls implicitly dispatching to `Rec` — beyond-1B.3b
 /// Task 3), by `from_object`'s kind. Reuses the SAME fail-closed per-kind
@@ -2054,21 +2267,69 @@ pub(crate) fn resolve_member_with_args(
                 };
             }
 
-            // General dispatch: resolve the method among the target object's procedures.
-            if let Some((shape, routes)) = resolve_in_object(
-                &target_id,
-                target_tier,
-                method_lc,
-                arity,
-                &from_object.id,
-                graph,
-                index,
-                body_map,
-                args,
-            ) {
+            // General dispatch: resolve the method among the target object's
+            // procedures. Task 1 (pageext-merge-and-final-residual plan): a
+            // `Page`-typed receiver merges in every closure-visible
+            // `PageExtension`'s routines FIRST — a `PageExtension`'s routines
+            // are indexed under the EXTENSION's own `ObjectNodeId`
+            // (`node_extract::extract_nodes`), structurally unreachable from a
+            // base-Page-typed receiver via a plain `resolve_in_object` call on
+            // the base alone (the Table analog: `resolve_in_table_scope` +
+            // `table_extensions_of`). See [`resolve_in_page_scope`]'s doc for
+            // the full closure/access/ambiguity design. Every other kind
+            // (Codeunit/Report/XmlPort/Query/…) is UNCHANGED — Report/
+            // ReportExtension's own merge is a deliberately DEFERRED decision
+            // (see that function's doc note).
+            let mut reason = UnknownReason::MemberNotFound;
+            let object_dispatch = if *kind == ObjectKind::Page {
+                match resolve_in_page_scope(
+                    from_object,
+                    target_id.clone(),
+                    method_lc,
+                    arity,
+                    graph,
+                    index,
+                    body_map,
+                    args,
+                ) {
+                    TableScopeOutcome::Resolved(shape, routes) => Some((shape, routes)),
+                    TableScopeOutcome::Ambiguous => {
+                        // Genuine >1-visible-candidate ambiguity across
+                        // base∪extensions — never fall through to the
+                        // instance-builtin catalog (mirrors the Record arm's
+                        // identical short-circuit; source/extension ambiguity
+                        // still shadows a same-named intrinsic).
+                        return (
+                            DispatchShape::Exact,
+                            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+                        );
+                    }
+                    TableScopeOutcome::NotVisible { access_excluded } => {
+                        if let Some(r) = access_excluded {
+                            reason = r;
+                        }
+                        None
+                    }
+                }
+            } else {
+                resolve_in_object(
+                    &target_id,
+                    target_tier,
+                    method_lc,
+                    arity,
+                    &from_object.id,
+                    graph,
+                    index,
+                    body_map,
+                    args,
+                )
+            };
+
+            if let Some((shape, routes)) = object_dispatch {
                 (shape, routes)
             } else {
-                // Method name absent from target object's declared procedures.
+                // Method name absent from target object's declared procedures
+                // (and, for Page, absent from every visible extension's too).
                 // Fall through to the instance-builtin catalog for kinds that have one
                 // (Page→PageInstance, Report→ReportInstance), EXCLUDING only the
                 // CurrPage-only `SaveRecord` (see `is_metadata_sensitive_instance_
@@ -2085,9 +2346,13 @@ pub(crate) fn resolve_member_with_args(
                     return member_catalog_route(bid);
                 }
                 // The receiver object WAS resolved (`target`/`target_tier`
-                // above) — member-absent-on-a-resolved-surface stays
-                // `MemberNotFound`; tag its tier (reason-split Task 2).
-                member_unknown_route_with_tier(UnknownReason::MemberNotFound, target_tier)
+                // above) — member-absent-on-a-resolved-surface defaults to
+                // `MemberNotFound` (reason-split Task 2); a Page merge that
+                // found a same-name candidate excluded by access (Local/
+                // Internal/Protected) reports that specific reason instead
+                // (Task 1 — the "different-app internal declines with the
+                // right reason" fixture).
+                member_unknown_route_with_tier(reason, target_tier)
             }
         }
         ReceiverType::SelfObject => {
@@ -9434,6 +9699,594 @@ pageextension 53921 "ProtXBaseExt" extends ProtXBase
             "a direct PageExtension calling its base's `protected` method \
              via an Object receiver must resolve to Source (gap D positive \
              control); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 1 (pageext-merge-and-final-residual plan): PageExtension routine
+    // merge into base-Page member resolution. `ReceiverType::Object{kind:
+    // Page}` must reach a method declared ONLY in a closure-visible
+    // PageExtension, not just the base page's own procedures — the CDO
+    // grounding's 7 `eCandidates` sites (`GetOutputProfile`/
+    // `OnlyVendorsAreHandled`/`OnlyCustomersAreHandled`, all `internal`,
+    // same-app). See `resolve_in_page_scope`'s doc for the full design.
+    // -----------------------------------------------------------------------
+
+    // (T1-pos-1) base-Page receiver, PageExtension-declared `internal`
+    // procedure, same app — must resolve to Source (the 7 sites' exact shape).
+    #[test]
+    fn resolve_member_object_page_merge_same_app_internal_extension_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61000 "PxMergeBase1"
+{
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61001 "PxMergeBase1Ext" extends "PxMergeBase1"
+{
+    internal procedure ExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61002 "PxMergeCaller1"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("PxMergeApp1");
+        let unit_page = make_unit(app_id.clone(), "PxMergeBase1.al", src_page);
+        let unit_ext = make_unit(app_id.clone(), "PxMergeBase1Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "PxMergeCaller1.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller1");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase1".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a base-Page-typed receiver calling a same-app `internal` \
+             PageExtension procedure must resolve to Source (Task 1's \
+             central fix); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (T1-neg-1) DIFFERENT-app internal extension member (no friend) —
+    // must decline with InternalNotVisible, not a bare MemberNotFound.
+    #[test]
+    fn resolve_member_object_page_merge_different_app_internal_extension_declines() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61010 "PxMergeBase2"
+{
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61011 "PxMergeBase2Ext" extends "PxMergeBase2"
+{
+    internal procedure ExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61012 "PxMergeCaller2"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        // CallerApp depends on both PageApp (base) and ExtApp (extension) —
+        // both in the caller's closure — but the extension's `internal`
+        // procedure is declared in a DIFFERENT app than the caller, with no
+        // InternalsVisibleTo friend grant either way.
+        let app_page = make_app_id("PxMergePageApp2");
+        let app_ext = make_app_id("PxMergeExtApp2");
+        let app_caller = make_app_id("PxMergeCallerApp2");
+        let unit_page = make_unit(app_page, "PxMergeBase2.al", src_page);
+        let unit_ext = make_unit(app_ext, "PxMergeBase2Ext.al", src_ext);
+        let unit_caller = make_unit(app_caller, "PxMergeCaller2.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph_multi_dep(
+            &units,
+            &[
+                ("PxMergeCallerApp2", "PxMergePageApp2"),
+                ("PxMergeCallerApp2", "PxMergeExtApp2"),
+                ("PxMergeExtApp2", "PxMergePageApp2"),
+            ],
+        );
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller2");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase2".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a cross-app `internal` PageExtension procedure (no friend \
+             grant) must stay honest Unknown, not a false Source; got {:?}",
+            routes[0].target
+        );
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::InternalNotVisible)
+            ),
+            "must be excluded with the specific InternalNotVisible reason \
+             (Task 1's access-filter fixture), not a bare MemberNotFound; \
+             got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-neg-2) out-of-closure extension — the extension's app is never a
+    // dependency of the caller's app, so its member must be structurally
+    // INVISIBLE (MemberNotFound), never surfaced as an access exclusion.
+    #[test]
+    fn resolve_member_object_page_merge_out_of_closure_extension_invisible() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61020 "PxMergeBase3"
+{
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61021 "PxMergeBase3Ext" extends "PxMergeBase3"
+{
+    procedure ExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61022 "PxMergeCaller3"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        // CallerApp depends ONLY on PageApp — never on ExtApp — so the
+        // extension is entirely out of the caller's dependency closure, even
+        // though ExtApp itself depends on PageApp (real AL requires that for
+        // `extends` to compile). The extension's `public` access does not
+        // matter: out-of-closure means the object itself was never imported.
+        let app_page = make_app_id("PxMergePageApp3");
+        let app_ext = make_app_id("PxMergeExtApp3");
+        let app_caller = make_app_id("PxMergeCallerApp3");
+        let unit_page = make_unit(app_page, "PxMergeBase3.al", src_page);
+        let unit_ext = make_unit(app_ext, "PxMergeBase3Ext.al", src_ext);
+        let unit_caller = make_unit(app_caller, "PxMergeCaller3.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph_multi_dep(
+            &units,
+            &[
+                ("PxMergeCallerApp3", "PxMergePageApp3"),
+                ("PxMergeExtApp3", "PxMergePageApp3"),
+            ],
+        );
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller3");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase3".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::MemberNotFound)
+            ),
+            "an out-of-closure extension must be structurally invisible \
+             (MemberNotFound), never surfaced via an access-exclusion \
+             reason; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-amb-1) TWO caller-visible PageExtensions both declaring the same
+    // viable member — genuine ambiguity, no first-wins (the
+    // aggregate-then-adjudicate proof).
+    #[test]
+    fn resolve_member_object_page_merge_two_extensions_same_member_is_ambiguous() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61030 "PxMergeBase4"
+{
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext_a: &'static str = r#"
+pageextension 61031 "PxMergeBase4ExtA" extends "PxMergeBase4"
+{
+    procedure DupProc()
+    begin
+    end;
+}
+"#;
+        let src_ext_b: &'static str = r#"
+pageextension 61032 "PxMergeBase4ExtB" extends "PxMergeBase4"
+{
+    procedure DupProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61033 "PxMergeCaller4"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("PxMergeApp4");
+        let unit_page = make_unit(app_id.clone(), "PxMergeBase4.al", src_page);
+        let unit_ext_a = make_unit(app_id.clone(), "PxMergeBase4ExtA.al", src_ext_a);
+        let unit_ext_b = make_unit(app_id.clone(), "PxMergeBase4ExtB.al", src_ext_b);
+        let unit_caller = make_unit(app_id, "PxMergeCaller4.al", src_caller);
+        let units = [unit_page, unit_ext_a, unit_ext_b, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller4");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase4".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "dupproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "two caller-visible PageExtensions both declaring the same \
+             viable member must decline as a genuine ambiguity — no \
+             first-wins (AL0226 makes this uncompilable in real source; \
+             this fixture is DEFENSIVE-ONLY against malformed input); got \
+             {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-amb-2) base-vs-extension same-name-same-arity pair — the ambiguity
+    // machinery fires too (defensive-only: AL0115 makes an exact base/
+    // extension duplicate signature uncompilable in real AL).
+    #[test]
+    fn resolve_member_object_page_merge_base_vs_extension_duplicate_is_ambiguous() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61040 "PxMergeBase5"
+{
+    procedure SameProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61041 "PxMergeBase5Ext" extends "PxMergeBase5"
+{
+    procedure SameProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61042 "PxMergeCaller5"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("PxMergeApp5");
+        let unit_page = make_unit(app_id.clone(), "PxMergeBase5.al", src_page);
+        let unit_ext = make_unit(app_id.clone(), "PxMergeBase5Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "PxMergeCaller5.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller5");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase5".into(),
+            id: None,
+        };
+        let (shape, routes) = resolve_member(
+            &receiver, "sameproc", 0, from_obj, &graph, &index, &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "a base-vs-extension exact duplicate signature must decline as \
+             a genuine ambiguity (defensive-only — AL0115 makes this \
+             uncompilable in real AL); got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-base-only) base-only calls are unchanged by the merge: a Page with
+    // an extension present (that does NOT declare the called member) still
+    // resolves the base's own procedure exactly as pre-Task-1, AND the
+    // instance-builtin catalog fallback still fires when neither base nor
+    // any extension declares the name.
+    #[test]
+    fn resolve_member_object_page_merge_base_only_unchanged() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61050 "PxMergeBase6"
+{
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61051 "PxMergeBase6Ext" extends "PxMergeBase6"
+{
+    procedure UnrelatedExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61052 "PxMergeCaller6"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("PxMergeApp6");
+        let unit_page = make_unit(app_id.clone(), "PxMergeBase6.al", src_page);
+        let unit_ext = make_unit(app_id.clone(), "PxMergeBase6Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "PxMergeCaller6.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller6");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase6".into(),
+            id: None,
+        };
+
+        // The base's own procedure still resolves to Source.
+        let (shape, routes) = resolve_member(
+            &receiver, "baseproc", 0, from_obj, &graph, &index, &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(matches!(routes[0].target, RouteTarget::Routine(_)));
+        assert_eq!(routes[0].evidence, Evidence::Source);
+
+        // A genuine platform-instrinsic (PageInstance catalog) member absent
+        // from both base and extension still falls through to Catalog.
+        let (shape2, routes2) =
+            resolve_member(&receiver, "close", 0, from_obj, &graph, &index, &body_map);
+        assert_eq!(shape2, DispatchShape::Exact);
+        assert_eq!(routes2.len(), 1);
+        assert_eq!(routes2[0].evidence, Evidence::Catalog);
+    }
+
+    // (T1-arity) arity-mismatch on a base-only candidate must still surface
+    // `ArityMismatch` (name found, wrong arity) — the merge must not
+    // regress this pre-Task-1 per-object diagnostic into a bare
+    // MemberNotFound/CatalogMiss.
+    #[test]
+    fn resolve_member_object_page_merge_arity_mismatch_preserved() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61060 "PxMergeBase7"
+{
+    procedure OneArgProc(X: Integer)
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61061 "PxMergeBase7Ext" extends "PxMergeBase7"
+{
+    procedure UnrelatedExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61062 "PxMergeCaller7"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("PxMergeApp7");
+        let unit_page = make_unit(app_id.clone(), "PxMergeBase7.al", src_page);
+        let unit_ext = make_unit(app_id.clone(), "PxMergeBase7Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "PxMergeCaller7.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller7");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase7".into(),
+            id: None,
+        };
+        // Call with arity 0 — the only declared "OneArgProc" takes 1 param.
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "oneargproc",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::ArityMismatch)
+            ),
+            "a wrong-arity call to a base-only candidate must stay \
+             ArityMismatch (name found), not collapse into MemberNotFound/ \
+             CatalogMiss via the merge; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-cross-app-pos) a PUBLIC extension procedure from a dependent app —
+    // the cross-app-legal case: the extension lives in a DIFFERENT app than
+    // the caller, but the caller depends on it (directly or transitively)
+    // and the member is `public`, so it must resolve to Source.
+    #[test]
+    fn resolve_member_object_page_merge_public_extension_cross_app_resolves() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_page: &'static str = r#"
+page 61070 "PxMergeBase8"
+{
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+pageextension 61071 "PxMergeBase8Ext" extends "PxMergeBase8"
+{
+    procedure PubExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 61072 "PxMergeCaller8"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        // CallerApp -> ExtApp -> PageApp (transitive closure): the caller
+        // never directly depends on PageApp, only reaches it transitively
+        // through ExtApp — proving `topology.closure` transitivity is what
+        // makes both the base AND the extension visible.
+        let app_page = make_app_id("PxMergePageApp8");
+        let app_ext = make_app_id("PxMergeExtApp8");
+        let app_caller = make_app_id("PxMergeCallerApp8");
+        let unit_page = make_unit(app_page, "PxMergeBase8.al", src_page);
+        let unit_ext = make_unit(app_ext, "PxMergeBase8Ext.al", src_ext);
+        let unit_caller = make_unit(app_caller, "PxMergeCaller8.al", src_caller);
+        let units = [unit_page, unit_ext, unit_caller];
+        let graph = build_graph_multi_dep(
+            &units,
+            &[
+                ("PxMergeCallerApp8", "PxMergeExtApp8"),
+                ("PxMergeExtApp8", "PxMergePageApp8"),
+            ],
+        );
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "PxMergeCaller8");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pxmergebase8".into(),
+            id: None,
+        };
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "pubextproc",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a `public` PageExtension procedure in a transitively-depended- \
+             on app must resolve to Source (the cross-app-legal case); got \
+             {:?}",
             routes[0].target
         );
         assert_eq!(routes[0].evidence, Evidence::Source);

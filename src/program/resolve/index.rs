@@ -138,6 +138,13 @@ pub struct ResolveIndex {
     objects_by_name: HashMap<(ObjectKind, String), Vec<ObjectNodeId>>,
     /// Lowercased `extends_target` of a `TableExtension` → all extension ids.
     table_extensions: HashMap<String, Vec<ObjectNodeId>>,
+    /// Lowercased `extends_target` of a `PageExtension` → all extension ids
+    /// (pageext-merge-and-final-residual plan, Task 1 — the `Page` analog of
+    /// `table_extensions`, needed to close the engine gap: a `PageExtension`'s
+    /// routines are indexed under the EXTENSION's own `ObjectNodeId`, so a
+    /// base-Page-typed receiver could never reach them without this reverse
+    /// lookup; see [`Self::page_extensions_of`]).
+    page_extensions: HashMap<String, Vec<ObjectNodeId>>,
     /// Lowercased interface name → all object ids that implement it.
     implementers: HashMap<String, Vec<ObjectNodeId>>,
     /// Publisher `RoutineNodeId` → ordered list of resolved subscribers.
@@ -181,6 +188,7 @@ impl ResolveIndex {
         let mut objects_by_id: HashMap<(ObjectKind, i64), Vec<ObjectNodeId>> = HashMap::new();
         let mut objects_by_name: HashMap<(ObjectKind, String), Vec<ObjectNodeId>> = HashMap::new();
         let mut table_extensions: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
+        let mut page_extensions: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
         let mut implementers: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
 
         for obj in &graph.objects {
@@ -204,6 +212,17 @@ impl ResolveIndex {
                 && let Some(ref target) = obj.extends_target
             {
                 table_extensions
+                    .entry(target.to_ascii_lowercase())
+                    .or_default()
+                    .push(obj.id.clone());
+            }
+
+            // PageExtension → base page name (lowercased) — the Task 1 analog
+            // of the TableExtension index above.
+            if obj.id.kind == ObjectKind::PageExtension
+                && let Some(ref target) = obj.extends_target
+            {
+                page_extensions
                     .entry(target.to_ascii_lowercase())
                     .or_default()
                     .push(obj.id.clone());
@@ -336,6 +355,7 @@ impl ResolveIndex {
             objects_by_id,
             objects_by_name,
             table_extensions,
+            page_extensions,
             implementers,
             subscribers_map,
             ambiguous_subscriptions,
@@ -515,6 +535,20 @@ impl ResolveIndex {
     pub fn table_extensions_of(&self, base_table_name_lc: &str) -> &[ObjectNodeId] {
         self.table_extensions
             .get(base_table_name_lc)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// All `PageExtension` objects whose `extends_target` (lowercased) equals
+    /// `base_page_name_lc` — [`WorldMode::AnalyzedSnapshot`], whole-program
+    /// view (extensions live in reverse-dependent apps, outside the base
+    /// page's own closure). The `Page` analog of [`Self::table_extensions_of`]
+    /// (pageext-merge-and-final-residual plan, Task 1) — see
+    /// `resolver::resolve_in_page_scope` for the closure- and access-filtered
+    /// consumer.
+    pub fn page_extensions_of(&self, base_page_name_lc: &str) -> &[ObjectNodeId] {
+        self.page_extensions
+            .get(base_page_name_lc)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
@@ -1554,6 +1588,74 @@ mod tests {
 
         let exts = idx.table_extensions_of("nosuchtable");
         assert!(exts.is_empty());
+    }
+
+    // -- page_extensions_of tests (pageext-merge-and-final-residual plan, Task 1) --
+
+    /// Single-app fixture: Page 50400 "PxBase" + PageExtension 50401
+    /// "PxBaseExt" extending it.
+    fn build_page_ext_fixture() -> (ProgramGraph, AppRef) {
+        let mut apps = AppRegistry::default();
+        let a = apps.intern(&make_app_id("PxApp"));
+        let topology = DependencyGraph::default();
+
+        let mut objects = vec![
+            make_obj(a, ObjectKind::Page, Some(50400), "PxBase", None, vec![]),
+            make_obj(
+                a,
+                ObjectKind::PageExtension,
+                Some(50401),
+                "PxBaseExt",
+                Some("PxBase"),
+                vec![],
+            ),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        (
+            ProgramGraph {
+                apps,
+                topology,
+                objects,
+                routines: vec![],
+                obj_index,
+                ..Default::default()
+            },
+            a,
+        )
+    }
+
+    #[test]
+    fn page_extensions_of_returns_extension() {
+        let (graph, a) = build_page_ext_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let exts = idx.page_extensions_of("pxbase");
+        assert_eq!(exts.len(), 1, "expected exactly one extension of PxBase");
+        assert_eq!(exts[0].app, a);
+        assert_eq!(exts[0].kind, ObjectKind::PageExtension);
+    }
+
+    #[test]
+    fn page_extensions_of_missing_returns_empty() {
+        let (graph, _a) = build_page_ext_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let exts = idx.page_extensions_of("nosuchpage");
+        assert!(exts.is_empty());
+    }
+
+    #[test]
+    fn page_extensions_of_does_not_leak_table_extensions() {
+        // A TableExtension named the same shape must never satisfy a
+        // page_extensions_of lookup — the two indexes are kind-partitioned
+        // at build time (each `if obj.id.kind == ...` guard is independent),
+        // never merged into one name-keyed map.
+        let (graph, _a, _b) = build_fixture(); // has a TableExtension "CustomerExt" extending "Customer"
+        let idx = ResolveIndex::build(&graph);
+
+        assert!(idx.page_extensions_of("customer").is_empty());
     }
 
     // -- field_in_table tests (Task 3) -----------------------------------------

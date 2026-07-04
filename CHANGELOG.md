@@ -8,6 +8,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **PageExtension routine merge into base-Page member resolution — real-`unknown`
+  0.0497%→0.0110%, `MemberNotFound` 7→0 (Task 1, pageext-merge-and-final-residual
+  plan).** Closes the engine gap the plan's grounding report identified on
+  `9b5f3de`: `resolve_member`'s `ReceiverType::Object` arm dispatched a `Page`-typed
+  receiver via a plain `resolve_in_object(target_id, ...)` call on the base page
+  alone — a `PageExtension`'s routines are indexed under the EXTENSION's own
+  `ObjectNodeId` (`node_extract::extract_nodes`), so they were structurally
+  unreachable from a base-Page-typed receiver, exactly mirroring the gap
+  `resolve_in_table_scope`/`table_extensions_of` already closed for
+  Table/TableExtension. Added the `Page` analog: `ResolveIndex::page_extensions_of`
+  (`index.rs`, mirrors `table_extensions_of` exactly) + a new `resolve_in_page_scope`
+  (`resolver.rs`) wired into the `Object` arm for `ObjectKind::Page` receivers only,
+  BEFORE the instance-builtin catalog fallback. CALLER-closure-anchored visibility
+  (never receiver-object-closure-anchored — an extension is a candidate only when
+  ITS OWN app is reachable in the CALLING object's dependency closure), the existing
+  `internalsVisibleTo`/`Local`/`Protected` access model applied unchanged, and
+  aggregate-then-adjudicate (every visible candidate — base ∪ every visible
+  extension — collected FIRST, fed to the SAME ambiguity machinery
+  `resolve_in_table_scope` uses; no first-wins). Diverges from
+  `resolve_in_table_scope` in one deliberate way: preserves the pre-merge
+  per-object `ArityMismatch`/access-exclusion diagnostic (a name-bearing-but-
+  wrong-arity candidate is forwarded to `resolve_in_object` for its own honest
+  reason rather than collapsing into a bare `MemberNotFound`) — `resolve_in_table_scope`'s
+  own cardinality check folds arity-exact matching into existence, making its
+  `ArityMismatch` branch provably unreachable; that pre-existing Table-arm
+  behavior is untouched (out of scope). 8 new TDD fixtures in `resolver.rs`
+  (same-app internal resolves; different-app internal declines
+  `InternalNotVisible`, not a bare `MemberNotFound`; out-of-closure extension is
+  structurally invisible `MemberNotFound`; two caller-visible extensions
+  declaring the same member → `OverloadAmbiguous`, no first-wins; base-vs-
+  extension exact duplicate → `OverloadAmbiguous`, defensive-only — AL0115/AL0226
+  make both uncompilable in real source; base-only calls + the instance-builtin
+  catalog fallback unchanged; arity-mismatch on a base-only candidate preserves
+  `ArityMismatch`; a `public` extension procedure from a transitively-depended-on
+  app resolves — the cross-app-legal case) + 3 `page_extensions_of` index unit
+  tests. Full CDO harness (`CDO_WS`/`ENFORCE_CDO_WS=1`, 173 tests,
+  single-threaded): primary/whole `unknown` 9→2 (`real_unknown_rate`
+  0.0497%→0.0110%, exact 2/18104), `unknownByReason`={UntrackedReceiver: 1,
+  BuiltinPrecedenceCollision: 1} — `MemberNotFound` fully closed (all 7 sites,
+  `CDOeCandidatesEventHandler.Codeunit.al` calling `GetOutputProfile`/
+  `OnlyVendorsAreHandled`/`OnlyCustomersAreHandled` on `Page "CTS-CDN Connect
+  eCandidates"`, declared `internal` in `Al/Extensions/eCandidates/
+  CDOConnecteCandidates.PageExt.al`, same app as every caller — resolved). L3
+  preflight site ledger (a before/after toggle-diff re-run, not a guess):
+  `matches` 6127→6120 (−7), `fresh_extra` 5100→5107 (+7), `fresh_wrong`=149,
+  `fresh_missing`=1, `genuine_wrong`=0 — all BYTE-IDENTICAL before/after except
+  the expected ±7 `matches`/`fresh_extra` swap, confirming the 7 sites move
+  cleanly from "L3 golden also empty there" to "fresh now ahead of L3" — never
+  `fresh_wrong`, never unexplained (the "L3 likely also missed these" prediction,
+  confirmed). `ambiguousResolved`=7 unchanged (exact, both scopes).
+  `genuine_wrong`=0 throughout. **Report/ReportExtension merge: DEFERRED**
+  (dated 2026-07-04) — the index-level `report_extensions_of` analog would be
+  mechanically cheap (`extends_target` is already populated identically for
+  `ReportExtension`), but the `ArityMismatch`-preserving resolver logic is
+  bespoke, not a mechanical index swap, and needs its own dedicated fixtures +
+  a fresh CDO measurement; the population motivating this task is 100% Page,
+  zero measured Report-typed cross-extension receiver calls on CDO.
 - **Receiver-closure arc complete — real-`unknown` 0.43%→0.05%, `ambiguousResolved`
   13→7 (Task 5, FINAL, receiver-closure-and-arg-increments plan).** Full CDO
   re-measure confirms the 4-task arc at its floors, byte-identical to Task 4's
