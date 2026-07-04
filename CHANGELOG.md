@@ -99,6 +99,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `coverage.holds` stays `true` throughout (no orphaned obligation).
 
 ### Fixed
+- **pageext-merge-and-final-residual arc complete — CDO primary real-`unknown` reaches THE ZERO: 0.0000%
+  (0/18108), and `ambiguousResolved` also reaches 0 (Task 4, FINAL — contingent close).** Full re-measure
+  (`CDO_WS`/`ENFORCE_CDO_WS=1`, release, single-threaded, 182-test suite) confirms the 3-task arc at its floor,
+  byte-identical to Task 3's own measurement:
+  - **The zero, both dimensions.** Primary-scoped: `total`=18108, `unknown`=0 (`real_unknown_rate`=0.0000%),
+    `unknownByReason`={} (empty — every reason bucket, not just the count, is empty). Whole-program: `total`=43408,
+    `unknown`=0. `ambiguousResolved`=0 (both scopes, hard-gated `assert_eq!`) — so the **legacy-inclusive** rate
+    (`(unknown + ambiguousResolved) / total`, the pre-sigfp-reclassification-plan metric definition) is ALSO exactly
+    0.0000%, not merely the narrower post-reclassification metric: every statically-resolvable call obligation on the
+    CDO reference corpus resolves, under either metric definition.
+  - **The honest-taxonomy composition, stated in full** (never just "0 unknown" — the residual is real, not vacuous):
+    primary `resolved_source`=8279, `resolved_catalog`=5890, `resolved_abi_external`=4, `conditional_resolved`=17,
+    `honest_dynamic`=42, `honest_empty`=3876 (sums to 18108); whole-program `resolved_source`=10173,
+    `resolved_catalog`=5890, `resolved_abi_external`=4, `conditional_resolved`=319, `honest_dynamic`=42,
+    `honest_empty`=26980 (sums to 43408). The `honest_dynamic`/`honest_empty` buckets are the PROVABLY-open residual
+    (runtime-typed dispatch and zero-obligation edges respectively) — never conflated with `unknown`.
+  - **Companion gates, all re-confirmed:** `genuine_wrong`=0 (`cdo_genuine_wrong_is_precedence_adjudicated`: 54/54
+    `known-genuine-divergences.json` overrides independently re-verified — `SameAppSourceProcedure`/
+    `CrossAppSourceProcedure` targets re-read directly off disk, `fresh_false_builtin=0 needs_manual_review=0`); L3
+    semantic audit `fresh_missing`=0, `fresh_wrong`=149 (ALL 149 adjudicated `fresh_ahead_dispatch`, zero
+    `genuine_wrong` among them — `matches`=6120, `fresh_extra`=5108, `fresh_novel`=6693, `golden_missing`=89);
+    `route_applicability_zero_violations`/`fan_out_applicability_zero_violations` both 0 violations with non-vacuous
+    `routes_checked` (`total_routes`=18590; interface=28, instance_builtin=482, implicit_trigger=1183, event=3404);
+    `recoveredFiles`=8 (pinned exact, unchanged — the 2 known `tree-sitter-al` grammar defects, both dependency-only).
+  - **The falsified-premise lesson, told for the SECOND time (append-only errata, no rewrite of the original
+    claims).** This arc's own "Key facts" preamble already named the first instance (plan-9's "13 workspace
+    `MemberNotFound` absences" were actually the `is_metadata_sensitive_instance_method` catalog gap, not absences —
+    see the argtype-dispatch-and-page-catalog plan's own capstone entry below). This arc supplies the SECOND: the
+    "**Receiver-closure arc complete**" entry immediately below this one, and the argtype-dispatch-and-page-catalog
+    Task 1 entry further below, both state the 7 `MemberNotFound` eCandidates sites as "verified-REAL absences" /
+    "genuinely absent members, not an engine gap". **That claim was false.** Task 1 of THIS plan found the true cause:
+    CDO's own workspace declares all 3 missing members in `Al/Extensions/eCandidates/CDOConnecteCandidates.PageExt.al`
+    (`internal`, same-app-visible) — the engine simply never merged a `PageExtension`'s routines into its base
+    `Page`'s member-resolution scope (the `Table`/`TableExtension` analog, `resolve_in_table_scope`, existed; no
+    `Page` equivalent did). Fixing the merge resolved all 7 sites to `Resolved`/`Source` — they were an ENGINE GAP,
+    not a verified absence, exactly the same shape of mistake as plan-9's. **The doctrine, now recorded twice:**
+    measure the actual population (read the real source, don't infer "probably absent" from a dependency `.app`
+    alone) before building any taxonomy — including `ProvenAbsent` — for it. Neither historical claim above is
+    rewritten; this entry is the dated correction.
+  - **Deferred, visible (Roadmap — see the plan doc's own "Roadmap — beyond this plan" section for the full
+    detail):** `ProvenAbsent` machinery — DEFERRED-WITH-BLUEPRINT (the full 8-obligation proof table, the
+    `Route::proven_absent` marker + `ObligationOutcome::ProvenAbsent` design, the `recoveredFiles`-consult invariant,
+    and the `app_content_hash`-anchored cache-invalidation requirement are recorded in the plan doc, not implemented —
+    `MemberNotFound`==0 on CDO means there is currently no population to validate it against); ABI param-type
+    retention (SymbolOnly dispatch — now the ONLY remaining `ambiguousResolved` lever, population-less on CDO today);
+    Report/ReportExtension routine-merge (mechanically cheap per Task 1's index inspection, zero measured population
+    motivating it); the 2 pinned `tree-sitter-al` grammar defects (`OptionMembers=TableData,...` keyword collision,
+    `# pragma` with a stray space); the `.dependencies/CDO` same-slug double-include root cause; implicit-conversion
+    modeling; protected `Variables[]`; `Sender` parameter-TYPE validation; Step-4b `WithState` symmetry (opus A).
 - **PageExtension routine merge into base-Page member resolution — real-`unknown`
   0.0497%→0.0110%, `MemberNotFound` 7→0 (Task 1, pageext-merge-and-final-residual
   plan).** Closes the engine gap the plan's grounding report identified on
@@ -228,7 +277,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bare occurrence of the 19 suppressed names confirmed these are the only 2
   real behavior-changing sites in the whole corpus. Both `unknown`
   count-ceiling ratchets and the rate ceiling re-derived and tightened to
-  the new measured floor.
+  the new measured floor. **Task 2 review fix (dated 2026-07-04):** the L3
+  semantic-audit ledger above was independently re-derived and found to
+  contain an arithmetic error — `matches`/`fresh_wrong` were reported
+  unchanged (6120/149) when the TRUE movement was `fresh_missing` 1→0 (Site
+  B, the bare `Run()` above, was the sole `fresh_missing` occupant and moved
+  into `matches` once it resolved with source evidence identical to L3's own
+  frozen golden — an HMAC re-verification confirmed L3 was never wrong here,
+  only fresh's pre-Task-2 answer was) and `fresh_extra` 5107→5108 (Site A,
+  the Page implicit-Rec field arm, independently moved `matches`→`fresh_extra`
+  for an unrelated reason). `FRESH_MISSING_CEILING` re-derived and tightened
+  `5→2` from the corrected measured value (0, not 1); `genuine_wrong`=0 and
+  `ambiguousResolved`=7 unaffected throughout. See
+  `.superpowers/sdd/task-2-report.md` §9 for the full correction.
 - **Receiver-closure arc complete — real-`unknown` 0.43%→0.05%, `ambiguousResolved`
   13→7 (Task 5, FINAL, receiver-closure-and-arg-increments plan).** Full CDO
   re-measure confirms the 4-task arc at its floors, byte-identical to Task 4's

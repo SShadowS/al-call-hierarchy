@@ -2011,6 +2011,22 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // declares the members (the "verified-real absences" premise falsified);
     // residual 2 = UntrackedReceiver 1 (the honest Page-gap) +
     // BuiltinPrecedenceCollision 1 (both Task-2 targets).
+    //
+    // RE-CONFIRMED 2026-07-04 (pageext-merge-and-final-residual plan, Task 4,
+    // FINAL — arc capstone): byte-identical 0.0000% (0/18108) by an
+    // independent single-threaded re-run under `ENFORCE_CDO_WS=1`.
+    // `unknownByReason`={} (empty, both scopes) — unchanged since Task 2.
+    // `total` grew 18104→18108 (Task 3's `in_expression` lowerer completeness
+    // fix; the numerator stays 0, so the ceiling needs no motion). Task 4
+    // makes no resolver changes — this is already THE FLOOR: every
+    // statically-resolvable call obligation on CDO resolves. Full honest-
+    // taxonomy composition and the companion-gate re-confirmation (`genuine_
+    // wrong`=0, `fresh_missing`=0, `fresh_wrong`=149 all `fresh_ahead_
+    // dispatch`, applicability 0 violations/non-vacuous, `recoveredFiles`=8)
+    // are recorded in CHANGELOG.md's arc-capstone entry and
+    // `.superpowers/sdd/task-4-report-close.md`. See the `ambiguous_resolved`
+    // ratchet below for the SAME arc's other half — `ambiguousResolved`
+    // reaching 0 (Task 3) — confirmed unchanged by this task's re-run.
     let primary_rate = ph.real_unknown_rate();
     assert!(
         primary_rate <= 0.0,
@@ -2262,6 +2278,11 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // the Page implicit-Rec field arm + the GLOBAL compiler-grounded bare-call
     // suppression closed BOTH residual sites; `unknownByReason`={} (EMPTY) —
     // the FLOOR. See the rate-ceiling comment above for the full adjudication.
+    //
+    // RE-CONFIRMED 2026-07-04 (pageext-merge-and-final-residual, Task 4,
+    // FINAL — arc capstone): byte-identical 0 (`total`=18108, grown from
+    // 18104 by Task 3's `in_expression` fix; numerator unaffected). No
+    // resolver changes this task — already the floor.
     assert!(
         ph.unknown == 0,
         "primary unknown count {} exceeds ceiling 0 (recorded 2026-07-04 \
@@ -2356,6 +2377,10 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // alongside the primary ceiling above; whole-program `unknown`=0, the
     // FLOOR (same value as primary today — every closed site originates in
     // the workspace/primary scope).
+    //
+    // RE-CONFIRMED 2026-07-04 (pageext-merge-and-final-residual, Task 4,
+    // FINAL — arc capstone): byte-identical 0 (`total`=43408, grown from
+    // 43404 by Task 3's `in_expression` fix). No resolver changes this task.
     assert!(
         h.unknown == 0,
         "whole-program unknown count {} exceeds ceiling 0 (recorded \
@@ -2633,9 +2658,11 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     //     inner calls are declared `BuildUserMessage(HTML: Text; Language:
     //     Text): Text` / `BuildUserMessageForWording(HTML: Text; Tone: Text):
     //     Text` on the WORKSPACE'S OWN `Codeunit 6175367 "CDO Email
-    //     Translate Config"` (source-verified, lines 83/96) — a bare-
-    //     Identifier call-result (Step-5-mirroring arm) types `Text`. The
-    //     OUTER receiver `AOAIChatMessages: Codeunit "AOAI Chat Messages"`
+    //     Translate Config"` (source-verified, lines 83/96) — a Member-
+    //     function call-result (Step-6-mirroring arm,
+    //     `type_call_result_arg_member` — `ConfigCU.Method(...)` is a
+    //     `Member{object, member}` call, not a bare `Identifier`) types
+    //     `Text`. The OUTER receiver `AOAIChatMessages: Codeunit "AOAI Chat Messages"`
     //     is Microsoft's REAL System Application object (id 7763; found as
     //     genuine embedded source in the `.alpackages`-packaged `.app`, NOT
     //     an ABI/SymbolOnly stub) declaring FOUR `AddUserMessage` overloads;
@@ -2674,6 +2701,18 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `CurrentClientType()` call obligation entirely); `coverage.holds`
     // stays `true` (no orphaned obligation), confirmed by the determinism
     // re-run below.
+    //
+    // RE-CONFIRMED 2026-07-04 (pageext-merge-and-final-residual plan, Task 4,
+    // FINAL — arc capstone): byte-identical 0 (both scopes) by an
+    // independent single-threaded re-run under `ENFORCE_CDO_WS=1`. Task 4
+    // makes no resolver changes. Combined with the `real_unknown_rate`/
+    // `unknown`-COUNT ceilings above (also confirmed at 0), the
+    // **legacy-inclusive** rate (`(unknown + ambiguous_resolved) / total`,
+    // the pre-sigfp-reclassification-plan metric definition —
+    // `Histogram::legacy_unknown_rate_including_ambiguous()`) is ALSO exactly
+    // 0.0000% now: every statically-resolvable call obligation on CDO
+    // resolves under EITHER metric definition, closing the arc this plan's
+    // preamble opened at real-unknown 0.0497%/9 + ambiguousResolved 7.
     assert_eq!(
         ph.ambiguous_resolved, 0,
         "primary ambiguousResolved count {} != the recorded 2026-07-04 value \

@@ -198,6 +198,78 @@ applies to every CDO movement.
   `docs(resolve): pageext-merge arc complete — real-unknown 0.05%→~0.01% (Task 4)`.
 
 ## Roadmap — beyond this plan
-ABI param-type retention (SymbolOnly dispatch — the remaining ambiguousResolved lever); ProvenAbsent (blueprint
-recorded, awaiting a real population); the 2 tree-sitter-al grammar fixes; the .dependencies double-include root cause;
-implicit conversions; protected Variables[]; Sender param-TYPE validation; Step-4b WithState symmetry (opus A).
+ABI param-type retention (SymbolOnly dispatch — now the ONLY remaining `ambiguousResolved` lever, currently
+population-less on CDO: `ambiguousResolved`=0 after Task 3); `ProvenAbsent` (blueprint recorded below, DEFERRED — Task
+4 measured `MemberNotFound`==0 on CDO, so there is no population to validate the machinery against; see the
+Task-4 contingent-close decision); the 2 tree-sitter-al grammar fixes (`OptionMembers=TableData,...` keyword
+collision, `# pragma` with a stray space — both confined to dependency/embedded source, pinned via `recovered_files`);
+the `.dependencies/CDO` same-slug double-include root cause; Report/ReportExtension routine-merge (mechanically cheap
+per Task 1's index inspection, but needs its own `ArityMismatch`-preserving fixtures + a fresh CDO measurement — zero
+measured population motivating it today); implicit conversions; protected `Variables[]`; `Sender` parameter-TYPE
+validation; Step-4b `WithState` symmetry (opus A).
+
+### `ProvenAbsent` — the deferred blueprint (Task 4, 2026-07-04)
+
+**Status: DEFERRED-WITH-BLUEPRINT, not implemented.** Task 4's full re-measure found CDO's `MemberNotFound` bucket at
+**0** (closed by Task 1's PageExtension merge) — building `ProvenAbsent` machinery now would be taxonomy without a
+population to validate it against, the exact "measure before taxonomy" mistake this plan's own preamble names as
+*already having struck twice* (plan-9's "13 workspace absences" were a catalog gap; this plan's own "7 eCandidates
+absences" were an engine gap — see the errata note in CHANGELOG.md and the arc capstone below). The design is recorded
+here so a FUTURE corpus that genuinely produces `MemberNotFound` sites has a reviewed starting point, not a blank page.
+
+**The problem `ProvenAbsent` solves.** `Unknown(UnknownReason::MemberNotFound)` today means "the receiver object was
+found, but the callee name was not declared anywhere reachable from it" — an OPEN-WORLD-honest "we didn't find it",
+never a closed-world "it positively does not exist". The two are behaviorally identical in the current histogram (both
+count as real-`unknown`), but they are epistemically different claims, and only the second can ever justify a stronger
+downstream action (e.g. a lint that flags a call as "will throw at runtime", or a dead-code-style report) without
+risking a false positive against a scope the engine simply failed to fully enumerate.
+
+**The mechanism, additive and diagnostic-shaped (mirrors the `Route::receiver_tier` precedent already shipped in
+`edge.rs`, reason-split Task 2):**
+
+- **`Route::proven_absent: bool`** — a new additive field on [`Route`] (`src/program/resolve/edge.rs`), default
+  `false` everywhere except the one construction site described below. Deliberately NOT folded into `Evidence` (would
+  force every existing `match` on `Evidence`'s 5 variants to grow a 6th arm across the whole resolver) and deliberately
+  NOT a payload on `UnknownReason::MemberNotFound` (that enum is a stable wire-format `as_str()` surface — see its own
+  doc — a boolean marker is cheaper and mirrors `receiver_tier`'s own "diagnostic-only, additive, never touching
+  `Evidence::kind()`'s serialization boundary" discipline exactly).
+- **`ObligationOutcome::ProvenAbsent`** — a new [`ObligationOutcome`] variant (`classify_obligation`, `edge.rs`),
+  emitted ONLY when every route on an edge is `Evidence::Unknown(MemberNotFound)` AND `Route::proven_absent==true`.
+  Treated as **resolved-for-resolution** (a closed-world proof, not a hole) but reported in its OWN histogram bucket —
+  NEVER silently merged into `resolved_source`/`resolved_catalog` (that would hide a real absence behind a "success"
+  label) and NEVER silently excluded from an advisory rate (mirrors `AmbiguousResolved`'s own "both-ways reporting"
+  rule from the sigfp-and-ambiguous-reclassification plan: `real_unknown_rate` excludes it, but
+  `Histogram::legacy_unknown_rate_including_ambiguous()`-style advisory rate must GROW A THIRD term
+  — `(unknown + ambiguous_resolved + proven_absent) / total` — so the metric can never be stat-juked by quietly
+  reclassifying declines into a new bucket without a visible, dated counter-metric proving it).
+
+**The 8-obligation proof table.** A resolver decline site may set `proven_absent = true` ONLY when ALL EIGHT hold —
+any single failure falls back to the current, honest `Unknown(MemberNotFound)` (fail-closed; the table is a
+conjunction, never a preponderance):
+
+| # | Obligation | Check | Failure mode if unmet |
+|---|---|---|---|
+| O1 | Receiver resolved | The receiver's `ObjectNodeId` set (base, or base ∪ every closure-visible extension — Task 1's aggregate-then-adjudicate scope) was found in the whole-program graph, never `ObjectNotInGraph`. | An absent-object claim is a DIFFERENT, weaker shape (no receiver to search) — stays plain `Unknown(ObjectNotInGraph)`. |
+| O2 | Closure-complete scope | EVERY extension of the receiver's kind visible from the CALLER's dependency closure was enumerated (mirrors Task 1's merge exactly) — never a partial scope. | A partially-searched scope can only prove "not found in the part searched", never absence; stays `MemberNotFound`. |
+| O3 | Source-complete trust tier, whole scope | Every object in the scope carries [`TrustTier`] `>= LocalSourceApproximate` (never `SymbolOnly`) — the SAME bar `MemberNotFound`'s own doc already states ("`SymbolOnly`'s ABI listing is not exhaustive of the real object"), extended from "the object" to "every object in the merged scope" (a base with real source but ONE `SymbolOnly` extension in the visible set still poisons the proof). | Any `SymbolOnly` member of the scope means the search wasn't exhaustive of the real declaration — stays `MemberNotFound`, `receiver_tier` unchanged. |
+| O4 | `ParseStatus` clean (the recoveredFiles-consult invariant) | None of the scope's declaring files appear in [`recovered_files`][`crate::program::resolve::full::ProgramReport::recovered_files`] (`resolve_full_program`'s own diagnostic — see its doc, already pinned exact at 8 entries / 4 distinct files on CDO for 2 real, dated `tree-sitter-al` grammar defects). | A `ParseStatus::Recovered` file may have silently DROPPED the very member being searched for (proven, not hypothetical — see the 2 pinned grammar defects); any scope file appearing here forces fallback. |
+| O5 | `#if` union-completeness | The name was searched across EVERY preprocessor branch the union-read materializes (Task 3, preproc foundations plan, `dbf2c56`) — not just the default/first-taken branch. | A member declared only under an untaken `#if` branch is a real false-`ProvenAbsent` vector if only one branch is searched; stays `MemberNotFound`. |
+| O6 | Name+arity+visibility exhaustiveness | The search covered every arity overload of the name (not merely the call's own arity) and every access level (`Local`/`Internal`/`Protected`/`Public`) — "absent at THIS arity" (`ArityMismatch`, a DIFFERENT reason) is never conflated with "absent under ANY arity/access". | A same-name candidate at a different arity or an access-excluded candidate both mean the name IS declared — the correct outcome there is `ArityMismatch`/`{Local,Internal,Protected}NotVisible`, never `ProvenAbsent`. |
+| O7 | Exact (non-approximate) receiver typing at the call site | The CALL SITE's own receiver-type inference reached its target without any heuristic/approximate step (e.g. never through a `LocalSourceApproximate`-tiered guess) — the search target itself must be exactly identified, not merely "probably this object". | An approximately-typed receiver means the search itself may have targeted the wrong scope; stays `MemberNotFound`. |
+| O8 | Content-anchored, invalidating identity | The proof is anchored to [`app_content_hash`][`crate::snapshot::embedded::app_content_hash`] (blake3 hex, already shipped) of EVERY `.app`/workspace root contributing to the scope; any cached/reported `ProvenAbsent` verdict is keyed by that hash tuple, never by app name/version alone. | Without content anchoring, a dependency upgrade (or a workspace edit) that ADDS the member later would leave a stale `ProvenAbsent` verdict silently wrong — the anchor makes staleness a cache-key miss, not a silent lie. |
+
+**Why this is additive, not a rewrite:** every one of O1–O8 is either an EXISTING invariant this codebase already
+enforces somewhere (O1/O2/O6 are exactly what Task 1's `resolve_in_page_scope`/`resolve_in_table_scope` already
+compute to emit `MemberNotFound` at all; O3 restates `MemberNotFound`'s own doc comment; O4/O5 are the preprocessor
+foundations plan's `recovered_files`/union-read invariants; O8 reuses a function that already exists,
+`src/snapshot/embedded.rs:43`) or a genuinely new but narrow gate (O7, a new "was this receiver-type step exact"
+predicate). No existing decline path needs to change behavior — a future implementation only needs to ADD a
+`proven_absent` computation at the existing `MemberNotFound` emission sites and let it default to `false` (the current,
+unchanged, honest behavior) everywhere the 8-obligation conjunction fails.
+
+**Why deferred, not stubbed:** with a zero-site population, every one of O1–O8 would be implemented and unit-tested
+against SYNTHETIC fixtures only, with zero opportunity to validate the conjunction is neither too strict (a real
+absence that never gets the label, harmless but pointless) nor too permissive (a false `ProvenAbsent` — a much worse
+failure mode than an honest `Unknown`, since it invites a downstream consumer to trust a closed-world claim that
+wasn't actually closed). Building it now would be exactly the taxonomy-without-population mistake named twice already
+in this arc's own history.
