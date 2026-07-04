@@ -142,6 +142,17 @@ pub struct RoutineDecl {
     pub params: Vec<Param>,
     /// Return type text, if declared.
     pub return_type: Option<String>,
+    /// The NAMED-return-value binding name (`procedure X() Ret: Record Y` — grammar
+    /// `_procedure_named_return`'s `return_value` field), unquoted (outer-quote-
+    /// stripped, mirrors `ident_text`); `None` for an anonymous `: Type` return (or no
+    /// return at all). The grammar only ever sets this alongside `return_type` (the
+    /// same production requires both), so `Some(_)` here implies `return_type` is also
+    /// `Some`. Scoped to THIS routine only — the engine synthesizes a scoped value
+    /// symbol from this name + `return_type` (own-routine scope, never leaking across
+    /// routines) that participates in `receiver.rs`'s Step 2 bare-identifier lookup and
+    /// `arg_dispatch.rs`'s caller-scope-exact arg typing via the shared
+    /// `caller_scope_symbol` helper (T3, receiver-closure-and-arg-increments plan).
+    pub return_name: Option<String>,
     pub locals: Vec<VarDecl>,
     /// Attribute names (lowercased) from the `attribute_item` siblings preceding the
     /// routine — e.g. "eventsubscriber", "tryfunction", "integrationevent". Drives

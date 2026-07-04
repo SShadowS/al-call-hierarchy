@@ -1901,13 +1901,56 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // `.superpowers/sdd/task-2-report.md`); fresh_missing stays 1,
     // fresh_wrong stays 149/149 adjudicated, `genuine_wrong` stays 0;
     // `ambiguous_resolved` stays 13 (untouched bucket).
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 3
+    // — named-return-value bindings + implicit-self table fields): 0.15% →
+    // 0.072%, measured 0.0718% [13/18104=0.0007181]. `UntrackedReceiver`
+    // 18→4 (-14): 11 named-return-binding receiver sites (a bare reference
+    // to a routine's own `procedure X() Ret: Type` binding, e.g. `Codeunit
+    // 6175279 "CDO Module Manager"`'s `GetAvailableModules() ModuleList:
+    // List of [Enum "CDO Module Type"]` body's `ModuleList.Add(...)`) + 3
+    // implicit-self Table/TableExtension field sites (the SAME `field_in_
+    // table` machinery Step 3a already used for quoted names, widened to
+    // also accept unquoted bare field names — `table_scope_has_routine`
+    // routine-shadow guard unchanged) now resolve via the new `caller_scope_
+    // symbol` shared helper's named-return tier / the widened Step 3a arm.
+    // The residual 4 are ALL confirmed out-of-scope-for-this-task via
+    // `task3_dump_untracked_receiver_sites_on_cdo` (a one-off `#[ignore]`d
+    // diagnostic, kept alongside the sibling Task-2 dump) + direct source
+    // read: 2 are `Enum::"Type".
+    // Ordinals()` static enum-type calls (category F, `Codeunit 6175279`
+    // line 28 + `Codeunit 6175317 "CDO Core Event Handler"` line 26), 1 is a
+    // bare enum-type-name receiver `"CDO Send on Posting".FromInteger(...)`
+    // (category G, `Codeunit 6175288 "CDO Data Upgrade"` line 625) — both
+    // categories explicitly deferred to Task 4 (enum-shape receivers) — and
+    // 1 is a Page's own `CalcFields`+bare-quoted-field reference to its
+    // SourceTable's field (`"View (Blob)".CreateInStream(...)` in
+    // `.dependencies/CDO/Page/CDOPageDefaultFilters.Page.al` line 88) —
+    // Step 3a is Table/TableExtension-only BY DESIGN (module doc, unchanged
+    // by this task); a Page's implicit-Rec bare-field shorthand is a
+    // separately-tracked, explicitly out-of-scope gap ("Page-with-
+    // SourceTable NOT in scope" — plan v2.1), not a regression. `Compound
+    // Receiver` stays 1 (the (D) enum-value-chain site, also deferred to
+    // Task 4); `BuiltinPrecedenceCollision` stays 1; `MemberNotFound` stays
+    // 7 (the honest eCandidates absences). `unknownByReason`={CompoundReceiver:
+    // 1, UntrackedReceiver: 4, BuiltinPrecedenceCollision: 1,
+    // MemberNotFound: 7}, sum==13. `genuine_wrong` stays 0
+    // (`cdo_genuine_wrong_is_precedence_adjudicated`, unchanged); the L3
+    // semantic audit stays clean (`cdo_l3_semantic_audit_no_fresh_wrong`,
+    // unchanged — its own ceilings needed no motion, all 14 newly-resolved
+    // sites' frozen L3 golden was already empty for them, so fresh is simply
+    // further ahead of the retired reference). See `ambiguous_resolved`'s
+    // ratchet below for the SIBLING #9/#10 flip (13→11) this same task
+    // produced in a disjoint histogram bucket.
     let primary_rate = ph.real_unknown_rate();
     assert!(
-        primary_rate <= 0.001492,
-        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.001492 \
+        primary_rate <= 0.000719,
+        "primary real_unknown_rate {primary_rate:.6} exceeds ceiling 0.000719 \
          (recorded 2026-07-04 post receiver-closure-and-arg-increments plan \
-         Task 2: 0.15% [27/18104=0.0014914], parens-optional zero-arg \
-         framework members + ErrorInfo.CustomDimensions rows; was 0.22% \
+         Task 3: 0.0718% [13/18104=0.0007181], named-return-value bindings + \
+         implicit-self table fields; was 0.15% [27/18104=0.0014914] post \
+         Task 2, parens-optional zero-arg framework members + \
+         ErrorInfo.CustomDimensions rows; was 0.22% \
          [40/18104=0.0022095] post Task 1, CurrPage UserControl / \
          direct-var ControlAddIn closed-if-known gating; was 0.43% \
          [77/18104=0.0042532] post argtype-dispatch-and-page-catalog Task 1, \
@@ -2299,19 +2342,57 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // existed; it merely stops being a Task-2 CONFIDENT PICK, falling back to
     // the pre-Task-2 honest `AmbiguousResolved` shape for its 2-candidate
     // `Authorize` overload set) — re-confirmed byte-identical below.
+    //
+    // TIGHTENED 2026-07-04 (receiver-closure-and-arg-increments plan, Task 3
+    // — the #9/#10 named-return-binding arg-typing flip): 13 -> 11 (2 of the
+    // 43 undecided sites become confident picks, 43->45 — reproduced via a
+    // diff of `task2_dump_argtype_dispatch_flips_on_cdo`'s dump before/after
+    // this task on the SAME warm CDO snapshot). BOTH flips are in `Page
+    // 6175389 "CDO Local Print Service Part"`'s 3-overload `GetJsonAttribute`
+    // family (`(Text,Text,var Text)` / `(JsonObject,Text,var Text)` /
+    // `(JsonObject,Text,var Integer)`):
+    //   - `GetErrorMessageFromResponse(response: Text) ReturnValue: Text`
+    //     (line 291) calls `GetJsonAttribute(JObject, 'message', ReturnValue)`
+    //     (line 296) — `ReturnValue` is this routine's OWN named-return
+    //     binding (type `Text`, never a param/local/global before this task
+    //     existed a way to type it at all); typing it now exact-matches the
+    //     `(JsonObject, Text, var Text)` overload's 3rd `var` param and
+    //     provably eliminates the sibling `var Integer` overload (disjoint
+    //     canonical types, C5's ByRef-exact rule) — a clean pick.
+    //   - `GetStatusCodeFromResponse(response: Text) ReturnValue: Integer`
+    //     (line 299) calls `GetJsonAttribute(JObject, 'statusCode',
+    //     ReturnValue)` (line 306) — the SAME shape, `ReturnValue: Integer`
+    //     (assigned `:= 200` earlier in the body — a live "used-before- AND
+    //     after-assignment" real-world confirmation the engine is correctly
+    //     flow-INsensitive) — exact-matches the sibling `var Integer`
+    //     overload, eliminating `var Text`.
+    // Both are cases a real AL compiler resolves identically (a `var`
+    // parameter requires the EXACT declared type; a named return value's
+    // type is exactly as concrete as an explicit local's) — adjudicated
+    // compiler-correct, not a guess. A THIRD `getjsonattribute`-family entry
+    // in the same dump (the `(Text,Text,var Text)` overload's own body
+    // calling the `(JsonObject,...)` overload via its OWN `var returnValue:
+    // Text` PARAMETER, not a named-return binding) was ALREADY one of the
+    // pre-Task-3 43 picks — unaffected by this task, confirmed by its
+    // presence being independent of `RoutineDecl.return_name`. `unknown`/
+    // `real_unknown_rate` are UNCHANGED by this flip (a disjoint histogram
+    // bucket, exactly like the Task-2-review-fix precedent above) —
+    // `genuine_wrong` stays 0, the L3 semantic audit stays clean (both
+    // re-run and green on this exact CDO snapshot).
     assert_eq!(
-        ph.ambiguous_resolved, 13,
+        ph.ambiguous_resolved, 11,
         "primary ambiguousResolved count {} != the recorded 2026-07-04 value \
-         13 (Task 2 review fix, Finding 1 — with-scope gate; investigated: \
-         exactly 1 site, `UseContiniaAuthorization`, reverts due to a \
-         pre-existing with-detection-signal disagreement — see the comment \
-         above) — investigate before updating this ratchet",
+         11 (Task 3 — the #9/#10 named-return-binding arg-typing flip, \
+         GetJsonAttribute's 3-overload family in Page 6175389 \"CDO Local \
+         Print Service Part\"; investigated + adjudicated compiler-correct — \
+         see the comment above; was 13 post Task 2 review fix, Finding 1) — \
+         investigate before updating this ratchet",
         ph.ambiguous_resolved,
     );
     assert_eq!(
-        h.ambiguous_resolved, 13,
+        h.ambiguous_resolved, 11,
         "whole-program ambiguousResolved count {} != the recorded 2026-07-04 \
-         value 13, same value as primary today",
+         value 11, same value as primary today",
         h.ambiguous_resolved,
     );
 
@@ -2740,6 +2821,57 @@ fn task2_dump_argtype_dispatch_flips_on_cdo() {
     );
     for f in &flips {
         eprintln!("{f}");
+    }
+}
+
+/// Task 3 (receiver-closure-and-arg-increments plan) diagnostic dump — the
+/// SAME "dump before/after via a worktree diff" technique
+/// `task2_dump_argtype_dispatch_flips_on_cdo` established: every edge whose
+/// `ObligationOutcome` is `Unknown` with `UnknownReason::UntrackedReceiver`,
+/// span-located (`caller`/`routine`/`unit:line:col`, 0-based). Used to
+/// identify the exact 14 sites Task 3 moved out of this bucket (18→4) and
+/// confirm the residual 4 are the F/G enum-shape receivers (deferred to Task
+/// 4) + one Page-SourceTable implicit-field gap (explicitly out of Task 3's
+/// Table/TableExtension-only scope) — see the `unknown` count ceiling's
+/// comment above for the full adjudication. `#[ignore]`d (not part of the
+/// gated CDO suite; a one-off investigation aid kept for future tasks that
+/// touch this bucket, mirroring the sibling dump's precedent).
+#[test]
+#[ignore]
+fn task3_dump_untracked_receiver_sites_on_cdo() {
+    let Some(ws) = std::env::var_os("CDO_WS")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+    else {
+        return;
+    };
+    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+    use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+    let mut lines: Vec<String> = Vec::new();
+    for ce in &report.edges {
+        if classify_obligation(&ce.edge) != ObligationOutcome::Unknown {
+            continue;
+        }
+        let reason = ce.edge.routes.iter().find_map(|r| match r.evidence {
+            Evidence::Unknown(reason) => Some(reason),
+            _ => None,
+        });
+        if reason == Some(UnknownReason::UntrackedReceiver) {
+            lines.push(format!(
+                "caller={:?} routine={} span={}:{}:{}",
+                ce.edge.from.object.key,
+                ce.edge.from.name_lc,
+                ce.edge.site.span.unit,
+                ce.edge.site.span.start.line,
+                ce.edge.site.span.start.col,
+            ));
+        }
+    }
+    lines.sort();
+    lines.dedup();
+    eprintln!("UntrackedReceiver sites: {}", lines.len());
+    for l in &lines {
+        eprintln!("{l}");
     }
 }
 

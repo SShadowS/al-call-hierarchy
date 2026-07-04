@@ -724,6 +724,22 @@ fn lower_routine<'t>(
         })
         .map(|n| n.text(source).trim().to_string());
 
+    // Named-return-value binding (T3, receiver-closure-and-arg-increments plan):
+    // `procedure X() Ret: Record Y` — grammar's `_procedure_named_return` sets BOTH
+    // `return_value` (the binding name) and `return_type` (captured above) together;
+    // an anonymous `: Type` return sets neither. Previously discarded entirely — the
+    // binding name never made it past this function, so `Ret.Get(...)` mid-body had no
+    // way to type `Ret`. `ident_text` strips the outer quotes for a QUOTED binding name
+    // (`"My Result": Record Y`), matching `Param`/`VarDecl` name storage convention.
+    // Direct `node.field` (not the `InterfaceProcedureSuffix` fallback above) —
+    // `interface_procedure`/`controladdin` signature-only declarations have no body to
+    // reference a named return in anyway, so the fallback's extra reach is unneeded
+    // here (a `None` there is correct: no binding to synthesize a scoped symbol from).
+    let return_name = node
+        .field(FieldName::ReturnValue)
+        .map(|n| ident_text(n, source))
+        .filter(|s| !s.is_empty());
+
     // Access modifier (`local`/`internal`/`protected`); None = public / trigger.
     let access_modifier = node.field(FieldName::Modifier).and_then(|m| {
         match m.text(source).trim().to_ascii_lowercase().as_str() {
@@ -751,6 +767,7 @@ fn lower_routine<'t>(
         name_origin,
         params,
         return_type,
+        return_name,
         locals,
         attributes,
         attributes_parsed,
@@ -1947,5 +1964,84 @@ interface "IFoo"
             Some("Boolean"),
             "return type must be recovered from the nested interface_procedure_suffix child"
         );
+    }
+
+    /// T3 (receiver-closure-and-arg-increments plan): a NAMED return value
+    /// (`procedure X() Ret: Record Y`) must capture the binding NAME on
+    /// `RoutineDecl.return_name` — previously silently discarded entirely.
+    #[test]
+    fn named_return_value_binding_is_captured() {
+        let src = r#"
+codeunit 50100 "My Codeunit"
+{
+    procedure GetItem() Ret: Record Item
+    begin
+    end;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        let r = &obj.routines[0];
+        assert_eq!(r.return_name.as_deref(), Some("Ret"));
+        assert_eq!(r.return_type.as_deref(), Some("Record Item"));
+    }
+
+    /// An anonymous `: Type` return (no binding name) must capture `None` —
+    /// never fabricate a name.
+    #[test]
+    fn anonymous_return_type_has_no_return_name() {
+        let src = r#"
+codeunit 50100 "My Codeunit"
+{
+    procedure GetCount(): Integer
+    begin
+    end;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        let r = &obj.routines[0];
+        assert_eq!(r.return_name, None);
+        assert_eq!(r.return_type.as_deref(), Some("Integer"));
+    }
+
+    /// A QUOTED binding name must be captured UNQUOTED (mirrors `Param`/
+    /// `VarDecl` name storage convention — `ident_text` strips the outer
+    /// quotes at lowering time).
+    #[test]
+    fn quoted_named_return_value_binding_is_unquoted() {
+        let src = r#"
+codeunit 50100 "My Codeunit"
+{
+    procedure GetItem() "My Result": Record Item
+    begin
+    end;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        let r = &obj.routines[0];
+        assert_eq!(r.return_name.as_deref(), Some("My Result"));
+        assert_eq!(r.return_type.as_deref(), Some("Record Item"));
+    }
+
+    /// A procedure with NO return spec at all (no `:`) must carry `None` for
+    /// both — the common majority case, guards against a regression that
+    /// fabricates a name/type out of thin air.
+    #[test]
+    fn no_return_spec_at_all_has_no_return_name_or_type() {
+        let src = r#"
+codeunit 50100 "My Codeunit"
+{
+    procedure DoSomething()
+    begin
+    end;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        let r = &obj.routines[0];
+        assert_eq!(r.return_name, None);
+        assert_eq!(r.return_type, None);
     }
 }

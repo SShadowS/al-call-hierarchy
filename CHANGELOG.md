@@ -8,6 +8,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Named-return-value bindings + implicit-self table fields — receiver and
+  arg typing: real-`unknown` 0.15%→0.072%, `UntrackedReceiver` 18→4,
+  `ambiguousResolved` 13→11 (receiver-closure-and-arg-increments plan,
+  Task 3).** Closes the 11-site (E) named-return-binding population plus the
+  3-site (H) implicit-self Table/TableExtension field population, and flips
+  2 (#9/#10) previously-ambiguous overload picks:
+  - **Root cause.** `procedure X() Ret: Record Y`'s NAMED-RETURN binding
+    name was discarded entirely at lowering (`al_syntax::lower::lower_routine`
+    only ever read the grammar's `return_type` field, never `return_value`),
+    so a mid-body bare reference to `Ret` (`Ret.Get(...)`) had no scoped
+    symbol to type against — `UntrackedReceiver`. Separately, Step 2's
+    variable lookup had no arm at all for an implicit-self TABLE field
+    referenced by a BARE UNQUOTED name (`Attachment.CreateInStream(X)`
+    inside the table's own procedure, no `Rec.` prefix) — only the QUOTED
+    form (`"File Blob".CreateInStream(...)`) was wired, from an earlier
+    task.
+  - **Lowerer fix (cross-crate, al-syntax):** `RoutineDecl` gains
+    `return_name: Option<String>`, captured from the grammar's
+    `_procedure_named_return`'s `return_value` field (unquoted, mirroring
+    `Param`/`VarDecl` name storage); `None` for an anonymous `: Type` return
+    or no return spec at all. Full workspace suite re-run; zero golden
+    movement (the field is additive and was previously read by nothing).
+  - **The proven precedence** (round-2 closer, BINDING — the task report has
+    the full compiler-fixture citation): param/local (same scope, mutually
+    exclusive with each other AND the named-return binding — any collision
+    is a compile error) → the routine's own named-return binding → object
+    globals → [routine-shadow check, parens-optional] → implicit-self table
+    fields LAST among value symbols. A new SHARED helper,
+    `receiver::caller_scope_symbol` (+ `CallerScopeSymbol` tri-state:
+    `Found`/`NotFound`/`MalformedDuplicate`), encodes exactly this
+    param→local→named-return→global order and is used by BOTH
+    `receiver.rs`'s Step 2 and `arg_dispatch.rs`'s `type_one_arg` caller-
+    scope-exact arg lookup — the two lookups can no longer drift.
+  - **SAME-SCOPE-ONLY malformed-duplicate rule:** a named-return binding
+    colliding with a param/local of the identical name (never legal AL — a
+    compile error) declines outright (`Unknown`/untyped) for that
+    identifier, rather than picking a winner; a binding SHADOWING a
+    same-named GLOBAL is ordinary, valid AL precedence — the binding wins.
+    Both directions fixture-proven in both `receiver.rs` and
+    `arg_dispatch.rs`.
+  - **Implicit-self field arm widened:** Step 3a's existing quoted-field
+    machinery (`ResolveIndex::field_in_table` + the `table_scope_has_routine`
+    routine-shadow guard, `WithState::NoWithProven` gate) now ALSO accepts
+    an unquoted bare identifier — the SAME code path, just without the
+    `starts_with('"')` restriction (defensively excludes literal unquoted
+    `rec`/`xrec`, which fall through to the Step 3b identity fallback
+    unchanged). Table/TableExtension only, exactly as before; non-Table
+    objects (including a Page's own SourceTable-implicit-field shorthand)
+    are explicitly OUT of scope and unaffected.
+  - **The #9/#10 arg-typing flip:** `arg_dispatch::type_one_arg`'s
+    caller-scope-exact lookup (now via the shared helper) types a
+    bare-identifier ARG that is the caller's own named-return binding
+    exactly like a local — enough evidence for `pick_candidate` to
+    disambiguate a `var`-typed overload position that was previously always
+    untyped (no way to find the binding in caller scope at all).
+  - **CDO gate:** primary real-`unknown` 27→13 (0.15%→0.0718%
+    [13/18104=0.0007181]); `UntrackedReceiver` 18→4 (-14: 11 named-return
+    sites + 3 implicit-self-table sites, ALL individually adjudicated
+    against real CDO source — see `.superpowers/sdd/task-3-report.md` for
+    the full per-site ledger); every other bucket byte-identical
+    (`CompoundReceiver`=1, `BuiltinPrecedenceCollision`=1,
+    `MemberNotFound`=7). The residual 4 `UntrackedReceiver` sites are ALL
+    confirmed out-of-this-task's-scope: 2 `Enum::"Type".Ordinals()` +
+    1 bare enum-type-name `"Type".FromInteger(...)` (categories F/G,
+    deferred to Task 4), + 1 Page-SourceTable implicit-field shorthand
+    (Table/TableExtension-only by design, a separately-tracked gap, not a
+    regression). `ambiguousResolved` 13→11 (2 flips, BOTH in `Page 6175389
+    "CDO Local Print Service Part"`'s 3-overload `GetJsonAttribute` family —
+    `GetErrorMessageFromResponse`/`GetStatusCodeFromResponse`'s own
+    named-return bindings now type the `var`-parameter argument, eliminating
+    the sibling-typed overload; both adjudicated compiler-correct).
+    `genuine_wrong`=0, L3 semantic audit unchanged (all newly-resolved
+    sites' frozen L3 golden was already empty for them). Ratchets
+    re-derived (rate ceiling 0.001492→0.000719, unknown-count ceilings
+    27→13, ambiguousResolved 13→11), dated 2026-07-04.
 - **Zero-arg framework members resolve parens-less — parens are OPTIONAL in
   AL: real-`unknown` 0.22%→0.15%, `CompoundReceiver` 14→1 (receiver-closure-
   and-arg-increments plan, Task 2).** Closes the 9-site (A) population

@@ -99,7 +99,9 @@ use crate::program::node::ObjectNodeId;
 use crate::program::node_extract::ObjectRef;
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
-use crate::program::resolve::receiver::{ParsedType, classify_type_text};
+use crate::program::resolve::receiver::{
+    CallerScopeSymbol, ParsedType, caller_scope_symbol, classify_type_text,
+};
 use crate::program::sig_fp::normalize_type_text;
 
 // ---------------------------------------------------------------------------
@@ -362,40 +364,29 @@ fn type_one_arg(
             if with_state != WithState::NoWithProven {
                 return ArgDispatchInfo::untyped();
             }
-            // Caller-scope-EXACT lookup: params -> locals -> globals (the
-            // SAME Step-2 shadowing order `receiver.rs`'s `infer_receiver_
-            // type` uses) — never a receiver/`with` scope. `.find` stops at
-            // the FIRST matching declaration; a shadowing local/param with no
-            // declared type text still shadows a same-named global (module
-            // doc) rather than falling through to it.
-            let declared_ty: Option<Option<&str>> = routine
-                .params
-                .iter()
-                .find(|p| p.name.eq_ignore_ascii_case(name))
-                .map(|p| p.ty.as_deref())
-                .or_else(|| {
-                    routine
-                        .locals
-                        .iter()
-                        .find(|v| v.name.eq_ignore_ascii_case(name))
-                        .map(|v| v.ty.as_deref())
-                })
-                .or_else(|| {
-                    object_globals
-                        .iter()
-                        .find(|v| v.name.eq_ignore_ascii_case(name))
-                        .map(|v| v.ty.as_deref())
-                });
-            match declared_ty {
-                Some(Some(ty)) => ArgDispatchInfo {
+            // Caller-scope-EXACT lookup: params -> locals -> the routine's
+            // own named-return binding -> globals — the SHARED
+            // `caller_scope_symbol` helper `receiver.rs`'s Step 2 also uses
+            // (T3, receiver-closure-and-arg-increments plan; "one shared
+            // helper... must not drift"), never a receiver/`with` scope. A
+            // shadowing local/param with no declared type text still shadows
+            // a same-named global (module doc) rather than falling through
+            // to it; a SAME-SCOPE named-return/param/local collision
+            // (malformed AL) degrades this position to untyped exactly like
+            // a not-found symbol — never a guess at which one wins.
+            match caller_scope_symbol(name, routine, object_globals) {
+                CallerScopeSymbol::Found(Some(ty)) => ArgDispatchInfo {
                     canonical: dispatch_canonical_type_text(ty, from, graph, index),
                     exact_text: Some(normalize_type_text(ty)),
                     literal_kind: None,
                     var_passable: true,
                 },
-                // Found but no declared type text, or not found at all in
-                // caller scope — untyped either way, never a guess.
-                _ => ArgDispatchInfo::untyped(),
+                // Found but no declared type text, not found at all in
+                // caller scope, or a malformed same-scope duplicate —
+                // untyped either way, never a guess.
+                CallerScopeSymbol::Found(None)
+                | CallerScopeSymbol::NotFound
+                | CallerScopeSymbol::MalformedDuplicate => ArgDispatchInfo::untyped(),
             }
         }
         ExprKind::Literal(lit) => match literal_canonical(lit) {
@@ -993,6 +984,7 @@ mod tests {
             name_origin: test_origin(),
             params: vec![],
             return_type: None,
+            return_name: None,
             locals: vec![],
             attributes: vec![],
             attributes_parsed: vec![],
@@ -1220,5 +1212,216 @@ mod tests {
             .expect("a parse-complete candidate must yield param metadata");
         assert_eq!(infos.len(), 1);
         assert_eq!(infos[0].canonical, CanonicalArgType::Base("integer".into()));
+    }
+
+    // -- type_one_arg: named-return-value binding (T3) -----------------------
+
+    /// The routine's own named-return binding types a bare-identifier ARG
+    /// exactly like a local — this is the mechanism behind the #9/#10
+    /// ambiguous-flip fixture below: BEFORE this task, `ReturnValue` had no
+    /// way to be found in caller scope at all (no `return_name` field
+    /// existed), so this position was always untyped.
+    #[test]
+    fn type_one_arg_named_return_binding_types_like_a_local() {
+        let mut routine = empty_routine();
+        routine.return_name = Some("ReturnValue".to_string());
+        routine.return_type = Some("JsonValue".to_string());
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = ident_expr("ReturnValue");
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("jsonvalue".into())),
+            "the named-return binding must type the arg exactly like a local"
+        );
+        assert!(
+            info.var_passable,
+            "the binding behaves like an ordinary local — var-passable"
+        );
+    }
+
+    /// A QUOTED binding name types an arg referenced via `QuotedIdentifier`
+    /// identically to the unquoted form (both already store the UNQUOTED
+    /// name at the IR level).
+    #[test]
+    fn type_one_arg_quoted_named_return_binding_types_like_a_local() {
+        let mut routine = empty_routine();
+        routine.return_name = Some("My Result".to_string());
+        routine.return_type = Some("Text".to_string());
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = Expr {
+            kind: ExprKind::QuotedIdentifier("My Result".to_string()),
+            origin: test_origin(),
+        };
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("text".into())),
+            "a quoted reference to the binding must still type via caller_scope_symbol"
+        );
+    }
+
+    /// SHADOW: the named-return binding shadows a same-named global exactly
+    /// like `receiver.rs`'s Step 2 (the shared helper) — mirrors that
+    /// module's `step2_named_return_binding_shadows_global` fixture.
+    #[test]
+    fn type_one_arg_named_return_binding_shadows_global() {
+        let mut routine = empty_routine();
+        routine.return_name = Some("Ret".to_string());
+        routine.return_type = Some("Integer".to_string());
+        let globals = vec![var("Ret", "Text")];
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = ident_expr("Ret");
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &globals,
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
+        assert_eq!(
+            info.canonical,
+            Some(CanonicalArgType::Base("integer".into())),
+            "the binding must shadow a same-named global"
+        );
+    }
+
+    /// SAME-SCOPE malformed duplicate (round-2 closer): a named-return
+    /// binding colliding with a same-named LOCAL degrades to untyped —
+    /// never a guess at which one wins.
+    #[test]
+    fn type_one_arg_named_return_duplicate_with_local_degrades_to_untyped() {
+        let mut routine = empty_routine();
+        routine.return_name = Some("Ret".to_string());
+        routine.return_type = Some("Integer".to_string());
+        routine.locals.push(var("Ret", "Text"));
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let e = ident_expr("Ret");
+        let info = type_one_arg(
+            &e,
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
+        assert_eq!(
+            info.canonical, None,
+            "a malformed same-scope duplicate must degrade to untyped, never guess"
+        );
+        assert!(!info.var_passable);
+    }
+
+    /// THE #9/#10 AMBIGUOUS-FLIP SHAPE (T3): a `GetJsonAttribute(.., \
+    /// ReturnValue)`-style 2-overload call where the SECOND arg is the
+    /// caller routine's OWN named-return binding. Before this task the
+    /// binding could never be found in caller scope (no `return_name` field
+    /// existed at all), so this position was always untyped and
+    /// `pick_candidate` could never pick — this fixture proves the fix
+    /// supplies exactly the missing evidence.
+    #[test]
+    fn named_return_binding_types_arg_and_flips_overload_pick() {
+        let mut routine = empty_routine();
+        routine.return_name = Some("ReturnValue".to_string());
+        routine.return_type = Some("JsonValue".to_string());
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        // Position 0 ("AttrName"): identical across both candidates — never
+        // discriminating. Position 1 (`ReturnValue`): typed via the binding.
+        let attr_arg = base_arg("text");
+        let return_value_arg = type_one_arg(
+            &ident_expr("ReturnValue"),
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
+        let args = vec![attr_arg, return_value_arg];
+
+        let candidates = vec![
+            vec![base_param("text", false), base_param("jsonvalue", false)],
+            vec![base_param("text", false), base_param("integer", false)],
+        ];
+
+        assert_eq!(
+            pick_candidate(&args, &candidates),
+            Some(0),
+            "the binding's type (JsonValue) must exact-match candidate 0 and \
+             provably eliminate candidate 1 (Integer), flipping AmbiguousResolved to a pick"
+        );
+    }
+
+    /// CONTRAST control: with NO named-return binding declared (an anonymous
+    /// return, or none at all), the SAME `ReturnValue` identifier is just an
+    /// ordinary unbound name — untyped, so the SAME 2-candidate set stays
+    /// unpicked (`AmbiguousResolved`, unchanged) — proves the fix in the
+    /// test above is genuinely load-bearing, not incidental.
+    #[test]
+    fn without_named_return_binding_the_same_overload_set_stays_unpicked() {
+        let routine = empty_routine(); // no return_name at all
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let attr_arg = base_arg("text");
+        let return_value_arg = type_one_arg(
+            &ident_expr("ReturnValue"),
+            &routine,
+            &[],
+            &from,
+            &graph,
+            &index,
+            WithState::NoWithProven,
+        );
+        assert_eq!(
+            return_value_arg.canonical, None,
+            "with no binding declared, `ReturnValue` must be an untyped bare identifier"
+        );
+        let args = vec![attr_arg, return_value_arg];
+
+        let candidates = vec![
+            vec![base_param("text", false), base_param("jsonvalue", false)],
+            vec![base_param("text", false), base_param("integer", false)],
+        ];
+        assert_eq!(
+            pick_candidate(&args, &candidates),
+            None,
+            "an untyped arg position must degrade the WHOLE call — no pick"
+        );
     }
 }
