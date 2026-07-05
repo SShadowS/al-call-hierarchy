@@ -19,7 +19,7 @@
 //!     dep-stamp bump) — MUST early-cut (no `scc_summaries`/`cones` recompute) AND
 //!     stay byte-equal.
 //!
-//! KNOWN_DIVERGENCES stays `[]` — the proof is exact byte-equality.
+//! The proof is exact byte-equality — no tolerated divergence.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

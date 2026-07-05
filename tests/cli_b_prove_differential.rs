@@ -13,7 +13,7 @@
 //!
 //! All 18 × 2 = 36 regular goldens + the 2 dummy-doc goldens (= 38 total) MUST
 //! byte-match. This is ungated: divergence is either a Rust bug to fix or a model
-//! difference to BLOCK — never a KNOWN_DIVERGENCES entry.
+//! difference to BLOCK — never something to tolerate.
 //!
 //! ## Refresh (ignored)
 //!

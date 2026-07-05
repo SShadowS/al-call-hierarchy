@@ -10,7 +10,8 @@
 //!   - `.all.json`     — ALL_DETECTORS (41 detectors, including opt-ins).
 //!
 //! ## Acceptance gate
-//! All 20 × 2 = 40 goldens MUST byte-match. `KNOWN_DIVERGENCES.json` MUST be `[]`.
+//! All 20 × 2 = 40 goldens MUST byte-match; a divergence is a bug to fix, not
+//! something to tolerate.
 //!
 //! ## Refresh (ignored)
 //! `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-json.ts`

@@ -1,7 +1,7 @@
 {
   "description": "R4-F Stage-0a RootClassification[] golden — stable projection of model.rootClassifications from analyzeWorkspace(deterministic: true) per ws-* fixture. Comparison surface for the al-sem → Rust root-classification parity differential. All ids in stable form (StableRoutineId). sourceAnchor omitted (validated at snapshot stage). See scripts/r4f-root-classification-projection.ts.",
   "capturePoint": "post-classifyRoots+overlayConfigRoots: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0'}) → model.rootClassifications → projectRootClassifications",
-  "note": "Covers job-queue-entrypoint (config), public-procedure (AST), event-subscriber (AST), and trigger kinds. sourceAnchor omitted for lightweight differential. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
+  "note": "Covers job-queue-entrypoint (config), public-procedure (AST), event-subscriber (AST), and trigger kinds. sourceAnchor omitted for lightweight differential. This is a Rust-owned baseline: the differential asserts a direct byte-match, zero divergence tolerated.",
   "alSemGitSha": "94a8b550683ec5d0f08d454eeeea387c9d88305f",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",

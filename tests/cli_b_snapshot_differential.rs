@@ -11,7 +11,7 @@
 //!
 //! All 20 × 4 = 80 goldens + the shard files MUST byte-match. This is ungated: a
 //! divergence is either a Rust bug to fix or a genuine model difference to BLOCK —
-//! never a KNOWN_DIVERGENCES entry.
+//! never something to tolerate.
 //!
 //! ## Refresh (ignored)
 //!

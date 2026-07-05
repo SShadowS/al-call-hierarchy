@@ -16,7 +16,8 @@
 //!   - `ws-txn-d46-neg` — canonical 0-findings fixture.
 //!
 //! ## Acceptance gate
-//! All 22 goldens MUST byte-match. `KNOWN_DIVERGENCES.json` MUST be `[]`.
+//! All 22 goldens MUST byte-match; a divergence is a bug to fix, not something
+//! to tolerate.
 //!
 //! ## Refresh (ignored)
 //! `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-html.ts`

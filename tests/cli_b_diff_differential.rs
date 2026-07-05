@@ -9,7 +9,7 @@
 //!   - the `--fail-on medium` exit code (1),
 //!   - the ws-mode stderr note (byte-exact).
 //!
-//! Ungated: a divergence is a Rust bug to fix, never a KNOWN_DIVERGENCES entry.
+//! Ungated: a divergence is a Rust bug to fix, never something to tolerate.
 //!
 //! Task 3.3 (al-sem parity retirement) vendored every input this file needs
 //! (snapshot pairs, `rename-overlay.json`, the `ws-diff-rename` /

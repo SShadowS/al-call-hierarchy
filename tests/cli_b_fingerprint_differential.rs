@@ -23,7 +23,7 @@
 //!
 //! ## Acceptance gate
 //!
-//! All goldens MUST byte-match. Divergences are bugs to fix, not KNOWN_DIVERGENCES entries.
+//! All goldens MUST byte-match. Divergences are bugs to fix, not something to tolerate.
 //!
 //! ## Refresh (ignored)
 //!

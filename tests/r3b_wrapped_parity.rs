@@ -4,7 +4,7 @@
 //! the proof is Salsa-WRAPPED-vs-Rust-from-scratch. This test demands the L4
 //! summaries + cone THROUGH the Salsa query graph (`engine::l4::incremental`) and
 //! asserts the wrapped projection is BYTE-IDENTICAL to the R3a from-scratch
-//! projection — which, via R3a parity (KNOWN_DIVERGENCES=[]), byte-matches the
+//! projection — which, via R3a's exact-byte-equality parity, byte-matches the
 //! al-sem goldens. NO incrementality yet (Stage 1): every query recomputes on a
 //! fresh DB.
 //!
@@ -14,8 +14,8 @@
 //!   - R3a-3 source-only cone/coverage over the whole `r0-corpus` (every fixture
 //!     with a committed r3a3 golden) — wrapped == from-scratch per fixture.
 //!
-//! KNOWN_DIVERGENCES stays `[]` (no allowlist entries are consulted — the proof is
-//! exact byte-equality, not an allowlisted differential).
+//! The proof is exact byte-equality — no tolerance layer, no allowlisted
+//! differential.
 
 use std::path::PathBuf;
 
@@ -53,9 +53,9 @@ fn r3b_stage1_wrapped_r3a5_cross_app_byte_matches_from_scratch_and_golden() {
          the from-scratch projection"
     );
 
-    // Transitively: the from-scratch path byte-matches the al-sem golden (R3a-5
-    // exit gate, KNOWN_DIVERGENCES=[]). Re-assert here so the wrapped path is
-    // tied directly to the golden bytes.
+    // Transitively: the from-scratch path byte-matches the al-sem golden (the
+    // R3a-5 exit gate's exact-byte-equality proof). Re-assert here so the wrapped
+    // path is tied directly to the golden bytes.
     let golden_path = repo_root()
         .join("tests")
         .join("r3a5-goldens")
@@ -66,7 +66,7 @@ fn r3b_stage1_wrapped_r3a5_cross_app_byte_matches_from_scratch_and_golden() {
         wrapped_json.trim_end(),
         golden_text.trim_end(),
         "R3b Stage 1: Salsa-wrapped R3a-5 projection is NOT byte-identical to the \
-         al-sem golden (KNOWN_DIVERGENCES=[])"
+         al-sem golden"
     );
 
     // Anti-degenerate: the cross-app cone genuinely fired through Salsa.
@@ -80,8 +80,8 @@ fn r3b_stage1_wrapped_r3a5_cross_app_byte_matches_from_scratch_and_golden() {
     );
 
     eprintln!(
-        "R3b Stage 1 (r3a5): {} summaries, Salsa-wrapped == from-scratch == golden, \
-         KNOWN_DIVERGENCES=[]",
+        "R3b Stage 1 (r3a5): {} summaries, Salsa-wrapped == from-scratch == golden \
+         (exact byte-equality)",
         wrapped.summaries.len()
     );
 }

@@ -9,7 +9,7 @@
 //!
 //! All 20 × 2 = 40 goldens MUST byte-match. Any divergence that is a genuine
 //! TS/engine model difference (not a Rust bug) is reported as BLOCKED — do NOT
-//! add a KNOWN_DIVERGENCES entry for stats; block the work item instead.
+//! tolerate it; block the work item instead.
 //!
 //! ## Refresh (ignored)
 //!

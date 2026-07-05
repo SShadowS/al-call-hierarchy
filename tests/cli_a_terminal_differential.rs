@@ -11,7 +11,8 @@
 //!   - `groupby-<key>` — five goldens for ws-d1-multi-caller.
 //!
 //! ## Acceptance gate
-//! All 27 goldens MUST byte-match. `KNOWN_DIVERGENCES.json` MUST be `[]`.
+//! All 27 goldens MUST byte-match; a divergence is a bug to fix, not something
+//! to tolerate.
 //!
 //! ## Refresh (ignored)
 //! The `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-terminal.ts`

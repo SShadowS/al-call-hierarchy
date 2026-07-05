@@ -1,7 +1,7 @@
 {
   "description": "R4-0 Finding[] golden — stable projection of Finding[] from analyzeWorkspace (deterministic: true) per ws-d* smoke fixture. Comparison surface for the al-sem → Rust L5 detector parity differential. All ids in stable form (StableRoutineId/StableObjectId/StableTableId). See scripts/r4-finding-projection.ts.",
   "capturePoint": "post-runDetectors: analyzeWorkspace(ws, {deterministic: true, modelInstanceIdOverride: 'r0', detectors: [...]}) → runDetectors (sorted by detector/primaryLocationKey/rootCauseKey) → projectR4Findings",
-  "note": "R4-0 smoke covers ≥1 fixture from each substrate wave (R4-A through R4-G). The per-wave FULL goldens come with each wave R4-A…G; R4-0 establishes the projection format + the smoke. Positive fixtures have findingCount > 0; negative fixtures (if added) have findingCount = 0. KNOWN_DIVERGENCES: [] (zero expected between TS oracle and Rust port).",
+  "note": "R4-0 smoke covers ≥1 fixture from each substrate wave (R4-A through R4-G). The per-wave FULL goldens come with each wave R4-A…G; R4-0 establishes the projection format + the smoke. Positive fixtures have findingCount > 0; negative fixtures (if added) have findingCount = 0. This is a Rust-owned baseline: the differential asserts a direct byte-match, zero divergence tolerated.",
   "alSemGitSha": "34bbf49556bf989dcf0eb0ab00455e6ea4efb541",
   "treeSitterAlTag": "v2.5.2-shim",
   "treeSitterAlNativeSha256": "251d2984193205d1bf562e05a740aca489b06771a7093a5b15eb729212827a80",

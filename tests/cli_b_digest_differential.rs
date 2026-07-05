@@ -12,7 +12,7 @@
 //!
 //! All 20 × 2 = 40 regular goldens + the 1 diff golden MUST byte-match. This
 //! is ungated: any divergence is either a Rust bug to fix or a genuine model
-//! difference to BLOCK — never a KNOWN_DIVERGENCES entry.
+//! difference to BLOCK — never something to tolerate.
 //!
 //! ## Refresh (ignored)
 //!
