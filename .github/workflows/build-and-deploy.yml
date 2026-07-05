@@ -1,0 +1,207 @@
+name: Build and Deploy Binaries
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Gate: no binary is deployed unless the test suite passes against the
+  # tree-sitter-al grammar it is built with (same gate as release.yml).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout al-call-hierarchy
+        uses: actions/checkout@v4
+
+      - name: Checkout tree-sitter-al
+        uses: actions/checkout@v4
+        with:
+          repository: SShadowS/tree-sitter-al
+          path: tree-sitter-al
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        # Debug build: validates the same logic against the grammar far faster
+        # than --release. The shipped binaries are still built in release by the
+        # build jobs below; this gate only needs the tests to pass.
+        run: cargo test --all-targets
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout al-call-hierarchy
+        uses: actions/checkout@v4
+
+      - name: Checkout tree-sitter-al
+        uses: actions/checkout@v4
+        with:
+          repository: SShadowS/tree-sitter-al
+          path: tree-sitter-al
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-call-hierarchy-windows
+          path: target/release/al-call-hierarchy.exe
+
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout al-call-hierarchy
+        uses: actions/checkout@v4
+
+      - name: Checkout tree-sitter-al
+        uses: actions/checkout@v4
+        with:
+          repository: SShadowS/tree-sitter-al
+          path: tree-sitter-al
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-call-hierarchy-linux
+          path: target/release/al-call-hierarchy
+
+  build-macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - name: Checkout al-call-hierarchy
+        uses: actions/checkout@v4
+
+      - name: Checkout tree-sitter-al
+        uses: actions/checkout@v4
+        with:
+          repository: SShadowS/tree-sitter-al
+          path: tree-sitter-al
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build for x86_64
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
+      - name: Build for aarch64 (Apple Silicon)
+        env:
+          TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
+        run: |
+          rustup target add aarch64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            target/x86_64-apple-darwin/release/al-call-hierarchy \
+            target/aarch64-apple-darwin/release/al-call-hierarchy \
+            -output al-call-hierarchy
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: al-call-hierarchy-macos
+          path: al-call-hierarchy
+
+  deploy:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: al-call-hierarchy-windows
+          path: binaries/windows
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: al-call-hierarchy-linux
+          path: binaries/linux
+
+      - name: Download macOS binary
+        uses: actions/download-artifact@v4
+        with:
+          name: al-call-hierarchy-macos
+          path: binaries/macos
+
+      - name: Checkout claude-code-lsps
+        uses: actions/checkout@v4
+        with:
+          repository: SShadowS/claude-code-lsps
+          token: ${{ secrets.CLAUDE_CODE_LSPS_TOKEN }}
+          path: claude-code-lsps
+
+      - name: Copy binaries to plugin directories
+        run: |
+          # Windows - Go wrapper
+          cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-go-windows/bin/
+
+          # Windows - Python wrapper
+          cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-python/bin/windows/
+          cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-python/bin/win32/
+
+          # Linux - Go wrapper
+          cp binaries/linux/al-call-hierarchy claude-code-lsps/al-language-server-go-linux/bin/
+          chmod +x claude-code-lsps/al-language-server-go-linux/bin/al-call-hierarchy
+
+          # Linux - Python wrapper
+          cp binaries/linux/al-call-hierarchy claude-code-lsps/al-language-server-python/bin/linux/
+          chmod +x claude-code-lsps/al-language-server-python/bin/linux/al-call-hierarchy
+
+          # macOS - Go wrapper
+          cp binaries/macos/al-call-hierarchy claude-code-lsps/al-language-server-go-darwin/bin/
+          chmod +x claude-code-lsps/al-language-server-go-darwin/bin/al-call-hierarchy
+
+          # macOS - Python wrapper
+          cp binaries/macos/al-call-hierarchy claude-code-lsps/al-language-server-python/bin/darwin/
+          chmod +x claude-code-lsps/al-language-server-python/bin/darwin/al-call-hierarchy
+
+      - name: Commit and push
+        working-directory: claude-code-lsps
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update al-call-hierarchy binaries from ${{ github.repository }}@${{ github.sha }}"
+            git push
+          fi
