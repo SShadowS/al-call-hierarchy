@@ -194,7 +194,7 @@ rm /u/Git/al-call-hierarchy/docs/superpowers/plans/2026-03-28-test-coverage-impr
 
 `tests/cli-c-policy-goldens/ws-policy-custom.custom.{human.txt,json}` embed `auto:U:\Git\al-sem\test\fixtures\…\al-sem.policy.yaml`. Root cause: the CLI emits the auto-detected policy path as an absolute machine path — a reproducibility defect in product output. **Contract (exact, not "or similar"):** `policySource` becomes the policy file's path relative to the analyzed workspace root, forward slashes on all platforms, no drive letters, no `.`/`..` segments; a policy file outside the workspace root falls back to its bare filename (and this case is unit-tested). If the field also surfaces in SARIF, it is emitted as a SARIF-relative artifact reference, not a bare string with an ambiguous base. Rebaseline the cli-c policy goldens; CHANGELOG under Fixed. Runs BEFORE the vendoring regen so the moved fixtures regenerate path-clean on the first pass.
 
-### Task 3.2 — Retire the src parity shims (identity decisions BEFORE any broad regen)
+### Task 3.2 — ✅ DONE 2026-07-05 (7 commits, review PASS, zero golden churn) — Retire the src parity shims (identity decisions BEFORE any broad regen)
 
 > **Pre-dispatch scouting finding (2026-07-05 — the version string does THREE jobs via one function):**
 > `alsem_version()` is read by (A) the JSON/events display envelope field (`alsemVersion`/`al_sem_version`
