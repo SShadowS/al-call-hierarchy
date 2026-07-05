@@ -1030,9 +1030,27 @@ pub fn infer_receiver_type(
     //    (`object_scope_has_bare_routine_shadow` — mirrors Step 3a's
     //    `table_scope_has_routine` precedent, generalized to every object
     //    kind since a routine-name shadow is not table-specific).
+    //
+    // WITH-GUARD (Task 3, roadmap-closure plan — symmetry fix): the SAME
+    // `bare_ctx`/`WithState::NoWithProven` gate Step 3a requires (above) is
+    // required here too. A bare enum-type-name reference is exactly as
+    // syntactically ambiguous as a bare field reference — inside an
+    // un-modeled `with` block, `"CDO Send on Posting".FromInteger(...)`
+    // could actually mean a FIELD of the (unproven) with-target record
+    // rather than the enum's type-static surface, which this step had no
+    // way to rule out before this fix (unlike Step 3a's arm, this one is not
+    // restricted to Table/Page-kind objects — a `with` block can wrap ANY
+    // record-typed receiver in ANY object kind, so the gate is unconditional
+    // here rather than paired with an object-kind `matches!`). No `bare_ctx`
+    // supplied (unit tests, `semantic_golden.rs`, the `RecordOp` shape) makes
+    // this step a no-op exactly like Step 3a and Step 5 — resolution-neutral
+    // for those callers, never a regression.
     // -----------------------------------------------------------------------
 
-    if is_atomic_receiver_token(receiver_lc) {
+    if is_atomic_receiver_token(receiver_lc)
+        && let Some((_, with_state)) = bare_ctx
+        && with_state == WithState::NoWithProven
+    {
         let name_raw = unquote_identifier(receiver_lc);
         let name_lc = name_raw.to_ascii_lowercase();
         let object_ref = ObjectRef::Name {
@@ -7460,6 +7478,12 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        // Task 3 (roadmap-closure plan): Step 4b now gates on `bare_ctx`'s
+        // `WithState` exactly like Step 3a — a realistic proven-no-`with`
+        // context is required for the positive path (see
+        // `step4b_declines_when_with_unproven`/`step4b_resolves_when_no_with_proven`
+        // for the guard's own dedicated coverage).
+        let body_map = BodyMap::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"cdo send on posting\"",
@@ -7469,7 +7493,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            None,
+            Some((&body_map, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -7493,6 +7517,9 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        // Task 3 (roadmap-closure plan): see the sibling quoted-name test
+        // above for why `bare_ctx` is now `Some(.., NoWithProven)` here.
+        let body_map = BodyMap::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "sendstatus",
@@ -7502,7 +7529,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            None,
+            Some((&body_map, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -7628,6 +7655,83 @@ codeunit 50100 "C"
             None,
         );
         assert_eq!(result, ReceiverType::Primitive);
+    }
+
+    /// NEGATIVE (Task 3, roadmap-closure plan): Step 4b's with-guard —
+    /// `WithState::InsideWith`/`Unknown` must decline a bare enum-type-name
+    /// receiver, mirroring Step 3a's `step3a_page_declines_when_with_unproven`
+    /// exactly. A bare name inside an un-modeled `with` block could actually
+    /// mean a field of the with-target record rather than the enum
+    /// type-static surface — the SAME false-`Source`-edge risk Step 3a
+    /// guards against — so Step 4b must not silently prefer the enum
+    /// reading whenever the `with` scope isn't proven empty.
+    #[test]
+    fn step4b_declines_when_with_unproven() {
+        let (graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "CDO Send on Posting",
+            None,
+            None,
+        )]);
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        for ws in [WithState::InsideWith, WithState::Unknown] {
+            let result = infer_receiver_type(
+                "\"cdo send on posting\"",
+                &routine,
+                &[],
+                &from_obj,
+                &graph,
+                &index,
+                None,
+                Some((&body_map, ws)),
+            );
+            assert_eq!(
+                result,
+                ReceiverType::Unknown,
+                "Step 4b must decline on a bare enum-type-name receiver under WithState {ws:?}"
+            );
+        }
+    }
+
+    /// POSITIVE (Task 3, roadmap-closure plan): `WithState::NoWithProven`
+    /// leaves Step 4b's resolution untouched — the guard added above only
+    /// excludes the two unproven states, it does not narrow the gate any
+    /// further than Step 3a's own identical condition does.
+    #[test]
+    fn step4b_resolves_when_no_with_proven() {
+        let (graph, app) = build_test_graph_with(vec![make_object_node(
+            AppRef(0),
+            ObjectKind::Enum,
+            "CDO Send on Posting",
+            None,
+            None,
+        )]);
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let result = infer_receiver_type(
+            "\"cdo send on posting\"",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::EnumTypeStatic {
+                name_lc: "cdo send on posting".to_string()
+            }
+        );
     }
 
     // -----------------------------------------------------------------------

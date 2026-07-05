@@ -1024,11 +1024,16 @@ enum ZeroMatchStrategy {
 /// Every visible candidate object (base ∪ every visible extension) is
 /// collected FIRST; a base-vs-extension or extension-vs-extension exact-
 /// duplicate same-arity pair is a genuine `>1` ambiguity, never first-wins.
-/// AL0115 (base/extension duplicate) and AL0226 (cross-extension duplicate)
-/// make an EXACT duplicate signature a compile error in real AL for
-/// Page/Report — this ambiguity path is DEFENSIVE-ONLY against malformed/
-/// synthetic source there, not a live production case (for Table it is the
-/// pre-existing, unchanged live behavior).
+/// **AL0440** ("already defines a method ... with the same parameter types")
+/// makes an EXACT duplicate signature a compile error in real AL for
+/// Page/Report, for BOTH shapes — base-vs-extension AND cross-extension
+/// alike (corrected, Task 3 roadmap-closure plan: a live `al compile` probe,
+/// same methodology as Task 1's, showed the SAME AL0440 diagnostic for both
+/// cases; the AL0115/AL0226 citations this comment previously carried were
+/// never independently probed and were wrong) — this ambiguity path is
+/// DEFENSIVE-ONLY against malformed/synthetic source there, not a live
+/// production case (for Table it is the pre-existing, unchanged live
+/// behavior).
 ///
 /// # Cardinality
 ///
@@ -10845,16 +10850,22 @@ codeunit 61033 "PxMergeCaller4"
             ),
             "two caller-visible PageExtensions both declaring the same \
              viable member must decline as a genuine ambiguity — no \
-             first-wins (AL0226 makes this uncompilable in real source; \
-             this fixture is DEFENSIVE-ONLY against malformed input); got \
+             first-wins (AL0440 makes this uncompilable in real source — \
+             corrected, Task 3 roadmap-closure plan: live-probed, not the \
+             AL0226 this comment previously guessed; this fixture is \
+             DEFENSIVE-ONLY against malformed input); got \
              {:?}",
             routes[0].evidence
         );
     }
 
     // (T1-amb-2) base-vs-extension same-name-same-arity pair — the ambiguity
-    // machinery fires too (defensive-only: AL0115 makes an exact base/
-    // extension duplicate signature uncompilable in real AL).
+    // machinery fires too (defensive-only: AL0440 makes an exact base/
+    // extension duplicate signature uncompilable in real AL — corrected,
+    // Task 3 roadmap-closure plan: live-probed [`pageA.al`+`pageAExt.al`,
+    // same procedure signature] AL0440 "already defines a method ... with
+    // the same parameter types", not the AL0115 this comment previously
+    // guessed).
     #[test]
     fn resolve_member_object_page_merge_base_vs_extension_duplicate_is_ambiguous() {
         use crate::program::resolve::receiver::ReceiverType;
@@ -10910,8 +10921,9 @@ codeunit 61042 "PxMergeCaller5"
                 Evidence::Unknown(UnknownReason::OverloadAmbiguous)
             ),
             "a base-vs-extension exact duplicate signature must decline as \
-             a genuine ambiguity (defensive-only — AL0115 makes this \
-             uncompilable in real AL); got {:?}",
+             a genuine ambiguity (defensive-only — AL0440 makes this \
+             uncompilable in real AL, corrected Task 3 [live-probed, not the \
+             AL0115 previously guessed]); got {:?}",
             routes[0].evidence
         );
     }
@@ -11377,7 +11389,11 @@ codeunit 62022 "RxMergeCaller3"
 
     // (T1-report-amb-1) TWO caller-visible ReportExtensions both declaring
     // the same viable member — genuine ambiguity, no first-wins (defensive:
-    // AL0226-class in real AL).
+    // AL0440 in real AL — corrected, Task 3 roadmap-closure plan: live-probed
+    // [two `pageextension`s declaring the identical procedure both report
+    // AL0440 "already defines a method ... with the same parameter types",
+    // the identical class the base-vs-extension shape produces; not the
+    // AL0226-class this comment previously guessed]).
     #[test]
     fn resolve_member_object_report_merge_two_extensions_same_member_is_ambiguous() {
         use crate::program::resolve::receiver::ReceiverType;
@@ -11447,8 +11463,9 @@ codeunit 62033 "RxMergeCaller4"
             ),
             "two caller-visible ReportExtensions both declaring the same \
              viable member must decline as a genuine ambiguity — no \
-             first-wins (AL0226-class, defensive-only against malformed \
-             input); got {:?}",
+             first-wins (AL0440, defensive-only against malformed input — \
+             corrected Task 3 [live-probed, not the AL0226-class previously \
+             guessed]); got {:?}",
             routes[0].evidence
         );
     }

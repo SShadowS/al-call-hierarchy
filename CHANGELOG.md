@@ -102,6 +102,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   BYTE-IDENTICAL to `.superpowers/sdd/cdo-baseline-plan13.md` — CDO carries
   zero `abi_overload_collapsed` routines, so this fix is fixture-proven but
   CDO-dormant, same as Task 2 itself.
+- **Step 4b (bare enum-type-name receiver) with-scope symmetry (Task 3,
+  roadmap-closure plan).** `infer_receiver_type`'s Step 4b
+  (`receiver.rs`, `"CDO Send on Posting".FromInteger(...)`-shaped) had no
+  `WithState` gate at all, unlike Step 3a's bare implicit-Rec field arm right
+  above it — inside an un-modeled `with` block, a bare enum-type name is
+  exactly as syntactically ambiguous as a bare field (the with-target
+  record could declare a field of the identical name), so Step 4b could
+  silently prefer the enum-static reading over an unproven field reading —
+  the same false-`Source`-edge risk class Step 3a's guard exists to close.
+  Fix: Step 4b now requires `bare_ctx` present AND
+  `WithState::NoWithProven`, the IDENTICAL gate shape Step 3a already uses
+  (unconditional rather than object-kind-scoped, since a `with` block can
+  wrap a record-typed receiver in any object kind, not only Table/Page). 2
+  new fixtures (`step4b_declines_when_with_unproven` — loops
+  `InsideWith`/`Unknown`, both decline; `step4b_resolves_when_no_with_proven`
+  — `NoWithProven` preserves the existing resolution). The 2 pre-existing
+  positive Step-4b fixtures (`bare_quoted_enum_type_name_resolves_...`/
+  `bare_unquoted_enum_type_name_resolves_...`) now supply a realistic
+  `Some((&body_map, NoWithProven))` `bare_ctx` instead of `None`, matching
+  what a real `resolve_full_program` caller actually threads through — the 3
+  negative fixtures (collision/routine-shadow/local-var-shadow) are
+  unaffected (they either resolve at Step 2, before Step 4b ever runs, or
+  already expected `Unknown`, which the new no-`bare_ctx`-is-no-op fallback
+  still produces). Full CDO harness BYTE-IDENTICAL to
+  `.superpowers/sdd/cdo-baseline-plan13.md` — CDO's Step-4b population sits
+  entirely outside any `with` block, so this fix is fixture-proven but
+  CDO-dormant.
+- **Duplicate-signature rationale comments corrected to the real diagnostic,
+  AL0440 (Task 3, roadmap-closure plan; hygiene item flagged by Task 1's own
+  review).** `resolver.rs`'s `resolve_in_extendable_scope` doc and 4 Page/
+  Report test-fixture comments (the inherited Page base-vs-extension +
+  cross-extension cases, and Task 1's new Report cross-extension case)
+  cited AL0115 ("base/extension duplicate") and AL0226 ("cross-extension
+  duplicate") for why an exact duplicate-signature ambiguity fixture is
+  DEFENSIVE-ONLY (uncompilable in real AL) — those citations were never
+  independently `al compile`-probed at the time and turned out to be wrong.
+  Live-probed this task (`al.exe` v18.0.37.11445, same CDO `.alpackages`
+  cache and methodology as Task 1's `al compile` probe): a base Page +
+  PageExtension both declaring `SameProc()` reports
+  `AL0440: The Page 'ProbePageA' already defines a method called 'SameProc'
+  with the same parameter types`; two PageExtensions both declaring
+  `DupProc()` reports the identical `AL0440` class against each other. BOTH
+  shapes are AL0440, not two distinct codes — comments corrected to cite the
+  single real diagnostic and this probe.
+- **Roadmap dispositions, probe-grounded (Task 3, roadmap-closure plan).**
+  - **QueryExtension: the round-2 addendum's "EXISTS as an AL object type"
+    claim was itself FALSE — corrected back to RETIRED (nonexistent
+    construct), now on direct compiler evidence rather than either LLM
+    review's assertion.** Probed 3 code-bearing shapes (`al.exe`
+    v18.0.37.11445, CDO's `.alpackages` cache, platform/application
+    `28.0.0.0`): a bare `queryextension` object with only a data-shape
+    addition (no code at all), one with an added `procedure`, and one with
+    an added `trigger OnBeforeOpen()` — all 3 reject IDENTICALLY with
+    `AL0198: Expected one of the application object keywords (table,
+    tableextension, page, pageextension, pagecustomization, profile,
+    profileextension, codeunit, report, reportextension, xmlport, query,
+    controladdin, dotnet, enum, enumextension, interface, permissionset,
+    permissionsetextension, entitlement)` — `queryextension` is absent from
+    the compiler's own enumerated keyword list. A positive control (the same
+    project with only the base `query` object, no extension file) compiles
+    clean (exit 0), ruling out an environment/cache setup failure as the
+    cause. This directly contradicts the plan's BINDING round-2 closer
+    ("`queryextension` EXISTS as an AL object type... the prior 'nonexistent
+    construct' wording was false") — that correction was itself ungrounded;
+    the ORIGINAL wording was right. Wake condition: a future AL compiler
+    version ever adding a `queryextension` object keyword.
+  - **Sender param-TYPE mismatch: DEFERRED-WITH-WAKE, not retired.** A
+    `Sender` parameter TYPE mismatch between an event's publisher and
+    subscriber is impossible to construct in compile-valid AL under a
+    CONSISTENT dependency closure (the compiler itself enforces the
+    publisher/subscriber signature match at compile time) — but a
+    version-drifted closure (a shipped `.app` compiled against an OLDER
+    publisher signature, now paired with a newer/changed publisher at
+    resolution time) can present a real mismatch this engine does not model.
+    Wake condition: a real corpus with a stale/version-drifted symbol
+    closure demanding drift analysis.
+  - **Protected `Variables[]`: DEFERRED-WITH-DESIGN, not retired.** 3 real
+    CDO declarations exist (dependency page/table variables with an explicit
+    access modifier), zero consuming extension sites currently reference
+    them — population-less on CDO today, so building the machinery now
+    would be unverifiable. The 3-layer lift is documented for whenever a
+    real consumer appears: (1) `VarDecl`'s access-modifier field (the
+    grammar already parses it; `al_syntax::lower` currently drops it), (2)
+    `ObjectNode`'s globals exposure (surfacing a protected-marked global
+    distinctly from a public one), (3) the scope-merge analog (an extension
+    routine's visibility check over a base object's protected globals,
+    mirroring the existing protected-member-access rules for routines).
+    Wake condition: an extension routine consuming a base object's protected
+    global variable in any corpus.
+  - **CHANGELOG errata: the stale "unquoted bare field receivers ...
+    deliberately deferred" note.** The applicability-param-subtype-recfield
+    plan's Task 4 entry (below) listed "unquoted bare field receivers
+    (`MyBlob.CreateInStream()`-shaped, deliberately deferred by both T3 and
+    T4)" as an open item, and its own body text called the quoted-only scope
+    "deliberate documented undercoverage — an unquoted bare field reference
+    is deferred to a future task." **That deferral was resolved two arcs
+    later:** the receiver-closure-and-arg-increments plan's Task 3 ("Named-
+    return-value bindings + implicit-self table fields", below) widened the
+    SAME Step 3a machinery (`ResolveIndex::field_in_table` +
+    `table_scope_has_routine` + the `WithState::NoWithProven` gate,
+    unchanged) to accept an unquoted bare identifier too — landing unquoted
+    bare implicit-Rec field receivers for Table/TableExtension, later
+    widened again to Page/PageExtension via `SourceTable` (Task 2 of the
+    pageext-merge-and-final-residual plan). Not rewriting the original
+    entries (append-only errata) — this is the dated correction.
+  - **Audit-trail wording convention.** `.superpowers/sdd/` is
+    git-ignored (see its own `.gitignore`) — a task report must never claim
+    its content is "preserved in git history"; only files actually tracked
+    by git qualify for that claim. Recorded here since an earlier report in
+    this plan (Task 1) used that wording incorrectly.
 
 ### Added
 - **Scope-resolver unification + the Report/ReportExtension routine merge
