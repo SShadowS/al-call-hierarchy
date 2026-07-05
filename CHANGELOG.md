@@ -104,7 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte-parity check of the bundled default policy against al-sem's source —
   is retired into a self-contained rule-count sanity check (al-sem is frozen
   forever, so a live drift check against it can never fire again; Task 3.3
-  confirmed, one last time, that the two were still identical). All 4
+  confirmed, one last time, that the two were still identical). All 3
   al-sem-shelling `#[ignore]` refresh tests are deleted (dead code once
   `REGEN_TEMP_GOLDENS` is the regen mechanism). Gate: all 5 files pass with
   `AL_SEM_DIR` pointed at a nonexistent path and no al-sem checkout anywhere

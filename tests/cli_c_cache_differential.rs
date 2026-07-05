@@ -49,6 +49,21 @@ fn fixture_cache_dir() -> PathBuf {
     cache_goldens_dir().join("fixture-cache")
 }
 
+/// Hard-require the vendored fixture-cache directory. Without this, a missing
+/// `fixture-cache/` would make `classify_artifact_for_prune` degrade a
+/// nonexistent path to `RemovedUnreadable`/`RemovedBadName` — coincidentally
+/// the SAME status `classification_oracle_unreadable`/`classification_oracle_
+/// bad_name` expect, so those two tests would spuriously PASS against an
+/// absent corpus instead of failing loudly (Task 3.3 review fix).
+fn require_fixture_cache() {
+    let dir = fixture_cache_dir();
+    assert!(
+        dir.is_dir(),
+        "vendored fixture-cache missing at {} (Task 3.3)",
+        dir.display()
+    );
+}
+
 fn load_golden(name: &str) -> String {
     let path = cache_goldens_dir().join(name);
     std::fs::read_to_string(&path)
@@ -82,6 +97,7 @@ const FIXTURE_CLASSIFICATIONS: &[(&str, PruneStatus)] = &[
 
 #[test]
 fn classification_oracle_content_hash_mismatch() {
+    require_fixture_cache();
     let file = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -93,6 +109,7 @@ fn classification_oracle_content_hash_mismatch() {
 
 #[test]
 fn classification_oracle_version_mismatch() {
+    require_fixture_cache();
     let file = "babebabebabebabebabebabebabebabebabebabebabebabebabebabebabebabe.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -104,6 +121,7 @@ fn classification_oracle_version_mismatch() {
 
 #[test]
 fn classification_oracle_kept() {
+    require_fixture_cache();
     let file = "cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -115,6 +133,7 @@ fn classification_oracle_kept() {
 
 #[test]
 fn classification_oracle_unreadable() {
+    require_fixture_cache();
     let file = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -126,6 +145,7 @@ fn classification_oracle_unreadable() {
 
 #[test]
 fn classification_oracle_bad_name() {
+    require_fixture_cache();
     let file = "nothex.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -138,6 +158,7 @@ fn classification_oracle_bad_name() {
 /// Aggregate oracle: verify ALL 5 statuses against classification.json.
 #[test]
 fn classification_oracle_all_vs_golden_json() {
+    require_fixture_cache();
     // Load and parse the classification golden.
     let golden_text = load_golden("classification.json");
     let golden: serde_json::Value =
@@ -178,6 +199,7 @@ fn classification_oracle_all_vs_golden_json() {
 
 #[test]
 fn dry_run_differential_vs_golden() {
+    require_fixture_cache();
     let cache_dir = fixture_cache_dir();
     let cache_dir_str = cache_dir.to_string_lossy();
 
@@ -205,6 +227,7 @@ fn dry_run_differential_vs_golden() {
 
 #[test]
 fn integration_real_prune_deletes_removed_files() {
+    require_fixture_cache();
     // Copy the fixture cache to a temp dir so we can mutate it.
     let tmp_dir = std::env::temp_dir().join(format!(
         "al-sem-cache-prune-test-{}",
