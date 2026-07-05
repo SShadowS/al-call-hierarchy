@@ -343,11 +343,6 @@ struct AnalyzeCli {
     #[arg(long = "group-by")]
     group_by: Option<String>,
 
-    /// Not supported: the full-model JSON dump is not ported to the Rust engine.
-    /// Use the TS CLI (`al-sem analyze ... --dump-model`) for full-model debug dumps.
-    #[arg(long = "dump-model", default_value_t = false, hide = true)]
-    dump_model: bool,
-
     /// Opt-in: augment each finding in `--format json` with `evidencePath` (the call
     /// chain) and a POSITION-derived `enclosingMember`/`originatingObject` discriminator
     /// on its `primaryLocation`, and bump the envelope `schemaVersion` to `1.1.0`.
@@ -703,7 +698,7 @@ const GROUP_BY_VALUES: &[&str] = &["object", "routine", "table", "detector", "fi
 const ORDER_REJECTION: &str = "al-sem: digest --order is not supported by the Rust engine; use the TS CLI for ordered digests";
 
 fn run_digest_cmd(d: DigestCli) -> ExitCode {
-    // Reject --order (CONFIG_ERROR, matching --dump-model pattern)
+    // Reject --order (CONFIG_ERROR — a not-ported flag rejected cleanly rather than silently ignored)
     if d.order {
         eprintln!("{ORDER_REJECTION}");
         return ExitCode::from(exit::CONFIG_ERROR);
@@ -1184,11 +1179,6 @@ fn run_cache_prune_cmd(c: CachePruneCli) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// The exact stderr message emitted when `--dump-model` is used. The full-model JSON
-/// dump (>500MB) is an intentional, documented out-of-scope divergence — the Rust
-/// engine rejects it rather than porting it.
-const DUMP_MODEL_REJECTION: &str = "al-sem: --dump-model is not supported by the Rust engine; use the TS CLI for full-model debug dumps";
-
 /// Resolve `--format auto` (or omitted) to a concrete `OutputFormat`.
 /// Non-TTY stdout → `Json`; TTY stdout → `Terminal`.
 /// This is the testable contract (corpus differentials always pipe → non-TTY → json).
@@ -1211,24 +1201,7 @@ fn resolve_auto_format(format_str: &str) -> OutputFormat {
     }
 }
 
-/// The `--dump-model` rejection decision: `Some((message, exit_code))` when the flag
-/// is set, `None` otherwise. Pure helper so the (message, exit) contract is unit-testable
-/// without driving the full `run_analyze_cmd` / capturing stderr.
-fn dump_model_rejection(dump_model: bool) -> Option<(&'static str, u8)> {
-    if dump_model {
-        Some((DUMP_MODEL_REJECTION, exit::CONFIG_ERROR))
-    } else {
-        None
-    }
-}
-
 fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
-    // --- --dump-model: intentional not-ported rejection ---
-    if let Some((msg, code)) = dump_model_rejection(a.dump_model) {
-        eprintln!("{msg}");
-        return ExitCode::from(code);
-    }
-
     // --- enum-flag validation (mirrors the al-sem CLI's CONFIG_ERROR exits) ---
     if let Some(sev) = &a.min_severity
         && !SEVERITY_VALUES.contains(&sev.as_str())
@@ -1356,22 +1329,6 @@ mod tests {
         assert_eq!(resolve_auto_format("sarif"), OutputFormat::Sarif);
         assert_eq!(resolve_auto_format("pr-summary"), OutputFormat::PrSummary);
         assert_eq!(resolve_auto_format("html"), OutputFormat::Html);
-    }
-
-    /// `--dump-model` rejection: the exact stderr message AND CONFIG_ERROR (3).
-    #[test]
-    fn dump_model_is_rejected_with_exact_message_and_config_error() {
-        // dump_model = false → no rejection.
-        assert_eq!(dump_model_rejection(false), None);
-        // dump_model = true → exact message + CONFIG_ERROR (3).
-        let (msg, code) = dump_model_rejection(true).expect("dump-model must be rejected");
-        assert_eq!(
-            msg,
-            "al-sem: --dump-model is not supported by the Rust engine; \
-             use the TS CLI for full-model debug dumps"
-        );
-        assert_eq!(code, exit::CONFIG_ERROR);
-        assert_eq!(code, 3);
     }
 
     /// All production formats (Terminal/Html) return `Ok` from the pipeline. We drive a
