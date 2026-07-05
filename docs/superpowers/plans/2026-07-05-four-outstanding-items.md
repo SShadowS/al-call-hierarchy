@@ -21,7 +21,7 @@
 
 ---
 
-## Item 1 — Worktree / branch / stash housekeeping (user-gated batch)
+## Item 1 — Worktree / branch / stash housekeeping — ✅ DONE 2026-07-05 (9 worktrees removed; 11 branches deleted incl. 3 superseded-unmerged + 2 remote; 14 discardable stashes dropped, 6 WIP kept; cargo clean reclaimed 91G — U: now 136G free)
 
 All evidence gathered 2026-07-05. Everything below is destructive; execute each step group only on the user's go.
 
