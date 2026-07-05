@@ -442,52 +442,74 @@ pub fn run_policy_explain(opts: &PolicyExplainOptions) -> PolicyExplainOutcome {
 #[cfg(test)]
 mod tests {
     use super::workspace_relative;
-    use std::path::Path;
+    use std::path::PathBuf;
+
+    // Paths below are built with `PathBuf::join` rather than embedded-separator
+    // string literals (e.g. `r"U:\ws"`), so separators are native to whatever OS
+    // runs the test (backslash on Windows, forward slash on Unix) and
+    // `strip_prefix`'s component-wise comparison is exercised identically on
+    // both — a raw `r"U:\ws"` literal parses as a single opaque filename
+    // component on Unix (no drive-letter/backslash-separator concept there),
+    // which previously made 5 of these 6 tests Windows-only despite having no
+    // `#[cfg(windows)]` marking them as such.
 
     #[test]
     fn inside_workspace_is_forward_slash_relative() {
-        let ws = Path::new(r"U:\ws");
-        let abs = Path::new(r"U:\ws\al-sem.policy.yaml");
-        assert_eq!(workspace_relative(ws, abs), "al-sem.policy.yaml");
+        let ws = PathBuf::from("root").join("ws");
+        let abs = ws.join("al-sem.policy.yaml");
+        assert_eq!(workspace_relative(&ws, &abs), "al-sem.policy.yaml");
     }
 
     #[test]
     fn nested_subdir_joins_with_forward_slashes() {
-        let ws = Path::new(r"U:\ws");
-        let abs = Path::new(r"U:\ws\sub\dir\al-sem.policy.yaml");
-        assert_eq!(workspace_relative(ws, abs), "sub/dir/al-sem.policy.yaml");
+        let ws = PathBuf::from("root").join("ws");
+        let abs = ws.join("sub").join("dir").join("al-sem.policy.yaml");
+        assert_eq!(workspace_relative(&ws, &abs), "sub/dir/al-sem.policy.yaml");
     }
 
     #[test]
     fn outside_workspace_falls_back_to_bare_filename() {
-        // Mirrors the brief's example verbatim (POSIX-style absolute paths) — the
-        // component-wise comparison behaves the same regardless of platform.
-        let ws = Path::new("/ws");
-        let abs = Path::new("/other/p.yaml");
-        assert_eq!(workspace_relative(ws, abs), "p.yaml");
+        let ws = PathBuf::from("root").join("ws");
+        let abs = PathBuf::from("root").join("other").join("p.yaml");
+        assert_eq!(workspace_relative(&ws, &abs), "p.yaml");
     }
 
     #[test]
-    fn outside_workspace_windows_style_falls_back_to_bare_filename() {
-        let ws = Path::new(r"U:\ws");
-        let abs = Path::new(r"U:\other\p.yaml");
-        assert_eq!(workspace_relative(ws, abs), "p.yaml");
+    fn sibling_workspace_name_is_not_treated_as_a_prefix_match() {
+        // `ws-foo` contains "ws" as a string prefix but is a component-wise
+        // SIBLING of `ws`, not a descendant — `strip_prefix` compares path
+        // components, not strings, so this must still fall back to the bare
+        // filename rather than being (wrongly) treated as inside the workspace.
+        let ws = PathBuf::from("root").join("ws");
+        let abs = PathBuf::from("root").join("ws-foo").join("p.yaml");
+        assert_eq!(workspace_relative(&ws, &abs), "p.yaml");
     }
 
+    #[cfg(windows)]
     #[test]
     fn windows_backslash_input_normalizes_to_forward_slashes() {
+        // Backslash-embedded literals and a drive-letter prefix have no
+        // equivalent on Unix (`\` is an ordinary filename character there, and
+        // there is no drive-letter/Prefix component), so this case is
+        // inherently Windows-only and cannot be ported to native construction.
+        use std::path::Path;
         let ws = Path::new(r"U:\ws\root");
         let abs = Path::new(r"U:\ws\root\a\b\al-sem.policy.yaml");
         assert_eq!(workspace_relative(ws, abs), "a/b/al-sem.policy.yaml");
     }
 
     #[test]
-    fn dot_segment_in_workspace_root_is_normalized_away() {
-        // `absolutize(".")` yields a trailing CurDir component (`cwd.join(".")`
-        // does not collapse it) — the helper must still recognize the file as
-        // inside the workspace.
-        let ws = Path::new(r"U:\ws\.");
-        let abs = Path::new(r"U:\ws\al-sem.policy.yaml");
-        assert_eq!(workspace_relative(ws, abs), "al-sem.policy.yaml");
+    fn leading_dot_workspace_is_normalized_away() {
+        // `normalize_lexical`'s `CurDir` arm is reachable only when a path's
+        // OWN first component is a literal `.` (e.g. a workspace root of ".").
+        // A `.` in the middle or at the end of a path is already elided by
+        // `Path::components()` itself before `normalize_lexical` ever sees it
+        // (verified: `PathBuf::from("root").join("ws").join(".")` yields the
+        // components `[Normal("root"), Normal("ws")]` with no `CurDir` at
+        // all) — so a leading dot is the one shape that actually exercises
+        // that arm, on every platform.
+        let ws = PathBuf::from(".");
+        let abs = PathBuf::from(".").join("al-sem.policy.yaml");
+        assert_eq!(workspace_relative(&ws, &abs), "al-sem.policy.yaml");
     }
 }
