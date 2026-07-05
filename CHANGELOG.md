@@ -87,6 +87,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALCH_RELEASE` and `AL_SEM_DEV_FINGERPRINT` → `ALCH_DEV_FINGERPRINT`
   (old names removed outright, not aliased — anyone relying on them for a
   warm cache gets a one-time re-fingerprint, not a correctness hazard).
+  `policy check`/`digest`/`prove`/`fingerprint`/`events fanout`/`events
+  chains`/`diff` also now report `driver_version()` instead of the retired
+  `DEFAULT_ALSEM_VERSION` constant, which is deleted — every CLI path reports
+  the same, honest identity; no al-sem version const or literal remains in
+  `src/` except `CACHE_ANALYZER_VERSION`.
+
+### Removed
+- **`analyze --dump-model`.** A hidden flag that only ever rejected itself
+  with a CONFIG_ERROR pointing at "the TS CLI" — a tool that no longer
+  exists. Removed outright; an invocation now gets clap's own
+  unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
 - **`alsem policy check`'s `policySource` no longer embeds an absolute machine
