@@ -5,9 +5,16 @@
 //! detector context), builds the policy model-input view, runs the engine, and
 //! formats the result. Policy resolution mirrors the CLI:
 //!   1. `--no-policy` → "disabled" (policyVersion 0).
-//!   2. `--policy <path>` → "explicit:<abs>".
-//!   3. auto-detect `al-sem.policy.yaml` / `.yml` in the workspace → "auto:<abs>".
+//!   2. `--policy <path>` → "explicit:<workspace-relative path>".
+//!   3. auto-detect `al-sem.policy.yaml` / `.yml` in the workspace →
+//!      "auto:<workspace-relative path>".
 //!   4. bundled default → "default".
+//!
+//! `policySource`'s path component is ALWAYS relative to the analyzed workspace
+//! root (forward slashes on every platform, no drive letters, no `.`/`..`
+//! segments) — never an absolute machine path, which would be a reproducibility
+//! defect in product output. A policy file outside the workspace root falls back
+//! to its bare filename. See `workspace_relative` below.
 
 use std::path::{Path, PathBuf};
 
@@ -47,12 +54,13 @@ fn resolve_policy_check(
     if no_policy {
         return ResolvedPolicy::Disabled;
     }
+    let ws_abs = absolutize(workspace);
     if let Some(p) = policy_path {
         let abs = absolutize(p);
         return match load_policy_from_file(&abs) {
             LoadResult::Ok { policy, .. } => ResolvedPolicy::Loaded {
                 policy,
-                source: format!("explicit:{}", abs.display()),
+                source: format!("explicit:{}", workspace_relative(&ws_abs, &abs)),
             },
             LoadResult::Err { errors, .. } => ResolvedPolicy::Error(
                 errors
@@ -70,7 +78,7 @@ fn resolve_policy_check(
             return match load_policy_from_file(&abs) {
                 LoadResult::Ok { policy, .. } => ResolvedPolicy::Loaded {
                     policy,
-                    source: format!("auto:{}", abs.display()),
+                    source: format!("auto:{}", workspace_relative(&ws_abs, &abs)),
                 },
                 LoadResult::Err { errors, .. } => ResolvedPolicy::Error(
                     errors
@@ -97,14 +105,51 @@ fn resolve_policy_check(
 }
 
 /// Resolve an absolute path (al-sem `resolve(path)` semantics — relative to cwd).
-fn absolutize(p: &str) -> PathBuf {
-    let path = Path::new(p);
+fn absolutize<P: AsRef<Path>>(p: P) -> PathBuf {
+    let path = p.as_ref();
     if path.is_absolute() {
         path.to_path_buf()
     } else {
         std::env::current_dir()
             .map(|cwd| cwd.join(path))
             .unwrap_or_else(|_| path.to_path_buf())
+    }
+}
+
+/// Lexically collapse `.` and `..` components without touching the filesystem
+/// (`absolutize(".")` leaves a trailing `CurDir` component that would otherwise
+/// defeat a component-wise `strip_prefix` comparison).
+fn normalize_lexical(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in p.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The policy file's path relative to the analyzed workspace root — the tail of
+/// the `policySource` field (`auto:<rel>` / `explicit:<rel>`). Forward slashes on
+/// all platforms, no drive letters, no `.`/`..` segments. A policy file outside
+/// the workspace root falls back to its bare filename.
+fn workspace_relative(workspace: &Path, abs: &Path) -> String {
+    let ws = normalize_lexical(workspace);
+    let target = normalize_lexical(abs);
+    match target.strip_prefix(&ws) {
+        Ok(rel) => rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+        Err(_) => target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| target.to_string_lossy().replace('\\', "/")),
     }
 }
 
@@ -270,11 +315,15 @@ pub struct PolicyExplainOptions<'a> {
 /// `runPolicyExplain`. `--format json` is IGNORED (always human). Resolution mirrors
 /// `runPolicyCheck` MINUS `--no-policy` (explain has no disabled mode).
 pub fn run_policy_explain(opts: &PolicyExplainOptions) -> PolicyExplainOutcome {
+    let ws_abs = absolutize(opts.workspace);
     // Resolve policy (explicit → auto → default).
     let (policy, source): (PolicyDoc, String) = if let Some(p) = opts.policy_path {
         let abs = absolutize(p);
         match load_policy_from_file(&abs) {
-            LoadResult::Ok { policy, .. } => (policy, format!("explicit:{}", abs.display())),
+            LoadResult::Ok { policy, .. } => (
+                policy,
+                format!("explicit:{}", workspace_relative(&ws_abs, &abs)),
+            ),
             LoadResult::Err { errors, .. } => {
                 return PolicyExplainOutcome {
                     stdout: None,
@@ -295,7 +344,10 @@ pub fn run_policy_explain(opts: &PolicyExplainOptions) -> PolicyExplainOutcome {
                 let abs = absolutize(candidate.to_string_lossy().as_ref());
                 match load_policy_from_file(&abs) {
                     LoadResult::Ok { policy, .. } => {
-                        found = Some((policy, format!("auto:{}", abs.display())));
+                        found = Some((
+                            policy,
+                            format!("auto:{}", workspace_relative(&ws_abs, &abs)),
+                        ));
                         break;
                     }
                     LoadResult::Err { errors, .. } => {
@@ -384,5 +436,58 @@ pub fn run_policy_explain(opts: &PolicyExplainOptions) -> PolicyExplainOutcome {
         stdout: Some(format!("{}\n", lines.join("\n"))),
         exit_code: 0,
         stderr_lines: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workspace_relative;
+    use std::path::Path;
+
+    #[test]
+    fn inside_workspace_is_forward_slash_relative() {
+        let ws = Path::new(r"U:\ws");
+        let abs = Path::new(r"U:\ws\al-sem.policy.yaml");
+        assert_eq!(workspace_relative(ws, abs), "al-sem.policy.yaml");
+    }
+
+    #[test]
+    fn nested_subdir_joins_with_forward_slashes() {
+        let ws = Path::new(r"U:\ws");
+        let abs = Path::new(r"U:\ws\sub\dir\al-sem.policy.yaml");
+        assert_eq!(workspace_relative(ws, abs), "sub/dir/al-sem.policy.yaml");
+    }
+
+    #[test]
+    fn outside_workspace_falls_back_to_bare_filename() {
+        // Mirrors the brief's example verbatim (POSIX-style absolute paths) — the
+        // component-wise comparison behaves the same regardless of platform.
+        let ws = Path::new("/ws");
+        let abs = Path::new("/other/p.yaml");
+        assert_eq!(workspace_relative(ws, abs), "p.yaml");
+    }
+
+    #[test]
+    fn outside_workspace_windows_style_falls_back_to_bare_filename() {
+        let ws = Path::new(r"U:\ws");
+        let abs = Path::new(r"U:\other\p.yaml");
+        assert_eq!(workspace_relative(ws, abs), "p.yaml");
+    }
+
+    #[test]
+    fn windows_backslash_input_normalizes_to_forward_slashes() {
+        let ws = Path::new(r"U:\ws\root");
+        let abs = Path::new(r"U:\ws\root\a\b\al-sem.policy.yaml");
+        assert_eq!(workspace_relative(ws, abs), "a/b/al-sem.policy.yaml");
+    }
+
+    #[test]
+    fn dot_segment_in_workspace_root_is_normalized_away() {
+        // `absolutize(".")` yields a trailing CurDir component (`cwd.join(".")`
+        // does not collapse it) — the helper must still recognize the file as
+        // inside the workspace.
+        let ws = Path::new(r"U:\ws\.");
+        let abs = Path::new(r"U:\ws\al-sem.policy.yaml");
+        assert_eq!(workspace_relative(ws, abs), "al-sem.policy.yaml");
     }
 }

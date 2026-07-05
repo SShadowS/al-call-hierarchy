@@ -73,6 +73,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Fixed
+- **`alsem policy check`'s `policySource` no longer embeds an absolute machine
+  path — it is now workspace-relative (Task 3.1, al-sem parity retirement
+  arc).** `resolve_policy_check` (`--policy`/auto-detect) and
+  `run_policy_explain` (same two branches, an identical bug the task brief's
+  scouting missed but which shared the same root cause) each built
+  `policySource` as `format!("explicit:{}", abs.display())` /
+  `format!("auto:{}", abs.display())` — an absolute, machine- and
+  checkout-specific path leaking into committed goldens and any consumer of
+  `alsem policy check --format json/human` output, a reproducibility defect.
+  New pure helper `pipeline::workspace_relative(workspace, abs)`: the policy
+  path becomes relative to the analyzed workspace root, forward slashes on
+  every platform (component-wise reconstruction, not a naive
+  backslash-replace), no drive letters, no `.`/`..` segments (a
+  `normalize_lexical` pass collapses `CurDir`/`ParentDir` components first, so
+  a workspace root passed as `.` still strips correctly); a policy file
+  **outside** the workspace root falls back to its bare filename. `absolutize`
+  broadened to `AsRef<Path>` so it composes with the new helper without an
+  extra `&str` round-trip. SARIF (`format_policy_sarif`) does not surface
+  `policySource` at all, so it needed no change. 6 new unit tests
+  (`pipeline.rs`): inside-workspace, nested-subdir, POSIX- and Windows-style
+  outside-workspace fallback, backslash-input normalization, and a `.`-laden
+  workspace root. Rebaselined the two affected goldens
+  (`tests/cli-c-policy-goldens/ws-policy-custom.custom.{human.txt,json}`):
+  `policySource` changes from `auto:U:\Git\al-sem\test\fixtures\
+  ws-policy-custom\al-sem.policy.yaml` to `auto:al-sem.policy.yaml` (the
+  auto-detect candidate is always `workspace.join("al-sem.policy.yaml")`, so
+  its relative form is exactly the bare filename); every other byte in both
+  goldens is unchanged. Full CDO harness and the aldump `--program-call-graph-
+  stats` JSON SHA-256 stay byte-identical to `.superpowers/sdd/cdo-baseline-
+  plan13.md` (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`)
+  — the policy gate is disjoint from the call-graph harness.
 - **`abi_param_canonical` falls back to `type_text` identity — the
   `already_quoted` shape now participates in a pick (Task 2 review fix,
   roadmap-closure plan).** Task 2's ABI-aware canonicalization reached PAST
