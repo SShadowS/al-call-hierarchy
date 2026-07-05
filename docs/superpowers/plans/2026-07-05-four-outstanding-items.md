@@ -245,7 +245,11 @@ Delete `KNOWN_DIVERGENCES.json` (currently `[]` — empty). In each of the 13 ha
 
 ### Task 3.5 — Remove the 14 refresh functions + `r2_5b_refresh.rs`
 
-Every harness keeps (or gains) a `REGEN_TEMP_GOLDENS=1` regen path regenerating from RUST output (Task 3.0 verified these); the al-sem/Bun refresh functions (`AL_SEM_DIR`-driven) are deleted wholesale. Note `cli_a_stats_differential.rs:345` already regens from Rust — it is the model. Delete `tests/r2_5b_refresh.rs` entirely. After this task: `grep -r "AL_SEM_DIR" tests/ src/` is empty.
+> **Pre-dispatch scouting (2026-07-05).** DELETION CRITERION: delete every `#[ignore]`d refresh fn that reads `AL_SEM_DIR` or shells `bun run` — 14 total: `differential.rs`, `r2_5a_differential.rs`, `r3a4_differential.rs`, `r3a5_differential.rs`, `r4_differential.rs`, `cli_a_{html,json,terminal}_differential.rs`, `cli_c_events_differential.rs`, and the cli_b refresh set — plus delete `tests/r2_5b_refresh.rs` (whole file, `refresh_r2_5b_goldens_from_al_sem`). KEEP `cli_a_stats_differential.rs:345` `refresh()` — it regens purely from Rust output (no `AL_SEM_DIR`, no bun); it is the MODEL.
+>
+> **"Gains a regen path" (6 harnesses).** These lack `REGEN_TEMP_GOLDENS` and would lose their only regen when the al-sem refresh is deleted: `r2_5a_differential.rs`, `r2_5b_{cg,cov,eg}_differential.rs`, `r3a4_differential.rs`, `cli_c_events_differential.rs`. Give each a Rust-regen path mirroring the in-repo pattern (`differential.rs` has 12 such sites; `r2_5b_rt_differential.rs` has 3): at the existing actual-vs-golden comparison, `if env REGEN_TEMP_GOLDENS is set { write the ACTUAL Rust output to the golden path; skip the assert } else { assert as today }`. These paths are INERT under normal `cargo test` (env-gated) so they cannot affect the suite. The other 7 affected harnesses already have `REGEN_TEMP_GOLDENS` — leave those regen paths, delete only their al-sem refresh fn.
+
+The al-sem/Bun refresh functions (`AL_SEM_DIR`-driven) are deleted wholesale; `tests/r2_5b_refresh.rs` deleted entirely. Also update `tests/r0-goldens/README.md` (drop the `AL_SEM_DIR` refresh instructions). After this task: `grep -rn "AL_SEM_DIR" tests/ src/` is empty and `grep -rn "bun " tests/` shows no live `bun run` invocation (retired-note comments referencing the archived TS tool are acceptable only if they carry no runnable instruction — prefer removing them).
 
 ### Task 3.6 — Docs + capstone
 
