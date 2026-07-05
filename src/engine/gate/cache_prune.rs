@@ -33,10 +33,8 @@ use crate::engine::ids::sha256_hex;
 // stamps below (grammar / symbolReader / summarySchema / depCache / resourcePolicy)
 // have no Rust engine "home" yet — bump them here in lockstep with al-sem.
 //
-// The `analyzer` stamp is NOT a const here: it is resolved at runtime from
-// `crate::engine::gate::version::alsem_version()` (DEFAULT_ALSEM_VERSION +
-// the `AL_SEM_VERSION_OVERRIDE` hook), so it never drifts from version.rs and
-// honours the override the differential harness uses.
+// The `analyzer` stamp is `CACHE_ANALYZER_VERSION` (below) — a cache-format
+// version we own, independent of the engine's display/identity version.
 // ---------------------------------------------------------------------------
 
 /// Grammar version tag (mirrors `GRAMMAR_VERSION` in al-sem `discover.ts`).
@@ -57,6 +55,13 @@ pub const CACHE_VERSION_DEP_CACHE: &str = "8";
 
 /// Resource policy version (al-sem `cache-versions.ts` `resourcePolicy`).
 pub const CACHE_VERSION_RESOURCE_POLICY: &str = "1";
+
+/// The cache artifact format version stamped as the `analyzer` field in every
+/// dependency-cache header. This versions OUR on-disk cache format — it is
+/// deliberately decoupled from [`crate::engine::gate::version::driver_version`]
+/// (the engine's display/identity version): bump this const only when a cache-shape
+/// or classification-behavior change should invalidate every existing cache entry.
+pub const CACHE_ANALYZER_VERSION: &str = "0.0.12";
 
 /// The dev fingerprint used when not in a release build.
 ///
@@ -181,12 +186,10 @@ pub fn classify_artifact_for_prune(path: &Path) -> PruneStatus {
     // `for (const [k,val] of Object.entries(expected))`): the artifact must
     // carry the matching value for each expected key, but is ALLOWED to have
     // extra/unknown version keys (a struct/map `==` would wrongly reject those).
-    // `analyzer` resolves from version.rs (override-aware), never a const.
     let v = &parsed["header"]["versions"];
     let fp = dev_fingerprint();
-    let analyzer = crate::engine::gate::version::alsem_version();
     let expected: [(&str, &str); 7] = [
-        ("analyzer", analyzer.as_str()),
+        ("analyzer", CACHE_ANALYZER_VERSION),
         ("grammar", CACHE_VERSION_GRAMMAR),
         ("symbolReader", CACHE_VERSION_SYMBOL_READER),
         ("summarySchema", CACHE_VERSION_SUMMARY_SCHEMA),
