@@ -169,7 +169,19 @@ rm /u/Git/al-call-hierarchy/docs/superpowers/plans/2026-03-28-test-coverage-impr
 
 **CDO-gate clarification:** the frozen-baseline byte-identical requirement holds absolutely for Tasks 3.0, 3.1, 3.3, 3.4, 3.5. For Task 3.2 (which changes emitted version metadata) the gate is: aldump JSON + L3 digest EXPECTED byte-identical (version.rs is gate-output plumbing, not aldump plumbing) — if they move, the diff must consist solely of the approved version-field change, itemized in the task report; any other byte is a stop-the-line failure.
 
-### Task 3.0 — Preflight witness (run while `U:\Git\al-sem` is still present)
+> **Task 3.0 finding (2026-07-05, executed): `U:\Git\al-sem` was already gone.** The checkout was
+> archived to `U:\Git\al-sem-OBOLETE` on 2026-06-11 (its own HEAD: "ARCHIVED — engine re-derived in
+> Rust… repo frozen"). The implementer bridged it with a temporary directory junction (reverted) to
+> capture the witness. Consequences threaded into the tasks below: (i) the arc's premise is STRONGER —
+> the 5 live-read tests have silently skipped on this machine since 2026-06-11 and NEVER ran in CI
+> (GHA checks out only al-call-hierarchy + tree-sitter-al), so they have validated nothing anywhere
+> for weeks; (ii) Task 3.3 vendors from the WITNESS area (`.superpowers/sdd/alsem-witness/`, 53 files),
+> not from live al-sem — no junction needed downstream; (iii) Task 3.6's "temporarily rename al-sem"
+> is already the machine's real state — final verification runs directly. Two more findings: the
+> cli-c-cache al-sem fallback corpus is stale dead code (retire, don't vendor — Task 3.3/3.5), and two
+> extra live-read fixtures (`ws-diff-rename`, `ws-diff-removed-field`) the brief missed (vendor in 3.3).
+
+### Task 3.0 — ✅ DONE 2026-07-05 — Preflight witness (no commits; witness untracked by design)
 
 1. Record the al-sem checkout's HEAD commit (`git -C U:/Git/al-sem rev-parse HEAD`) in the witness manifest.
 2. Run the 5 live-read test files with the checkout present and PROVE none took its skip path (the gates are silent `return`-style skips, invisible to cargo — instrument by asserting on their skip-log lines or temporarily panicking the skip arms). All 5 must run their real assertions and pass.
@@ -194,11 +206,16 @@ rm /u/Git/al-call-hierarchy/docs/superpowers/plans/2026-03-28-test-coverage-impr
 
 ### Task 3.3 — Vendor the live-read corpora in-repo (witness-diffed)
 
+**Source of vendored bytes:** copy from the Task-3.0 witness area `.superpowers/sdd/alsem-witness/` (which holds byte-exact copies + SHA-256 of everything below), NOT from live al-sem (which is absent). Verify each vendored file against the witness SHA-256 listing after copy.
+
 **Files:**
-- Create: `tests/fixtures/ws-d2/` (copied bytes from the frozen checkout) + `PROVENANCE.md` (source path, al-sem HEAD commit from Task 3.0, copy date, "historical fixture, not a live oracle")
-- Create: `tests/fixtures/cli-c-policy/` (the fixture workspaces `cli_c_policy_differential.rs` enumerates) + `PROVENANCE.md`
-- Create: `tests/cli-b-goldens/diff/`, the missing `tests/cli-c-goldens/cache/` fallback entries, and in-repo homes for the two aldump/al2dump goldens — all regenerated from THIS engine's output via the Task-3.0-verified regen paths
+- Create: `tests/fixtures/ws-d2/` + `PROVENANCE.md` (source path, al-sem HEAD `cfea6149…` from Task 3.0, copy date, "historical fixture, not a live oracle")
+- Create: `tests/fixtures/cli-c-policy/` (the 10 fixture workspaces `cli_c_policy_differential.rs` enumerates) + `PROVENANCE.md`
+- Create: `tests/fixtures/ws-diff-rename/` and `tests/fixtures/ws-diff-removed-field/` (the two extra live-read fixtures Task 3.0 found — `cli_b_diff_differential.rs` reads them directly) + `PROVENANCE.md`
+- Create: `tests/cli-b-goldens/diff/` and in-repo homes for the two aldump/al2dump goldens (`ws-d2.l3eg`, `ws-d2.l2`) — regenerated from THIS engine's output via the Task-3.0-verified regen paths
 - Modify: `tests/aldump_smoke.rs`, `tests/al2dump_smoke.rs`, `tests/cli_b_diff_differential.rs`, `tests/cli_c_policy_differential.rs`, `tests/cli_c_cache_differential.rs` — point at the in-repo paths, DELETE the skip-gates (tests now hard-require their inputs)
+
+**cli-c-cache fallback — RETIRE, do not vendor (Task 3.0 finding 2):** the al-sem-side cache golden set (`$AL_SEM_DIR/scripts/cli-c-goldens/cache/`) is STALE — a symbolReader 17→18 version bump post-dates it, so the current engine cannot regenerate it, and the in-repo local override (`tests/cli-c-goldens/cache/`, already current + regen-verified in Task 3.0) always wins the local-else-fallback in `cache_goldens_dir()`. Vendoring it would commit content the engine can't reproduce — a Rust-owned-doctrine violation. Instead: delete the `al_sem_cache_goldens_dir()` / `al_sem_dir()` fallback branch in `cli_c_cache_differential.rs`, leaving the local override as the sole path. FIRST confirm the test's INPUT fixture-cache (the `fixture_cache_dir()` the prune runs against) is in-repo; if it too reads from al-sem, vendor it from the witness. This removes the last `AL_SEM_DIR` read from this file (dovetails with Task 3.5).
 
 **Byte-preservation (round-2 finding):** this repo's `.gitattributes` forces `eol=lf` on several `tests/**` patterns and the checkout runs `core.autocrlf=true` — committing the vendored fixtures without an explicit rule can rewrite their line endings, shifting every tree-sitter byte offset and silently invalidating the goldens generated from them. Add `tests/fixtures/** -text` to `.gitattributes` (ordered after the existing `tests/**` rules — last match wins), commit, then verify each committed fixture file's SHA-256 matches the Task-3.0 witness listing via `git show HEAD:<path> | sha256sum`.
 
@@ -221,7 +238,7 @@ Every harness keeps (or gains) a `REGEN_TEMP_GOLDENS=1` regen path regenerating 
 
 - Move `docs/engine-migration.md` + `docs/engine-gaps.md` to `docs/history/` with an ARCHIVED header.
 - CLAUDE.md: rewrite the "Testing Philosophy & Goldens" al-sem bullets (the "LEGACY tests still pointing at the al-sem repo" sentence becomes false — delete it) AND fix the stale grammar-migrations line "the goldens are the al-sem TS reference output … source of truth" (CLAUDE.md:128–130), which contradicts the Rust-owned doctrine.
-- **Zero-skip mechanical verification:** on the FINAL branch state, run the full suite twice — once with `U:\Git\al-sem` present, once with it temporarily renamed (restore after) — and assert the pass/run counts are identical between the two runs (Task 3.0's count is evidence, not the baseline: the arc itself adds and deletes tests). Plus grep the five former live-read files for any surviving skip-string/early-return pattern.
+- **Zero-skip mechanical verification:** `U:\Git\al-sem` is ALREADY absent on this machine (Task 3.0 finding 1), so the final branch state runs in the target environment directly — run the full suite as-is and confirm the five former live-read test files run their real assertions (no skips) and pass. Cross-check by grepping those five files for any surviving skip-string/early-return pattern (there must be none — the gates were deleted in 3.3). Optional stronger proof: temporarily create the junction (`New-Item -ItemType Junction -Path U:\Git\al-sem -Target U:\Git\al-sem-OBOLETE`), rerun, confirm identical pass/run counts, remove the junction — proves the in-repo paths win even when a checkout reappears.
 - **Broadened legacy-token audit** (round-1 finding — the old grep was too weak):
   ```bash
   rg -n --hidden --glob '!target/**' --glob '!docs/history/**' \
