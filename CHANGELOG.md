@@ -8,6 +8,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Scope-resolver unification + the Report/ReportExtension routine merge
+  (Task 1, roadmap-closure plan).** `resolve_in_table_scope` and
+  `resolve_in_page_scope` (`resolver.rs`) were ~90%-identical hand-copies,
+  diverging only in the zero-arity-match branch (Table diagnoses an
+  access-exclusion reason; Page forwards to the first name-bearing object so
+  `resolve_in_object`'s own `ArityMismatch`/`AccessFilteredOverload`
+  diagnostic survives) — confirmed by a pre-refactor dimension-by-dimension
+  behavioral inventory (candidate collection, extension filtering, closure
+  anchor, access rules, cardinality, ambiguity ordering all identical) before
+  any code moved. Unified into `resolve_in_extendable_scope` (the shared
+  ~150-line engine) + a `ZeroMatchStrategy` enum (`AccessExcludedReason` |
+  `PreserveArityMismatch`) + three ~25-line thin wrappers
+  (`resolve_in_table_scope`/`resolve_in_page_scope`/the NEW
+  `resolve_in_report_scope`). `Report`-typed receivers
+  (`ReceiverType::Object{kind: Report, ..}`) now merge in every
+  closure-visible `ReportExtension`'s routines, closing the gap the
+  pageext-merge-and-final-residual plan deliberately deferred (that plan's
+  Task 1 doc note is superseded by this entry) — a new `report_extensions`
+  reverse index (`index.rs`, mirroring `table_extensions`/`page_extensions`;
+  `extends_target` was already populated for `ReportExtension` identically
+  to `PageExtension`) plus the `:2421` routing site now dispatching
+  `Page`/`Report` both through their respective extendable-scope resolver.
+  The `PreserveArityMismatch` policy for Report is grounded by an `al
+  compile` probe (the tree-sitter-al grammar repo's minimal-probe
+  methodology): a same-app `ReportExtension` procedure called through a
+  base-Report-typed variable receiver compiles cleanly (the merge itself is
+  real, compiler-verified AL semantics), and a wrong-arity call reports
+  `AL0135` ("no argument given that corresponds to the required formal
+  parameter") — a diagnostic class distinct from the genuine "member not
+  found" `AL0132`, confirmed on the same fixture. Zero fixture edits to the
+  existing Table/Page test suites (the behavior-preservation postcondition);
+  8 new Report-shaped fixtures added (same-app internal resolves; different
+  -app internal declines with `InternalNotVisible`; out-of-closure extension
+  invisible; two visible extensions ambiguous; visible wrong-arity preserves
+  `ArityMismatch`; invisible (out-of-closure) wrong-arity does not leak
+  `ArityMismatch`; mixed base+extension wrong-arity is deterministic; base
+  -only calls unchanged, including the `ReportInstance` catalog fallback) —
+  3 of the 8 independently confirmed as genuine regression-catchers (fail
+  against the pre-refactor bare-`resolve_in_object` routing), the remaining
+  5 as completeness/non-regression controls mirroring the Page suite's own
+  established pattern. Full CDO harness BYTE-IDENTICAL to the frozen
+  `.superpowers/sdd/cdo-baseline-plan13.md` baseline (179 passed / 0 failed
+  / 3 ignored; primary/whole `unknown`=0; `ambiguousResolved`=0;
+  `unknownByReason`={} both scopes; `recoveredFiles`=0; `genuine_wrong`=0; L3
+  semantic-audit digest and `aldump --program-call-graph-stats` JSON SHA-256
+  both byte-for-byte identical) — Report cross-extension population is
+  confirmed ZERO on CDO, so this machinery is fixture-proven but currently
+  dormant there, exactly as the grounding predicted.
 - **Call-result + boolean argument typing — `ambiguousResolved` 7→0, a FULL
   closure (Task 3, pageext-merge-and-final-residual plan).** Extends
   `arg_dispatch::type_one_arg` with three new arms so an argument that is

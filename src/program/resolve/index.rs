@@ -145,6 +145,14 @@ pub struct ResolveIndex {
     /// base-Page-typed receiver could never reach them without this reverse
     /// lookup; see [`Self::page_extensions_of`]).
     page_extensions: HashMap<String, Vec<ObjectNodeId>>,
+    /// Lowercased `extends_target` of a `ReportExtension` → all extension ids
+    /// (roadmap-closure plan, Task 1 — the `Report` analog of
+    /// `table_extensions`/`page_extensions`; `extends_target` is populated
+    /// for `ReportExtension` identically to `PageExtension` —
+    /// `node_extract::extract_nodes` does not kind-gate that field — so this
+    /// index is the mechanical third copy of the same reverse lookup; see
+    /// [`Self::report_extensions_of`]).
+    report_extensions: HashMap<String, Vec<ObjectNodeId>>,
     /// Lowercased interface name → all object ids that implement it.
     implementers: HashMap<String, Vec<ObjectNodeId>>,
     /// Publisher `RoutineNodeId` → ordered list of resolved subscribers.
@@ -189,6 +197,7 @@ impl ResolveIndex {
         let mut objects_by_name: HashMap<(ObjectKind, String), Vec<ObjectNodeId>> = HashMap::new();
         let mut table_extensions: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
         let mut page_extensions: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
+        let mut report_extensions: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
         let mut implementers: HashMap<String, Vec<ObjectNodeId>> = HashMap::new();
 
         for obj in &graph.objects {
@@ -223,6 +232,18 @@ impl ResolveIndex {
                 && let Some(ref target) = obj.extends_target
             {
                 page_extensions
+                    .entry(target.to_ascii_lowercase())
+                    .or_default()
+                    .push(obj.id.clone());
+            }
+
+            // ReportExtension → base report name (lowercased) — the
+            // roadmap-closure plan Task 1 analog of the Table/Page indexes
+            // above.
+            if obj.id.kind == ObjectKind::ReportExtension
+                && let Some(ref target) = obj.extends_target
+            {
+                report_extensions
                     .entry(target.to_ascii_lowercase())
                     .or_default()
                     .push(obj.id.clone());
@@ -356,6 +377,7 @@ impl ResolveIndex {
             objects_by_name,
             table_extensions,
             page_extensions,
+            report_extensions,
             implementers,
             subscribers_map,
             ambiguous_subscriptions,
@@ -549,6 +571,21 @@ impl ResolveIndex {
     pub fn page_extensions_of(&self, base_page_name_lc: &str) -> &[ObjectNodeId] {
         self.page_extensions
             .get(base_page_name_lc)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// All `ReportExtension` objects whose `extends_target` (lowercased)
+    /// equals `base_report_name_lc` — [`WorldMode::AnalyzedSnapshot`],
+    /// whole-program view (extensions live in reverse-dependent apps,
+    /// outside the base report's own closure). The `Report` analog of
+    /// [`Self::table_extensions_of`]/[`Self::page_extensions_of`]
+    /// (roadmap-closure plan, Task 1) — see
+    /// `resolver::resolve_in_report_scope` for the closure- and
+    /// access-filtered consumer.
+    pub fn report_extensions_of(&self, base_report_name_lc: &str) -> &[ObjectNodeId] {
+        self.report_extensions
+            .get(base_report_name_lc)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
@@ -1656,6 +1693,77 @@ mod tests {
         let idx = ResolveIndex::build(&graph);
 
         assert!(idx.page_extensions_of("customer").is_empty());
+    }
+
+    // -- report_extensions_of tests (roadmap-closure plan, Task 1) -------------
+
+    /// Single-app fixture: Report 50700 "RxBase" + ReportExtension 50701
+    /// "RxBaseExt" extending it — mirrors `build_page_ext_fixture` exactly.
+    fn build_report_ext_fixture() -> (ProgramGraph, AppRef) {
+        let mut apps = AppRegistry::default();
+        let a = apps.intern(&make_app_id("RxApp"));
+        let topology = DependencyGraph::default();
+
+        let mut objects = vec![
+            make_obj(a, ObjectKind::Report, Some(50700), "RxBase", None, vec![]),
+            make_obj(
+                a,
+                ObjectKind::ReportExtension,
+                Some(50701),
+                "RxBaseExt",
+                Some("RxBase"),
+                vec![],
+            ),
+        ];
+        objects.sort_by(|x, y| x.id.cmp(&y.id));
+
+        let obj_index = ObjectIndex::build(&objects);
+        (
+            ProgramGraph {
+                apps,
+                topology,
+                objects,
+                routines: vec![],
+                obj_index,
+                ..Default::default()
+            },
+            a,
+        )
+    }
+
+    #[test]
+    fn report_extensions_of_returns_extension() {
+        let (graph, a) = build_report_ext_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let exts = idx.report_extensions_of("rxbase");
+        assert_eq!(exts.len(), 1, "expected exactly one extension of RxBase");
+        assert_eq!(exts[0].app, a);
+        assert_eq!(exts[0].kind, ObjectKind::ReportExtension);
+    }
+
+    #[test]
+    fn report_extensions_of_missing_returns_empty() {
+        let (graph, _a) = build_report_ext_fixture();
+        let idx = ResolveIndex::build(&graph);
+
+        let exts = idx.report_extensions_of("nosuchreport");
+        assert!(exts.is_empty());
+    }
+
+    #[test]
+    fn report_extensions_of_does_not_leak_page_or_table_extensions() {
+        // A TableExtension/PageExtension named the same shape must never
+        // satisfy a report_extensions_of lookup — all three indexes are
+        // kind-partitioned at build time (each `if obj.id.kind == ...` guard
+        // is independent), never merged into one name-keyed map.
+        let (graph_t, _a, _b) = build_fixture(); // TableExtension "CustomerExt" extending "Customer"
+        let idx_t = ResolveIndex::build(&graph_t);
+        assert!(idx_t.report_extensions_of("customer").is_empty());
+
+        let (graph_p, _a2) = build_page_ext_fixture(); // PageExtension "PxBaseExt" extending "PxBase"
+        let idx_p = ResolveIndex::build(&graph_p);
+        assert!(idx_p.report_extensions_of("pxbase").is_empty());
     }
 
     // -- field_in_table tests (Task 3) -----------------------------------------

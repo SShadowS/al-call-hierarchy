@@ -889,9 +889,11 @@ fn access_exclusion_reason(
         })
 }
 
-/// The outcome of a [`resolve_in_table_scope`] search — sufficient for the
-/// caller to know not just WHETHER it resolved, but on decline, WHY (Task 3's
-/// diagnostic [`UnknownReason`] payload).
+/// The outcome of a [`resolve_in_extendable_scope`] search (Table/Page/Report,
+/// via [`resolve_in_table_scope`]/[`resolve_in_page_scope`]/
+/// [`resolve_in_report_scope`]) — sufficient for the caller to know not just
+/// WHETHER it resolved, but on decline, WHY (Task 3's diagnostic
+/// [`UnknownReason`] payload).
 enum TableScopeOutcome {
     /// Exactly one visible candidate — resolved.
     Resolved(DispatchShape, Vec<Route>),
@@ -910,30 +912,72 @@ enum TableScopeOutcome {
     },
 }
 
-/// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED table scope: the
-/// base table `table_id` plus every `TableExtension` of it that is reachable
-/// in `from_object`'s compile-time app dependency closure (beyond-1B.3b Task
-/// 2; extracted from `resolve_member`'s `Record` arm so a future caller with
-/// the same scope+cardinality need — e.g. `resolve_bare`'s implicit-Rec
-/// lookup — can reuse the identical algorithm rather than re-deriving it).
+/// The ONE intentional divergence between the Table/Page/Report extendable-
+/// scope resolvers (roadmap-closure plan, Task 1 — see the pre-refactor
+/// behavioral inventory in the task report for the dimension-by-dimension
+/// proof that this is the only place they differ): what to do when ZERO
+/// scope objects (base ∪ visible extensions) carry an arity+visibility
+/// match, but a diagnostic is still owed. Passed to
+/// [`resolve_in_extendable_scope`] by each thin per-kind wrapper.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ZeroMatchStrategy {
+    /// The Table/Record policy (pre-Task-1 behavior, unchanged): scan `scope`
+    /// for the first same-name/EXACT-arity candidate that exists but was
+    /// excluded by the caller-identity access filter, and report that as
+    /// `access_excluded` — never forward to [`resolve_in_object`]. A
+    /// same-name-WRONG-arity candidate is invisible to this scan (it filters
+    /// on `arity` too), so a pure arity mismatch on the Table/Record arm
+    /// falls through to the caller's own generic default reason
+    /// (`access_excluded: None`), exactly as it always has.
+    AccessExcludedReason,
+    /// The Page/Report policy: when no scope object has a matching arity,
+    /// check whether the routine NAME (any arity) is declared SOMEWHERE in
+    /// scope, and if so forward to the first (deterministic, scope-order)
+    /// name-bearing object so [`resolve_in_object`]'s own internal
+    /// diagnostic — `ArityMismatch`, `AccessFilteredOverload`,
+    /// `LocalNotVisible`, … — survives exactly as a single-object dispatch
+    /// would have produced it. See [`resolve_in_page_scope`]'s doc for the
+    /// full "why Page/Report diverges from Table" rationale (the
+    /// `ArityMismatch`-preservation requirement) and the al-compile probe
+    /// (`.superpowers/sdd/task-1-report.md`) that grounds extending this
+    /// policy to Report: AL0135 ("no argument given that corresponds to the
+    /// required formal parameter") is the compiler's OWN distinct diagnostic
+    /// class for a wrong-arity call to a real, name-resolved routine —
+    /// disjoint from AL0132 ("does not contain a definition for") — so
+    /// collapsing a wrong-arity ReportExtension call into a bare
+    /// `MemberNotFound` would misrepresent what the real compiler reports,
+    /// exactly the failure mode this variant exists to avoid.
+    PreserveArityMismatch,
+}
+
+/// Resolve `name_lc`/`arity` against a VISIBILITY-SCOPED extendable-object
+/// scope: `base_id` plus every extension of it (as returned by
+/// `extensions_of`) reachable in `from_object`'s compile-time app dependency
+/// closure. The shared engine behind [`resolve_in_table_scope`]/
+/// [`resolve_in_page_scope`]/[`resolve_in_report_scope`] (roadmap-closure
+/// plan, Task 1 — unifies what were two ~90%-identical hand-copies,
+/// generalized to a third kind via [`ZeroMatchStrategy`] rather than a third
+/// copy; see the task report's pre-refactor behavioral inventory for the
+/// dimension-by-dimension proof that the zero-match branch below is the ONLY
+/// place Table/Page ever diverged).
 ///
-/// # Visibility scoping (the Task 2 soundness fix)
+/// # Visibility scoping (the beyond-1B.3b Task 2 soundness fix)
 ///
 /// Two INDEPENDENT fail-closed filters narrow the raw scope before
-/// cardinality is counted — either one dropping a candidate can turn a
-/// pre-Task-2 false `Source` into a correct decline:
+/// cardinality is counted — either one dropping a candidate can turn a false
+/// `Source` into a correct decline:
 ///
-/// 1. **Closure filter.** [`ResolveIndex::table_extensions_of`] is
-///    whole-snapshot (`WorldMode::AnalyzedSnapshot` — Task 2 Step 1
-///    investigation confirmed it has no app-scoping, unlike
-///    `object_by_number`/`resolve_object_ref`). A `TableExtension` declared
-///    in an app OUTSIDE `from_object`'s transitive dependency closure is a
-///    symbol `from_object`'s own app never imported — the real AL compiler
-///    could never have resolved a call to it. Such an extension is dropped
-///    from `scope` entirely, not merely deprioritized. The base table
-///    (`table_id`) is gated the same way, defense-in-depth (it is normally
-///    already closure-validated by the receiver-inference stage that
-///    produced it — see `receiver::resolve_source_table_ref` — but
+/// 1. **Closure filter.** `extensions_of` (whichever of
+///    [`ResolveIndex::table_extensions_of`]/[`ResolveIndex::page_extensions_of`]/
+///    [`ResolveIndex::report_extensions_of`] the caller passes) is
+///    whole-snapshot (`WorldMode::AnalyzedSnapshot` — no app-scoping). An
+///    extension declared in an app OUTSIDE `from_object`'s transitive
+///    dependency closure is a symbol `from_object`'s own app never imported —
+///    the real AL compiler could never have resolved a call to it. Such an
+///    extension is dropped from `scope` entirely, not merely deprioritized.
+///    The base object (`base_id`) is gated the same way, defense-in-depth (it
+///    is normally already closure-validated by the receiver-inference stage
+///    that produced it — see `receiver::resolve_source_table_ref` — but
 ///    re-checking here makes this helper safe to call independent of that
 ///    upstream guarantee).
 /// 2. **Access filter.** A candidate procedure whose declared [`Access`] is
@@ -942,49 +986,59 @@ enum TableScopeOutcome {
 ///    declaring object, `Internal` requires the same app, `Protected`
 ///    requires self OR a direct kind-compatible extension relationship (see
 ///    [`object_has_visible_member_candidate`] for the full per-access
-///    rationale — beyond-1B.3b Task 1, superseded by Task 1's protected-ABI
-///    soundness fix: SymbolOnly candidates are NO LONGER a `Public`-only
-///    no-op here, since `access` now carries the real ABI `IsProtected`
-///    modifier, so this filter can genuinely exclude a SymbolOnly candidate
-///    too).
+///    rationale). Tier-agnostic: a SymbolOnly candidate's `access` carries the
+///    real ABI `IsProtected` modifier, so this filter can genuinely exclude a
+///    SymbolOnly candidate too.
 ///
-/// # Cardinality (unchanged from the pre-extraction Record arm; Task 3 wraps
-/// the same three outcomes in [`TableScopeOutcome`] so a decline also
-/// carries WHY)
+/// # Aggregate-then-adjudicate (round-1 review addendum, BINDING)
 ///
-/// - 0 visible candidates (or `table_id` itself not visible) →
-///   [`TableScopeOutcome::NotVisible`] — fall through to the caller's next
-///   precedence level (e.g. the Record builtin catalog).
-/// - Exactly 1 visible candidate → [`TableScopeOutcome::Resolved`], a single
-///   `Source`/`Abi`/`Opaque` route via [`resolve_in_object`].
-/// - `>1` visible candidates → [`TableScopeOutcome::Ambiguous`] — honest
-///   ambiguous `Unknown`; never pick-first, never fall through to the
-///   catalog (source ambiguity still shadows a same-named intrinsic).
+/// Every visible candidate object (base ∪ every visible extension) is
+/// collected FIRST; a base-vs-extension or extension-vs-extension exact-
+/// duplicate same-arity pair is a genuine `>1` ambiguity, never first-wins.
+/// AL0115 (base/extension duplicate) and AL0226 (cross-extension duplicate)
+/// make an EXACT duplicate signature a compile error in real AL for
+/// Page/Report — this ambiguity path is DEFENSIVE-ONLY against malformed/
+/// synthetic source there, not a live production case (for Table it is the
+/// pre-existing, unchanged live behavior).
+///
+/// # Cardinality
+///
+/// - `>1` DISTINCT scope objects each carrying a visible arity-EXACT match →
+///   [`TableScopeOutcome::Ambiguous`] (never pick-first; source/extension
+///   ambiguity still shadows a same-named intrinsic).
+/// - Exactly 1 → [`TableScopeOutcome::Resolved`], a single `Source`/`Abi`/
+///   `Opaque` route via [`resolve_in_object`].
+/// - 0 arity+visibility matches anywhere in scope → dispatch on `zero_match`
+///   (see [`ZeroMatchStrategy`]'s doc for the two policies and why they
+///   differ; this is the ONLY divergence point between the three
+///   per-kind wrappers).
 ///
 /// Deterministic: `scope` is explicitly sorted by `ObjectNodeId` before
 /// cardinality is counted.
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args` (Task 2, argtype-dispatch-and-page-catalog plan).
-fn resolve_in_table_scope(
+#[allow(clippy::too_many_arguments)] // 8 pre-existing params + the extension-index fn-pointer + the zero-match policy (Task 1, roadmap-closure plan): each is a distinct identity/lookup/policy input, grouping would obscure call sites.
+fn resolve_in_extendable_scope(
     from_object: &ObjectNode,
-    table_id: ObjectNodeId,
+    base_id: ObjectNodeId,
     name_lc: &str,
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
     body_map: &BodyMap<'_>,
     args: &[ArgDispatchInfo],
+    extensions_of: for<'a> fn(&'a ResolveIndex, &str) -> &'a [ObjectNodeId],
+    zero_match: ZeroMatchStrategy,
 ) -> TableScopeOutcome {
     let closure = graph.topology.closure(from_object.id.app);
 
-    if !closure.contains(&table_id.app) {
+    if !closure.contains(&base_id.app) {
         return TableScopeOutcome::NotVisible {
             access_excluded: None,
         };
     }
-    let Some((table_tier, table_name_lc)) = graph
+    let Some((base_tier, base_name_lc)) = graph
         .objects
         .iter()
-        .find(|o| o.id == table_id)
+        .find(|o| o.id == base_id)
         .map(|o| (o.tier, o.name.to_ascii_lowercase()))
     else {
         return TableScopeOutcome::NotVisible {
@@ -992,10 +1046,10 @@ fn resolve_in_table_scope(
         };
     };
 
-    // Visible scope: the base table plus every TableExtension of it that is
+    // Visible scope: the base object plus every extension of it that is
     // reachable in `from_object`'s app dependency closure.
-    let mut scope: Vec<(ObjectNodeId, TrustTier)> = vec![(table_id.clone(), table_tier)];
-    for ext_id in index.table_extensions_of(&table_name_lc) {
+    let mut scope: Vec<(ObjectNodeId, TrustTier)> = vec![(base_id.clone(), base_tier)];
+    for ext_id in extensions_of(index, &base_name_lc) {
         if !closure.contains(&ext_id.app) {
             // Outside from_object's dependency closure: invisible, not a
             // candidate (the Task 2 soundness fix).
@@ -1029,194 +1083,6 @@ fn resolve_in_table_scope(
     let second = candidate_objects.next();
 
     match (first, second) {
-        (None, _) => {
-            // Zero visible candidates in the whole scope — diagnose WHY, in
-            // scope order (deterministic): the first same-name/arity
-            // candidate that exists but is access-excluded, if any.
-            let access_excluded = scope.iter().find_map(|(oid, _tier)| {
-                access_exclusion_reason(oid, name_lc, arity, &from_object.id, graph, index)
-            });
-            TableScopeOutcome::NotVisible { access_excluded }
-        }
-        (Some(_), Some(_)) => TableScopeOutcome::Ambiguous,
-        (Some((oid, tier)), None) => {
-            match resolve_in_object(
-                oid,
-                *tier,
-                name_lc,
-                arity,
-                &from_object.id,
-                graph,
-                index,
-                body_map,
-                args,
-            ) {
-                Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
-                // Defensive: `object_has_visible_member_candidate` already
-                // confirmed a visible arity match exists, so `resolve_in_object`
-                // should always return `Some` here.
-                None => TableScopeOutcome::NotVisible {
-                    access_excluded: Some(UnknownReason::IndexIntegrationGap),
-                },
-            }
-        }
-    }
-}
-
-/// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED Page **object**
-/// scope: the base Page `page_id` plus every `PageExtension` of it reachable
-/// in `from_object`'s compile-time app dependency closure — the `Page` analog
-/// of [`resolve_in_table_scope`] (pageext-merge-and-final-residual plan,
-/// Task 1). Closes the engine gap the plan's grounding report identified: a
-/// `PageExtension`'s routines are indexed under the EXTENSION's own
-/// `ObjectNodeId` (`node_extract::extract_nodes`), so a base-Page-typed
-/// receiver (`ReceiverType::Object{kind: Page, ..}`) could never reach them
-/// via a plain [`resolve_in_object`] call on the base alone.
-///
-/// # Visibility (round-1 review addenda, BINDING)
-///
-/// CALLER-closure-anchored, never receiver-object-closure-anchored: an
-/// extension is only a candidate when its OWN declaring app is reachable in
-/// `from_object`'s (the CALLING object's) transitive dependency closure —
-/// mirrors [`resolve_in_table_scope`]'s closure filter exactly (see that
-/// function's doc for the full "why closure, not receiver-object" rationale).
-/// Per-candidate member access (`Local`/`Internal`/`Protected`) is then
-/// checked by [`object_has_visible_member_candidate`]/[`resolve_in_object`]
-/// exactly as it already is for Table∪TableExtension — no separate rule, no
-/// new access model.
-///
-/// # Aggregate-then-adjudicate (round-1 addendum, BINDING)
-///
-/// Every visible candidate object (base ∪ every visible extension) is
-/// collected FIRST; a base-vs-extension or extension-vs-extension exact-
-/// duplicate same-arity pair is a genuine `>1` ambiguity fed to the SAME
-/// machinery [`resolve_in_table_scope`] uses (never first-wins). AL0115
-/// (base/extension duplicate) and AL0226 (cross-extension duplicate) make an
-/// EXACT duplicate signature a compile error in real AL — this ambiguity path
-/// is DEFENSIVE-ONLY against malformed/synthetic source, not a live
-/// production case.
-///
-/// # Divergence from [`resolve_in_table_scope`]: `ArityMismatch` preservation
-///
-/// Unlike the Table/Record arm — whose cardinality check folds arity-EXACT
-/// matching into object EXISTENCE, so a same-name-wrong-arity candidate never
-/// counts as "present" (meaning `resolve_in_object`'s own `ArityMismatch`
-/// branch is provably unreachable through that path — cardinality already
-/// guarantees an arity match before `resolve_in_object` is ever called; see
-/// that function's `Defensive:` comment) — this function preserves the
-/// PRE-TASK-1 per-object `ArityMismatch`/access-exclusion diagnostic quality:
-/// when NO scope object has an arity+visibility match ANYWHERE, but the
-/// routine NAME (any arity) is declared somewhere in scope, the first
-/// (deterministic, scope-order) name-bearing object is still forwarded to
-/// [`resolve_in_object`] so its own internal per-object diagnostic
-/// (`ArityMismatch`, `AccessFilteredOverload`, `LocalNotVisible`, …) survives
-/// exactly as the single-object dispatch produced it pre-merge — required so
-/// the merge is a pure ADDITIVE gain (extensions become reachable) and never
-/// a diagnostic regression for a base-only call whose arity happens to be
-/// wrong. This can never construct a false `Source` route: by construction,
-/// [`resolve_in_object`] on a name-bearing-but-non-arity-visible-matching
-/// object always returns an `Unknown`-shaped route (never a real match) —
-/// `object_has_visible_member_candidate`'s arity+visibility scan already
-/// proved no candidate on ANY scope object clears that bar, so this fallback
-/// object's own internal arity/visibility filter can only reach its
-/// `ArityMismatch` or `visible.len() == 0` (access-exclusion) branches.
-///
-/// # Cardinality
-///
-/// - `>1` DISTINCT scope objects each carrying a visible arity-EXACT match →
-///   [`TableScopeOutcome::Ambiguous`] (never pick-first).
-/// - Exactly 1 → [`TableScopeOutcome::Resolved`] via [`resolve_in_object`].
-/// - 0 arity+visibility matches, but the name exists (any arity) somewhere in
-///   scope → forward to the first (scope-order) name-bearing object for its
-///   own diagnostic (never `Source`, per the divergence note above) —
-///   returned as `TableScopeOutcome::Resolved` too (that variant means "
-///   `resolve_in_object` was invoked and returned `Some`", not literally "a
-///   real match was found" — the SAME convention [`resolve_in_table_scope`]
-///   already uses for its own `AccessFilteredOverload`/`AbiCollapsedOverload`
-///   `Some` outcomes).
-/// - The name absent from every scope object → [`TableScopeOutcome::
-///   NotVisible`] with `access_excluded: None` — nothing to fall through with
-///   a specific reason; the caller's own default (`MemberNotFound`) applies.
-///
-/// # Report/ReportExtension (deferred, per the plan's cross-task addendum)
-///
-/// `Report`-typed receivers (`ReceiverType::Object{kind: Report, ..}`) are NOT
-/// merged here or anywhere else — index inspection confirmed a
-/// `report_extensions_of` analog would be mechanically cheap to add (`extends_
-/// target` is already populated for `ReportExtension` objects identically to
-/// `PageExtension`), but the `ArityMismatch`-preserving resolution logic above
-/// is bespoke (not a mechanical index swap) and would need its OWN dedicated
-/// fixtures + a fresh CDO measurement to verify soundness — the measured CDO
-/// population motivating THIS task is 100% Page (the 7 `eCandidates` sites),
-/// zero measured Report-typed-receiver cross-extension calls. Deferred rather
-/// than done speculatively (dated 2026-07-04) — see the task report for the
-/// full note.
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args`, mirrors resolve_in_table_scope's identical attribute.
-fn resolve_in_page_scope(
-    from_object: &ObjectNode,
-    page_id: ObjectNodeId,
-    name_lc: &str,
-    arity: usize,
-    graph: &ProgramGraph,
-    index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
-    args: &[ArgDispatchInfo],
-) -> TableScopeOutcome {
-    let closure = graph.topology.closure(from_object.id.app);
-
-    if !closure.contains(&page_id.app) {
-        return TableScopeOutcome::NotVisible {
-            access_excluded: None,
-        };
-    }
-    let Some((page_tier, page_name_lc)) = graph
-        .objects
-        .iter()
-        .find(|o| o.id == page_id)
-        .map(|o| (o.tier, o.name.to_ascii_lowercase()))
-    else {
-        return TableScopeOutcome::NotVisible {
-            access_excluded: None,
-        };
-    };
-
-    // Visible scope: the base page plus every PageExtension of it that is
-    // reachable in `from_object`'s app dependency closure.
-    let mut scope: Vec<(ObjectNodeId, TrustTier)> = vec![(page_id.clone(), page_tier)];
-    for ext_id in index.page_extensions_of(&page_name_lc) {
-        if !closure.contains(&ext_id.app) {
-            // Outside from_object's dependency closure: invisible, not a
-            // candidate (mirrors resolve_in_table_scope's identical filter).
-            continue;
-        }
-        let Some(ext_tier) = graph
-            .objects
-            .iter()
-            .find(|o| &o.id == ext_id)
-            .map(|o| o.tier)
-        else {
-            continue;
-        };
-        scope.push((ext_id.clone(), ext_tier));
-    }
-    // Deterministic ordering (candidate vectors sorted by stable ObjectNodeId).
-    scope.sort_by(|(a, _), (b, _)| a.cmp(b));
-
-    let mut arity_matched = scope.iter().filter(|(oid, tier)| {
-        object_has_visible_member_candidate(
-            oid,
-            *tier,
-            name_lc,
-            arity,
-            &from_object.id,
-            graph,
-            index,
-        )
-    });
-    let first = arity_matched.next();
-    let second = arity_matched.next();
-
-    match (first, second) {
         (Some(_), Some(_)) => TableScopeOutcome::Ambiguous,
         (Some((oid, tier)), None) => match resolve_in_object(
             oid,
@@ -1237,43 +1103,215 @@ fn resolve_in_page_scope(
                 access_excluded: Some(UnknownReason::IndexIntegrationGap),
             },
         },
-        (None, _) => {
-            // No scope object has BOTH a matching arity and visibility for
-            // `name_lc`. Before declaring true absence, check whether the
-            // bare NAME (any arity, tier-agnostic existence — mirrors
-            // `resolve_in_object`'s own initial `index.routines_in_object`
-            // check) exists anywhere in scope, so a genuine arity/access
-            // diagnostic is preserved (see the `ArityMismatch` divergence
-            // note above) rather than collapsed into a bare "not found". A
-            // deterministic (scope-order) pick among multiple name-bearing-
-            // but-non-matching objects is safe — none of them can produce a
-            // `Source` route (see the doc above).
-            match scope
-                .iter()
-                .find(|(oid, _)| !index.routines_in_object(oid, name_lc).is_empty())
-            {
-                Some((oid, tier)) => match resolve_in_object(
-                    oid,
-                    *tier,
-                    name_lc,
-                    arity,
-                    &from_object.id,
-                    graph,
-                    index,
-                    body_map,
-                    args,
-                ) {
-                    Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
+        (None, _) => match zero_match {
+            ZeroMatchStrategy::AccessExcludedReason => {
+                // Zero visible candidates in the whole scope — diagnose WHY,
+                // in scope order (deterministic): the first same-name/arity
+                // candidate that exists but is access-excluded, if any.
+                let access_excluded = scope.iter().find_map(|(oid, _tier)| {
+                    access_exclusion_reason(oid, name_lc, arity, &from_object.id, graph, index)
+                });
+                TableScopeOutcome::NotVisible { access_excluded }
+            }
+            ZeroMatchStrategy::PreserveArityMismatch => {
+                // No scope object has BOTH a matching arity and visibility
+                // for `name_lc`. Before declaring true absence, check whether
+                // the bare NAME (any arity, tier-agnostic existence — mirrors
+                // `resolve_in_object`'s own initial `index.routines_in_object`
+                // check) exists anywhere in scope, so a genuine arity/access
+                // diagnostic is preserved rather than collapsed into a bare
+                // "not found". A deterministic (scope-order) pick among
+                // multiple name-bearing-but-non-matching objects is safe —
+                // none of them can produce a `Source` route: by construction,
+                // `resolve_in_object` on a name-bearing-but-non-arity-
+                // visible-matching object always returns an `Unknown`-shaped
+                // route (never a real match) — the arity+visibility scan
+                // above already proved no candidate on ANY scope object
+                // clears that bar, so this fallback object's own internal
+                // arity/visibility filter can only reach its `ArityMismatch`
+                // or `visible.len() == 0` (access-exclusion) branches.
+                match scope
+                    .iter()
+                    .find(|(oid, _)| !index.routines_in_object(oid, name_lc).is_empty())
+                {
+                    Some((oid, tier)) => match resolve_in_object(
+                        oid,
+                        *tier,
+                        name_lc,
+                        arity,
+                        &from_object.id,
+                        graph,
+                        index,
+                        body_map,
+                        args,
+                    ) {
+                        Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
+                        None => TableScopeOutcome::NotVisible {
+                            access_excluded: None,
+                        },
+                    },
                     None => TableScopeOutcome::NotVisible {
                         access_excluded: None,
                     },
-                },
-                None => TableScopeOutcome::NotVisible {
-                    access_excluded: None,
-                },
+                }
             }
-        }
+        },
     }
+}
+
+/// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED table scope: the
+/// base table `table_id` plus every `TableExtension` of it that is reachable
+/// in `from_object`'s compile-time app dependency closure (beyond-1B.3b Task
+/// 2; extracted from `resolve_member`'s `Record` arm so a future caller with
+/// the same scope+cardinality need — e.g. `resolve_bare`'s implicit-Rec
+/// lookup — can reuse the identical algorithm rather than re-deriving it).
+/// A thin wrapper over [`resolve_in_extendable_scope`] (roadmap-closure plan,
+/// Task 1) with [`ZeroMatchStrategy::AccessExcludedReason`] — the pre-Task-1
+/// Table/Record policy: a same-name-WRONG-arity candidate never counts as
+/// "present" for diagnostic purposes on this arm (see that variant's doc).
+/// See [`resolve_in_extendable_scope`]'s doc for the full visibility-scoping,
+/// aggregate-then-adjudicate, and cardinality rules (shared by all three
+/// kinds).
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args` (Task 2, argtype-dispatch-and-page-catalog plan).
+fn resolve_in_table_scope(
+    from_object: &ObjectNode,
+    table_id: ObjectNodeId,
+    name_lc: &str,
+    arity: usize,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    args: &[ArgDispatchInfo],
+) -> TableScopeOutcome {
+    resolve_in_extendable_scope(
+        from_object,
+        table_id,
+        name_lc,
+        arity,
+        graph,
+        index,
+        body_map,
+        args,
+        ResolveIndex::table_extensions_of,
+        ZeroMatchStrategy::AccessExcludedReason,
+    )
+}
+
+/// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED Page **object**
+/// scope: the base Page `page_id` plus every `PageExtension` of it reachable
+/// in `from_object`'s compile-time app dependency closure — the `Page` analog
+/// of [`resolve_in_table_scope`] (pageext-merge-and-final-residual plan,
+/// Task 1). Closes the engine gap the plan's grounding report identified: a
+/// `PageExtension`'s routines are indexed under the EXTENSION's own
+/// `ObjectNodeId` (`node_extract::extract_nodes`), so a base-Page-typed
+/// receiver (`ReceiverType::Object{kind: Page, ..}`) could never reach them
+/// via a plain [`resolve_in_object`] call on the base alone. A thin wrapper
+/// over [`resolve_in_extendable_scope`] (roadmap-closure plan, Task 1) with
+/// [`ZeroMatchStrategy::PreserveArityMismatch`].
+///
+/// # Divergence from [`resolve_in_table_scope`]: `ArityMismatch` preservation
+///
+/// Unlike the Table/Record arm — whose cardinality check folds arity-EXACT
+/// matching into object EXISTENCE, so a same-name-wrong-arity candidate never
+/// counts as "present" (meaning `resolve_in_object`'s own `ArityMismatch`
+/// branch is provably unreachable through that path; see that function's
+/// `Defensive:` comment) — this policy preserves the PRE-TASK-1 per-object
+/// `ArityMismatch`/access-exclusion diagnostic quality: when NO scope object
+/// has an arity+visibility match ANYWHERE, but the routine NAME (any arity)
+/// is declared somewhere in scope, the first (deterministic, scope-order)
+/// name-bearing object is still forwarded to [`resolve_in_object`] so its own
+/// internal per-object diagnostic (`ArityMismatch`, `AccessFilteredOverload`,
+/// `LocalNotVisible`, …) survives exactly as the single-object dispatch
+/// produced it pre-merge — required so the merge is a pure ADDITIVE gain
+/// (extensions become reachable) and never a diagnostic regression for a
+/// base-only call whose arity happens to be wrong. See
+/// [`ZeroMatchStrategy::PreserveArityMismatch`]'s doc for the al-compile
+/// probe that independently grounds extending this SAME policy to Report.
+///
+/// See [`resolve_in_extendable_scope`]'s doc for the full visibility-scoping,
+/// aggregate-then-adjudicate, and cardinality rules (shared by all three
+/// kinds).
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args`, mirrors resolve_in_table_scope's identical attribute.
+fn resolve_in_page_scope(
+    from_object: &ObjectNode,
+    page_id: ObjectNodeId,
+    name_lc: &str,
+    arity: usize,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    args: &[ArgDispatchInfo],
+) -> TableScopeOutcome {
+    resolve_in_extendable_scope(
+        from_object,
+        page_id,
+        name_lc,
+        arity,
+        graph,
+        index,
+        body_map,
+        args,
+        ResolveIndex::page_extensions_of,
+        ZeroMatchStrategy::PreserveArityMismatch,
+    )
+}
+
+/// Resolve `name_lc`/`arity` against the VISIBILITY-SCOPED Report **object**
+/// scope: the base Report `report_id` plus every `ReportExtension` of it
+/// reachable in `from_object`'s compile-time app dependency closure — the
+/// `Report` analog of [`resolve_in_page_scope`] (roadmap-closure plan,
+/// Task 1; previously deferred — see the pageext-merge-and-final-residual
+/// plan's Task 1 doc note, now superseded by this function). Closes the same
+/// class of engine gap: a `ReportExtension`'s routines are indexed under the
+/// EXTENSION's own `ObjectNodeId` (`node_extract::extract_nodes`), so a
+/// base-Report-typed receiver (`ReceiverType::Object{kind: Report, ..}`)
+/// could never reach them via a plain [`resolve_in_object`] call on the base
+/// alone. A thin wrapper over [`resolve_in_extendable_scope`] with
+/// [`ZeroMatchStrategy::PreserveArityMismatch`] — the SAME policy as Page,
+/// grounded independently for Report by an `al compile` probe (the
+/// grammar repo's minimal-probe methodology,
+/// `tree-sitter-al/CLAUDE.md` § "Validating AL Syntax Questions"): a
+/// same-app `ReportExtension` procedure called through a base-Report-typed
+/// variable receiver (`R: Report "ProbeReport"; R.OneArgProc(5);`) compiles
+/// cleanly (positive control — the merge itself is real, compiler-verified
+/// AL semantics, not just an engine assumption), and calling it with the
+/// WRONG arity (`R.OneArgProc();`) reports `AL0135: There is no argument
+/// given that corresponds to the required formal parameter 'X' of
+/// 'OneArgProc(Integer)'` — a DISTINCT diagnostic class from the genuine
+/// "member not found" case (`AL0132: 'Report ProbeReport' does not contain a
+/// definition for 'NoSuchProc'`, confirmed on the same fixture). The real
+/// compiler treats a wrong-arity call to a name-resolved routine as its own
+/// diagnostic category, never collapsing it into "not found" — exactly what
+/// `PreserveArityMismatch` (as opposed to Table's `AccessExcludedReason`)
+/// preserves. Full probe transcript in `.superpowers/sdd/task-1-report.md`.
+///
+/// See [`resolve_in_extendable_scope`]'s doc for the full visibility-scoping,
+/// aggregate-then-adjudicate, and cardinality rules (shared by all three
+/// kinds), and [`resolve_in_page_scope`]'s doc for the full `ArityMismatch`-
+/// preservation rationale this function reuses unchanged.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `args`, mirrors resolve_in_table_scope's/resolve_in_page_scope's identical attribute.
+fn resolve_in_report_scope(
+    from_object: &ObjectNode,
+    report_id: ObjectNodeId,
+    name_lc: &str,
+    arity: usize,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    args: &[ArgDispatchInfo],
+) -> TableScopeOutcome {
+    resolve_in_extendable_scope(
+        from_object,
+        report_id,
+        name_lc,
+        arity,
+        graph,
+        index,
+        body_map,
+        args,
+        ResolveIndex::report_extensions_of,
+        ZeroMatchStrategy::PreserveArityMismatch,
+    )
 }
 
 /// Compute the implicit-`Rec` table `ObjectNodeId` for `resolve_bare`'s Step 3
@@ -2405,30 +2443,46 @@ pub(crate) fn resolve_member_with_args(
             }
 
             // General dispatch: resolve the method among the target object's
-            // procedures. Task 1 (pageext-merge-and-final-residual plan): a
-            // `Page`-typed receiver merges in every closure-visible
-            // `PageExtension`'s routines FIRST — a `PageExtension`'s routines
+            // procedures. Task 1 (pageext-merge-and-final-residual plan, Page;
+            // roadmap-closure plan, Task 1, Report): a `Page`- or `Report`-
+            // typed receiver merges in every closure-visible `PageExtension`/
+            // `ReportExtension`'s routines FIRST — an extension's routines
             // are indexed under the EXTENSION's own `ObjectNodeId`
             // (`node_extract::extract_nodes`), structurally unreachable from a
-            // base-Page-typed receiver via a plain `resolve_in_object` call on
-            // the base alone (the Table analog: `resolve_in_table_scope` +
-            // `table_extensions_of`). See [`resolve_in_page_scope`]'s doc for
-            // the full closure/access/ambiguity design. Every other kind
-            // (Codeunit/Report/XmlPort/Query/…) is UNCHANGED — Report/
-            // ReportExtension's own merge is a deliberately DEFERRED decision
-            // (see that function's doc note).
+            // base-typed receiver via a plain `resolve_in_object` call on the
+            // base alone (the Table analog: `resolve_in_table_scope` +
+            // `table_extensions_of`). See [`resolve_in_page_scope`]'s and
+            // [`resolve_in_report_scope`]'s docs for the full closure/access/
+            // ambiguity design (shared engine: [`resolve_in_extendable_scope`]).
+            // Every other kind (Codeunit/XmlPort/Query/…) is UNCHANGED — no
+            // measured CDO population motivates merging them, and no
+            // `extends_target` reverse index exists for them.
             let mut reason = UnknownReason::MemberNotFound;
-            let object_dispatch = if *kind == ObjectKind::Page {
-                match resolve_in_page_scope(
-                    from_object,
-                    target_id.clone(),
-                    method_lc,
-                    arity,
-                    graph,
-                    index,
-                    body_map,
-                    args,
-                ) {
+            let object_dispatch = if matches!(*kind, ObjectKind::Page | ObjectKind::Report) {
+                let outcome = if *kind == ObjectKind::Page {
+                    resolve_in_page_scope(
+                        from_object,
+                        target_id.clone(),
+                        method_lc,
+                        arity,
+                        graph,
+                        index,
+                        body_map,
+                        args,
+                    )
+                } else {
+                    resolve_in_report_scope(
+                        from_object,
+                        target_id.clone(),
+                        method_lc,
+                        arity,
+                        graph,
+                        index,
+                        body_map,
+                        args,
+                    )
+                };
+                match outcome {
                     TableScopeOutcome::Resolved(shape, routes) => Some((shape, routes)),
                     TableScopeOutcome::Ambiguous => {
                         // Genuine >1-visible-candidate ambiguity across
@@ -2466,8 +2520,9 @@ pub(crate) fn resolve_member_with_args(
                 (shape, routes)
             } else {
                 // Method name absent from target object's declared procedures
-                // (and, for Page, absent from every visible extension's too).
-                // Fall through to the instance-builtin catalog for kinds that have one
+                // (and, for Page/Report, absent from every visible
+                // extension's too). Fall through to the instance-builtin
+                // catalog for kinds that have one
                 // (Page→PageInstance, Report→ReportInstance), EXCLUDING only the
                 // CurrPage-only `SaveRecord` (see `is_metadata_sensitive_instance_
                 // method`'s doc — argtype-dispatch-and-page-catalog plan, Task 1):
@@ -10699,6 +10754,641 @@ codeunit 61072 "PxMergeCaller8"
             routes[0].target
         );
         assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 1 (roadmap-closure plan): ReportExtension routine merge into
+    // base-Report member resolution — the `Report` analog of the
+    // PageExtension merge block above, via `resolve_in_report_scope` (a thin
+    // `resolve_in_extendable_scope` wrapper, `ZeroMatchStrategy::
+    // PreserveArityMismatch`). Mirrors each Page fixture exactly (same
+    // shape, same assertions) — the postcondition being proven is that the
+    // unified engine produces IDENTICAL behavior for a third kind, not just
+    // for the two it already had fixtures for. See `resolve_in_report_scope`'s
+    // doc for the al-compile probe (AL0135 vs AL0132) grounding the
+    // `PreserveArityMismatch` policy for Report specifically.
+    // -----------------------------------------------------------------------
+
+    // (T1-report-pos-1) base-Report receiver, ReportExtension-declared
+    // `internal` procedure, same app — must resolve to Source.
+    #[test]
+    fn resolve_member_object_report_merge_same_app_internal_extension_resolves_to_source() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62000 "RxMergeBase1"
+{
+    dataset
+    {
+    }
+
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62001 "RxMergeBase1Ext" extends "RxMergeBase1"
+{
+    internal procedure ExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62002 "RxMergeCaller1"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("RxMergeApp1");
+        let unit_report = make_unit(app_id.clone(), "RxMergeBase1.al", src_report);
+        let unit_ext = make_unit(app_id.clone(), "RxMergeBase1Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "RxMergeCaller1.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller1");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase1".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "a base-Report-typed receiver calling a same-app `internal` \
+             ReportExtension procedure must resolve to Source (Task 1's \
+             central fix, mirroring the Page merge); got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+    }
+
+    // (T1-report-neg-1) DIFFERENT-app internal extension member (no friend) —
+    // must decline with InternalNotVisible, not a bare MemberNotFound.
+    #[test]
+    fn resolve_member_object_report_merge_different_app_internal_extension_declines() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62010 "RxMergeBase2"
+{
+    dataset
+    {
+    }
+
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62011 "RxMergeBase2Ext" extends "RxMergeBase2"
+{
+    internal procedure ExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62012 "RxMergeCaller2"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_report = make_app_id("RxMergeReportApp2");
+        let app_ext = make_app_id("RxMergeExtApp2");
+        let app_caller = make_app_id("RxMergeCallerApp2");
+        let unit_report = make_unit(app_report, "RxMergeBase2.al", src_report);
+        let unit_ext = make_unit(app_ext, "RxMergeBase2Ext.al", src_ext);
+        let unit_caller = make_unit(app_caller, "RxMergeCaller2.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph_multi_dep(
+            &units,
+            &[
+                ("RxMergeCallerApp2", "RxMergeReportApp2"),
+                ("RxMergeCallerApp2", "RxMergeExtApp2"),
+                ("RxMergeExtApp2", "RxMergeReportApp2"),
+            ],
+        );
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller2");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase2".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].target,
+            RouteTarget::Unresolved,
+            "a cross-app `internal` ReportExtension procedure (no friend \
+             grant) must stay honest Unknown, not a false Source; got {:?}",
+            routes[0].target
+        );
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::InternalNotVisible)
+            ),
+            "must be excluded with the specific InternalNotVisible reason, \
+             not a bare MemberNotFound; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-report-neg-2) out-of-closure extension — the extension's app is
+    // never a dependency of the caller's app, so its member must be
+    // structurally INVISIBLE (MemberNotFound), never surfaced as an access
+    // exclusion.
+    #[test]
+    fn resolve_member_object_report_merge_out_of_closure_extension_invisible() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62020 "RxMergeBase3"
+{
+    dataset
+    {
+    }
+
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62021 "RxMergeBase3Ext" extends "RxMergeBase3"
+{
+    procedure ExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62022 "RxMergeCaller3"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        // CallerApp depends ONLY on ReportApp — never on ExtApp — so the
+        // extension is entirely out of the caller's dependency closure, even
+        // though ExtApp itself depends on ReportApp (real AL requires that
+        // for `extends` to compile).
+        let app_report = make_app_id("RxMergeReportApp3");
+        let app_ext = make_app_id("RxMergeExtApp3");
+        let app_caller = make_app_id("RxMergeCallerApp3");
+        let unit_report = make_unit(app_report, "RxMergeBase3.al", src_report);
+        let unit_ext = make_unit(app_ext, "RxMergeBase3Ext.al", src_ext);
+        let unit_caller = make_unit(app_caller, "RxMergeCaller3.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph_multi_dep(
+            &units,
+            &[
+                ("RxMergeCallerApp3", "RxMergeReportApp3"),
+                ("RxMergeExtApp3", "RxMergeReportApp3"),
+            ],
+        );
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller3");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase3".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::MemberNotFound)
+            ),
+            "an out-of-closure extension must be structurally invisible \
+             (MemberNotFound), never surfaced via an access-exclusion \
+             reason; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-report-amb-1) TWO caller-visible ReportExtensions both declaring
+    // the same viable member — genuine ambiguity, no first-wins (defensive:
+    // AL0226-class in real AL).
+    #[test]
+    fn resolve_member_object_report_merge_two_extensions_same_member_is_ambiguous() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62030 "RxMergeBase4"
+{
+    dataset
+    {
+    }
+
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext_a: &'static str = r#"
+reportextension 62031 "RxMergeBase4ExtA" extends "RxMergeBase4"
+{
+    procedure DupProc()
+    begin
+    end;
+}
+"#;
+        let src_ext_b: &'static str = r#"
+reportextension 62032 "RxMergeBase4ExtB" extends "RxMergeBase4"
+{
+    procedure DupProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62033 "RxMergeCaller4"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("RxMergeApp4");
+        let unit_report = make_unit(app_id.clone(), "RxMergeBase4.al", src_report);
+        let unit_ext_a = make_unit(app_id.clone(), "RxMergeBase4ExtA.al", src_ext_a);
+        let unit_ext_b = make_unit(app_id.clone(), "RxMergeBase4ExtB.al", src_ext_b);
+        let unit_caller = make_unit(app_id, "RxMergeCaller4.al", src_caller);
+        let units = [unit_report, unit_ext_a, unit_ext_b, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller4");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase4".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "dupproc", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].target, RouteTarget::Unresolved);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::OverloadAmbiguous)
+            ),
+            "two caller-visible ReportExtensions both declaring the same \
+             viable member must decline as a genuine ambiguity — no \
+             first-wins (AL0226-class, defensive-only against malformed \
+             input); got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-report-arity-visible) a VISIBLE base-only candidate called with the
+    // WRONG arity must still surface `ArityMismatch` (name found, wrong
+    // arity) — the merge must not regress this pre-Task-1 per-object
+    // diagnostic into a bare MemberNotFound/CatalogMiss. Grounded by the
+    // al-compile probe on `resolve_in_report_scope`'s doc (AL0135).
+    #[test]
+    fn resolve_member_object_report_merge_visible_wrong_arity_preserves_arity_mismatch() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62040 "RxMergeBase5"
+{
+    dataset
+    {
+    }
+
+    procedure OneArgProc(X: Integer)
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62041 "RxMergeBase5Ext" extends "RxMergeBase5"
+{
+    procedure UnrelatedExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62042 "RxMergeCaller5"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("RxMergeApp5");
+        let unit_report = make_unit(app_id.clone(), "RxMergeBase5.al", src_report);
+        let unit_ext = make_unit(app_id.clone(), "RxMergeBase5Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "RxMergeCaller5.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller5");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase5".into(),
+            id: None,
+        };
+        // Call with arity 0 — the only declared "OneArgProc" takes 1 param.
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "oneargproc",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::ArityMismatch)
+            ),
+            "a wrong-arity call to a VISIBLE base-only candidate must stay \
+             ArityMismatch (name found), not collapse into MemberNotFound/ \
+             CatalogMiss via the merge (the al-compile AL0135 probe); got \
+             {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-report-arity-invisible) an INVISIBLE (out-of-closure) extension
+    // declaring the SAME name at the WRONG arity must NOT leak an
+    // `ArityMismatch` — the closure filter runs BEFORE the zero-match
+    // fallback ever sees the candidate, so an invisible wrong-arity
+    // candidate stays structurally absent (MemberNotFound), exactly like the
+    // out-of-closure fixture above.
+    #[test]
+    fn resolve_member_object_report_merge_invisible_wrong_arity_no_leak() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62050 "RxMergeBase6"
+{
+    dataset
+    {
+    }
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62051 "RxMergeBase6Ext" extends "RxMergeBase6"
+{
+    procedure OneArgProc(X: Integer)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62052 "RxMergeCaller6"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        // CallerApp depends ONLY on ReportApp — the extension (declaring
+        // OneArgProc at arity 1) is entirely out of the caller's closure.
+        let app_report = make_app_id("RxMergeReportApp6");
+        let app_ext = make_app_id("RxMergeExtApp6");
+        let app_caller = make_app_id("RxMergeCallerApp6");
+        let unit_report = make_unit(app_report, "RxMergeBase6.al", src_report);
+        let unit_ext = make_unit(app_ext, "RxMergeBase6Ext.al", src_ext);
+        let unit_caller = make_unit(app_caller, "RxMergeCaller6.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph_multi_dep(
+            &units,
+            &[
+                ("RxMergeCallerApp6", "RxMergeReportApp6"),
+                ("RxMergeExtApp6", "RxMergeReportApp6"),
+            ],
+        );
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller6");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase6".into(),
+            id: None,
+        };
+        // Call with arity 0 — the invisible extension's OneArgProc takes 1.
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "oneargproc",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::MemberNotFound)
+            ),
+            "an out-of-closure extension's wrong-arity candidate must NOT \
+             leak ArityMismatch (it is invisible, full stop) — must stay \
+             the generic MemberNotFound default; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-report-arity-mixed) base declares the name at one arity, a VISIBLE
+    // extension declares it at a DIFFERENT arity — calling with a THIRD arity
+    // (matching neither) must deterministically land on ArityMismatch (via
+    // the first scope-order name-bearing object), never Ambiguous and never
+    // MemberNotFound.
+    #[test]
+    fn resolve_member_object_report_merge_mixed_base_extension_wrong_arity() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62060 "RxMergeBase7"
+{
+    dataset
+    {
+    }
+
+    procedure MixedProc(X: Integer)
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62061 "RxMergeBase7Ext" extends "RxMergeBase7"
+{
+    procedure MixedProc(X: Integer; Y: Integer)
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62062 "RxMergeCaller7"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("RxMergeApp7");
+        let unit_report = make_unit(app_id.clone(), "RxMergeBase7.al", src_report);
+        let unit_ext = make_unit(app_id.clone(), "RxMergeBase7Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "RxMergeCaller7.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller7");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase7".into(),
+            id: None,
+        };
+        // Call with arity 0 — base takes 1, extension takes 2; neither matches.
+        let (shape, routes) = resolve_member(
+            &receiver,
+            "mixedproc",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(
+                routes[0].evidence,
+                Evidence::Unknown(UnknownReason::ArityMismatch)
+            ),
+            "a mixed base+extension wrong-arity call (neither side's arity \
+             matches) must deterministically report ArityMismatch, never \
+             Ambiguous (there is no arity+visibility match to BE ambiguous \
+             between) and never a bare MemberNotFound; got {:?}",
+            routes[0].evidence
+        );
+    }
+
+    // (T1-report-base-only) base-only calls are unchanged by the merge: a
+    // Report with an extension present (that does NOT declare the called
+    // member) still resolves the base's own procedure exactly as
+    // pre-Task-1, AND the instance-builtin catalog fallback still fires when
+    // neither base nor any extension declares the name.
+    #[test]
+    fn resolve_member_object_report_merge_base_only_unchanged() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let src_report: &'static str = r#"
+report 62070 "RxMergeBase8"
+{
+    dataset
+    {
+    }
+
+    procedure BaseProc()
+    begin
+    end;
+}
+"#;
+        let src_ext: &'static str = r#"
+reportextension 62071 "RxMergeBase8Ext" extends "RxMergeBase8"
+{
+    procedure UnrelatedExtProc()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 62072 "RxMergeCaller8"
+{
+    procedure Trigger()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("RxMergeApp8");
+        let unit_report = make_unit(app_id.clone(), "RxMergeBase8.al", src_report);
+        let unit_ext = make_unit(app_id.clone(), "RxMergeBase8Ext.al", src_ext);
+        let unit_caller = make_unit(app_id, "RxMergeCaller8.al", src_caller);
+        let units = [unit_report, unit_ext, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "RxMergeCaller8");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Report,
+            name_lc: "rxmergebase8".into(),
+            id: None,
+        };
+
+        // The base's own procedure still resolves to Source.
+        let (shape, routes) = resolve_member(
+            &receiver, "baseproc", 0, from_obj, &graph, &index, &body_map,
+        );
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(matches!(routes[0].target, RouteTarget::Routine(_)));
+        assert_eq!(routes[0].evidence, Evidence::Source);
+
+        // A genuine platform-intrinsic (ReportInstance catalog) member absent
+        // from both base and extension still falls through to Catalog.
+        let (shape2, routes2) = resolve_member(
+            &receiver,
+            "saveaspdf",
+            0,
+            from_obj,
+            &graph,
+            &index,
+            &body_map,
+        );
+        assert_eq!(shape2, DispatchShape::Exact);
+        assert_eq!(routes2.len(), 1);
+        assert_eq!(routes2[0].evidence, Evidence::Catalog);
     }
 
     // (B-pos) bare call to the caller's own `local` procedure (gap B is
