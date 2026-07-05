@@ -212,6 +212,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     its content is "preserved in git history"; only files actually tracked
     by git qualify for that claim. Recorded here since an earlier report in
     this plan (Task 1) used that wording incorrectly.
+- **Grammar repin: spaced `# if`/`# elif`/`# endif` now recognized
+  (Task 4, roadmap-closure plan; `tree-sitter-al` v3.1.0 `307dc39` ->
+  v3.2.0 `14bd55c`).** Closes the limitation v3.1.0 documented and
+  reviewed-and-rejected: a single horizontal space between `#` and the
+  directive keyword (`# if`, `# elif`, `# endif`) previously recovered to an
+  honest `ERROR` (this engine's `ParseStatus::Recovered` diagnostic) rather
+  than parsing. Fixed this time via **scanner-exclusive** ownership (the
+  round-2 closer's binding design gate) rather than the reverted
+  literal-variant approach that caused v3.1.0's GLR non-determinism: the
+  external scanner's `PREPROC_OPEN`/`PREPROC_CLOSE` now consume `#`, optional
+  horizontal whitespace, then the keyword, as ONE token — participating in
+  the depth counter identically for spaced and unspaced forms — and the
+  grammar's `preproc_if`/`preproc_endif` carry ONLY the scanner token (every
+  grammar-literal fallback removed), so there is exactly one route to either
+  token and nothing for GLR to fork on. `preproc_elif` (no scanner token, no
+  depth interaction) separately gained spaced literal variants mirroring the
+  pre-existing, safe `preproc_else` pattern. This also retires a latent bug
+  the old `'# endif'` literal fallback carried since its introduction: it
+  bypassed the scanner's depth counter entirely (zero corpus hits ever fired
+  it, but the bug was real). Inert on CDO (zero spaced-preproc source; full
+  CDO harness BYTE-IDENTICAL to `.superpowers/sdd/cdo-baseline-plan13.md` on
+  every metric, including `aldump --program-call-graph-stats`'s JSON SHA-256).
+  `gen-syntax` re-run: zero NAMED-kind vocabulary change (388 named kinds
+  unchanged) — only the anonymous token set shifted (9 removed:
+  `#if`/`#IF`/`#If`/`#endif`/`#ENDIF`/`#Endif`/`# endif`/`# ENDIF`/`# Endif`;
+  3 added: `# elif`/`# ELIF`/`# Elif`) and the embedded
+  `GRAMMAR_NODE_TYPES_HASH` anchor updated accordingly — both fully expected,
+  neither a RawKind vocabulary move. See the grammar repo's `[3.2.0]`
+  CHANGELOG entry and `.superpowers/sdd/task-4-report.md` for the full design
+  note, stability-protocol results (5x clean-cache `tree-sitter test` runs +
+  5x clean-cache re-parses of the historical GLR-non-determinism repro, all
+  identical), and the BC.History (16,898 files) byte-identical manifest
+  proof. Local commits only (grammar + this repin) — no push, no tag; rides
+  the merge menu with Tasks 1-3.
 
 ### Added
 - **Scope-resolver unification + the Report/ReportExtension routine merge

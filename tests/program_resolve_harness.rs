@@ -1409,6 +1409,30 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // path) rather than parsing silently wrong or non-deterministically. See
     // `tree-sitter-al`'s CHANGELOG.md ("Not supported") and
     // `test/corpus/preproc_if_elif_whitespace_not_recognized_test.txt`.
+    //
+    // RESOLVED 2026-07-05 (roadmap-closure plan, Task 4, grammar v3.2.0,
+    // submodule `307dc39` -> `14bd55c`) — the scanner-exclusive route this
+    // comment's "future fix" pointer called for has landed:
+    // `PREPROC_OPEN`/`PREPROC_CLOSE` now consume optional horizontal
+    // whitespace between `#` and the keyword as PART OF the token (never
+    // skipped, never a bare `\s`/`isspace()` that could span a newline), so a
+    // spaced `# if`/`# endif` participates in the scanner's depth counter
+    // exactly like the unspaced form. Critically this is NOT the reverted
+    // literal-variant approach — `preproc_if`/`preproc_endif` carry ONLY
+    // `$.preproc_open`/`$.preproc_close` (every grammar-literal alternative,
+    // spaced and unspaced, is REMOVED), so there is exactly one route to
+    // either token and nothing for GLR to fork on; the non-determinism class
+    // described above does not reproduce (proven via 5x clean-cache
+    // `tree-sitter test` runs plus 5x clean-cache re-parses of the exact
+    // `preproc_split_if_then_begin_else_shared`-with-spaced-open repro, all
+    // identical). `preproc_elif` (no scanner token, no depth interaction)
+    // separately gained spaced literal variants mirroring the pre-existing,
+    // safe `preproc_else` pattern. CDO has zero spaced-preproc source, so
+    // this is inert here (`recovered_files` stays empty, confirmed below) —
+    // see `tree-sitter-al`'s CHANGELOG.md `[3.2.0]` entry and
+    // `test/corpus/preproc_if_elif_whitespace_tolerance_test.txt` (renamed
+    // from `..._not_recognized_test.txt`) for the full fix and fixtures.
+    //
     // Both `tools/tree-harness.sh` (CDO source, 551 files; BC.History,
     // 15,358 files) confirm byte-identical parse trees before/after outside
     // the 4 previously-Recovered dependency files — zero blast radius
