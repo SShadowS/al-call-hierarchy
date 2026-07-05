@@ -3,22 +3,23 @@
 //! # Coverage
 //!
 //! (a) NATIVE ORACLES: `classify_artifact_for_prune` byte-for-byte vs
-//!     `scripts/cli-c-goldens/cache/classification.json` for all 5 fixture files.
+//!     `classification.json` for all 5 fixture files.
 //! (b) DRY-RUN DIFFERENTIAL: run `cache prune --dry-run --dep-cache-dir <fixture-cache>`
 //!     and byte-compare the stdout (with the first line normalized from the abs path to
-//!     `<CACHE_DIR>`) to `scripts/cli-c-goldens/cache/dry-run.txt`.
+//!     `<CACHE_DIR>`) to `dry-run.txt`.
 //! (c) INTEGRATION: copy the fixture cache to a temp dir, run a real (non-dry-run)
 //!     prune, assert the 4 `removed-*` files are deleted and the `kept` file remains.
 //!     NOT byte-differentialed — the mutation is filesystem observable only.
 //!
 //! # Golden source
-//! All goldens + fixtures live in the al-sem checkout (default `U:\Git\al-sem`).
-//! Override with the `AL_SEM_DIR` environment variable.
-//!
-//! # Refresh
-//! The `#[ignore]` test shells `bun run scripts/dump-cache.ts` under `AL_SEM_DIR`
-//! and re-copies the goldens into the engine's test tree (not needed yet — goldens
-//! are read directly from the al-sem checkout).
+//! All goldens + fixtures are vendored in-repo at `tests/cli-c-goldens/cache/`
+//! (temp-state epoch, Task 16). al-sem is FROZEN — never modified — and is no
+//! longer read at all: the symbolReader cache bump 17→18 invalidated al-sem's
+//! original cache fixtures (a version bump the frozen archive can never
+//! regenerate), so Task 3.3 retired the al-sem fallback and made this in-repo
+//! corpus (the kept/content-hash-mismatch fixtures bumped to "18", with the
+//! kept fixture's `artifactContentHash` recomputed) the sole, hard-required
+//! source. There is no skip-gate: a missing fixture is a hard failure.
 
 use std::path::PathBuf;
 
@@ -30,67 +31,22 @@ use al_call_hierarchy::engine::gate::cache_prune::{
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// The al-sem checkout root.  Override via `AL_SEM_DIR`.
-fn al_sem_dir() -> PathBuf {
-    PathBuf::from(std::env::var("AL_SEM_DIR").unwrap_or_else(|_| r"U:\Git\al-sem".to_string()))
-}
-
 /// This crate's manifest dir (the alch-engine worktree root).
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn al_sem_cache_goldens_dir() -> PathBuf {
-    al_sem_dir()
-        .join("scripts")
-        .join("cli-c-goldens")
-        .join("cache")
-}
-
-/// In-repo VENDORED override for the cli-c cache golden corpus (temp-state epoch,
-/// Task 16). al-sem is FROZEN — never modified. The symbolReader cache bump 17→18
-/// invalidated the prior cache fixtures, so the rebaselined corpus (the kept/
-/// content-hash-mismatch fixtures bumped to "18" with the kept fixture's
-/// artifactContentHash recomputed) lives HERE as a self-contained 5-file
-/// fixture-cache + classification.json + dry-run.txt. Prefer it when present; fall
-/// back to the frozen al-sem archive otherwise (so a checkout without the local
-/// override still works against al-sem).
-fn local_cache_goldens_dir() -> PathBuf {
+/// In-repo vendored cli-c cache golden corpus (temp-state epoch, Task 16; sole
+/// source since Task 3.3 retired the al-sem fallback).
+fn cache_goldens_dir() -> PathBuf {
     repo_root()
         .join("tests")
         .join("cli-c-goldens")
         .join("cache")
 }
 
-fn cache_goldens_dir() -> PathBuf {
-    let local = local_cache_goldens_dir();
-    if local.is_dir() {
-        local
-    } else {
-        al_sem_cache_goldens_dir()
-    }
-}
-
 fn fixture_cache_dir() -> PathBuf {
     cache_goldens_dir().join("fixture-cache")
-}
-
-/// Skip the test if the al-sem checkout / fixture cache is not present.
-fn corpus_available() -> bool {
-    fixture_cache_dir().is_dir()
-}
-
-/// Returns `true` when the corpus is MISSING — and prints a visible skip notice
-/// so an absent corpus is never mistaken for passing coverage.
-fn skip_if_no_corpus(test_name: &str) -> bool {
-    if corpus_available() {
-        return false;
-    }
-    eprintln!(
-        "skipping cli_c_cache::{test_name}: corpus unavailable (fixture-cache not found at {})",
-        fixture_cache_dir().display()
-    );
-    true
 }
 
 fn load_golden(name: &str) -> String {
@@ -126,9 +82,6 @@ const FIXTURE_CLASSIFICATIONS: &[(&str, PruneStatus)] = &[
 
 #[test]
 fn classification_oracle_content_hash_mismatch() {
-    if skip_if_no_corpus("classification_oracle_content_hash_mismatch") {
-        return;
-    }
     let file = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -140,9 +93,6 @@ fn classification_oracle_content_hash_mismatch() {
 
 #[test]
 fn classification_oracle_version_mismatch() {
-    if skip_if_no_corpus("classification_oracle_version_mismatch") {
-        return;
-    }
     let file = "babebabebabebabebabebabebabebabebabebabebabebabebabebabebabebabe.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -154,9 +104,6 @@ fn classification_oracle_version_mismatch() {
 
 #[test]
 fn classification_oracle_kept() {
-    if skip_if_no_corpus("classification_oracle_kept") {
-        return;
-    }
     let file = "cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -168,9 +115,6 @@ fn classification_oracle_kept() {
 
 #[test]
 fn classification_oracle_unreadable() {
-    if skip_if_no_corpus("classification_oracle_unreadable") {
-        return;
-    }
     let file = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -182,9 +126,6 @@ fn classification_oracle_unreadable() {
 
 #[test]
 fn classification_oracle_bad_name() {
-    if skip_if_no_corpus("classification_oracle_bad_name") {
-        return;
-    }
     let file = "nothex.json";
     let path = fixture_cache_dir().join(file);
     assert_eq!(
@@ -197,10 +138,6 @@ fn classification_oracle_bad_name() {
 /// Aggregate oracle: verify ALL 5 statuses against classification.json.
 #[test]
 fn classification_oracle_all_vs_golden_json() {
-    if skip_if_no_corpus("classification_oracle_all_vs_golden_json") {
-        return;
-    }
-
     // Load and parse the classification golden.
     let golden_text = load_golden("classification.json");
     let golden: serde_json::Value =
@@ -241,10 +178,6 @@ fn classification_oracle_all_vs_golden_json() {
 
 #[test]
 fn dry_run_differential_vs_golden() {
-    if skip_if_no_corpus("dry_run_differential_vs_golden") {
-        return;
-    }
-
     let cache_dir = fixture_cache_dir();
     let cache_dir_str = cache_dir.to_string_lossy();
 
@@ -272,10 +205,6 @@ fn dry_run_differential_vs_golden() {
 
 #[test]
 fn integration_real_prune_deletes_removed_files() {
-    if skip_if_no_corpus("integration_real_prune_deletes_removed_files") {
-        return;
-    }
-
     // Copy the fixture cache to a temp dir so we can mutate it.
     let tmp_dir = std::env::temp_dir().join(format!(
         "al-sem-cache-prune-test-{}",
@@ -593,43 +522,11 @@ fn sha256_hex_test(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// #[ignore] refresh test — re-generates goldens by running dump-cache.ts
+// Refresh test RETIRED (Task 3.3): this used to shell `bun run
+// scripts/dump-cache.ts` in the al-sem checkout, but al-sem's symbolReader
+// version is permanently stuck at 17 (frozen) while the engine's is 18 — the
+// script can never again regenerate a `kept`-classified fixture, so refreshing
+// from it would silently re-break the corpus. The in-repo golden corpus at
+// `tests/cli-c-goldens/cache/` (Task 16 rebaseline) is the sole source of
+// truth; there is no automated refresh path against a retired oracle.
 // ---------------------------------------------------------------------------
-
-/// Refresh the cache goldens by running `bun run scripts/dump-cache.ts` in the
-/// al-sem checkout. This test is marked `#[ignore]` — run manually with:
-///   `cargo test -p al-call-hierarchy refresh_cache_goldens -- --ignored`
-///
-/// The dump script regenerates the fixture-cache files + classification.json +
-/// dry-run.txt + manifest.json under `scripts/cli-c-goldens/cache/`.
-#[test]
-#[ignore]
-fn refresh_cache_goldens() {
-    let al_sem = al_sem_dir();
-    assert!(
-        al_sem.is_dir(),
-        "AL_SEM_DIR not found at {}",
-        al_sem.display()
-    );
-
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-cache.ts"])
-        .current_dir(&al_sem)
-        .status()
-        .expect("failed to run bun");
-
-    assert!(
-        status.success(),
-        "dump-cache.ts failed with exit code: {:?}",
-        status.code()
-    );
-
-    println!(
-        "Cache goldens refreshed. Check for changes in {}",
-        al_sem
-            .join("scripts")
-            .join("cli-c-goldens")
-            .join("cache")
-            .display()
-    );
-}

@@ -73,6 +73,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **Vendored the 5 live-al-sem-read test files' inputs in-repo (Task 3.3,
+  al-sem parity retirement arc) — tests are now self-contained.**
+  `tests/aldump_smoke.rs`, `tests/al2dump_smoke.rs`,
+  `tests/cli_b_diff_differential.rs`, `tests/cli_c_policy_differential.rs`,
+  and `tests/cli_c_cache_differential.rs` no longer read from any al-sem
+  checkout or `AL_SEM_DIR`, and no longer skip-gate when one is absent —
+  missing inputs are now a hard test failure. 13 fixture trees (`ws-d2`, the
+  10 `ws-policy-*` policy workspaces, `ws-diff-rename`,
+  `ws-diff-removed-field`) were copied byte-for-byte from the frozen
+  `al-sem-OBOLETE` archive into `tests/fixtures/`, each verified against the
+  Task-3.0 witness SHA-256 listings before and after commit (a
+  `tests/fixtures/** -text` `.gitattributes` rule, committed first, protects
+  the bytes from EOL normalization); each vendored area carries a
+  `PROVENANCE.md`. The cli-b diff snapshot-pair inputs and rename overlay
+  (fixed test data, not engine output) were likewise copied verbatim from the
+  witness into `tests/cli-b-goldens/diff/`. Every OUTPUT golden (the L3
+  event-graph and L2 projections for ws-d2, all 24 cli-b diff outputs) was
+  instead *regenerated from this engine* (Rust-owned baseline, via a new
+  `REGEN_TEMP_GOLDENS=1` path in each file) and witness-diffed: all are
+  byte-identical to the witness except `al2dump-smoke-goldens/ws-d2.l2.golden.json`,
+  which differs only in JSON key order (a benign struct-field-reorder
+  artifact — value-equal under order-independent comparison, confirmed by an
+  independent canonicalized diff). The cli-c cache golden corpus's al-sem
+  fallback (`al_sem_cache_goldens_dir()`) is retired outright — its goldens
+  were already permanently stale (frozen at symbolReader version 17 while the
+  engine is at 18) and unreproducible from al-sem, so the existing in-repo
+  vendored override (`tests/cli-c-goldens/cache/`) is now the sole source.
+  `cli_c_policy_differential.rs`'s one remaining al-sem touchpoint — a live
+  byte-parity check of the bundled default policy against al-sem's source —
+  is retired into a self-contained rule-count sanity check (al-sem is frozen
+  forever, so a live drift check against it can never fire again; Task 3.3
+  confirmed, one last time, that the two were still identical). All 4
+  al-sem-shelling `#[ignore]` refresh tests are deleted (dead code once
+  `REGEN_TEMP_GOLDENS` is the regen mechanism). Gate: all 5 files pass with
+  `AL_SEM_DIR` pointed at a nonexistent path and no al-sem checkout anywhere
+  on disk; CDO's `--program-call-graph-stats` SHA-256 is unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`).
 - **Retired the src-side al-sem parity shims (Task 3.2, al-sem parity
   retirement arc).** `alsem_version()` is renamed `driver_version()` and its
   default is now this crate's own `CARGO_PKG_VERSION` instead of the pinned

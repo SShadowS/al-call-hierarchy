@@ -1,23 +1,37 @@
 //! R1a Task 3 smoke test: run the workspace-level L2 features emitter
-//! (`aldump --l2`) on al-sem's ws-d2 fixture and assert:
+//! (`aldump --l2`) on the vendored ws-d2 fixture and assert:
 //!   1. the output parses as JSON and has the golden top-level shape;
 //!   2. a known routine's `features` (operationSite/recordOp + a loop callsite)
 //!      match `ws-d2.l2.golden.json` (the golden is ground truth);
 //!   3. NO forbidden later-gate / L3-resolved field key appears ANYWHERE in the
 //!      output (recursive key scan).
 //!
-//! Full-corpus comparison is Task 4 — this is just a smoke + forbidden-field
-//! guard. If ws-d2's L2 features diverge from the golden, that is a real
-//! walker/emitter bug; the fix belongs in `src/engine/l2/**`, not here.
+//! Task 3.3 (al-sem parity retirement) vendored the ws-d2 fixture tree and its
+//! L2 golden in-repo (`tests/fixtures/ws-d2/`, `tests/al2dump-smoke-goldens/`);
+//! this test no longer reads from any al-sem checkout and hard-requires its
+//! inputs (no skip-gate). If ws-d2's L2 features diverge from the golden, that
+//! is a real walker/emitter bug; the fix belongs in `src/engine/l2/**`, not here.
 
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
-use std::path::Path;
+use std::path::PathBuf;
 
-/// Absolute path to al-sem's ws-d2 fixture (sibling repo).
-const WS_D2: &str = r"U:\Git\al-sem\test\fixtures\ws-d2";
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
 
-/// The committed R1a golden for ws-d2.
-const WS_D2_GOLDEN: &str = r"U:\Git\al-sem\scripts\r1a-goldens\ws-d2.l2.golden.json";
+/// Vendored ws-d2 fixture (Task 3.3; see `tests/fixtures/ws-d2/PROVENANCE.md`).
+fn ws_d2_dir() -> PathBuf {
+    repo_root().join("tests").join("fixtures").join("ws-d2")
+}
+
+/// In-repo home for the L2 golden, regenerated from THIS engine (Task 3.3) —
+/// Rust-owned baseline, not a copy of al-sem's TS output.
+fn ws_d2_golden_path() -> PathBuf {
+    repo_root()
+        .join("tests")
+        .join("al2dump-smoke-goldens")
+        .join("ws-d2.l2.golden.json")
+}
 
 /// Keys that must NEVER appear anywhere in the L2 projection (later-gate / L3 —
 /// mirrors `scripts/r1a-l2-projection.ts` FORBIDDEN_KEYS + the binding subset).
@@ -56,15 +70,14 @@ fn scan_forbidden(value: &serde_json::Value, hits: &mut Vec<String>) {
 
 #[test]
 fn ws_d2_l2_features_match_golden_and_have_no_forbidden_fields() {
-    let ws = Path::new(WS_D2);
-    if !ws.is_dir() {
-        // The fixture lives in the sibling al-sem repo; skip rather than fail
-        // when it is not present on this machine (Task 4 wires the corpus).
-        eprintln!("skipping: ws-d2 fixture not found at {WS_D2}");
-        return;
-    }
+    let ws = ws_d2_dir();
+    assert!(
+        ws.is_dir(),
+        "vendored ws-d2 fixture missing at {} (Task 3.3 vendoring)",
+        ws.display()
+    );
 
-    let projection = project_workspace(ws).expect("project_workspace should succeed on ws-d2");
+    let projection = project_workspace(&ws).expect("project_workspace should succeed on ws-d2");
 
     // (1) Serializes + parses as JSON, with the golden top-level shape.
     let json = serde_json::to_string_pretty(&projection).expect("projection serializes to JSON");
@@ -83,18 +96,37 @@ fn ws_d2_l2_features_match_golden_and_have_no_forbidden_fields() {
         "forbidden later-gate/L3 field(s) leaked into the L2 output: {hits:?}"
     );
 
-    // (2) Known-routine feature parity against the golden. When the golden file
-    // is present, assert the FULL projection equals it (the strongest smoke).
-    let golden_path = Path::new(WS_D2_GOLDEN);
-    if golden_path.is_file() {
-        let golden_text = std::fs::read_to_string(golden_path).expect("read ws-d2 golden");
-        let golden: serde_json::Value =
-            serde_json::from_str(&golden_text).expect("golden parses as JSON");
-        assert_eq!(
-            parsed, golden,
-            "ws-d2 L2 projection must match ws-d2.l2.golden.json exactly (golden is ground truth)"
-        );
+    let golden_path = ws_d2_golden_path();
+
+    // REGEN path (Task 3.3 vendoring): `REGEN_TEMP_GOLDENS=1` writes the ENGINE
+    // projection to the in-repo golden instead of comparing — this is a
+    // Rust-owned baseline, not a copy of al-sem's TS output.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let mut pretty =
+            serde_json::to_string_pretty(&projection).expect("regen serialize l2 ws-d2");
+        pretty.push('\n');
+        std::fs::create_dir_all(golden_path.parent().expect("golden has a parent"))
+            .expect("create al2dump-smoke-goldens dir");
+        std::fs::write(&golden_path, pretty)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        eprintln!("REGEN al2dump-smoke l2 golden: {}", golden_path.display());
+        return;
     }
+
+    // (2) Known-routine feature parity against the golden. Assert the FULL
+    // projection equals it (the strongest smoke).
+    assert!(
+        golden_path.is_file(),
+        "missing golden {} (run `REGEN_TEMP_GOLDENS=1 cargo test --test al2dump_smoke`)",
+        golden_path.display()
+    );
+    let golden_text = std::fs::read_to_string(&golden_path).expect("read ws-d2 golden");
+    let golden: serde_json::Value =
+        serde_json::from_str(&golden_text).expect("golden parses as JSON");
+    assert_eq!(
+        parsed, golden,
+        "ws-d2 L2 projection must match ws-d2.l2.golden.json exactly (golden is ground truth)"
+    );
 
     // Targeted assertions (independent of the golden file's presence on disk) on
     // the known subscriber routine `HandleProcessLine` — a record-op operation

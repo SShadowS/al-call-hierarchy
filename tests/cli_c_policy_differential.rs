@@ -4,15 +4,15 @@
 //! (in-process — NOT via the binary, so Windows console redirect quirks never
 //! apply) with `deterministic = true` and `driver_version = "cli-c-v1"`, and
 //! byte-compares the output to the committed goldens under
-//! `tests/cli-c-policy-goldens/` (copied from al-sem `scripts/cli-c-goldens/policy/`).
+//! `tests/cli-c-policy-goldens/`.
 //!
 //! ## Fixtures
-//! The policy fixtures live in the al-sem checkout (`$AL_SEM_DIR/test/fixtures`,
-//! default `U:\Git\al-sem`). The custom-policy golden's `policySource` is the
-//! ABSOLUTE auto-detected path (`auto:U:\Git\al-sem\...\al-sem.policy.yaml`), so the
-//! differential MUST run against that exact path for the source to byte-match. If
-//! the al-sem checkout is missing, the corpus tests skip (ungated, like the events
-//! differential's offline-corpus guard).
+//! Task 3.3 (al-sem parity retirement) vendored the policy fixtures in-repo at
+//! `tests/fixtures/cli-c-policy/` (see its `PROVENANCE.md`) — this file no
+//! longer reads from any al-sem checkout, and there is no skip-gate: a missing
+//! fixture is a hard failure. The custom-policy golden's `policySource` is
+//! workspace-relative (`auto:al-sem.policy.yaml`, since Task 3.1's fix), so it
+//! is independent of the fixture's physical path.
 //!
 //! ## Coverage (33 goldens)
 //!   - 8 default fixtures × {human, json, sarif} = 24
@@ -24,10 +24,6 @@
 //!
 //! Plus NATIVE ORACLES (no fixture needed) for each predicate kind / operator / the
 //! 3 Kleene tables / onUnknown both ways / the coverage gate / each finding variant.
-//!
-//! ## Refresh
-//! The `#[ignore]` test shells `bun run scripts/dump-policy.ts` under `AL_SEM_DIR`
-//! and re-copies the goldens.
 
 use std::path::PathBuf;
 
@@ -37,32 +33,26 @@ use al_call_hierarchy::engine::gate::policy::pipeline::{
 
 const ALSEM_VERSION: &str = "cli-c-v1";
 
-/// The al-sem checkout root (where the policy fixtures live). The custom golden's
-/// `auto:` source hardcodes this path, so it MUST match the checkout the goldens
-/// were dumped from.
-fn al_sem_dir() -> PathBuf {
-    PathBuf::from(std::env::var("AL_SEM_DIR").unwrap_or_else(|_| r"U:\Git\al-sem".to_string()))
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// Vendored policy fixture tree root (Task 3.3).
 fn fixtures_dir() -> PathBuf {
-    al_sem_dir().join("test").join("fixtures")
+    repo_root()
+        .join("tests")
+        .join("fixtures")
+        .join("cli-c-policy")
 }
 
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("cli-c-policy-goldens")
+    repo_root().join("tests").join("cli-c-policy-goldens")
 }
 
 fn load_golden(name: &str) -> String {
     let path = golden_dir().join(name);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read golden {}: {e}", path.display()))
-}
-
-/// Whether the al-sem fixture checkout is present (corpus tests skip if not).
-fn corpus_available() -> bool {
-    fixtures_dir().is_dir()
 }
 
 // ---------------------------------------------------------------------------
@@ -103,13 +93,11 @@ fn check_text(fixture: &str, format: &str, no_policy: bool) -> String {
 
 #[test]
 fn default_policy_human_json_sarif_byte_match() {
-    if !corpus_available() {
-        eprintln!(
-            "SKIP: al-sem fixtures not found at {} (set AL_SEM_DIR)",
-            fixtures_dir().display()
-        );
-        return;
-    }
+    assert!(
+        fixtures_dir().is_dir(),
+        "vendored policy fixtures missing at {}",
+        fixtures_dir().display()
+    );
     for fixture in DEFAULT_CORPUS {
         for (format, ext) in [("human", "human.txt"), ("json", "json"), ("sarif", "sarif")] {
             let got = check_text(fixture, format, false);
@@ -126,10 +114,11 @@ fn default_policy_human_json_sarif_byte_match() {
 
 #[test]
 fn custom_policy_human_json_sarif_byte_match() {
-    if !corpus_available() {
-        eprintln!("SKIP: al-sem fixtures not found");
-        return;
-    }
+    assert!(
+        fixtures_dir().is_dir(),
+        "vendored policy fixtures missing at {}",
+        fixtures_dir().display()
+    );
     let fixture = "ws-policy-custom";
     for (format, ext) in [("human", "human.txt"), ("json", "json"), ("sarif", "sarif")] {
         let got = check_text(fixture, format, false);
@@ -144,10 +133,11 @@ fn custom_policy_human_json_sarif_byte_match() {
 
 #[test]
 fn no_policy_json_byte_match() {
-    if !corpus_available() {
-        eprintln!("SKIP: al-sem fixtures not found");
-        return;
-    }
+    assert!(
+        fixtures_dir().is_dir(),
+        "vendored policy fixtures missing at {}",
+        fixtures_dir().display()
+    );
     let got = check_text("ws-policy-clean", "json", true);
     let golden = load_golden("ws-policy-clean.nopolicy.json");
     assert_eq!(got, golden, "ws-policy-clean.nopolicy.json mismatch");
@@ -591,66 +581,32 @@ mod oracles {
 }
 
 // ---------------------------------------------------------------------------
-// Vendored policy-default.yaml byte-parity guard.
+// Bundled policy-default.yaml self-check.
 // ---------------------------------------------------------------------------
 
-/// The engine embeds (`include_str!`) a VENDORED copy of al-sem's
-/// `src/policy/policy-default.yaml`. This test (AL_SEM_DIR-gated) asserts the two are
-/// byte-identical, so a future al-sem edit to the bundled default is CAUGHT here
-/// rather than silently diverging.
+/// The engine embeds (`include_str!`) `BUNDLED_DEFAULT_POLICY_YAML`. This USED
+/// to be a live byte-parity guard against al-sem's `src/policy/policy-default.yaml`
+/// (Task 3.3 confirmed, one final time, that the two were still byte-identical
+/// at al-sem's freeze point HEAD `cfea6149c1ed912f1a10fa45eb4a755302327c60`).
+/// al-sem is now a frozen, read-only archive that will never change again, so a
+/// live drift check against it can never fire — it is retired in favor of this
+/// self-contained sanity check: the bundled default loads and has its known
+/// 8-rule shape.
 #[test]
-fn vendored_default_policy_matches_al_sem_source() {
-    let al_sem_yaml = al_sem_dir()
-        .join("src")
-        .join("policy")
-        .join("policy-default.yaml");
-    if !al_sem_yaml.is_file() {
-        eprintln!(
-            "SKIP: al-sem source not found at {} (set AL_SEM_DIR)",
-            al_sem_yaml.display()
-        );
-        return;
-    }
-    let source = std::fs::read_to_string(&al_sem_yaml).expect("read al-sem policy-default.yaml");
-    let vendored =
-        al_call_hierarchy::engine::gate::policy::policy_loader::BUNDLED_DEFAULT_POLICY_YAML;
-    // Normalize CRLF→LF on both sides (git autocrlf on Windows may rewrite either
-    // working copy); the load-bearing assertion is content identity, and the loader
-    // is newline-agnostic (serde_yaml).
-    let norm = |s: &str| s.replace("\r\n", "\n");
-    assert_eq!(
-        norm(vendored),
-        norm(&source),
-        "vendored policy-default.yaml has drifted from al-sem src/policy/policy-default.yaml"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Refresh shell (ignored) — re-dump goldens from al-sem + re-copy.
-// ---------------------------------------------------------------------------
-
-#[test]
-#[ignore = "refresh: shells `bun run scripts/dump-policy.ts` under AL_SEM_DIR"]
-fn refresh_policy_goldens() {
-    let al_sem = al_sem_dir();
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-policy.ts"])
-        .current_dir(&al_sem)
-        .env("AL_SEM_VERSION_OVERRIDE", "cli-c-v1")
-        .status()
-        .expect("failed to run bun");
-    assert!(status.success(), "dump-policy.ts failed");
-
-    let src = al_sem.join("scripts").join("cli-c-goldens").join("policy");
-    let dst = golden_dir();
-    std::fs::create_dir_all(&dst).unwrap();
-    for entry in std::fs::read_dir(&src).unwrap() {
-        let entry = entry.unwrap();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.ends_with(".txt") || name.ends_with(".json") || name.ends_with(".sarif") {
-            std::fs::copy(entry.path(), dst.join(entry.file_name())).unwrap();
+fn bundled_default_policy_loads_with_expected_rule_count() {
+    use al_call_hierarchy::engine::gate::policy::policy_loader::{
+        BUNDLED_DEFAULT_POLICY_YAML, LoadResult, load_policy_from_string,
+    };
+    match load_policy_from_string(BUNDLED_DEFAULT_POLICY_YAML) {
+        LoadResult::Ok { policy, .. } => {
+            assert_eq!(
+                policy.rules.len(),
+                8,
+                "bundled default policy rule count drifted"
+            );
+        }
+        LoadResult::Err { errors, .. } => {
+            panic!("bundled default policy failed to load: {errors:?}")
         }
     }
-    eprintln!("refreshed policy goldens into {}", dst.display());
 }
