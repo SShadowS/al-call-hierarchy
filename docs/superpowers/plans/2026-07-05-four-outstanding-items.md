@@ -241,7 +241,7 @@ rm /u/Git/al-call-hierarchy/docs/superpowers/plans/2026-03-28-test-coverage-impr
 
 ### Task 3.4 — Remove KNOWN_DIVERGENCES machinery
 
-Delete `KNOWN_DIVERGENCES.json`; in each of the 13 harnesses (`differential.rs`, `r4_differential.rs`, `r2_5a_differential.rs`, `r2_5b_{cg,cov,eg,rt}_differential.rs`, `r3a{1,2,2_trace,3,4,5}_differential.rs`) delete the local `KnownDivergence` struct + `load_known_divergences()` + gating, collapsing each comparison to a plain byte-assert. The r3a4/r3a5 "allowlist must be empty" exit gates become vacuous — delete them too. Remove the `KNOWN_DIVERGENCES.json` paragraph from CLAUDE.md.
+Delete `KNOWN_DIVERGENCES.json` (currently `[]` — empty). In each of the 13 harnesses (`differential.rs`, `r4_differential.rs`, `r2_5a_differential.rs`, `r2_5b_{cg,cov,eg,rt}_differential.rs`, `r3a{1,2,2_trace,3,4,5}_differential.rs`) the allowlist machinery is named `AllowEntry` (struct) + `load_allowlist()` (loader) — delete both plus their two-part gate: (a) fail on any non-allowlisted divergence, (b) fail on any UNUSED allowlist entry. With the allowlist empty, collapsing (a) to a direct byte-assert of the diff being empty is behavior-preserving (no divergence is tolerated today), and (b) vanishes with the allowlist. The r3a4/r3a5 "allowlist must be empty" exit gates become vacuous — delete them too. Remove the `KNOWN_DIVERGENCES.json` paragraph from CLAUDE.md. All 13 suites must stay green (strict assert already holds since the allowlist is empty).
 
 ### Task 3.5 — Remove the 14 refresh functions + `r2_5b_refresh.rs`
 
