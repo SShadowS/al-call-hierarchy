@@ -73,6 +73,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **6 differential harnesses gained a Rust-native `REGEN_TEMP_GOLDENS`
+  rebaseline path, replacing the al-sem refresh they lost (Task 3.5, al-sem
+  parity retirement arc).** `r2_5a_differential.rs`,
+  `r2_5b_{cg,cov,eg}_differential.rs`, `r3a4_differential.rs`, and
+  `cli_c_events_differential.rs` had no other regen mechanism once their
+  al-sem-shelling refresh fns were deleted (see Removed, below). Each now
+  mirrors the in-repo pattern already used by `differential.rs` /
+  `r2_5b_rt_differential.rs`: at the existing actual-vs-golden comparison
+  site, `REGEN_TEMP_GOLDENS=1` writes the ENGINE's own output to the golden
+  file instead of asserting against it. `cli_c_events_differential.rs`
+  needed the widest change (15 comparison sites across a test-generating
+  macro + 6 standalone test fns) — a new `golden_or_regen(name, actual)`
+  helper centralizes the write-or-read branch so every golden in a
+  multi-golden test still regenerates even after the first write. All 6
+  paths are env-gated (inert under a normal `cargo test`) and were each
+  verified to reproduce their committed golden byte-for-byte (`git diff`
+  empty after a `REGEN_TEMP_GOLDENS=1` run). `cargo test --release
+  --workspace` stays green; CDO's `--program-call-graph-stats` SHA-256 is
+  unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`).
 - **Vendored the 5 live-al-sem-read test files' inputs in-repo (Task 3.3,
   al-sem parity retirement arc) — tests are now self-contained.**
   `tests/aldump_smoke.rs`, `tests/al2dump_smoke.rs`,
@@ -131,6 +151,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/` except `CACHE_ANALYZER_VERSION`.
 
 ### Removed
+- **The 14 al-sem/Bun-shelling `#[ignore]`d golden-refresh functions +
+  `tests/r2_5b_refresh.rs` (Task 3.5, al-sem parity retirement arc) — no test
+  anywhere touches `AL_SEM_DIR` or shells `bun run` anymore.** Deleted:
+  `differential.rs`'s `refresh_goldens_from_al_sem` (plus its 4 now-orphaned
+  helpers — `copy_source_fixture`/`copy_al_tree`/`git_sha`/
+  `read_manifest_field`); `r2_5a_differential.rs`'s
+  `refresh_r2_5a_goldens_from_al_sem` AND its sibling
+  `r2_5a_fixtures_match_al_sem_bytes` byte-parity guard (also
+  `AL_SEM_DIR`-gated — caught by grepping for the literal env-var string
+  rather than trusting the "refresh" name, since it wasn't one);
+  `r3a4_differential.rs`'s `refresh_r3a4_goldens_from_al_sem`;
+  `r3a5_differential.rs`'s `refresh_r3a5_goldens_from_al_sem`;
+  `r4_differential.rs`'s `refresh_r4_goldens_from_al_sem`; the
+  `cli_a_html_differential.rs` / `cli_a_json_differential.rs`
+  `refresh_goldens` fns and `cli_a_terminal_differential.rs`'s
+  `refresh_terminal_goldens`; `cli_c_events_differential.rs`'s
+  `refresh_goldens`; and `tests/r2_5b_refresh.rs` in its entirety
+  (`refresh_r2_5b_goldens_from_al_sem`, which refreshed all 4 R2.5b sub-gates
+  — rt/cg/eg/cov — in one shot). The 4 `cli_b_{digest,fingerprint,prove,
+  snapshot}_differential.rs` files had already lost their refresh fns in an
+  earlier task; only stale doc-comment mentions of `AL_SEM_DIR`/`bun run`
+  remained and are swept out here. `cli_a_stats_differential.rs`'s
+  `refresh()` — which regenerates purely from the ENGINE's own output, never
+  `AL_SEM_DIR` or `bun` — was the model for the new regen paths (see
+  Changed, above) and is untouched. `grep -rn "AL_SEM_DIR" tests/ src/` is
+  now empty repo-wide, and the only surviving `bun run` mention anywhere is a
+  pre-existing retired-note comment carrying no runnable instruction.
 - **`KNOWN_DIVERGENCES.json` allowlist-tolerance machinery (Task 3.4, al-sem
   parity retirement arc).** The repo-root `KNOWN_DIVERGENCES.json` allowlist
   file is deleted, and the `AllowEntry` struct + `load_allowlist()` loader +

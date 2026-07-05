@@ -10,8 +10,8 @@
 //! committed `test/fixtures/r2.5a-deps/`), so this is a TRUE byte-parity diff.
 //!
 //! Default `cargo test` runs entirely OFFLINE: everything is committed in-repo.
-//! A separate `#[ignore]`d `refresh_r2_5a_goldens_from_al_sem` (gated on
-//! `AL_SEM_DIR`) re-copies the goldens + `.app` fixtures from an al-sem checkout.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired); rebaseline
+//! with `REGEN_TEMP_GOLDENS=1 cargo test --test r2_5a_differential`.
 //!
 //! ## Capture point (R2.5a)
 //!
@@ -37,7 +37,7 @@
 //! hard failure, with no tolerance mechanism of any kind.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use al_call_hierarchy::engine::deps::merged_index::{
     build_merged_index_from_path, serialize_projection,
@@ -505,6 +505,17 @@ fn differential_r2_5a_merged_index_matches_goldens() {
         let rust_json: Value =
             serde_json::from_str(&rust_text).expect("rust projection re-parses as JSON");
 
+        // REGEN path (mirrors the R0/L2/L3rt branches in `differential.rs`). When
+        // `REGEN_TEMP_GOLDENS` is set, write the ENGINE-serialized text straight to
+        // the golden file instead of comparing — the goldens are Rust-owned
+        // baselines (TS oracle retired).
+        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+            std::fs::write(golden_path, &rust_text)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN r2.5a golden: {}", golden_path.display());
+            continue;
+        }
+
         // Golden side.
         let golden_text = std::fs::read_to_string(golden_path)
             .unwrap_or_else(|e| panic!("read golden {}: {e}", golden_path.display()));
@@ -523,6 +534,12 @@ fn differential_r2_5a_merged_index_matches_goldens() {
 
         // Matrices from the RUST output.
         totals.add(&matrices_of(&rust_json));
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        eprintln!("REGEN r2.5a: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     all_divergences
@@ -656,100 +673,4 @@ fn differential_r2_5a_merged_index_matches_goldens() {
         "R2.5a differential: {} fixture(s), 0 divergences.",
         goldens.len()
     );
-}
-
-/// LIVE refresh: re-copy the goldens + `.app` fixtures from an al-sem checkout
-/// (`AL_SEM_DIR`). Never runs in the normal loop. After regenerating the al-sem
-/// goldens (`bun run scripts/dump-r2.5a-merged-index.ts`), this copies the
-/// committed `.app` fixtures + goldens into the engine so both sides read the SAME
-/// bytes. `#[ignore]`d so `cargo test` stays offline.
-#[test]
-#[ignore]
-fn refresh_r2_5a_goldens_from_al_sem() {
-    let al_sem = match std::env::var("AL_SEM_DIR") {
-        Ok(d) => PathBuf::from(d),
-        Err(_) => {
-            eprintln!("AL_SEM_DIR not set — skipping R2.5a refresh");
-            return;
-        }
-    };
-    let src_goldens = al_sem.join("scripts").join("r2.5a-goldens");
-    let src_apps = al_sem.join("test").join("fixtures").join("r2.5a-deps");
-
-    // Copy goldens (manifest + *.r2.5a.golden.json).
-    let dst_goldens = goldens_dir();
-    std::fs::create_dir_all(&dst_goldens).expect("mk goldens dir");
-    for entry in std::fs::read_dir(&src_goldens)
-        .expect("read al-sem goldens")
-        .flatten()
-    {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.ends_with(".r2.5a.golden.json") || name == "manifest.json" {
-            std::fs::copy(entry.path(), dst_goldens.join(&name))
-                .unwrap_or_else(|e| panic!("copy golden {name}: {e}"));
-        }
-    }
-
-    // Copy each `.app` fixture into its per-fixture dir (keyed via the manifest's
-    // fixture → depAppGuids mapping so the layout mirrors al-sem's workspace).
-    let manifest_text =
-        std::fs::read_to_string(dst_goldens.join("manifest.json")).expect("read manifest");
-    let manifest: Value = serde_json::from_str(&manifest_text).expect("manifest parses");
-    if let Some(fixtures) = manifest["fixtures"].as_array() {
-        for f in fixtures {
-            let fixture = f["fixture"].as_str().unwrap();
-            let dir = fixtures_dir().join(fixture);
-            std::fs::create_dir_all(&dir).expect("mk fixture dir");
-            if let Some(guids) = f["depAppGuids"].as_array() {
-                for g in guids {
-                    let guid = g.as_str().unwrap();
-                    let app = format!("{guid}.app");
-                    std::fs::copy(src_apps.join(&app), dir.join(&app))
-                        .unwrap_or_else(|e| panic!("copy .app {app} for {fixture}: {e}"));
-                }
-            }
-        }
-    }
-    eprintln!(
-        "R2.5a goldens + .app fixtures refreshed from {}",
-        al_sem.display()
-    );
-}
-
-/// Guard: the committed `.app` fixtures must be byte-identical to al-sem's when
-/// `AL_SEM_DIR` is set (proves the two sides read the SAME bytes). `#[ignore]`d so
-/// the offline loop never depends on al-sem; run it after a refresh.
-#[test]
-#[ignore]
-fn r2_5a_fixtures_match_al_sem_bytes() {
-    let al_sem = match std::env::var("AL_SEM_DIR") {
-        Ok(d) => PathBuf::from(d),
-        Err(_) => {
-            eprintln!("AL_SEM_DIR not set — skipping byte-parity guard");
-            return;
-        }
-    };
-    let src_apps = al_sem.join("test").join("fixtures").join("r2.5a-deps");
-    let mut checked = 0;
-    fn walk(dir: &Path, src: &Path, checked: &mut usize) {
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                walk(&p, src, checked);
-            } else if p.extension().and_then(|e| e.to_str()) == Some("app") {
-                let name = p.file_name().unwrap().to_string_lossy().to_string();
-                let ours = std::fs::read(&p).unwrap();
-                let theirs = std::fs::read(src.join(&name))
-                    .unwrap_or_else(|e| panic!("read al-sem .app {name}: {e}"));
-                assert_eq!(
-                    ours, theirs,
-                    "`.app` fixture {name} differs from al-sem bytes"
-                );
-                *checked += 1;
-            }
-        }
-    }
-    walk(&fixtures_dir(), &src_apps, &mut checked);
-    assert!(checked > 0, "no `.app` fixtures checked");
-    eprintln!("R2.5a byte-parity guard: {checked} `.app` fixture(s) match al-sem.");
 }

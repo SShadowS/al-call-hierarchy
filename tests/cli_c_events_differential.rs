@@ -6,8 +6,8 @@
 //!   2. Compares the output byte-for-byte to the committed golden files under
 //!      `tests/cli-c-events-goldens/`.
 //!
-//! Golden files are committed from al-sem `scripts/cli-c-goldens/events/`.
-//! The `--ignore` shells re-run `bun run scripts/dump-events.ts` to refresh them.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired); rebaseline
+//! with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_c_events_differential`.
 //!
 //! ## Coverage
 //!   - 13 fixtures × 4 files = 52 base goldens (fanout.human + fanout.json +
@@ -52,6 +52,20 @@ fn load_golden(name: &str) -> String {
         .unwrap_or_else(|e| panic!("Failed to read golden {}: {e}", path.display()))
 }
 
+/// When `REGEN_TEMP_GOLDENS` is set, write `actual` to the named golden and return
+/// it (so the caller's compare trivially passes) instead of reading the existing
+/// golden. Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+fn golden_or_regen(name: &str, actual: &str) -> String {
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let path = golden_dir().join(name);
+        std::fs::write(&path, actual)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
+        eprintln!("REGEN cli-c-events golden: {}", path.display());
+        return actual.to_string();
+    }
+    load_golden(name)
+}
+
 const ALSEM_VERSION: &str = "cli-c-v1";
 
 // ---------------------------------------------------------------------------
@@ -79,7 +93,8 @@ macro_rules! events_differential {
                     strict: false,
                 };
                 let result = run_events_fanout(&opts);
-                let golden = load_golden(&format!("{fixture_stem}.fanout.human.txt"));
+                let golden =
+                    golden_or_regen(&format!("{fixture_stem}.fanout.human.txt"), &result.text);
                 assert_eq!(result.text, golden, "{fixture_stem} fanout.human mismatch");
                 assert_eq!(result.exit_code, 0, "{fixture_stem} fanout.human exit_code");
             }
@@ -96,7 +111,7 @@ macro_rules! events_differential {
                     strict: false,
                 };
                 let result = run_events_fanout(&opts);
-                let golden = load_golden(&format!("{fixture_stem}.fanout.json"));
+                let golden = golden_or_regen(&format!("{fixture_stem}.fanout.json"), &result.text);
                 assert_eq!(result.text, golden, "{fixture_stem} fanout.json mismatch");
                 assert_eq!(result.exit_code, 0, "{fixture_stem} fanout.json exit_code");
             }
@@ -115,7 +130,8 @@ macro_rules! events_differential {
                     strict: false,
                 };
                 let result = run_events_chains(&opts);
-                let golden = load_golden(&format!("{fixture_stem}.chains.human.txt"));
+                let golden =
+                    golden_or_regen(&format!("{fixture_stem}.chains.human.txt"), &result.text);
                 assert_eq!(result.text, golden, "{fixture_stem} chains.human mismatch");
                 assert_eq!(result.exit_code, 0, "{fixture_stem} chains.human exit_code");
             }
@@ -134,7 +150,7 @@ macro_rules! events_differential {
                     strict: false,
                 };
                 let result = run_events_chains(&opts);
-                let golden = load_golden(&format!("{fixture_stem}.chains.json"));
+                let golden = golden_or_regen(&format!("{fixture_stem}.chains.json"), &result.text);
                 assert_eq!(result.text, golden, "{fixture_stem} chains.json mismatch");
                 assert_eq!(result.exit_code, 0, "{fixture_stem} chains.json exit_code");
             }
@@ -213,7 +229,7 @@ fn events_ws_event_fanout_scope_all() {
             strict: false,
         };
         let result = run_events_fanout(&opts);
-        let golden = load_golden("ws-event-fanout.scope-all.fanout.human.txt");
+        let golden = golden_or_regen("ws-event-fanout.scope-all.fanout.human.txt", &result.text);
         assert_eq!(result.text, golden, "scope-all fanout.human mismatch");
     }
 
@@ -229,7 +245,7 @@ fn events_ws_event_fanout_scope_all() {
             strict: false,
         };
         let result = run_events_fanout(&opts);
-        let golden = load_golden("ws-event-fanout.scope-all.fanout.json");
+        let golden = golden_or_regen("ws-event-fanout.scope-all.fanout.json", &result.text);
         assert_eq!(result.text, golden, "scope-all fanout.json mismatch");
     }
 
@@ -247,7 +263,7 @@ fn events_ws_event_fanout_scope_all() {
             strict: false,
         };
         let result = run_events_chains(&opts);
-        let golden = load_golden("ws-event-fanout.scope-all.chains.human.txt");
+        let golden = golden_or_regen("ws-event-fanout.scope-all.chains.human.txt", &result.text);
         assert_eq!(result.text, golden, "scope-all chains.human mismatch");
     }
 
@@ -265,7 +281,7 @@ fn events_ws_event_fanout_scope_all() {
             strict: false,
         };
         let result = run_events_chains(&opts);
-        let golden = load_golden("ws-event-fanout.scope-all.chains.json");
+        let golden = golden_or_regen("ws-event-fanout.scope-all.chains.json", &result.text);
         assert_eq!(result.text, golden, "scope-all chains.json mismatch");
     }
 }
@@ -291,7 +307,10 @@ fn events_ws_event_d45_deep_max_depth_1() {
             strict: false,
         };
         let result = run_events_chains(&opts);
-        let golden = load_golden("ws-event-d45-deep.max-depth-1.chains.human.txt");
+        let golden = golden_or_regen(
+            "ws-event-d45-deep.max-depth-1.chains.human.txt",
+            &result.text,
+        );
         assert_eq!(result.text, golden, "max-depth-1 chains.human mismatch");
     }
 
@@ -309,7 +328,7 @@ fn events_ws_event_d45_deep_max_depth_1() {
             strict: false,
         };
         let result = run_events_chains(&opts);
-        let golden = load_golden("ws-event-d45-deep.max-depth-1.chains.json");
+        let golden = golden_or_regen("ws-event-d45-deep.max-depth-1.chains.json", &result.text);
         assert_eq!(result.text, golden, "max-depth-1 chains.json mismatch");
     }
 }
@@ -354,31 +373,37 @@ fn assert_partial_policy(policy: &str) {
     // human stdout
     {
         let result = run_partial_fanout(policy, "human");
-        let golden = load_golden(&format!(
-            "ws-event-partial-coverage.fanout.{policy}.human.txt"
-        ));
+        let golden = golden_or_regen(
+            &format!("ws-event-partial-coverage.fanout.{policy}.human.txt"),
+            &result.text,
+        );
         assert_eq!(result.text, golden, "{policy} fanout.human mismatch");
     }
     // json stdout
     {
         let result = run_partial_fanout(policy, "json");
-        let golden = load_golden(&format!("ws-event-partial-coverage.fanout.{policy}.json"));
+        let golden = golden_or_regen(
+            &format!("ws-event-partial-coverage.fanout.{policy}.json"),
+            &result.text,
+        );
         assert_eq!(result.text, golden, "{policy} fanout.json mismatch");
     }
     // stderr + exit (read from the json run; stderr/exit are format-independent for fanout)
     {
         let result = run_partial_fanout(policy, "json");
-        let stderr_golden = load_golden(&format!(
-            "ws-event-partial-coverage.fanout.{policy}.stderr.txt"
-        ));
+        let stderr_golden = golden_or_regen(
+            &format!("ws-event-partial-coverage.fanout.{policy}.stderr.txt"),
+            &stderr_text(&result.stderr_lines),
+        );
         assert_eq!(
             stderr_text(&result.stderr_lines),
             stderr_golden,
             "{policy} fanout stderr mismatch"
         );
-        let exit_golden = load_golden(&format!(
-            "ws-event-partial-coverage.fanout.{policy}.exitcode.txt"
-        ));
+        let exit_golden = golden_or_regen(
+            &format!("ws-event-partial-coverage.fanout.{policy}.exitcode.txt"),
+            &result.exit_code.to_string(),
+        );
         assert_eq!(
             result.exit_code.to_string(),
             exit_golden,
@@ -676,38 +701,4 @@ fn cycle_native_oracle() {
         json.contains("\"cyclesDetected\":"),
         "json summary must contain 'cyclesDetected'"
     );
-}
-
-// ── Refresh shell ────────────────────────────────────────────────────────────
-//
-// To regenerate the goldens, set AL_SEM_DIR to the al-sem repo root and run:
-//   cargo test --test cli_c_events_differential refresh_goldens -- --ignored
-//
-// The shell invokes `bun run scripts/dump-events.ts` in the al-sem repo and
-// copies the output into `tests/cli-c-events-goldens/`.
-
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem_dir = std::env::var("AL_SEM_DIR").unwrap_or_else(|_| "U:/Git/al-sem".to_string());
-    let status = std::process::Command::new("bun")
-        .arg("run")
-        .arg("scripts/dump-events.ts")
-        .current_dir(&al_sem_dir)
-        .env("AL_SEM_VERSION_OVERRIDE", "cli-c-v1")
-        .status()
-        .expect("bun run scripts/dump-events.ts failed to launch");
-    assert!(status.success(), "dump-events.ts failed");
-
-    // Copy goldens from al-sem to engine.
-    let src = PathBuf::from(&al_sem_dir).join("scripts/cli-c-goldens/events");
-    let dst = golden_dir();
-    let entries = std::fs::read_dir(&src).expect("read src dir");
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if let Some(name) = p.file_name() {
-            std::fs::copy(&p, dst.join(name)).expect("copy golden");
-        }
-    }
-    println!("Goldens refreshed from {}", src.display());
 }

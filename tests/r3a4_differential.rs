@@ -152,6 +152,20 @@ fn differential_r3a4_dep_hooks_match_goldens() {
     let rust_json = serde_json::to_value(&projection)
         .unwrap_or_else(|e| panic!("serialize Rust R3a-4 projection: {e}"));
 
+    // REGEN path (mirrors `differential.rs` / r2_5a). When `REGEN_TEMP_GOLDENS` is
+    // set, write the ENGINE-serialized projection straight to the golden file
+    // instead of comparing — the goldens are Rust-owned baselines (TS oracle
+    // retired).
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let mut pretty = serde_json::to_string_pretty(&projection)
+            .unwrap_or_else(|e| panic!("regen serialize R3a-4 projection: {e}"));
+        pretty.push('\n');
+        std::fs::write(&golden_path, pretty)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        eprintln!("REGEN r3a4 golden: {}", golden_path.display());
+        return;
+    }
+
     // --- structural positional diff ---
     let mut all_divergences: Vec<Divergence> = Vec::new();
     diff_value(FIXTURE, "", &golden_json, &rust_json, &mut all_divergences);
@@ -302,77 +316,6 @@ fn r3a4_anti_degenerate_matrix_matches_manifest() {
         projection.return_summaries_count,
         projection.dep_order_index_present,
         projection.freshness_stamp_fresh,
-    );
-}
-
-/// UNIFIED GOLDEN REFRESH (R3a-4) — the one-command regen path. `#[ignore]`d so the
-/// default `cargo test` loop stays OFFLINE; gated on `AL_SEM_DIR`. After regenerating
-/// the al-sem goldens (`bun run scripts/dump-r3a4-dep-hooks.ts`), run:
-///
-/// ```bash
-/// AL_SEM_DIR=/u/Git/al-sem cargo test --test r3a4_differential -- \
-///     --ignored refresh_r3a4_goldens_from_al_sem --nocapture
-/// ```
-///
-/// Re-copies from the al-sem checkout into the engine:
-///   - the golden + manifest (`scripts/r3a4-goldens/{cross-app-dep-hooks.r3a4.golden.json,
-///     manifest.json}` → `tests/r3a4-goldens/`),
-///   - the committed dep `.app` fixture (`test/fixtures/r3a4-deps/<guid>.app` →
-///     `tests/r3a4-fixtures/<guid>.app` AND `tests/r3a4-fixtures/ws/.alpackages/<guid>.app`),
-///     so BOTH sides read the SAME `.app` bytes.
-///
-/// NOTE: al-sem builds the R3a-4 workspace INLINE (TS constants in
-/// `scripts/r3a4-projection.ts`); the engine's `tests/r3a4-fixtures/ws/{app.json,src/*.al}`
-/// is the hand-maintained mirror — if the al-sem capture changes the workspace shape,
-/// update those `.al` files. This refresh copies the goldens + the dep `.app`; it does
-/// NOT auto-commit.
-#[test]
-#[ignore]
-fn refresh_r3a4_goldens_from_al_sem() {
-    let al_sem = match std::env::var("AL_SEM_DIR") {
-        Ok(d) => PathBuf::from(d),
-        Err(_) => {
-            eprintln!("AL_SEM_DIR not set — skipping R3a-4 refresh");
-            return;
-        }
-    };
-    const DEP_GUID: &str = "cccccccc-0001-0000-0000-000000000001";
-
-    // 1. goldens + manifest.
-    let src_goldens = al_sem.join("scripts").join("r3a4-goldens");
-    let dst_goldens = goldens_dir();
-    std::fs::create_dir_all(&dst_goldens).expect("mk r3a4 goldens dir");
-    for name in [
-        "cross-app-dep-hooks.r3a4.golden.json",
-        "manifest.json",
-        "r3a4-vectors.json",
-    ] {
-        let src = src_goldens.join(name);
-        if src.exists() {
-            std::fs::copy(&src, dst_goldens.join(name))
-                .unwrap_or_else(|e| panic!("copy {name}: {e}"));
-        }
-    }
-    eprintln!("R3a-4: copied goldens → {}", dst_goldens.display());
-
-    // 2. the dep `.app` fixture (both the flat fixture + the ws/.alpackages copy).
-    let src_app = al_sem
-        .join("test")
-        .join("fixtures")
-        .join("r3a4-deps")
-        .join(format!("{DEP_GUID}.app"));
-    let fixtures = repo_root().join("tests").join("r3a4-fixtures");
-    std::fs::copy(&src_app, fixtures.join(format!("{DEP_GUID}.app")))
-        .unwrap_or_else(|e| panic!("copy dep .app (flat): {e}"));
-    let alpackages = fixtures.join("ws").join(".alpackages");
-    std::fs::create_dir_all(&alpackages).expect("mk ws/.alpackages");
-    std::fs::copy(&src_app, alpackages.join(format!("{DEP_GUID}.app")))
-        .unwrap_or_else(|e| panic!("copy dep .app (ws): {e}"));
-    eprintln!("R3a-4: copied dep .app → flat + ws/.alpackages");
-
-    eprintln!(
-        "R3a-4 goldens + dep .app refreshed from {}",
-        al_sem.display()
     );
 }
 
