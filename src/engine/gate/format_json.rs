@@ -237,11 +237,9 @@ fn project_one_diagnostic(d: &Diagnostic) -> serde_json::Value {
 
 /// Project `Vec<Diagnostic>` to the contract diagnostics array.
 ///
-/// Mirrors `projectDiagnostics` from `src/contracts/snapshot.ts` EXCEPT for the
-/// `versionDiagnostic()` prepend: when `AL_SEM_VERSION_OVERRIDE` is set (which the
-/// JSON differential always does), al-sem's `alsemVersion()` returns the override
-/// early and `cachedDiagnostic` is never set — so `versionDiagnostic()` returns
-/// `undefined` and VERSION001 is NOT emitted. We replicate that: no VERSION001 injection.
+/// This engine does not implement al-sem's VERSION001 cache-version diagnostic
+/// (the `versionDiagnostic()` prepend some callers may expect) — diagnostics are
+/// projected as-is, with no version-mismatch entry ever injected.
 pub fn project_diagnostics(diags: &[Diagnostic]) -> serde_json::Value {
     let arr: Vec<serde_json::Value> = diags.iter().map(project_one_diagnostic).collect();
     serde_json::Value::Array(arr)
