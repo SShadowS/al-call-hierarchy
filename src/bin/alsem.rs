@@ -20,7 +20,7 @@ use al_call_hierarchy::engine::gate::exit_code::{exit, parse_fail_on};
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
-use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
+use al_call_hierarchy::engine::gate::version::{DEFAULT_ALSEM_VERSION, driver_version};
 use al_call_hierarchy::engine::l5::digest_cli::{
     ChangedAutoDetect, auto_detect_changed, run_digest_pipeline,
 };
@@ -32,11 +32,6 @@ use al_call_hierarchy::engine::l5::fingerprint_cli::{
 };
 use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
-
-/// The engine's default (unpinned) SARIF `driver.version`. The differential always
-/// pins via `--sarif-version-override gate-sarif-v1`; this is only the fallback for a
-/// real, unpinned invocation.
-const DEFAULT_SARIF_VERSION: &str = DEFAULT_ALSEM_VERSION;
 
 const SEVERITY_VALUES: &[&str] = &["critical", "high", "medium", "low", "info"];
 
@@ -1312,7 +1307,10 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
         with_evidence: a.with_evidence,
     };
 
-    match run_analyze_with_exit(&args, DEFAULT_SARIF_VERSION) {
+    // `default_version` is the engine's default (unpinned) SARIF `driver.version`.
+    // The differential always pins via `--sarif-version-override gate-sarif-v1`;
+    // this is only the fallback for a real, unpinned invocation.
+    match run_analyze_with_exit(&args, &driver_version()) {
         Ok((out, exit_code, stderr_warning)) => {
             // F2: emit the preflight degraded warning to stderr (the "no silent clean"
             // contract). Matches al-sem index.ts:263-264:

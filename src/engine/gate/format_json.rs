@@ -264,7 +264,7 @@ pub struct JsonFormatInputs<'a> {
     pub coverage: &'a AnalysisCoverage,
     /// `--deterministic` flag (pins `generatedAt`).
     pub deterministic: bool,
-    /// Effective al-sem version (from `alsem_version()`).
+    /// Effective driver version (from `driver_version()`).
     pub alsem_version: String,
     /// Opt-in `--with-evidence` augmentation. `None` ⇒ default path: NO `evidencePath`,
     /// NO `enclosingMember`/`originatingObject`, `schemaVersion "1.0.0"` (byte-identical

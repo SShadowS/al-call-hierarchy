@@ -1,7 +1,7 @@
 //! Stage A4 — `--format html` byte-parity differential test.
 //!
 //! For each fixture in the corpus, runs the Rust gate pipeline under
-//! `--format html --deterministic` with `AL_SEM_VERSION_OVERRIDE=cli-a-json-v1`
+//! `--format html --deterministic` with `ALCH_DRIVER_VERSION_OVERRIDE=cli-a-json-v1`
 //! and byte-compares the output against the committed al-sem goldens at
 //! `U:\Git\al-sem\scripts\cli-a-goldens\html\<fixture>.<slot>.html`.
 //!
@@ -183,8 +183,8 @@ fn maybe_regen(name: &str, rust: &str) -> bool {
 }
 
 /// Run the Rust HTML pipeline for one fixture with the given detector list.
-/// The env var `AL_SEM_VERSION_OVERRIDE` MUST be set by the caller before
-/// this function is called (it reads the env at call time via `alsem_version()`).
+/// The env var `ALCH_DRIVER_VERSION_OVERRIDE` MUST be set by the caller before
+/// this function is called (it reads the env at call time via `driver_version()`).
 fn run_html(fixture: &str, detector_csv: &str) -> String {
     let fixture_dir = corpus_dir().join(fixture);
     assert!(
@@ -276,10 +276,10 @@ fn cli_a_html_byte_match() {
 
     let mut divergences: Vec<String> = Vec::new();
 
-    // Serialize env access across all sub-runs (AL_SEM_VERSION_OVERRIDE is process-global).
+    // Serialize env access across all sub-runs (ALCH_DRIVER_VERSION_OVERRIDE is process-global).
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
 
     for &fixture in FIXTURES {
         // Always run default slot.
@@ -330,7 +330,7 @@ fn cli_a_html_byte_match() {
     }
 
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     if !divergences.is_empty() {
         let mut msg = format!("{TEST_NAME}: {} divergence(s) found:\n", divergences.len());
@@ -358,10 +358,10 @@ fn zero_findings_fixture_renders_correctly() {
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
     let out = run_html("ws-txn-d46-neg", &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     assert!(
         out.contains(r#"<p class="empty">No findings."#),
@@ -386,10 +386,10 @@ fn event_graph_fixture_renders_svg() {
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
     let out = run_html("ws-d8-commit-in-tx", &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     assert!(
         out.contains(r#"class="evgraph""#),

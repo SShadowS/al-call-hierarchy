@@ -1,7 +1,7 @@
 //! Stage A2 — `--format json` DocumentEnvelope differential test.
 //!
 //! For each fixture in the corpus, runs the Rust gate pipeline under
-//! `--format json --deterministic` with `AL_SEM_VERSION_OVERRIDE=cli-a-json-v1`
+//! `--format json --deterministic` with `ALCH_DRIVER_VERSION_OVERRIDE=cli-a-json-v1`
 //! and byte-compares the output against the committed al-sem goldens at
 //! `U:\Git\al-sem\scripts\cli-a-goldens\json\<fixture>.<slot>.json`.
 //!
@@ -166,8 +166,8 @@ fn maybe_regen(name: &str, rust: &str) -> bool {
 }
 
 /// Run the Rust JSON pipeline for one fixture with the given detector list.
-/// The env var `AL_SEM_VERSION_OVERRIDE` MUST be set by the caller before
-/// this function is called (it reads the env at call time via `alsem_version()`).
+/// The env var `ALCH_DRIVER_VERSION_OVERRIDE` MUST be set by the caller before
+/// this function is called (it reads the env at call time via `driver_version()`).
 fn run_json(fixture: &str, detector_csv: &str) -> String {
     let fixture_dir = corpus_dir().join(fixture);
     assert!(
@@ -336,10 +336,10 @@ fn cli_a_json_byte_match() {
 
     let mut divergences: Vec<String> = Vec::new();
 
-    // Serialize env access across all sub-runs (AL_SEM_VERSION_OVERRIDE is process-global).
+    // Serialize env access across all sub-runs (ALCH_DRIVER_VERSION_OVERRIDE is process-global).
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
 
     for &fixture in FIXTURES {
         for (slot, csv) in &[("default", default_csv.as_str()), ("all", all_csv.as_str())] {
@@ -368,7 +368,7 @@ fn cli_a_json_byte_match() {
     }
 
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     if !divergences.is_empty() {
         let mut msg = format!("{TEST_NAME}: {} divergence(s) found:\n", divergences.len());
@@ -396,10 +396,10 @@ fn zero_findings_fixture_has_empty_maps() {
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
     let out = run_json("ws-txn-d46-neg", &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     let v: serde_json::Value =
         serde_json::from_str(&out).expect("zero-findings output must be valid JSON");
@@ -443,10 +443,10 @@ fn envelope_fields_are_correct() {
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
     let out = run_json("ws-txn-d46-neg", &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     let v: serde_json::Value = serde_json::from_str(&out).expect("output must be valid JSON");
 
@@ -533,7 +533,7 @@ fn scratch_ws(tag: &str) -> PathBuf {
 }
 
 /// Run the JSON pipeline directly over an arbitrary workspace path (not a corpus
-/// fixture). Caller sets `AL_SEM_VERSION_OVERRIDE` and holds `ENV_LOCK`.
+/// fixture). Caller sets `ALCH_DRIVER_VERSION_OVERRIDE` and holds `ENV_LOCK`.
 fn run_json_path(ws: &Path, detector_csv: &str) -> String {
     let args = AnalyzeArgs {
         workspace: ws.to_string_lossy().to_string(),
@@ -587,10 +587,10 @@ fn fail_closed_multi_app_emits_discover_diagnostic() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
     let out = run_json_path(&ws, &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     let _ = std::fs::remove_dir_all(&ws);
 
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
@@ -633,10 +633,10 @@ fn fail_closed_idless_app_json_emits_discover_diagnostic() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
     let out = run_json_path(&ws, &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     let _ = std::fs::remove_dir_all(&ws);
 
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
@@ -673,10 +673,10 @@ fn no_object_declaration_emits_index_diagnostic() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", JSON_VERSION_OVERRIDE) };
     let out = run_json_path(&ws, &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     let _ = std::fs::remove_dir_all(&ws);
 
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");

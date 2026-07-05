@@ -246,7 +246,7 @@ fn cli_a_terminal_byte_match() {
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
 
     // --- plain goldens (21 fixtures) ---
     for &fixture in PLAIN_FIXTURES {
@@ -322,7 +322,7 @@ fn cli_a_terminal_byte_match() {
     }
 
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     if !divergences.is_empty() {
         let mut msg = format!("{TEST_NAME}: {} divergence(s) found:\n", divergences.len());
@@ -348,10 +348,10 @@ fn zero_findings_fixture_shows_no_findings() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
     let out = run_terminal("ws-txn-d46-neg", &default_csv, None);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     assert!(
         out.contains("No findings."),
         "zero-findings fixture must contain 'No findings.' but got:\n{out}"
@@ -369,10 +369,10 @@ fn rollup_fixture_has_3_detectors_agree() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
     let out = run_terminal("ws-rollup-multi-detector", &default_csv, None);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     assert!(
         out.contains("3 detectors agree:"),
         "rollup fixture must contain '3 detectors agree:' but got:\n{out}"
@@ -390,10 +390,10 @@ fn group_by_detector_contains_header() {
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
     let out = run_terminal(GROUP_BY_FIXTURE, &default_csv, Some("detector"));
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     assert!(
         out.contains("Grouped by detector"),
         "group-by output must contain 'Grouped by detector' but got:\n{out}"
