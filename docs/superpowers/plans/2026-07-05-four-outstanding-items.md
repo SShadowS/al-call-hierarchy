@@ -112,7 +112,7 @@ du -sh /u/Git/al-call-hierarchy/target /u/Git/tree-sitter-al 2>/dev/null
 
 ---
 
-## Item 2 — The four untracked files
+## Item 2 — The four untracked files — ✅ DONE 2026-07-05 (workflow fixed+committed `416489e`; both cleanup scripts and the stale coverage plan deleted)
 
 ### 2.1 `.github/workflows/build-and-deploy.yml` — FIX + COMMIT (recommended) or delete
 
