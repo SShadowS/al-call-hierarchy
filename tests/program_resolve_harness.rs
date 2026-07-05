@@ -1434,9 +1434,14 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     // from `..._not_recognized_test.txt`) for the full fix and fixtures.
     //
     // Both `tools/tree-harness.sh` (CDO source, 551 files; BC.History,
-    // 15,358 files) confirm byte-identical parse trees before/after outside
-    // the 4 previously-Recovered dependency files — zero blast radius
-    // beyond the targeted constructs. Per this diagnostic's own documented
+    // 16,898 files — CORRECTED 2026-07-05, Task 5: this checkout's actual
+    // BC.History corpus size at the time Task 4 ran the harness, per its own
+    // report; "15,358" was a stale figure inherited from this repo's
+    // CLAUDE.md, which predates the corpus's growth and was never
+    // re-measured before being quoted here) confirm byte-identical parse
+    // trees before/after outside the 4 previously-Recovered dependency
+    // files — zero blast radius beyond the targeted constructs. Per this
+    // diagnostic's own documented
     // invariant (see `recovered_file_paths`'s doc), these 4 files' `#if`
     // union-reads are no longer silently incomplete — any PRIOR
     // absence/`ProvenAbsent`-shaped caveat about `System::Object`/

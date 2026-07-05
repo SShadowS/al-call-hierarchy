@@ -246,6 +246,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical), and the BC.History (16,898 files) byte-identical manifest
   proof. Local commits only (grammar + this repin) — no push, no tag; rides
   the merge menu with Tasks 1-3.
+- **Roadmap-closure arc complete — BUILT 4 / RETIRED 2 / DEFERRED-WITH-WAKE 6, the roadmap's FINAL
+  honest state; every zero-metric held byte-identical through all 4 build tasks (Task 5, FINAL,
+  roadmap-closure plan).** Full re-measure at HEAD `e994d7b` against the frozen
+  `.superpowers/sdd/cdo-baseline-plan13.md` baseline (engine `858e663` / grammar `307dc39`):
+  BYTE-IDENTICAL on every tracked row — CDO harness 179 passed / 0 failed / 3 ignored; primary
+  `unknown` 0/18108 (0.0000%), whole `unknown` 0/43408; `ambiguousResolved` 0 both scopes;
+  `unknownByReason` `{}` both scopes; `recoveredFiles` 0; `genuine_wrong` 0 (54/54 adjudicated); the
+  L3 semantic-audit digest and `aldump --program-call-graph-stats` JSON SHA-256 both byte-for-byte
+  identical to the baseline; `route_applicability`/`fan_out_applicability` both 0 violations
+  (non-vacuous `routes_checked`); `cargo test --workspace` 159 blocks ok, 0 failures; clippy/fmt
+  clean.
+  - **BUILT (4):** the Report/ReportExtension routine merge via `resolve_in_extendable_scope`
+    unification (Task 1); ABI param-type retention behind the structural `AbiParams` enum, lifting
+    the SymbolOnly arg-type dispatch gate, plus the `already_quoted` canonicalization fallback
+    (Task 2 + its review fix); the Step-4b `WithState` symmetry guard (Task 3); the spaced-`# if`/
+    `# elif`/`# endif` scanner-EXCLUSIVE route, `tree-sitter-al` v3.1.0 -> v3.2.0 (Task 4), which
+    also root-caused and fixed a real latent depth-counter bug in the old `'# endif'` literal
+    fallback. All four are fixture-proven and CDO-population-less by grounding (Tasks 1-3 measure
+    zero live CDO population; Task 4 is inert on CDO source) — exactly the outcome the plan
+    predicted; "byte-identical CDO" was the acceptance bar throughout, never a metric mover.
+  - **RETIRED (2):** QueryExtension — NOT an AL object keyword. This plan's own round-2 addendum
+    asserted `queryextension` "EXISTS as an AL object type" and narrowed the retirement to "no
+    callable routine members"; Task 3's mandatory `al compile` probe (`al.exe` v18.0.37.11445, 3/3
+    code-bearing shapes: bare, `+procedure`, `+trigger`) found that claim FALSE — all 3 reject
+    identically with `AL0198: Expected one of the application object keywords (...)`,
+    `queryextension` absent from the compiler's own enumerated list, confirmed against a clean
+    positive control. Disposition reverts to the ORIGINAL pre-round-2 wording: RETIRED (nonexistent
+    construct). Wake: a future AL compiler version ever adding the keyword (re-probe before
+    re-asserting either way — see the plan doc's dated correction, added this task). The
+    `.dependencies`/CDO same-slug "double-include" framing — already retired 2026-07-05 per the
+    permanent law (`.dependencies` folders are ordinary source, confirmed CLEAN by two EARLIER
+    plans' Task-0 preflight audits — dataitem-depscope-reason-split and
+    sigfp-and-ambiguous-reclassification — before this plan even started); recorded here for the
+    capstone's completeness, not new work this arc.
+  - **DEFERRED-WITH-WAKE (6), the roadmap's final state — every remaining call-graph item, each
+    population-less, each with its own wake condition:** `ProvenAbsent` machinery (wake: a real
+    proven-absence population on any corpus); implicit-conversion modeling (wake: a nonzero
+    `ambiguousResolved` population); the full `ParseStatus` gate (wake: the first
+    absence-claiming consumer); protected `Variables[]` (wake: an extension routine consuming a
+    base protected var, in any corpus); preprocessor-symbol fidelity for embedded dependencies
+    (wake: a real consumer); `Sender` parameter-TYPE drift analysis (wake: a corpus with a
+    version-drifted symbol closure).
+  - **Two stale roadmap claims confirmed DONE-VERIFIED, corrected append-only:** unquoted bare
+    field receivers (Task 3's errata — landed in the tenth arc, receiver-closure-and-arg-increments
+    plan, `e24ad4c`; a CHANGELOG note calling it "deliberately deferred" was stale). Dot-quoted
+    field names (e.g. `"No."`) — corrected THIS task: `is_atomic_receiver_token` (`receiver.rs`)
+    treats ANY well-formed quoted token as atomic regardless of an embedded dot (proven by
+    `infer_receiver_type_step2b_dot_bearing_quoted_dataitem_name_resolves` + the
+    `is_atomic_receiver_token_cases` "quoted, embedded dot" case) — the SAME shared primitive every
+    quoted-receiver arm (Step 2b, Step 3a, quote-parity) is built on, so this was structural
+    immunity all along, never a gap needing its own arm; the applicability-param-subtype-recfield
+    plan's stale "dot-quoted field names... not yet covered by any quoted-field arm" claim (above,
+    `### Fixed` "Bare implicit-Rec quoted-field receivers..." entry) is corrected here.
+  - **Nits:** the stale "15,358" BC.History figure in `tests/program_resolve_harness.rs`'s
+    `RESOLVED 2026-07-05` comment corrected to 16,898 (this checkout's actual corpus size, per Task
+    4's own measurement); the plan doc
+    (`docs/superpowers/plans/2026-07-05-roadmap-closure.md`) gets a dated, append-only correction
+    note on its own round-2 QueryExtension addendum, pointing at the Task 3 probe finding above.
+  - Product backlog (BC-Brain integration work) stays SEPARATE from this call-graph roadmap, per
+    the plan's own binding rule — never folded into the doctrine-deferred list above.
+  - Grammar + engine local-only state at close: `tree-sitter-al` v3.2.0 local commit `14bd55c`
+    (submodule pin, not pushed); the engine's `feat/roadmap-closure` HEAD carries the submodule
+    gitlink update. No push, no tag, no merge to `master` this task — per the plan's explicit
+    no-push gate and this task's foreground-only, non-destructive scope.
 
 ### Added
 - **Scope-resolver unification + the Report/ReportExtension routine merge

@@ -74,6 +74,21 @@
   the grammar repo's `al compile` probe methodology (a queryextension with a procedure — expect rejection) and record
   the probe result; wake: the compiler/spec ever permitting callable queryextension members.
 
+> **DATED CORRECTION (Task 5, 2026-07-05, append-only — the bullet above stays unedited).** The claim just above —
+> "`queryextension` EXISTS as an AL object type... the prior 'nonexistent construct' wording was false" — was itself
+> **FALSIFIED** by Task 3's mandatory pre-wording probe (`al.exe` v18.0.37.11445, CDO's `.alpackages` cache,
+> platform/application `28.0.0.0`): 3/3 code-bearing shapes (bare, `+procedure`, `+trigger OnBeforeOpen()`) all
+> reject identically with `AL0198: Expected one of the application object keywords (table, tableextension, page,
+> pageextension, pagecustomization, profile, profileextension, codeunit, report, reportextension, xmlport, query,
+> controladdin, dotnet, enum, enumextension, interface, permissionset, permissionsetextension, entitlement)` —
+> `queryextension` is absent from the compiler's own enumerated keyword list, confirmed against a positive control
+> (a bare `query` object in the same project compiles clean, exit 0). **The disposition reverts to the ORIGINAL,
+> pre-round-2 wording: RETIRED (nonexistent construct)**, not "retired narrowly with a verification gate" as this
+> addendum instructed. See `.superpowers/sdd/task-3-report.md` §1 for the full probe transcript and
+> `CHANGELOG.md`'s `[Unreleased]` "Roadmap dispositions, probe-grounded (Task 3...)" entry for the recorded
+> correction. Wake condition unchanged in spirit: a future AL compiler version ever adding a `queryextension` object
+> keyword (re-probe before ever re-asserting either way).
+
 **Cross-task (gpt I5/M1/M2):**
 - **The frozen mechanical baseline:** BEFORE T1, capture one canonical CDO baseline artifact (engine SHA, grammar
   SHA, the harness command, all metrics, coverage totals, digests) into the report dir; every task compares against
