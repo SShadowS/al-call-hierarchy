@@ -42,7 +42,7 @@ pub struct DiffCliOptions<'a> {
     pub fail_on: Option<Severity>,
     pub strict: bool,
     pub deterministic: bool,
-    pub alsem_version: &'a str,
+    pub driver_version: &'a str,
 }
 
 fn detect_input_kind(arg: &str) -> Result<InputKind, String> {
@@ -80,7 +80,7 @@ fn load_snapshot_from_path(path: &str) -> Result<CborValue, String> {
 /// Compose a full snapshot tree by reanalyzing a workspace directory (ws-mode).
 fn load_snapshot_from_workspace(
     dir: &str,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
 ) -> Result<CborValue, String> {
     use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
@@ -94,7 +94,7 @@ fn load_snapshot_from_workspace(
         .ok_or_else(|| format!("workspace '{dir}' did not resolve"))?;
     let opts = FullSnapshotOptions {
         workspace_dir: ws,
-        alsem_version,
+        driver_version,
         deterministic,
         roots_config_ignored: false,
     };
@@ -134,7 +134,7 @@ pub fn run_diff(opts: &DiffCliOptions) -> DiffRunOutcome {
     // Load both snapshots.
     let old_snap = match old_kind {
         InputKind::Workspace => {
-            load_snapshot_from_workspace(opts.old_arg, opts.alsem_version, opts.deterministic)
+            load_snapshot_from_workspace(opts.old_arg, opts.driver_version, opts.deterministic)
         }
         _ => load_snapshot_from_path(opts.old_arg),
     };
@@ -144,7 +144,7 @@ pub fn run_diff(opts: &DiffCliOptions) -> DiffRunOutcome {
     };
     let new_snap = match new_kind {
         InputKind::Workspace => {
-            load_snapshot_from_workspace(opts.new_arg, opts.alsem_version, opts.deterministic)
+            load_snapshot_from_workspace(opts.new_arg, opts.driver_version, opts.deterministic)
         }
         _ => load_snapshot_from_path(opts.new_arg),
     };
@@ -187,7 +187,7 @@ pub fn run_diff(opts: &DiffCliOptions) -> DiffRunOutcome {
     let text = format_diff(
         &result,
         opts.format,
-        opts.alsem_version,
+        opts.driver_version,
         opts.deterministic,
         &analyzer_diagnostics,
     );

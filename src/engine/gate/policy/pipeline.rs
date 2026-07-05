@@ -171,7 +171,7 @@ pub struct PolicyCheckOptions<'a> {
     pub out: Option<&'a str>,
     pub deterministic: bool,
     pub strict: bool,
-    pub alsem_version: &'a str,
+    pub driver_version: &'a str,
 }
 
 /// `runPolicyCheck`. Exit: 0 on success ALWAYS (no fail-on gate); non-zero only on
@@ -265,8 +265,8 @@ pub fn run_policy_check(opts: &PolicyCheckOptions) -> PolicyCheckOutcome {
     };
 
     let text = match opts.format {
-        "json" => format_policy_json(&result, opts.alsem_version, opts.deterministic),
-        "sarif" => format_policy_sarif(&result, opts.alsem_version),
+        "json" => format_policy_json(&result, opts.driver_version, opts.deterministic),
+        "sarif" => format_policy_sarif(&result, opts.driver_version),
         _ => format_policy_human(&result),
     };
 

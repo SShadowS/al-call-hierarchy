@@ -31,7 +31,7 @@ const FIXTURE: &str = "ws-d8-commit-in-tx";
 fn base_opts(ws: &std::path::Path) -> FingerprintOptions<'_> {
     FingerprintOptions {
         workspace: ws,
-        alsem_version: "p1-test-v1",
+        driver_version: "p1-test-v1",
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -220,7 +220,7 @@ fn inventory_only_cbor_rejected() {
     assert!(ws.is_dir());
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: "p1-test-v1",
+        driver_version: "p1-test-v1",
         format: FingerprintFormat::Cbor,
         out: None,
         shard: None,
@@ -277,7 +277,7 @@ fn inventory_doc_for(tag: &str, al_file: &str, al_source: &str) -> serde_json::V
 
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: "p1-test-v1",
+        driver_version: "p1-test-v1",
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -455,7 +455,7 @@ fn inventory_only_query_selector_rejected() {
     );
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: "p1-test-v1",
+        driver_version: "p1-test-v1",
         format: FingerprintFormat::Json,
         out: None,
         shard: None,

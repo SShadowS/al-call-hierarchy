@@ -207,7 +207,7 @@ fn compose_ws(dir: &std::path::Path) -> CborValue {
     let resolved = assemble_and_resolve_workspace(dir, &model_id).expect("resolve");
     let opts = FullSnapshotOptions {
         workspace_dir: dir,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         deterministic: true,
         roots_config_ignored: false,
     };
@@ -288,7 +288,7 @@ fn diff_strict_exit_via_cli_orchestrator() {
         fail_on: None,
         strict: false,
         deterministic: true,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
     });
     assert_eq!(outcome.exit_code, 1, "strict CLI exit must be 1");
     assert!(outcome.error_message.is_none());
@@ -304,7 +304,7 @@ fn diff_strict_exit_via_cli_orchestrator() {
         fail_on: Some(Severity::Medium),
         strict: false,
         deterministic: true,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
     });
     assert_eq!(outcome.exit_code, 1, "fail-on medium CLI exit must be 1");
 }
@@ -327,7 +327,7 @@ fn diff_app_input_rejected() {
         fail_on: None,
         strict: false,
         deterministic: true,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
     });
     let _ = std::fs::remove_file(&tmp);
     assert_eq!(outcome.exit_code, 2, "app input → CONFIG_ERROR exit 2");
@@ -362,7 +362,7 @@ fn diff_ws_mode_stderr_note_byte_match() {
         fail_on: None,
         strict: false,
         deterministic: true,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
     });
 
     // stderr golden has a trailing newline; our stderr_lines join with newline + the

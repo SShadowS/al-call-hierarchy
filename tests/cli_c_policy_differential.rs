@@ -2,7 +2,7 @@
 //!
 //! Each test runs the Rust `run_policy_check` / `run_policy_explain` pipeline
 //! (in-process — NOT via the binary, so Windows console redirect quirks never
-//! apply) with `deterministic = true` and `alsem_version = "cli-c-v1"`, and
+//! apply) with `deterministic = true` and `driver_version = "cli-c-v1"`, and
 //! byte-compares the output to the committed goldens under
 //! `tests/cli-c-policy-goldens/` (copied from al-sem `scripts/cli-c-goldens/policy/`).
 //!
@@ -90,7 +90,7 @@ fn check_text(fixture: &str, format: &str, no_policy: bool) -> String {
         out: None,
         deterministic: true,
         strict: false,
-        alsem_version: ALSEM_VERSION,
+        driver_version: ALSEM_VERSION,
     };
     let outcome = run_policy_check(&opts);
     assert_eq!(

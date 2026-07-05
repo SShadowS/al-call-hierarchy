@@ -1026,7 +1026,7 @@ pub fn project_fingerprint_query_full(
     filters: &FingerprintFilters,
     deterministic: bool,
     analyzer_diagnostics: &[(String, String, String)],
-    alsem_version: &str,
+    driver_version: &str,
     workspace_fingerprint: &str,
 ) -> String {
     // Operation index (borrowed from snap; lives as long as snap).
@@ -1268,7 +1268,7 @@ pub fn project_fingerprint_query_full(
     let envelope = serde_json::json!({
         "kind": "fingerprint-query",
         "schemaVersion": FINGERPRINT_QUERY_CONTRACT_VERSION,
-        "alsemVersion": alsem_version,
+        "alsemVersion": driver_version,
         "deterministic": deterministic,
         "generatedAt": generated_at,
         "diagnostics": diags_arr,

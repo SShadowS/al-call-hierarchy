@@ -140,7 +140,7 @@ fn compose_full_for(
         .unwrap_or_else(|| panic!("{fixture}: workspace did not resolve"));
     let opts = FullSnapshotOptions {
         workspace_dir: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         deterministic: true,
         roots_config_ignored: false,
     };
@@ -204,7 +204,7 @@ fn query_json_matches_goldens() {
         let ws = fixture_dir(fixture);
         let opts = FingerprintOptions {
             workspace: &ws,
-            alsem_version: VERSION_OVERRIDE,
+            driver_version: VERSION_OVERRIDE,
             format: FingerprintFormat::Json,
             out: None,
             shard: None,
@@ -247,7 +247,7 @@ fn human_compact_matches_goldens() {
         let ws = fixture_dir(fixture);
         let opts = FingerprintOptions {
             workspace: &ws,
-            alsem_version: VERSION_OVERRIDE,
+            driver_version: VERSION_OVERRIDE,
             format: FingerprintFormat::Human,
             out: None,
             shard: None,
@@ -289,7 +289,7 @@ fn witness_all_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -326,7 +326,7 @@ fn witness_zero_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -363,7 +363,7 @@ fn witness_false_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -404,7 +404,7 @@ fn selector_error_json_matches_golden_and_exits_2() {
     let ws = fixture_dir(ERROR_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -446,7 +446,7 @@ fn human_full_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Human,
         out: None,
         shard: None,
@@ -536,7 +536,7 @@ fn opts_for<'a>(
 ) -> FingerprintOptions<'a> {
     FingerprintOptions {
         workspace: ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format,
         out: None,
         shard,

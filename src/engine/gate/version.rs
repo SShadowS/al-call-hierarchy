@@ -6,19 +6,9 @@
 //!
 //! The dependency-cache header's `analyzer` stamp is a SEPARATE, deliberately
 //! decoupled concern — see [`crate::engine::gate::cache_prune::CACHE_ANALYZER_VERSION`].
-//!
-//! A handful of CLI subcommands (`policy check`, `digest`, `prove`, `fingerprint`,
-//! `events fanout`/`chains`) still thread the legacy `DEFAULT_ALSEM_VERSION` const
-//! directly rather than this module's [`driver_version`] — tracked separately, out
-//! of scope for this pass.
-
-/// Legacy fallback version string still used directly by a handful of CLI
-/// subcommands (`policy check`, `digest`, `prove`, `fingerprint`, `events
-/// fanout`/`chains`) that have not yet been migrated onto [`driver_version`].
-/// Deliberately left as a literal (not `env!("CARGO_PKG_VERSION")`) so those
-/// call sites are untouched by this decoupling; migrating them is tracked
-/// separately.
-pub const DEFAULT_ALSEM_VERSION: &str = "0.0.12";
+//! Every CLI subcommand that reports a driver/display version (`analyze`, `policy
+//! check`, `digest`, `prove`, `fingerprint`, `events fanout`/`chains`, `diff`) goes
+//! through [`driver_version`] — there is no other version identity left in `src/`.
 
 /// The env-var name carrying the driver-version override.
 const OVERRIDE_ENV_VAR: &str = "ALCH_DRIVER_VERSION_OVERRIDE";

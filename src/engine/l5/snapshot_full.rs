@@ -43,7 +43,7 @@ pub struct FullSnapshotOptions<'a> {
     /// The workspace directory (for the inputs walk + relative paths).
     pub workspace_dir: &'a std::path::Path,
     /// The al-sem version string (`alsemVersion`; e.g. `cli-b-v1`).
-    pub alsem_version: &'a str,
+    pub driver_version: &'a str,
     /// When true, `generatedAt` is pinned to the Unix epoch for byte-stable output.
     pub deterministic: bool,
     /// True when a `roots.config.json` existed but was ignored via --no-roots-config
@@ -58,9 +58,9 @@ pub struct FullSnapshotOptions<'a> {
 /// a full snapshot tree. Used by the digest pipeline so it doesn't pay for a second
 /// `compose_snapshot` (which `compose_full_snapshot` calls internally) just to fish
 /// the fingerprint out of a CBOR map (#19).
-pub fn workspace_fingerprint_of(workspace_dir: &std::path::Path, alsem_version: &str) -> String {
+pub fn workspace_fingerprint_of(workspace_dir: &std::path::Path, driver_version: &str) -> String {
     let inputs = derive_inputs(workspace_dir);
-    compute_workspace_fingerprint(&inputs, alsem_version)
+    compute_workspace_fingerprint(&inputs, driver_version)
 }
 
 pub fn compose_full_snapshot(resolved: &L3Resolved, opts: &FullSnapshotOptions) -> CborValue {
@@ -70,7 +70,7 @@ pub fn compose_full_snapshot(resolved: &L3Resolved, opts: &FullSnapshotOptions) 
     let base = build_r3a3_source_only_base(resolved);
 
     let inputs = derive_inputs(opts.workspace_dir);
-    let workspace_fingerprint = compute_workspace_fingerprint(&inputs, opts.alsem_version);
+    let workspace_fingerprint = compute_workspace_fingerprint(&inputs, opts.driver_version);
 
     let apps = project_apps(resolved);
     let contract_facts = derive_contracts(resolved);
@@ -103,7 +103,7 @@ pub fn compose_full_snapshot(resolved: &L3Resolved, opts: &FullSnapshotOptions) 
     );
     m.insert(
         "alsemVersion".into(),
-        CborValue::Text(opts.alsem_version.to_string()),
+        CborValue::Text(opts.driver_version.to_string()),
     );
     m.insert(
         "workspaceFingerprint".into(),
@@ -843,7 +843,7 @@ fn derive_inputs(workspace_dir: &std::path::Path) -> Vec<SnapshotInput> {
 }
 
 /// SHA-256 over the sorted (kind, path, contentHash) triples + alsemVersion.
-fn compute_workspace_fingerprint(inputs: &[SnapshotInput], alsem_version: &str) -> String {
+fn compute_workspace_fingerprint(inputs: &[SnapshotInput], driver_version: &str) -> String {
     let mut sorted: Vec<&SnapshotInput> = inputs.iter().collect();
     // al-sem `computeWorkspaceFingerprint`: same localeCompare(kind|path) sort.
     sorted.sort_by(|a, b| {
@@ -856,7 +856,7 @@ fn compute_workspace_fingerprint(inputs: &[SnapshotInput], alsem_version: &str) 
         .iter()
         .map(|i| format!("{}\t{}\t{}", i.kind, i.path, i.content_hash))
         .collect();
-    lines.push(format!("alsemVersion\t{alsem_version}"));
+    lines.push(format!("alsemVersion\t{driver_version}"));
     sha256_hex(&lines.join("\n"))
 }
 
@@ -919,11 +919,11 @@ pub fn serialize_cbor_gz(tree: &CborValue) -> Vec<u8> {
 /// Then serialized sorted-key with `undefined` dropped (no undefined in practice).
 pub fn serialize_envelope(
     tree: &CborValue,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
     diagnostics: &[EnvelopeDiagnostic],
 ) -> String {
-    let doc = build_envelope(tree, alsem_version, deterministic, diagnostics);
+    let doc = build_envelope(tree, driver_version, deterministic, diagnostics);
     let mut s = String::new();
     write_sorted_json_inner(&doc, 0, true, &mut s);
     s.push('\n');
@@ -941,7 +941,7 @@ pub struct EnvelopeDiagnostic {
 
 fn build_envelope(
     tree: &CborValue,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
     diagnostics: &[EnvelopeDiagnostic],
 ) -> CborValue {
@@ -985,7 +985,7 @@ fn build_envelope(
     env.insert("schemaVersion".into(), CborValue::Text("1.1.0".into()));
     env.insert(
         "alsemVersion".into(),
-        CborValue::Text(alsem_version.to_string()),
+        CborValue::Text(driver_version.to_string()),
     );
     env.insert("deterministic".into(), CborValue::Bool(deterministic));
     env.insert("generatedAt".into(), CborValue::Text(generated_at));
@@ -1021,10 +1021,10 @@ fn build_envelope(
 pub fn build_inventory_envelope(
     tree: &CborValue,
     resolved: &L3Resolved,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
 ) -> String {
-    let doc = build_inventory_doc(tree, resolved, alsem_version, deterministic);
+    let doc = build_inventory_doc(tree, resolved, driver_version, deterministic);
     let mut s = String::new();
     write_sorted_json_inner(&doc, 0, true, &mut s);
     s.push('\n');
@@ -1055,7 +1055,7 @@ fn case_insensitive_compare_opt(a: &Option<String>, b: &Option<String>) -> std::
 fn build_inventory_doc(
     tree: &CborValue,
     resolved: &L3Resolved,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
 ) -> CborValue {
     let CborValue::Map(snap) = tree else {
@@ -1142,7 +1142,7 @@ fn build_inventory_doc(
     );
     env.insert(
         "alsemVersion".into(),
-        CborValue::Text(alsem_version.to_string()),
+        CborValue::Text(driver_version.to_string()),
     );
     env.insert("deterministic".into(), CborValue::Bool(deterministic));
     env.insert("generatedAt".into(), CborValue::Text(generated_at));
@@ -1171,7 +1171,7 @@ pub struct ShardFile {
 /// so it takes none either.
 pub fn serialize_sharded(
     tree: &CborValue,
-    alsem_version: &str,
+    driver_version: &str,
     primary_only: bool,
 ) -> Vec<ShardFile> {
     let mut out: Vec<ShardFile> = Vec::new();
@@ -1187,7 +1187,7 @@ pub fn serialize_sharded(
     if apps.is_empty() {
         out.push(ShardFile {
             name: "manifest.json".into(),
-            bytes: encode_manifest(snap, alsem_version, &[]).into_bytes(),
+            bytes: encode_manifest(snap, driver_version, &[]).into_bytes(),
         });
         return out;
     }
@@ -1233,7 +1233,7 @@ pub fn serialize_sharded(
 
     out.push(ShardFile {
         name: "manifest.json".into(),
-        bytes: encode_manifest(snap, alsem_version, &shard_entries).into_bytes(),
+        bytes: encode_manifest(snap, driver_version, &shard_entries).into_bytes(),
     });
     out
 }
@@ -1430,7 +1430,7 @@ fn filter_event_declarations(v: &CborValue, in_app: &dyn Fn(&str) -> bool) -> Cb
 /// null, 2)` — NOT sorted (al-sem uses the default replacer here).
 fn encode_manifest(
     snap: &IndexMap<String, CborValue>,
-    alsem_version: &str,
+    driver_version: &str,
     shards: &[(String, String, String)],
 ) -> String {
     let workspace_fingerprint = match snap.get("workspaceFingerprint") {
@@ -1452,7 +1452,7 @@ fn encode_manifest(
     );
     m.insert(
         "alsemVersion".into(),
-        CborValue::Text(alsem_version.to_string()),
+        CborValue::Text(driver_version.to_string()),
     );
     m.insert(
         "workspaceFingerprint".into(),

@@ -194,7 +194,7 @@ fn compose_for(
         .unwrap_or_else(|| panic!("{fixture}: workspace did not resolve"));
     let opts = FullSnapshotOptions {
         workspace_dir: &fixture_dir,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         deterministic: true,
         roots_config_ignored: false,
     };

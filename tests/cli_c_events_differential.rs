@@ -2,7 +2,7 @@
 //!
 //! Each test:
 //!   1. Runs the Rust `run_events_fanout` / `run_events_chains` pipeline with
-//!      `deterministic = true` and `alsem_version = "cli-c-v1"`.
+//!      `deterministic = true` and `driver_version = "cli-c-v1"`.
 //!   2. Compares the output byte-for-byte to the committed golden files under
 //!      `tests/cli-c-events-goldens/`.
 //!
@@ -74,7 +74,7 @@ macro_rules! events_differential {
                     format: "human",
                     scope: $scope,
                     coverage_policy: "warn",
-                    alsem_version: ALSEM_VERSION,
+                    driver_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
                 };
@@ -91,7 +91,7 @@ macro_rules! events_differential {
                     format: "json",
                     scope: $scope,
                     coverage_policy: "warn",
-                    alsem_version: ALSEM_VERSION,
+                    driver_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
                 };
@@ -110,7 +110,7 @@ macro_rules! events_differential {
                     max_depth: None,
                     max_nodes: None,
                     coverage_policy: "warn",
-                    alsem_version: ALSEM_VERSION,
+                    driver_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
                 };
@@ -129,7 +129,7 @@ macro_rules! events_differential {
                     max_depth: None,
                     max_nodes: None,
                     coverage_policy: "warn",
-                    alsem_version: ALSEM_VERSION,
+                    driver_version: ALSEM_VERSION,
                     deterministic: true,
                     strict: false,
                 };
@@ -208,7 +208,7 @@ fn events_ws_event_fanout_scope_all() {
             format: "human",
             scope: Scope::All,
             coverage_policy: "warn",
-            alsem_version: ALSEM_VERSION,
+            driver_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
         };
@@ -224,7 +224,7 @@ fn events_ws_event_fanout_scope_all() {
             format: "json",
             scope: Scope::All,
             coverage_policy: "warn",
-            alsem_version: ALSEM_VERSION,
+            driver_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
         };
@@ -242,7 +242,7 @@ fn events_ws_event_fanout_scope_all() {
             max_depth: None,
             max_nodes: None,
             coverage_policy: "warn",
-            alsem_version: ALSEM_VERSION,
+            driver_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
         };
@@ -260,7 +260,7 @@ fn events_ws_event_fanout_scope_all() {
             max_depth: None,
             max_nodes: None,
             coverage_policy: "warn",
-            alsem_version: ALSEM_VERSION,
+            driver_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
         };
@@ -286,7 +286,7 @@ fn events_ws_event_d45_deep_max_depth_1() {
             max_depth: Some(1),
             max_nodes: None,
             coverage_policy: "warn",
-            alsem_version: ALSEM_VERSION,
+            driver_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
         };
@@ -304,7 +304,7 @@ fn events_ws_event_d45_deep_max_depth_1() {
             max_depth: Some(1),
             max_nodes: None,
             coverage_policy: "warn",
-            alsem_version: ALSEM_VERSION,
+            driver_version: ALSEM_VERSION,
             deterministic: true,
             strict: false,
         };
@@ -343,7 +343,7 @@ fn run_partial_fanout(
         format,
         scope: Scope::Primary,
         coverage_policy: policy,
-        alsem_version: ALSEM_VERSION,
+        driver_version: ALSEM_VERSION,
         deterministic: true,
         strict: false,
     };

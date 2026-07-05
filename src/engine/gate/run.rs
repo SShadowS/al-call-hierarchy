@@ -387,7 +387,7 @@ pub fn run_analyze_with_exit(
                 detector_stats: &run_detector_stats,
                 coverage: &coverage,
                 deterministic: args.deterministic,
-                alsem_version: driver_version(),
+                driver_version: driver_version(),
                 evidence: evidence.as_deref(),
             })
         }
@@ -495,7 +495,7 @@ pub(crate) fn empty_output_result(
                 detector_stats: &[],
                 coverage: &empty_coverage,
                 deterministic: args.deterministic,
-                alsem_version: driver_version(),
+                driver_version: driver_version(),
                 evidence: if args.with_evidence {
                     Some(&empty_evidence)
                 } else {

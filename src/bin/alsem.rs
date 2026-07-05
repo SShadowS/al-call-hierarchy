@@ -20,7 +20,7 @@ use al_call_hierarchy::engine::gate::exit_code::{exit, parse_fail_on};
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
-use al_call_hierarchy::engine::gate::version::{DEFAULT_ALSEM_VERSION, driver_version};
+use al_call_hierarchy::engine::gate::version::driver_version;
 use al_call_hierarchy::engine::l5::digest_cli::{
     ChangedAutoDetect, auto_detect_changed, run_digest_pipeline,
 };
@@ -525,6 +525,7 @@ fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
     }
 
     let workspace = std::path::Path::new(&c.workspace);
+    let version = driver_version();
     let opts = PolicyCheckOptions {
         workspace,
         policy_path: c.policy.as_deref(),
@@ -533,7 +534,7 @@ fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
         out: c.out.as_deref(),
         deterministic: c.deterministic,
         strict: c.strict,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
     };
 
     let outcome = run_policy_check(&opts);
@@ -648,6 +649,7 @@ fn run_diff_cmd(d: DiffCli) -> ExitCode {
         }
     };
 
+    let version = driver_version();
     let opts = DiffCliOptions {
         old_arg: &d.old,
         new_arg: &d.new,
@@ -658,7 +660,7 @@ fn run_diff_cmd(d: DiffCli) -> ExitCode {
         fail_on,
         strict: d.strict,
         deterministic: d.deterministic,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
     };
 
     let outcome = run_diff(&opts);
@@ -781,13 +783,14 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
     };
 
     let workspace = std::path::Path::new(&d.workspace);
+    let version = driver_version();
 
     match run_digest_pipeline(
         workspace,
         changed_files,
         changed_routines,
         diff_text,
-        DEFAULT_ALSEM_VERSION,
+        &version,
         d.deterministic,
         d.max_paths,
     ) {
@@ -854,12 +857,13 @@ fn run_prove_cmd(p: ProveCli) -> ExitCode {
     }
 
     let workspace = std::path::Path::new(&p.workspace);
+    let version = driver_version();
 
     match run_prove_pipeline(
         workspace,
         &p.routine,
         &p.question,
-        DEFAULT_ALSEM_VERSION,
+        &version,
         p.deterministic,
     ) {
         Err(msg) => {
@@ -972,10 +976,11 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
 
     let is_query_requested = specified.is_query_requested();
     let workspace = std::path::Path::new(&f.workspace);
+    let version = driver_version();
 
     let opts = FingerprintOptions {
         workspace,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
         format,
         out: f.out.as_deref(),
         shard: shard_mode,
@@ -1061,12 +1066,13 @@ fn run_events_fanout_cmd(f: EventsFanoutCli) -> ExitCode {
     };
 
     let workspace = std::path::Path::new(&f.workspace);
+    let version = driver_version();
     let opts = EventsFanoutOptions {
         workspace,
         format: &f.format,
         scope,
         coverage_policy: &f.coverage_policy,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
         deterministic: f.deterministic,
         strict: f.strict,
     };
@@ -1130,6 +1136,7 @@ fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
     }
 
     let workspace = std::path::Path::new(&c.workspace);
+    let version = driver_version();
     let opts = EventsChainsOptions {
         workspace,
         format: &c.format,
@@ -1137,7 +1144,7 @@ fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
         coverage_policy: &c.coverage_policy,
         max_depth: c.max_depth,
         max_nodes: c.max_nodes,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
         deterministic: c.deterministic,
         strict: c.strict,
     };
