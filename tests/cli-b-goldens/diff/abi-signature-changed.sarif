@@ -1,0 +1,137 @@
+{
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "fingerprints": {
+            "default": "3d79b827667840e6"
+          },
+          "level": "error",
+          "message": {
+            "text": "procedure-removed: CreateInvoice"
+          },
+          "ruleId": "abi.procedure-removed"
+        },
+        {
+          "fingerprints": {
+            "default": "e4252549d5ac5660"
+          },
+          "level": "error",
+          "message": {
+            "text": "permission-target-added: CreateInvoice"
+          },
+          "ruleId": "permissions.permission-target-added"
+        },
+        {
+          "fingerprints": {
+            "default": "0c7e11f7359bb52a"
+          },
+          "level": "warning",
+          "message": {
+            "text": "capability-gained-write: CreateInvoice"
+          },
+          "ruleId": "capabilities.capability-gained-write"
+        },
+        {
+          "fingerprints": {
+            "default": "bf1cff2d5672752e"
+          },
+          "level": "warning",
+          "message": {
+            "text": "capability-lost-under-coverage: CreateInvoice"
+          },
+          "ruleId": "capabilities.capability-lost-under-coverage"
+        },
+        {
+          "fingerprints": {
+            "default": "4fb992aa5cfdb458"
+          },
+          "level": "note",
+          "message": {
+            "text": "permission-target-removed: CreateInvoice"
+          },
+          "ruleId": "permissions.permission-target-removed"
+        },
+        {
+          "fingerprints": {
+            "default": "c097ba1dd51a363b"
+          },
+          "level": "note",
+          "message": {
+            "text": "procedure-added: CreateInvoice"
+          },
+          "ruleId": "abi.procedure-added"
+        },
+        {
+          "fingerprints": {
+            "default": "22f0bf312ce1423d"
+          },
+          "level": "note",
+          "message": {
+            "text": "table-field-added: dd6a6b6i-0006-0006-0006-000000000006:Table:50600#3"
+          },
+          "ruleId": "schema.table-field-added"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/anthropics/al-sem",
+          "name": "al-sem-diff",
+          "rules": [
+            {
+              "id": "abi.procedure-removed",
+              "name": "procedure-removed",
+              "shortDescription": {
+                "text": "abi procedure-removed"
+              }
+            },
+            {
+              "id": "permissions.permission-target-added",
+              "name": "permission-target-added",
+              "shortDescription": {
+                "text": "permissions permission-target-added"
+              }
+            },
+            {
+              "id": "capabilities.capability-gained-write",
+              "name": "capability-gained-write",
+              "shortDescription": {
+                "text": "capabilities capability-gained-write"
+              }
+            },
+            {
+              "id": "capabilities.capability-lost-under-coverage",
+              "name": "capability-lost-under-coverage",
+              "shortDescription": {
+                "text": "capabilities capability-lost-under-coverage"
+              }
+            },
+            {
+              "id": "permissions.permission-target-removed",
+              "name": "permission-target-removed",
+              "shortDescription": {
+                "text": "permissions permission-target-removed"
+              }
+            },
+            {
+              "id": "abi.procedure-added",
+              "name": "procedure-added",
+              "shortDescription": {
+                "text": "abi procedure-added"
+              }
+            },
+            {
+              "id": "schema.table-field-added",
+              "name": "table-field-added",
+              "shortDescription": {
+                "text": "schema table-field-added"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

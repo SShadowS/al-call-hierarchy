@@ -1,0 +1,80 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "diff-report",
+  "payload": {
+    "diagnostics": [],
+    "findings": [
+      {
+        "category": "permissions",
+        "comparisonCone": [
+          "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942"
+        ],
+        "details": {
+          "kind": "permission-rights-expanded",
+          "newRights": [
+            "R"
+          ],
+          "oldRights": [
+            "M"
+          ],
+          "targetId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300",
+          "targetKind": "TableData"
+        },
+        "id": "49ca2edfaa862287",
+        "kind": "permission-rights-expanded",
+        "severity": "high",
+        "subject": {
+          "displayName": "UpdateItem",
+          "newStableId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+          "normalizedStableId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942"
+        }
+      },
+      {
+        "category": "capabilities",
+        "comparisonCone": [
+          "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942"
+        ],
+        "coverageState": {
+          "new": "complete",
+          "old": "complete"
+        },
+        "details": {
+          "kind": "capability-gained-read",
+          "op": "read",
+          "resourceId": "dd3p3e3f-0003-0003-0003-000000000003/table/50300",
+          "resourceKind": "table"
+        },
+        "id": "3b24f29517c83301",
+        "kind": "capability-gained-read",
+        "severity": "medium",
+        "subject": {
+          "displayName": "UpdateItem",
+          "newStableId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+          "normalizedStableId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942"
+        }
+      }
+    ],
+    "summary": {
+      "coverageIncompleteCones": 0,
+      "findingsByCategory": {
+        "abi": 0,
+        "capabilities": 1,
+        "events": 0,
+        "permissions": 1,
+        "schema": 0
+      },
+      "findingsBySeverity": {
+        "critical": 0,
+        "high": 1,
+        "info": 0,
+        "low": 0,
+        "medium": 1
+      },
+      "renamesApplied": 0
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

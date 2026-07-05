@@ -1,0 +1,178 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd6a6b6i-0006-0006-0006-000000000006",
+      "name": "Diff ABI Change App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.0"
+    }
+  ],
+  "callsiteIndex": [],
+  "callsiteResolutions": [],
+  "capabilityFacts": [
+    {
+      "confidence": "static",
+      "extra": {
+        "kind": "table",
+        "opSubtype": "Insert",
+        "recordVariableId": "9d28e87d9a974c9b/ac39ea6069911fc4f041ffb24f2404d59e3b264ea1bfd963aa40b32a5d6af666/rv/invoice",
+        "tempState": {
+          "kind": "known",
+          "value": false
+        }
+      },
+      "op": "insert",
+      "provenance": "direct",
+      "resourceId": "dd6a6b6i-0006-0006-0006-000000000006/table/50600",
+      "resourceKind": "table",
+      "subject": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "via": "self",
+      "witnessOperationId": "9d28e87d9a974c9b/ac39ea6069911fc4f041ffb24f2404d59e3b264ea1bfd963aa40b32a5d6af666/op0"
+    }
+  ],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "0001bd2196938535f5928ee9bbbb4dcbc9e27366659d9895d8c9c8c3ed57a313",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "377ed41e49b2e0e6b2d3a1e7c31d5623e0edc466409c997c9c8f7b5f49fb3a96",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Table:50600",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Invoicer",
+      "CreateInvoice",
+      "Invoice"
+    ],
+    "stableIds": [
+      "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600",
+      "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "dd6a6b6i-0006-0006-0006-000000000006:Table:50600"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "8d0004287170c3f67560871ae13e6522738f507a018c4f380c75e42b95e271d4",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [
+    {
+      "controlContext": "top-level",
+      "displayText": "Invoice.Insert",
+      "endColumn": 24,
+      "endLine": 7,
+      "operationId": "9d28e87d9a974c9b/ac39ea6069911fc4f041ffb24f2404d59e3b264ea1bfd963aa40b32a5d6af666/op0",
+      "order": {
+        "dominatesSuccessReturn": true,
+        "frameId": 0,
+        "onSuccessPath": true,
+        "orderId": 0
+      },
+      "routine": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "sourceFile": "ws:src/invoicer.al",
+      "startColumn": 8,
+      "startLine": 7
+    }
+  ],
+  "permissionFacts": [
+    {
+      "coverage": "complete",
+      "derivedFromCapability": {
+        "op": "insert"
+      },
+      "kind": "required",
+      "rights": [
+        "I"
+      ],
+      "subject": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "target": "dd6a6b6i-0006-0006-0006-000000000006:Table:50600",
+      "targetKind": "TableData"
+    }
+  ],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "9d28e87d9a974c9b/ac39ea6069911fc4f041ffb24f2404d59e3b264ea1bfd963aa40b32a5d6af666",
+        "range": {
+          "endColumn": 8,
+          "endLine": 8,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/invoicer.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd6a6b6i-0006-0006-0006-000000000006:Codeunit:50600#3a947e8ad729d9df93fcb0986aee321b938ab16c8d4f9d1af0bf7962efd5fb3f": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [
+    {
+      "kind": "table",
+      "shapeFingerprint": "7edd7caf7c24ccda5cedbf22a63710676ae4c7a313141321a831979ed6bdc651",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Table:50600"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "d45c6f5aaa93a9d7b25b6943991d9d2292f40e6a6fee95b9ad930448031da73b",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Table:50600#1"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "d45c6f5aaa93a9d7b25b6943991d9d2292f40e6a6fee95b9ad930448031da73b",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Table:50600#2"
+    },
+    {
+      "kind": "key",
+      "shapeFingerprint": "a0929e42ffaee8f465ae94772ca6d5d6882fff036221e0507ba02c1e973001a8",
+      "stableId": "dd6a6b6i-0006-0006-0006-000000000006:Table:50600#K0"
+    }
+  ],
+  "schemaVersion": 3,
+  "typedEdges": [],
+  "workspaceFingerprint": "f895c215f21c116ac064d025c0c1ad075c0b4605f15a9529da554b6a6b659d0a"
+}

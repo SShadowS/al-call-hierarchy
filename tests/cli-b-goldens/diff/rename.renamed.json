@@ -1,0 +1,51 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "diff-report",
+  "payload": {
+    "diagnostics": [],
+    "findings": [
+      {
+        "category": "abi",
+        "comparisonCone": [
+          "dd4r4e4n-0004-0004-0004-000000000004:Codeunit:50200"
+        ],
+        "details": {
+          "kind": "procedure-signature-changed",
+          "newSignatureHash": "bdc0c51cd641daab95b5afdf087e06af235f92303262693a035656454c88b55c",
+          "oldSignatureHash": "b4d95d55dac3586e795c04b2c38e4b727e4ee97596a67907752a9321e7723356"
+        },
+        "id": "c3066143b9945343",
+        "kind": "procedure-signature-changed",
+        "severity": "critical",
+        "subject": {
+          "displayName": "SalesPosting",
+          "newStableId": "dd4r4e4n-0004-0004-0004-000000000004:Codeunit:50200",
+          "normalizedStableId": "dd4r4e4n-0004-0004-0004-000000000004:Codeunit:50200",
+          "oldOriginalStableId": "dd4r4e4n-0004-0004-0004-000000000004:Codeunit:50100"
+        }
+      }
+    ],
+    "summary": {
+      "coverageIncompleteCones": 0,
+      "findingsByCategory": {
+        "abi": 1,
+        "capabilities": 0,
+        "events": 0,
+        "permissions": 0,
+        "schema": 0
+      },
+      "findingsBySeverity": {
+        "critical": 1,
+        "high": 0,
+        "info": 0,
+        "low": 0,
+        "medium": 0
+      },
+      "renamesApplied": 2
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

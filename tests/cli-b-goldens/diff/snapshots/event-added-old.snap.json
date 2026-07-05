@@ -1,0 +1,178 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd7e7f7g-0007-0007-0007-000000000007",
+      "name": "Diff Event Added App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.0"
+    }
+  ],
+  "callsiteIndex": [],
+  "callsiteResolutions": [],
+  "capabilityFacts": [
+    {
+      "confidence": "static",
+      "extra": {
+        "kind": "table",
+        "opSubtype": "Insert",
+        "recordVariableId": "aaae2f8d0ae94e06/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/rv/entry",
+        "tempState": {
+          "kind": "known",
+          "value": false
+        }
+      },
+      "op": "insert",
+      "provenance": "direct",
+      "resourceId": "dd7e7f7g-0007-0007-0007-000000000007/table/50700",
+      "resourceKind": "table",
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "via": "self",
+      "witnessOperationId": "aaae2f8d0ae94e06/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/op0"
+    }
+  ],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "f9872c5268ac24d1708d6f31f13f005b529b56268163e6e9f6874a15f2d524ef",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "eb8cfae148637df02869e9e48f7737c8017287fccf34f68fb6555eac35f11440",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Ledger Poster",
+      "PostEntry",
+      "Ledger Entry"
+    ],
+    "stableIds": [
+      "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700",
+      "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "dd7e7f7g-0007-0007-0007-000000000007:Table:50700"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "eb34ab7fce81e3610b2bc8dabe1f1246db02a84a842265cfb3c9e0c411007c75",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [
+    {
+      "controlContext": "top-level",
+      "displayText": "Entry.Insert",
+      "endColumn": 22,
+      "endLine": 7,
+      "operationId": "aaae2f8d0ae94e06/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/op0",
+      "order": {
+        "dominatesSuccessReturn": true,
+        "frameId": 0,
+        "onSuccessPath": true,
+        "orderId": 0
+      },
+      "routine": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "sourceFile": "ws:src/ledger.al",
+      "startColumn": 8,
+      "startLine": 7
+    }
+  ],
+  "permissionFacts": [
+    {
+      "coverage": "complete",
+      "derivedFromCapability": {
+        "op": "insert"
+      },
+      "kind": "required",
+      "rights": [
+        "I"
+      ],
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "target": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700",
+      "targetKind": "TableData"
+    }
+  ],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "aaae2f8d0ae94e06/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d",
+        "range": {
+          "endColumn": 8,
+          "endLine": 8,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/ledger.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [
+    {
+      "kind": "table",
+      "shapeFingerprint": "54d490918f557dbbfd0bcc86a5c1abe93a8bf1d4e4a93306d6071beee4105181",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "26839cc5e09f3400e05e701c85022ec2bacd89495b27312a0730169c5fd8604d",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700#1"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "bf4129007800249ad2bc83c18dd579eb41af2b26ed42e11e09089878770e0ada",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700#2"
+    },
+    {
+      "kind": "key",
+      "shapeFingerprint": "0c3a950b2f7a7c2ca7afb9a31d29f061e8fc69490f91c7b942c1097a1b501b9e",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700#K0"
+    }
+  ],
+  "schemaVersion": 3,
+  "typedEdges": [],
+  "workspaceFingerprint": "ed1cd6b40029641e0f6617ffd3292c10490becc4842094b6d2d6aa02f6a76dd6"
+}

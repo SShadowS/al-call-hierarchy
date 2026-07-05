@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "fingerprints": {
+            "default": "49ca2edfaa862287"
+          },
+          "level": "error",
+          "message": {
+            "text": "permission-rights-expanded: UpdateItem"
+          },
+          "ruleId": "permissions.permission-rights-expanded"
+        },
+        {
+          "fingerprints": {
+            "default": "3b24f29517c83301"
+          },
+          "level": "warning",
+          "message": {
+            "text": "capability-gained-read: UpdateItem"
+          },
+          "ruleId": "capabilities.capability-gained-read"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/anthropics/al-sem",
+          "name": "al-sem-diff",
+          "rules": [
+            {
+              "id": "permissions.permission-rights-expanded",
+              "name": "permission-rights-expanded",
+              "shortDescription": {
+                "text": "permissions permission-rights-expanded"
+              }
+            },
+            {
+              "id": "capabilities.capability-gained-read",
+              "name": "capability-gained-read",
+              "shortDescription": {
+                "text": "capabilities capability-gained-read"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
