@@ -217,7 +217,7 @@ rm /u/Git/al-call-hierarchy/docs/superpowers/plans/2026-03-28-test-coverage-impr
 
 **Gate:** full suite green; clippy; CDO byte-identical (display/cache-env plumbing, disjoint from the call-graph harness — the aldump stats JSON SHA-256 `67910e99…913f4f` must NOT move; if it does, stop). Cache goldens byte-identical (decouple keeps `0.0.12`); display goldens byte-identical (sentinels unchanged).
 
-### Task 3.3 — Vendor the live-read corpora in-repo (witness-diffed)
+### Task 3.3 — ✅ DONE 2026-07-05 (5 commits, review PASS, suite green with no al-sem on disk) — Vendor the live-read corpora in-repo (witness-diffed)
 
 **Source of vendored bytes (corrected 2026-07-05 after inspecting the witness):** Task 3.0 captured fixture TREES only as SHA-256 *listings* (`.superpowers/sdd/alsem-witness/fixture-listings/`), not as byte copies — the fixture bytes live in the archived checkout `U:\Git\al-sem-OBOLETE\test\fixtures\<name>` (all 13 present: `ws-d2`, `ws-diff-rename`, `ws-diff-removed-field`, and the 10 `ws-policy-*` workspaces). GOLDEN bytes ARE in the witness (`.superpowers/sdd/alsem-witness/scripts/{cli-b-goldens,cli-c-goldens,r1a-goldens,r2c-goldens}`). So: copy fixture TREES from `al-sem-OBOLETE`, verifying each file's SHA-256 against the witness listing; regenerate GOLDENS from THIS engine and witness-diff them against the witness `scripts/` copies. `al-sem-OBOLETE` is a frozen archive — read-only, never write to it.
 
