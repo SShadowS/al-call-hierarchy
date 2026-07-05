@@ -690,6 +690,60 @@ mod tests {
         );
     }
 
+    /// Whole-graph invariant (Task 2 review fix, Finding 2):
+    /// `abi_overload_collapsed` and `abi_params == CollapsedUntrusted` must
+    /// stay IN LOCKSTEP for EVERY routine that survives a dedup pass mixing
+    /// collapsed and non-collapsed, ABI and SOURCE routines across MULTIPLE
+    /// objects — not just the single hand-picked case
+    /// `abi_sig_fp_collision_marks_survivor_collapsed` exercises in
+    /// isolation. `arg_dispatch::candidate_param_infos_abi`'s structural
+    /// `AbiParams::Complete`-only guard is only as sound as this invariant
+    /// holding for every routine that reaches it.
+    #[test]
+    fn abi_overload_collapsed_and_abi_params_stay_in_lockstep_whole_graph() {
+        let app = AppRef(0);
+        let obj_a = dep_obj_id(app, 60200);
+        let obj_b = dep_obj_id(app, 60201);
+        let mut routines = vec![
+            // A genuine ABI sig_fp collision on obj_a -> must collapse AND demote.
+            abi_routine(&obj_a, "get", 1, 777),
+            abi_routine(&obj_a, "get", 1, 777),
+            // A lone ABI routine on obj_a -> never marked.
+            abi_routine(&obj_a, "getcontent", 0, 0),
+            // Two distinct-sig_fp ABI routines on obj_b -> neither marked.
+            abi_routine(&obj_b, "set", 1, 111),
+            abi_routine(&obj_b, "set", 1, 222),
+            // A SOURCE re-parse duplicate on obj_b -> collapses but is NEVER
+            // marked (the guard is ABI-tier-only); abi_params stays Missing.
+            source_routine(&obj_b, "name", 0, "", 0),
+            source_routine(&obj_b, "name", 0, "", 0),
+        ];
+        dedup_routines_preserving_genuine_overloads(&mut routines);
+
+        for r in &routines {
+            if r.abi_overload_collapsed {
+                assert_eq!(
+                    r.abi_params,
+                    AbiParams::CollapsedUntrusted,
+                    "routine {:?} is abi_overload_collapsed but abi_params is \
+                     {:?}, not CollapsedUntrusted — arg_dispatch::candidate_param_infos_abi \
+                     could read a collapsed survivor's parameter list as trustworthy",
+                    r.id,
+                    r.abi_params
+                );
+            } else {
+                assert_ne!(
+                    r.abi_params,
+                    AbiParams::CollapsedUntrusted,
+                    "routine {:?} is NOT abi_overload_collapsed but abi_params \
+                     is CollapsedUntrusted anyway — the two markers must move \
+                     together",
+                    r.id
+                );
+            }
+        }
+    }
+
     /// A SINGLE ABI routine (no collision at all) must NEVER be marked —
     /// this is the `GetContent`-shaped real-world case (CDO's 2 real
     /// resolved chain edges) that must keep resolving after this fix.

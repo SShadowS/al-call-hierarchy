@@ -76,7 +76,7 @@ use sha2::{Digest, Sha256};
 use crate::program::graph::ProgramGraph;
 use crate::program::l3_mint::{project_l3, project_l3_implicit_trigger_in_scope};
 use crate::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId};
-use crate::program::node_extract::ObjectNode;
+use crate::program::node_extract::{AbiParams, ObjectNode};
 use crate::program::resolve::abi_check::{
     RawAbiIndex, abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
 };
@@ -1167,6 +1167,20 @@ pub struct ApplicabilityReport {
     pub witness_contract_violations: usize,
     /// `AbiSymbol` routes whose key is absent from the raw-ABI index.
     pub abi_unmapped: usize,
+    /// STRUCTURAL (Task 2 review fix, Finding 2): `RoutineNode`s in the graph
+    /// where `abi_overload_collapsed` and `abi_params ==
+    /// AbiParams::CollapsedUntrusted` are OUT OF LOCKSTEP.
+    /// `build::dedup_routines_preserving_genuine_overloads` is supposed to
+    /// set the two markers together for every `TrustTier::SymbolOnly`
+    /// collapse survivor (see that function's doc); `arg_dispatch::
+    /// candidate_param_infos_abi`'s whole fail-closed contract — a collapsed
+    /// survivor's parameter list must be structurally unreadable, never
+    /// merely conventionally untrusted — depends on this holding for EVERY
+    /// routine in the graph, not just the hand-built fixtures `build.rs`'s
+    /// own unit tests exercise in isolation. Non-zero here means a collapsed
+    /// survivor's (possibly WRONG, arbitrary-JSON-order) parameter list could
+    /// be read into an arg-type dispatch pick.
+    pub abi_overload_collapsed_lockstep_violations: usize,
     /// SOUNDNESS: `DispatchShape::Polymorphic` (Interface fan-out) `Routine`
     /// routes that fail [`interface_route_applicable`] against the call
     /// site's dispatched `(iface, called_member, arity)` — or, when no
@@ -1236,6 +1250,7 @@ impl ApplicabilityReport {
     pub fn is_clean(&self) -> bool {
         self.witness_contract_violations == 0
             && self.abi_unmapped == 0
+            && self.abi_overload_collapsed_lockstep_violations == 0
             && self.interface_applicability_violations == 0
             && self.instance_builtin_violations == 0
             && self.implicit_trigger_violations == 0
@@ -1243,8 +1258,8 @@ impl ApplicabilityReport {
     }
 
     /// Sum of the four 1B.3b Task 2 fan-out SOUNDNESS violation counters
-    /// (excludes the pre-existing structural `witness_contract_violations`/
-    /// `abi_unmapped` checks).
+    /// (excludes the structural `witness_contract_violations`/`abi_unmapped`/
+    /// `abi_overload_collapsed_lockstep_violations` checks).
     pub fn fan_out_violations(&self) -> usize {
         self.interface_applicability_violations
             + self.instance_builtin_violations
@@ -2049,10 +2064,22 @@ pub fn route_applicability(
     }
 
     let abi_report = abi_ingestion_integrity(edges, raw_abi);
+    // STRUCTURAL (Task 2 review fix, Finding 2) — whole-graph, not just the
+    // routes THIS edge set happened to touch: every `RoutineNode` in the
+    // graph must keep `abi_overload_collapsed`/`abi_params` in lockstep (see
+    // `ApplicabilityReport::abi_overload_collapsed_lockstep_violations`'s doc).
+    let abi_overload_collapsed_lockstep_violations = graph
+        .routines
+        .iter()
+        .filter(|r| {
+            r.abi_overload_collapsed != matches!(r.abi_params, AbiParams::CollapsedUntrusted)
+        })
+        .count();
     ApplicabilityReport {
         total_routes,
         witness_contract_violations,
         abi_unmapped: abi_report.abi_unmapped,
+        abi_overload_collapsed_lockstep_violations,
         interface_applicability_violations,
         instance_builtin_violations,
         implicit_trigger_violations,

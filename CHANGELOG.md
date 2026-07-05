@@ -41,19 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   BodyMap entry", not `rid.object`'s tier, is the trigger, so the two routes
   can never disagree about which one applies. `is_var` carries through as
   real `by_ref` fidelity, so the pre-existing ByRef-EXACT rule now also
-  protects ABI candidates. 10 new unit fixtures (`arg_dispatch.rs`): distinct
+  protects ABI candidates. 8 new unit fixtures (`arg_dispatch.rs`): distinct
   -scalar-type ABI overloads pick correctly; a `var` ABI param eliminates a
   literal argument; a `CollapsedUntrusted` survivor declines unconditionally
   (the enum makes the read impossible, regardless of how discriminating the
   original raw params might have looked); a `Missing`-metadata candidate
   declines; a lookup-miss declines without panicking; Record-id-vs-name
   Subtype equality; an unresolvable Subtype degrades; a scalar keyword's
-  ordinary base-keyword route is unchanged; plus one REAL generated
-  `SymbolReference.json` fragment (`RegisterAssistedSetup`, extracted
-  verbatim from `Continia Software_Continia Core_29.0.0.94574.app` in the
-  CDO workspace's own `.alpackages`, including its real extra `ModuleId`
-  field on `Subtype` — proving the parser tolerates real-world JSON shapes,
-  not just hand-authored text). 3 new end-to-end fixtures (`resolver.rs`):
+  ordinary base-keyword route is unchanged. Plus 2 new fixtures
+  (`abi_ingest.rs`): one REAL generated `SymbolReference.json` fragment
+  (method `RegisterAssistedSetup`, genuinely declared on `Table 6192869
+  "CSC Temp. Assisted Setup"` — extracted verbatim from
+  `Continia Software_Continia Core_29.0.0.94574.app` in the CDO workspace's
+  own `.alpackages`, including its real extra `ModuleId` field on
+  `Subtype` — proving the parser tolerates real-world JSON shapes, not just
+  hand-authored text; the fixture wraps it in a fabricated Codeunit
+  wrapper, since only the Methods[] content carries test signal); and the
+  tri-state-arity sibling (`parameters_known == false` retains as
+  `Missing`, never a false empty `Complete`). 3 new end-to-end fixtures
+  (`resolver.rs`):
   a `Missing`-metadata ABI candidate in an otherwise-pickable set degrades
   the whole call rather than resolving the `Complete` sibling confidently;
   a real-source-plus-hand-injected-ABI "mixed" candidate set (proving the
@@ -65,6 +71,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SymbolOnly routines with retained ABI parameters exercised by this path,
   so the lift is fixture-proven but CDO-dormant, exactly as the plan
   predicted.
+
+### Fixed
+- **`abi_param_canonical` falls back to `type_text` identity — the
+  `already_quoted` shape now participates in a pick (Task 2 review fix,
+  roadmap-closure plan).** Task 2's ABI-aware canonicalization reached PAST
+  `classify_type_text(&p.type_text)`'s own extracted `table_ref`/`object_ref`
+  and required the raw `subtype_raw_name`/`subtype_id` tuple instead — but
+  the `already_quoted` reconstruction shape (`type_text = 'Record "Normal
+  Table"'`, no `Subtype` at all — per `reconstruct_param_field_type`'s own
+  doc "the more common real shape") therefore ALWAYS degraded, defeating the
+  feature for the common Record-typed ABI param (fail-safe, but a
+  completeness gap). Fix: when the raw tuple is absent, fall back to the
+  identity `classify_type_text` already extracted from `type_text` — the
+  SAME semantic-identity route `dispatch_canonical_type_text` uses for a
+  SOURCE parameter; when BOTH sources are present, cross-validate (resolve
+  each independently and require the SAME object) rather than silently
+  preferring one — any disagreement degrades the whole param. 3 new unit
+  fixtures (`arg_dispatch.rs`): the already_quoted-no-Subtype shape
+  canonicalizes and participates in a real 2-overload pick; a
+  tuple-vs-text-disagreement fixture degrades; the existing 13 Task 2
+  fixtures stay green. Plus a new whole-graph invariant test (`build.rs`):
+  no routine surviving `dedup_routines_preserving_genuine_overloads` has
+  `abi_overload_collapsed` and `abi_params != CollapsedUntrusted` out of
+  lockstep, across a mix of collapsed/non-collapsed ABI and SOURCE routines
+  on multiple objects — and a new structural `ApplicabilityReport` counter
+  (`abi_overload_collapsed_lockstep_violations`, folded into `is_clean()`)
+  wiring the SAME invariant into the CDO-gated `route_applicability_zero_
+  violations` harness test over the real graph. Full CDO harness
+  BYTE-IDENTICAL to `.superpowers/sdd/cdo-baseline-plan13.md` — CDO carries
+  zero `abi_overload_collapsed` routines, so this fix is fixture-proven but
+  CDO-dormant, same as Task 2 itself.
+
+### Added
 - **Scope-resolver unification + the Report/ReportExtension routine merge
   (Task 1, roadmap-closure plan).** `resolve_in_table_scope` and
   `resolve_in_page_scope` (`resolver.rs`) were ~90%-identical hand-copies,

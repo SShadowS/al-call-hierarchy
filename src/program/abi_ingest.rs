@@ -1377,14 +1377,28 @@ mod tests {
 
     /// A REAL `Methods[].Parameters` fragment extracted verbatim from
     /// `Continia Software_Continia Core_29.0.0.94574.app`'s own
-    /// `SymbolReference.json` (`RegisterAssistedSetup`, object id
-    /// `707414482`) — the CDO workspace's own `.alpackages` dependency (see
-    /// the task report for the extraction method). Kept byte-for-byte
-    /// (including the real `ModuleId` field on `Subtype`, which
-    /// `RawSubtype`/`RawTypeDef` never declare and serde silently ignores —
-    /// proving the parser tolerates real-world extra JSON fields) so this
-    /// fixture proves `retain_abi_params` against the type_text SHAPES as
-    /// they really are, not an idealized hand-authored approximation.
+    /// `SymbolReference.json` (the CDO workspace's own `.alpackages`
+    /// dependency — see the task report for the extraction method):
+    /// `Table 6192869 "CSC Temp. Assisted Setup"`'s method
+    /// `RegisterAssistedSetup` (the method's own real `Id`, `707414482`).
+    /// Kept byte-for-byte (including the real `ModuleId` field on
+    /// `Subtype`, which `RawSubtype`/`RawTypeDef` never declare and serde
+    /// silently ignores — proving the parser tolerates real-world extra
+    /// JSON fields) so this fixture proves `retain_abi_params` against the
+    /// type_text SHAPES as they really are, not an idealized hand-authored
+    /// approximation.
+    ///
+    /// # Provenance correction (Task 2 review fix, Nit)
+    ///
+    /// Only the `Methods[]` entry below (parameters, method `Id`/`Name`) is
+    /// the real, verbatim-extracted fragment. The `Codeunit "ProbeAssistedSetup"`
+    /// (id `50700`) it is wrapped in here is a FABRICATED convenience
+    /// wrapper — the real SymbolReference.json declares this method on
+    /// `Table 6192869 "CSC Temp. Assisted Setup"`, not on any Codeunit; this
+    /// fixture re-houses the real Methods[] content under a synthetic
+    /// Codeunit purely because `retain_abi_params` operates on an
+    /// `AbiRoutine` regardless of its declaring object KIND, so the wrapper's
+    /// shape is immaterial to what this test actually proves.
     const REAL_REGISTER_ASSISTED_SETUP_JSON: &str = r#"
     {
       "Codeunits": [
@@ -1436,12 +1450,12 @@ mod tests {
             .objects
             .iter()
             .find(|o| o.name == "ProbeAssistedSetup")
-            .expect("the real Codeunit entry must parse");
+            .expect("the fixture's fabricated wrapper Codeunit must parse");
         let routine = obj
             .routines
             .iter()
             .find(|r| r.name == "RegisterAssistedSetup")
-            .expect("the real Method entry must parse");
+            .expect("the real Method entry (verbatim from Table 6192869) must parse");
         assert!(
             routine.parameters_known,
             "a genuinely-present Parameters array must set parameters_known"

@@ -908,29 +908,51 @@ pub(crate) fn candidate_param_infos(
 }
 
 /// ABI-AWARE canonicalization of one retained ABI parameter (Task 2,
-/// roadmap-closure plan, round-1 addendum, BINDING): resolves an
-/// object-bearing Subtype via the SAME semantic object identity
-/// [`dispatch_canonical_type_text`] uses for a SOURCE parameter's declared
-/// text ([`ResolveIndex::resolve_object_ref`]) — `Record 36` and `Record
-/// "Customer"` canonicalize IDENTICALLY iff they resolve to the SAME table,
-/// even when [`AbiParamRetained::type_text`] itself degraded to the bare
-/// outer keyword (an `id_only`/`name_quoted`/`empty_subtype` Subtype — see
-/// that field's "BARE-OUTER-NAME FALLBACK" doc, via
-/// `crate::engine::deps::symbol_reference::reconstruct_param_field_type`).
-/// This function reaches PAST the degraded text and resolves directly from
-/// the RAW `subtype_raw_name`/`subtype_id` tuple instead — a raw Subtype
-/// Name wins over a raw Subtype Id when both happen to be present (mirrors
-/// `classify_type_text`'s own name-over-id preference for a fully-shaped
-/// source text).
+/// roadmap-closure plan, round-1 addendum, BINDING; Task 2 review fix —
+/// completeness gap closed): resolves an object-bearing Subtype via the SAME
+/// semantic object identity [`dispatch_canonical_type_text`] uses for a
+/// SOURCE parameter's declared text ([`ResolveIndex::resolve_object_ref`]) —
+/// `Record 36` and `Record "Customer"` canonicalize IDENTICALLY iff they
+/// resolve to the SAME table.
+///
+/// Two INDEPENDENT identity sources feed this, exactly mirroring
+/// [`dispatch_canonical_type_text`]'s own object-resolution route:
+/// - **TEXT identity**: `classify_type_text(&p.type_text)`'s own extracted
+///   `table_ref`/`object_ref`/name — the SAME extraction
+///   [`dispatch_canonical_type_text`] uses, genuinely present ONLY for the
+///   `already_quoted`/`full` [`AbiParamRetained::subtype_tag`] shapes (see
+///   `crate::engine::deps::symbol_reference::reconstruct_param_field_type`'s
+///   doc) where `type_text` carries a REAL name/id, never for a bare outer
+///   keyword with an empty name component (`no_subtype`/`id_only`/
+///   `name_quoted`/`empty_subtype` — `type_text` there is JUST the keyword,
+///   e.g. `"Record"`, and `classify_type_text` on that yields an empty-name
+///   `ObjectRef::Name` — filtered out below as "no identity in text").
+/// - **TUPLE identity**: the RAW `subtype_raw_name`/`subtype_id` pair — a raw
+///   Subtype Name wins over a raw Subtype Id when both happen to be present
+///   (mirrors `classify_type_text`'s own name-over-id preference).
+///
+/// Resolution order: when ONLY one source carries an identity, use it
+/// (this is the completeness fix — an `already_quoted` shape with NO
+/// accompanying `Subtype` at all previously fell straight to the "neither a
+/// raw name nor a raw id" `None` below, even though `type_text` itself
+/// already carried the full identity). When BOTH sources carry an identity,
+/// cross-validate: resolve each independently and require them to name the
+/// SAME object — any disagreement (including either side failing to resolve
+/// uniquely) degrades to `None` rather than silently preferring one source
+/// over the other (fail-closed; the two sources are expected to be
+/// redundant, never contradictory, so a mismatch is a signal to decline, not
+/// arbitrate).
 ///
 /// `None` — untyped, degrading the WHOLE call (module doc's cardinal rule) —
 /// whenever no identity is resolvable:
 /// - an empty `type_text` (no outer keyword at all — the ABI's own
 ///   `no_type_definition`/`no_name` degradation shapes);
-/// - an object-bearing outer keyword with NEITHER a raw name NOR a raw id to
-///   resolve (`no_subtype`/`empty_subtype`);
+/// - an object-bearing outer keyword with NEITHER a text-carried identity NOR
+///   a raw name/id tuple to resolve (`no_subtype`/`empty_subtype`);
 /// - a name/id that does not resolve to EXACTLY one object in `from`'s
-///   dependency closure (ambiguous/out-of-closure/unresolved).
+///   dependency closure (ambiguous/out-of-closure/unresolved);
+/// - the text and tuple identities are BOTH present but disagree (resolve to
+///   different objects, or either fails to resolve uniquely).
 ///
 /// A NON-object-bearing keyword (scalar/Framework/RecordRef/Dynamic/…) is
 /// canonicalized via the ordinary base-keyword route unchanged — `type_text`
@@ -945,33 +967,71 @@ fn abi_param_canonical(
     if p.type_text.trim().is_empty() {
         return None;
     }
-    let object_kind = match classify_type_text(&p.type_text) {
-        ParsedType::Record { .. } => ObjectKind::Table,
-        ParsedType::Object { kind, .. } => kind,
-        ParsedType::Interface { .. } => ObjectKind::Interface,
-        ParsedType::EnumType { .. } => ObjectKind::Enum,
+    let (object_kind, text_ref) = match classify_type_text(&p.type_text) {
+        ParsedType::Record { table_ref } => (ObjectKind::Table, Some(table_ref)),
+        ParsedType::Object { kind, object_ref } => (kind, Some(object_ref)),
+        ParsedType::Interface { name } => (
+            ObjectKind::Interface,
+            Some(ObjectRef::Name {
+                raw: name.clone(),
+                normalized_lc: name,
+            }),
+        ),
+        ParsedType::EnumType { name } => (
+            ObjectKind::Enum,
+            Some(ObjectRef::Name {
+                raw: name.clone(),
+                normalized_lc: name,
+            }),
+        ),
         // Scalar / Framework / RecordRef / FieldRef / KeyRef / ControlAddIn /
         // Dynamic / Primitive: no Subtype ever attaches, `type_text` is
         // already the full text — the ordinary route applies unchanged.
         _ => return Some(CanonicalArgType::Base(base_keyword(&p.type_text))),
     };
-    let oref = if let Some(name) = &p.subtype_raw_name {
-        ObjectRef::Name {
+    // An empty-name `ObjectRef` means `type_text` was JUST the bare outer
+    // keyword with no name/id component at all (the `no_subtype`/`id_only`/
+    // `name_quoted`/`empty_subtype` degradation shapes) — there is no
+    // identity in the text to fall back to for those; only the raw Subtype
+    // tuple below can supply one.
+    let text_ref = text_ref.filter(
+        |r| !matches!(r, ObjectRef::Name { normalized_lc, .. } if normalized_lc.is_empty()),
+    );
+
+    let tuple_ref = if let Some(name) = &p.subtype_raw_name {
+        Some(ObjectRef::Name {
             raw: name.clone(),
             normalized_lc: name.to_ascii_lowercase(),
-        }
-    } else if let Some(id) = p.subtype_id {
-        ObjectRef::Id(id)
+        })
     } else {
-        // `no_subtype`/`empty_subtype` on an object-bearing keyword — no raw
-        // identity to resolve at all.
-        return None;
+        p.subtype_id.map(ObjectRef::Id)
     };
-    match index.resolve_object_ref(graph, from.clone(), object_kind, &oref) {
-        ObjectRefResolution::Unique(id) => Some(CanonicalArgType::Object(id)),
-        ObjectRefResolution::Ambiguous
-        | ObjectRefResolution::OutOfClosure
-        | ObjectRefResolution::Unresolved => None,
+
+    let resolve_unique =
+        |oref: &ObjectRef| match index.resolve_object_ref(graph, from.clone(), object_kind, oref) {
+            ObjectRefResolution::Unique(id) => Some(id),
+            ObjectRefResolution::Ambiguous
+            | ObjectRefResolution::OutOfClosure
+            | ObjectRefResolution::Unresolved => None,
+        };
+
+    match (text_ref, tuple_ref) {
+        (Some(t), Some(u)) => {
+            // Both sources carry an identity — cross-validate rather than
+            // silently preferring one: only a PROVEN-same object is safe to
+            // use (round-2-style landmine guard; see the doc's "Resolution
+            // order").
+            let t_id = resolve_unique(&t)?;
+            let u_id = resolve_unique(&u)?;
+            if t_id == u_id {
+                Some(CanonicalArgType::Object(t_id))
+            } else {
+                None
+            }
+        }
+        (Some(t), None) => resolve_unique(&t).map(CanonicalArgType::Object),
+        (None, Some(u)) => resolve_unique(&u).map(CanonicalArgType::Object),
+        (None, None) => None,
     }
 }
 
@@ -2889,6 +2949,45 @@ codeunit 50700 "Caller"
         }
     }
 
+    /// The multi-table sibling of `graph_with_table` (Task 2 review fix) —
+    /// needed for the tuple-vs-text-disagree fixture, where TWO distinct
+    /// real tables must coexist in the same closure so BOTH identity
+    /// sources resolve to a real (but DIFFERENT) object rather than one side
+    /// merely failing to resolve at all.
+    fn graph_with_tables(app: AppRef, tables: &[(i64, &str)]) -> ProgramGraph {
+        use crate::program::graph::ObjectIndex;
+        use crate::program::node_extract::ObjectNode;
+        use crate::snapshot::TrustTier;
+        let objects: Vec<ObjectNode> = tables
+            .iter()
+            .map(|(table_id, table_name)| ObjectNode {
+                id: ObjectNodeId {
+                    app,
+                    kind: ObjectKind::Table,
+                    key: ObjKey::Id(*table_id),
+                },
+                name: table_name.to_string(),
+                declared_id: Some(*table_id),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+                parse_incomplete: false,
+            })
+            .collect();
+        let obj_index = ObjectIndex::build(&objects);
+        ProgramGraph {
+            objects,
+            obj_index,
+            ..Default::default()
+        }
+    }
+
     /// A minimal ABI (`TrustTier::SymbolOnly`) `RoutineNode` carrying the
     /// given `abi_params` — mirrors `build_symbol_only_member_call_graph`'s
     /// fixture style above.
@@ -3032,6 +3131,132 @@ codeunit 50700 "Caller"
             abi_param_canonical(&blank, &from, &graph, &index),
             None,
             "an empty type_text (no outer keyword at all) must decline"
+        );
+    }
+
+    /// Fixture (i) — Task 2 review fix, BLOCKING finding: the `already_quoted`
+    /// shape (`type_text = 'Record "Customer"'`) with NO accompanying
+    /// `Subtype` tuple AT ALL (`subtype_raw_name`/`subtype_id` both `None`) —
+    /// per `reconstruct_param_field_type`'s own doc, "the more common real
+    /// shape" — must canonicalize via the identity `classify_type_text`
+    /// already extracted from `type_text`, never degrade. Before this fix,
+    /// `abi_param_canonical` DISCARDED that extracted `table_ref` and
+    /// unconditionally required the raw tuple, so this exact (common) shape
+    /// ALWAYS degraded to `None` — defeating the feature for the common
+    /// Record-typed ABI param.
+    #[test]
+    fn abi_param_canonical_already_quoted_no_subtype_falls_back_to_text_identity() {
+        let app = AppRef(0);
+        let graph = graph_with_table(app, 36, "Customer");
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let already_quoted = abi_param("Record \"Customer\"", false, None, None, "already_quoted");
+        assert_eq!(
+            abi_param_canonical(&already_quoted, &from, &graph, &index),
+            Some(CanonicalArgType::Object(ObjectNodeId {
+                app,
+                kind: ObjectKind::Table,
+                key: ObjKey::Id(36),
+            })),
+            "an already_quoted Record param with NO Subtype tuple must fall \
+             back to the text-extracted identity, not degrade"
+        );
+    }
+
+    /// Fixture (j) — Task 2 review fix: when BOTH identity sources are
+    /// present but resolve to DIFFERENT real objects, the param must degrade
+    /// rather than silently prefer one source over the other. No real
+    /// `SymbolReference.json` should ever produce this (the two sources are
+    /// meant to be redundant), but the cross-validation this fix adds must
+    /// fail closed on it regardless.
+    #[test]
+    fn abi_param_canonical_tuple_vs_text_disagree_degrades() {
+        let app = AppRef(0);
+        let graph = graph_with_tables(app, &[(36, "Customer"), (37, "Vendor")]);
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let contradictory = abi_param(
+            "Record \"Customer\"",
+            false,
+            None,
+            Some("Vendor"),
+            "already_quoted",
+        );
+        assert_eq!(
+            abi_param_canonical(&contradictory, &from, &graph, &index),
+            None,
+            "text identity (Customer) and tuple identity (Vendor) resolving \
+             to DIFFERENT real objects must degrade the whole param, never \
+             arbitrate between the two sources"
+        );
+    }
+
+    /// Fixture (k) — Task 2 review fix: the already_quoted-no-Subtype Record
+    /// param from fixture (i), exercised end-to-end through
+    /// `candidate_param_infos_abi` + `pick_candidate` over a real 2-overload
+    /// set — proving the completeness fix doesn't just canonicalize in
+    /// isolation but actually PARTICIPATES in a confident pick, the concrete
+    /// "defeats the feature" scenario the BLOCKING finding named.
+    #[test]
+    fn candidate_param_infos_abi_already_quoted_record_participates_in_pick() {
+        let app = AppRef(0);
+        let table_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Table,
+            key: ObjKey::Id(36),
+        };
+        let obj_id = ObjectNodeId {
+            app,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60700),
+        };
+        let mut graph = graph_with_table(app, 36, "Customer");
+        let text_overload = abi_routine_node(
+            &obj_id,
+            "process",
+            1,
+            111,
+            AbiParams::Complete(vec![abi_param("Text", false, None, None, "no_subtype")]),
+        );
+        let record_overload = abi_routine_node(
+            &obj_id,
+            "process",
+            1,
+            222,
+            AbiParams::Complete(vec![abi_param(
+                "Record \"Customer\"",
+                false,
+                None,
+                None,
+                "already_quoted",
+            )]),
+        );
+        graph.routines = vec![text_overload.clone(), record_overload.clone()];
+        graph.routines.sort_by(|a, b| a.id.cmp(&b.id));
+        let index = ResolveIndex::build(&graph);
+
+        let text_params = candidate_param_infos_abi(&text_overload.id, &graph, &index)
+            .expect("Text param must canonicalize");
+        let record_params = candidate_param_infos_abi(&record_overload.id, &graph, &index).expect(
+            "an already_quoted Record param with NO Subtype tuple must still \
+             canonicalize via the text-fallback fix -- this is the BLOCKING \
+             finding's exact completeness gap",
+        );
+
+        let args = vec![ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Object(table_id)),
+            exact_text: Some("record customer".into()),
+            literal_kind: None,
+            var_passable: false,
+        }];
+        let candidates = vec![text_params, record_params];
+        assert_eq!(
+            pick_candidate(&args, &candidates),
+            Some(1),
+            "a Record \"Customer\"-typed arg must pick the Record overload via \
+             the already_quoted text-identity fallback, never stay ambiguous"
         );
     }
 

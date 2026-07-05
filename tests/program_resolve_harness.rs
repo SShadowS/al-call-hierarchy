@@ -3037,12 +3037,15 @@ fn route_applicability_zero_violations() {
     assert!(
         appl.is_clean(),
         "route-applicability contract violated on fixture: witness_violations={} \
-         abi_unmapped={} interface_applicability_violations={} \
+         abi_unmapped={} abi_overload_collapsed_lockstep_violations={} \
+         interface_applicability_violations={} \
          instance_builtin_violations={} implicit_trigger_violations={} event_violations={} \
-         (is_clean() folds ALL six — printing only the first two would hide which family \
-         actually failed; 1B.3b Task 1 observability gap fix)",
+         (is_clean() folds ALL seven — printing only the first two would hide which family \
+         actually failed; 1B.3b Task 1 observability gap fix; the lockstep counter added by \
+         Task 2's review fix, Finding 2)",
         appl.witness_contract_violations,
         appl.abi_unmapped,
+        appl.abi_overload_collapsed_lockstep_violations,
         appl.interface_applicability_violations,
         appl.instance_builtin_violations,
         appl.implicit_trigger_violations,
@@ -3065,12 +3068,15 @@ fn route_applicability_zero_violations() {
     assert!(
         appl_cdo.is_clean(),
         "route-applicability contract violated on CDO_WS: witness_violations={} \
-         abi_unmapped={} interface_applicability_violations={} \
+         abi_unmapped={} abi_overload_collapsed_lockstep_violations={} \
+         interface_applicability_violations={} \
          instance_builtin_violations={} implicit_trigger_violations={} event_violations={} \
-         (is_clean() folds ALL six — printing only the first two would hide which family \
-         actually failed; 1B.3b Task 1 observability gap fix)",
+         (is_clean() folds ALL seven — printing only the first two would hide which family \
+         actually failed; 1B.3b Task 1 observability gap fix; the lockstep counter added by \
+         Task 2's review fix, Finding 2)",
         appl_cdo.witness_contract_violations,
         appl_cdo.abi_unmapped,
+        appl_cdo.abi_overload_collapsed_lockstep_violations,
         appl_cdo.interface_applicability_violations,
         appl_cdo.instance_builtin_violations,
         appl_cdo.implicit_trigger_violations,
