@@ -1,0 +1,14 @@
+# Provenance
+
+This fixture tree is a byte-for-byte copy, not a live oracle.
+
+- **Source path:** `U:\Git\al-sem-OBOLETE\test\fixtures\ws-d2`
+- **al-sem HEAD:** `cfea6149c1ed912f1a10fa45eb4a755302327c60`
+- **Copy date:** 2026-07-05
+- **Verification:** each file's SHA-256 matches
+  `.superpowers/sdd/alsem-witness/fixture-listings/ws-d2.sha256.txt`
+
+`al-sem-OBOLETE` is a frozen, read-only archive checkout — it is never a live
+oracle for this repo. This tree is vendored so `tests/aldump_smoke.rs` and
+`tests/al2dump_smoke.rs` are self-contained and require no sibling al-sem
+checkout.

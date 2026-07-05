@@ -1,0 +1,8 @@
+table 64100 Customer
+{
+    fields
+    {
+        field(1; "No."; Code[20]) { }
+    }
+    keys { key(PK; "No.") { } }
+}
