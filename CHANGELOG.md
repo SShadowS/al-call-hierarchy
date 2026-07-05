@@ -8,6 +8,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ABI param-type retention — the SymbolOnly arg-type dispatch lift, behind
+  a structural guard (Task 2, roadmap-closure plan).** `AbiParameter`
+  (`engine/deps/symbol_reference.rs`) already carried full parameter Subtype
+  fidelity (`type_text` + `is_var` + `subtype_id`/`subtype_raw_name`/
+  `subtype_tag`, from the sigfp-and-ambiguous-reclassification plan), but
+  `abi_ingest.rs` folded it into `sig_fp` and then discarded it
+  (`param_sig_key: String::new()`) — the argtype-dispatch-and-page-catalog
+  plan's fail-closed overload pick (`arg_dispatch::pick_candidate`) was
+  therefore gated `obj_tier != TrustTier::SymbolOnly`, permanently inert for
+  every ABI (dependency-boundary) overload set. New `RoutineNode.abi_params:
+  AbiParams` — a STRUCTURAL enum (`Complete(Vec<AbiParamRetained>) | Missing
+  | CollapsedUntrusted`), not a plain `Option`, so a collapse-marked
+  survivor's parameters are impossible to read BY TYPE: `abi_ingest::
+  retain_abi_params` populates `Complete`/`Missing` at ingestion (tri-state
+  arity — `Missing` mirrors "arity unknown", never a false empty list), and
+  `build::dedup_routines_preserving_genuine_overloads` demotes to
+  `CollapsedUntrusted` in lockstep with the existing `abi_overload_collapsed`
+  marker (the SAME survivor, the SAME collapse condition). New
+  `arg_dispatch::candidate_param_infos_abi` + `abi_param_canonical`: the
+  ABI-AWARE canonicalization route resolves an object-typed parameter's
+  Subtype via the SAME semantic object identity a source parameter's
+  declared text resolves through (`ResolveIndex::resolve_object_ref`) —
+  `Record 36` and `Record "Customer"` canonicalize identically iff they
+  resolve to the SAME table, reaching PAST a degraded `type_text` (an
+  `id_only`/`name_quoted` Subtype) via the raw discriminator fields instead
+  of guessing from text; a genuinely unresolvable/absent Subtype degrades
+  that parameter to untyped, which degrades the WHOLE call (never a partial
+  or filtered read). The `resolver.rs` gate lifts from "SOURCE tier only" to
+  a per-candidate `candidate_param_infos_either` (BodyMap first, the
+  ABI-AWARE route only when BodyMap has no entry for that candidate) — "no
+  BodyMap entry", not `rid.object`'s tier, is the trigger, so the two routes
+  can never disagree about which one applies. `is_var` carries through as
+  real `by_ref` fidelity, so the pre-existing ByRef-EXACT rule now also
+  protects ABI candidates. 10 new unit fixtures (`arg_dispatch.rs`): distinct
+  -scalar-type ABI overloads pick correctly; a `var` ABI param eliminates a
+  literal argument; a `CollapsedUntrusted` survivor declines unconditionally
+  (the enum makes the read impossible, regardless of how discriminating the
+  original raw params might have looked); a `Missing`-metadata candidate
+  declines; a lookup-miss declines without panicking; Record-id-vs-name
+  Subtype equality; an unresolvable Subtype degrades; a scalar keyword's
+  ordinary base-keyword route is unchanged; plus one REAL generated
+  `SymbolReference.json` fragment (`RegisterAssistedSetup`, extracted
+  verbatim from `Continia Software_Continia Core_29.0.0.94574.app` in the
+  CDO workspace's own `.alpackages`, including its real extra `ModuleId`
+  field on `Subtype` — proving the parser tolerates real-world JSON shapes,
+  not just hand-authored text). 3 new end-to-end fixtures (`resolver.rs`):
+  a `Missing`-metadata ABI candidate in an otherwise-pickable set degrades
+  the whole call rather than resolving the `Complete` sibling confidently;
+  a real-source-plus-hand-injected-ABI "mixed" candidate set (proving the
+  per-candidate helper's contract directly, since one `ObjectNode` cannot
+  legitimately carry two tiers at once) picks correctly when both sides are
+  complete, and declines on the ABI side alone when it is not (the
+  no-filtering rule). Full CDO harness BYTE-IDENTICAL to the frozen
+  `.superpowers/sdd/cdo-baseline-plan13.md` baseline — CDO has ZERO
+  SymbolOnly routines with retained ABI parameters exercised by this path,
+  so the lift is fixture-proven but CDO-dormant, exactly as the plan
+  predicted.
 - **Scope-resolver unification + the Report/ReportExtension routine merge
   (Task 1, roadmap-closure plan).** `resolve_in_table_scope` and
   `resolve_in_page_scope` (`resolver.rs`) were ~90%-identical hand-copies,

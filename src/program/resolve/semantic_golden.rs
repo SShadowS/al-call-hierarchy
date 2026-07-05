@@ -2515,7 +2515,7 @@ mod tests {
     use crate::engine::deps::symbol_reference::SymbolReferenceAbi;
     use crate::program::graph::ObjectIndex;
     use crate::program::node::{AppRegistry, RoutineNodeId};
-    use crate::program::node_extract::{Access, RoutineNode, extract_nodes};
+    use crate::program::node_extract::{AbiParams, Access, RoutineNode, extract_nodes};
     use crate::program::resolve::edge::{
         BuiltinId, CanonicalSpan, Evidence, OpenWorldReason, Route, SetCompleteness, SourcePos,
         Witness,
@@ -2592,6 +2592,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 

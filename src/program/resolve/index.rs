@@ -989,7 +989,7 @@ mod tests {
     use super::*;
     use crate::program::graph::{ObjectIndex, ProgramGraph};
     use crate::program::node::{AppRef, AppRegistry, ObjKey, ObjectNodeId, RoutineNodeId};
-    use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
+    use crate::program::node_extract::{AbiParams, Access, ObjectNode, RoutineNode};
     use crate::program::resolve::edge::Condition;
     use crate::program::resolve::event::{ParsedSubscriberArgs, PublisherKind};
     use crate::program::topology::DependencyGraph;
@@ -1058,6 +1058,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 
@@ -1091,6 +1092,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 
@@ -1124,6 +1126,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 

@@ -302,6 +302,7 @@ mod tests {
     use super::*;
     use crate::program::graph::ObjectIndex;
     use crate::program::node::{AppRegistry, ObjKey};
+    use crate::program::node_extract::AbiParams;
     use crate::program::node_extract::Access;
     use crate::program::resolve::edge::{
         CanonicalSpan, DispatchShape, Edge, OpenWorldReason, Route, SetCompleteness, SiteId,
@@ -365,6 +366,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 

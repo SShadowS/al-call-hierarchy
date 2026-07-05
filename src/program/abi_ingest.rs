@@ -12,7 +12,9 @@ use crate::engine::deps::symbol_reference::{
 };
 use crate::engine::l3::al_attributes::{AttributeInfo, bool_arg, find_attribute};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
-use crate::program::node_extract::{Access, FieldNode, ObjectNode, RoutineNode};
+use crate::program::node_extract::{
+    AbiParamRetained, AbiParams, Access, FieldNode, ObjectNode, RoutineNode,
+};
 use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::PublisherKind;
 use crate::program::sig_fp::{fnv1a, write_len_prefixed};
@@ -78,6 +80,38 @@ pub(crate) fn param_type_fp(params: &[crate::engine::deps::symbol_reference::Abi
         fold_param_discriminator(&mut canon, p);
     }
     fnv1a(&canon)
+}
+
+/// Retain one ABI routine's parameter metadata as an [`AbiParams`] (Task 2,
+/// roadmap-closure plan) — `Complete` when the JSON genuinely carried a
+/// `Parameters` array (tri-state arity, see
+/// `AbiRoutine::parameters_known`'s doc: `Missing` here, NOT a false `0`,
+/// whenever the field was absent/unparseable), `Missing` otherwise. Copies
+/// each [`crate::engine::deps::symbol_reference::AbiParameter`]'s dispatch-
+/// relevant fields verbatim — no canonicalization/object resolution happens
+/// here; that is `arg_dispatch::candidate_param_infos_abi`'s job, run at
+/// QUERY time against the fully-built graph/index (ingestion happens before
+/// either exists). Never returns `CollapsedUntrusted` — that demotion only
+/// happens later, in lockstep with `abi_overload_collapsed`, once every
+/// app's routines are pooled and a collapse run is detected
+/// (`build::dedup_routines_preserving_genuine_overloads`).
+fn retain_abi_params(routine: &AbiRoutine) -> AbiParams {
+    if !routine.parameters_known {
+        return AbiParams::Missing;
+    }
+    AbiParams::Complete(
+        routine
+            .parameters
+            .iter()
+            .map(|p| AbiParamRetained {
+                type_text: p.type_text.clone(),
+                is_var: p.is_var,
+                subtype_id: p.subtype_id,
+                subtype_raw_name: p.subtype_raw_name.clone(),
+                subtype_tag: p.subtype_tag,
+            })
+            .collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +537,15 @@ pub fn ingest_abi(
                 // `RoutineNode::source_overload_aliased`'s doc (mutually
                 // exclusive with `abi_overload_collapsed` by construction).
                 source_overload_aliased: false,
+                // Task 2 (roadmap-closure plan): retain the raw parameter
+                // metadata now instead of hard-discarding it — see
+                // `retain_abi_params`'s doc. `abi_overload_collapsed`'s later
+                // demotion to `AbiParams::CollapsedUntrusted` happens in
+                // `build::dedup_routines_preserving_genuine_overloads`, not
+                // here (ingestion emits one `RoutineNode` per RAW entry, no
+                // folding yet — same rationale as `abi_overload_collapsed`
+                // above).
+                abi_params: retain_abi_params(routine),
             });
         }
     }
@@ -1324,5 +1367,139 @@ mod tests {
             .find(|o| o.name.eq_ignore_ascii_case("Dep Codeunit"))
             .expect("Dep Codeunit ObjectNode must exist");
         assert!(dep_cu.fields.is_empty());
+    }
+
+    // -------------------------------------------------------------------
+    // Task 2 (roadmap-closure plan): `retain_abi_params` — including a REAL
+    // generated `SymbolReference.json` fragment (fixture (i)), not only
+    // hand-authored text.
+    // -------------------------------------------------------------------
+
+    /// A REAL `Methods[].Parameters` fragment extracted verbatim from
+    /// `Continia Software_Continia Core_29.0.0.94574.app`'s own
+    /// `SymbolReference.json` (`RegisterAssistedSetup`, object id
+    /// `707414482`) — the CDO workspace's own `.alpackages` dependency (see
+    /// the task report for the extraction method). Kept byte-for-byte
+    /// (including the real `ModuleId` field on `Subtype`, which
+    /// `RawSubtype`/`RawTypeDef` never declare and serde silently ignores —
+    /// proving the parser tolerates real-world extra JSON fields) so this
+    /// fixture proves `retain_abi_params` against the type_text SHAPES as
+    /// they really are, not an idealized hand-authored approximation.
+    const REAL_REGISTER_ASSISTED_SETUP_JSON: &str = r#"
+    {
+      "Codeunits": [
+        {
+          "Id": 50700,
+          "Name": "ProbeAssistedSetup",
+          "Methods": [
+            {
+              "Parameters": [
+                { "Name": "AppID", "TypeDefinition": { "Name": "Code[10]" } },
+                { "Name": "AssistedSetupPageId", "TypeDefinition": { "Name": "Integer" } },
+                { "Name": "BasicSetupCompleted", "TypeDefinition": { "Name": "Boolean" } },
+                {
+                  "Name": "AssistedSetupCategory",
+                  "TypeDefinition": {
+                    "Name": "Enum",
+                    "Subtype": {
+                      "ModuleId": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+                      "Name": "Assisted Setup Group",
+                      "Id": 1815
+                    }
+                  }
+                },
+                {
+                  "Name": "ManualSetupCategory",
+                  "TypeDefinition": {
+                    "Name": "Enum",
+                    "Subtype": {
+                      "ModuleId": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+                      "Name": "Manual Setup Category",
+                      "Id": 1875
+                    }
+                  }
+                }
+              ],
+              "Id": 707414482,
+              "Name": "RegisterAssistedSetup"
+            }
+          ]
+        }
+      ]
+    }
+    "#;
+
+    #[test]
+    fn retain_abi_params_on_real_generated_symbol_reference_shape() {
+        let abi = parse_symbol_reference(REAL_REGISTER_ASSISTED_SETUP_JSON);
+        let obj = abi
+            .objects
+            .iter()
+            .find(|o| o.name == "ProbeAssistedSetup")
+            .expect("the real Codeunit entry must parse");
+        let routine = obj
+            .routines
+            .iter()
+            .find(|r| r.name == "RegisterAssistedSetup")
+            .expect("the real Method entry must parse");
+        assert!(
+            routine.parameters_known,
+            "a genuinely-present Parameters array must set parameters_known"
+        );
+
+        let AbiParams::Complete(params) = retain_abi_params(routine) else {
+            panic!("a genuinely-parsed Parameters array must retain as Complete");
+        };
+        assert_eq!(params.len(), 5, "all 5 real parameters must be retained");
+
+        // Scalars: real type_text verbatim, no Subtype at all.
+        assert_eq!(params[0].type_text, "Code[10]");
+        assert_eq!(params[0].subtype_id, None);
+        assert_eq!(params[0].subtype_raw_name, None);
+        assert_eq!(params[1].type_text, "Integer");
+        assert_eq!(params[2].type_text, "Boolean");
+
+        // Object-typed (Enum), Subtype Name+Id BOTH real-present — the "full"
+        // shape, real ModuleId field on Subtype silently tolerated.
+        assert_eq!(params[3].type_text, "Enum \"Assisted Setup Group\"");
+        assert_eq!(params[3].subtype_id, Some(1815));
+        assert_eq!(
+            params[3].subtype_raw_name.as_deref(),
+            Some("Assisted Setup Group")
+        );
+        assert_eq!(params[3].subtype_tag, "full");
+        assert_eq!(params[4].type_text, "Enum \"Manual Setup Category\"");
+        assert_eq!(params[4].subtype_id, Some(1875));
+        assert_eq!(
+            params[4].subtype_raw_name.as_deref(),
+            Some("Manual Setup Category")
+        );
+        assert_eq!(params[4].subtype_tag, "full");
+
+        // None of these are `var` — the real JSON carries no `IsVar` key on
+        // any of these 5 (absent → `false`, never a guessed `true`).
+        assert!(params.iter().all(|p| !p.is_var));
+    }
+
+    /// The tri-state-arity sibling: a routine whose `Parameters` field is
+    /// absent entirely (`parameters_known == false`) must retain as
+    /// `Missing`, never a false empty `Complete(vec![])`.
+    #[test]
+    fn retain_abi_params_missing_when_parameters_unknown() {
+        let routine = AbiRoutine {
+            name: "NoParamsField".into(),
+            kind: "procedure".into(),
+            event_kind: SrAbiEventKind::Unknown,
+            parameters: vec![],
+            parameters_known: false,
+            return_type_text: None,
+            return_type_id: None,
+            is_local: false,
+            is_internal: false,
+            is_protected: false,
+            attributes: vec![],
+            attributes_parsed: vec![],
+        };
+        assert_eq!(retain_abi_params(&routine), AbiParams::Missing);
     }
 }

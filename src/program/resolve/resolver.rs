@@ -66,7 +66,8 @@ use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{Access, ObjectNode, RoutineNode};
 use crate::program::resolve::arg_dispatch::{
-    ArgDispatchInfo, candidate_param_infos, pick_candidate,
+    ArgDispatchInfo, ParamDispatchInfo, candidate_param_infos, candidate_param_infos_abi,
+    pick_candidate,
 };
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
@@ -542,25 +543,28 @@ fn resolve_in_object(
                 ));
             }
 
-            // Task 2 (argtype-dispatch-and-page-catalog plan): attempt a
+            // Task 2 (argtype-dispatch-and-page-catalog plan; lifted off
+            // SOURCE-only by Task 2 of the roadmap-closure plan): attempt a
             // fail-closed arg-type pick over `visible` BEFORE constructing
             // the AmbiguousOverload route set — see `arg_dispatch`'s module
-            // doc for the full hardened rule set. SOURCE tier only: a
-            // SymbolOnly `obj_tier` means every candidate here is ABI-tier,
-            // which carries no `BodyMap` entry (no retained param
-            // type+mode metadata) — gate explicitly rather than rely on that
-            // incidentally (clean skip, not partial). `visible` already
-            // passed the `degraded` prevalidation above, so every candidate
-            // reaching the pick is individually CONCRETE (non-collapse-
-            // marked, non-source-aliased) by construction.
-            if obj_tier != TrustTier::SymbolOnly && !args.is_empty() {
+            // doc for the full hardened rule set. Per-candidate metadata now
+            // comes from BodyMap FIRST, falling back to the ABI-AWARE route
+            // (`arg_dispatch::candidate_param_infos_abi`) ONLY when BodyMap
+            // has no entry — see `candidate_param_infos_either`'s doc for why
+            // "no BodyMap entry" (not `obj_tier`) is the correct trigger.
+            // `visible` already passed the `degraded` prevalidation above, so
+            // every SOURCE candidate reaching the pick is individually
+            // CONCRETE (non-collapse-marked, non-source-aliased) by
+            // construction; the ABI route ADDITIONALLY declines its own
+            // `AbiParams::CollapsedUntrusted`/`Missing` states (structural,
+            // not merely a convention check) — no unknown-metadata candidate
+            // is ever filtered out of the competition, its mere presence
+            // degrades the whole call (module doc's cardinal rule).
+            if !args.is_empty() {
                 let mut candidate_params = Vec::with_capacity(visible.len());
                 let mut all_known = true;
                 for rid in &visible {
-                    match body_map
-                        .get(rid)
-                        .and_then(|decl| candidate_param_infos(decl, &rid.object, graph, index))
-                    {
+                    match candidate_param_infos_either(rid, graph, index, body_map) {
                         Some(p) => candidate_params.push(p),
                         None => {
                             all_known = false;
@@ -600,6 +604,31 @@ fn resolve_in_object(
             Some((DispatchShape::AmbiguousOverload, routes))
         }
     }
+}
+
+/// Per-candidate parameter metadata lookup for the arg-type pick (Task 2,
+/// roadmap-closure plan) — `BodyMap` FIRST (the pre-existing SOURCE-tier
+/// route, unchanged), then the ABI-AWARE fallback
+/// ([`candidate_param_infos_abi`]) ONLY when `BodyMap` has no entry for
+/// `rid`. "No `BodyMap` entry" — not `rid.object`'s tier — is deliberately
+/// the trigger: every SOURCE-tier routine has a `BodyMap` entry and every
+/// `TrustTier::SymbolOnly` routine never does (see the `arg_dispatch` module
+/// doc's "SOURCE tier only" section, now extended by the ABI fallback below
+/// it), so the two routes can never disagree about which one applies to a
+/// given candidate — there is exactly one correct answer per `rid`, never a
+/// choice. Returns `None` — "no metadata", degrading the WHOLE call per
+/// `arg_dispatch`'s cardinal rule — when NEITHER route has complete metadata
+/// for `rid`.
+fn candidate_param_infos_either(
+    rid: &RoutineNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+) -> Option<Vec<ParamDispatchInfo>> {
+    if let Some(decl) = body_map.get(rid) {
+        return candidate_param_infos(decl, &rid.object, graph, index);
+    }
+    candidate_param_infos_abi(rid, graph, index)
 }
 
 /// Whether a single, CONCRETE arity-matched routine candidate `rid` is
@@ -3078,7 +3107,10 @@ mod tests {
 
     use crate::program::graph::{ObjectIndex, ProgramGraph};
     use crate::program::node::AppRegistry;
-    use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
+    use crate::program::node_extract::{
+        AbiParamRetained, AbiParams, Access, ObjectNode, RoutineNode, extract_nodes,
+    };
+    use crate::program::resolve::arg_dispatch::{CanonicalArgType, LiteralKind};
     use crate::program::resolve::body_map::BodyMap;
     use crate::program::resolve::edge::{
         Condition, DispatchShape, Edge, EdgeKind, Evidence, Histogram, ObligationOutcome,
@@ -4214,6 +4246,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -4379,6 +4412,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type_id: Some(("Dep Http Content".into(), 60101)),
             abi_overload_collapsed: collapsed,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -4470,6 +4504,346 @@ pageextension 52911 "ExtA" extends BasePage
         assert!(
             matches!(r.target, RouteTarget::AbiSymbol { .. }),
             "an UNMARKED sole ABI candidate must still resolve normally; got {r:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2 (roadmap-closure plan): the ABI param-type retention + SymbolOnly
+    // dispatch lift, end-to-end through `resolve_member_with_args`.
+    // -----------------------------------------------------------------------
+
+    /// Two SymbolOnly overloads of "Get" at arity 1, differing only by
+    /// `abi_params`: one `Complete` (a real Integer param), one `Missing`
+    /// (simulating an ABI candidate whose metadata could not be retained).
+    /// Real ingestion always pairs `Missing` with the `UNKNOWN_ARITY`
+    /// sentinel (so it would never reach THIS same-arity set) — this fixture
+    /// deliberately bypasses that pairing (hand-constructs both at the SAME
+    /// `params_count`) to prove the structural guard holds independent of
+    /// it, per the plan's "no unknown-metadata candidate is ever filtered
+    /// out" rule.
+    fn abi_missing_metadata_fixture() -> (ProgramGraph, ResolveIndex, BodyMap<'static>, ObjectNodeId)
+    {
+        let ws_id = make_app_id("WS");
+        let dep_id = make_app_id("DepApp");
+
+        let mut apps = AppRegistry::default();
+        let ws_ref = apps.intern(&ws_id);
+        let dep_ref = apps.intern(&dep_id);
+
+        let caller_obj_id = ObjectNodeId {
+            app: ws_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(50610),
+        };
+        let dep_obj_id = ObjectNodeId {
+            app: dep_ref,
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60110),
+        };
+
+        let objects = vec![
+            ObjectNode {
+                id: caller_obj_id.clone(),
+                name: "Caller".into(),
+                declared_id: Some(50610),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::Workspace,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+                parse_incomplete: false,
+            },
+            ObjectNode {
+                id: dep_obj_id.clone(),
+                name: "Dep Overload".into(),
+                declared_id: Some(60110),
+                extends_target: None,
+                implements: vec![],
+                tier: TrustTier::SymbolOnly,
+                source_table: None,
+                table_no: None,
+                source_table_temporary: false,
+                page_controls: vec![],
+                fields: vec![],
+                dataitems: vec![],
+                parse_incomplete: false,
+            },
+        ];
+
+        fn abi_node(dep_obj_id: &ObjectNodeId, sig_fp: u64, abi_params: AbiParams) -> RoutineNode {
+            RoutineNode {
+                id: RoutineNodeId {
+                    object: dep_obj_id.clone(),
+                    name_lc: "get".into(),
+                    enclosing_member_lc: None,
+                    params_count: 1,
+                    sig_fp,
+                },
+                name: "Get".into(),
+                is_trigger: false,
+                access: Access::Public,
+                tier: TrustTier::SymbolOnly,
+                event_subscribers: vec![],
+                subscriber_instance_manual: false,
+                publisher_kind: None,
+                include_sender: None,
+                abi_routine_kind: Some(AbiRoutineKind::Procedure),
+                abi_event_kind: Some(AbiEventKind::None),
+                param_sig_key: String::new(),
+                return_type: None,
+                return_type_id: None,
+                abi_overload_collapsed: false,
+                source_overload_aliased: false,
+                abi_params,
+            }
+        }
+
+        let routines = vec![
+            abi_node(
+                &dep_obj_id,
+                111,
+                AbiParams::Complete(vec![AbiParamRetained {
+                    type_text: "Integer".into(),
+                    is_var: false,
+                    subtype_id: None,
+                    subtype_raw_name: None,
+                    subtype_tag: "no_subtype",
+                }]),
+            ),
+            abi_node(&dep_obj_id, 222, AbiParams::Missing),
+        ];
+
+        let mut topology = DependencyGraph::default();
+        topology.add_dependency(ws_ref, dep_ref);
+
+        let obj_index = ObjectIndex::build(&objects);
+        let graph = ProgramGraph {
+            apps,
+            topology,
+            objects,
+            routines,
+            obj_index,
+            ..Default::default()
+        };
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &[]);
+        (graph, index, body_map, caller_obj_id)
+    }
+
+    /// Fixture (d): a `Missing`-metadata ABI candidate in the visible set
+    /// degrades the WHOLE call — never a false-confident `Exact` pick to the
+    /// `Complete` sibling, even though that sibling alone would otherwise
+    /// exactly match the typed arg.
+    #[test]
+    fn resolve_member_degrades_when_one_abi_candidate_has_missing_metadata() {
+        use crate::program::resolve::receiver::ReceiverType;
+
+        let (graph, index, body_map, caller_obj_id) = abi_missing_metadata_fixture();
+        let from_obj = graph
+            .objects
+            .iter()
+            .find(|o| o.id == caller_obj_id)
+            .expect("Caller must exist");
+
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Codeunit,
+            name_lc: "dep overload".into(),
+            id: None,
+        };
+        let args = [ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Base("integer".into())),
+            exact_text: Some("integer".into()),
+            literal_kind: Some(LiteralKind::Integer),
+            var_passable: false,
+        }];
+        let (shape, routes) = resolve_member_with_args(
+            &receiver, "get", 1, from_obj, &graph, &index, &body_map, &args,
+        );
+
+        assert_eq!(
+            shape,
+            DispatchShape::AmbiguousOverload,
+            "a Missing-metadata candidate must NEVER be filtered out of the \
+             competition to let the Complete sibling resolve — its mere \
+             presence degrades the whole call; got shape {shape:?}, routes {routes:?}"
+        );
+        assert_eq!(routes.len(), 2);
+        assert!(
+            routes
+                .iter()
+                .all(|r| r.conditions.contains(&Condition::AmbiguousDispatch)),
+            "both routes must carry AmbiguousDispatch; got {routes:?}"
+        );
+    }
+
+    /// Fixtures (e)/(f), at the `candidate_param_infos_either` mechanism
+    /// level (the generic per-candidate helper `resolve_in_object`'s gate
+    /// calls): a real SOURCE candidate (a genuinely parsed `RoutineDecl`, a
+    /// `BodyMap` hit) mixed with an ABI candidate — proven directly against
+    /// the helper rather than through `resolve_member`/`resolve_in_object`
+    /// end-to-end, because ONE `ObjectNode` cannot legitimately carry two
+    /// DIFFERENT tiers at once (an object is wholly SOURCE-parsed or wholly
+    /// ABI-ingested by construction — see `TrustTier`'s doc); this
+    /// nonetheless exercises the REAL contract `candidate_param_infos_either`
+    /// promises: "no BodyMap entry" (never `rid.object`'s tier) decides which
+    /// route serves a given `rid`, so a SOURCE `rid` (found in `BodyMap`) and
+    /// an ABI `rid` (not in `BodyMap`, but carrying `abi_params`) can
+    /// coexist in one candidate list exactly as `resolve_in_object`'s loop
+    /// assembles one.
+    #[test]
+    fn candidate_param_infos_either_mixed_source_and_complete_abi_pick_correctly() {
+        let src: &'static str = r#"
+codeunit 50611 "MixedCU"
+{
+    procedure GetValue(X: Text)
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("MixedApp");
+        let unit = make_unit(app_id, "MixedCU.al", src);
+        let units = [unit];
+        let mut graph = build_graph(&units, None);
+        let source_obj_id = find_obj(&graph, "MixedCU").id.clone();
+        let source_rid = graph
+            .routines
+            .iter()
+            .find(|r| r.id.object == source_obj_id && r.id.name_lc == "getvalue")
+            .expect("source GetValue(Text) must be extracted")
+            .id
+            .clone();
+
+        // Inject a SECOND same-name/same-arity overload on the SAME object,
+        // carrying ABI metadata instead of a BodyMap entry — see the fixture
+        // doc for why this is legitimately synthetic.
+        let abi_rid = RoutineNodeId {
+            object: source_obj_id.clone(),
+            name_lc: "getvalue".into(),
+            enclosing_member_lc: None,
+            params_count: 1,
+            sig_fp: 999,
+        };
+        graph.routines.push(RoutineNode {
+            id: abi_rid.clone(),
+            name: "GetValue".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+            source_overload_aliased: false,
+            abi_params: AbiParams::Complete(vec![AbiParamRetained {
+                type_text: "Integer".into(),
+                is_var: false,
+                subtype_id: None,
+                subtype_raw_name: None,
+                subtype_tag: "no_subtype",
+            }]),
+        });
+        graph.routines.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let source_params = candidate_param_infos_either(&source_rid, &graph, &index, &body_map)
+            .expect("the source candidate must read via BodyMap");
+        let abi_params = candidate_param_infos_either(&abi_rid, &graph, &index, &body_map)
+            .expect("the ABI candidate must read via the AbiParams::Complete fallback");
+
+        let args = [ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Base("integer".into())),
+            exact_text: Some("integer".into()),
+            literal_kind: Some(LiteralKind::Integer),
+            var_passable: false,
+        }];
+        let candidates = vec![source_params, abi_params];
+        assert_eq!(
+            pick_candidate(&args, &candidates),
+            Some(1),
+            "an Integer arg must pick the ABI (Integer) candidate over the source (Text) one"
+        );
+    }
+
+    /// Fixture (f): the same mixed set, but the ABI sibling's metadata is
+    /// `Missing` — `candidate_param_infos_either` declines for THAT
+    /// candidate alone, which is exactly what makes `resolve_in_object`'s
+    /// `all_known` flip false and degrade the WHOLE call (the no-filtering
+    /// rule) rather than silently proceed on the source candidate alone.
+    #[test]
+    fn candidate_param_infos_either_mixed_source_and_incomplete_abi_declines_for_abi_side() {
+        let src: &'static str = r#"
+codeunit 50612 "MixedCU2"
+{
+    procedure GetValue(X: Text)
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("MixedApp2");
+        let unit = make_unit(app_id, "MixedCU2.al", src);
+        let units = [unit];
+        let mut graph = build_graph(&units, None);
+        let source_obj_id = find_obj(&graph, "MixedCU2").id.clone();
+        let source_rid = graph
+            .routines
+            .iter()
+            .find(|r| r.id.object == source_obj_id && r.id.name_lc == "getvalue")
+            .expect("source GetValue(Text) must be extracted")
+            .id
+            .clone();
+
+        let abi_rid = RoutineNodeId {
+            object: source_obj_id.clone(),
+            name_lc: "getvalue".into(),
+            enclosing_member_lc: None,
+            params_count: 1,
+            sig_fp: 999,
+        };
+        graph.routines.push(RoutineNode {
+            id: abi_rid.clone(),
+            name: "GetValue".into(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+            source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
+        });
+        graph.routines.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        assert!(
+            candidate_param_infos_either(&source_rid, &graph, &index, &body_map).is_some(),
+            "the source candidate alone is perfectly readable via BodyMap"
+        );
+        assert!(
+            candidate_param_infos_either(&abi_rid, &graph, &index, &body_map).is_none(),
+            "the no-filtering rule: a Missing ABI sibling must decline on its \
+             own terms, never be quietly dropped so the source candidate \
+             resolves alone"
         );
     }
 
@@ -4589,6 +4963,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type_id: None,
             abi_overload_collapsed: collapsed,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -4799,6 +5174,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type_id: None,
             abi_overload_collapsed: collapsed,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }];
 
         let obj_index = ObjectIndex::build(&objects);
@@ -4958,6 +5334,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         };
 
         let subscriber = RoutineNode {
@@ -4990,6 +5367,7 @@ pageextension 52911 "ExtA" extends BasePage
             return_type_id: None,
             abi_overload_collapsed: collapsed,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         };
 
         let mut routines = vec![publisher, subscriber];
@@ -9876,6 +10254,7 @@ codeunit 50000 "Caller"
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         });
 
         // Regular procedure: abi_routine_kind=Procedure, abi_event_kind=None.
@@ -9902,6 +10281,7 @@ codeunit 50000 "Caller"
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         });
 
         objects.sort_by(|a, b| a.id.cmp(&b.id));
@@ -12162,6 +12542,7 @@ codeunit 53971 "OverloadNCaller"
                 return_type_id: None,
                 abi_overload_collapsed: false,
                 source_overload_aliased: false,
+                abi_params: AbiParams::Missing,
             }
         }
         let routines = vec![
@@ -12532,6 +12913,7 @@ codeunit 53975 "Overload3Caller"
                 return_type_id: None,
                 abi_overload_collapsed: true,
                 source_overload_aliased: false,
+                abi_params: AbiParams::Missing,
             },
             RoutineNode {
                 id: RoutineNodeId {
@@ -12556,6 +12938,7 @@ codeunit 53975 "Overload3Caller"
                 return_type_id: None,
                 abi_overload_collapsed: false,
                 source_overload_aliased: false,
+                abi_params: AbiParams::Missing,
             },
         ];
 
@@ -12730,6 +13113,7 @@ codeunit 60152 "AliasTarget"
                 return_type_id: None,
                 abi_overload_collapsed: false,
                 source_overload_aliased: true,
+                abi_params: AbiParams::Missing,
             },
             RoutineNode {
                 id: real_id.clone(),
@@ -12748,6 +13132,7 @@ codeunit 60152 "AliasTarget"
                 return_type_id: None,
                 abi_overload_collapsed: false,
                 source_overload_aliased: true,
+                abi_params: AbiParams::Missing,
             },
         ];
 

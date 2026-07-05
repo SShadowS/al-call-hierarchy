@@ -1046,6 +1046,7 @@ mod tests {
     use super::*;
     use crate::program::graph::ObjectIndex;
     use crate::program::node::{AppRegistry, ObjKey, ObjectNodeId};
+    use crate::program::node_extract::AbiParams;
     use crate::program::resolve::edge::{CanonicalSpan, Route, SiteId, SourcePos};
     use crate::program::topology::DependencyGraph;
     use crate::snapshot::AppId;
@@ -1109,6 +1110,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 

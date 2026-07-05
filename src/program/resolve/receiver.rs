@@ -2998,6 +2998,7 @@ mod tests {
 
     use crate::program::graph::{ObjectIndex, ProgramGraph};
     use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
+    use crate::program::node_extract::AbiParams;
     use crate::program::node_extract::{Access, DataitemNode, ObjectNode};
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::topology::DependencyGraph;
@@ -5907,6 +5908,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 
@@ -7658,6 +7660,7 @@ codeunit 50100 "C"
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 

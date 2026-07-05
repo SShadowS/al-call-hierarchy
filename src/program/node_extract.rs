@@ -159,6 +159,65 @@ pub struct ObjectNode {
     pub parse_incomplete: bool,
 }
 
+/// One retained ABI parameter's dispatch-relevant metadata (Task 2, roadmap-
+/// closure plan) — copied verbatim from
+/// [`crate::engine::deps::symbol_reference::AbiParameter`] at ingestion time,
+/// MINUS `name`/`is_temporary` (arg-type dispatch never needs a parameter's
+/// declared NAME, and `is_temporary` has no dispatch consumer yet — see that
+/// struct's doc for both fields). Carries the FULL semantic subtype tuple,
+/// not just `type_text`, so `arg_dispatch::candidate_param_infos_abi`'s
+/// ABI-AWARE canonicalization route can resolve an object-typed parameter via
+/// the SAME semantic object identity a source parameter's declared text
+/// resolves through (`ResolveIndex::resolve_object_ref`) — `Record 36` and
+/// `Record "Customer"` canonicalize IDENTICALLY iff they resolve to the SAME
+/// table, even when `type_text` itself degraded to the bare outer keyword
+/// (see [`crate::engine::deps::symbol_reference::AbiParameter::type_text`]'s
+/// "BARE-OUTER-NAME FALLBACK" doc).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AbiParamRetained {
+    pub type_text: String,
+    pub is_var: bool,
+    pub subtype_id: Option<i64>,
+    pub subtype_raw_name: Option<String>,
+    pub subtype_tag: &'static str,
+}
+
+/// The STRUCTURAL guard over a [`RoutineNode`]'s retained ABI parameter
+/// metadata (Task 2, roadmap-closure plan, round-1 addendum, BINDING): an
+/// ENUM, not a plain `Option<Vec<_>>` — so a collapsed-and-therefore-
+/// untrustworthy overload survivor's parameters are IMPOSSIBLE to read BY
+/// TYPE, never merely by convention/a boolean check a future call site could
+/// forget to consult. `arg_dispatch::candidate_param_infos_abi` accepts ONLY
+/// [`AbiParams::Complete`] — every other variant is a clean "no metadata",
+/// degrading the WHOLE call per that module's cardinal rule (never a partial
+/// read, never a guess).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AbiParams {
+    /// A genuinely-parsed, trustworthy parameter list (possibly empty, for a
+    /// true 0-arg ABI routine) — the ONLY variant
+    /// `arg_dispatch::candidate_param_infos_abi` reads.
+    Complete(Vec<AbiParamRetained>),
+    /// No parameter metadata is available — either this is a SOURCE routine
+    /// (parameter metadata lives in `BodyMap` instead — see
+    /// [`RoutineNode::abi_params`]'s doc; `Missing` here is not a fidelity
+    /// gap, it is simply inapplicable), or it is an ABI routine whose
+    /// `Parameters` JSON array was absent/unparseable (tri-state arity — see
+    /// [`crate::engine::deps::symbol_reference::AbiRoutine::parameters_known`]).
+    Missing,
+    /// This node is the arbitrary survivor of ≥2 raw ABI overload entries
+    /// that fingerprint-collided (see [`RoutineNode::abi_overload_collapsed`]'s
+    /// doc) — its parameter list, like its return type, belongs to only ONE
+    /// of the ≥2 real declarations, chosen arbitrarily by raw JSON order, and
+    /// a downstream consumer has no way to tell which. Reading it for
+    /// arg-type dispatch would risk a WRONG PICK — the cardinal sin this
+    /// module's whole design exists to prevent — so the TYPE itself makes
+    /// that read impossible rather than relying on every future call site to
+    /// remember a convention. Set in lockstep with
+    /// [`RoutineNode::abi_overload_collapsed`] by
+    /// `build::dedup_routines_preserving_genuine_overloads`.
+    CollapsedUntrusted,
+}
+
 #[derive(Debug, Clone)]
 pub struct RoutineNode {
     pub id: RoutineNodeId,
@@ -287,6 +346,23 @@ pub struct RoutineNode {
     /// exclusive by construction, see `build::dedup_routines_preserving_
     /// genuine_overloads`). Not serialized (like `abi_overload_collapsed`).
     pub source_overload_aliased: bool,
+    /// Retained ABI parameter metadata (Task 2, roadmap-closure plan) — see
+    /// [`AbiParams`]'s doc for the full structural-guard rationale. Always
+    /// [`AbiParams::Missing`] for a SOURCE (non-`TrustTier::SymbolOnly`)
+    /// routine: source-tier arg-type dispatch reads parameter metadata from
+    /// `BodyMap`/`RoutineDecl` directly (`arg_dispatch::
+    /// candidate_param_infos`), never this field. For an ABI
+    /// (`TrustTier::SymbolOnly`) routine, populated at ingestion
+    /// (`abi_ingest::ingest_abi`) from the parsed `AbiRoutine::parameters` —
+    /// `Complete` when `AbiRoutine::parameters_known`, `Missing` otherwise —
+    /// and demoted to `CollapsedUntrusted` by `build::
+    /// dedup_routines_preserving_genuine_overloads` in lockstep with
+    /// [`Self::abi_overload_collapsed`] (the SAME survivor, the SAME "≥2 raw
+    /// entries fingerprint-collided" condition): a collapsed survivor's
+    /// parameter list is exactly as untrustworthy as its return type (see
+    /// that field's doc), so reading it for arg-type dispatch must be
+    /// structurally impossible, not merely convention-guarded.
+    pub abi_params: AbiParams,
 }
 
 /// Lowercased, `|`-joined parameter TYPE-TEXT sequence for a SOURCE routine's
@@ -589,6 +665,10 @@ pub fn extract_nodes(
                 return_type_id: None,
                 abi_overload_collapsed: false,
                 source_overload_aliased: false,
+                // SOURCE routine: parameter metadata for arg-type dispatch
+                // lives in `BodyMap`/`RoutineDecl`, never here — see
+                // `RoutineNode::abi_params`'s doc.
+                abi_params: AbiParams::Missing,
             });
         }
     }

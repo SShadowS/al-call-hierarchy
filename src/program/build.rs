@@ -7,7 +7,7 @@ use al_syntax::ir::ObjectKind;
 use crate::program::abi_ingest::AbiCache;
 use crate::program::graph::{ObjectIndex, ProgramGraph};
 use crate::program::node::{AppRef, AppRegistry, RoutineNodeId};
-use crate::program::node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};
+use crate::program::node_extract::{AbiParams, Access, ObjectNode, RoutineNode, extract_nodes};
 use crate::program::resolve::event::{
     PublisherKind, is_platform_page_event, is_platform_table_event, platform_event_display_name,
 };
@@ -281,6 +281,9 @@ pub(crate) fn inject_platform_event_publishers(graph: &mut ProgramGraph) {
                 return_type_id: None,
                 abi_overload_collapsed: false,
                 source_overload_aliased: false,
+                // Synthesized, not ingested from any `SymbolReference.json`
+                // — no ABI parameter metadata exists to retain.
+                abi_params: AbiParams::Missing,
             });
         }
     }
@@ -411,6 +414,17 @@ fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) 
                 let mut survivor = r.clone();
                 if r.tier == TrustTier::SymbolOnly && sig_counts[r.param_sig_key.as_str()] >= 2 {
                     survivor.abi_overload_collapsed = true;
+                    // Task 2 (roadmap-closure plan): demote the retained ABI
+                    // parameter list in LOCKSTEP with the collapse marker —
+                    // the SAME survivor, the SAME "≥2 raw entries
+                    // fingerprint-collided" condition. `abi_params` on this
+                    // survivor belongs to only ONE of the ≥2 real
+                    // declarations (arbitrary raw-JSON-order choice, same as
+                    // `return_type`/`return_type_id` above) — the structural
+                    // guard (`AbiParams::CollapsedUntrusted`) makes reading
+                    // it for arg-type dispatch impossible by type, never
+                    // merely a convention a future call site could forget.
+                    survivor.abi_params = AbiParams::CollapsedUntrusted;
                 } else if r.tier != TrustTier::SymbolOnly && distinct_key_count >= 2 {
                     survivor.source_overload_aliased = true;
                 }
@@ -597,6 +611,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 
@@ -637,6 +652,7 @@ mod tests {
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }
     }
 
@@ -663,6 +679,14 @@ mod tests {
             "the survivor of a ≥2-raw-ABI-entry collapse must be flagged \
              abi_overload_collapsed so a chain type-query declines rather \
              than trust its return type"
+        );
+        assert_eq!(
+            routines[0].abi_params,
+            AbiParams::CollapsedUntrusted,
+            "Task 2 (roadmap-closure plan): abi_params must demote to \
+             CollapsedUntrusted in LOCKSTEP with abi_overload_collapsed — \
+             the survivor's retained parameter list is exactly as \
+             untrustworthy as its return type"
         );
     }
 

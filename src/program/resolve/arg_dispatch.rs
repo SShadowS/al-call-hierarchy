@@ -97,8 +97,8 @@ use al_syntax::ir::{
 };
 
 use crate::program::graph::ProgramGraph;
-use crate::program::node::ObjectNodeId;
-use crate::program::node_extract::{ObjectRef, RoutineNode};
+use crate::program::node::{ObjectNodeId, RoutineNodeId};
+use crate::program::node_extract::{AbiParamRetained, AbiParams, ObjectRef, RoutineNode};
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::{BuiltinId, RouteTarget};
 use crate::program::resolve::extract::WithState;
@@ -902,6 +902,113 @@ pub(crate) fn candidate_param_infos(
             canonical,
             exact_text: normalize_type_text(ty),
             by_ref: p.by_ref,
+        });
+    }
+    Some(out)
+}
+
+/// ABI-AWARE canonicalization of one retained ABI parameter (Task 2,
+/// roadmap-closure plan, round-1 addendum, BINDING): resolves an
+/// object-bearing Subtype via the SAME semantic object identity
+/// [`dispatch_canonical_type_text`] uses for a SOURCE parameter's declared
+/// text ([`ResolveIndex::resolve_object_ref`]) — `Record 36` and `Record
+/// "Customer"` canonicalize IDENTICALLY iff they resolve to the SAME table,
+/// even when [`AbiParamRetained::type_text`] itself degraded to the bare
+/// outer keyword (an `id_only`/`name_quoted`/`empty_subtype` Subtype — see
+/// that field's "BARE-OUTER-NAME FALLBACK" doc, via
+/// `crate::engine::deps::symbol_reference::reconstruct_param_field_type`).
+/// This function reaches PAST the degraded text and resolves directly from
+/// the RAW `subtype_raw_name`/`subtype_id` tuple instead — a raw Subtype
+/// Name wins over a raw Subtype Id when both happen to be present (mirrors
+/// `classify_type_text`'s own name-over-id preference for a fully-shaped
+/// source text).
+///
+/// `None` — untyped, degrading the WHOLE call (module doc's cardinal rule) —
+/// whenever no identity is resolvable:
+/// - an empty `type_text` (no outer keyword at all — the ABI's own
+///   `no_type_definition`/`no_name` degradation shapes);
+/// - an object-bearing outer keyword with NEITHER a raw name NOR a raw id to
+///   resolve (`no_subtype`/`empty_subtype`);
+/// - a name/id that does not resolve to EXACTLY one object in `from`'s
+///   dependency closure (ambiguous/out-of-closure/unresolved).
+///
+/// A NON-object-bearing keyword (scalar/Framework/RecordRef/Dynamic/…) is
+/// canonicalized via the ordinary base-keyword route unchanged — `type_text`
+/// is always the FULL, correctly-shaped text for these (no `Subtype` ever
+/// attaches to a non-object type), so there is nothing to reach past.
+fn abi_param_canonical(
+    p: &AbiParamRetained,
+    from: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<CanonicalArgType> {
+    if p.type_text.trim().is_empty() {
+        return None;
+    }
+    let object_kind = match classify_type_text(&p.type_text) {
+        ParsedType::Record { .. } => ObjectKind::Table,
+        ParsedType::Object { kind, .. } => kind,
+        ParsedType::Interface { .. } => ObjectKind::Interface,
+        ParsedType::EnumType { .. } => ObjectKind::Enum,
+        // Scalar / Framework / RecordRef / FieldRef / KeyRef / ControlAddIn /
+        // Dynamic / Primitive: no Subtype ever attaches, `type_text` is
+        // already the full text — the ordinary route applies unchanged.
+        _ => return Some(CanonicalArgType::Base(base_keyword(&p.type_text))),
+    };
+    let oref = if let Some(name) = &p.subtype_raw_name {
+        ObjectRef::Name {
+            raw: name.clone(),
+            normalized_lc: name.to_ascii_lowercase(),
+        }
+    } else if let Some(id) = p.subtype_id {
+        ObjectRef::Id(id)
+    } else {
+        // `no_subtype`/`empty_subtype` on an object-bearing keyword — no raw
+        // identity to resolve at all.
+        return None;
+    };
+    match index.resolve_object_ref(graph, from.clone(), object_kind, &oref) {
+        ObjectRefResolution::Unique(id) => Some(CanonicalArgType::Object(id)),
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => None,
+    }
+}
+
+/// Build the full [`ParamDispatchInfo`] list for one ABI (`TrustTier::
+/// SymbolOnly`) candidate's parameters, as seen from `from` (the
+/// CANDIDATE's OWN declaring object identity — mirrors
+/// [`candidate_param_infos`]'s contract exactly, just sourced from
+/// [`RoutineNode::abi_params`] instead of a `BodyMap` `RoutineDecl`).
+///
+/// # The structural guard (Task 2 round-1 addendum, BINDING)
+///
+/// Accepts ONLY [`AbiParams::Complete`] — `Missing`/`CollapsedUntrusted` are
+/// impossible to read into a pick BY TYPE, not merely by a forgettable
+/// convention check (see [`AbiParams`]'s doc). `None` — "missing candidate
+/// metadata", degrading the WHOLE call per this module's cardinal rule — for
+/// any other outcome: `rid` not found in `graph.routines`, `abi_params` not
+/// `Complete`, or any ONE parameter's [`abi_param_canonical`] canonicalization
+/// failing (an unresolvable/degraded Subtype).
+pub(crate) fn candidate_param_infos_abi(
+    rid: &RoutineNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<Vec<ParamDispatchInfo>> {
+    let i = graph
+        .routines
+        .binary_search_by(|probe| probe.id.cmp(rid))
+        .ok()?;
+    let node = &graph.routines[i];
+    let AbiParams::Complete(params) = &node.abi_params else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(params.len());
+    for p in params {
+        out.push(ParamDispatchInfo {
+            canonical: abi_param_canonical(p, &rid.object, graph, index)?,
+            exact_text: normalize_type_text(&p.type_text),
+            by_ref: p.is_var,
         });
     }
     Some(out)
@@ -2644,6 +2751,7 @@ codeunit 50100 "C"
             return_type_id: None,
             abi_overload_collapsed: false,
             source_overload_aliased: false,
+            abi_params: AbiParams::Missing,
         }];
 
         let mut topology = DependencyGraph::default();
@@ -2724,5 +2832,355 @@ codeunit 50700 "Caller"
             None,
             "an uncataloged builtin must be None, never a guess"
         );
+    }
+
+    // -- abi_param_canonical / candidate_param_infos_abi (Task 2,
+    // roadmap-closure plan: ABI param-type retention + the SymbolOnly
+    // dispatch lift) -----------------------------------------------------
+
+    fn abi_param(
+        type_text: &str,
+        is_var: bool,
+        subtype_id: Option<i64>,
+        subtype_raw_name: Option<&str>,
+        subtype_tag: &'static str,
+    ) -> AbiParamRetained {
+        AbiParamRetained {
+            type_text: type_text.to_string(),
+            is_var,
+            subtype_id,
+            subtype_raw_name: subtype_raw_name.map(str::to_string),
+            subtype_tag,
+        }
+    }
+
+    /// A one-object graph carrying a single declared Table (id + name) —
+    /// enough closure for `resolve_object_ref` to resolve either a
+    /// numeric-id or a name reference to it from an object in the SAME app.
+    fn graph_with_table(app: AppRef, table_id: i64, table_name: &str) -> ProgramGraph {
+        use crate::program::graph::ObjectIndex;
+        use crate::program::node_extract::ObjectNode;
+        use crate::snapshot::TrustTier;
+        let table = ObjectNode {
+            id: ObjectNodeId {
+                app,
+                kind: ObjectKind::Table,
+                key: ObjKey::Id(table_id),
+            },
+            name: table_name.to_string(),
+            declared_id: Some(table_id),
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::SymbolOnly,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
+            fields: vec![],
+            dataitems: vec![],
+            parse_incomplete: false,
+        };
+        let objects = vec![table];
+        let obj_index = ObjectIndex::build(&objects);
+        ProgramGraph {
+            objects,
+            obj_index,
+            ..Default::default()
+        }
+    }
+
+    /// A minimal ABI (`TrustTier::SymbolOnly`) `RoutineNode` carrying the
+    /// given `abi_params` — mirrors `build_symbol_only_member_call_graph`'s
+    /// fixture style above.
+    fn abi_routine_node(
+        obj_id: &ObjectNodeId,
+        name_lc: &str,
+        params_count: usize,
+        sig_fp: u64,
+        abi_params: AbiParams,
+    ) -> RoutineNode {
+        use crate::program::node_extract::Access;
+        use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
+        use crate::snapshot::TrustTier;
+        RoutineNode {
+            id: RoutineNodeId {
+                object: obj_id.clone(),
+                name_lc: name_lc.to_string(),
+                enclosing_member_lc: None,
+                params_count,
+                sig_fp,
+            },
+            name: name_lc.to_string(),
+            is_trigger: false,
+            access: Access::Public,
+            tier: TrustTier::SymbolOnly,
+            event_subscribers: vec![],
+            subscriber_instance_manual: false,
+            publisher_kind: None,
+            include_sender: None,
+            abi_routine_kind: Some(AbiRoutineKind::Procedure),
+            abi_event_kind: Some(AbiEventKind::None),
+            param_sig_key: String::new(),
+            return_type: None,
+            return_type_id: None,
+            abi_overload_collapsed: false,
+            source_overload_aliased: false,
+            abi_params,
+        }
+    }
+
+    /// A one-object (`SymbolOnly`) graph carrying `routines` — enough for
+    /// `candidate_param_infos_abi`'s `graph.routines.binary_search_by` lookup.
+    fn abi_object_graph(obj_id: &ObjectNodeId, mut routines: Vec<RoutineNode>) -> ProgramGraph {
+        use crate::program::graph::ObjectIndex;
+        use crate::program::node_extract::ObjectNode;
+        use crate::snapshot::TrustTier;
+        let object = ObjectNode {
+            id: obj_id.clone(),
+            name: "DepWorker".to_string(),
+            declared_id: None,
+            extends_target: None,
+            implements: vec![],
+            tier: TrustTier::SymbolOnly,
+            source_table: None,
+            table_no: None,
+            source_table_temporary: false,
+            page_controls: vec![],
+            fields: vec![],
+            dataitems: vec![],
+            parse_incomplete: false,
+        };
+        let objects = vec![object];
+        let obj_index = ObjectIndex::build(&objects);
+        routines.sort_by(|a, b| a.id.cmp(&b.id));
+        ProgramGraph {
+            objects,
+            obj_index,
+            routines,
+            ..Default::default()
+        }
+    }
+
+    /// Scalar keyword (no `Subtype` ever attaches) canonicalizes via the
+    /// ordinary base-keyword route, unchanged.
+    #[test]
+    fn abi_param_canonical_scalar_uses_base_keyword_route() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+        let p = abi_param("Text[30]", false, None, None, "no_subtype");
+        assert_eq!(
+            abi_param_canonical(&p, &from, &graph, &index),
+            Some(CanonicalArgType::Base("text".to_string()))
+        );
+    }
+
+    /// Fixture (g): an `id_only`-degraded ABI param (`type_text` lost the
+    /// identity, only `subtype_id` survives) and a `full`-shaped ABI param
+    /// (`type_text` carries the complete quoted name) both resolve to the
+    /// SAME declared table — `Record 36` == `Record "Customer"` via
+    /// resolution, never via text comparison.
+    #[test]
+    fn abi_param_canonical_record_id_and_name_resolve_to_same_object() {
+        let app = AppRef(0);
+        let graph = graph_with_table(app, 36, "Customer");
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let id_only = abi_param("Record", false, Some(36), None, "id_only");
+        let full = abi_param("Record \"Customer\"", false, None, Some("Customer"), "full");
+
+        let by_id = abi_param_canonical(&id_only, &from, &graph, &index);
+        let by_name = abi_param_canonical(&full, &from, &graph, &index);
+
+        assert!(
+            matches!(by_id, Some(CanonicalArgType::Object(_))),
+            "an id_only Subtype with a real declared id must resolve to an object identity; got {by_id:?}"
+        );
+        assert_eq!(
+            by_id, by_name,
+            "Record 36 and Record \"Customer\" must canonicalize IDENTICALLY when they resolve to the SAME table"
+        );
+    }
+
+    /// Fixture (h): an unresolvable Subtype (a raw name absent from the
+    /// closure; an object-bearing keyword with neither a raw name NOR a raw
+    /// id; no outer keyword at all) degrades to untyped — never a guess.
+    #[test]
+    fn abi_param_canonical_unresolvable_subtype_degrades() {
+        let app = AppRef(0);
+        let graph = graph_with_table(app, 36, "Customer");
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let ghost = abi_param("Record", false, None, Some("Ghost Table"), "name_quoted");
+        assert_eq!(
+            abi_param_canonical(&ghost, &from, &graph, &index),
+            None,
+            "a raw Subtype name absent from the closure must decline, never guess"
+        );
+
+        let empty = abi_param("Record", false, None, None, "empty_subtype");
+        assert_eq!(
+            abi_param_canonical(&empty, &from, &graph, &index),
+            None,
+            "an object-bearing keyword with neither a raw name nor a raw id has no identity to resolve"
+        );
+
+        let blank = abi_param("", false, None, None, "no_type_definition");
+        assert_eq!(
+            abi_param_canonical(&blank, &from, &graph, &index),
+            None,
+            "an empty type_text (no outer keyword at all) must decline"
+        );
+    }
+
+    /// Fixture (a): two ABI overloads differing only by scalar param TYPE —
+    /// `candidate_param_infos_abi` reads each candidate's retained params
+    /// correctly, and `pick_candidate` (unchanged, tier-agnostic) picks the
+    /// one matching a typed Integer argument.
+    #[test]
+    fn candidate_param_infos_abi_distinct_scalar_types_pick_correctly() {
+        let obj_id = ObjectNodeId {
+            app: AppRef(1),
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60700),
+        };
+        let text_overload = abi_routine_node(
+            &obj_id,
+            "getvalue",
+            1,
+            111,
+            AbiParams::Complete(vec![abi_param("Text", false, None, None, "no_subtype")]),
+        );
+        let int_overload = abi_routine_node(
+            &obj_id,
+            "getvalue",
+            1,
+            222,
+            AbiParams::Complete(vec![abi_param("Integer", false, None, None, "no_subtype")]),
+        );
+        let graph = abi_object_graph(&obj_id, vec![text_overload.clone(), int_overload.clone()]);
+        let index = ResolveIndex::build(&graph);
+
+        let text_params = candidate_param_infos_abi(&text_overload.id, &graph, &index)
+            .expect("Complete params must be readable");
+        let int_params = candidate_param_infos_abi(&int_overload.id, &graph, &index)
+            .expect("Complete params must be readable");
+
+        let args = vec![ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Base("integer".into())),
+            exact_text: Some("integer".into()),
+            literal_kind: Some(LiteralKind::Integer),
+            var_passable: false,
+        }];
+        let candidates = vec![text_params, int_params];
+        assert_eq!(
+            pick_candidate(&args, &candidates),
+            Some(1),
+            "an Integer-typed arg must pick the Integer ABI overload, never the Text one"
+        );
+    }
+
+    /// Fixture (b): an ABI `var` param eliminates a literal argument — real
+    /// `is_var` fidelity, the ByRef-EXACT rule applies to ABI candidates
+    /// exactly like source ones.
+    #[test]
+    fn candidate_param_infos_abi_var_param_eliminates_literal_argument() {
+        let obj_id = ObjectNodeId {
+            app: AppRef(1),
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60701),
+        };
+        let var_overload = abi_routine_node(
+            &obj_id,
+            "setvalue",
+            1,
+            333,
+            AbiParams::Complete(vec![abi_param("Integer", true, None, None, "no_subtype")]),
+        );
+        let graph = abi_object_graph(&obj_id, vec![var_overload.clone()]);
+        let index = ResolveIndex::build(&graph);
+
+        let params = candidate_param_infos_abi(&var_overload.id, &graph, &index)
+            .expect("Complete params must be readable");
+        assert!(
+            params[0].by_ref,
+            "is_var: true must carry through as by_ref"
+        );
+
+        // A literal argument is never var-passable — the sole candidate is
+        // eliminated (module doc, C5) even though its canonical TYPE matches.
+        let literal_arg = ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Base("integer".into())),
+            exact_text: Some("integer".into()),
+            literal_kind: Some(LiteralKind::Integer),
+            var_passable: false,
+        };
+        assert_eq!(
+            pick_candidate(&[literal_arg], &[params]),
+            None,
+            "a literal argument can never bind a var ABI parameter — sound elimination, never a pick"
+        );
+    }
+
+    /// Fixture (c): a collapsed survivor's `abi_params` is
+    /// `AbiParams::CollapsedUntrusted` — reading it is impossible BY TYPE
+    /// (there is no `Vec<AbiParamRetained>` to read at all), regardless of
+    /// how discriminating the ORIGINAL raw params might have looked before
+    /// the collapse. `candidate_param_infos_abi` must decline.
+    #[test]
+    fn candidate_param_infos_abi_declines_collapsed_survivor() {
+        let obj_id = ObjectNodeId {
+            app: AppRef(1),
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60702),
+        };
+        let collapsed = abi_routine_node(&obj_id, "get", 1, 444, AbiParams::CollapsedUntrusted);
+        let graph = abi_object_graph(&obj_id, vec![collapsed.clone()]);
+        let index = ResolveIndex::build(&graph);
+
+        assert!(
+            candidate_param_infos_abi(&collapsed.id, &graph, &index).is_none(),
+            "CollapsedUntrusted must decline unconditionally — the enum makes the read impossible"
+        );
+    }
+
+    /// Fixture (d), unit-level: a `Missing`-metadata ABI candidate declines —
+    /// same outcome as `Missing` pairing with `UNKNOWN_ARITY` at real
+    /// ingestion, but proven here independent of that pairing (the structural
+    /// guard must hold even if a future ingestion path ever let `Missing`
+    /// coexist with a real matching arity).
+    #[test]
+    fn candidate_param_infos_abi_declines_missing_metadata() {
+        let obj_id = ObjectNodeId {
+            app: AppRef(1),
+            kind: ObjectKind::Codeunit,
+            key: ObjKey::Id(60703),
+        };
+        let missing = abi_routine_node(&obj_id, "get", 1, 555, AbiParams::Missing);
+        let graph = abi_object_graph(&obj_id, vec![missing.clone()]);
+        let index = ResolveIndex::build(&graph);
+
+        assert!(
+            candidate_param_infos_abi(&missing.id, &graph, &index).is_none(),
+            "Missing must decline — no metadata to read"
+        );
+    }
+
+    /// `rid` not present in `graph.routines` at all (a defensive lookup-miss
+    /// path) must also decline, never panic.
+    #[test]
+    fn candidate_param_infos_abi_declines_on_lookup_miss() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let rid = RoutineNodeId {
+            object: test_object_id(),
+            name_lc: "ghost".into(),
+            enclosing_member_lc: None,
+            params_count: 1,
+            sig_fp: 0,
+        };
+        assert!(candidate_param_infos_abi(&rid, &graph, &index).is_none());
     }
 }
