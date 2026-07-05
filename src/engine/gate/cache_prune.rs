@@ -25,13 +25,12 @@ use std::path::Path;
 use crate::engine::ids::sha256_hex;
 
 // ---------------------------------------------------------------------------
-// CACHE_VERSIONS constants — MUST match al-sem's `src/deps/cache-versions.ts`
-// and `src/providers/discover.ts` EXACTLY. The `kept` fixture pins this tuple.
-//
-// SOURCE OF TRUTH: al-sem `src/deps/cache-versions.ts` (CACHE_VERSIONS) +
-// `src/providers/discover.ts` (ANALYZER_VERSION / GRAMMAR_VERSION). The 5 schema
-// stamps below (grammar / symbolReader / summarySchema / depCache / resourcePolicy)
-// have no Rust engine "home" yet — bump them here in lockstep with al-sem.
+// CACHE_VERSIONS constants — the version tuple stamped into every dependency-
+// cache artifact header. This engine owns the cache format now: bump the
+// relevant const whenever a schema or classification-behavior change should
+// invalidate every existing cache entry. The `kept` fixture pins this tuple.
+// (Originated from al-sem's `src/deps/cache-versions.ts` / `src/providers/
+// discover.ts` during the port; that TS source no longer exists to track.)
 //
 // The `analyzer` stamp is `CACHE_ANALYZER_VERSION` (below) — a cache-format
 // version we own, independent of the engine's display/identity version.
@@ -65,15 +64,13 @@ pub const CACHE_ANALYZER_VERSION: &str = "0.0.12";
 
 /// The dev fingerprint used when not in a release build.
 ///
-/// al-sem logic: `process.env.AL_SEM_RELEASE === "1"` → `""`;
-/// else `process.env.AL_SEM_DEV_FINGERPRINT ?? "dev"`.
-///
-/// The Rust engine mirrors this: release builds can set `AL_SEM_RELEASE=1`.
+/// `ALCH_RELEASE=1` → `""` (release builds carry no dev fingerprint); otherwise
+/// `ALCH_DEV_FINGERPRINT` if set, else `"dev"`.
 pub fn dev_fingerprint() -> String {
-    if std::env::var("AL_SEM_RELEASE").as_deref() == Ok("1") {
+    if std::env::var("ALCH_RELEASE").as_deref() == Ok("1") {
         return String::new();
     }
-    std::env::var("AL_SEM_DEV_FINGERPRINT").unwrap_or_else(|_| "dev".to_string())
+    std::env::var("ALCH_DEV_FINGERPRINT").unwrap_or_else(|_| "dev".to_string())
 }
 
 // ---------------------------------------------------------------------------

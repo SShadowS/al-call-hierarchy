@@ -72,6 +72,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the lift is fixture-proven but CDO-dormant, exactly as the plan
   predicted.
 
+### Changed
+- **Retired the src-side al-sem parity shims (Task 3.2, al-sem parity
+  retirement arc).** `alsem_version()` is renamed `driver_version()` and its
+  default is now this crate's own `CARGO_PKG_VERSION` instead of the pinned
+  al-sem `package.json` version (`0.0.12`) — the engine reports its own
+  identity rather than impersonating the retired TS tool. The override env
+  var is renamed `AL_SEM_VERSION_OVERRIDE` → `ALCH_DRIVER_VERSION_OVERRIDE`
+  (test-harness sentinel values are unchanged, so display goldens are
+  byte-identical). The dependency-cache header's `analyzer` stamp is now a
+  dedicated `CACHE_ANALYZER_VERSION` const, decoupled from the display
+  version (still `"0.0.12"` — cache goldens byte-identical). The cache
+  release/dev-fingerprint env vars are renamed `AL_SEM_RELEASE` →
+  `ALCH_RELEASE` and `AL_SEM_DEV_FINGERPRINT` → `ALCH_DEV_FINGERPRINT`
+  (old names removed outright, not aliased — anyone relying on them for a
+  warm cache gets a one-time re-fingerprint, not a correctness hazard).
+
 ### Fixed
 - **`alsem policy check`'s `policySource` no longer embeds an absolute machine
   path — it is now workspace-relative (Task 3.1, al-sem parity retirement
