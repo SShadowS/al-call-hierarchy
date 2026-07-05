@@ -15,10 +15,10 @@
 //! byte-match. This is ungated: divergence is either a Rust bug to fix or a model
 //! difference to BLOCK — never something to tolerate.
 //!
-//! ## Refresh (ignored)
+//! ## Refresh
 //!
-//! `#[ignore] refresh_goldens` shells `bun run scripts/dump-prove.ts` under
-//! `AL_SEM_DIR` to regenerate the goldens.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_prove_differential`.
 
 use std::path::PathBuf;
 

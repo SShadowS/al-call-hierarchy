@@ -14,9 +14,9 @@
 //! All 27 goldens MUST byte-match; a divergence is a bug to fix, not something
 //! to tolerate.
 //!
-//! ## Refresh (ignored)
-//! The `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-terminal.ts`
-//! under `AL_SEM_DIR`.
+//! ## Refresh
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_a_terminal_differential`.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -399,25 +399,4 @@ fn group_by_detector_contains_header() {
         out.contains("Grouped by detector"),
         "group-by output must contain 'Grouped by detector' but got:\n{out}"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Refresh (ignored) — regenerate goldens from al-sem TS reference
-// ---------------------------------------------------------------------------
-
-#[test]
-#[ignore]
-fn refresh_terminal_goldens() {
-    let al_sem_dir = repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem");
-    let status = std::process::Command::new("bun")
-        .arg("run")
-        .arg("scripts/dump-analyze-terminal.ts")
-        .current_dir(&al_sem_dir)
-        .env("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE)
-        .status()
-        .expect("refresh: failed to spawn bun");
-    assert!(status.success(), "refresh: bun script exited with {status}");
 }

@@ -19,9 +19,9 @@
 //! All 22 goldens MUST byte-match; a divergence is a bug to fix, not something
 //! to tolerate.
 //!
-//! ## Refresh (ignored)
-//! `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-html.ts`
-//! (under `AL_SEM_DIR`) to regenerate the goldens from the TS reference.
+//! ## Refresh
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_a_html_differential`.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -416,39 +416,4 @@ fn event_graph_fixture_renders_svg() {
         out.contains("opacity=\"0.7\""),
         "bezier paths must use opacity=0.7"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Refresh test (ignored — only run explicitly)
-// ---------------------------------------------------------------------------
-
-/// Regenerate the al-sem html goldens by running the TS reference.
-///
-/// Run with:
-///   cargo test --test cli_a_html_differential refresh_goldens -- --ignored
-///
-/// Requires `AL_SEM_DIR` env var pointing to the al-sem repo root (or the
-/// sibling `../al-sem` path is used as a fallback).
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem_dir = std::env::var("AL_SEM_DIR").unwrap_or_else(|_| {
-        repo_root()
-            .parent()
-            .expect("parent")
-            .join("al-sem")
-            .to_string_lossy()
-            .to_string()
-    });
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-analyze-html.ts"])
-        .current_dir(&al_sem_dir)
-        .env("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE)
-        .status()
-        .expect("failed to run bun");
-    assert!(
-        status.success(),
-        "bun run scripts/dump-analyze-html.ts failed"
-    );
-    eprintln!("refresh_goldens: goldens refreshed at {al_sem_dir}/scripts/cli-a-goldens/html/");
 }

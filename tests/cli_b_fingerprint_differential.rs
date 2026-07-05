@@ -25,10 +25,10 @@
 //!
 //! All goldens MUST byte-match. Divergences are bugs to fix, not something to tolerate.
 //!
-//! ## Refresh (ignored)
+//! ## Refresh
 //!
-//! `#[ignore] refresh_goldens` shells `bun run scripts/dump-fingerprint.ts` under
-//! `AL_SEM_DIR` to regenerate the goldens.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_fingerprint_differential`.
 
 use std::path::PathBuf;
 
