@@ -31,10 +31,10 @@
 //! (symbol-only + app-source). An oracle cross-check asserts the Rust-computed
 //! matrix counts EQUAL the al-sem `manifest.json` matrix counts (ground truth).
 //!
-//! ## KNOWN_DIVERGENCES gating
+//! ## Strict comparison
 //!
-//! Reuses the repo-root `KNOWN_DIVERGENCES.json` with exact `(test, fixture, path)`
-//! matching, scoped to `test == R2_5A_TEST_NAME`. Target: empty.
+//! The golden and the Rust projection are compared directly: any divergence is a
+//! hard failure, with no tolerance mechanism of any kind.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -42,10 +42,8 @@ use std::path::{Path, PathBuf};
 use al_call_hierarchy::engine::deps::merged_index::{
     build_merged_index_from_path, serialize_projection,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
-const R2_5A_TEST_NAME: &str = "differential_r2_5a_merged_index_matches_goldens";
 const R2_5A_MODEL_INSTANCE_ID: &str = "r2.5a";
 
 /// Keys that must NEVER appear anywhere in the R2.5a projection (L4/summary/cone —
@@ -73,36 +71,6 @@ fn goldens_dir() -> PathBuf {
 
 fn fixtures_dir() -> PathBuf {
     repo_root().join("tests").join("r2-5a-fixtures")
-}
-
-/// One entry in `KNOWN_DIVERGENCES.json`. `test` scopes the entry; only R2.5a-
-/// scoped entries apply here.
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-fn default_allow_test() -> String {
-    // The earliest pass; an R2.5a entry MUST set `test` explicitly, so this default
-    // never accidentally scopes an R2.5a entry.
-    "differential_identity_subset_matches_goldens".to_string()
-}
-
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
 }
 
 /// A single divergence (golden vs rust), with a stable line-locator path.
@@ -518,11 +486,6 @@ fn differential_r2_5a_merged_index_matches_goldens() {
         goldens_dir().display()
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == R2_5A_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut totals = Matrices::default();
@@ -669,51 +632,17 @@ fn differential_r2_5a_merged_index_matches_goldens() {
         rust_prop, oracle.property
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/L3) ----------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict divergence assert --------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED R2.5a divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={R2_5A_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} R2.5a divergence(s) found:\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED R2.5a allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -724,9 +653,8 @@ fn differential_r2_5a_merged_index_matches_goldens() {
     );
 
     eprintln!(
-        "R2.5a differential: {} fixture(s), 0 divergences, allowlist fully consumed ({} entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2.5a differential: {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 

@@ -13,9 +13,9 @@
 //!
 //! SCOPE: the in-repo corpus is the FULL source-only `ws-*` set al-sem dumps
 //! (157 fixtures as of R0 Task 7, including the `ws-r0-canon-stress` identity
-//! stress fixture). The gating logic, allowlist semantics, and live-refresh path
-//! are all real; the harness iterates every `tests/r0-goldens/*.golden.json` and
-//! requires each to match with `KNOWN_DIVERGENCES.json` == `[]`.
+//! stress fixture). The comparison logic and live-refresh path are all real;
+//! the harness iterates every `tests/r0-goldens/*.golden.json` and asserts an
+//! exact match — zero tolerated divergences.
 //!
 //! ## Comparison rules
 //!
@@ -39,13 +39,10 @@
 //!   - present in rust, absent in golden: `objects["<id>"]:EXTRA_IN_RUST`
 //!     / `routines["<id>"]:EXTRA_IN_RUST`
 //!
-//! ## Allowlist gating (`KNOWN_DIVERGENCES.json`, repo root)
+//! ## Strict comparison
 //!
-//! An array of `{ fixture, path, reason, expires }`. The test FAILS if:
-//!   (a) any divergence is NOT covered by an entry (undocumented divergence), OR
-//!   (b) any allowlist entry is UNUSED this run (no matching divergence).
-//! Matching is EXACT on the `(fixture, path)` pair — not prefix/glob (over-broad
-//! = fail). At R0 exit the allowlist is empty and the full corpus matches.
+//! No tolerance layer: the test FAILS on ANY divergence between golden and
+//! Rust output. The full corpus is asserted to match exactly.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -56,39 +53,11 @@ use al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection;
 use al_call_hierarchy::engine::l3::coverage::AnalysisCoverage;
 use al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection;
 use al_call_hierarchy::engine::l3::l3_workspace::{
-    L3RecordTypeProjection, assemble_and_resolve_workspace_default,
+    assemble_and_resolve_workspace_default, L3RecordTypeProjection,
 };
 use al_call_hierarchy::engine::snapshot::{
-    IdentitySnapshot, ObjectIdentity, RoutineIdentity, snapshot_workspace,
+    snapshot_workspace, IdentitySnapshot, ObjectIdentity, RoutineIdentity,
 };
-use serde::Deserialize;
-
-/// One entry in `KNOWN_DIVERGENCES.json`.
-///
-/// `test` scopes the entry to ONE differential pass. It defaults to the R0
-/// identity test (`differential_identity_subset_matches_goldens`) so existing
-/// R0 entries need no `test` field. L2 entries MUST carry
-/// `"test": "differential_l2_features_match_goldens"`. Matching is exact on the
-/// `(test, fixture, path)` triple, so an R0 entry can never cover an L2
-/// divergence (or vice versa).
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)] // documentation fields; not used in matching.
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-/// Default allowlist scope: the R0 identity pass.
-fn default_allow_test() -> String {
-    "differential_identity_subset_matches_goldens".to_string()
-}
 
 /// A single, machine-checkable divergence between a golden and the Rust output.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,8 +69,8 @@ struct Divergence {
     rust_value: String,
 }
 
-/// Repo root = the crate manifest dir (the worktree root). `tests/` and
-/// `KNOWN_DIVERGENCES.json` live directly under it.
+/// Repo root = the crate manifest dir (the worktree root). `tests/` lives
+/// directly under it.
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -139,15 +108,6 @@ fn discover_goldens() -> Vec<(String, PathBuf)> {
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
-}
-
-/// Load + parse `KNOWN_DIVERGENCES.json` into the same struct shape.
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
 }
 
 /// Parse a golden file into the SAME `IdentitySnapshot` structs the engine
@@ -300,7 +260,7 @@ fn push_field(out: &mut Vec<Divergence>, fixture: &str, path: &str, golden: &str
 }
 
 /// The default, offline differential test. Runs the Rust snapshot on every
-/// in-repo golden's matching fixture, diffs, and gates on the allowlist.
+/// in-repo golden's matching fixture, diffs, and asserts an exact match.
 #[test]
 fn differential_identity_subset_matches_goldens() {
     let goldens = discover_goldens();
@@ -309,13 +269,6 @@ fn differential_identity_subset_matches_goldens() {
         "no goldens discovered under {} — corpus missing?",
         goldens_dir().display()
     );
-
-    // Only R0-scoped allowlist entries apply to this pass; L2 entries are
-    // filtered out (and vice versa in the L2 test).
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == "differential_identity_subset_matches_goldens")
-        .collect();
 
     // Collect every divergence across every fixture.
     let mut all_divergences: Vec<Divergence> = Vec::new();
@@ -336,60 +289,18 @@ fn differential_identity_subset_matches_goldens() {
         all_divergences.append(&mut divs);
     }
 
-    // --- Allowlist gating ---------------------------------------------------
-    // (a) every divergence must be covered by an exact (fixture, path) entry;
-    // (b) every allowlist entry must match at least one divergence this run.
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-                // keep scanning so a divergence matched by multiple identical
-                // entries marks them all used (still flagged later as redundant
-                // only if truly unused — exact dupes both count as used).
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
 
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED divergence(s) (not in KNOWN_DIVERGENCES.json):\n",
-            undocumented.len()
+            "\n{} divergence(s) found:\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED allowlist entr(y/ies) (no matching divergence this run — \
-             remove or fix; over-broad/stale entries are not allowed):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -403,9 +314,8 @@ fn differential_identity_subset_matches_goldens() {
     );
 
     eprintln!(
-        "R0 differential: {} fixture(s), 0 divergences, allowlist fully consumed ({} entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R0 differential: {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -453,11 +363,9 @@ fn differential_identity_subset_matches_goldens() {
 // so the locality (raw text / CFN node path / ExpressionInfo / operationId)
 // falls straight out of the pointer.
 //
-// ## Allowlist gating
+// ## Strict comparison
 //
-// Reuses `KNOWN_DIVERGENCES.json` + the exact-`(test,fixture,path)` gating, but
-// only entries scoped to `test == "differential_l2_features_match_goldens"`
-// apply here. Target: empty.
+// No tolerance layer: any divergence fails the test. Target: zero divergences.
 //
 // ## Scope gate (Task 4 vs Task 5)
 //
@@ -679,12 +587,6 @@ fn differential_l2_features_match_goldens() {
         "R1A_L2_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    // Only L2-scoped allowlist entries apply here.
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L2_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
 
@@ -763,51 +665,17 @@ fn differential_l2_features_match_goldens() {
         forbidden_hits.join("\n  ")
     );
 
-    // --- Allowlist gating (same semantics as R0) ----------------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L2 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L2_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L2 divergence(s) found (test={L2_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L2 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -818,10 +686,8 @@ fn differential_l2_features_match_goldens() {
     );
 
     eprintln!(
-        "R1a L2 differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L2 entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R1a L2 differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -867,9 +733,9 @@ fn differential_l2_features_match_goldens() {
 // The matrix counts are printed; an oracle cross-check asserts they equal the
 // counts computed from the GOLDENS (al-sem ground truth).
 //
-// ## Allowlist gating + scope gate
+// ## Strict comparison + scope gate
 //
-// Reuses `KNOWN_DIVERGENCES.json` with `test == L3_TEST_NAME`; target empty.
+// No tolerance layer: any divergence fails the test (target empty).
 // `R2A_L3_SET` selects the asserted fixtures:
 //   - "full" (committed default since R2a Task 4 / the EXIT GATE): every
 //     `tests/r2a-goldens/*.l3rt.golden.json` (the 153-fixture corpus). The
@@ -1008,12 +874,6 @@ fn differential_l3_record_types_match_goldens() {
         "R2A_L3_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    // Only L3-scoped allowlist entries apply.
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = CoverageMatrix::default();
@@ -1142,51 +1002,17 @@ fn differential_l3_record_types_match_goldens() {
         "L3 coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2) -------------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3 divergence(s) found (test={L3_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -1197,10 +1023,8 @@ fn differential_l3_record_types_match_goldens() {
     );
 
     eprintln!(
-        "R2a L3 differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3 entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2a L3 differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -1236,7 +1060,7 @@ fn scan_l3_forbidden(value: &serde_json::Value, path: &str, hits: &mut Vec<Strin
 // is compared at the group level; the upgraded argumentBindings per callsite are
 // compared too. HARD-FAILS on any forbidden later-gate / L4 field (typedEdges /
 // summary / coverage / eventGraph / callsiteResolutions / openWorld /
-// capabilityFactsDirect / rootClassifications). KNOWN_DIVERGENCES-gated (empty).
+// capabilityFactsDirect / rootClassifications). Asserted with zero tolerance.
 // ===========================================================================
 
 /// Forbidden later-gate / L4 keys that must NEVER appear in the L3 call-graph
@@ -1581,11 +1405,6 @@ fn differential_l3_call_graph_match_goldens() {
         "R2B_L3CG_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3CG_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = CallGraphCoverage::default();
@@ -1752,51 +1571,17 @@ fn differential_l3_call_graph_match_goldens() {
         "L3cg coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/R2a) ---------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3cg divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3CG_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3cg divergence(s) found (test={L3CG_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3cg allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -1807,10 +1592,8 @@ fn differential_l3_call_graph_match_goldens() {
     );
 
     eprintln!(
-        "R2b L3cg differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3cg entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2b L3cg differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -1884,7 +1667,7 @@ fn l3cg_coverage_matrix_matches_manifest_oracle() {
 // both already deterministically sorted by the projection, so the compare is
 // positional/structural after keying. HARD-FAILS on any forbidden later-gate / L4
 // field (callGraph / typedEdges / summary / coverage / publish / capability*).
-// KNOWN_DIVERGENCES-gated (empty).
+// Asserted with zero tolerance.
 //
 // ## The 31-event-fixtures-vs-corpus inclusion rule
 //
@@ -2168,11 +1951,6 @@ fn differential_l3_event_graph_match_goldens() {
         "R2C_L3EG_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3EG_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = EventGraphCoverage::default();
@@ -2316,51 +2094,17 @@ fn differential_l3_event_graph_match_goldens() {
         "L3eg coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/R2a/R2b) -----------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3eg divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3EG_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3eg divergence(s) found (test={L3EG_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3eg allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -2371,10 +2115,8 @@ fn differential_l3_event_graph_match_goldens() {
     );
 
     eprintln!(
-        "R2c L3eg differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3eg entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2c L3eg differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -2436,7 +2178,7 @@ fn l3eg_coverage_matrix_matches_manifest_oracle() {
 // array compare (after sort) detects any cardinality OR id divergence (duplicates
 // are preserved on BOTH sides — never deduped). HARD-FAILS on any forbidden
 // later-gate / L4 field (callGraph / eventGraph / typedEdges / summary /
-// analysisGaps / …). KNOWN_DIVERGENCES-gated (empty at R2d exit).
+// analysisGaps / …). Asserted with zero tolerance.
 //
 // Every fixture has a golden (coverage is non-empty for every source workspace),
 // so there is NO inclusion rule (unlike R2c's event graph) — all 158 compare.
@@ -2618,11 +2360,6 @@ fn differential_l3_coverage_match_goldens() {
         "R2D_L3COV_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3COV_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = CoverageMatrix2::default();
@@ -2771,51 +2508,17 @@ fn differential_l3_coverage_match_goldens() {
         "L3cov coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/R2a/R2b/R2c) -------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3cov divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3COV_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3cov divergence(s) found (test={L3COV_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3cov allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -2826,10 +2529,8 @@ fn differential_l3_coverage_match_goldens() {
     );
 
     eprintln!(
-        "R2d L3cov differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3cov entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2d L3cov differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 

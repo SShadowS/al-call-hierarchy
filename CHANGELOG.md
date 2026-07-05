@@ -131,6 +131,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/` except `CACHE_ANALYZER_VERSION`.
 
 ### Removed
+- **`KNOWN_DIVERGENCES.json` allowlist-tolerance machinery (Task 3.4, al-sem
+  parity retirement arc).** The repo-root `KNOWN_DIVERGENCES.json` allowlist
+  file is deleted, and the `AllowEntry` struct + `load_allowlist()` loader +
+  the two-part gate (fail on any undocumented divergence, fail on any unused
+  allowlist entry) are removed from all 13 differential harnesses
+  (`differential.rs` — 6 gate sites; `r4_differential.rs`;
+  `r2_5a_differential.rs`; `r2_5b_{cg,cov,eg,rt}_differential.rs`;
+  `r3a{1,2,2_trace,3,4,5}_differential.rs`). Each gate now asserts directly
+  that the computed divergence set is empty — since the allowlist was already
+  `[]` (no divergence tolerated today), this is behavior-preserving, just
+  stricter code: a future divergence now fails immediately instead of passing
+  through a tolerance layer that had become vestigial. `r3a4_differential.rs`
+  and `r3a5_differential.rs` also drop their now-vacuous "allowlist must be
+  empty" exit-gate assertions (the real byte-match comparison against the
+  golden is unchanged). Every harness's actual comparison — structural diff,
+  byte-match, forbidden-field scans, anti-degenerate/coverage matrices, oracle
+  cross-checks — is untouched. `cargo test --release --workspace` stays fully
+  green (159 test-result blocks, 0 failed); CDO's
+  `--program-call-graph-stats` SHA-256 is unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`).
 - **`analyze --dump-model`.** A hidden flag that only ever rejected itself
   with a CONFIG_ERROR pointing at "the TS CLI" — a tool that no longer
   exists. Removed outright; an invocation now gets clap's own

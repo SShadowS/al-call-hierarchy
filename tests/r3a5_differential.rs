@@ -20,14 +20,18 @@
 //!
 //! post-computeSummaries WITH dep hooks (the FULL `analyzeWorkspace` order:
 //! merged index → buildCombinedGraph → injectIntraAppCallEdges → computeSummaries
-//! → the cone). KNOWN_DIVERGENCES target: empty (byte-match).
+//! → the cone).
+//!
+//! ## Strict byte-match comparison
+//!
+//! No allowlist tolerance: any structural divergence fails the test directly, and
+//! the pretty JSON must be byte-identical to the golden file.
 
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l4::capability_cone::{
     R3a5FullSummaryProjection, project_r3a5_cross_app,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
 const R3A5_TEST_NAME: &str = "differential_r3a5_cross_app_summary_match_goldens";
@@ -44,32 +48,6 @@ fn goldens_dir() -> PathBuf {
 
 fn ws_fixture_dir() -> PathBuf {
     repo_root().join("tests").join("r3a5-fixtures").join("ws")
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-fn default_allow_test() -> String {
-    "differential_identity_subset_matches_goldens".to_string()
-}
-
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
 }
 
 #[derive(Debug, Clone)]
@@ -194,61 +172,22 @@ fn differential_r3a5_cross_app_summary_match_goldens() {
     let rust_json = serde_json::to_value(&projection)
         .unwrap_or_else(|e| panic!("serialize Rust R3a-5 projection: {e}"));
 
-    // --- structural positional diff (the allowlist-gated surface) ---
+    // --- structural positional diff ---
     let mut all_divergences: Vec<Divergence> = Vec::new();
     diff_value(FIXTURE, "", &golden_json, &rust_json, &mut all_divergences);
     all_divergences
         .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == R3A5_TEST_NAME)
-        .collect();
-
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED R3a-5 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={R3A5_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} R3a-5 divergence(s) found ({R3A5_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED R3a-5 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -257,25 +196,19 @@ fn differential_r3a5_cross_app_summary_match_goldens() {
         "R3a-5 cross-app summary differential FAILED:{failure}"
     );
 
-    // --- BYTE-MATCH guard: KNOWN_DIVERGENCES is empty → the pretty JSON must be
-    // byte-identical to the golden file (the strongest oracle). ----------------
-    assert!(
-        allowlist.is_empty(),
-        "R3a-5 KNOWN_DIVERGENCES must be empty for the EXIT GATE (byte-match); found {} entr(y/ies)",
-        allowlist.len()
-    );
+    // --- BYTE-MATCH guard: the pretty JSON must be byte-identical to the golden
+    // file (the strongest oracle). -----------------------------------------
     let rust_pretty = serde_json::to_string_pretty(&projection)
         .unwrap_or_else(|e| panic!("pretty-serialize Rust R3a-5 projection: {e}"));
     assert_eq!(
         rust_pretty.trim_end(),
         golden_text.trim_end(),
-        "R3a-5 pretty JSON is NOT byte-identical to the golden (KNOWN_DIVERGENCES=[])"
+        "R3a-5 pretty JSON is NOT byte-identical to the golden"
     );
 
     eprintln!(
-        "R3a-5 differential: 1 fixture, {} summaries, byte-match, KNOWN_DIVERGENCES=[] ({} entr(y/ies)).",
-        projection.summaries.len(),
-        allowlist.len()
+        "R3a-5 differential: 1 fixture, {} summaries, byte-match.",
+        projection.summaries.len()
     );
 }
 

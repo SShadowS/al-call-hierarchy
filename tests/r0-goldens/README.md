@@ -24,8 +24,9 @@ test.
 - `tests/r0-corpus/<fixture>/` — the **source-only** AL workspace
   (`app.json` + `src/**/*.al`) the goldens were derived from, so the harness has
   AL to parse offline.
-- `KNOWN_DIVERGENCES.json` (repo root) — machine-readable allowlist. Empty for
-  R0 (ws-d2 fully matches). See the harness header for gating semantics.
+
+The harness asserts a direct, strict field-for-field match against these
+goldens — no allowlist/tolerance mechanism; any divergence fails the test.
 
 ## Provenance (this snapshot)
 

@@ -181,8 +181,6 @@ redesign spec under `docs/superpowers/specs/`.
   goldens from it or write into it at test time. Tests still pointing at the al-sem repo
   (some cli-b differentials, r3a1/r4f) are LEGACY and should be migrated to in-repo
   Rust-owned goldens or contract assertions when touched.
-- **`KNOWN_DIVERGENCES.json`** is a legacy port-parity artifact; it is not the mechanism
-  for Rust-ahead-of-al-sem behavior (that is just the new correct baseline).
 
 ## Working Principle
 
