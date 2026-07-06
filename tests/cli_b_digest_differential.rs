@@ -3,7 +3,8 @@
 //! For each fixture in `DIGEST_CORPUS`, collect all `.al` source files in
 //! `<fixture>/src/`, run `run_digest_pipeline` with `deterministic:true` and
 //! version `cli-b-v1`, and byte-compare the `.json` and `.human.txt` goldens
-//! from `U:\Git\al-sem\scripts\cli-b-goldens\digest\`.
+//! vendored (Rust-owned) at `tests/cli-b-goldens/digest/` — originally sourced
+//! from al-sem's `scripts/cli-b-goldens/digest/`, now retired.
 //!
 //! Additionally, for `ws-d8-commit-in-tx`, runs with the `.changed.diff` file
 //! (from the same goldens directory) and compares the `.diff.json` golden.

@@ -1,10 +1,11 @@
 //! cli-b/b0 — the full `CapabilitySnapshot` serializer differential.
 //!
 //! For each fixture in `SNAPSHOT_CORPUS`, run the Rust source-only L0→L3 pass over
-//! the al-sem fixture, compose the FULL snapshot (deterministic, version
+//! the fixture, compose the FULL snapshot (deterministic, version
 //! `cli-b-v1`), serialize it four ways (raw JSON / envelope JSON / CBOR / cbor.gz),
-//! and byte/hex-compare each to the committed al-sem golden under
-//! `U:\Git\al-sem\scripts\cli-b-goldens\snapshot\`. Plus the sharded JSON output
+//! and byte/hex-compare each to the vendored (Rust-owned) golden under
+//! `tests/cli-b-goldens/snapshot/` — originally sourced from al-sem's
+//! `scripts/cli-b-goldens/snapshot/`, now retired. Plus the sharded JSON output
 //! for the findings-rich fixture `ws-d8-commit-in-tx`.
 //!
 //! ## Acceptance gate

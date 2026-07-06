@@ -545,11 +545,10 @@ fn sha256_hex_test(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Refresh test RETIRED (Task 3.3): this used to shell `bun run
-// scripts/dump-cache.ts` in the al-sem checkout, but al-sem's symbolReader
-// version is permanently stuck at 17 (frozen) while the engine's is 18 — the
-// script can never again regenerate a `kept`-classified fixture, so refreshing
-// from it would silently re-break the corpus. The in-repo golden corpus at
+// Refresh test RETIRED (Task 3.3): the retired al-sem oracle's symbolReader
+// version is permanently stuck at 17 while the engine's is 18, so it can
+// never again regenerate a `kept`-classified fixture — refreshing from it
+// would silently re-break the corpus. The in-repo golden corpus at
 // `tests/cli-c-goldens/cache/` (Task 16 rebaseline) is the sole source of
-// truth; there is no automated refresh path against a retired oracle.
+// truth; there is no automated refresh path.
 // ---------------------------------------------------------------------------

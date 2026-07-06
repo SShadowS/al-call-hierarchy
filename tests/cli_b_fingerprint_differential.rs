@@ -1,8 +1,9 @@
 //! cli-b/b3 — FINGERPRINT CLI differential.
 //!
 //! For each fixture in `FINGERPRINT_CORPUS` (20 fixtures), runs the Rust fingerprint
-//! pipeline and byte-compares the output against the committed al-sem goldens under
-//! `U:\Git\al-sem\scripts\cli-b-goldens\fingerprint\`.
+//! pipeline and byte-compares the output against the vendored (Rust-owned) goldens
+//! under `tests/cli-b-goldens/fingerprint/` — originally sourced from al-sem's
+//! `scripts/cli-b-goldens/fingerprint/`, now retired.
 //!
 //! ## Goldens checked per fixture
 //!

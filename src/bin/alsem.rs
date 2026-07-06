@@ -697,7 +697,7 @@ const GROUP_BY_VALUES: &[&str] = &["object", "routine", "table", "detector", "fi
 // ── digest command ──────────────────────────────────────────────────────────
 
 /// The exact stderr message emitted when `--order` is used with `digest`.
-const ORDER_REJECTION: &str = "al-sem: digest --order is not supported by the Rust engine; use the TS CLI for ordered digests";
+const ORDER_REJECTION: &str = "al-sem: digest --order is not supported by the Rust engine";
 
 fn run_digest_cmd(d: DigestCli) -> ExitCode {
     // Reject --order (CONFIG_ERROR — a not-ported flag rejected cleanly rather than silently ignored)

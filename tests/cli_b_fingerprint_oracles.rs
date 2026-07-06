@@ -3,9 +3,11 @@
 //! These assert the EXACT TS-faithful bytes/behavior for the corpus-invisible
 //! paths the fingerprint differential does not exercise (it covers only a narrow
 //! slice: includeInherited=true, witness∈{3,all,0,false}, no --roots, JSON-only
-//! selector error). Every string here is read directly from the al-sem source
-//! (`U:\Git\al-sem\src\cli\fingerprint.ts`, `format-fingerprint.ts`,
-//! `query/witness.ts`, `contracts/fingerprint-query.ts`) — no golden needed.
+//! selector error). Every string here was originally transcribed directly from the
+//! al-sem TS source (`src/cli/fingerprint.ts`, `format-fingerprint.ts`,
+//! `query/witness.ts`, `contracts/fingerprint-query.ts`, which lived at
+//! `U:\Git\al-sem`, now retired) — the values are Rust-owned constants; no golden
+//! needed.
 //!
 //! Grouped by the second-pass review item number.
 

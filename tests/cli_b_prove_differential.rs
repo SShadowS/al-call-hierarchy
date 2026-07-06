@@ -1,10 +1,10 @@
 //! cli-b/b2 — the PROVE CLI differential.
 //!
 //! For each (fixture, routine, question) in the hardcoded `PROVE_CORPUS` const (which
-//! mirrors the al-sem `scripts/cli-b-goldens/prove/manifest.json` entries), runs
-//! `run_prove_pipeline` with `deterministic:true` and version `cli-b-v1`, and
-//! byte-compares the `.json` and `.human.txt` goldens from
-//! `U:\Git\al-sem\scripts\cli-b-goldens\prove\`.
+//! originally mirrored al-sem's `scripts/cli-b-goldens/prove/manifest.json` entries;
+//! that oracle is now retired), runs `run_prove_pipeline` with `deterministic:true`
+//! and version `cli-b-v1`, and byte-compares the `.json` and `.human.txt` goldens
+//! vendored (Rust-owned) at `tests/cli-b-goldens/prove/`.
 //!
 //! Additionally, verifies the dummy-doc case (ws-d8-commit-in-tx, NonExistentRoutineXYZ)
 //! exits with code 2.

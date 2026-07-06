@@ -5,8 +5,10 @@
 //! OFFLINE: the goldens are committed; the corpus fixtures live under
 //! `tests/r0-corpus/<fixture>`. No subprocess — `run_analyze` is called in-process.
 //!
-//! The differential always pins `driver.version` to "gate-sarif-v1" via
-//! `--sarif-version-override`, matching the al-sem capture (AL_SEM_VERSION_OVERRIDE).
+//! The differential always pins `driver.version` to "gate-sarif-v1" via the
+//! `--sarif-version-override` CLI flag (the current, Rust-side mechanism; the
+//! goldens were originally captured from al-sem using its own env-var-based
+//! version pin, now retired).
 //!
 //! Two goldens per fixture:
 //!   - `.txn.sarif.json`     — `--preset transaction-integrity` (except the d51
