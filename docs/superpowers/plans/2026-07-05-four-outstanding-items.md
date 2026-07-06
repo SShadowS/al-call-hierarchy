@@ -251,7 +251,7 @@ Delete `KNOWN_DIVERGENCES.json` (currently `[]` — empty). In each of the 13 ha
 
 The al-sem/Bun refresh functions (`AL_SEM_DIR`-driven) are deleted wholesale; `tests/r2_5b_refresh.rs` deleted entirely. Also update `tests/r0-goldens/README.md` (drop the `AL_SEM_DIR` refresh instructions). After this task: `grep -rn "AL_SEM_DIR" tests/ src/` is empty and `grep -rn "bun " tests/` shows no live `bun run` invocation (retired-note comments referencing the archived TS tool are acceptable only if they carry no runnable instruction — prefer removing them).
 
-### Task 3.6 — Docs + capstone
+### Task 3.6 — ✅ DONE 2026-07-05 (5 commits — full suite 2283/0 green, clippy clean, CDO 179/0/3 + SHA byte-identical; found + fixed a real silent-skip bug beyond scope) — Docs + capstone
 
 - Move `docs/engine-migration.md` + `docs/engine-gaps.md` to `docs/history/` with an ARCHIVED header.
 - CLAUDE.md: rewrite the "Testing Philosophy & Goldens" al-sem bullets (the "LEGACY tests still pointing at the al-sem repo" sentence becomes false — delete it) AND fix the stale grammar-migrations line "the goldens are the al-sem TS reference output … source of truth" (CLAUDE.md:128–130), which contradicts the Rust-owned doctrine.
