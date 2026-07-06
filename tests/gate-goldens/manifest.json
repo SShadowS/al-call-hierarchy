@@ -1,7 +1,7 @@
 {
   "description": "Stage-1a gate-SARIF goldens — output of the al-sem TS gate's SARIF path (analyzeWorkspace + projectFinding/filterFindings/scope-filter + formatSarif). Stage 1: no baseline, no inline suppression. Two goldens per fixture: .txn.sarif.json (--preset transaction-integrity) and .default.sarif.json (default detector set). The Rust engine's `analyze --format sarif` must byte-match these.",
   "capturePoint": "analyzeWorkspace({deterministic:true, detectors}) → projectFinding/filterFindings/{} → scope=primary filter → formatSarif(filteredResult)",
-  "alsemVersionPin": "Originally captured from al-sem via its AL_SEM_VERSION_OVERRIDE=gate-sarif-v1 env var (now retired); the Rust engine pins the same value today via the --sarif-version-override CLI flag. The driver.version field in all goldens is 'gate-sarif-v1'. This makes the SARIF byte-stable across version bumps.",
+  "driverVersionPin": "The driver.version field in all goldens is 'gate-sarif-v1', pinned today via the Rust engine's --sarif-version-override CLI flag (originally captured with the same pinned value from the now-retired al-sem TS gate). This makes the SARIF byte-stable across version bumps.",
   "note": "Stage 1 (no baseline/suppression). Stage 3 will add baseline + al-sem-ignore goldens. Corpus: R4 ws-d8/d34/d35/d46/d47/d48/d49/d51 + d1-multi-caller (codeFlows) + d14 (non-txn). All fixtures run with scope=primary (dependency-anchored findings dropped).",
   "alSemGitSha": "1b6e0c284ebc258fba2e092837e035ed0f958cb0",
   "alsemVersionOverride": "gate-sarif-v1",
