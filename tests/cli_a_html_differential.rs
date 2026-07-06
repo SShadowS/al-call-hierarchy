@@ -350,10 +350,11 @@ fn zero_findings_fixture_renders_correctly() {
 #[test]
 fn event_graph_fixture_renders_svg() {
     let fixture_dir = corpus_dir().join("ws-d8-commit-in-tx");
-    if !fixture_dir.is_dir() {
-        eprintln!("{TEST_NAME}: ws-d8-commit-in-tx fixture missing, SKIPPING event-graph oracle");
-        return;
-    }
+    assert!(
+        fixture_dir.is_dir(),
+        "{TEST_NAME}: ws-d8-commit-in-tx fixture missing at {}",
+        fixture_dir.display()
+    );
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();

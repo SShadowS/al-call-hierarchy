@@ -405,10 +405,11 @@ fn zero_findings_fixture_has_empty_maps() {
 #[test]
 fn envelope_fields_are_correct() {
     let fixture_dir = corpus_dir().join("ws-txn-d46-neg");
-    if !fixture_dir.is_dir() {
-        eprintln!("{TEST_NAME}: ws-txn-d46-neg fixture missing, SKIPPING envelope oracle");
-        return;
-    }
+    assert!(
+        fixture_dir.is_dir(),
+        "{TEST_NAME}: ws-txn-d46-neg fixture missing at {}",
+        fixture_dir.display()
+    );
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();

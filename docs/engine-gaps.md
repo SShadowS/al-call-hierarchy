@@ -1,7 +1,5 @@
 # Engine detector-quality gaps (backlog)
 
-> **ARCHIVED (2026-07-05):** historical migration narrative, not current guidance.
-
 False-positive / quality classes surfaced by triaging the **post-temp-state-epoch** binary
 against a real shipping app (Continia DocumentOutput / Cloud, ~2260 findings; 441 crit+high
 in primary scope reviewed against source → 93 false positives, ~21%). The temp-state epoch
