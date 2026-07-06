@@ -1,0 +1,14 @@
+Analysed 5 routines (5 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+HIGH (2):
+  [d35-commit-in-event-subscriber] Commit reachable from event subscriber — OnAfterPostDirect is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails.
+    ws:src/Codeunit.al:7:9 in D35 Demo :: OnAfterPostDirect
+    confidence: likely
+    fix (medium): Remove the Commit from the subscriber path. If durable side effects are required, schedule them outside the publisher's transaction (e.g. a job-queue entry written without Commit, processed later).
+  [d35-commit-in-event-subscriber] Commit reachable from event subscriber (via callee) — OnAfterValidateTransitive is an event subscriber that transitively reaches Commit through its callees — the publisher cannot roll back the committed state if its work later fails.
+    ws:src/Codeunit.al:12:5 in D35 Demo :: OnAfterValidateTransitive
+    confidence: possible
+    fix (medium): Remove the Commit from the subscriber path. If durable side effects are required, schedule them outside the publisher's transaction (e.g. a job-queue entry written without Commit, processed later).
+
+Diagnostics (1):
+  [warning/detect] d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited

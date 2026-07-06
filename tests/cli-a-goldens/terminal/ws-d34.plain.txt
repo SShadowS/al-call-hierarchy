@@ -1,0 +1,29 @@
+Analysed 6 routines (6 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+CRITICAL (1):
+  [d34-commit-in-loop] Commit inside a nested loop — NestedCommit calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely.
+    ws:src/Codeunit.al:22:17 in D34 Demo :: NestedCommit
+    confidence: likely
+    fix (medium): Move the Commit outside the loop. If progress-saving is genuinely required, document a chunking strategy and consider a job queue.
+
+HIGH (1):
+  [d34-commit-in-loop] Commit inside a loop — DirectCommitInLoop calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely.
+    ws:src/Codeunit.al:10:13 in D34 Demo :: DirectCommitInLoop
+    confidence: likely
+    fix (medium): Move the Commit outside the loop. If progress-saving is genuinely required, document a chunking strategy and consider a job queue.
+
+MEDIUM (1):
+  [d34-commit-in-loop] Loop reaches a Commit through a callee — TransitiveCommit's for loop calls Persist, which commits — per-iteration commits break atomicity even when the Commit isn't visible at the loop site.
+    ws:src/Codeunit.al:31:13 in D34 Demo :: TransitiveCommit
+    confidence: possible
+    fix (medium): Verify the callee really needs to Commit. If the loop is correct as written, hoist the work that requires a Commit (or the Commit itself) outside the loop.
+
+INFO (2):
+  [d19-unused-parameter] Procedure parameter is never used — DoWork declares parameter '_n' (Integer) at position 0 but the body never references it.
+    ws:src/Codeunit.al:44:5 in D34 Demo :: DoWork
+    confidence: likely
+    fix (low): Remove the parameter, or wire it into the procedure body. If callers must keep the existing signature, leave it and silence with an `_` prefix on the name.
+  [d19-unused-parameter] Procedure parameter is never used — Persist declares parameter '_n' (Integer) at position 0 but the body never references it.
+    ws:src/Codeunit.al:46:5 in D34 Demo :: Persist
+    confidence: likely
+    fix (low): Remove the parameter, or wire it into the procedure body. If callers must keep the existing signature, leave it and silence with an `_` prefix on the name.

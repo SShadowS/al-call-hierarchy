@@ -2,8 +2,9 @@
 //!
 //! For each fixture in the corpus, runs the Rust gate pipeline under
 //! `--format html --deterministic` with `ALCH_DRIVER_VERSION_OVERRIDE=cli-a-json-v1`
-//! and byte-compares the output against the committed al-sem goldens at
-//! `U:\Git\al-sem\scripts\cli-a-goldens\html\<fixture>.<slot>.html`.
+//! and byte-compares the output against the vendored (Rust-owned) goldens at
+//! `tests/cli-a-goldens/html/<fixture>.<slot>.html` — originally sourced from
+//! al-sem's `scripts/cli-a-goldens/html/`, now retired.
 //!
 //! Slots:
 //!   - `.default.html` — DEFAULT_DETECTORS (34 detectors).
@@ -111,32 +112,18 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
-fn al_sem_html_dir() -> PathBuf {
-    repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem")
-        .join("scripts")
-        .join("cli-a-goldens")
-        .join("html")
-}
-
-/// In-repo VENDORED override dir for rebaselined cli-a html goldens (temp-state
-/// epoch, Task 16). al-sem is FROZEN — never modified — so only the changed goldens
-/// live here; all unchanged goldens still read from the frozen al-sem archive.
+/// In-repo vendored cli-a html golden corpus — the SOLE source. Originally only
+/// the rebaselined-vs-al-sem fixtures lived here with the rest falling back to a
+/// frozen al-sem archive; that fallback was retired (Task 3.6, al-sem parity
+/// retirement) once the corpus was fully vendored, since the fallback checked a
+/// path that no longer exists on disk and silently skipped every assertion.
 fn local_html_dir() -> PathBuf {
     repo_root().join("tests").join("cli-a-goldens").join("html")
 }
 
-/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
-/// frozen al-sem archive when no local override exists.
+/// Resolve a golden by name against the in-repo vendored corpus.
 fn resolve_golden(name: &str) -> PathBuf {
-    let local = local_html_dir().join(name);
-    if local.exists() {
-        local
-    } else {
-        al_sem_html_dir().join(name)
-    }
+    local_html_dir().join(name)
 }
 
 /// Build detector string for `--detector` flag from a names slice.
@@ -156,12 +143,10 @@ fn all_detector_csv() -> String {
 
 /// REGEN path (temp-state epoch rebaseline, Task 16; iter-2 gap rebaseline).
 /// When `REGEN_TEMP_GOLDENS` is set, reconcile the golden against the ENGINE output
-/// — the goldens are Rust-owned baselines (TS oracle retired). al-sem stays FROZEN:
-/// the write target is ALWAYS the in-repo VENDORED dir (`local_html_dir()/<name>`),
-/// never al-sem. To keep the vendored set MINIMAL (only moved fixtures shadow
-/// al-sem), we write the local override ONLY when the engine output differs from
-/// the resolved baseline; if it already matches (al-sem or an existing local), we
-/// leave it untouched. Returns `true` when in regen mode (caller skips the assert).
+/// — the goldens are Rust-owned baselines (TS oracle retired). The write target is
+/// the in-repo vendored dir (`local_html_dir()/<name>`); we write ONLY when the
+/// engine output differs from the existing baseline, leaving an already-matching
+/// golden untouched. Returns `true` when in regen mode (caller skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
@@ -262,15 +247,6 @@ fn html_diff(fixture: &str, slot: &str, golden: &str, rust: &str) -> String {
 
 #[test]
 fn cli_a_html_byte_match() {
-    let html_dir = al_sem_html_dir();
-    if !html_dir.is_dir() {
-        eprintln!(
-            "{TEST_NAME}: al-sem html directory not found at {}, SKIPPING",
-            html_dir.display()
-        );
-        return;
-    }
-
     let all_csv = all_detector_csv();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let all_slot_set: std::collections::HashSet<&str> = ALL_SLOT_FIXTURES.iter().copied().collect();
@@ -350,11 +326,6 @@ fn cli_a_html_byte_match() {
 /// empty body and the app masthead from app.json.
 #[test]
 fn zero_findings_fixture_renders_correctly() {
-    let html_dir = al_sem_html_dir();
-    if !html_dir.is_dir() {
-        eprintln!("{TEST_NAME}: al-sem html directory not found, SKIPPING zero-findings oracle");
-        return;
-    }
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();

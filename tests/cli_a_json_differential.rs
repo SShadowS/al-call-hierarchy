@@ -2,8 +2,9 @@
 //!
 //! For each fixture in the corpus, runs the Rust gate pipeline under
 //! `--format json --deterministic` with `ALCH_DRIVER_VERSION_OVERRIDE=cli-a-json-v1`
-//! and byte-compares the output against the committed al-sem goldens at
-//! `U:\Git\al-sem\scripts\cli-a-goldens\json\<fixture>.<slot>.json`.
+//! and byte-compares the output against the vendored (Rust-owned) goldens at
+//! `tests/cli-a-goldens/json/<fixture>.<slot>.json` — originally sourced from
+//! al-sem's `scripts/cli-a-goldens/json/`, now retired.
 //!
 //! Two goldens per fixture:
 //!   - `.default.json` — DEFAULT_DETECTORS (34 detectors).
@@ -102,34 +103,18 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
-fn al_sem_json_dir() -> PathBuf {
-    repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem")
-        .join("scripts")
-        .join("cli-a-goldens")
-        .join("json")
-}
-
-/// In-repo VENDORED override dir for rebaselined cli-a json goldens (temp-state
-/// epoch, Task 16). al-sem is FROZEN — never modified — so the goldens that the
-/// temp-state epoch changed live HERE; all unchanged goldens still read from the
-/// frozen al-sem archive.
+/// In-repo vendored cli-a json golden corpus — the SOLE source. Originally only
+/// the rebaselined-vs-al-sem fixtures lived here with the rest falling back to a
+/// frozen al-sem archive; that fallback was retired (Task 3.6, al-sem parity
+/// retirement) once the corpus was fully vendored, since the fallback checked a
+/// path that no longer exists on disk and silently skipped every assertion.
 fn local_json_dir() -> PathBuf {
     repo_root().join("tests").join("cli-a-goldens").join("json")
 }
 
-/// Resolve a golden by name: prefer the in-repo vendored override; fall back to
-/// the frozen al-sem archive when no local override exists. Used so only the 7
-/// rebaselined fixtures read local and the rest keep reading al-sem unchanged.
+/// Resolve a golden by name against the in-repo vendored corpus.
 fn resolve_golden(name: &str) -> PathBuf {
-    let local = local_json_dir().join(name);
-    if local.exists() {
-        local
-    } else {
-        al_sem_json_dir().join(name)
-    }
+    local_json_dir().join(name)
 }
 
 /// Build detector string for `--detector` flag from a names slice.
@@ -139,12 +124,10 @@ fn detector_arg(names: &[&str]) -> String {
 
 /// REGEN path (temp-state epoch rebaseline, Task 16; iter-2 gap rebaseline).
 /// When `REGEN_TEMP_GOLDENS` is set, reconcile the golden against the ENGINE output
-/// — the goldens are Rust-owned baselines (TS oracle retired). al-sem stays FROZEN:
-/// the write target is ALWAYS the in-repo VENDORED dir (`local_json_dir()/<name>`),
-/// never al-sem. To keep the vendored set MINIMAL (only moved fixtures shadow
-/// al-sem), we write the local override ONLY when the engine output differs from
-/// the resolved baseline; if it already matches (al-sem or an existing local), we
-/// leave it untouched. Returns `true` when in regen mode (caller skips the assert).
+/// — the goldens are Rust-owned baselines (TS oracle retired). The write target is
+/// the in-repo vendored dir (`local_json_dir()/<name>`); we write ONLY when the
+/// engine output differs from the existing baseline, leaving an already-matching
+/// golden untouched. Returns `true` when in regen mode (caller skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
@@ -323,15 +306,6 @@ fn diff_values(
 
 #[test]
 fn cli_a_json_byte_match() {
-    let json_dir = al_sem_json_dir();
-    if !json_dir.is_dir() {
-        eprintln!(
-            "{TEST_NAME}: al-sem json directory not found at {}, SKIPPING",
-            json_dir.display()
-        );
-        return;
-    }
-
     let all_csv = all_detector_csv();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
@@ -388,11 +362,6 @@ fn cli_a_json_byte_match() {
 /// payload.findings:[], and bySeverity:{}, byDetector:{}.
 #[test]
 fn zero_findings_fixture_has_empty_maps() {
-    let json_dir = al_sem_json_dir();
-    if !json_dir.is_dir() {
-        eprintln!("{TEST_NAME}: al-sem json directory not found, SKIPPING zero-findings oracle");
-        return;
-    }
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();

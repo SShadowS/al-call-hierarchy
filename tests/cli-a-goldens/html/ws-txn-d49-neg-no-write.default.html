@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>al-sem report — D49 Neg No Write</title>
+<style>
+:root{
+  --bg:oklch(0.99 0.004 255);--surface:oklch(1 0 0);--border:oklch(0.91 0.008 255);
+  --ink:oklch(0.30 0.02 260);--muted:oklch(0.52 0.015 260);--accent:oklch(0.55 0.14 262);
+  --mono:"SFMono-Regular",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:48px 28px 96px}
+.masthead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;
+  border-bottom:1px solid var(--border);padding-bottom:20px;margin-bottom:8px}
+.masthead h1{font-size:1.7rem;font-weight:680;letter-spacing:-0.02em;margin:0}
+.masthead h1 b{color:var(--accent)}
+.masthead .app{font-family:var(--mono);font-size:0.85rem;color:var(--muted)}
+.coverage{color:var(--muted);font-size:0.84rem;margin:14px 0 26px}
+.tally{display:flex;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px}
+.tally span{display:flex;align-items:center;justify-content:center;color:oklch(0.99 0 0);
+  font-size:0.78rem;font-weight:600;min-width:34px;font-variant-numeric:tabular-nums}
+.tally-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:0.78rem;color:var(--muted);margin-bottom:40px}
+.tally-legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:baseline}
+.sev-group{margin:0 0 14px}
+.sev-group>h2{font-size:0.78rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);
+  font-weight:700;margin:34px 0 12px}
+.finding{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:18px 20px;margin:0 0 14px}
+.finding-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sev-dot{width:11px;height:11px;border-radius:50%;background:var(--sev);flex:none;
+  box-shadow:0 0 0 4px color-mix(in oklch,var(--sev) 16%,transparent)}
+.detector{font-family:var(--mono);font-size:0.76rem;color:var(--muted);
+  background:oklch(0.96 0.006 260);padding:2px 7px;border-radius:5px}
+.finding-head h3{font-size:1.02rem;font-weight:620;margin:0;flex:1 1 auto;letter-spacing:-0.01em}
+.conf{font-size:0.72rem;font-weight:600;color:var(--conf);
+  border:1px solid color-mix(in oklch,var(--conf) 40%,transparent);
+  background:color-mix(in oklch,var(--conf) 10%,transparent);padding:2px 9px;border-radius:20px;white-space:nowrap}
+.root-cause{color:var(--ink);margin:11px 0 4px;max-width:74ch}
+.flow{list-style:none;margin:16px 0 4px;padding:0}
+.flow-step{display:flex;gap:14px;position:relative}
+.flow-rail{flex:none;width:14px;display:flex;justify-content:center;position:relative}
+.flow-rail::before{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--border)}
+.flow-step:first-child .flow-rail::before{top:11px}
+.flow-step:last-child .flow-rail::before{bottom:calc(100% - 11px)}
+.flow-dot{width:11px;height:11px;border-radius:50%;background:var(--surface);
+  border:2px solid var(--muted);margin-top:5px;z-index:1}
+.flow-step.is-terminal .flow-dot{background:var(--sev);border-color:var(--sev);
+  box-shadow:0 0 0 4px color-mix(in oklch,var(--sev) 16%,transparent)}
+.flow-body{display:flex;flex-direction:column;padding-bottom:18px;gap:1px}
+.flow-head{font-weight:580;font-size:0.92rem}
+.flow-note{color:var(--muted);font-size:0.86rem}
+.flow-loc{font-family:var(--mono);font-size:0.76rem;color:var(--accent)}
+.flow-extra{color:var(--muted);font-size:0.8rem;margin:2px 0 0 28px}
+.badge{font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;
+  padding:1px 6px;border-radius:5px;vertical-align:middle;margin-left:4px}
+.badge-loop{background:oklch(0.93 0.06 80);color:oklch(0.45 0.12 70)}
+.badge-call{background:oklch(0.95 0.01 260);color:var(--muted)}
+.badge-op{background:color-mix(in oklch,var(--sev) 18%,transparent);color:var(--sev)}
+.tables{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
+.tables .lbl{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-right:2px}
+.chip{font-family:var(--mono);font-size:0.76rem;background:oklch(0.96 0.01 260);
+  border:1px solid var(--border);padding:2px 8px;border-radius:6px}
+.fix{margin-top:12px}
+.fix summary{font-size:0.84rem;font-weight:600;cursor:pointer;color:var(--accent)}
+.fix ul{margin:8px 0 0;padding-left:2px;list-style:none}
+.fix li{margin:6px 0;font-size:0.88rem;color:var(--ink)}
+.safety{font-size:0.66rem;font-weight:700;text-transform:uppercase;padding:1px 6px;border-radius:5px;margin-right:6px}
+.safety-high{background:oklch(0.92 0.07 150);color:oklch(0.42 0.12 155)}
+.safety-medium{background:oklch(0.93 0.06 80);color:oklch(0.45 0.12 70)}
+.safety-low{background:oklch(0.93 0.05 30);color:oklch(0.48 0.14 30)}
+.co{margin-top:11px;font-size:0.78rem;color:var(--muted)}
+.co code{font-family:var(--mono);background:oklch(0.96 0.006 260);padding:1px 5px;border-radius:4px}
+.graph-wrap{margin-top:56px;border-top:1px solid var(--border);padding-top:8px}
+.graph-wrap h2{font-size:1.15rem;font-weight:640;letter-spacing:-0.01em;margin:24px 0 4px}
+.graph-wrap .sub{color:var(--muted);font-size:0.86rem;margin:0 0 18px;max-width:70ch}
+.evgraph{width:100%;height:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px}
+.g-col{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:0.1em;fill:oklch(0.6 0.02 260)}
+.g-label{font-family:var(--sans);font-size:12.5px;font-weight:540;fill:var(--ink)}
+.g-tag{font-family:var(--mono);font-size:11px;font-weight:700}
+.empty{color:var(--muted);font-style:italic;margin:40px 0}
+.wrap footer{margin-top:56px;color:var(--muted);font-size:0.78rem;border-top:1px solid var(--border);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <h1><b>al-sem</b> analysis report</h1>
+    <span class="app">D49 Neg No Write · 1.0.0.0 · PT</span>
+  </div>
+  <div class="coverage">
+    1 routines (1 with bodies, 0 parse-incomplete) ·
+    1/1 source units parsed ·
+    0 opaque app(s)
+  </div>
+  <div class="tally"></div>
+  <div class="tally-legend"><span><i style="background:oklch(0.52 0.20 25)"></i>critical 0</span><span><i style="background:oklch(0.62 0.18 45)"></i>high 0</span><span><i style="background:oklch(0.74 0.14 80)"></i>medium 0</span><span><i style="background:oklch(0.62 0.11 240)"></i>low 0</span><span><i style="background:oklch(0.62 0.02 255)"></i>info 0</span></div>
+  <p class="empty">No findings. (Absence of a finding is not absence of a problem — see coverage.)</p>
+  
+  <footer>Generated by al-sem · static semantic analysis for AL · 0 finding(s)</footer>
+</div>
+</body>
+</html>

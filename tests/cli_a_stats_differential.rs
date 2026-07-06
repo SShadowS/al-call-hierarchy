@@ -2,8 +2,9 @@
 //!
 //! For each fixture in `tests/r0-corpus/<fixture>`, runs the Rust L5 pipeline
 //! over both the `default` (34 detectors) and `all` (41 detectors) slots and
-//! byte-matches the serialized `detectorStats` array against the committed
-//! al-sem goldens at `U:\Git\al-sem\scripts\cli-a-goldens\stats\<fixture>.<slot>.json`.
+//! byte-matches the serialized `detectorStats` array against the vendored
+//! (Rust-owned) goldens at `tests/cli-a-goldens/stats/<fixture>.<slot>.json` —
+//! originally sourced from al-sem's `scripts/cli-a-goldens/stats/`, now retired.
 //!
 //! ## Acceptance gate
 //!
@@ -13,8 +14,8 @@
 //!
 //! ## Refresh (ignored)
 //!
-//! `#[ignore]` re-baseline test writes the Rust output back to the al-sem golden
-//! directory. Only run explicitly when intentionally updating the goldens.
+//! `#[ignore]` re-baseline test writes the Rust output into the in-repo vendored
+//! goldens directory. Only run explicitly when intentionally updating the goldens.
 
 use std::path::PathBuf;
 
@@ -94,20 +95,10 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
-fn al_sem_stats_dir() -> PathBuf {
-    // Path to al-sem's committed stats goldens (sibling repo).
-    repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem")
-        .join("scripts")
-        .join("cli-a-goldens")
-        .join("stats")
-}
-
-/// In-repo VENDORED override dir for rebaselined cli-a stats goldens. al-sem is
-/// FROZEN — never modified — so only the changed goldens live here; all unchanged
-/// goldens still read from the frozen al-sem archive (mirrors json/html/terminal).
+/// In-repo vendored cli-a stats golden corpus — the SOLE source. Originally only
+/// the rebaselined-vs-al-sem fixtures lived here with the rest falling back to a
+/// frozen al-sem archive; that fallback was retired (Task 3.6, al-sem parity
+/// retirement) once the corpus was fully vendored (mirrors json/html/terminal).
 fn local_stats_dir() -> PathBuf {
     repo_root()
         .join("tests")
@@ -115,25 +106,17 @@ fn local_stats_dir() -> PathBuf {
         .join("stats")
 }
 
-/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
-/// frozen al-sem archive when no local override exists.
+/// Resolve a golden by name against the in-repo vendored corpus.
 fn resolve_golden(name: &str) -> PathBuf {
-    let local = local_stats_dir().join(name);
-    if local.exists() {
-        local
-    } else {
-        al_sem_stats_dir().join(name)
-    }
+    local_stats_dir().join(name)
 }
 
 /// REGEN path (iter-2 gap rebaseline). When `REGEN_TEMP_GOLDENS` is set, reconcile
 /// the golden against the ENGINE output — the goldens are Rust-owned baselines (TS
-/// oracle retired). al-sem stays FROZEN: the write target is ALWAYS the in-repo
-/// VENDORED dir (`local_stats_dir()/<name>`), never al-sem. To keep the vendored
-/// set MINIMAL (only moved fixtures shadow al-sem), we write the local override
-/// ONLY when the engine output differs from the resolved baseline; if it already
-/// matches (al-sem or an existing local), we leave it untouched. Returns `true`
-/// when in regen mode (caller skips the assert).
+/// oracle retired). The write target is the in-repo vendored dir
+/// (`local_stats_dir()/<name>`); we write ONLY when the engine output differs from
+/// the existing baseline, leaving an already-matching golden untouched. Returns
+/// `true` when in regen mode (caller skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
@@ -200,19 +183,6 @@ struct Divergence {
 
 #[test]
 fn cli_a_stats_byte_match() {
-    // Skip only when NEITHER the frozen al-sem archive NOR an in-repo vendored
-    // override is present (e.g. CI without sibling checkout). REGEN mode never
-    // skips — it writes the vendored override regardless.
-    let regen = std::env::var("REGEN_TEMP_GOLDENS").is_ok();
-    if !regen && !al_sem_stats_dir().is_dir() && !local_stats_dir().is_dir() {
-        eprintln!(
-            "{TEST_NAME}: neither al-sem ({}) nor local ({}) stats dir found, SKIPPING",
-            al_sem_stats_dir().display(),
-            local_stats_dir().display()
-        );
-        return;
-    }
-
     let all_names: Vec<&str> = {
         let dets = registered_detectors();
         dets.into_iter()
@@ -338,12 +308,12 @@ fn compact(v: &serde_json::Value) -> String {
     serde_json::to_string(v).unwrap_or_else(|_| format!("{v:?}"))
 }
 
-/// Refresh test — writes Rust output back to al-sem goldens. Run with:
-///   cargo test --test cli_a_stats_differential refresh -- --ignored
+/// Refresh test — writes Rust output into the in-repo vendored goldens dir. Run
+/// with: cargo test --test cli_a_stats_differential refresh -- --ignored
 #[test]
 #[ignore]
 fn refresh() {
-    let stats_dir = al_sem_stats_dir();
+    let stats_dir = local_stats_dir();
     std::fs::create_dir_all(&stats_dir).expect("create stats_dir");
 
     let all_names: Vec<&str> = {

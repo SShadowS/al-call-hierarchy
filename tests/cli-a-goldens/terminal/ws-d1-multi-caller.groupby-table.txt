@@ -1,0 +1,4 @@
+Analysed 4 routines (4 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+Grouped by table (top 1):
+  11111111-0000-0000-0000-00000000d01a/table/50101: 1

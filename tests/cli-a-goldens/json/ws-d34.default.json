@@ -1,0 +1,396 @@
+{
+  "alsemVersion": "cli-a-json-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "analyze-report",
+  "payload": {
+    "findings": [
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d340/Codeunit/51000"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d19-unused-parameter",
+        "fingerprint": "ca8240f5a8dbc5c2",
+        "fixHint": {
+          "description": "Remove the parameter, or wire it into the procedure body. If callers must keep the existing signature, leave it and silence with an `_` prefix on the name.",
+          "safety": "low"
+        },
+        "id": "d19/e09e92b394f6df1a/fa250c46e1b1f092b4ad05328c01f834e55f7f1479de12e04c243e4cbac4b0ba/p0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 5,
+          "file": "ws:src/Codeunit.al",
+          "line": 44,
+          "objectId": "11111111-0000-0000-0000-00000000d340/Codeunit/51000",
+          "objectName": "D34 Demo",
+          "routineId": "e09e92b394f6df1a/fa250c46e1b1f092b4ad05328c01f834e55f7f1479de12e04c243e4cbac4b0ba",
+          "routineName": "DoWork"
+        },
+        "rootCause": "DoWork declares parameter '_n' (Integer) at position 0 but the body never references it.",
+        "severity": "info",
+        "title": "Procedure parameter is never used"
+      },
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d340/Codeunit/51000"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d19-unused-parameter",
+        "fingerprint": "ec27544ca4d71533",
+        "fixHint": {
+          "description": "Remove the parameter, or wire it into the procedure body. If callers must keep the existing signature, leave it and silence with an `_` prefix on the name.",
+          "safety": "low"
+        },
+        "id": "d19/e09e92b394f6df1a/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158/p0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 5,
+          "file": "ws:src/Codeunit.al",
+          "line": 46,
+          "objectId": "11111111-0000-0000-0000-00000000d340/Codeunit/51000",
+          "objectName": "D34 Demo",
+          "routineId": "e09e92b394f6df1a/691053475741d64edaba80206bad8ba185061558aec4c24c10047904deb88158",
+          "routineName": "Persist"
+        },
+        "rootCause": "Persist declares parameter '_n' (Integer) at position 0 but the body never references it.",
+        "severity": "info",
+        "title": "Procedure parameter is never used"
+      },
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d340/Codeunit/51000"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d34-commit-in-loop",
+        "fingerprint": "bdec731f19cb4510",
+        "fixHint": {
+          "description": "Move the Commit outside the loop. If progress-saving is genuinely required, document a chunking strategy and consider a job queue.",
+          "safety": "medium"
+        },
+        "id": "d34/e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/loop1/e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750/op0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 17,
+          "file": "ws:src/Codeunit.al",
+          "line": 22,
+          "objectId": "11111111-0000-0000-0000-00000000d340/Codeunit/51000",
+          "objectName": "D34 Demo",
+          "routineId": "e09e92b394f6df1a/ff0824dbeb922a1ff22cfdbb22a7ea3405e3d8a50860e66d0b1f6fe7db78d750",
+          "routineName": "NestedCommit"
+        },
+        "rootCause": "NestedCommit calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely.",
+        "severity": "critical",
+        "title": "Commit inside a nested loop"
+      },
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d340/Codeunit/51000"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "possible"
+        },
+        "detector": "d34-commit-in-loop",
+        "fingerprint": "52b05acb79ffafd4",
+        "fixHint": {
+          "description": "Verify the callee really needs to Commit. If the loop is correct as written, hoist the work that requires a Commit (or the Commit itself) outside the loop.",
+          "safety": "medium"
+        },
+        "id": "d34/e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/loop0/e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf/cs0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 13,
+          "file": "ws:src/Codeunit.al",
+          "line": 31,
+          "objectId": "11111111-0000-0000-0000-00000000d340/Codeunit/51000",
+          "objectName": "D34 Demo",
+          "routineId": "e09e92b394f6df1a/5bf249a23dc88d7f4b70ae320b08debd53d26bf9a6eb6a46584f9deee1d574bf",
+          "routineName": "TransitiveCommit"
+        },
+        "rootCause": "TransitiveCommit's for loop calls Persist, which commits — per-iteration commits break atomicity even when the Commit isn't visible at the loop site.",
+        "severity": "medium",
+        "title": "Loop reaches a Commit through a callee"
+      },
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d340/Codeunit/51000"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d34-commit-in-loop",
+        "fingerprint": "ff28c67e2c5c328d",
+        "fixHint": {
+          "description": "Move the Commit outside the loop. If progress-saving is genuinely required, document a chunking strategy and consider a job queue.",
+          "safety": "medium"
+        },
+        "id": "d34/e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/loop0/e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d/op0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 13,
+          "file": "ws:src/Codeunit.al",
+          "line": 10,
+          "objectId": "11111111-0000-0000-0000-00000000d340/Codeunit/51000",
+          "objectName": "D34 Demo",
+          "routineId": "e09e92b394f6df1a/10608aafc963ede74520763dee2ab35a9ba82a2c8720ab9055245be79b97d11d",
+          "routineName": "DirectCommitInLoop"
+        },
+        "rootCause": "DirectCommitInLoop calls Commit inside a for loop — per-iteration commits break atomicity and prevent the job from being retried safely.",
+        "severity": "high",
+        "title": "Commit inside a loop"
+      }
+    ],
+    "summary": {
+      "byDetector": {
+        "d19-unused-parameter": 2,
+        "d34-commit-in-loop": 3
+      },
+      "bySeverity": {
+        "critical": 1,
+        "high": 1,
+        "info": 2,
+        "medium": 1
+      },
+      "detectorStats": [
+        {
+          "candidatesConsidered": 6,
+          "detector": "d1-db-op-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d2-event-fanout-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d3-missing-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d4-repeated-lookup-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 6
+          }
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d5-set-based-opportunity",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 6
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d7-recursive-event-expansion",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 4,
+          "detector": "d8-commit-in-transaction",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 4
+          }
+        },
+        {
+          "candidatesConsidered": 4,
+          "detector": "d9-transaction-span-summary",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 4
+          }
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d10-self-modifying-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d11-modify-without-get",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d12-dead-integration-event",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d13-cross-app-internal-call",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 3
+          }
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d14-dead-routine",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 6
+          }
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d16-obsolete-routine-call",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 3
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d17-min-version-drift",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d18-constant-filter-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 2,
+          "detector": "d19-unused-parameter",
+          "findingsEmitted": 2,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d20-unreachable-after-exit",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d21-read-without-load",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d22-flowfield-without-calcfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d29-subscriber-modify-on-event-record",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d32-constant-boolean-parameter",
+          "findingsEmitted": 0,
+          "skipped": {
+            "noBooleanParams": 2,
+            "nonLocal": 4
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d33-unfiltered-bulk-write",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 6,
+          "detector": "d34-commit-in-loop",
+          "findingsEmitted": 3,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d35-commit-in-event-subscriber",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d36-late-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d37-validate-without-persist",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d38-subscriber-to-obsolete-event",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d39-record-left-dirty-across-chain",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d41-transitive-filter-loss",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d42-cross-call-wrong-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d43-event-ishandled-skip",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d44-event-multi-subscriber-overlap",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d45-event-transitive-table-exposure",
+          "findingsEmitted": 0,
+          "skipped": {}
+        }
+      ],
+      "opaqueApps": [],
+      "routinesAnalyzed": 6,
+      "sourceUnitsParsed": 1,
+      "totalFindings": 5
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

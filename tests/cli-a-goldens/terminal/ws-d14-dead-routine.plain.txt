@@ -1,0 +1,7 @@
+Analysed 3 routines (3 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+INFO (1):
+  [d14-dead-routine] Routine is unreachable from any entry point — DeadHelper on D14EntryPoints is not called from any page action, trigger, OnRun, web service, or event subscriber in this app — appears to be dead code.
+    ws:src/codeunit.al:10:2 in D14EntryPoints :: DeadHelper
+    confidence: possible
+    fix (low): Remove the routine if truly unused, or wire it up to an entry point if intended to be invoked.
