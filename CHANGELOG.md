@@ -74,10 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Docs + CLAUDE.md doctrine + a legacy-token TRIAGE (Task 3.6, al-sem
-  parity retirement arc capstone).** `docs/engine-migration.md` and
-  `docs/engine-gaps.md` moved to `docs/history/` (git mv) with an `ARCHIVED
-  (2026-07-05)` header — historical migration/backlog narrative, not current
-  guidance. CLAUDE.md's two remaining now-false al-sem claims are corrected:
+  parity retirement arc capstone).** `docs/engine-migration.md` moved to
+  `docs/history/` (git mv) with an `ARCHIVED (2026-07-05)` header —
+  historical migration narrative, not current guidance. (A same-task review
+  fix caught that `docs/engine-gaps.md` was wrongly archived alongside it:
+  24 sites across 6 `src/engine/l5` detector files and 17
+  `tests/gap_g*.rs` files cite it by path as the live rationale for each
+  detector-gap fix — it is moved back to `docs/engine-gaps.md` with the
+  ARCHIVED header removed; `engine-migration.md`, which has zero code
+  citations, correctly stays archived.) CLAUDE.md's two remaining now-false
+  al-sem claims are corrected:
   the grammar-migrations line claiming "the goldens are the al-sem TS
   reference output … source of truth" now states the goldens are Rust-owned
   baselines and the Rust engine is the source of truth; the Testing
@@ -276,6 +282,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of the in-repo vendored dir, is corrected to target
   `local_stats_dir()`. All 4 `cli_a_*` suites now run 16 real tests (0
   skipped) and pass against a fully self-contained, hard-required corpus.
+  (A same-task review fix caught 2 more instances of the identical
+  pattern that survived the first pass: `cli_a_html_differential.rs`'s
+  `event_graph_fixture_renders_svg` and `cli_a_json_differential.rs`'s
+  `envelope_fields_are_correct` each still gated on
+  `if !fixture_dir.is_dir() { eprintln!(...SKIPPING...); return; }`
+  against a git-tracked `tests/r0-corpus` fixture that always exists —
+  converted both to `assert!(fixture_dir.is_dir(), ...)` so a genuinely
+  missing fixture fails loudly; confirmed with `--nocapture` that both
+  oracles now execute their real body. All 4 `cli_a_*.rs` files are
+  re-grepped for any other `is_dir()`-gated skip-return: none remain.)
 - **`alsem policy check`'s `policySource` no longer embeds an absolute machine
   path — it is now workspace-relative (Task 3.1, al-sem parity retirement
   arc).** `resolve_policy_check` (`--policy`/auto-detect) and
