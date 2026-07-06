@@ -1,0 +1,317 @@
+{
+  "alsemVersion": "cli-a-json-v1",
+  "deterministic": true,
+  "diagnostics": [
+    {
+      "code": "DIAG-detect",
+      "message": "d43-event-ishandled-skip: conditionReferences substrate empty; dispatch-site detection limited",
+      "severity": "warning"
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "analyze-report",
+  "payload": {
+    "findings": [
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d350/Codeunit/51100"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "possible"
+        },
+        "detector": "d35-commit-in-event-subscriber",
+        "fingerprint": "37cac7de987e5da2",
+        "fixHint": {
+          "description": "Remove the Commit from the subscriber path. If durable side effects are required, schedule them outside the publisher's transaction (e.g. a job-queue entry written without Commit, processed later).",
+          "safety": "medium"
+        },
+        "id": "d35/2ffd4af23d76aec9/939ecc3af3daa4cb1820b33d65e175d7c8af0fca371ac5e9ec5bf0648dceb282/transitive",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 5,
+          "file": "ws:src/Codeunit.al",
+          "line": 12,
+          "objectId": "11111111-0000-0000-0000-00000000d350/Codeunit/51100",
+          "objectName": "D35 Demo",
+          "routineId": "2ffd4af23d76aec9/939ecc3af3daa4cb1820b33d65e175d7c8af0fca371ac5e9ec5bf0648dceb282",
+          "routineName": "OnAfterValidateTransitive"
+        },
+        "rootCause": "OnAfterValidateTransitive is an event subscriber that transitively reaches Commit through its callees — the publisher cannot roll back the committed state if its work later fails.",
+        "severity": "high",
+        "title": "Commit reachable from event subscriber (via callee)"
+      },
+      {
+        "affectedObjects": [
+          "11111111-0000-0000-0000-00000000d350/Codeunit/51100"
+        ],
+        "affectedTables": [],
+        "confidence": {
+          "level": "likely"
+        },
+        "detector": "d35-commit-in-event-subscriber",
+        "fingerprint": "5d43771b187fda7f",
+        "fixHint": {
+          "description": "Remove the Commit from the subscriber path. If durable side effects are required, schedule them outside the publisher's transaction (e.g. a job-queue entry written without Commit, processed later).",
+          "safety": "medium"
+        },
+        "id": "d35/2ffd4af23d76aec9/54db1217a95bcf580507f08e916cf526fdca91452213bbb8d2649e65c4a3495e/2ffd4af23d76aec9/54db1217a95bcf580507f08e916cf526fdca91452213bbb8d2649e65c4a3495e/op0",
+        "pathCount": 1,
+        "primaryLocation": {
+          "column": 9,
+          "file": "ws:src/Codeunit.al",
+          "line": 7,
+          "objectId": "11111111-0000-0000-0000-00000000d350/Codeunit/51100",
+          "objectName": "D35 Demo",
+          "routineId": "2ffd4af23d76aec9/54db1217a95bcf580507f08e916cf526fdca91452213bbb8d2649e65c4a3495e",
+          "routineName": "OnAfterPostDirect"
+        },
+        "rootCause": "OnAfterPostDirect is an event subscriber that calls Commit directly — the publisher cannot roll back the committed state if its work later fails.",
+        "severity": "high",
+        "title": "Commit reachable from event subscriber"
+      }
+    ],
+    "summary": {
+      "byDetector": {
+        "d35-commit-in-event-subscriber": 2
+      },
+      "bySeverity": {
+        "high": 2
+      },
+      "detectorStats": [
+        {
+          "candidatesConsidered": 5,
+          "detector": "d1-db-op-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d2-event-fanout-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d3-missing-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d4-repeated-lookup-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 5
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d5-set-based-opportunity",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 5
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d7-recursive-event-expansion",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d8-commit-in-transaction",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 3
+          }
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d9-transaction-span-summary",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 3
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d10-self-modifying-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d11-modify-without-get",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d12-dead-integration-event",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 1,
+          "detector": "d13-cross-app-internal-call",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 1
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d14-dead-routine",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 5
+          }
+        },
+        {
+          "candidatesConsidered": 1,
+          "detector": "d16-obsolete-routine-call",
+          "findingsEmitted": 0,
+          "skipped": {
+            "other": 1
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d17-min-version-drift",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d18-constant-filter-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d19-unused-parameter",
+          "findingsEmitted": 0,
+          "skipped": {
+            "eventSubscriber": 3
+          }
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d20-unreachable-after-exit",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d21-read-without-load",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d22-flowfield-without-calcfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d29-subscriber-modify-on-event-record",
+          "findingsEmitted": 0,
+          "skipped": {
+            "nonModifyEvent": 3
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d32-constant-boolean-parameter",
+          "findingsEmitted": 0,
+          "skipped": {
+            "noBooleanParams": 1,
+            "nonLocal": 1
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d33-unfiltered-bulk-write",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 5,
+          "detector": "d34-commit-in-loop",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 3,
+          "detector": "d35-commit-in-event-subscriber",
+          "findingsEmitted": 2,
+          "skipped": {
+            "commitFreeSubscriber": 1
+          }
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d36-late-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d37-validate-without-persist",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d38-subscriber-to-obsolete-event",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d39-record-left-dirty-across-chain",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d41-transitive-filter-loss",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d42-cross-call-wrong-setloadfields",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d43-event-ishandled-skip",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d44-event-multi-subscriber-overlap",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d45-event-transitive-table-exposure",
+          "findingsEmitted": 0,
+          "skipped": {}
+        }
+      ],
+      "opaqueApps": [],
+      "routinesAnalyzed": 5,
+      "sourceUnitsParsed": 1,
+      "totalFindings": 2
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

@@ -1,0 +1,148 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd2c2a2b-0002-0002-0002-000000000002",
+      "name": "Diff New Capability App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.1"
+    }
+  ],
+  "callsiteIndex": [
+    {
+      "calleeDisplay": "Client.Get",
+      "callsiteId": "329ef0f82c87a42c/de9b69db03e9e2548647a483811a73d9c3ee0a78b51352debe15468e6d1c902e/cs0",
+      "controlContext": "top-level",
+      "endColumn": 55,
+      "endLine": 9,
+      "order": {
+        "dominatesSuccessReturn": true,
+        "frameId": 0,
+        "onSuccessPath": true,
+        "orderId": 0
+      },
+      "routine": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "sourceFile": "ws:src/processor.al",
+      "startColumn": 8,
+      "startLine": 9
+    }
+  ],
+  "callsiteResolutions": [
+    {
+      "calleeDisplay": "Client.Get",
+      "callsiteId": "329ef0f82c87a42c/de9b69db03e9e2548647a483811a73d9c3ee0a78b51352debe15468e6d1c902e/cs0",
+      "dispatchKind": "method",
+      "from": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "resolvedEdges": [],
+      "status": "unresolved-receiver-type"
+    }
+  ],
+  "capabilityFacts": [
+    {
+      "confidence": "static",
+      "extra": {
+        "bodyArgSource": {
+          "initializer": {
+            "kind": "unknown"
+          },
+          "kind": "constant-var",
+          "varName": "response"
+        },
+        "kind": "http",
+        "method": "Get"
+      },
+      "op": "send",
+      "provenance": "direct",
+      "resourceArgSource": {
+        "kind": "literal",
+        "value": "https://example.com/api"
+      },
+      "resourceKind": "http",
+      "subject": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "via": "self",
+      "witnessCallsiteId": "329ef0f82c87a42c/de9b69db03e9e2548647a483811a73d9c3ee0a78b51352debe15468e6d1c902e/cs0"
+    }
+  ],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "0a6b80e53ec5257715a1bca8a0fdfdaf8f18b6b9a77f3a7bcdc0baa75d7b56b6",
+      "stableId": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "stableId": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Processor",
+      "Compute"
+    ],
+    "stableIds": [
+      "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200",
+      "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "d88f6831fbaa414e5c6b765f87f8e0632f5805b6f82ca474c39f294c36d9c5cf",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [],
+  "permissionFacts": [],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "329ef0f82c87a42c/de9b69db03e9e2548647a483811a73d9c3ee0a78b51352debe15468e6d1c902e",
+        "range": {
+          "endColumn": 8,
+          "endLine": 11,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/processor.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [],
+  "schemaVersion": 3,
+  "typedEdges": [],
+  "workspaceFingerprint": "ce4704d0f0ec6dfc8a8679e636fdb2468549e452779e20b66721e78bf841d851"
+}

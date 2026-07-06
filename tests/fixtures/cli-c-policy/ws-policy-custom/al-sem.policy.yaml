@@ -1,0 +1,117 @@
+version: 1
+description: "Custom policy exercising all 4 predicate kinds, all 4 operators, both onUnknown modes, and the coverage gate."
+defaults:
+  onUnknown: fail-open
+  requireCoverage: any
+
+rules:
+  # ---------------------------------------------------------------------------
+  # cust-all-rule: explicit "all" kind; both children use "in" operator.
+  #
+  # Predicate kind: all (explicit)
+  # Operators: "in" (enum-list field with single value → still uses in)
+  # Tri-state: true for HandleCustomEvent (event-subscriber + commit fact)
+  # onUnknown: fail-closed (override from defaults)
+  # ---------------------------------------------------------------------------
+  - id: cust-all-rule
+    title: "Event subscribers must not commit (all-kind rule)"
+    severity: high
+    onUnknown: fail-closed
+    when:
+      all:
+        - root.kinds: event-subscriber
+        - capability.op: commit
+    facts: any
+
+  # ---------------------------------------------------------------------------
+  # cust-any-rule: explicit "any" kind; uses "glob-in" operator.
+  #
+  # Predicate kind: any (explicit, single-child variant that OR-absorbs)
+  # Operators: "glob-in" (glob-list field with an array value)
+  # Tri-state: true for ModifyOrder (table "Custom Order" matches "* Order")
+  #            false for HandleCustomEvent (no table fact), ReadExternal (table unknown)
+  # onUnknown: fail-open (from defaults)
+  # Note: any[] mix of fact-scope only — compiler allows it.
+  # ---------------------------------------------------------------------------
+  - id: cust-any-rule
+    title: "Writes to order or setup tables must be reviewed"
+    severity: medium
+    when:
+      any:
+        - capability.resource.table.name: ["* Order", "* Setup"]
+        - capability.op: [insert, delete]
+    facts: any
+
+  # ---------------------------------------------------------------------------
+  # cust-field-rule: single "field" kind with "==" operator (object.appGuid,
+  # string-exact) combined with a "glob" operator (routine.name).
+  # Multi-key map implicitly becomes an "all" — but each sub-predicate is
+  # compiled as a distinct field predicate.
+  #
+  # Predicate kind: field (via implicit all wrapper from multi-key map)
+  # Operators: "==" (string-exact, single value), "in" (enum-list for capability.op)
+  # Tri-state: true for ModifyOrder (appGuid matches, name doesn't match "Modify*"
+  #            ... wait, ModifyOrder DOES match "Modify*"), false for others
+  # Note: object.appGuid is routine-scope; capability.op is fact-scope.
+  # ---------------------------------------------------------------------------
+  - id: cust-field-rule
+    title: "This app must not modify records from certain routines"
+    severity: low
+    when:
+      object.appGuid: "10000010-0000-0000-0000-000000000000"
+      routine.name: "Modify*"
+      capability.op: modify
+    facts: any
+
+  # ---------------------------------------------------------------------------
+  # cust-not-rule: "not" kind over a fact-scope field.
+  #
+  # Predicate kind: not (explicit)
+  # Operators: "in" inside the not child
+  # Tri-state: true for ModifyOrder's read fact (op=read, NOT in [insert,modify,delete])
+  #            false for ModifyOrder's modify fact (op=modify, IS in list → not=false)
+  #            false for HandleCustomEvent's commit fact (op=commit IS in...wait no)
+  # Note: "commit" is NOT in [insert, modify, delete] so not(false) = true for commit facts
+  # onUnknown: fail-open (from defaults)
+  # ---------------------------------------------------------------------------
+  - id: cust-not-rule
+    title: "Table facts with non-write ops (exercises not-kind predicate)"
+    severity: info
+    when:
+      capability.resourceKind: table
+      not:
+        capability.op: [insert, modify, delete]
+    facts: any
+
+  # ---------------------------------------------------------------------------
+  # cust-unknown-table: glob operator on capability.resource.table.name.
+  # ReadExternal has resourceId=undefined → unknown tri-state → onUnknown=fail-closed
+  # fires an unknown-finding.  ModifyOrder's table is "Custom Order" → doesn't
+  # match "* Entry" → false.
+  #
+  # Predicate kind: field (via implicit all wrapper)
+  # Operators: "in" (capability.resourceKind), "glob" (capability.resource.table.name)
+  # Tri-state: unknown for ReadExternal (resource-id-unresolved), false for others
+  # onUnknown: fail-closed → produces unknown-finding for ReadExternal
+  # ---------------------------------------------------------------------------
+  - id: cust-unknown-table
+    title: "Reads of unresolved ledger entries (exercises unknown tri-state)"
+    severity: medium
+    onUnknown: fail-closed
+    when:
+      capability.resourceKind: table
+      capability.resource.table.name: "* Entry"
+    facts: any
+
+  # ---------------------------------------------------------------------------
+  # cust-coverage-gate: requireCoverage=complete + onUnknown=fail-open.
+  # DispatchDynamic has coverage=partial → skippedCoverage but no finding (fail-open).
+  # ---------------------------------------------------------------------------
+  - id: cust-coverage-gate
+    title: "Complete-coverage gate with fail-open (exercises coverage gate)"
+    severity: low
+    requireCoverage: complete
+    onUnknown: fail-open
+    when:
+      capability.op: execute
+    facts: any

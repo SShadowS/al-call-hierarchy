@@ -1,6 +1,7 @@
-//! Root-classification substrate — Rust port of al-sem's §4.3 root-classifier.
+//! Root-classification substrate — originally a Rust port of al-sem's §4.3 root-classifier.
 //!
-//! Ports (byte-parity oracle: `U:\Git\al-sem`):
+//! Ports (originally byte-parity-ported against al-sem's TS source, which lived at
+//! `U:\Git\al-sem`; that oracle is now retired and the port is Rust-owned):
 //!   - `src/model/root-classification.ts` — [`RootKind`], [`ROOT_KIND_VALUES`],
 //!     [`is_externally_reachable_kind`], [`RootClassification`].
 //!   - `src/engine/root-classifier.ts` — [`classify_roots`] (AST-only pass).

@@ -1,0 +1,96 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd2c2a2b-0002-0002-0002-000000000002",
+      "name": "Diff New Capability App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.0"
+    }
+  ],
+  "callsiteIndex": [],
+  "callsiteResolutions": [],
+  "capabilityFacts": [],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "0a6b80e53ec5257715a1bca8a0fdfdaf8f18b6b9a77f3a7bcdc0baa75d7b56b6",
+      "stableId": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "stableId": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Processor",
+      "Compute"
+    ],
+    "stableIds": [
+      "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200",
+      "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "7879fa5e862a4a63d05017af73d5dc59a90702e48700d7cc40d00d769f0c7857",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [],
+  "permissionFacts": [],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "beee1eb269e72248/de9b69db03e9e2548647a483811a73d9c3ee0a78b51352debe15468e6d1c902e",
+        "range": {
+          "endColumn": 8,
+          "endLine": 8,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/processor.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd2c2a2b-0002-0002-0002-000000000002:Codeunit:50200#e57c74f799c7f386398a2313e4ccb697e320d480f5798771b3a58510188862c4": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [],
+  "schemaVersion": 3,
+  "typedEdges": [],
+  "workspaceFingerprint": "4e34bbd70a67583f2d0ee615d881194a82d477358bc0b157bfb3f9e6874b9e3a"
+}

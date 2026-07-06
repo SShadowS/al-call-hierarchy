@@ -1,5 +1,7 @@
 # Engine migration: al-sem → Rust (differential, TS-oracle)
 
+> **ARCHIVED (2026-07-05):** historical migration narrative, not current guidance.
+
 The al-call-hierarchy engine is being re-derived in Rust under `src/engine/` by
 **differential migration against a TypeScript oracle** — the sibling `al-sem`
 analyzer (`U:\Git\al-sem`). al-sem stays the source of truth; the Rust engine is

@@ -20,7 +20,7 @@ This is a backlog for later work, not a committed plan.
 > `UnsuppressedD3` reads a Normal field (`Name`) after the `Get` (gate-suppress
 > SARIF/PR-summary + the `ws-inline-suppress` L2 feature golden rebaselined). All
 > other gap fixes moved no in-repo golden. `cli_c_cache` did not move → no cache
-> version bump. `KNOWN_DIVERGENCES.json` stays `[]`.
+> version bump. The differentials stayed byte-exact (zero tolerated divergence).
 
 ---
 

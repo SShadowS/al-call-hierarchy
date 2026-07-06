@@ -72,7 +72,257 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the lift is fixture-proven but CDO-dormant, exactly as the plan
   predicted.
 
+### Changed
+- **Docs + CLAUDE.md doctrine + a legacy-token TRIAGE (Task 3.6, al-sem
+  parity retirement arc capstone).** `docs/engine-migration.md` moved to
+  `docs/history/` (git mv) with an `ARCHIVED (2026-07-05)` header —
+  historical migration narrative, not current guidance. (A same-task review
+  fix caught that `docs/engine-gaps.md` was wrongly archived alongside it:
+  24 sites across 6 `src/engine/l5` detector files and 17
+  `tests/gap_g*.rs` files cite it by path as the live rationale for each
+  detector-gap fix — it is moved back to `docs/engine-gaps.md` with the
+  ARCHIVED header removed; `engine-migration.md`, which has zero code
+  citations, correctly stays archived.) CLAUDE.md's two remaining now-false
+  al-sem claims are corrected:
+  the grammar-migrations line claiming "the goldens are the al-sem TS
+  reference output … source of truth" now states the goldens are Rust-owned
+  baselines and the Rust engine is the source of truth; the Testing
+  Philosophy line claiming al-sem is merely "frozen, not a live oracle" with
+  "LEGACY" tests still pointing at it now states retirement is COMPLETE
+  (`al-sem-OBOLETE`, zero tests read it, `REGEN_TEMP_GOLDENS=1` regenerates
+  every golden) — the false "some cli-b differentials, r3a1/r4f are LEGACY"
+  sentence is deleted outright. A triage (not a purge — legitimate
+  provenance/changelog/algorithm-oracle references survive) cleaned the
+  remaining soft-pattern hits: `src/bin/alsem.rs`'s `ORDER_REJECTION` message
+  (`digest --order`, confirmed a live, reachable, intentionally-hidden clap
+  flag — NOT dead like the removed `--dump-model`) drops its "use the TS
+  CLI" pointer, now stating the rejection full stop; 10 doc-comments citing
+  `U:\Git\al-sem` as a byte-parity oracle or golden source
+  (`src/engine/root_classification.rs` + 9 `cli_a_*`/`cli_b_*` differential
+  test file headers) are reworded from present-tense ("byte-compares against
+  … at `U:\Git\al-sem\…`") to past-tense provenance ("originally sourced
+  from al-sem's …, now retired; vendored Rust-owned at `tests/cli-*-goldens/
+  …`"); `tests/gate_sarif_differential.rs` and `tests/gate-goldens/
+  manifest.json`'s `alsemVersionPin` field (neither byte-asserted by any
+  test) are reworded to describe the current `--sarif-version-override` CLI
+  flag instead of the dead `AL_SEM_VERSION_OVERRIDE` env var; the one
+  surviving stale "used to shell `bun run`" retired-note comment
+  (`cli_c_cache_differential.rs`) is trimmed to drop the dangling shell
+  invocation while keeping the causal why (al-sem's symbolReader version is
+  permanently stuck at 17 vs. the engine's 18). KEPT as legitimate: every
+  `Bun`/`localeCompare` reference in `ids.rs`/`gate/cbor.rs`/
+  `l5/ordering_facts.rs`/`l5/snapshot_full.rs` (ICU/DUCET collation + CBOR +
+  gzip-level algorithm provenance, not al-sem parity); every "no Bun
+  required" statement; every `PROVENANCE.md` fixture-origin note; every
+  historical `docs/superpowers/{plans,specs,prompts}/*.md` entry from
+  completed prior arcs (analogous to CHANGELOG — frozen historical record,
+  not live doctrine). The HARD-token audit
+  (`AL_SEM_DIR|AL_SEM_VERSION_OVERRIDE|AL_SEM_RELEASE|AL_SEM_DEV_FINGERPRINT|
+  DEFAULT_ALSEM_VERSION|KNOWN_DIVERGENCES|dump[-_]model`) returns nothing
+  outside `.git/` internals, `CHANGELOG.md`, `PROVENANCE.md` files, and the
+  historical prior-arc plan/spec docs noted above.
+- **6 differential harnesses gained a Rust-native `REGEN_TEMP_GOLDENS`
+  rebaseline path, replacing the al-sem refresh they lost (Task 3.5, al-sem
+  parity retirement arc).** `r2_5a_differential.rs`,
+  `r2_5b_{cg,cov,eg}_differential.rs`, `r3a4_differential.rs`, and
+  `cli_c_events_differential.rs` had no other regen mechanism once their
+  al-sem-shelling refresh fns were deleted (see Removed, below). Each now
+  mirrors the in-repo pattern already used by `differential.rs` /
+  `r2_5b_rt_differential.rs`: at the existing actual-vs-golden comparison
+  site, `REGEN_TEMP_GOLDENS=1` writes the ENGINE's own output to the golden
+  file instead of asserting against it. `cli_c_events_differential.rs`
+  needed the widest change (15 comparison sites across a test-generating
+  macro + 6 standalone test fns) — a new `golden_or_regen(name, actual)`
+  helper centralizes the write-or-read branch so every golden in a
+  multi-golden test still regenerates even after the first write. All 6
+  paths are env-gated (inert under a normal `cargo test`) and were each
+  verified to reproduce their committed golden byte-for-byte (`git diff`
+  empty after a `REGEN_TEMP_GOLDENS=1` run). `cargo test --release
+  --workspace` stays green; CDO's `--program-call-graph-stats` SHA-256 is
+  unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`).
+- **Vendored the 5 live-al-sem-read test files' inputs in-repo (Task 3.3,
+  al-sem parity retirement arc) — tests are now self-contained.**
+  `tests/aldump_smoke.rs`, `tests/al2dump_smoke.rs`,
+  `tests/cli_b_diff_differential.rs`, `tests/cli_c_policy_differential.rs`,
+  and `tests/cli_c_cache_differential.rs` no longer read from any al-sem
+  checkout or `AL_SEM_DIR`, and no longer skip-gate when one is absent —
+  missing inputs are now a hard test failure. 13 fixture trees (`ws-d2`, the
+  10 `ws-policy-*` policy workspaces, `ws-diff-rename`,
+  `ws-diff-removed-field`) were copied byte-for-byte from the frozen
+  `al-sem-OBOLETE` archive into `tests/fixtures/`, each verified against the
+  Task-3.0 witness SHA-256 listings before and after commit (a
+  `tests/fixtures/** -text` `.gitattributes` rule, committed first, protects
+  the bytes from EOL normalization); each vendored area carries a
+  `PROVENANCE.md`. The cli-b diff snapshot-pair inputs and rename overlay
+  (fixed test data, not engine output) were likewise copied verbatim from the
+  witness into `tests/cli-b-goldens/diff/`. Every OUTPUT golden (the L3
+  event-graph and L2 projections for ws-d2, all 24 cli-b diff outputs) was
+  instead *regenerated from this engine* (Rust-owned baseline, via a new
+  `REGEN_TEMP_GOLDENS=1` path in each file) and witness-diffed: all are
+  byte-identical to the witness except `al2dump-smoke-goldens/ws-d2.l2.golden.json`,
+  which differs only in JSON key order (a benign struct-field-reorder
+  artifact — value-equal under order-independent comparison, confirmed by an
+  independent canonicalized diff). The cli-c cache golden corpus's al-sem
+  fallback (`al_sem_cache_goldens_dir()`) is retired outright — its goldens
+  were already permanently stale (frozen at symbolReader version 17 while the
+  engine is at 18) and unreproducible from al-sem, so the existing in-repo
+  vendored override (`tests/cli-c-goldens/cache/`) is now the sole source.
+  `cli_c_policy_differential.rs`'s one remaining al-sem touchpoint — a live
+  byte-parity check of the bundled default policy against al-sem's source —
+  is retired into a self-contained rule-count sanity check (al-sem is frozen
+  forever, so a live drift check against it can never fire again; Task 3.3
+  confirmed, one last time, that the two were still identical). All 3
+  al-sem-shelling `#[ignore]` refresh tests are deleted (dead code once
+  `REGEN_TEMP_GOLDENS` is the regen mechanism). Gate: all 5 files pass with
+  `AL_SEM_DIR` pointed at a nonexistent path and no al-sem checkout anywhere
+  on disk; CDO's `--program-call-graph-stats` SHA-256 is unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`).
+- **Retired the src-side al-sem parity shims (Task 3.2, al-sem parity
+  retirement arc).** `alsem_version()` is renamed `driver_version()` and its
+  default is now this crate's own `CARGO_PKG_VERSION` instead of the pinned
+  al-sem `package.json` version (`0.0.12`) — the engine reports its own
+  identity rather than impersonating the retired TS tool. The override env
+  var is renamed `AL_SEM_VERSION_OVERRIDE` → `ALCH_DRIVER_VERSION_OVERRIDE`
+  (test-harness sentinel values are unchanged, so display goldens are
+  byte-identical). The dependency-cache header's `analyzer` stamp is now a
+  dedicated `CACHE_ANALYZER_VERSION` const, decoupled from the display
+  version (still `"0.0.12"` — cache goldens byte-identical). The cache
+  release/dev-fingerprint env vars are renamed `AL_SEM_RELEASE` →
+  `ALCH_RELEASE` and `AL_SEM_DEV_FINGERPRINT` → `ALCH_DEV_FINGERPRINT`
+  (old names removed outright, not aliased — anyone relying on them for a
+  warm cache gets a one-time re-fingerprint, not a correctness hazard).
+  `policy check`/`digest`/`prove`/`fingerprint`/`events fanout`/`events
+  chains`/`diff` also now report `driver_version()` instead of the retired
+  `DEFAULT_ALSEM_VERSION` constant, which is deleted — every CLI path reports
+  the same, honest identity; no al-sem version const or literal remains in
+  `src/` except `CACHE_ANALYZER_VERSION`.
+
+### Removed
+- **The 14 al-sem/Bun-shelling `#[ignore]`d golden-refresh functions +
+  `tests/r2_5b_refresh.rs` (Task 3.5, al-sem parity retirement arc) — no test
+  anywhere touches `AL_SEM_DIR` or shells `bun run` anymore.** Deleted:
+  `differential.rs`'s `refresh_goldens_from_al_sem` (plus its 4 now-orphaned
+  helpers — `copy_source_fixture`/`copy_al_tree`/`git_sha`/
+  `read_manifest_field`); `r2_5a_differential.rs`'s
+  `refresh_r2_5a_goldens_from_al_sem` AND its sibling
+  `r2_5a_fixtures_match_al_sem_bytes` byte-parity guard (also
+  `AL_SEM_DIR`-gated — caught by grepping for the literal env-var string
+  rather than trusting the "refresh" name, since it wasn't one);
+  `r3a4_differential.rs`'s `refresh_r3a4_goldens_from_al_sem`;
+  `r3a5_differential.rs`'s `refresh_r3a5_goldens_from_al_sem`;
+  `r4_differential.rs`'s `refresh_r4_goldens_from_al_sem`; the
+  `cli_a_html_differential.rs` / `cli_a_json_differential.rs`
+  `refresh_goldens` fns and `cli_a_terminal_differential.rs`'s
+  `refresh_terminal_goldens`; `cli_c_events_differential.rs`'s
+  `refresh_goldens`; and `tests/r2_5b_refresh.rs` in its entirety
+  (`refresh_r2_5b_goldens_from_al_sem`, which refreshed all 4 R2.5b sub-gates
+  — rt/cg/eg/cov — in one shot). The 4 `cli_b_{digest,fingerprint,prove,
+  snapshot}_differential.rs` files had already lost their refresh fns in an
+  earlier task; only stale doc-comment mentions of `AL_SEM_DIR`/`bun run`
+  remained and are swept out here. `cli_a_stats_differential.rs`'s
+  `refresh()` — which regenerates purely from the ENGINE's own output, never
+  `AL_SEM_DIR` or `bun` — was the model for the new regen paths (see
+  Changed, above) and is untouched. `grep -rn "AL_SEM_DIR" tests/ src/` is
+  now empty repo-wide, and the only surviving `bun run` mention anywhere is a
+  pre-existing retired-note comment carrying no runnable instruction.
+- **`KNOWN_DIVERGENCES.json` allowlist-tolerance machinery (Task 3.4, al-sem
+  parity retirement arc).** The repo-root `KNOWN_DIVERGENCES.json` allowlist
+  file is deleted, and the `AllowEntry` struct + `load_allowlist()` loader +
+  the two-part gate (fail on any undocumented divergence, fail on any unused
+  allowlist entry) are removed from all 13 differential harnesses
+  (`differential.rs` — 6 gate sites; `r4_differential.rs`;
+  `r2_5a_differential.rs`; `r2_5b_{cg,cov,eg,rt}_differential.rs`;
+  `r3a{1,2,2_trace,3,4,5}_differential.rs`). Each gate now asserts directly
+  that the computed divergence set is empty — since the allowlist was already
+  `[]` (no divergence tolerated today), this is behavior-preserving, just
+  stricter code: a future divergence now fails immediately instead of passing
+  through a tolerance layer that had become vestigial. `r3a4_differential.rs`
+  and `r3a5_differential.rs` also drop their now-vacuous "allowlist must be
+  empty" exit-gate assertions (the real byte-match comparison against the
+  golden is unchanged). Every harness's actual comparison — structural diff,
+  byte-match, forbidden-field scans, anti-degenerate/coverage matrices, oracle
+  cross-checks — is untouched. `cargo test --release --workspace` stays fully
+  green (159 test-result blocks, 0 failed); CDO's
+  `--program-call-graph-stats` SHA-256 is unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`).
+- **`analyze --dump-model`.** A hidden flag that only ever rejected itself
+  with a CONFIG_ERROR pointing at "the TS CLI" — a tool that no longer
+  exists. Removed outright; an invocation now gets clap's own
+  unknown-argument rejection instead of the bespoke stub.
+
 ### Fixed
+- **`cli_a_{html,json,terminal}_differential.rs` were silently reporting `ok`
+  while running ZERO real assertions, ever since al-sem left disk (Task 3.6,
+  al-sem parity retirement arc capstone).** Each file's main byte-match test
+  and several "anti-degenerate oracle" tests gated on `al_sem_{html,json,
+  terminal}_dir().is_dir()` — a hardcoded sibling-checkout path
+  (`<repo>/../al-sem/scripts/cli-a-goldens/...`) — and silently `return`ed
+  ("SKIPPING") when that path was absent, which it always has been since
+  al-sem was archived: `cargo test` showed these as passing while they
+  executed no comparison at all. `cli_a_stats_differential.rs` was NOT
+  affected (its skip-check already also tested the in-repo vendored dir).
+  Worse, once the bogus gate was removed, the corpus itself proved
+  incomplete: the vendored `tests/cli-a-goldens/{html,json,terminal}/`
+  directories held only the fixtures a prior task had explicitly
+  rebaselined (10/22, 17/40, 10/27 respectively) — the rest had always been
+  served by the (now-gone) al-sem fallback and were never vendored. Fixed by
+  (1) deleting the dead `al_sem_*_dir()` fallback functions and simplifying
+  `resolve_golden()` to read the in-repo vendored dir as the sole source
+  (mirroring the `cli_c_cache_differential.rs` precedent from Task 3.3); (2)
+  removing every skip-gate — a missing local golden is now a hard test
+  failure via the existing "golden file missing" divergence path, and the
+  three oracle tests that didn't even read a golden lost their spurious
+  guard entirely; (3) regenerating the 49 missing goldens (12 html, 20 json,
+  17 terminal) via `REGEN_TEMP_GOLDENS=1` — all NEW files, no existing
+  golden was overwritten — and spot-checking several for structural sanity
+  (e.g. `ws-txn-d46-neg` renders "No findings.", `ws-d34` renders its
+  `d34-commit-in-loop` finding). `cli_a_stats_differential.rs`'s `refresh()`
+  utility, which had been writing into the (nonexistent) al-sem sibling path
+  instead of the in-repo vendored dir, is corrected to target
+  `local_stats_dir()`. All 4 `cli_a_*` suites now run 16 real tests (0
+  skipped) and pass against a fully self-contained, hard-required corpus.
+  (A same-task review fix caught 2 more instances of the identical
+  pattern that survived the first pass: `cli_a_html_differential.rs`'s
+  `event_graph_fixture_renders_svg` and `cli_a_json_differential.rs`'s
+  `envelope_fields_are_correct` each still gated on
+  `if !fixture_dir.is_dir() { eprintln!(...SKIPPING...); return; }`
+  against a git-tracked `tests/r0-corpus` fixture that always exists —
+  converted both to `assert!(fixture_dir.is_dir(), ...)` so a genuinely
+  missing fixture fails loudly; confirmed with `--nocapture` that both
+  oracles now execute their real body. All 4 `cli_a_*.rs` files are
+  re-grepped for any other `is_dir()`-gated skip-return: none remain.)
+- **`alsem policy check`'s `policySource` no longer embeds an absolute machine
+  path — it is now workspace-relative (Task 3.1, al-sem parity retirement
+  arc).** `resolve_policy_check` (`--policy`/auto-detect) and
+  `run_policy_explain` (same two branches, an identical bug the task brief's
+  scouting missed but which shared the same root cause) each built
+  `policySource` as `format!("explicit:{}", abs.display())` /
+  `format!("auto:{}", abs.display())` — an absolute, machine- and
+  checkout-specific path leaking into committed goldens and any consumer of
+  `alsem policy check --format json/human` output, a reproducibility defect.
+  New pure helper `pipeline::workspace_relative(workspace, abs)`: the policy
+  path becomes relative to the analyzed workspace root, forward slashes on
+  every platform (component-wise reconstruction, not a naive
+  backslash-replace), no drive letters, no `.`/`..` segments (a
+  `normalize_lexical` pass collapses `CurDir`/`ParentDir` components first, so
+  a workspace root passed as `.` still strips correctly); a policy file
+  **outside** the workspace root falls back to its bare filename. `absolutize`
+  broadened to `AsRef<Path>` so it composes with the new helper without an
+  extra `&str` round-trip. SARIF (`format_policy_sarif`) does not surface
+  `policySource` at all, so it needed no change. 6 new unit tests
+  (`pipeline.rs`): inside-workspace, nested-subdir, POSIX- and Windows-style
+  outside-workspace fallback, backslash-input normalization, and a `.`-laden
+  workspace root. Rebaselined the two affected goldens
+  (`tests/cli-c-policy-goldens/ws-policy-custom.custom.{human.txt,json}`):
+  `policySource` changes from `auto:U:\Git\al-sem\test\fixtures\
+  ws-policy-custom\al-sem.policy.yaml` to `auto:al-sem.policy.yaml` (the
+  auto-detect candidate is always `workspace.join("al-sem.policy.yaml")`, so
+  its relative form is exactly the bare filename); every other byte in both
+  goldens is unchanged. Full CDO harness and the aldump `--program-call-graph-
+  stats` JSON SHA-256 stay byte-identical to `.superpowers/sdd/cdo-baseline-
+  plan13.md` (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`)
+  — the policy gate is disjoint from the call-graph harness.
 - **`abi_param_canonical` falls back to `type_text` identity — the
   `already_quoted` shape now participates in a pick (Task 2 review fix,
   roadmap-closure plan).** Task 2's ABI-aware canonicalization reached PAST

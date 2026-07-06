@@ -1,0 +1,3 @@
+Analysed 2 routines (2 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+No findings. (Absence of a finding is not absence of a problem — see coverage above.)

@@ -23,7 +23,7 @@
 //! graph with UNRELATED SCCs ⇒ only that routine's SCC + its caller cone recompute,
 //! a strict subset of all SCCs (the unrelated SCCs early-cut).
 //!
-//! KNOWN_DIVERGENCES stays `[]`.
+//! The proof is exact byte-equality throughout — no tolerated divergence.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;

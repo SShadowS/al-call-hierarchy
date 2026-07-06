@@ -3,7 +3,8 @@
 //! For each fixture in `DIGEST_CORPUS`, collect all `.al` source files in
 //! `<fixture>/src/`, run `run_digest_pipeline` with `deterministic:true` and
 //! version `cli-b-v1`, and byte-compare the `.json` and `.human.txt` goldens
-//! from `U:\Git\al-sem\scripts\cli-b-goldens\digest\`.
+//! vendored (Rust-owned) at `tests/cli-b-goldens/digest/` — originally sourced
+//! from al-sem's `scripts/cli-b-goldens/digest/`, now retired.
 //!
 //! Additionally, for `ws-d8-commit-in-tx`, runs with the `.changed.diff` file
 //! (from the same goldens directory) and compares the `.diff.json` golden.
@@ -12,12 +13,12 @@
 //!
 //! All 20 × 2 = 40 regular goldens + the 1 diff golden MUST byte-match. This
 //! is ungated: any divergence is either a Rust bug to fix or a genuine model
-//! difference to BLOCK — never a KNOWN_DIVERGENCES entry.
+//! difference to BLOCK — never something to tolerate.
 //!
-//! ## Refresh (ignored)
+//! ## Refresh
 //!
-//! `#[ignore] refresh_goldens` shells `bun run scripts/dump-digest.ts` under
-//! `AL_SEM_DIR` to regenerate the goldens. Run only when intentionally updating.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_digest_differential`.
 
 use std::path::{Path, PathBuf};
 

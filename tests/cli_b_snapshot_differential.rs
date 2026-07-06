@@ -1,22 +1,23 @@
 //! cli-b/b0 — the full `CapabilitySnapshot` serializer differential.
 //!
 //! For each fixture in `SNAPSHOT_CORPUS`, run the Rust source-only L0→L3 pass over
-//! the al-sem fixture, compose the FULL snapshot (deterministic, version
+//! the fixture, compose the FULL snapshot (deterministic, version
 //! `cli-b-v1`), serialize it four ways (raw JSON / envelope JSON / CBOR / cbor.gz),
-//! and byte/hex-compare each to the committed al-sem golden under
-//! `U:\Git\al-sem\scripts\cli-b-goldens\snapshot\`. Plus the sharded JSON output
+//! and byte/hex-compare each to the vendored (Rust-owned) golden under
+//! `tests/cli-b-goldens/snapshot/` — originally sourced from al-sem's
+//! `scripts/cli-b-goldens/snapshot/`, now retired. Plus the sharded JSON output
 //! for the findings-rich fixture `ws-d8-commit-in-tx`.
 //!
 //! ## Acceptance gate
 //!
 //! All 20 × 4 = 80 goldens + the shard files MUST byte-match. This is ungated: a
 //! divergence is either a Rust bug to fix or a genuine model difference to BLOCK —
-//! never a KNOWN_DIVERGENCES entry.
+//! never something to tolerate.
 //!
-//! ## Refresh (ignored)
+//! ## Refresh
 //!
-//! `#[ignore] refresh_goldens` shells `bun run scripts/dump-snapshot.ts` under
-//! `AL_SEM_DIR` to regenerate the goldens. Run only when intentionally updating.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_snapshot_differential`.
 //!
 //! ## Tracked want — localeCompare coverage
 //!
@@ -194,7 +195,7 @@ fn compose_for(
         .unwrap_or_else(|| panic!("{fixture}: workspace did not resolve"));
     let opts = FullSnapshotOptions {
         workspace_dir: &fixture_dir,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         deterministic: true,
         roots_config_ignored: false,
     };

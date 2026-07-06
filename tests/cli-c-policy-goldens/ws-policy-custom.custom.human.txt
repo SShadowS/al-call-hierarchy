@@ -1,4 +1,4 @@
-Policy check — auto:U:\Git\al-sem\test\fixtures\ws-policy-custom\al-sem.policy.yaml
+Policy check — auto:al-sem.policy.yaml
 
 Rule summaries:
 	cust-all-rule: evaluated=7 matched=1 passed=0 skipped(coverage)=0 skipped(unknown)=0 findings=1

@@ -28,10 +28,10 @@
 //! equal-distance ties (≥2 distinct first-hop edges reaching a key at the same minimum
 //! distance). Both must be > 0 (the cone genuinely propagated multi-hop + a real tie fired).
 //!
-//! ## KNOWN_DIVERGENCES gating
+//! ## Divergence comparison
 //!
-//! Reuses the repo-root `KNOWN_DIVERGENCES.json` with exact `(test, fixture, path)`
-//! matching, scoped to `test == R3A3_TEST_NAME`. Target: empty.
+//! The harness performs a direct strict comparison: any divergence between the
+//! golden and the Rust projection fails the test outright. There is no allowlist.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -40,7 +40,6 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::capability_cone::{
     R3a3Projection, compute_r3a3_real_matrix, project_r3a3,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
 const R3A3_TEST_NAME: &str = "differential_r3a3_cone_coverage_match_goldens";
@@ -141,32 +140,6 @@ fn goldens_dir() -> PathBuf {
 
 fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-fn default_allow_test() -> String {
-    "differential_identity_subset_matches_goldens".to_string()
-}
-
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
 }
 
 #[derive(Debug, Clone)]
@@ -417,11 +390,6 @@ fn differential_r3a3_cone_coverage_match_goldens() {
         goldens_dir().display()
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == R3A3_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_dist = R3a3DistMatrix::default();
@@ -629,51 +597,17 @@ fn differential_r3a3_cone_coverage_match_goldens() {
          {rust_dist:?}\n  manifest = {manifest:?}",
     );
 
-    // --- Allowlist gating ---------------------------------------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Direct strict divergence gate (no allowlist) -----------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED R3a-3 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={R3A3_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} R3a-3 divergence(s) found ({R3A3_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED R3a-3 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -684,8 +618,7 @@ fn differential_r3a3_cone_coverage_match_goldens() {
     );
 
     eprintln!(
-        "R3a-3 differential: {} fixture(s), 0 divergences, allowlist fully consumed ({} entr(y/ies)).",
+        "R3a-3 differential: {} fixture(s), 0 divergences.",
         goldens.len(),
-        allowlist.len()
     );
 }

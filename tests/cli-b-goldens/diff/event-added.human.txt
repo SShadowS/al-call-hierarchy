@@ -1,0 +1,10 @@
+Diff: 4 finding(s). critical=0 high=0 medium=2 low=0 info=2
+
+Contract:
+  [info] procedure-added: OnAfterPostEntry
+  [info] event-publisher-added: OnAfterPostEntry
+
+Effects:
+  [medium] capability-gained-event-publish: OnAfterPostEntry [cov old=unknown new=complete]
+  [medium] capability-gained-event-publish: PostEntry
+

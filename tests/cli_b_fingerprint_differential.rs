@@ -1,8 +1,9 @@
 //! cli-b/b3 — FINGERPRINT CLI differential.
 //!
 //! For each fixture in `FINGERPRINT_CORPUS` (20 fixtures), runs the Rust fingerprint
-//! pipeline and byte-compares the output against the committed al-sem goldens under
-//! `U:\Git\al-sem\scripts\cli-b-goldens\fingerprint\`.
+//! pipeline and byte-compares the output against the vendored (Rust-owned) goldens
+//! under `tests/cli-b-goldens/fingerprint/` — originally sourced from al-sem's
+//! `scripts/cli-b-goldens/fingerprint/`, now retired.
 //!
 //! ## Goldens checked per fixture
 //!
@@ -23,12 +24,12 @@
 //!
 //! ## Acceptance gate
 //!
-//! All goldens MUST byte-match. Divergences are bugs to fix, not KNOWN_DIVERGENCES entries.
+//! All goldens MUST byte-match. Divergences are bugs to fix, not something to tolerate.
 //!
-//! ## Refresh (ignored)
+//! ## Refresh
 //!
-//! `#[ignore] refresh_goldens` shells `bun run scripts/dump-fingerprint.ts` under
-//! `AL_SEM_DIR` to regenerate the goldens.
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_fingerprint_differential`.
 
 use std::path::PathBuf;
 
@@ -140,7 +141,7 @@ fn compose_full_for(
         .unwrap_or_else(|| panic!("{fixture}: workspace did not resolve"));
     let opts = FullSnapshotOptions {
         workspace_dir: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         deterministic: true,
         roots_config_ignored: false,
     };
@@ -204,7 +205,7 @@ fn query_json_matches_goldens() {
         let ws = fixture_dir(fixture);
         let opts = FingerprintOptions {
             workspace: &ws,
-            alsem_version: VERSION_OVERRIDE,
+            driver_version: VERSION_OVERRIDE,
             format: FingerprintFormat::Json,
             out: None,
             shard: None,
@@ -247,7 +248,7 @@ fn human_compact_matches_goldens() {
         let ws = fixture_dir(fixture);
         let opts = FingerprintOptions {
             workspace: &ws,
-            alsem_version: VERSION_OVERRIDE,
+            driver_version: VERSION_OVERRIDE,
             format: FingerprintFormat::Human,
             out: None,
             shard: None,
@@ -289,7 +290,7 @@ fn witness_all_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -326,7 +327,7 @@ fn witness_zero_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -363,7 +364,7 @@ fn witness_false_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -404,7 +405,7 @@ fn selector_error_json_matches_golden_and_exits_2() {
     let ws = fixture_dir(ERROR_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Json,
         out: None,
         shard: None,
@@ -446,7 +447,7 @@ fn human_full_matches_golden() {
     let ws = fixture_dir(WITNESS_FIXTURE);
     let opts = FingerprintOptions {
         workspace: &ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format: FingerprintFormat::Human,
         out: None,
         shard: None,
@@ -536,7 +537,7 @@ fn opts_for<'a>(
 ) -> FingerprintOptions<'a> {
     FingerprintOptions {
         workspace: ws,
-        alsem_version: VERSION_OVERRIDE,
+        driver_version: VERSION_OVERRIDE,
         format,
         out: None,
         shard,

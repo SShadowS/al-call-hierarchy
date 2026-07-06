@@ -20,10 +20,11 @@
 //! Each new R4-A detector (d5/d10/d11/d18/d21/d36, plus d19/d20/d29) MUST yield 0
 //! findings over a neutral fixture that lacks its pattern. R4-B adds d22/d33.
 //!
-//! ## KNOWN_DIVERGENCES gating
+//! ## Divergence comparison
 //!
-//! Reuses the repo-root `KNOWN_DIVERGENCES.json` with exact `(test, fixture, path)`
-//! matching, scoped to `test == R4_TEST_NAME`. Target: empty for the ported subset.
+//! The harness performs a direct strict comparison against the committed goldens:
+//! any structural divergence found by `diff_value` fails the test, unconditionally,
+//! for the ported subset — there is no tolerated-exception mechanism.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -33,10 +34,7 @@ use al_call_hierarchy::engine::l5::detectors::registered_detectors;
 use al_call_hierarchy::engine::l5::finding::{
     R4FindingsProjection, project_r4_findings, project_r4_findings_cross_app,
 };
-use serde::Deserialize;
 use serde_json::Value;
-
-const R4_TEST_NAME: &str = "differential_r4_findings_match_goldens";
 
 /// A smoke entry — the wave representative fixtures (one per substrate wave).
 /// These are kept from R4-0 for continuity; the per-detector fixtures below are the
@@ -959,32 +957,6 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-fn default_allow_test() -> String {
-    "differential_identity_subset_matches_goldens".to_string()
-}
-
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
-}
-
 #[derive(Debug, Clone)]
 struct Divergence {
     fixture: String,
@@ -1119,19 +1091,17 @@ fn run_rust_cross_app(
 ///   - d13 carries no dep id in its rootCauseKey → fingerprint is stable.
 ///   - d16's rootCauseKey embeds the dep callee's INTERNAL id, BUT the Rust engine
 ///     stabilizes it via `FingerprintIndex::build` (the all-routines internal-id →
-///     stable-id substitution) — so the fingerprint DOES byte-match. `KNOWN_DIVERGENCES`
-///     is [] for these fixtures.
+///     stable-id substitution) — so the fingerprint DOES byte-match.
 ///   - d17 carries no dep id in its rootCauseKey → fingerprint is stable.
 ///
-/// Divergences are still routed through the KNOWN_DIVERGENCES allowlist (for future
-/// proofing) — any undocumented divergence fails the run.
+/// Divergences are routed into `all_divergences` for the harness's direct strict
+/// comparison at the end of the test — any divergence fails the run.
 ///
-/// Returns `(byte_matched_modulo_allowlist, finding_count)`. The anti-degenerate ≥1
-/// check still applies; the byte-match flag is true when every divergence is
-/// allowlisted (so the fixture is "accepted" under the documented exception).
+/// Returns `(byte_matched, finding_count)`. The anti-degenerate ≥1 check still
+/// applies; the byte-match flag is true only when the fixture has zero structural
+/// divergences from its golden.
 fn run_cross_app_entry(
     smoke: &Smoke,
-    allowlist: &[AllowEntry],
     all_divergences: &mut Vec<Divergence>,
 ) -> Option<(bool, usize)> {
     let golden_path = goldens_dir().join(format!("{}.r4.golden.json", smoke.fixture));
@@ -1161,19 +1131,14 @@ fn run_cross_app_entry(
         return Some((true, count));
     }
 
-    // Diff into a local bucket; every divergence MUST be allowlisted (test==R4_TEST_NAME)
-    // for the fixture to be accepted. Any UNDOCUMENTED divergence fails the run via the
-    // shared allowlist-gating block.
+    // Diff into a local bucket; any divergence fails the run via the harness's
+    // direct strict comparison at the end of the test.
     let mut local: Vec<Divergence> = Vec::new();
     let rust_json = serde_json::to_value(&rust).expect("rust → value");
     diff_value(smoke.fixture, "", &golden_json, &rust_json, &mut local);
-    let all_allowlisted = local.iter().all(|d| {
-        allowlist
-            .iter()
-            .any(|e| e.fixture == d.fixture && e.path == d.path)
-    });
+    let no_divergences = local.is_empty();
     all_divergences.extend(local);
-    Some((all_allowlisted, count))
+    Some((no_divergences, count))
 }
 
 /// Pretty-serialize + trailing newline — the exact on-disk golden form.
@@ -1281,11 +1246,6 @@ fn run_smoke_entry(
 
 #[test]
 fn differential_r4_findings_match_goldens() {
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == R4_TEST_NAME)
-        .collect();
-
     let registered_names: BTreeSet<String> = registered_detectors()
         .iter()
         .map(|d| d.name.clone())
@@ -1446,8 +1406,7 @@ fn differential_r4_findings_match_goldens() {
 
     // --- R4 CROSS-APP positives (d13/d16/d17 — committed dep .app in .alpackages) -
     for smoke in WAVE_CROSS_APP {
-        if let Some((matched, count)) = run_cross_app_entry(smoke, &allowlist, &mut all_divergences)
-        {
+        if let Some((matched, count)) = run_cross_app_entry(smoke, &mut all_divergences) {
             ported_results.push((smoke.fixture, matched, count));
         }
     }
@@ -1497,52 +1456,20 @@ fn differential_r4_findings_match_goldens() {
         );
     }
 
-    // --- Allowlist gating ---------------------------------------------------
+    // --- Strict divergence check ---------------------------------------------
     all_divergences
         .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
 
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED R4 divergence(s) (not in KNOWN_DIVERGENCES.json, test={R4_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} divergence(s) found:\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED R4 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -1554,8 +1481,7 @@ fn differential_r4_findings_match_goldens() {
 
     eprintln!(
         "R4 differential: {} smoke + {} R4-A + {} R4-B + {} R4-C + {} R4-D + {} D1 wave fixture(s) \
-         (+1 D1 negative); {} ported (all byte-matched); {} negatives passed; {} deferred; \
-         allowlist consumed ({} entr(y/ies)).",
+         (+1 D1 negative); {} ported (all byte-matched); {} negatives passed; {} deferred.",
         SMOKE.len(),
         WAVE_A.len(),
         WAVE_B.len(),
@@ -1565,63 +1491,5 @@ fn differential_r4_findings_match_goldens() {
         ported_results.len(),
         NEGATIVES.len(),
         SMOKE.iter().filter(|s| !s.ported).count(),
-        allowlist.len(),
-    );
-}
-
-/// Refresh the R4 goldens + manifest from a local al-sem checkout. Gated on
-/// `AL_SEM_DIR`; does NOT auto-commit. Mirrors `refresh_r3a5_goldens_from_al_sem`.
-#[test]
-#[ignore]
-fn refresh_r4_goldens_from_al_sem() {
-    let al_sem = match std::env::var("AL_SEM_DIR") {
-        Ok(d) => PathBuf::from(d),
-        Err(_) => {
-            eprintln!("AL_SEM_DIR not set — skipping R4 refresh");
-            return;
-        }
-    };
-    let src = al_sem.join("scripts").join("r4-goldens");
-    let dst = goldens_dir();
-    std::fs::create_dir_all(&dst).expect("mk r4 goldens dir");
-    let mut copied = 0usize;
-    // Smoke + wave-A + wave-B + wave-C + wave-D fixtures
-    let all_fixtures: Vec<&str> = SMOKE
-        .iter()
-        .chain(WAVE_A.iter())
-        .chain(WAVE_B.iter())
-        .chain(WAVE_C.iter())
-        .chain(WAVE_D.iter())
-        .chain(WAVE_E.iter())
-        .chain(WAVE_E2.iter())
-        .chain(WAVE_D1.iter())
-        .chain(std::iter::once(&WAVE_D1_NEGATIVE))
-        .chain(WAVE_D2.iter())
-        .chain(WAVE_D48.iter())
-        .chain(std::iter::once(&WAVE_D48_NEGATIVE))
-        .chain(WAVE_R4_EVENT.iter())
-        .chain(WAVE_G_POSITIVE.iter())
-        .chain(WAVE_G_NEGATIVES.iter())
-        .chain(WAVE_F.iter())
-        .chain(WAVE_F_NEGATIVES.iter())
-        .chain(WAVE_CROSS_APP.iter())
-        .map(|s| s.fixture)
-        .collect();
-    for fixture in all_fixtures {
-        let name = format!("{fixture}.r4.golden.json");
-        let s = src.join(&name);
-        if s.exists() {
-            std::fs::copy(&s, dst.join(&name)).unwrap_or_else(|e| panic!("copy {name}: {e}"));
-            copied += 1;
-        }
-    }
-    let manifest = src.join("manifest.json");
-    if manifest.exists() {
-        std::fs::copy(&manifest, dst.join("manifest.json")).expect("copy manifest");
-    }
-    eprintln!(
-        "R4: refreshed {copied} golden(s) + manifest from {} → {}",
-        src.display(),
-        dst.display()
     );
 }

@@ -1,0 +1,298 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd7e7f7g-0007-0007-0007-000000000007",
+      "name": "Diff Event Added App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.1"
+    }
+  ],
+  "callsiteIndex": [
+    {
+      "calleeDisplay": "OnAfterPostEntry",
+      "callsiteId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/cs0",
+      "controlContext": "top-level",
+      "endColumn": 31,
+      "endLine": 8,
+      "order": {
+        "dominatesSuccessReturn": true,
+        "frameId": 0,
+        "onSuccessPath": true,
+        "orderId": 1
+      },
+      "routine": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "sourceFile": "ws:src/ledger.al",
+      "startColumn": 8,
+      "startLine": 8
+    }
+  ],
+  "callsiteResolutions": [
+    {
+      "calleeDisplay": "OnAfterPostEntry",
+      "callsiteId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/cs0",
+      "dispatchKind": "direct",
+      "from": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "resolvedEdges": [
+        "3ade7c8bef5315fc"
+      ],
+      "status": "resolved"
+    }
+  ],
+  "capabilityFacts": [
+    {
+      "confidence": "static",
+      "extra": {
+        "eventClass": "Integration",
+        "kind": "event"
+      },
+      "op": "publish",
+      "provenance": "direct",
+      "resourceId": "dd7e7f7g-0007-0007-0007-000000000007/Codeunit/50700/event/onafterpostentry",
+      "resourceKind": "event",
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "via": "self"
+    },
+    {
+      "confidence": "static",
+      "extra": {
+        "kind": "table",
+        "opSubtype": "Insert",
+        "recordVariableId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/rv/entry",
+        "tempState": {
+          "kind": "known",
+          "value": false
+        }
+      },
+      "op": "insert",
+      "provenance": "direct",
+      "resourceId": "dd7e7f7g-0007-0007-0007-000000000007/table/50700",
+      "resourceKind": "table",
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "via": "self",
+      "witnessOperationId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/op0"
+    },
+    {
+      "confidence": "static",
+      "extra": {
+        "eventClass": "Integration",
+        "kind": "event"
+      },
+      "op": "publish",
+      "provenance": "inherited",
+      "resourceId": "dd7e7f7g-0007-0007-0007-000000000007/Codeunit/50700/event/onafterpostentry",
+      "resourceKind": "event",
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "via": "call",
+      "witnessCallsiteId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/cs0"
+    }
+  ],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "f9872c5268ac24d1708d6f31f13f005b529b56268163e6e9f6874a15f2d524ef",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700",
+      "visibility": "public"
+    },
+    {
+      "attributes": [
+        {
+          "argsHash": "94a1cb2613334be74217450a907cf3564b30da9ef3704adcae23996da25203ef",
+          "name": "IntegrationEvent"
+        }
+      ],
+      "kind": "routine",
+      "signatureFingerprint": "9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "eb8cfae148637df02869e9e48f7737c8017287fccf34f68fb6555eac35f11440",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "unknownTargets": []
+    },
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [
+    {
+      "eventId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700::OnAfterPostEntry::9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "kind": "publisher",
+      "routine": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "sourceAnchor": {
+        "enclosingRoutineId": "c5ef924ef25c3d0d/ae4428d52817091f51ab606225b51bb389371aae9acdfec252ce5b75ab4c7634",
+        "range": {
+          "endColumn": 8,
+          "endLine": 14,
+          "startColumn": 4,
+          "startLine": 12
+        },
+        "sourceUnitId": "ws:src/ledger.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Ledger Poster",
+      "OnAfterPostEntry",
+      "PostEntry",
+      "Ledger Entry"
+    ],
+    "stableIds": [
+      "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700",
+      "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+      "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "dd7e7f7g-0007-0007-0007-000000000007:Table:50700"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "57aed9717bd25c72e5de4c492eca764762dd4238eb5e486afe3aca6c8141b1f4",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [
+    {
+      "controlContext": "top-level",
+      "displayText": "Entry.Insert",
+      "endColumn": 22,
+      "endLine": 7,
+      "operationId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/op0",
+      "order": {
+        "dominatesSuccessReturn": true,
+        "frameId": 0,
+        "onSuccessPath": true,
+        "orderId": 0
+      },
+      "routine": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "sourceFile": "ws:src/ledger.al",
+      "startColumn": 8,
+      "startLine": 7
+    }
+  ],
+  "permissionFacts": [
+    {
+      "coverage": "complete",
+      "derivedFromCapability": {
+        "op": "insert"
+      },
+      "kind": "required",
+      "rights": [
+        "I"
+      ],
+      "subject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "target": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700",
+      "targetKind": "TableData"
+    }
+  ],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d",
+        "range": {
+          "endColumn": 8,
+          "endLine": 9,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/ledger.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ],
+    "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [
+    {
+      "kind": "table",
+      "shapeFingerprint": "54d490918f557dbbfd0bcc86a5c1abe93a8bf1d4e4a93306d6071beee4105181",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "26839cc5e09f3400e05e701c85022ec2bacd89495b27312a0730169c5fd8604d",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700#1"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "bf4129007800249ad2bc83c18dd579eb41af2b26ed42e11e09089878770e0ada",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700#2"
+    },
+    {
+      "kind": "key",
+      "shapeFingerprint": "0c3a950b2f7a7c2ca7afb9a31d29f061e8fc69490f91c7b942c1097a1b501b9e",
+      "stableId": "dd7e7f7g-0007-0007-0007-000000000007:Table:50700#K0"
+    }
+  ],
+  "schemaVersion": 3,
+  "typedEdges": [
+    {
+      "callsiteId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d/cs0",
+      "edgeId": "3ade7c8bef5315fc",
+      "from": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+      "kind": "direct-call",
+      "sourceAnchor": {
+        "enclosingRoutineId": "c5ef924ef25c3d0d/c5084e18412296b33c3ce4f28b6d4c8cf8c99d13ac7f0aa0ccd050aaff5bd26d",
+        "range": {
+          "endColumn": 31,
+          "endLine": 8,
+          "startColumn": 8,
+          "startLine": 8
+        },
+        "sourceUnitId": "ws:src/ledger.al",
+        "syntaxKind": "call_expression"
+      },
+      "to": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+    }
+  ],
+  "workspaceFingerprint": "f96305c5f4f217bf5f2f90f197c774b0681e6d93a920efeb4e5a3aa23795437a"
+}

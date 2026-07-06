@@ -237,11 +237,9 @@ fn project_one_diagnostic(d: &Diagnostic) -> serde_json::Value {
 
 /// Project `Vec<Diagnostic>` to the contract diagnostics array.
 ///
-/// Mirrors `projectDiagnostics` from `src/contracts/snapshot.ts` EXCEPT for the
-/// `versionDiagnostic()` prepend: when `AL_SEM_VERSION_OVERRIDE` is set (which the
-/// JSON differential always does), al-sem's `alsemVersion()` returns the override
-/// early and `cachedDiagnostic` is never set — so `versionDiagnostic()` returns
-/// `undefined` and VERSION001 is NOT emitted. We replicate that: no VERSION001 injection.
+/// This engine does not implement al-sem's VERSION001 cache-version diagnostic
+/// (the `versionDiagnostic()` prepend some callers may expect) — diagnostics are
+/// projected as-is, with no version-mismatch entry ever injected.
 pub fn project_diagnostics(diags: &[Diagnostic]) -> serde_json::Value {
     let arr: Vec<serde_json::Value> = diags.iter().map(project_one_diagnostic).collect();
     serde_json::Value::Array(arr)
@@ -264,8 +262,8 @@ pub struct JsonFormatInputs<'a> {
     pub coverage: &'a AnalysisCoverage,
     /// `--deterministic` flag (pins `generatedAt`).
     pub deterministic: bool,
-    /// Effective al-sem version (from `alsem_version()`).
-    pub alsem_version: String,
+    /// Effective driver version (from `driver_version()`).
+    pub driver_version: String,
     /// Opt-in `--with-evidence` augmentation. `None` ⇒ default path: NO `evidencePath`,
     /// NO `enclosingMember`/`originatingObject`, `schemaVersion "1.0.0"` (byte-identical
     /// to today). `Some(slice)` ⇒ per-finding evidence aligned BY INDEX with `findings`,
@@ -367,7 +365,7 @@ pub fn build_analyze_json(inputs: &JsonFormatInputs<'_>) -> String {
     let mut envelope = serde_json::Map::new();
     envelope.insert(
         "alsemVersion".to_string(),
-        inputs.alsem_version.clone().into(),
+        inputs.driver_version.clone().into(),
     );
     envelope.insert("deterministic".to_string(), inputs.deterministic.into());
     envelope.insert(

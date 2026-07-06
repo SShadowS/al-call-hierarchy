@@ -1,0 +1,192 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd3p3e3f-0003-0003-0003-000000000003",
+      "name": "Diff Permission Expanded App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.0"
+    }
+  ],
+  "callsiteIndex": [],
+  "callsiteResolutions": [],
+  "capabilityFacts": [
+    {
+      "confidence": "static",
+      "extra": {
+        "kind": "table",
+        "opSubtype": "Modify",
+        "recordVariableId": "ebf5db1ea5d5b849/e18e7f010da9703fe54d0049c392d7fde34a24deef25abf055e14494f8073355/rv/item",
+        "tempState": {
+          "kind": "known",
+          "value": false
+        }
+      },
+      "op": "modify",
+      "provenance": "direct",
+      "resourceId": "dd3p3e3f-0003-0003-0003-000000000003/table/50300",
+      "resourceKind": "table",
+      "subject": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "via": "self",
+      "witnessOperationId": "ebf5db1ea5d5b849/e18e7f010da9703fe54d0049c392d7fde34a24deef25abf055e14494f8073355/op0"
+    }
+  ],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "6105ce4a7a5830edfae215e1c4779e36c19654fa536dd0312cd96afbe271bcbf",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "42847415609e7550e6e0367ac3540afbfe389117a815f9232e385c7b0023cbd4",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:PermissionSet:50100",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "b1be938fa984d2c659a19b12322598d3b083ffe015eb169893c811f3e6e4fe9a",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Item Manager",
+      "UpdateItem",
+      "Item Permissions",
+      "Item"
+    ],
+    "stableIds": [
+      "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300",
+      "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "dd3p3e3f-0003-0003-0003-000000000003:PermissionSet:50100",
+      "dd3p3e3f-0003-0003-0003-000000000003:Table:50300"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "0a7a494e984ba9cd2835f41eff612abef44607219e1a24ebc13542b041a833b1",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [
+    {
+      "controlContext": "top-level",
+      "displayText": "Item.Modify",
+      "endColumn": 21,
+      "endLine": 7,
+      "operationId": "ebf5db1ea5d5b849/e18e7f010da9703fe54d0049c392d7fde34a24deef25abf055e14494f8073355/op0",
+      "order": {
+        "dominatesSuccessReturn": true,
+        "frameId": 0,
+        "onSuccessPath": true,
+        "orderId": 0
+      },
+      "routine": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "sourceFile": "ws:src/manager.al",
+      "startColumn": 8,
+      "startLine": 7
+    }
+  ],
+  "permissionFacts": [
+    {
+      "coverage": "complete",
+      "derivedFromCapability": {
+        "op": "modify"
+      },
+      "kind": "required",
+      "rights": [
+        "M"
+      ],
+      "subject": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "target": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300",
+      "targetKind": "TableData"
+    }
+  ],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "ebf5db1ea5d5b849/e18e7f010da9703fe54d0049c392d7fde34a24deef25abf055e14494f8073355",
+        "range": {
+          "endColumn": 8,
+          "endLine": 8,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/manager.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd3p3e3f-0003-0003-0003-000000000003:Codeunit:50300#bd531b980f4449e2a1c7a969b61e65084243c8b4fbdf080e99f0189c15f13942": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [
+    {
+      "kind": "table",
+      "shapeFingerprint": "d9b130bd821ac4b6c15f0ac2453ec7c8fe7b0889c37d8ad7f37fccac694f17a0",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "d45c6f5aaa93a9d7b25b6943991d9d2292f40e6a6fee95b9ad930448031da73b",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300#1"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "c6d6e6c422e554c234dc411ad41fd5f57ed04e3dc94188c26601f65a9f0214b4",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300#2"
+    },
+    {
+      "kind": "field",
+      "shapeFingerprint": "26839cc5e09f3400e05e701c85022ec2bacd89495b27312a0730169c5fd8604d",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300#3"
+    },
+    {
+      "kind": "key",
+      "shapeFingerprint": "f7356f44aee838a03bfda5d5af703e8dc78b6fb5f2496cd7973ec7205c5260b1",
+      "stableId": "dd3p3e3f-0003-0003-0003-000000000003:Table:50300#K0"
+    }
+  ],
+  "schemaVersion": 3,
+  "typedEdges": [],
+  "workspaceFingerprint": "6b1cf0515c4d6d37cb43765bba14585dadc42160b01bb8a335e68fee22705a16"
+}

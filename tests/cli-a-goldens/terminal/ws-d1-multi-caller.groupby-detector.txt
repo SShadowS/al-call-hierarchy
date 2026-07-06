@@ -1,0 +1,4 @@
+Analysed 4 routines (4 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+Grouped by detector (top 1):
+  d1-db-op-in-loop: 1

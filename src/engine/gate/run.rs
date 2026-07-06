@@ -37,7 +37,7 @@ use crate::engine::gate::model_instance_id::compute_gate_model_instance_id;
 use crate::engine::gate::preflight::evaluate_preflight;
 use crate::engine::gate::presets::resolve_analyze_detectors;
 use crate::engine::gate::projection::{ProjectionIndex, project_finding};
-use crate::engine::gate::version::alsem_version;
+use crate::engine::gate::version::driver_version;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::registry::run_detectors;
 
@@ -387,7 +387,7 @@ pub fn run_analyze_with_exit(
                 detector_stats: &run_detector_stats,
                 coverage: &coverage,
                 deterministic: args.deterministic,
-                alsem_version: alsem_version(),
+                driver_version: driver_version(),
                 evidence: evidence.as_deref(),
             })
         }
@@ -495,7 +495,7 @@ pub(crate) fn empty_output_result(
                 detector_stats: &[],
                 coverage: &empty_coverage,
                 deterministic: args.deterministic,
-                alsem_version: alsem_version(),
+                driver_version: driver_version(),
                 evidence: if args.with_evidence {
                     Some(&empty_evidence)
                 } else {

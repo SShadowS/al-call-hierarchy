@@ -125,9 +125,10 @@ wrapper nodes that broke the v2 assumptions above.
     keeps a defensive `is_named()` filter on `children_by_field("pattern")`.
   - Editor consumers: `queries/highlights.scm` + `queries/tags.scm` capture
     `member_trigger_name`. The engine does NOT use `.scm` queries (IR-only).
-- **Validate a migration with the al-sem differential goldens** (`cargo test`):
-  zero divergences = behaviour-preserving. The goldens are the al-sem **TS
-  reference** output, not Rust's — they are the source of truth.
+- **Validate a migration with the differential goldens** (`cargo test`): zero
+  divergences = behaviour-preserving. The goldens are **Rust-owned baselines**
+  regenerated from this engine — the Rust engine is the source of truth
+  (al-sem is retired; see Testing Philosophy & Goldens below).
 - Dump a real tree with `tree-sitter parse <file.al>` from `tree-sitter-al/`.
 
 ## Adding New AL Constructs
@@ -177,12 +178,10 @@ redesign spec under `docs/superpowers/specs/`.
   Inspect the diff is intended before committing. Manifest "matrix" oracles hold
   Rust-owned numbers; update them to the current Rust value when the engine intentionally
   improves.
-- **`U:\Git\al-sem` is a frozen historical reference, not a live oracle** — never read
-  goldens from it or write into it at test time. Tests still pointing at the al-sem repo
-  (some cli-b differentials, r3a1/r4f) are LEGACY and should be migrated to in-repo
-  Rust-owned goldens or contract assertions when touched.
-- **`KNOWN_DIVERGENCES.json`** is a legacy port-parity artifact; it is not the mechanism
-  for Rust-ahead-of-al-sem behavior (that is just the new correct baseline).
+- **al-sem retirement is COMPLETE.** `U:\Git\al-sem` was archived to
+  `al-sem-OBOLETE`; nothing in this repo reads from it or writes into it at test
+  time, and zero tests point at it any more. Every differential/golden is
+  Rust-owned and regenerable via `REGEN_TEMP_GOLDENS=1 cargo test` (see above).
 
 ## Working Principle
 

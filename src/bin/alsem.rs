@@ -20,7 +20,7 @@ use al_call_hierarchy::engine::gate::exit_code::{exit, parse_fail_on};
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
-use al_call_hierarchy::engine::gate::version::DEFAULT_ALSEM_VERSION;
+use al_call_hierarchy::engine::gate::version::driver_version;
 use al_call_hierarchy::engine::l5::digest_cli::{
     ChangedAutoDetect, auto_detect_changed, run_digest_pipeline,
 };
@@ -32,11 +32,6 @@ use al_call_hierarchy::engine::l5::fingerprint_cli::{
 };
 use al_call_hierarchy::engine::l5::prove::{parse_question, question_ids, run_prove_pipeline};
 use clap::{Parser, Subcommand};
-
-/// The engine's default (unpinned) SARIF `driver.version`. The differential always
-/// pins via `--sarif-version-override gate-sarif-v1`; this is only the fallback for a
-/// real, unpinned invocation.
-const DEFAULT_SARIF_VERSION: &str = DEFAULT_ALSEM_VERSION;
 
 const SEVERITY_VALUES: &[&str] = &["critical", "high", "medium", "low", "info"];
 
@@ -348,11 +343,6 @@ struct AnalyzeCli {
     #[arg(long = "group-by")]
     group_by: Option<String>,
 
-    /// Not supported: the full-model JSON dump is not ported to the Rust engine.
-    /// Use the TS CLI (`al-sem analyze ... --dump-model`) for full-model debug dumps.
-    #[arg(long = "dump-model", default_value_t = false, hide = true)]
-    dump_model: bool,
-
     /// Opt-in: augment each finding in `--format json` with `evidencePath` (the call
     /// chain) and a POSITION-derived `enclosingMember`/`originatingObject` discriminator
     /// on its `primaryLocation`, and bump the envelope `schemaVersion` to `1.1.0`.
@@ -535,6 +525,7 @@ fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
     }
 
     let workspace = std::path::Path::new(&c.workspace);
+    let version = driver_version();
     let opts = PolicyCheckOptions {
         workspace,
         policy_path: c.policy.as_deref(),
@@ -543,7 +534,7 @@ fn run_policy_check_cmd(c: PolicyCheckCli) -> ExitCode {
         out: c.out.as_deref(),
         deterministic: c.deterministic,
         strict: c.strict,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
     };
 
     let outcome = run_policy_check(&opts);
@@ -658,6 +649,7 @@ fn run_diff_cmd(d: DiffCli) -> ExitCode {
         }
     };
 
+    let version = driver_version();
     let opts = DiffCliOptions {
         old_arg: &d.old,
         new_arg: &d.new,
@@ -668,7 +660,7 @@ fn run_diff_cmd(d: DiffCli) -> ExitCode {
         fail_on,
         strict: d.strict,
         deterministic: d.deterministic,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
     };
 
     let outcome = run_diff(&opts);
@@ -705,10 +697,10 @@ const GROUP_BY_VALUES: &[&str] = &["object", "routine", "table", "detector", "fi
 // ── digest command ──────────────────────────────────────────────────────────
 
 /// The exact stderr message emitted when `--order` is used with `digest`.
-const ORDER_REJECTION: &str = "al-sem: digest --order is not supported by the Rust engine; use the TS CLI for ordered digests";
+const ORDER_REJECTION: &str = "al-sem: digest --order is not supported by the Rust engine";
 
 fn run_digest_cmd(d: DigestCli) -> ExitCode {
-    // Reject --order (CONFIG_ERROR, matching --dump-model pattern)
+    // Reject --order (CONFIG_ERROR — a not-ported flag rejected cleanly rather than silently ignored)
     if d.order {
         eprintln!("{ORDER_REJECTION}");
         return ExitCode::from(exit::CONFIG_ERROR);
@@ -791,13 +783,14 @@ fn run_digest_cmd(d: DigestCli) -> ExitCode {
     };
 
     let workspace = std::path::Path::new(&d.workspace);
+    let version = driver_version();
 
     match run_digest_pipeline(
         workspace,
         changed_files,
         changed_routines,
         diff_text,
-        DEFAULT_ALSEM_VERSION,
+        &version,
         d.deterministic,
         d.max_paths,
     ) {
@@ -864,12 +857,13 @@ fn run_prove_cmd(p: ProveCli) -> ExitCode {
     }
 
     let workspace = std::path::Path::new(&p.workspace);
+    let version = driver_version();
 
     match run_prove_pipeline(
         workspace,
         &p.routine,
         &p.question,
-        DEFAULT_ALSEM_VERSION,
+        &version,
         p.deterministic,
     ) {
         Err(msg) => {
@@ -982,10 +976,11 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
 
     let is_query_requested = specified.is_query_requested();
     let workspace = std::path::Path::new(&f.workspace);
+    let version = driver_version();
 
     let opts = FingerprintOptions {
         workspace,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
         format,
         out: f.out.as_deref(),
         shard: shard_mode,
@@ -1071,12 +1066,13 @@ fn run_events_fanout_cmd(f: EventsFanoutCli) -> ExitCode {
     };
 
     let workspace = std::path::Path::new(&f.workspace);
+    let version = driver_version();
     let opts = EventsFanoutOptions {
         workspace,
         format: &f.format,
         scope,
         coverage_policy: &f.coverage_policy,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
         deterministic: f.deterministic,
         strict: f.strict,
     };
@@ -1140,6 +1136,7 @@ fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
     }
 
     let workspace = std::path::Path::new(&c.workspace);
+    let version = driver_version();
     let opts = EventsChainsOptions {
         workspace,
         format: &c.format,
@@ -1147,7 +1144,7 @@ fn run_events_chains_cmd(c: EventsChainsCli) -> ExitCode {
         coverage_policy: &c.coverage_policy,
         max_depth: c.max_depth,
         max_nodes: c.max_nodes,
-        alsem_version: DEFAULT_ALSEM_VERSION,
+        driver_version: &version,
         deterministic: c.deterministic,
         strict: c.strict,
     };
@@ -1189,11 +1186,6 @@ fn run_cache_prune_cmd(c: CachePruneCli) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// The exact stderr message emitted when `--dump-model` is used. The full-model JSON
-/// dump (>500MB) is an intentional, documented out-of-scope divergence — the Rust
-/// engine rejects it rather than porting it.
-const DUMP_MODEL_REJECTION: &str = "al-sem: --dump-model is not supported by the Rust engine; use the TS CLI for full-model debug dumps";
-
 /// Resolve `--format auto` (or omitted) to a concrete `OutputFormat`.
 /// Non-TTY stdout → `Json`; TTY stdout → `Terminal`.
 /// This is the testable contract (corpus differentials always pipe → non-TTY → json).
@@ -1216,24 +1208,7 @@ fn resolve_auto_format(format_str: &str) -> OutputFormat {
     }
 }
 
-/// The `--dump-model` rejection decision: `Some((message, exit_code))` when the flag
-/// is set, `None` otherwise. Pure helper so the (message, exit) contract is unit-testable
-/// without driving the full `run_analyze_cmd` / capturing stderr.
-fn dump_model_rejection(dump_model: bool) -> Option<(&'static str, u8)> {
-    if dump_model {
-        Some((DUMP_MODEL_REJECTION, exit::CONFIG_ERROR))
-    } else {
-        None
-    }
-}
-
 fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
-    // --- --dump-model: intentional not-ported rejection ---
-    if let Some((msg, code)) = dump_model_rejection(a.dump_model) {
-        eprintln!("{msg}");
-        return ExitCode::from(code);
-    }
-
     // --- enum-flag validation (mirrors the al-sem CLI's CONFIG_ERROR exits) ---
     if let Some(sev) = &a.min_severity
         && !SEVERITY_VALUES.contains(&sev.as_str())
@@ -1312,7 +1287,10 @@ fn run_analyze_cmd(a: AnalyzeCli) -> ExitCode {
         with_evidence: a.with_evidence,
     };
 
-    match run_analyze_with_exit(&args, DEFAULT_SARIF_VERSION) {
+    // `default_version` is the engine's default (unpinned) SARIF `driver.version`.
+    // The differential always pins via `--sarif-version-override gate-sarif-v1`;
+    // this is only the fallback for a real, unpinned invocation.
+    match run_analyze_with_exit(&args, &driver_version()) {
         Ok((out, exit_code, stderr_warning)) => {
             // F2: emit the preflight degraded warning to stderr (the "no silent clean"
             // contract). Matches al-sem index.ts:263-264:
@@ -1358,22 +1336,6 @@ mod tests {
         assert_eq!(resolve_auto_format("sarif"), OutputFormat::Sarif);
         assert_eq!(resolve_auto_format("pr-summary"), OutputFormat::PrSummary);
         assert_eq!(resolve_auto_format("html"), OutputFormat::Html);
-    }
-
-    /// `--dump-model` rejection: the exact stderr message AND CONFIG_ERROR (3).
-    #[test]
-    fn dump_model_is_rejected_with_exact_message_and_config_error() {
-        // dump_model = false → no rejection.
-        assert_eq!(dump_model_rejection(false), None);
-        // dump_model = true → exact message + CONFIG_ERROR (3).
-        let (msg, code) = dump_model_rejection(true).expect("dump-model must be rejected");
-        assert_eq!(
-            msg,
-            "al-sem: --dump-model is not supported by the Rust engine; \
-             use the TS CLI for full-model debug dumps"
-        );
-        assert_eq!(code, exit::CONFIG_ERROR);
-        assert_eq!(code, 3);
     }
 
     /// All production formats (Terminal/Html) return `Ok` from the pipeline. We drive a

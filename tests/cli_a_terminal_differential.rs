@@ -2,8 +2,9 @@
 //!
 //! For each fixture in the terminal corpus, runs the Rust gate pipeline under
 //! `--format terminal --deterministic` and byte-compares the output against
-//! the committed al-sem goldens at:
-//!   `U:\Git\al-sem\scripts\cli-a-goldens\terminal\<fixture>.<variant>.txt`
+//! the vendored (Rust-owned) goldens at:
+//!   `tests/cli-a-goldens/terminal/<fixture>.<variant>.txt`
+//! (originally sourced from al-sem's `scripts/cli-a-goldens/terminal/`, now retired)
 //!
 //! Three variant families:
 //!   - `plain`   — every fixture (21 including ws-rollup-multi-detector).
@@ -11,11 +12,12 @@
 //!   - `groupby-<key>` — five goldens for ws-d1-multi-caller.
 //!
 //! ## Acceptance gate
-//! All 27 goldens MUST byte-match. `KNOWN_DIVERGENCES.json` MUST be `[]`.
+//! All 27 goldens MUST byte-match; a divergence is a bug to fix, not something
+//! to tolerate.
 //!
-//! ## Refresh (ignored)
-//! The `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-terminal.ts`
-//! under `AL_SEM_DIR`.
+//! ## Refresh
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_a_terminal_differential`.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -107,19 +109,11 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
-fn al_sem_terminal_dir() -> PathBuf {
-    repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem")
-        .join("scripts")
-        .join("cli-a-goldens")
-        .join("terminal")
-}
-
-/// In-repo VENDORED override dir for rebaselined cli-a terminal goldens (temp-state
-/// epoch, Task 16). al-sem is FROZEN — never modified — so only the changed goldens
-/// live here; all unchanged goldens still read from the frozen al-sem archive.
+/// In-repo vendored cli-a terminal golden corpus — the SOLE source. Originally
+/// only the rebaselined-vs-al-sem fixtures lived here with the rest falling back
+/// to a frozen al-sem archive; that fallback was retired (Task 3.6, al-sem parity
+/// retirement) once the corpus was fully vendored, since the fallback checked a
+/// path that no longer exists on disk and silently skipped every assertion.
 fn local_terminal_dir() -> PathBuf {
     repo_root()
         .join("tests")
@@ -127,15 +121,9 @@ fn local_terminal_dir() -> PathBuf {
         .join("terminal")
 }
 
-/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
-/// frozen al-sem archive when no local override exists.
+/// Resolve a golden by name against the in-repo vendored corpus.
 fn resolve_golden(name: &str) -> PathBuf {
-    let local = local_terminal_dir().join(name);
-    if local.exists() {
-        local
-    } else {
-        al_sem_terminal_dir().join(name)
-    }
+    local_terminal_dir().join(name)
 }
 
 fn detector_arg(names: &[&str]) -> String {
@@ -144,12 +132,10 @@ fn detector_arg(names: &[&str]) -> String {
 
 /// REGEN path (temp-state epoch rebaseline, Task 16; iter-2 gap rebaseline).
 /// When `REGEN_TEMP_GOLDENS` is set, reconcile the golden against the ENGINE output
-/// — the goldens are Rust-owned baselines (TS oracle retired). al-sem stays FROZEN:
-/// the write target is ALWAYS the in-repo VENDORED dir
-/// (`local_terminal_dir()/<name>`), never al-sem. To keep the vendored set MINIMAL
-/// (only moved fixtures shadow al-sem), we write the local override ONLY when the
-/// engine output differs from the resolved baseline; if it already matches (al-sem
-/// or an existing local), we leave it untouched. Returns `true` in regen mode.
+/// — the goldens are Rust-owned baselines (TS oracle retired). The write target is
+/// the in-repo vendored dir (`local_terminal_dir()/<name>`); we write ONLY when the
+/// engine output differs from the existing baseline, leaving an already-matching
+/// golden untouched. Returns `true` in regen mode.
 fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
@@ -232,21 +218,12 @@ fn text_diff(fixture: &str, slot: &str, golden: &str, rust: &str) -> String {
 
 #[test]
 fn cli_a_terminal_byte_match() {
-    let terminal_dir = al_sem_terminal_dir();
-    if !terminal_dir.is_dir() {
-        eprintln!(
-            "{TEST_NAME}: al-sem terminal directory not found at {}, SKIPPING",
-            terminal_dir.display()
-        );
-        return;
-    }
-
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let mut divergences: Vec<String> = Vec::new();
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
 
     // --- plain goldens (21 fixtures) ---
     for &fixture in PLAIN_FIXTURES {
@@ -322,7 +299,7 @@ fn cli_a_terminal_byte_match() {
     }
 
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     if !divergences.is_empty() {
         let mut msg = format!("{TEST_NAME}: {} divergence(s) found:\n", divergences.len());
@@ -340,18 +317,13 @@ fn cli_a_terminal_byte_match() {
 /// ws-txn-d46-neg (canonical 0-findings fixture) must emit the "No findings." line.
 #[test]
 fn zero_findings_fixture_shows_no_findings() {
-    let terminal_dir = al_sem_terminal_dir();
-    if !terminal_dir.is_dir() {
-        eprintln!("{TEST_NAME}: al-sem terminal directory not found, SKIPPING no-findings oracle");
-        return;
-    }
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
     let out = run_terminal("ws-txn-d46-neg", &default_csv, None);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     assert!(
         out.contains("No findings."),
         "zero-findings fixture must contain 'No findings.' but got:\n{out}"
@@ -361,18 +333,13 @@ fn zero_findings_fixture_shows_no_findings() {
 /// ws-rollup-multi-detector must contain "3 detectors agree:" in its plain golden.
 #[test]
 fn rollup_fixture_has_3_detectors_agree() {
-    let terminal_dir = al_sem_terminal_dir();
-    if !terminal_dir.is_dir() {
-        eprintln!("{TEST_NAME}: al-sem terminal directory not found, SKIPPING rollup oracle");
-        return;
-    }
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
     let out = run_terminal("ws-rollup-multi-detector", &default_csv, None);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     assert!(
         out.contains("3 detectors agree:"),
         "rollup fixture must contain '3 detectors agree:' but got:\n{out}"
@@ -382,41 +349,15 @@ fn rollup_fixture_has_3_detectors_agree() {
 /// group-by output for ws-d1-multi-caller must contain "Grouped by detector".
 #[test]
 fn group_by_detector_contains_header() {
-    let terminal_dir = al_sem_terminal_dir();
-    if !terminal_dir.is_dir() {
-        eprintln!("{TEST_NAME}: al-sem terminal directory not found, SKIPPING groupby oracle");
-        return;
-    }
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE) };
     let out = run_terminal(GROUP_BY_FIXTURE, &default_csv, Some("detector"));
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
     assert!(
         out.contains("Grouped by detector"),
         "group-by output must contain 'Grouped by detector' but got:\n{out}"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Refresh (ignored) — regenerate goldens from al-sem TS reference
-// ---------------------------------------------------------------------------
-
-#[test]
-#[ignore]
-fn refresh_terminal_goldens() {
-    let al_sem_dir = repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem");
-    let status = std::process::Command::new("bun")
-        .arg("run")
-        .arg("scripts/dump-analyze-terminal.ts")
-        .current_dir(&al_sem_dir)
-        .env("AL_SEM_VERSION_OVERRIDE", TERMINAL_VERSION_OVERRIDE)
-        .status()
-        .expect("refresh: failed to spawn bun");
-    assert!(status.success(), "refresh: bun script exited with {status}");
 }

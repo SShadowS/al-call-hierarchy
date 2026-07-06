@@ -1,0 +1,1 @@
+note: workspace-mode reanalyzes both sides; for CI, persist snapshots with 'al-sem fingerprint --format cbor.gz' and diff those instead.

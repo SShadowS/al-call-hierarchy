@@ -25,18 +25,15 @@ use std::path::Path;
 use crate::engine::ids::sha256_hex;
 
 // ---------------------------------------------------------------------------
-// CACHE_VERSIONS constants — MUST match al-sem's `src/deps/cache-versions.ts`
-// and `src/providers/discover.ts` EXACTLY. The `kept` fixture pins this tuple.
+// CACHE_VERSIONS constants — the version tuple stamped into every dependency-
+// cache artifact header. This engine owns the cache format now: bump the
+// relevant const whenever a schema or classification-behavior change should
+// invalidate every existing cache entry. The `kept` fixture pins this tuple.
+// (Originated from al-sem's `src/deps/cache-versions.ts` / `src/providers/
+// discover.ts` during the port; that TS source no longer exists to track.)
 //
-// SOURCE OF TRUTH: al-sem `src/deps/cache-versions.ts` (CACHE_VERSIONS) +
-// `src/providers/discover.ts` (ANALYZER_VERSION / GRAMMAR_VERSION). The 5 schema
-// stamps below (grammar / symbolReader / summarySchema / depCache / resourcePolicy)
-// have no Rust engine "home" yet — bump them here in lockstep with al-sem.
-//
-// The `analyzer` stamp is NOT a const here: it is resolved at runtime from
-// `crate::engine::gate::version::alsem_version()` (DEFAULT_ALSEM_VERSION +
-// the `AL_SEM_VERSION_OVERRIDE` hook), so it never drifts from version.rs and
-// honours the override the differential harness uses.
+// The `analyzer` stamp is `CACHE_ANALYZER_VERSION` (below) — a cache-format
+// version we own, independent of the engine's display/identity version.
 // ---------------------------------------------------------------------------
 
 /// Grammar version tag (mirrors `GRAMMAR_VERSION` in al-sem `discover.ts`).
@@ -58,17 +55,22 @@ pub const CACHE_VERSION_DEP_CACHE: &str = "8";
 /// Resource policy version (al-sem `cache-versions.ts` `resourcePolicy`).
 pub const CACHE_VERSION_RESOURCE_POLICY: &str = "1";
 
+/// The cache artifact format version stamped as the `analyzer` field in every
+/// dependency-cache header. This versions OUR on-disk cache format — it is
+/// deliberately decoupled from [`crate::engine::gate::version::driver_version`]
+/// (the engine's display/identity version): bump this const only when a cache-shape
+/// or classification-behavior change should invalidate every existing cache entry.
+pub const CACHE_ANALYZER_VERSION: &str = "0.0.12";
+
 /// The dev fingerprint used when not in a release build.
 ///
-/// al-sem logic: `process.env.AL_SEM_RELEASE === "1"` → `""`;
-/// else `process.env.AL_SEM_DEV_FINGERPRINT ?? "dev"`.
-///
-/// The Rust engine mirrors this: release builds can set `AL_SEM_RELEASE=1`.
+/// `ALCH_RELEASE=1` → `""` (release builds carry no dev fingerprint); otherwise
+/// `ALCH_DEV_FINGERPRINT` if set, else `"dev"`.
 pub fn dev_fingerprint() -> String {
-    if std::env::var("AL_SEM_RELEASE").as_deref() == Ok("1") {
+    if std::env::var("ALCH_RELEASE").as_deref() == Ok("1") {
         return String::new();
     }
-    std::env::var("AL_SEM_DEV_FINGERPRINT").unwrap_or_else(|_| "dev".to_string())
+    std::env::var("ALCH_DEV_FINGERPRINT").unwrap_or_else(|_| "dev".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -181,12 +183,10 @@ pub fn classify_artifact_for_prune(path: &Path) -> PruneStatus {
     // `for (const [k,val] of Object.entries(expected))`): the artifact must
     // carry the matching value for each expected key, but is ALLOWED to have
     // extra/unknown version keys (a struct/map `==` would wrongly reject those).
-    // `analyzer` resolves from version.rs (override-aware), never a const.
     let v = &parsed["header"]["versions"];
     let fp = dev_fingerprint();
-    let analyzer = crate::engine::gate::version::alsem_version();
     let expected: [(&str, &str); 7] = [
-        ("analyzer", analyzer.as_str()),
+        ("analyzer", CACHE_ANALYZER_VERSION),
         ("grammar", CACHE_VERSION_GRAMMAR),
         ("symbolReader", CACHE_VERSION_SYMBOL_READER),
         ("summarySchema", CACHE_VERSION_SUMMARY_SCHEMA),

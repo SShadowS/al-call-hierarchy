@@ -197,7 +197,7 @@ fn rule_summary_to_jv(s: &RuleRunSummary) -> Jv {
 /// `formatPolicy(result, { format: "json", deterministic, alsemVersion })`.
 pub fn format_policy_json(
     result: &PolicyRunResult,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
 ) -> String {
     // al-sem: deterministic → "0"; else `new Date().toISOString()` (ms `.sssZ`).
@@ -207,7 +207,7 @@ pub fn format_policy_json(
         crate::engine::gate::format_json::pinned_or_now_iso8601(false)
     };
     let envelope = Jv::Obj(vec![
-        ("al_sem_version".to_string(), Jv::s(alsem_version)),
+        ("al_sem_version".to_string(), Jv::s(driver_version)),
         ("generated_at".to_string(), Jv::s(&generated_at)),
         ("kind".to_string(), Jv::s("policy.check")),
         ("policySource".to_string(), Jv::s(&result.policy_source)),
@@ -256,7 +256,7 @@ fn sarif_level(severity: &str) -> &'static str {
 }
 
 /// `formatPolicy(result, { format: "sarif", … })`. Reuses the gate SARIF shape.
-pub fn format_policy_sarif(result: &PolicyRunResult, alsem_version: &str) -> String {
+pub fn format_policy_sarif(result: &PolicyRunResult, driver_version: &str) -> String {
     let rules = Jv::Arr(
         result
             .rule_summaries
@@ -338,7 +338,7 @@ pub fn format_policy_sarif(result: &PolicyRunResult, alsem_version: &str) -> Str
                         "driver".to_string(),
                         Jv::Obj(vec![
                             ("name".to_string(), Jv::s("al-sem")),
-                            ("version".to_string(), Jv::s(alsem_version)),
+                            ("version".to_string(), Jv::s(driver_version)),
                             ("rules".to_string(), rules),
                         ]),
                     )]),

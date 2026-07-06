@@ -1,21 +1,19 @@
 //! R0 differential harness — the SAFETY NET for the al-sem → Rust engine
 //! migration.
 //!
-//! For each committed al-sem "golden" identity file under `tests/r0-goldens/`,
-//! this runs the Rust `snapshot_workspace()` on the matching in-repo source
-//! fixture under `tests/r0-corpus/` and asserts the **identity subset matches**
-//! field-for-field. The default `cargo test` runs entirely OFFLINE: no Bun, no
-//! al-sem checkout, no `AL_SEM_DIR`. Everything it needs is committed in-repo.
-//!
-//! A separate, `#[ignore]`d `refresh_goldens_from_al_sem` test (gated on the
-//! `AL_SEM_DIR` env var) regenerates + copies the goldens/fixtures from al-sem.
-//! It never runs in the normal loop.
+//! For each committed golden identity file under `tests/r0-goldens/`, this runs
+//! the Rust `snapshot_workspace()` on the matching in-repo source fixture under
+//! `tests/r0-corpus/` and asserts the **identity subset matches** field-for-field.
+//! The default `cargo test` runs entirely OFFLINE: no Bun, no al-sem checkout.
+//! Everything it needs is committed in-repo. Goldens are Rust-owned baselines
+//! (the al-sem TS oracle is retired); rebaseline with
+//! `REGEN_TEMP_GOLDENS=1 cargo test --test differential`.
 //!
 //! SCOPE: the in-repo corpus is the FULL source-only `ws-*` set al-sem dumps
 //! (157 fixtures as of R0 Task 7, including the `ws-r0-canon-stress` identity
-//! stress fixture). The gating logic, allowlist semantics, and live-refresh path
-//! are all real; the harness iterates every `tests/r0-goldens/*.golden.json` and
-//! requires each to match with `KNOWN_DIVERGENCES.json` == `[]`.
+//! stress fixture). The comparison logic is all real; the harness iterates
+//! every `tests/r0-goldens/*.golden.json` and asserts an exact match — zero
+//! tolerated divergences.
 //!
 //! ## Comparison rules
 //!
@@ -39,13 +37,10 @@
 //!   - present in rust, absent in golden: `objects["<id>"]:EXTRA_IN_RUST`
 //!     / `routines["<id>"]:EXTRA_IN_RUST`
 //!
-//! ## Allowlist gating (`KNOWN_DIVERGENCES.json`, repo root)
+//! ## Strict comparison
 //!
-//! An array of `{ fixture, path, reason, expires }`. The test FAILS if:
-//!   (a) any divergence is NOT covered by an entry (undocumented divergence), OR
-//!   (b) any allowlist entry is UNUSED this run (no matching divergence).
-//! Matching is EXACT on the `(fixture, path)` pair — not prefix/glob (over-broad
-//! = fail). At R0 exit the allowlist is empty and the full corpus matches.
+//! No tolerance layer: the test FAILS on ANY divergence between golden and
+//! Rust output. The full corpus is asserted to match exactly.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -61,34 +56,6 @@ use al_call_hierarchy::engine::l3::l3_workspace::{
 use al_call_hierarchy::engine::snapshot::{
     IdentitySnapshot, ObjectIdentity, RoutineIdentity, snapshot_workspace,
 };
-use serde::Deserialize;
-
-/// One entry in `KNOWN_DIVERGENCES.json`.
-///
-/// `test` scopes the entry to ONE differential pass. It defaults to the R0
-/// identity test (`differential_identity_subset_matches_goldens`) so existing
-/// R0 entries need no `test` field. L2 entries MUST carry
-/// `"test": "differential_l2_features_match_goldens"`. Matching is exact on the
-/// `(test, fixture, path)` triple, so an R0 entry can never cover an L2
-/// divergence (or vice versa).
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)] // documentation fields; not used in matching.
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-/// Default allowlist scope: the R0 identity pass.
-fn default_allow_test() -> String {
-    "differential_identity_subset_matches_goldens".to_string()
-}
 
 /// A single, machine-checkable divergence between a golden and the Rust output.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,8 +67,8 @@ struct Divergence {
     rust_value: String,
 }
 
-/// Repo root = the crate manifest dir (the worktree root). `tests/` and
-/// `KNOWN_DIVERGENCES.json` live directly under it.
+/// Repo root = the crate manifest dir (the worktree root). `tests/` lives
+/// directly under it.
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -139,15 +106,6 @@ fn discover_goldens() -> Vec<(String, PathBuf)> {
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
-}
-
-/// Load + parse `KNOWN_DIVERGENCES.json` into the same struct shape.
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
 }
 
 /// Parse a golden file into the SAME `IdentitySnapshot` structs the engine
@@ -300,7 +258,7 @@ fn push_field(out: &mut Vec<Divergence>, fixture: &str, path: &str, golden: &str
 }
 
 /// The default, offline differential test. Runs the Rust snapshot on every
-/// in-repo golden's matching fixture, diffs, and gates on the allowlist.
+/// in-repo golden's matching fixture, diffs, and asserts an exact match.
 #[test]
 fn differential_identity_subset_matches_goldens() {
     let goldens = discover_goldens();
@@ -309,13 +267,6 @@ fn differential_identity_subset_matches_goldens() {
         "no goldens discovered under {} — corpus missing?",
         goldens_dir().display()
     );
-
-    // Only R0-scoped allowlist entries apply to this pass; L2 entries are
-    // filtered out (and vice versa in the L2 test).
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == "differential_identity_subset_matches_goldens")
-        .collect();
 
     // Collect every divergence across every fixture.
     let mut all_divergences: Vec<Divergence> = Vec::new();
@@ -336,60 +287,18 @@ fn differential_identity_subset_matches_goldens() {
         all_divergences.append(&mut divs);
     }
 
-    // --- Allowlist gating ---------------------------------------------------
-    // (a) every divergence must be covered by an exact (fixture, path) entry;
-    // (b) every allowlist entry must match at least one divergence this run.
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-                // keep scanning so a divergence matched by multiple identical
-                // entries marks them all used (still flagged later as redundant
-                // only if truly unused — exact dupes both count as used).
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
 
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED divergence(s) (not in KNOWN_DIVERGENCES.json):\n",
-            undocumented.len()
+            "\n{} divergence(s) found:\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED allowlist entr(y/ies) (no matching divergence this run — \
-             remove or fix; over-broad/stale entries are not allowed):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -403,9 +312,8 @@ fn differential_identity_subset_matches_goldens() {
     );
 
     eprintln!(
-        "R0 differential: {} fixture(s), 0 divergences, allowlist fully consumed ({} entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R0 differential: {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -453,11 +361,9 @@ fn differential_identity_subset_matches_goldens() {
 // so the locality (raw text / CFN node path / ExpressionInfo / operationId)
 // falls straight out of the pointer.
 //
-// ## Allowlist gating
+// ## Strict comparison
 //
-// Reuses `KNOWN_DIVERGENCES.json` + the exact-`(test,fixture,path)` gating, but
-// only entries scoped to `test == "differential_l2_features_match_goldens"`
-// apply here. Target: empty.
+// No tolerance layer: any divergence fails the test. Target: zero divergences.
 //
 // ## Scope gate (Task 4 vs Task 5)
 //
@@ -679,12 +585,6 @@ fn differential_l2_features_match_goldens() {
         "R1A_L2_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    // Only L2-scoped allowlist entries apply here.
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L2_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
 
@@ -763,51 +663,17 @@ fn differential_l2_features_match_goldens() {
         forbidden_hits.join("\n  ")
     );
 
-    // --- Allowlist gating (same semantics as R0) ----------------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L2 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L2_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L2 divergence(s) found (test={L2_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L2 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -818,10 +684,8 @@ fn differential_l2_features_match_goldens() {
     );
 
     eprintln!(
-        "R1a L2 differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L2 entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R1a L2 differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -867,9 +731,9 @@ fn differential_l2_features_match_goldens() {
 // The matrix counts are printed; an oracle cross-check asserts they equal the
 // counts computed from the GOLDENS (al-sem ground truth).
 //
-// ## Allowlist gating + scope gate
+// ## Strict comparison + scope gate
 //
-// Reuses `KNOWN_DIVERGENCES.json` with `test == L3_TEST_NAME`; target empty.
+// No tolerance layer: any divergence fails the test (target empty).
 // `R2A_L3_SET` selects the asserted fixtures:
 //   - "full" (committed default since R2a Task 4 / the EXIT GATE): every
 //     `tests/r2a-goldens/*.l3rt.golden.json` (the 153-fixture corpus). The
@@ -1008,12 +872,6 @@ fn differential_l3_record_types_match_goldens() {
         "R2A_L3_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    // Only L3-scoped allowlist entries apply.
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = CoverageMatrix::default();
@@ -1142,51 +1000,17 @@ fn differential_l3_record_types_match_goldens() {
         "L3 coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2) -------------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3 divergence(s) found (test={L3_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -1197,10 +1021,8 @@ fn differential_l3_record_types_match_goldens() {
     );
 
     eprintln!(
-        "R2a L3 differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3 entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2a L3 differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -1236,7 +1058,7 @@ fn scan_l3_forbidden(value: &serde_json::Value, path: &str, hits: &mut Vec<Strin
 // is compared at the group level; the upgraded argumentBindings per callsite are
 // compared too. HARD-FAILS on any forbidden later-gate / L4 field (typedEdges /
 // summary / coverage / eventGraph / callsiteResolutions / openWorld /
-// capabilityFactsDirect / rootClassifications). KNOWN_DIVERGENCES-gated (empty).
+// capabilityFactsDirect / rootClassifications). Asserted with zero tolerance.
 // ===========================================================================
 
 /// Forbidden later-gate / L4 keys that must NEVER appear in the L3 call-graph
@@ -1581,11 +1403,6 @@ fn differential_l3_call_graph_match_goldens() {
         "R2B_L3CG_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3CG_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = CallGraphCoverage::default();
@@ -1752,51 +1569,17 @@ fn differential_l3_call_graph_match_goldens() {
         "L3cg coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/R2a) ---------------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3cg divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3CG_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3cg divergence(s) found (test={L3CG_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3cg allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -1807,10 +1590,8 @@ fn differential_l3_call_graph_match_goldens() {
     );
 
     eprintln!(
-        "R2b L3cg differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3cg entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2b L3cg differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -1884,7 +1665,7 @@ fn l3cg_coverage_matrix_matches_manifest_oracle() {
 // both already deterministically sorted by the projection, so the compare is
 // positional/structural after keying. HARD-FAILS on any forbidden later-gate / L4
 // field (callGraph / typedEdges / summary / coverage / publish / capability*).
-// KNOWN_DIVERGENCES-gated (empty).
+// Asserted with zero tolerance.
 //
 // ## The 31-event-fixtures-vs-corpus inclusion rule
 //
@@ -2168,11 +1949,6 @@ fn differential_l3_event_graph_match_goldens() {
         "R2C_L3EG_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3EG_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = EventGraphCoverage::default();
@@ -2316,51 +2092,17 @@ fn differential_l3_event_graph_match_goldens() {
         "L3eg coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/R2a/R2b) -----------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3eg divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3EG_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3eg divergence(s) found (test={L3EG_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3eg allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -2371,10 +2113,8 @@ fn differential_l3_event_graph_match_goldens() {
     );
 
     eprintln!(
-        "R2c L3eg differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3eg entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2c L3eg differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -2436,7 +2176,7 @@ fn l3eg_coverage_matrix_matches_manifest_oracle() {
 // array compare (after sort) detects any cardinality OR id divergence (duplicates
 // are preserved on BOTH sides — never deduped). HARD-FAILS on any forbidden
 // later-gate / L4 field (callGraph / eventGraph / typedEdges / summary /
-// analysisGaps / …). KNOWN_DIVERGENCES-gated (empty at R2d exit).
+// analysisGaps / …). Asserted with zero tolerance.
 //
 // Every fixture has a golden (coverage is non-empty for every source workspace),
 // so there is NO inclusion rule (unlike R2c's event graph) — all 158 compare.
@@ -2618,11 +2358,6 @@ fn differential_l3_coverage_match_goldens() {
         "R2D_L3COV_SET={set:?} selected zero fixtures (small set = {small_set:?})"
     );
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == L3COV_TEST_NAME)
-        .collect();
-
     let mut all_divergences: Vec<Divergence> = Vec::new();
     let mut forbidden_hits: Vec<String> = Vec::new();
     let mut rust_cov = CoverageMatrix2::default();
@@ -2771,51 +2506,17 @@ fn differential_l3_coverage_match_goldens() {
         "L3cov coverage matrix MISMATCH vs golden oracle (set={set:?})\n  rust   = {rust_cov:?}\n  golden = {golden_cov:?}",
     );
 
-    // --- Allowlist gating (same semantics as R0/L2/R2a/R2b/R2c) -------------
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
+    // --- Strict comparison ---------------------------------------------------
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED L3cov divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={L3COV_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} L3cov divergence(s) found (test={L3COV_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED L3cov allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -2826,10 +2527,8 @@ fn differential_l3_coverage_match_goldens() {
     );
 
     eprintln!(
-        "R2d L3cov differential: set={set:?}, {} fixture(s), 0 divergences, \
-         allowlist fully consumed ({} L3cov entr(y/ies)).",
-        goldens.len(),
-        allowlist.len()
+        "R2d L3cov differential: set={set:?}, {} fixture(s), 0 divergences.",
+        goldens.len()
     );
 }
 
@@ -2912,601 +2611,4 @@ fn max_dup(ids: &[String]) -> usize {
         *counts.entry(id.as_str()).or_insert(0) += 1;
     }
     counts.values().copied().max().unwrap_or(0)
-}
-
-/// LIVE / REFRESH mode — NOT part of the default loop.
-///
-/// Gated behind `AL_SEM_DIR`. Run explicitly with:
-///   AL_SEM_DIR=/u/Git/al-sem cargo test --test differential -- \
-///       --ignored refresh_goldens_from_al_sem --nocapture
-///
-/// It (a) shells `bun run scripts/dump-goldens.ts` in `$AL_SEM_DIR` to
-/// regenerate the goldens, (b) copies the source-only `ws-*` fixtures + their
-/// `*.golden.json` + `manifest.json` into `tests/r0-corpus/` and
-/// `tests/r0-goldens/`, (c) prints al-sem git sha + grammar sha + this engine's
-/// commit for provenance, and (d) does NOT auto-commit (leaves a reviewable
-/// diff). If `AL_SEM_DIR` is unset it skips (so an accidental `--ignored` run is
-/// a no-op rather than a failure).
-#[test]
-#[ignore = "live/refresh mode: regenerates goldens from al-sem; requires AL_SEM_DIR + Bun"]
-fn refresh_goldens_from_al_sem() {
-    let Ok(al_sem_dir) = std::env::var("AL_SEM_DIR") else {
-        eprintln!(
-            "refresh_goldens_from_al_sem: AL_SEM_DIR not set — skipping (this is the \
-             refresh path; set AL_SEM_DIR=/u/Git/al-sem to run it)."
-        );
-        return;
-    };
-    let al_sem = PathBuf::from(&al_sem_dir);
-    assert!(
-        al_sem.is_dir(),
-        "AL_SEM_DIR is not a directory: {al_sem_dir}"
-    );
-
-    // (a) Regenerate goldens via Bun inside the al-sem checkout.
-    eprintln!("refresh: running `bun run scripts/dump-goldens.ts` in {al_sem_dir} ...");
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-goldens.ts"])
-        .current_dir(&al_sem)
-        // dump-goldens writes the manifest JSON to stdout; discard it (files are
-        // the artifact). Logs go to the inherited stderr.
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` (is Bun on PATH?): {e}"));
-    assert!(
-        status.success(),
-        "`bun run scripts/dump-goldens.ts` failed with status {status}"
-    );
-
-    let src_goldens = al_sem.join("scripts").join("r0-goldens");
-    let src_fixtures = al_sem.join("test").join("fixtures");
-    let dst_goldens = goldens_dir();
-    let dst_corpus = corpus_dir();
-    std::fs::create_dir_all(&dst_goldens).expect("create tests/r0-goldens");
-    std::fs::create_dir_all(&dst_corpus).expect("create tests/r0-corpus");
-
-    // (b) Copy each generated golden + its source-only fixture. This copies the
-    //     FULL source-only corpus al-sem produced; every copied golden is then
-    //     REQUIRED to match in the default offline differential (R0 exit gate).
-    let mut copied = 0usize;
-    for entry in std::fs::read_dir(&src_goldens).expect("read al-sem r0-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".golden.json") {
-            continue;
-        }
-        let fixture = name.trim_end_matches(".golden.json").to_string();
-        let fixture_src = src_fixtures.join(&fixture);
-        if !fixture_src.is_dir() {
-            eprintln!(
-                "refresh: skip {fixture} (no source fixture at {})",
-                fixture_src.display()
-            );
-            continue;
-        }
-        // golden file
-        std::fs::copy(entry.path(), dst_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy golden {name}: {e}"));
-        // source-only fixture (app.json + src/**)
-        copy_source_fixture(&fixture_src, &dst_corpus.join(&fixture));
-        copied += 1;
-    }
-    // manifest
-    let manifest_src = src_goldens.join("manifest.json");
-    if manifest_src.is_file() {
-        std::fs::copy(&manifest_src, dst_goldens.join("manifest.json"))
-            .expect("copy manifest.json");
-    }
-
-    // (b2) Regenerate + copy the R1a L2-feature goldens. Same al-sem checkout,
-    //      a second dump script (`scripts/dump-l2-features.ts`). The L2 goldens
-    //      land in `scripts/r1a-goldens/`; copy them + their manifest into
-    //      `tests/r1a-goldens/`. The source fixtures are the SAME `ws-*` trees
-    //      already copied to `tests/r0-corpus/` above, so no separate corpus.
-    eprintln!("refresh: running `bun run scripts/dump-l2-features.ts` in {al_sem_dir} ...");
-    let l2_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-l2-features.ts"])
-        .current_dir(&al_sem)
-        // dump-l2-features writes its manifest JSON to stdout; discard it (files
-        // are the artifact). Logs go to the inherited stderr.
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L2 dump: {e}"));
-    assert!(
-        l2_status.success(),
-        "`bun run scripts/dump-l2-features.ts` failed with status {l2_status}"
-    );
-
-    let src_l2_goldens = al_sem.join("scripts").join("r1a-goldens");
-    let dst_l2_goldens = r1a_goldens_dir();
-    std::fs::create_dir_all(&dst_l2_goldens).expect("create tests/r1a-goldens");
-    let mut l2_copied = 0usize;
-    for entry in std::fs::read_dir(&src_l2_goldens).expect("read al-sem r1a-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".l2.golden.json") {
-            continue; // skips manifest.json + l2-vectors.json (vectors are separate).
-        }
-        std::fs::copy(entry.path(), dst_l2_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy L2 golden {name}: {e}"));
-        l2_copied += 1;
-    }
-    let l2_manifest_src = src_l2_goldens.join("manifest.json");
-    if l2_manifest_src.is_file() {
-        std::fs::copy(&l2_manifest_src, dst_l2_goldens.join("manifest.json"))
-            .expect("copy r1a-goldens/manifest.json");
-    }
-    eprintln!("refresh: copied {l2_copied} L2 golden(s) into tests/r1a-goldens/.");
-
-    // (b3) Regenerate + copy the R2a L3 record-type goldens. A third dump script
-    //      (`scripts/dump-l3-record-types.ts`) writes `scripts/r2a-goldens/
-    //      *.l3rt.golden.json` + `manifest.json`; copy them into
-    //      `tests/r2a-goldens/`. Source fixtures are the SAME `ws-*` trees already
-    //      copied to `tests/r0-corpus/` above (no separate corpus). NOTE the new
-    //      `ws-r2a-record-types` fixture only appears here if al-sem's r2a goldens
-    //      include it (its golden's source fixture is copied via the R0 loop above
-    //      when an R0 golden exists; if not, copy it explicitly below).
-    eprintln!("refresh: running `bun run scripts/dump-l3-record-types.ts` in {al_sem_dir} ...");
-    let l3_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-l3-record-types.ts"])
-        .current_dir(&al_sem)
-        // dump-l3-record-types writes its manifest JSON to stdout; discard it
-        // (files are the artifact). Logs go to the inherited stderr.
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 dump: {e}"));
-    assert!(
-        l3_status.success(),
-        "`bun run scripts/dump-l3-record-types.ts` failed with status {l3_status}"
-    );
-
-    let src_l3_goldens = al_sem.join("scripts").join("r2a-goldens");
-    let dst_l3_goldens = repo_root().join("tests").join("r2a-goldens");
-    std::fs::create_dir_all(&dst_l3_goldens).expect("create tests/r2a-goldens");
-    let mut l3_copied = 0usize;
-    for entry in std::fs::read_dir(&src_l3_goldens).expect("read al-sem r2a-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".l3rt.golden.json") {
-            continue; // skips manifest.json + l3rt-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus (the R0 loop
-        // above only copies fixtures with an R0 golden; a record-types-only fixture
-        // like ws-r2a-record-types would otherwise be missing).
-        let fixture = name.trim_end_matches(".l3rt.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_l3_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy L3 golden {name}: {e}"));
-        l3_copied += 1;
-    }
-    let l3_manifest_src = src_l3_goldens.join("manifest.json");
-    if l3_manifest_src.is_file() {
-        std::fs::copy(&l3_manifest_src, dst_l3_goldens.join("manifest.json"))
-            .expect("copy r2a-goldens/manifest.json");
-    }
-    eprintln!("refresh: copied {l3_copied} L3 golden(s) into tests/r2a-goldens/.");
-
-    // (b4) Regenerate + copy the R2b L3 CALL-GRAPH goldens. A fourth dump script
-    //      (`scripts/dump-l3-call-graph.ts`) writes `scripts/r2b-goldens/
-    //      *.l3cg.golden.json` + `manifest.json`; copy them into
-    //      `tests/r2b-goldens/`. Source fixtures are the SAME `ws-*` trees already
-    //      copied to `tests/r0-corpus/` above; any call-graph-only fixture
-    //      (ws-r2b-opaque / ws-r2b-external / ws-interface-dispatch) is copied
-    //      explicitly here when missing.
-    eprintln!("refresh: running `bun run scripts/dump-l3-call-graph.ts` in {al_sem_dir} ...");
-    let l3cg_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-l3-call-graph.ts"])
-        .current_dir(&al_sem)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 call-graph dump: {e}"));
-    assert!(
-        l3cg_status.success(),
-        "`bun run scripts/dump-l3-call-graph.ts` failed with status {l3cg_status}"
-    );
-
-    let src_l3cg_goldens = al_sem.join("scripts").join("r2b-goldens");
-    let dst_l3cg_goldens = repo_root().join("tests").join("r2b-goldens");
-    std::fs::create_dir_all(&dst_l3cg_goldens).expect("create tests/r2b-goldens");
-    let mut l3cg_copied = 0usize;
-    for entry in std::fs::read_dir(&src_l3cg_goldens).expect("read al-sem r2b-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".l3cg.golden.json") {
-            continue; // skips manifest.json + l3cg-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus.
-        let fixture = name.trim_end_matches(".l3cg.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_l3cg_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy L3cg golden {name}: {e}"));
-        l3cg_copied += 1;
-    }
-    let l3cg_manifest_src = src_l3cg_goldens.join("manifest.json");
-    if l3cg_manifest_src.is_file() {
-        std::fs::copy(&l3cg_manifest_src, dst_l3cg_goldens.join("manifest.json"))
-            .expect("copy r2b-goldens/manifest.json");
-    }
-    eprintln!("refresh: copied {l3cg_copied} L3 call-graph golden(s) into tests/r2b-goldens/.");
-
-    // (b5) Regenerate + copy the R2c L3 EVENT-GRAPH goldens. A fifth dump script
-    //      (`scripts/dump-l3-event-graph.ts`) writes `scripts/r2c-goldens/
-    //      *.l3eg.golden.json` + `manifest.json`; copy them into
-    //      `tests/r2c-goldens/`. Only the 31 event-BEARING fixtures get a golden
-    //      (al-sem excludes event-less fixtures); their source `ws-*` trees are the
-    //      SAME ones copied to `tests/r0-corpus/` above, with the event-only
-    //      fixtures (ws-r2c-maybe-elem / ws-r2c-mixed / ws-r2c-two-sub-maybe) copied
-    //      explicitly here when missing.
-    eprintln!("refresh: running `bun run scripts/dump-l3-event-graph.ts` in {al_sem_dir} ...");
-    let l3eg_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-l3-event-graph.ts"])
-        .current_dir(&al_sem)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 event-graph dump: {e}"));
-    assert!(
-        l3eg_status.success(),
-        "`bun run scripts/dump-l3-event-graph.ts` failed with status {l3eg_status}"
-    );
-
-    let src_l3eg_goldens = al_sem.join("scripts").join("r2c-goldens");
-    let dst_l3eg_goldens = repo_root().join("tests").join("r2c-goldens");
-    std::fs::create_dir_all(&dst_l3eg_goldens).expect("create tests/r2c-goldens");
-    let mut l3eg_copied = 0usize;
-    for entry in std::fs::read_dir(&src_l3eg_goldens).expect("read al-sem r2c-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".l3eg.golden.json") {
-            continue; // skips manifest.json + l3eg-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus.
-        let fixture = name.trim_end_matches(".l3eg.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_l3eg_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy L3eg golden {name}: {e}"));
-        l3eg_copied += 1;
-    }
-    let l3eg_manifest_src = src_l3eg_goldens.join("manifest.json");
-    if l3eg_manifest_src.is_file() {
-        std::fs::copy(&l3eg_manifest_src, dst_l3eg_goldens.join("manifest.json"))
-            .expect("copy r2c-goldens/manifest.json");
-    }
-    eprintln!("refresh: copied {l3eg_copied} L3 event-graph golden(s) into tests/r2c-goldens/.");
-
-    // (b6) Regenerate + copy the R2d L3 COVERAGE goldens. A sixth dump script
-    //      (`scripts/dump-l3-coverage.ts`) writes `scripts/r2d-goldens/
-    //      *.l3cov.golden.json` + `manifest.json`; copy them into
-    //      `tests/r2d-goldens/`. EVERY source workspace has a coverage golden (158
-    //      total — no inclusion rule); their source `ws-*` trees are the SAME ones
-    //      copied to `tests/r0-corpus/` above (copied explicitly here when missing).
-    eprintln!("refresh: running `bun run scripts/dump-l3-coverage.ts` in {al_sem_dir} ...");
-    let l3cov_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-l3-coverage.ts"])
-        .current_dir(&al_sem)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for L3 coverage dump: {e}"));
-    assert!(
-        l3cov_status.success(),
-        "`bun run scripts/dump-l3-coverage.ts` failed with status {l3cov_status}"
-    );
-
-    let src_l3cov_goldens = al_sem.join("scripts").join("r2d-goldens");
-    let dst_l3cov_goldens = repo_root().join("tests").join("r2d-goldens");
-    std::fs::create_dir_all(&dst_l3cov_goldens).expect("create tests/r2d-goldens");
-    let mut l3cov_copied = 0usize;
-    for entry in std::fs::read_dir(&src_l3cov_goldens).expect("read al-sem r2d-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".l3cov.golden.json") {
-            continue; // skips manifest.json + l3cov-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus.
-        let fixture = name.trim_end_matches(".l3cov.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_l3cov_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy L3cov golden {name}: {e}"));
-        l3cov_copied += 1;
-    }
-    // Also copy the vectors file so the offline l3cov_vectors test stays in sync.
-    let l3cov_vectors_src = src_l3cov_goldens.join("l3cov-vectors.json");
-    if l3cov_vectors_src.is_file() {
-        let dst_vectors = repo_root().join("tests").join("r2d-vectors");
-        std::fs::create_dir_all(&dst_vectors).expect("create tests/r2d-vectors");
-        std::fs::copy(&l3cov_vectors_src, dst_vectors.join("l3cov-vectors.json"))
-            .expect("copy l3cov-vectors.json");
-    }
-    let l3cov_manifest_src = src_l3cov_goldens.join("manifest.json");
-    if l3cov_manifest_src.is_file() {
-        std::fs::copy(&l3cov_manifest_src, dst_l3cov_goldens.join("manifest.json"))
-            .expect("copy r2d-goldens/manifest.json");
-    }
-    eprintln!("refresh: copied {l3cov_copied} L3 coverage golden(s) into tests/r2d-goldens/.");
-
-    // (b7) Regenerate + copy the R3a-1 COMBINED-GRAPH + SCC goldens. A seventh dump
-    //      script (`scripts/dump-r3a1-combined-graph.ts`) writes
-    //      `scripts/r3a1-goldens/*.r3a1.golden.json` + `manifest.json`; copy them
-    //      into `tests/r3a1-goldens/`. The 158 source-only `ws-*` fixtures are the
-    //      SAME trees already copied to `tests/r0-corpus/` above (copied explicitly
-    //      here when missing). al-sem EXCLUDES `.app`-bearing + empty fail-closed
-    //      fixtures, so the golden set is exactly the source-only-analyzable corpus.
-    eprintln!("refresh: running `bun run scripts/dump-r3a1-combined-graph.ts` in {al_sem_dir} ...");
-    let r3a1_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-r3a1-combined-graph.ts"])
-        .current_dir(&al_sem)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for R3a-1 combined-graph dump: {e}"));
-    assert!(
-        r3a1_status.success(),
-        "`bun run scripts/dump-r3a1-combined-graph.ts` failed with status {r3a1_status}"
-    );
-
-    let src_r3a1_goldens = al_sem.join("scripts").join("r3a1-goldens");
-    let dst_r3a1_goldens = repo_root().join("tests").join("r3a1-goldens");
-    std::fs::create_dir_all(&dst_r3a1_goldens).expect("create tests/r3a1-goldens");
-    let mut r3a1_copied = 0usize;
-    for entry in std::fs::read_dir(&src_r3a1_goldens).expect("read al-sem r3a1-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".r3a1.golden.json") {
-            continue; // skips manifest.json + r3a1-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus.
-        let fixture = name.trim_end_matches(".r3a1.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_r3a1_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy R3a-1 golden {name}: {e}"));
-        r3a1_copied += 1;
-    }
-    let r3a1_manifest_src = src_r3a1_goldens.join("manifest.json");
-    if r3a1_manifest_src.is_file() {
-        std::fs::copy(&r3a1_manifest_src, dst_r3a1_goldens.join("manifest.json"))
-            .expect("copy r3a1-goldens/manifest.json");
-    }
-    eprintln!(
-        "refresh: copied {r3a1_copied} R3a-1 combined-graph golden(s) into tests/r3a1-goldens/."
-    );
-
-    // (b8) Regenerate + copy the R3a-2 FIXED-POINT SUMMARY-CORE goldens + the
-    //      per-recursive-SCC fingerprint TRACE goldens. An eighth dump script
-    //      (`scripts/dump-r3a2-summary-core.ts`) writes
-    //      `scripts/r3a2-goldens/*.r3a2.golden.json` (158) +
-    //      `*.r3a2-trace.golden.json` (one per recursive-SCC-bearing fixture) +
-    //      `manifest.json`; copy them into `tests/r3a2-goldens/`. SAME source-only
-    //      `ws-*` corpus already in `tests/r0-corpus/` (copied here when missing).
-    eprintln!("refresh: running `bun run scripts/dump-r3a2-summary-core.ts` in {al_sem_dir} ...");
-    let r3a2_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-r3a2-summary-core.ts"])
-        .current_dir(&al_sem)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for R3a-2 summary-core dump: {e}"));
-    assert!(
-        r3a2_status.success(),
-        "`bun run scripts/dump-r3a2-summary-core.ts` failed with status {r3a2_status}"
-    );
-
-    let src_r3a2_goldens = al_sem.join("scripts").join("r3a2-goldens");
-    let dst_r3a2_goldens = repo_root().join("tests").join("r3a2-goldens");
-    std::fs::create_dir_all(&dst_r3a2_goldens).expect("create tests/r3a2-goldens");
-    let mut r3a2_copied = 0usize;
-    let mut r3a2_trace_copied = 0usize;
-    for entry in std::fs::read_dir(&src_r3a2_goldens).expect("read al-sem r3a2-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        // The per-SCC trace goldens (`*.r3a2-trace.golden.json`) ride alongside the
-        // summary-core goldens (`*.r3a2.golden.json`); copy both, skip the vectors.
-        if name.ends_with(".r3a2-trace.golden.json") {
-            std::fs::copy(entry.path(), dst_r3a2_goldens.join(&name))
-                .unwrap_or_else(|e| panic!("copy R3a-2 trace golden {name}: {e}"));
-            r3a2_trace_copied += 1;
-            continue;
-        }
-        if !name.ends_with(".r3a2.golden.json") {
-            continue; // skips manifest.json + r3a2-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus.
-        let fixture = name.trim_end_matches(".r3a2.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_r3a2_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy R3a-2 golden {name}: {e}"));
-        r3a2_copied += 1;
-    }
-    let r3a2_manifest_src = src_r3a2_goldens.join("manifest.json");
-    if r3a2_manifest_src.is_file() {
-        std::fs::copy(&r3a2_manifest_src, dst_r3a2_goldens.join("manifest.json"))
-            .expect("copy r3a2-goldens/manifest.json");
-    }
-    eprintln!(
-        "refresh: copied {r3a2_copied} R3a-2 summary-core golden(s) + {r3a2_trace_copied} \
-         trace golden(s) into tests/r3a2-goldens/."
-    );
-
-    // (b.3) R3a-3 CAPABILITY-CONE + COVERAGE goldens. A ninth dump script
-    //       (`scripts/dump-r3a3-cone-coverage.ts`) writes
-    //       `scripts/r3a3-goldens/*.r3a3.golden.json` (159) + `manifest.json`; copy
-    //       them into `tests/r3a3-goldens/`. SAME source-only `ws-*` corpus already
-    //       in `tests/r0-corpus/` (copied here when missing — incl. the R3a-3-added
-    //       `ws-r3a3-equal-distance-tie` tie fixture).
-    eprintln!("refresh: running `bun run scripts/dump-r3a3-cone-coverage.ts` in {al_sem_dir} ...");
-    let r3a3_status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-r3a3-cone-coverage.ts"])
-        .current_dir(&al_sem)
-        .stdout(std::process::Stdio::null())
-        .status()
-        .unwrap_or_else(|e| panic!("failed to spawn `bun` for R3a-3 cone-coverage dump: {e}"));
-    assert!(
-        r3a3_status.success(),
-        "`bun run scripts/dump-r3a3-cone-coverage.ts` failed with status {r3a3_status}"
-    );
-
-    let src_r3a3_goldens = al_sem.join("scripts").join("r3a3-goldens");
-    let dst_r3a3_goldens = repo_root().join("tests").join("r3a3-goldens");
-    std::fs::create_dir_all(&dst_r3a3_goldens).expect("create tests/r3a3-goldens");
-    let mut r3a3_copied = 0usize;
-    for entry in std::fs::read_dir(&src_r3a3_goldens).expect("read al-sem r3a3-goldens") {
-        let entry = entry.expect("entry");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".r3a3.golden.json") {
-            continue; // skips manifest.json + r3a3-vectors.json (vectors are separate).
-        }
-        // Ensure the source fixture is present in the offline corpus.
-        let fixture = name.trim_end_matches(".r3a3.golden.json").to_string();
-        let fixture_dst = dst_corpus.join(&fixture);
-        if !fixture_dst.is_dir() {
-            let fixture_src = src_fixtures.join(&fixture);
-            if fixture_src.is_dir() {
-                copy_source_fixture(&fixture_src, &fixture_dst);
-                eprintln!(
-                    "refresh: copied missing source fixture {fixture} into tests/r0-corpus/."
-                );
-            }
-        }
-        std::fs::copy(entry.path(), dst_r3a3_goldens.join(&name))
-            .unwrap_or_else(|e| panic!("copy R3a-3 golden {name}: {e}"));
-        r3a3_copied += 1;
-    }
-    let r3a3_manifest_src = src_r3a3_goldens.join("manifest.json");
-    if r3a3_manifest_src.is_file() {
-        std::fs::copy(&r3a3_manifest_src, dst_r3a3_goldens.join("manifest.json"))
-            .expect("copy r3a3-goldens/manifest.json");
-    }
-    eprintln!(
-        "refresh: copied {r3a3_copied} R3a-3 cone-coverage golden(s) into tests/r3a3-goldens/."
-    );
-
-    // (c) Provenance.
-    let al_sem_sha = git_sha(&al_sem);
-    let grammar_sha = read_manifest_field(
-        &dst_goldens.join("manifest.json"),
-        "treeSitterAlNativeSha256",
-    );
-    let engine_sha = git_sha(&repo_root());
-    eprintln!("refresh: copied {copied} fixture(s)/golden(s).");
-    eprintln!("refresh: provenance:");
-    eprintln!("  al-sem git sha     = {al_sem_sha}");
-    eprintln!("  tree-sitter-al sha = {grammar_sha}");
-    eprintln!("  engine commit sha  = {engine_sha}");
-    eprintln!("refresh: NOT auto-committed — review the diff and commit deliberately.");
-}
-
-/// Copy a source-only fixture (every `app.json` + `*.al` in the tree) into `dst`,
-/// skipping dependency/package dirs. Mirrors the offline-corpus contract AND the
-/// al-sem WorkspaceProvider layout view: nested `a/app.json` + `b/app.json` of a
-/// multi-app fixture (e.g. `ws-diff-*`) are copied so the fail-closed (multi-app)
-/// branch is exercised by the offline corpus exactly as in al-sem.
-fn copy_source_fixture(src: &Path, dst: &Path) {
-    std::fs::create_dir_all(dst).unwrap_or_else(|e| panic!("create {}: {e}", dst.display()));
-    // Recurse over the whole tree, copying both `*.al` and `app.json` files
-    // (root or nested), so the corpus mirrors al-sem's source tree.
-    copy_al_tree(src, dst);
-}
-
-/// Recursively copy `*.al` and `app.json` files (and the dirs containing them)
-/// from `src` to `dst`, skipping `node_modules` / `.alpackages` / `.git`. Copying
-/// nested `app.json` files is required so the multi-app fail-closed branch is
-/// reproduced offline (al-sem counts app.json under the root excluding those dirs).
-fn copy_al_tree(src: &Path, dst: &Path) {
-    let Ok(entries) = std::fs::read_dir(src) else {
-        return;
-    };
-    for entry in entries {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let ftype = entry.file_type().expect("file_type");
-        let name = entry.file_name().to_string_lossy().to_string();
-        if ftype.is_dir() {
-            let name_lc = name.to_lowercase();
-            if name_lc == "node_modules" || name_lc == ".alpackages" || name_lc == ".git" {
-                continue;
-            }
-            copy_al_tree(&path, &dst.join(&name));
-        } else if ftype.is_file()
-            && (path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("al"))
-                .unwrap_or(false)
-                || name.eq_ignore_ascii_case("app.json"))
-        {
-            std::fs::create_dir_all(dst).expect("create dst dir");
-            std::fs::copy(&path, dst.join(&name))
-                .unwrap_or_else(|e| panic!("copy {}: {e}", path.display()));
-        }
-    }
-}
-
-/// `git rev-parse HEAD` in `dir`, or `<unknown>` on any failure.
-fn git_sha(dir: &Path) -> String {
-    std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(dir)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "<unknown>".to_string())
-}
-
-/// Pull a top-level string field out of `manifest.json`, or `<unknown>`.
-fn read_manifest_field(manifest: &Path, field: &str) -> String {
-    std::fs::read_to_string(manifest)
-        .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v.get(field).and_then(|f| f.as_str()).map(str::to_string))
-        .unwrap_or_else(|| "<unknown>".to_string())
 }

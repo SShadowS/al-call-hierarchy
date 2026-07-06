@@ -1,0 +1,36 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "diff-report",
+  "payload": {
+    "diagnostics": [
+      {
+        "cone": "new",
+        "kind": "coverage-incomplete",
+        "subject": "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6"
+      }
+    ],
+    "findings": [],
+    "summary": {
+      "coverageIncompleteCones": 1,
+      "findingsByCategory": {
+        "abi": 0,
+        "capabilities": 0,
+        "events": 0,
+        "permissions": 0,
+        "schema": 0
+      },
+      "findingsBySeverity": {
+        "critical": 0,
+        "high": 0,
+        "info": 0,
+        "low": 0,
+        "medium": 0
+      },
+      "renamesApplied": 0
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

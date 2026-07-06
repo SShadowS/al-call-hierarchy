@@ -1,9 +1,10 @@
 //! Stage A4 — `--format html` byte-parity differential test.
 //!
 //! For each fixture in the corpus, runs the Rust gate pipeline under
-//! `--format html --deterministic` with `AL_SEM_VERSION_OVERRIDE=cli-a-json-v1`
-//! and byte-compares the output against the committed al-sem goldens at
-//! `U:\Git\al-sem\scripts\cli-a-goldens\html\<fixture>.<slot>.html`.
+//! `--format html --deterministic` with `ALCH_DRIVER_VERSION_OVERRIDE=cli-a-json-v1`
+//! and byte-compares the output against the vendored (Rust-owned) goldens at
+//! `tests/cli-a-goldens/html/<fixture>.<slot>.html` — originally sourced from
+//! al-sem's `scripts/cli-a-goldens/html/`, now retired.
 //!
 //! Slots:
 //!   - `.default.html` — DEFAULT_DETECTORS (34 detectors).
@@ -16,11 +17,12 @@
 //!   - `ws-txn-d46-neg` — canonical 0-findings fixture.
 //!
 //! ## Acceptance gate
-//! All 22 goldens MUST byte-match. `KNOWN_DIVERGENCES.json` MUST be `[]`.
+//! All 22 goldens MUST byte-match; a divergence is a bug to fix, not something
+//! to tolerate.
 //!
-//! ## Refresh (ignored)
-//! `#[ignore]` refresh test shells out to `bun run scripts/dump-analyze-html.ts`
-//! (under `AL_SEM_DIR`) to regenerate the goldens from the TS reference.
+//! ## Refresh
+//! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_a_html_differential`.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -110,32 +112,18 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
-fn al_sem_html_dir() -> PathBuf {
-    repo_root()
-        .parent()
-        .expect("CARGO_MANIFEST_DIR has a parent")
-        .join("al-sem")
-        .join("scripts")
-        .join("cli-a-goldens")
-        .join("html")
-}
-
-/// In-repo VENDORED override dir for rebaselined cli-a html goldens (temp-state
-/// epoch, Task 16). al-sem is FROZEN — never modified — so only the changed goldens
-/// live here; all unchanged goldens still read from the frozen al-sem archive.
+/// In-repo vendored cli-a html golden corpus — the SOLE source. Originally only
+/// the rebaselined-vs-al-sem fixtures lived here with the rest falling back to a
+/// frozen al-sem archive; that fallback was retired (Task 3.6, al-sem parity
+/// retirement) once the corpus was fully vendored, since the fallback checked a
+/// path that no longer exists on disk and silently skipped every assertion.
 fn local_html_dir() -> PathBuf {
     repo_root().join("tests").join("cli-a-goldens").join("html")
 }
 
-/// Resolve a golden by name: prefer the in-repo vendored override; fall back to the
-/// frozen al-sem archive when no local override exists.
+/// Resolve a golden by name against the in-repo vendored corpus.
 fn resolve_golden(name: &str) -> PathBuf {
-    let local = local_html_dir().join(name);
-    if local.exists() {
-        local
-    } else {
-        al_sem_html_dir().join(name)
-    }
+    local_html_dir().join(name)
 }
 
 /// Build detector string for `--detector` flag from a names slice.
@@ -155,12 +143,10 @@ fn all_detector_csv() -> String {
 
 /// REGEN path (temp-state epoch rebaseline, Task 16; iter-2 gap rebaseline).
 /// When `REGEN_TEMP_GOLDENS` is set, reconcile the golden against the ENGINE output
-/// — the goldens are Rust-owned baselines (TS oracle retired). al-sem stays FROZEN:
-/// the write target is ALWAYS the in-repo VENDORED dir (`local_html_dir()/<name>`),
-/// never al-sem. To keep the vendored set MINIMAL (only moved fixtures shadow
-/// al-sem), we write the local override ONLY when the engine output differs from
-/// the resolved baseline; if it already matches (al-sem or an existing local), we
-/// leave it untouched. Returns `true` when in regen mode (caller skips the assert).
+/// — the goldens are Rust-owned baselines (TS oracle retired). The write target is
+/// the in-repo vendored dir (`local_html_dir()/<name>`); we write ONLY when the
+/// engine output differs from the existing baseline, leaving an already-matching
+/// golden untouched. Returns `true` when in regen mode (caller skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
     if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
         return false;
@@ -183,8 +169,8 @@ fn maybe_regen(name: &str, rust: &str) -> bool {
 }
 
 /// Run the Rust HTML pipeline for one fixture with the given detector list.
-/// The env var `AL_SEM_VERSION_OVERRIDE` MUST be set by the caller before
-/// this function is called (it reads the env at call time via `alsem_version()`).
+/// The env var `ALCH_DRIVER_VERSION_OVERRIDE` MUST be set by the caller before
+/// this function is called (it reads the env at call time via `driver_version()`).
 fn run_html(fixture: &str, detector_csv: &str) -> String {
     let fixture_dir = corpus_dir().join(fixture);
     assert!(
@@ -261,25 +247,16 @@ fn html_diff(fixture: &str, slot: &str, golden: &str, rust: &str) -> String {
 
 #[test]
 fn cli_a_html_byte_match() {
-    let html_dir = al_sem_html_dir();
-    if !html_dir.is_dir() {
-        eprintln!(
-            "{TEST_NAME}: al-sem html directory not found at {}, SKIPPING",
-            html_dir.display()
-        );
-        return;
-    }
-
     let all_csv = all_detector_csv();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let all_slot_set: std::collections::HashSet<&str> = ALL_SLOT_FIXTURES.iter().copied().collect();
 
     let mut divergences: Vec<String> = Vec::new();
 
-    // Serialize env access across all sub-runs (AL_SEM_VERSION_OVERRIDE is process-global).
+    // Serialize env access across all sub-runs (ALCH_DRIVER_VERSION_OVERRIDE is process-global).
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
 
     for &fixture in FIXTURES {
         // Always run default slot.
@@ -330,7 +307,7 @@ fn cli_a_html_byte_match() {
     }
 
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     if !divergences.is_empty() {
         let mut msg = format!("{TEST_NAME}: {} divergence(s) found:\n", divergences.len());
@@ -349,19 +326,14 @@ fn cli_a_html_byte_match() {
 /// empty body and the app masthead from app.json.
 #[test]
 fn zero_findings_fixture_renders_correctly() {
-    let html_dir = al_sem_html_dir();
-    if !html_dir.is_dir() {
-        eprintln!("{TEST_NAME}: al-sem html directory not found, SKIPPING zero-findings oracle");
-        return;
-    }
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
     let out = run_html("ws-txn-d46-neg", &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     assert!(
         out.contains(r#"<p class="empty">No findings."#),
@@ -378,18 +350,19 @@ fn zero_findings_fixture_renders_correctly() {
 #[test]
 fn event_graph_fixture_renders_svg() {
     let fixture_dir = corpus_dir().join("ws-d8-commit-in-tx");
-    if !fixture_dir.is_dir() {
-        eprintln!("{TEST_NAME}: ws-d8-commit-in-tx fixture missing, SKIPPING event-graph oracle");
-        return;
-    }
+    assert!(
+        fixture_dir.is_dir(),
+        "{TEST_NAME}: ws-d8-commit-in-tx fixture missing at {}",
+        fixture_dir.display()
+    );
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::set_var("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
+    unsafe { std::env::set_var("ALCH_DRIVER_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE) };
     let out = run_html("ws-d8-commit-in-tx", &default_csv);
     // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { std::env::remove_var("AL_SEM_VERSION_OVERRIDE") };
+    unsafe { std::env::remove_var("ALCH_DRIVER_VERSION_OVERRIDE") };
 
     assert!(
         out.contains(r#"class="evgraph""#),
@@ -415,39 +388,4 @@ fn event_graph_fixture_renders_svg() {
         out.contains("opacity=\"0.7\""),
         "bezier paths must use opacity=0.7"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Refresh test (ignored — only run explicitly)
-// ---------------------------------------------------------------------------
-
-/// Regenerate the al-sem html goldens by running the TS reference.
-///
-/// Run with:
-///   cargo test --test cli_a_html_differential refresh_goldens -- --ignored
-///
-/// Requires `AL_SEM_DIR` env var pointing to the al-sem repo root (or the
-/// sibling `../al-sem` path is used as a fallback).
-#[test]
-#[ignore]
-fn refresh_goldens() {
-    let al_sem_dir = std::env::var("AL_SEM_DIR").unwrap_or_else(|_| {
-        repo_root()
-            .parent()
-            .expect("parent")
-            .join("al-sem")
-            .to_string_lossy()
-            .to_string()
-    });
-    let status = std::process::Command::new("bun")
-        .args(["run", "scripts/dump-analyze-html.ts"])
-        .current_dir(&al_sem_dir)
-        .env("AL_SEM_VERSION_OVERRIDE", HTML_VERSION_OVERRIDE)
-        .status()
-        .expect("failed to run bun");
-    assert!(
-        status.success(),
-        "bun run scripts/dump-analyze-html.ts failed"
-    );
-    eprintln!("refresh_goldens: goldens refreshed at {al_sem_dir}/scripts/cli-a-goldens/html/");
 }

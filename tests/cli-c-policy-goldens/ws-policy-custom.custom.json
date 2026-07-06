@@ -2,7 +2,7 @@
   "al_sem_version": "cli-c-v1",
   "generated_at": "0",
   "kind": "policy.check",
-  "policySource": "auto:U:\\Git\\al-sem\\test\\fixtures\\ws-policy-custom\\al-sem.policy.yaml",
+  "policySource": "auto:al-sem.policy.yaml",
   "policyVersion": 1,
   "ruleSummaries": [
     {

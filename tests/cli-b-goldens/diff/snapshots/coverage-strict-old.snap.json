@@ -1,0 +1,96 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "analysisGaps": [],
+  "apps": [
+    {
+      "appGuid": "dd5c5n5o-0005-0005-0005-000000000005",
+      "name": "Diff Coverage Narrowed App",
+      "publisher": "DiffTest",
+      "version": "1.0.0.0"
+    }
+  ],
+  "callsiteIndex": [],
+  "callsiteResolutions": [],
+  "capabilityFacts": [],
+  "contractFacts": [
+    {
+      "attributes": [],
+      "kind": "object",
+      "signatureFingerprint": "48f10e94258bca6f16a6bbdb2336a6b23449491dd01be58e4b6516c18441fadf",
+      "stableId": "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400",
+      "visibility": "public"
+    },
+    {
+      "attributes": [],
+      "kind": "routine",
+      "signatureFingerprint": "234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "stableId": "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "visibility": "public"
+    }
+  ],
+  "coverage": [
+    {
+      "directStatus": "complete",
+      "inheritedStatus": "complete",
+      "reasons": [],
+      "subject": "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "unknownTargets": []
+    }
+  ],
+  "eventDeclarations": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "identities": {
+    "displayNames": [
+      "Runner",
+      "Run"
+    ],
+    "stableIds": [
+      "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400",
+      "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6"
+    ]
+  },
+  "inputs": [
+    {
+      "contentHash": "5f859ceafba5019009118a31fbc898cb5edd731437616307d5a0af33f63e2ba2",
+      "kind": "app-json",
+      "path": "app.json"
+    }
+  ],
+  "operationIndex": [],
+  "permissionFacts": [],
+  "rootClassifications": [
+    {
+      "confidence": "static",
+      "externallyReachable": true,
+      "kinds": [
+        "public-procedure"
+      ],
+      "routineId": "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "source": "ast",
+      "sourceAnchor": {
+        "enclosingRoutineId": "437708a07d538c57/c45d5f611d7163033bb7acb99f27902ae05d8425bd5e4fcd7b1642f36e1a417a",
+        "range": {
+          "endColumn": 8,
+          "endLine": 8,
+          "startColumn": 4,
+          "startLine": 2
+        },
+        "sourceUnitId": "ws:src/runner.al",
+        "syntaxKind": "procedure"
+      }
+    }
+  ],
+  "routineOrderFrames": {
+    "dd5c5n5o-0005-0005-0005-000000000005:Codeunit:50400#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6": [
+      {
+        "frameId": 0,
+        "kind": "block",
+        "parentFrameId": -1
+      }
+    ]
+  },
+  "schemaFacts": [],
+  "schemaVersion": 3,
+  "typedEdges": [],
+  "workspaceFingerprint": "b476fc8f0388c1a408541e070339209e27177a46799f1e7e5211c10f2588be49"
+}

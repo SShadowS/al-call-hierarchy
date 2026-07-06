@@ -1,0 +1,4 @@
+Analysed 4 routines (4 with bodies, 0 parse-incomplete); 1/1 source units parsed; 0 opaque app(s).
+
+Grouped by file (top 1):
+  ws:src/D1MultiCaller.al: 1

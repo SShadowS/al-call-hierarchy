@@ -1,31 +1,44 @@
-//! R0 Task 4 smoke test: run the identity-subset extraction on al-sem's ws-d2
-//! fixture and assert the output matches the committed golden's identity subset.
+//! R0 Task 4 smoke test: run the identity-subset extraction on the vendored
+//! ws-d2 fixture and assert the output matches the committed golden's identity
+//! subset.
 //!
-//! The fixture path is referenced directly for now; R0 Task 5 wires the
-//! committed goldens into a full differential harness. If the bundled-fork
-//! grammar yields a different AST shape than al-sem's WASM grammar, some fields
-//! may diverge from the golden — that is expected pre-Task-6 (grammar
-//! convergence) and would surface as an assertion failure here.
+//! Task 3.3 (al-sem parity retirement) vendored the ws-d2 fixture tree and its
+//! L3 event-graph golden in-repo (`tests/fixtures/ws-d2/`,
+//! `tests/aldump-smoke-goldens/`); this test no longer reads from any al-sem
+//! checkout and hard-requires its inputs (no skip-gate).
 
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::snapshot::snapshot_workspace;
-use std::path::Path;
+use std::path::PathBuf;
 
-/// Absolute path to al-sem's ws-d2 fixture. Task 5 will replace this with the
-/// committed golden corpus.
-const WS_D2: &str = r"U:\Git\al-sem\test\fixtures\ws-d2";
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Vendored ws-d2 fixture (Task 3.3; see `tests/fixtures/ws-d2/PROVENANCE.md`).
+fn ws_d2_dir() -> PathBuf {
+    repo_root().join("tests").join("fixtures").join("ws-d2")
+}
+
+/// In-repo home for the L3 event-graph golden, regenerated from THIS engine
+/// (Task 3.3) — Rust-owned baseline, not a copy of al-sem's TS output.
+fn l3eg_golden_path() -> PathBuf {
+    repo_root()
+        .join("tests")
+        .join("aldump-smoke-goldens")
+        .join("ws-d2.l3eg.golden.json")
+}
 
 #[test]
 fn ws_d2_identity_subset_matches_golden() {
-    let ws = Path::new(WS_D2);
-    if !ws.is_dir() {
-        // The fixture lives in the sibling al-sem repo; if it is not present on
-        // this machine, skip rather than fail (CI wires the corpus in Task 5).
-        eprintln!("skipping: ws-d2 fixture not found at {WS_D2}");
-        return;
-    }
+    let ws = ws_d2_dir();
+    assert!(
+        ws.is_dir(),
+        "vendored ws-d2 fixture missing at {} (Task 3.3 vendoring)",
+        ws.display()
+    );
 
-    let snap = snapshot_workspace(ws).expect("snapshot_workspace should succeed on ws-d2");
+    let snap = snapshot_workspace(&ws).expect("snapshot_workspace should succeed on ws-d2");
 
     // Serializes cleanly as JSON.
     let json = serde_json::to_string_pretty(&snap).expect("snapshot serializes to JSON");
@@ -94,12 +107,13 @@ fn ws_d2_identity_subset_matches_golden() {
 /// the in-workspace pub+sub pair resolves rather than synthesizing a maybe.
 #[test]
 fn ws_d2_l3_event_graph_matches_golden() {
-    let ws = Path::new(WS_D2);
-    if !ws.is_dir() {
-        eprintln!("skipping: ws-d2 fixture not found at {WS_D2}");
-        return;
-    }
-    let resolved = assemble_and_resolve_workspace_default(ws)
+    let ws = ws_d2_dir();
+    assert!(
+        ws.is_dir(),
+        "vendored ws-d2 fixture missing at {} (Task 3.3 vendoring)",
+        ws.display()
+    );
+    let resolved = assemble_and_resolve_workspace_default(&ws)
         .expect("ws-d2 assembles + resolves (sound single-app layout)");
     let projection = resolved.project_event_graph();
 
@@ -118,16 +132,33 @@ fn ws_d2_l3_event_graph_matches_golden() {
         "both ws-d2 subscribers resolve to an indexed publisher"
     );
 
-    // Byte-identical to the committed golden when present (golden is ground truth).
-    let golden_path = Path::new(r"U:\Git\al-sem\scripts\r2c-goldens\ws-d2.l3eg.golden.json");
-    if golden_path.is_file() {
-        let golden_text = std::fs::read_to_string(golden_path).expect("read ws-d2 l3eg golden");
-        let golden: serde_json::Value =
-            serde_json::from_str(&golden_text).expect("golden parses as JSON");
-        let rust = serde_json::to_value(&projection).expect("projection serializes");
-        assert_eq!(
-            rust, golden,
-            "ws-d2 L3 event-graph projection must match ws-d2.l3eg.golden.json exactly"
-        );
+    let rust = serde_json::to_value(&projection).expect("projection serializes");
+    let golden_path = l3eg_golden_path();
+
+    // REGEN path (Task 3.3 vendoring): `REGEN_TEMP_GOLDENS=1` writes the ENGINE
+    // projection to the in-repo golden instead of comparing — this is a
+    // Rust-owned baseline, not a copy of al-sem's TS output.
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let mut pretty = serde_json::to_string_pretty(&projection).expect("regen serialize l3eg");
+        pretty.push('\n');
+        std::fs::create_dir_all(golden_path.parent().expect("golden has a parent"))
+            .expect("create aldump-smoke-goldens dir");
+        std::fs::write(&golden_path, pretty)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        eprintln!("REGEN aldump-smoke l3eg golden: {}", golden_path.display());
+        return;
     }
+
+    assert!(
+        golden_path.is_file(),
+        "missing golden {} (run `REGEN_TEMP_GOLDENS=1 cargo test --test aldump_smoke`)",
+        golden_path.display()
+    );
+    let golden_text = std::fs::read_to_string(&golden_path).expect("read ws-d2 l3eg golden");
+    let golden: serde_json::Value =
+        serde_json::from_str(&golden_text).expect("golden parses as JSON");
+    assert_eq!(
+        rust, golden,
+        "ws-d2 L3 event-graph projection must match ws-d2.l3eg.golden.json exactly"
+    );
 }

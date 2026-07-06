@@ -1,0 +1,116 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "diff-report",
+  "payload": {
+    "diagnostics": [],
+    "findings": [
+      {
+        "category": "capabilities",
+        "comparisonCone": [
+          "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+        ],
+        "coverageState": {
+          "new": "complete",
+          "old": "unknown"
+        },
+        "details": {
+          "kind": "capability-gained-event-publish",
+          "op": "publish",
+          "resourceId": "dd7e7f7g-0007-0007-0007-000000000007/Codeunit/50700/event/onafterpostentry",
+          "resourceKind": "event"
+        },
+        "id": "61ed00f39d7b7691",
+        "kind": "capability-gained-event-publish",
+        "severity": "medium",
+        "subject": {
+          "displayName": "OnAfterPostEntry",
+          "newStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+          "normalizedStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+        }
+      },
+      {
+        "category": "capabilities",
+        "comparisonCone": [
+          "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde"
+        ],
+        "coverageState": {
+          "new": "complete",
+          "old": "complete"
+        },
+        "details": {
+          "kind": "capability-gained-event-publish",
+          "op": "publish",
+          "resourceId": "dd7e7f7g-0007-0007-0007-000000000007/Codeunit/50700/event/onafterpostentry",
+          "resourceKind": "event"
+        },
+        "id": "8c22c5e4a48c9f52",
+        "kind": "capability-gained-event-publish",
+        "severity": "medium",
+        "subject": {
+          "displayName": "PostEntry",
+          "newStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde",
+          "normalizedStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#bd036240d944dfa203338651758b10276974497653d2fcc56f19fae52c887fde"
+        }
+      },
+      {
+        "category": "abi",
+        "comparisonCone": [
+          "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+        ],
+        "details": {
+          "kind": "procedure-added"
+        },
+        "id": "d7661d1cc3661065",
+        "kind": "procedure-added",
+        "severity": "info",
+        "subject": {
+          "displayName": "OnAfterPostEntry",
+          "newStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+          "normalizedStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+        }
+      },
+      {
+        "category": "events",
+        "comparisonCone": [
+          "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+        ],
+        "details": {
+          "eventName": "OnAfterPostEntry",
+          "kind": "event-publisher-added",
+          "newEventId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700::OnAfterPostEntry::9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+          "publisherObject": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700"
+        },
+        "id": "69bcb7150a6700f1",
+        "kind": "event-publisher-added",
+        "severity": "info",
+        "subject": {
+          "displayName": "OnAfterPostEntry",
+          "newStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57",
+          "normalizedStableId": "dd7e7f7g-0007-0007-0007-000000000007:Codeunit:50700#9fedad194e1df4eaf80770d96973f5a671c966f66c4faf4be35c26152389fb57"
+        }
+      }
+    ],
+    "summary": {
+      "coverageIncompleteCones": 0,
+      "findingsByCategory": {
+        "abi": 1,
+        "capabilities": 2,
+        "events": 1,
+        "permissions": 0,
+        "schema": 0
+      },
+      "findingsBySeverity": {
+        "critical": 0,
+        "high": 0,
+        "info": 2,
+        "low": 0,
+        "medium": 2
+      },
+      "renamesApplied": 0
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

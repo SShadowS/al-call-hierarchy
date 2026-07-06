@@ -13,18 +13,18 @@ use super::{DiffDiagnostic, DiffEngineResult, DiffFinding, DiffSummary, Severity
 /// The diff-report contract version (al-sem `DIFF_CONTRACT_VERSION`).
 const DIFF_CONTRACT_VERSION: &str = "1.0.0";
 
-/// Render the diff result in the requested format. `alsem_version` /
+/// Render the diff result in the requested format. `driver_version` /
 /// `deterministic` / `analyzer_diagnostics` are only consulted for the json
 /// envelope.
 pub fn format_diff(
     result: &DiffEngineResult,
     format: &str,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
     analyzer_diagnostics: &[CborValue],
 ) -> String {
     match format {
-        "json" => render_json_envelope(result, alsem_version, deterministic, analyzer_diagnostics),
+        "json" => render_json_envelope(result, driver_version, deterministic, analyzer_diagnostics),
         "sarif" => render_sarif(result),
         _ => render_human(result),
     }
@@ -291,7 +291,7 @@ fn payload_to_cbor(result: &DiffEngineResult) -> CborValue {
 /// + `serializeDocument`). Sorted-key, undefined-dropped, trailing newline.
 fn render_json_envelope(
     result: &DiffEngineResult,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
     analyzer_diagnostics: &[CborValue],
 ) -> String {
@@ -305,7 +305,7 @@ fn render_json_envelope(
     );
     env.insert(
         "alsemVersion".into(),
-        CborValue::Text(alsem_version.to_string()),
+        CborValue::Text(driver_version.to_string()),
     );
     env.insert("deterministic".into(), CborValue::Bool(deterministic));
     env.insert("generatedAt".into(), CborValue::Text(generated_at));

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "fingerprints": {
+            "default": "61ed00f39d7b7691"
+          },
+          "level": "warning",
+          "message": {
+            "text": "capability-gained-event-publish: OnAfterPostEntry"
+          },
+          "ruleId": "capabilities.capability-gained-event-publish"
+        },
+        {
+          "fingerprints": {
+            "default": "8c22c5e4a48c9f52"
+          },
+          "level": "warning",
+          "message": {
+            "text": "capability-gained-event-publish: PostEntry"
+          },
+          "ruleId": "capabilities.capability-gained-event-publish"
+        },
+        {
+          "fingerprints": {
+            "default": "d7661d1cc3661065"
+          },
+          "level": "note",
+          "message": {
+            "text": "procedure-added: OnAfterPostEntry"
+          },
+          "ruleId": "abi.procedure-added"
+        },
+        {
+          "fingerprints": {
+            "default": "69bcb7150a6700f1"
+          },
+          "level": "note",
+          "message": {
+            "text": "event-publisher-added: OnAfterPostEntry"
+          },
+          "ruleId": "events.event-publisher-added"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/anthropics/al-sem",
+          "name": "al-sem-diff",
+          "rules": [
+            {
+              "id": "capabilities.capability-gained-event-publish",
+              "name": "capability-gained-event-publish",
+              "shortDescription": {
+                "text": "capabilities capability-gained-event-publish"
+              }
+            },
+            {
+              "id": "abi.procedure-added",
+              "name": "procedure-added",
+              "shortDescription": {
+                "text": "abi procedure-added"
+              }
+            },
+            {
+              "id": "events.event-publisher-added",
+              "name": "event-publisher-added",
+              "shortDescription": {
+                "text": "events event-publisher-added"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

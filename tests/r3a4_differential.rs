@@ -19,17 +19,16 @@
 //! post-inject_intra_app_call_edges / collect_cited_dep_evidence /
 //! collect_dep_order_index. The R3a-5 cross-app cone is NOT projected.
 //!
-//! ## KNOWN_DIVERGENCES gating
+//! ## Strict byte-match comparison
 //!
-//! Reuses the repo-root `KNOWN_DIVERGENCES.json` with exact `(test, fixture, path)`
-//! matching, scoped to `test == R3A4_TEST_NAME`. Target: empty (byte-match).
+//! No allowlist tolerance: any structural divergence fails the test directly, and
+//! the pretty JSON must be byte-identical to the golden file.
 
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::deps::r3a4_projection::{
     R3a4Projection, project_r3a4_from_workspace,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
 const R3A4_TEST_NAME: &str = "differential_r3a4_dep_hooks_match_goldens";
@@ -45,32 +44,6 @@ fn goldens_dir() -> PathBuf {
 
 fn ws_fixture_dir() -> PathBuf {
     repo_root().join("tests").join("r3a4-fixtures").join("ws")
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct AllowEntry {
-    #[serde(default = "default_allow_test")]
-    test: String,
-    fixture: String,
-    path: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    reason: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    expires: String,
-}
-
-fn default_allow_test() -> String {
-    "differential_identity_subset_matches_goldens".to_string()
-}
-
-fn load_allowlist() -> Vec<AllowEntry> {
-    let path = repo_root().join("KNOWN_DIVERGENCES.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("failed to parse {} as a JSON array: {e}", path.display()))
 }
 
 #[derive(Debug, Clone)]
@@ -179,61 +152,36 @@ fn differential_r3a4_dep_hooks_match_goldens() {
     let rust_json = serde_json::to_value(&projection)
         .unwrap_or_else(|e| panic!("serialize Rust R3a-4 projection: {e}"));
 
-    // --- structural positional diff (the allowlist-gated surface) ---
+    // REGEN path (mirrors `differential.rs` / r2_5a). When `REGEN_TEMP_GOLDENS` is
+    // set, write the ENGINE-serialized projection straight to the golden file
+    // instead of comparing — the goldens are Rust-owned baselines (TS oracle
+    // retired).
+    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        let mut pretty = serde_json::to_string_pretty(&projection)
+            .unwrap_or_else(|e| panic!("regen serialize R3a-4 projection: {e}"));
+        pretty.push('\n');
+        std::fs::write(&golden_path, pretty)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        eprintln!("REGEN r3a4 golden: {}", golden_path.display());
+        return;
+    }
+
+    // --- structural positional diff ---
     let mut all_divergences: Vec<Divergence> = Vec::new();
     diff_value(FIXTURE, "", &golden_json, &rust_json, &mut all_divergences);
     all_divergences
         .sort_by(|a, b| (a.fixture.as_str(), &a.path).cmp(&(b.fixture.as_str(), &b.path)));
 
-    let allowlist: Vec<AllowEntry> = load_allowlist()
-        .into_iter()
-        .filter(|e| e.test == R3A4_TEST_NAME)
-        .collect();
-
-    let mut entry_used = vec![false; allowlist.len()];
-    let mut undocumented: Vec<&Divergence> = Vec::new();
-    for div in &all_divergences {
-        let mut covered = false;
-        for (i, entry) in allowlist.iter().enumerate() {
-            if entry.fixture == div.fixture && entry.path == div.path {
-                entry_used[i] = true;
-                covered = true;
-            }
-        }
-        if !covered {
-            undocumented.push(div);
-        }
-    }
-    let unused: Vec<&AllowEntry> = allowlist
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !entry_used[*i])
-        .map(|(_, e)| e)
-        .collect();
-
     let mut failure = String::new();
-    if !undocumented.is_empty() {
+    if !all_divergences.is_empty() {
         failure.push_str(&format!(
-            "\n{} UNDOCUMENTED R3a-4 divergence(s) (not in KNOWN_DIVERGENCES.json, \
-             test={R3A4_TEST_NAME}):\n",
-            undocumented.len()
+            "\n{} R3a-4 divergence(s) found ({R3A4_TEST_NAME}):\n",
+            all_divergences.len()
         ));
-        for d in &undocumented {
+        for d in &all_divergences {
             failure.push_str(&format!(
                 "  [{}] {}\n      golden = {}\n      rust   = {}\n",
                 d.fixture, d.path, d.golden_value, d.rust_value
-            ));
-        }
-    }
-    if !unused.is_empty() {
-        failure.push_str(&format!(
-            "\n{} UNUSED R3a-4 allowlist entr(y/ies) (no matching divergence this run):\n",
-            unused.len()
-        ));
-        for e in &unused {
-            failure.push_str(&format!(
-                "  [{}] {}  (reason: {:?}, expires: {:?})\n",
-                e.fixture, e.path, e.reason, e.expires
             ));
         }
     }
@@ -242,13 +190,8 @@ fn differential_r3a4_dep_hooks_match_goldens() {
         "R3a-4 dep-hook differential FAILED:{failure}"
     );
 
-    // --- BYTE-MATCH guard: KNOWN_DIVERGENCES is empty → the pretty JSON must be
-    // byte-identical to the golden file (the strongest oracle). ----------------
-    assert!(
-        allowlist.is_empty(),
-        "R3a-4 KNOWN_DIVERGENCES must be empty for the EXIT GATE (byte-match); found {} entr(y/ies)",
-        allowlist.len()
-    );
+    // --- BYTE-MATCH guard: the pretty JSON must be byte-identical to the golden
+    // file (the strongest oracle). -----------------------------------------
     let rust_pretty = serde_json::to_string_pretty(&projection)
         .unwrap_or_else(|e| panic!("pretty-serialize Rust R3a-4 projection: {e}"));
     // serde_json::to_string_pretty omits the trailing newline; the golden file ends
@@ -257,13 +200,10 @@ fn differential_r3a4_dep_hooks_match_goldens() {
     assert_eq!(
         rust_pretty.trim_end(),
         golden_text.trim_end(),
-        "R3a-4 pretty JSON is NOT byte-identical to the golden (KNOWN_DIVERGENCES=[])"
+        "R3a-4 pretty JSON is NOT byte-identical to the golden"
     );
 
-    eprintln!(
-        "R3a-4 differential: 1 fixture, byte-match, KNOWN_DIVERGENCES=[] ({} entr(y/ies)).",
-        allowlist.len()
-    );
+    eprintln!("R3a-4 differential: 1 fixture, byte-match.");
 }
 
 /// ANTI-DEGENERATE matrix (fail-on-zero) — the corpus must exercise every payload
@@ -376,77 +316,6 @@ fn r3a4_anti_degenerate_matrix_matches_manifest() {
         projection.return_summaries_count,
         projection.dep_order_index_present,
         projection.freshness_stamp_fresh,
-    );
-}
-
-/// UNIFIED GOLDEN REFRESH (R3a-4) — the one-command regen path. `#[ignore]`d so the
-/// default `cargo test` loop stays OFFLINE; gated on `AL_SEM_DIR`. After regenerating
-/// the al-sem goldens (`bun run scripts/dump-r3a4-dep-hooks.ts`), run:
-///
-/// ```bash
-/// AL_SEM_DIR=/u/Git/al-sem cargo test --test r3a4_differential -- \
-///     --ignored refresh_r3a4_goldens_from_al_sem --nocapture
-/// ```
-///
-/// Re-copies from the al-sem checkout into the engine:
-///   - the golden + manifest (`scripts/r3a4-goldens/{cross-app-dep-hooks.r3a4.golden.json,
-///     manifest.json}` → `tests/r3a4-goldens/`),
-///   - the committed dep `.app` fixture (`test/fixtures/r3a4-deps/<guid>.app` →
-///     `tests/r3a4-fixtures/<guid>.app` AND `tests/r3a4-fixtures/ws/.alpackages/<guid>.app`),
-///     so BOTH sides read the SAME `.app` bytes.
-///
-/// NOTE: al-sem builds the R3a-4 workspace INLINE (TS constants in
-/// `scripts/r3a4-projection.ts`); the engine's `tests/r3a4-fixtures/ws/{app.json,src/*.al}`
-/// is the hand-maintained mirror — if the al-sem capture changes the workspace shape,
-/// update those `.al` files. This refresh copies the goldens + the dep `.app`; it does
-/// NOT auto-commit.
-#[test]
-#[ignore]
-fn refresh_r3a4_goldens_from_al_sem() {
-    let al_sem = match std::env::var("AL_SEM_DIR") {
-        Ok(d) => PathBuf::from(d),
-        Err(_) => {
-            eprintln!("AL_SEM_DIR not set — skipping R3a-4 refresh");
-            return;
-        }
-    };
-    const DEP_GUID: &str = "cccccccc-0001-0000-0000-000000000001";
-
-    // 1. goldens + manifest.
-    let src_goldens = al_sem.join("scripts").join("r3a4-goldens");
-    let dst_goldens = goldens_dir();
-    std::fs::create_dir_all(&dst_goldens).expect("mk r3a4 goldens dir");
-    for name in [
-        "cross-app-dep-hooks.r3a4.golden.json",
-        "manifest.json",
-        "r3a4-vectors.json",
-    ] {
-        let src = src_goldens.join(name);
-        if src.exists() {
-            std::fs::copy(&src, dst_goldens.join(name))
-                .unwrap_or_else(|e| panic!("copy {name}: {e}"));
-        }
-    }
-    eprintln!("R3a-4: copied goldens → {}", dst_goldens.display());
-
-    // 2. the dep `.app` fixture (both the flat fixture + the ws/.alpackages copy).
-    let src_app = al_sem
-        .join("test")
-        .join("fixtures")
-        .join("r3a4-deps")
-        .join(format!("{DEP_GUID}.app"));
-    let fixtures = repo_root().join("tests").join("r3a4-fixtures");
-    std::fs::copy(&src_app, fixtures.join(format!("{DEP_GUID}.app")))
-        .unwrap_or_else(|e| panic!("copy dep .app (flat): {e}"));
-    let alpackages = fixtures.join("ws").join(".alpackages");
-    std::fs::create_dir_all(&alpackages).expect("mk ws/.alpackages");
-    std::fs::copy(&src_app, alpackages.join(format!("{DEP_GUID}.app")))
-        .unwrap_or_else(|e| panic!("copy dep .app (ws): {e}"));
-    eprintln!("R3a-4: copied dep .app → flat + ws/.alpackages");
-
-    eprintln!(
-        "R3a-4 goldens + dep .app refreshed from {}",
-        al_sem.display()
     );
 }
 

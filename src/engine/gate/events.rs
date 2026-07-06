@@ -144,7 +144,7 @@ fn chain_node_to_jv(node: &ChainNode) -> Jv {
 /// No trailing newline — matches `JSON.stringify(..., undefined, 2)`.
 pub fn format_fanout_json(
     report: &FanoutReport,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
 ) -> String {
     let generated_at = if deterministic {
@@ -173,7 +173,7 @@ pub fn format_fanout_json(
     let entries = Jv::Arr(report.entries.iter().map(fanout_entry_to_jv).collect());
 
     let envelope = Jv::Obj(vec![
-        ("al_sem_version".to_string(), Jv::s(alsem_version)),
+        ("al_sem_version".to_string(), Jv::s(driver_version)),
         ("generated_at".to_string(), Jv::s(&generated_at)),
         ("kind".to_string(), Jv::s("events.fanout")),
         ("summary".to_string(), summary),
@@ -186,7 +186,7 @@ pub fn format_fanout_json(
 /// Serialize the chain report to the insertion-order JSON envelope.
 pub fn format_chains_json(
     report: &ChainReport,
-    alsem_version: &str,
+    driver_version: &str,
     deterministic: bool,
 ) -> String {
     let generated_at = if deterministic {
@@ -212,7 +212,7 @@ pub fn format_chains_json(
     let chains = Jv::Arr(report.chains.iter().map(chain_node_to_jv).collect());
 
     let envelope = Jv::Obj(vec![
-        ("al_sem_version".to_string(), Jv::s(alsem_version)),
+        ("al_sem_version".to_string(), Jv::s(driver_version)),
         ("generated_at".to_string(), Jv::s(&generated_at)),
         ("kind".to_string(), Jv::s("events.chains")),
         ("summary".to_string(), summary),
@@ -341,7 +341,7 @@ pub struct EventsFanoutOptions<'a> {
     /// `capabilityComposition` is "partial" (emitting a stderr line + exit 1);
     /// `ignore` rewrites every entry's coverage to all-"complete".
     pub coverage_policy: &'a str,
-    pub alsem_version: &'a str,
+    pub driver_version: &'a str,
     pub deterministic: bool,
     pub strict: bool,
 }
@@ -435,7 +435,7 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
     }
 
     let text = match opts.format {
-        "json" => format_fanout_json(&report, opts.alsem_version, opts.deterministic),
+        "json" => format_fanout_json(&report, opts.driver_version, opts.deterministic),
         _ => format_fanout_human(&report),
     };
 
@@ -484,7 +484,7 @@ pub struct EventsChainsOptions<'a> {
     pub coverage_policy: &'a str,
     pub max_depth: Option<usize>,
     pub max_nodes: Option<usize>,
-    pub alsem_version: &'a str,
+    pub driver_version: &'a str,
     pub deterministic: bool,
     pub strict: bool,
 }
@@ -540,7 +540,7 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
     let report = compute_chain_report(ix, &walk_opts, opts.scope);
 
     let text = match opts.format {
-        "json" => format_chains_json(&report, opts.alsem_version, opts.deterministic),
+        "json" => format_chains_json(&report, opts.driver_version, opts.deterministic),
         _ => format_chains_human(&report),
     };
 

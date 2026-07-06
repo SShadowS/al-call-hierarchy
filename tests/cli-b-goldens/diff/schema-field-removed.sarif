@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "fingerprints": {
+            "default": "401c5ab1a46c4171"
+          },
+          "level": "error",
+          "message": {
+            "text": "table-field-removed: dd1f1e1d-0001-0001-0001-000000000001:Table:50100#3"
+          },
+          "ruleId": "schema.table-field-removed"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/anthropics/al-sem",
+          "name": "al-sem-diff",
+          "rules": [
+            {
+              "id": "schema.table-field-removed",
+              "name": "table-field-removed",
+              "shortDescription": {
+                "text": "schema table-field-removed"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

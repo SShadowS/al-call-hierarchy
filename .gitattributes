@@ -8,3 +8,10 @@ tests/**/*.cbor binary
 tests/**/*.gz binary
 tests/**/*.txt text eol=lf
 tests/**/*.md text eol=lf
+
+# Vendored fixture TREES (Task 3.3) are historical byte-for-byte copies of AL
+# source from the frozen al-sem archive; their SHA-256 is verified against the
+# witness listing at vendor time, so nothing here may rewrite their bytes
+# (line endings, EOF newline, etc). Last match wins, so this must come after
+# the broad tests/** rules above.
+tests/fixtures/** -text

@@ -236,7 +236,7 @@ pub struct FingerprintOptions<'a> {
     /// Workspace path.
     pub workspace: &'a std::path::Path,
     /// al-sem version string (e.g. `"cli-b-v1"`).
-    pub alsem_version: &'a str,
+    pub driver_version: &'a str,
     /// Output format.
     pub format: FingerprintFormat,
     /// Output file (stdout when None).
@@ -389,7 +389,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
 
         let full_opts = FullSnapshotOptions {
             workspace_dir: opts.workspace,
-            alsem_version: opts.alsem_version,
+            driver_version: opts.driver_version,
             deterministic: opts.deterministic,
             roots_config_ignored: false,
         };
@@ -422,12 +422,12 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
             // snapshot tree so apps/identities/coverage/rootClassifications are
             // byte-identical. The consumed-core (heavy) keys are not included.
             let text =
-                build_inventory_envelope(&tree, &resolved, opts.alsem_version, opts.deterministic);
+                build_inventory_envelope(&tree, &resolved, opts.driver_version, opts.deterministic);
             FingerprintOutput::Text(text)
         } else if let Some(mode) = opts.shard {
             // serialize_sharded: primaryOnly = (mode == PrimaryOnly).
             let primary_only = mode == ShardMode::PrimaryOnly;
-            let shards = serialize_sharded(&tree, opts.alsem_version, primary_only);
+            let shards = serialize_sharded(&tree, opts.driver_version, primary_only);
             FingerprintOutput::Shards(shards.into_iter().map(|s| (s.name, s.bytes)).collect())
         } else if opts.format == FingerprintFormat::Cbor {
             FingerprintOutput::Binary(serialize_cbor(&tree))
@@ -437,7 +437,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
             // json, no query
             let text = serialize_envelope(
                 &tree,
-                opts.alsem_version,
+                opts.driver_version,
                 opts.deterministic,
                 &envelope_diags,
             );
@@ -457,7 +457,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
     let snap = compose_snapshot(&resolved);
     let workspace_fp = crate::engine::l5::snapshot_full::workspace_fingerprint_of(
         opts.workspace,
-        opts.alsem_version,
+        opts.driver_version,
     );
 
     // Witness limit: default to 3 (the golden capturePoint default).
@@ -523,7 +523,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
         &filters,
         opts.deterministic,
         &analyzer_diags,
-        opts.alsem_version,
+        opts.driver_version,
         &workspace_fp,
     );
 
