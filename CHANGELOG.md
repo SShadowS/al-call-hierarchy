@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Performance targets: measured + CI-asserted generous bounds (Task T0.5,
+  Tier-0 remediation arc).** CLAUDE.md's Performance Targets table (initial index
+  <500ms/100 files, <2s/1000 files; prepareCallHierarchy/incomingCalls/outgoingCalls
+  <1ms; file change update <50ms) was measured NOWHERE: `benches/telemetry_hot_path.rs`
+  registered only `bench_disabled`, CI ran fmt/clippy/test/build and no bench, and no
+  test asserted any timing bound against the legacy LSP pipeline. New
+  `tests/perf_support/` is a deterministic (index-driven, no RNG) synthetic AL corpus
+  generator — N codeunits with a real cross-file call topology (every non-hub file's
+  `Proc0` makes one qualified call into a designated hub codeunit plus 2 local calls),
+  giving `incomingCalls`/`outgoingCalls` genuine fan-in/fan-out rather than an
+  all-isolated corpus. New `benches/lsp_pipeline.rs` (Criterion, `cargo bench --bench
+  lsp_pipeline`) measures initial index of 100/1000-file corpora, the 3 call-hierarchy
+  query handlers against a 1000-file indexed graph, and a single-file reindex — all
+  in-process, no LSP stdio loop. New `tests/perf_bounds.rs`, compiled for real only
+  under `#[cfg(not(debug_assertions))]` (a debug-build timing assert is meaningless;
+  an always-present marker test guarantees the binary never silently reports 0 tests),
+  asserts every operation stays within 3x its CLAUDE.md target (USER DECISION, binding:
+  generous margins accept occasional flake on loaded CI runners in exchange for
+  catching real order-of-magnitude regressions), using a warm-up pass plus a median of
+  3-5 timed runs. `.github/workflows/ci.yml` gained a `cargo test --release --test
+  perf_bounds` step reusing the existing release build. CLAUDE.md's perf table now
+  carries measured numbers alongside each target (all with wide headroom: e.g.
+  1000-file initial index ~15.9ms against a 2s target).
+  **Enabling refactor:** `graph.rs`/`indexer.rs`/`handlers.rs`/`parser.rs`/`protocol.rs`
+  were bin-only modules (declared in `main.rs`), invisible to bench/test targets that
+  only link the library crate — benching them required exposing them. Moved module
+  ownership to `lib.rs` (`pub mod`) and re-exported from `main.rs` via `pub use
+  al_call_hierarchy::{...}`, extending the pattern the repo already used for
+  `config`/`telemetry`/`app_package`/`dependencies` (whose own doc comment already said
+  this was "so library consumers \[i.e. benches\] can use them"). Fixed the one
+  self-crate-reference this exposed (`graph.rs`'s `ObjectType` re-export) and widened
+  one `pub(crate)` function (`parser::routine_complexity_ir`) to `pub`, since `main.rs`
+  now consumes it across a real crate boundary. The 3 handler functions
+  (`prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls`) are now `pub fn` (were
+  private) so benches/tests can call them directly. Zero behavior change: all 1340 lib
+  tests + 24 bin tests pass unchanged (92 of the 1340 are the graph/indexer/handlers
+  suites, now running as part of the lib target instead of the bin target).
 - **Builtin-dispatch justification audit — pinned-baseline ratchet (Task T0.3,
   Tier-0 remediation arc).** The north-star real-`unknown` rate cannot see a
   missed dispatch edge that lands in `builtin` instead: `Page.RunModal(Page::"X")`
