@@ -431,6 +431,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is upstream — `al_syntax::parse`/`extract_from_ir`'s `Interface` object
   extraction — and unidentified; needs its own dedicated investigation. Full
   reproduction steps in `tests/r0-goldens/README.md`).
+- **`tests/common/regen.rs` env-mutating unit test could race a real golden
+  gate into silently rewriting a golden (whole-branch review finding on Task
+  T0.6, Tier-0 remediation arc).** Because `regen.rs` is `#[path]`-included
+  into ~40 golden-asserting test binaries, its own `#[cfg(test)]` integration
+  test — `regen_mode_reads_real_env_var_by_value`, which `unsafe { set_var
+  ("REGEN_TEMP_GOLDENS", ...) }`'d the process env to exercise all three
+  value states, serialized only by a private `ENV_LOCK` that no other test in
+  the binary honored — ran concurrently, under `cargo test`'s parallel test
+  threads, with every other test in the same binary reading `regen_mode()`
+  unlocked. During the window where the var was set to `"1"`, a racing golden
+  gate could enter its regen branch and rewrite its committed golden without
+  asserting: the exact silent-rewrite hazard T0.6 exists to eliminate,
+  reintroduced by the test meant to guard it. Also plain UB (concurrent
+  `setenv`/`getenv` is why `set_var` is `unsafe` since edition 2024). Fixed by
+  deleting the test outright rather than adding save/restore locking (the
+  race window would remain); the five pure `resolve_regen_mode_*` tests fully
+  cover `regen_mode()`'s value semantics (a trivial composition over
+  `resolve_regen_mode`) without touching the environment, so no coverage was
+  lost.
 - **Regen-write trailing-newline bug (`program_resolve_harness.rs`
   `fixture_semantic_golden_matches_l3`, Task T0.6).** Its pre-existing regen
   path omitted the trailing newline every other regen path in the repo

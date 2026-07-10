@@ -41,14 +41,17 @@ pub fn regen_mode() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    /// Serializes the tests that mutate the process-global env var so they do
-    /// not race under cargo's parallel test threads (mirrors
-    /// `src/engine/gate/version.rs`).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     // --- pure-helper tests (no env state, never race) ---
+    //
+    // No test in this module mutates `REGEN_TEMP_GOLDENS`: this file is
+    // `#[path]`-included into ~40 golden-asserting test binaries, and a
+    // mutating test here would run concurrently with those binaries' own
+    // (unlocked) `regen_mode()` reads — racing a real golden gate into its
+    // regen branch and silently rewriting a committed golden. The value
+    // semantics of `regen_mode()` are a trivial composition over
+    // `resolve_regen_mode`, so the pure tests below fully cover it without
+    // touching the process environment.
 
     #[test]
     fn resolve_regen_mode_true_only_for_exact_one() {
@@ -77,30 +80,5 @@ mod tests {
         assert!(!resolve_regen_mode(Some("2")));
         assert!(!resolve_regen_mode(Some(" 1")));
         assert!(!resolve_regen_mode(Some("1 ")));
-    }
-
-    // --- thin integration test of the real env read (serialized via ENV_LOCK) ---
-
-    #[test]
-    fn regen_mode_reads_real_env_var_by_value() {
-        let _guard = ENV_LOCK.lock().unwrap();
-
-        // TODO: Audit that the environment access only happens in single-threaded code.
-        unsafe { std::env::set_var("REGEN_TEMP_GOLDENS", "1") };
-        assert!(regen_mode(), "REGEN_TEMP_GOLDENS=1 must regenerate");
-
-        // TODO: Audit that the environment access only happens in single-threaded code.
-        unsafe { std::env::set_var("REGEN_TEMP_GOLDENS", "0") };
-        assert!(
-            !regen_mode(),
-            "REGEN_TEMP_GOLDENS=0 must NOT regenerate (the T0.6 bug)"
-        );
-
-        // TODO: Audit that the environment access only happens in single-threaded code.
-        unsafe { std::env::remove_var("REGEN_TEMP_GOLDENS") };
-        assert!(
-            !regen_mode(),
-            "unset REGEN_TEMP_GOLDENS must NOT regenerate"
-        );
     }
 }
