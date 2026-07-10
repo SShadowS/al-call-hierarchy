@@ -10670,3 +10670,152 @@ fn ws_report_dataitem_extension_resolves_base_dataitem_name() {
     assert_eq!(rid.name_lc, "getdisplayname");
     assert!(rid.object.id_equals_number(51710));
 }
+
+// ---------------------------------------------------------------------------
+// T0.3: builtin-dispatch justification audit
+// ---------------------------------------------------------------------------
+//
+// The north-star metric counts only `unknown` edges as holes; a missed
+// dispatch edge that lands in `builtin` is structurally invisible to it (see
+// `member_catalog::ENTRY_DISPATCH_BUILTIN_IDS`'s doc for the two classifier
+// gaps this audit makes visible: `Page.RunModal(Page::"X")`-shaped keyword
+// calls, and declared Page/Report-typed variable `.RunModal()` calls). This
+// audit is DIAGNOSTIC + ratchet only — it never changes resolution outcome.
+
+/// Loads `tests/r0-corpus/ws-builtin-dispatch-audit` and returns the full
+/// `resolve_full_program` report.
+fn ws_builtin_dispatch_audit_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-builtin-dispatch-audit");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-builtin-dispatch-audit")
+}
+
+/// T0.3 fixture-level proof (no CDO needed): the audit flags EXACTLY the 3
+/// statically-named RunModal sites in `AuditCaller.Codeunit.al` — the
+/// brief's cited `Page.RunModal(Page::"X")` keyword-receiver shape, its
+/// `Report.RunModal(Report::"X")` analog, AND the declared-Page-variable
+/// shape (`MyPage.RunModal()`, which the brief's own roadmap doc explicitly
+/// scopes into this audit even though it's a SEPARATE classifier gap from
+/// the keyword-receiver one T1.3 targets first) — and marks the
+/// dynamic-target call `Indeterminate`: fail-closed, never guessed, never
+/// silently dropped.
+#[test]
+fn ws_builtin_dispatch_audit_flags_exactly_the_static_runmodal_sites() {
+    let report = ws_builtin_dispatch_audit_report();
+    let audit = &report.builtin_dispatch_audit;
+
+    assert_eq!(
+        audit.flagged.len(),
+        3,
+        "expected exactly 3 flagged sites; got {:#?}",
+        audit.flagged
+    );
+    assert_eq!(
+        audit.indeterminate.len(),
+        1,
+        "expected exactly 1 indeterminate site; got {:#?}",
+        audit.indeterminate
+    );
+
+    // Every flagged/indeterminate site must come from AuditCaller.Codeunit.al.
+    for s in &audit.flagged {
+        assert!(
+            s.file.ends_with("AuditCaller.Codeunit.al"),
+            "unexpected file on a flagged site: {s:?}"
+        );
+        assert_eq!(s.method, "runmodal");
+    }
+    for s in &audit.indeterminate {
+        assert!(
+            s.file.ends_with("AuditCaller.Codeunit.al"),
+            "unexpected file on an indeterminate site: {s:?}"
+        );
+        assert_eq!(s.method, "runmodal");
+    }
+
+    // The 2 keyword/declared-var Page sites both resolve to the SAME target
+    // identity string ("Page::audit target page") and sort before the single
+    // Report site ('P' < 'R') — proving BOTH populations (keyword-receiver +
+    // declared-variable) are caught, not just one.
+    let objects: Vec<&str> = audit.flagged.iter().map(|s| s.object.as_str()).collect();
+    assert_eq!(
+        objects,
+        vec![
+            "Page::audit target page",
+            "Page::audit target page",
+            "Report::audit target report",
+        ],
+        "flagged objects (sorted) must be exactly 2 Page + 1 Report site; got {objects:?}"
+    );
+
+    // Determinism: output is sorted (never HashMap iteration order).
+    let mut sorted_flagged = audit.flagged.clone();
+    sorted_flagged.sort();
+    assert_eq!(
+        audit.flagged, sorted_flagged,
+        "flagged sites must already be sorted"
+    );
+    let mut sorted_indeterminate = audit.indeterminate.clone();
+    sorted_indeterminate.sort();
+    assert_eq!(
+        audit.indeterminate, sorted_indeterminate,
+        "indeterminate sites must already be sorted"
+    );
+}
+
+/// T0.3 CDO ratchet (gated — no `CDO_WS`, silently skips): the flagged
+/// population on the real CDO workspace is PINNED to
+/// `CDO_ENTRY_DISPATCH_FLAGGED_PIN` — this pin drops to 0 only when T1.3
+/// (the RunModal entry-trigger dispatch fix) lands for BOTH populations this
+/// audit covers (see `docs/superpowers/plans/2026-07-10-deep-review-
+/// remediation.md`'s T1.3 entry — its CURRENT scope is the keyword-receiver
+/// shape only, so the pin may only PARTIALLY drop when T1.3 first lands; a
+/// residual nonzero pin after that landing is expected until the
+/// declared-variable population is ALSO fixed, not a regression by itself —
+/// re-measure and re-pin deliberately, don't assume 0). A DIFFERENT number
+/// in EITHER direction from a re-measurement that was not an intentional
+/// classifier change is a regression: either a resolver change silently
+/// started/stopped landing sites in the flagged catalog, or this audit's own
+/// logic drifted.
+#[test]
+fn cdo_builtin_dispatch_audit_flagged_count_is_pinned() {
+    let Some(ws) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    const CDO_ENTRY_DISPATCH_FLAGGED_PIN: usize = 94;
+
+    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+    let audit = &report.builtin_dispatch_audit;
+
+    // Determinism: sorted output, stable across repeated re-derivation from
+    // the SAME report (not re-parsing CDO twice — this test asserts the
+    // audit's own sort is idempotent, not merely "ran once").
+    let mut resorted = audit.flagged.clone();
+    resorted.sort();
+    assert_eq!(
+        audit.flagged, resorted,
+        "flagged sites must already be sorted"
+    );
+
+    assert_eq!(
+        audit.flagged.len(),
+        CDO_ENTRY_DISPATCH_FLAGGED_PIN,
+        "CDO flagged builtin-dispatch population moved off the pinned baseline \
+         ({} vs pinned {}) — investigate before re-pinning: either a resolver \
+         change intentionally landed/removed sites in the flagged catalog \
+         (expected direction: DOWN, once T1.3 lands), or this is a real \
+         regression.\nflagged sites:\n{:#?}",
+        audit.flagged.len(),
+        CDO_ENTRY_DISPATCH_FLAGGED_PIN,
+        audit.flagged,
+    );
+
+    eprintln!(
+        "T0.3 CDO builtin-dispatch audit: flagged={} indeterminate={}\nflagged sites:\n{:#?}",
+        audit.flagged.len(),
+        audit.indeterminate.len(),
+        audit.flagged,
+    );
+}

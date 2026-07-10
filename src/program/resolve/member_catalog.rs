@@ -534,6 +534,78 @@ pub fn member_builtin_id(kind: MemberCatalogKind<'_>, method_lc: &str) -> Option
 }
 
 // ---------------------------------------------------------------------------
+// T0.3: entry-dispatching builtin catalog members (diagnostic-only)
+// ---------------------------------------------------------------------------
+
+/// [`BuiltinId`] text (`"{Prefix}::{method_lc}"`, see [`member_builtin_id`]) of
+/// every catalog member that DISPATCHES INTO USER CODE when its target object
+/// is statically known, rather than being an ordinary platform intrinsic.
+///
+/// `Run`/`RunModal` on the Page/Report instance catalogs (`PAGE_INSTANCE`
+/// above, `member_catalog.rs:307`; `REPORT_INSTANCE`, `:316`) open the named
+/// page/report — a real entry-trigger dispatch into caller-named user code,
+/// not a leaf platform call. Two classifier gaps currently land this shape as
+/// an ordinary `Evidence::Catalog` `Builtin` route instead of an entry-trigger
+/// `Run` edge into the target object:
+/// - `extract::classify_call`'s `ObjectRun` check
+///   (`src/program/resolve/extract.rs:371`) only recognizes bare
+///   `Page.Run(...)`/`Report.Run(...)` (`method_lc == "run"`), never
+///   `RunModal`, for a KEYWORD receiver (`Page`/`Report` used as a
+///   pseudo-namespace).
+/// - `resolver::resolve_member_with_args`'s `Object{kind, name_lc}` arm
+///   (`resolver.rs:2553-2573`) never recognizes ANY declared Page/Report-typed
+///   VARIABLE receiver (`MyPage.RunModal()`) as an entry dispatch at all —
+///   only `Codeunit.Run` has a special-cased entry-trigger arm
+///   (`resolver.rs:2433`).
+///
+/// This const is consulted ONLY by the T0.3 builtin-dispatch audit
+/// (`program::resolve::full`'s `builtin_dispatch_finding`) — NEVER by
+/// resolution/classification itself. Diagnostic-only, does not change any
+/// route/edge/histogram.
+///
+/// # Inclusion / exclusion (scouted against every catalog in this file)
+///
+/// - **Included:** `PageInstance::run`, `PageInstance::runmodal`,
+///   `ReportInstance::run`, `ReportInstance::runmodal` — MS Learn documents
+///   both as opening the page/report named by the call
+///   (`page-run-method`/`page-runmodal-method`,
+///   `report-run-method`/`report-runmodal-method`): a genuine entry dispatch
+///   into the target object's own trigger chain (`OnOpenPage`/`OnInit` for
+///   Page, `OnInitReport`/`OnPreReport` for Report).
+/// - **Codeunit excluded:** `Codeunit.Run`/a declared Codeunit-typed
+///   variable's `.Run()` can NEVER land in `builtin` — the keyword-receiver
+///   form is caught by `extract::classify_call`'s `ObjectRun` check (method
+///   `"run"` already matches there), and the variable-receiver form is caught
+///   by `resolve_member_with_args`'s OWN `ObjectKind::Codeunit && method_lc ==
+///   "run"` special case (`resolver.rs:2433`), which dispatches to the
+///   `OnRun` entry trigger directly. `Codeunit` has no `RunModal` member at
+///   all (MS Learn: only Page/Report document a `RunModal` overload) and
+///   `object_instance_framework_kind` (`resolver.rs:2137`) returns `None` for
+///   `Codeunit` — there is no instance-builtin catalog for it to fall into.
+/// - **XmlPort/Query excluded:** `object_instance_framework_kind` returns
+///   `None` for both (no instance-builtin catalog exists for either kind in
+///   this file), and neither has a `Run`/`RunModal`-shaped member that
+///   dispatches into user code per MS Learn — `XmlPort.Import`/`Export`
+///   stream data through a declared XmlPort's OWN ports (not a fan-out into
+///   a NAMED target), and `Query.Open`/`ReadAndClear`-family members execute
+///   a platform query, never a callee's code. Neither is a member of this
+///   list.
+pub const ENTRY_DISPATCH_BUILTIN_IDS: &[&str] = &[
+    "PageInstance::run",
+    "PageInstance::runmodal",
+    "ReportInstance::run",
+    "ReportInstance::runmodal",
+];
+
+/// `true` when `id`'s text is one of [`ENTRY_DISPATCH_BUILTIN_IDS`] — a
+/// `Builtin` route the T0.3 audit must justify (flag or mark indeterminate)
+/// rather than silently accept. Diagnostic-only (see the const's doc).
+#[must_use]
+pub fn is_entry_dispatch_builtin(id: &BuiltinId) -> bool {
+    ENTRY_DISPATCH_BUILTIN_IDS.contains(&id.0.as_str())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

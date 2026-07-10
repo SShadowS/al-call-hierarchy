@@ -52,6 +52,10 @@ ws-bare-implicit-rec-field/RBFBaseExt.TableExtension.al::0::TestBareBaseFieldFro
 ws-bare-implicit-rec-field/RBFCaller.Codeunit.al::0::TestBareFieldReceiverNonTableScope	1cf7e651fbee8181
 ws-baseapp-closure/src/WsBaseCaller.Codeunit.al::0::Run	6378e9310d30e2a5
 ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al::0::Run	a19777337a1266d1
+ws-builtin-dispatch-audit/src/AuditCaller.Codeunit.al::0::FlaggedPageKeywordRunModal	63abcf7e28a28fb3
+ws-builtin-dispatch-audit/src/AuditCaller.Codeunit.al::0::FlaggedReportKeywordRunModal	81df3848009233f9
+ws-builtin-dispatch-audit/src/AuditCaller.Codeunit.al::0::FlaggedDeclaredPageVarRunModal	24b1a186f97e3606
+ws-builtin-dispatch-audit/src/AuditCaller.Codeunit.al::0::IndeterminatePageKeywordDynamicTarget	a564d90bd1c9e04e
 ws-builtin-shadow/Acme.Table.al::0::FieldNo	e745de7563a4d71c
 ws-builtin-shadow/ShadowCallerA.Codeunit.al::0::CallA	b2ec4dbe37b780e8
 ws-builtin-shadow/ShadowCallerB.Codeunit.al::0::CallB	3f3f23a5af16eef1

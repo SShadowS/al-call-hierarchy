@@ -8,6 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Builtin-dispatch justification audit — pinned-baseline ratchet (Task T0.3,
+  Tier-0 remediation arc).** The north-star real-`unknown` rate cannot see a
+  missed dispatch edge that lands in `builtin` instead: `Page.RunModal(Page::"X")`
+  (a keyword receiver + `DatabaseReference` argument) and a declared
+  Page/Report-typed variable's `.RunModal()` both currently resolve as an
+  ordinary `Evidence::Catalog` `Builtin` route (`PageInstance::runmodal` /
+  `ReportInstance::runmodal`) instead of an entry-trigger `Run` edge into the
+  named target — two separate classifier gaps (`extract::classify_call`'s
+  `ObjectRun` check only recognizes method `"run"`, never `"runmodal"`, for a
+  keyword receiver; `resolver::resolve_member_with_args`'s `Object{kind,
+  name_lc}` arm never special-cases a declared Page/Report variable's
+  `Run`/`RunModal` as an entry dispatch at all — only `Codeunit.Run` has that
+  special case). New `member_catalog::ENTRY_DISPATCH_BUILTIN_IDS` names the 4
+  flagged catalog entries (`PageInstance`/`ReportInstance` × `run`/`runmodal`;
+  Codeunit/XmlPort/Query excluded with documented MS-Learn-grounded reasoning).
+  `resolve_full_program`'s `ProgramReport` gained an ADDITIVE
+  `builtin_dispatch_audit: BuiltinDispatchAudit` field (sorted `flagged: Vec<
+  FlaggedBuiltinDispatchSite>` + `indeterminate: Vec<IndeterminateBuiltinDispatchSite>`),
+  computed inline in `resolve_call_site_obligation`'s `CalleeShape::Member` arm
+  from data already in scope (the resolved `ReceiverType` + the call's raw
+  argument expressions) — no change to `Route`/`Edge`/`CalleeShape`, no change
+  to any resolution outcome or histogram (CDO `aldump
+  --program-call-graph-stats` SHA-256 confirmed byte-identical to the frozen
+  baseline). Fail-closed: a flagged method whose target cannot be PROVEN
+  static (e.g. a runtime-variable `RunModal` argument) is reported separately
+  as `indeterminate`, never guessed into `flagged`. `extract::classify_call`'s
+  existing `DatabaseReference`-target extraction was factored into a shared
+  `static_database_reference_target` helper so the audit and the `ObjectRun`
+  classifier check can never drift. New fixture `tests/r0-corpus/
+  ws-builtin-dispatch-audit` proves the audit flags exactly its 3 statically-named
+  RunModal sites (both populations) and marks 1 dynamic-target call
+  indeterminate, with zero `CDO_WS` dependency. New CDO-gated ratchet test
+  `cdo_builtin_dispatch_audit_flagged_count_is_pinned` (via the shared
+  `cdo::cdo_ws_or_enforce()` helper) pins the measured real population —
+  **94 flagged sites, 13 indeterminate** — as a binding, user-decided
+  pinned-baseline ratchet (mirrors the `ambiguousResolved=56` precedent): the
+  pin holds the gate green until Task T1.3 lands the classifier fix, at which
+  point it drops (verified stable across 2 consecutive CDO runs, byte-identical
+  flagged-site lists both times).
 - **`scripts/cdo-gate` — the local release-gate runner for the CDO ratchet
   (Task T0.2, Tier-0 remediation arc).** A Git-Bash-compatible shell script
   that requires a CDO workspace path (positional arg or `CDO_WS` env var —
