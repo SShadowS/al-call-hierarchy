@@ -487,6 +487,67 @@ mod tests {
         );
     }
 
+    /// CDO pin (Tier-1 remediation, Task T1.2, H-2 re-measure protocol):
+    /// names the real duplicate-GUID dependencies the fix found and dropped
+    /// on the frozen CDO workspace, so the fix's real-world effect (not just
+    /// the synthetic fixtures above) is a durable regression guard.
+    ///
+    /// Investigative run (2026-07-10): CDO's workspace root
+    /// (`DO.Support-SlowDOSetup/DocumentOutput/Cloud`) has its OWN
+    /// `.alpackages`, and its ANCESTOR (`DO.Support-SlowDOSetup/
+    /// DocumentOutput`) has a SECOND `.alpackages` that `find_all_alpackages_
+    /// folders` also scans (by design — a monorepo's shared package cache) —
+    /// 10 of CDO's 12 real dependency apps are cached in BOTH,
+    /// byte-identical. TWO (`Continia Document Output`, `Continia Connector
+    /// App`) additionally have a genuinely STALE extra copy in the ancestor
+    /// folder — the literal "stale ancestor-folder copy" scenario the H-2 fix
+    /// exists for, confirmed on real data, not just a constructed fixture.
+    #[test]
+    fn cdo_dedup_names_the_real_dropped_duplicates() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            return;
+        };
+        let (_snap, dropped) = (SnapshotBuilder {
+            workspace_root: ws,
+            local_providers: vec![],
+        })
+        .build_with_diagnostics()
+        .expect("snapshot build");
+
+        assert_eq!(
+            dropped.len(),
+            12,
+            "CDO's real .alpackages duplicate-GUID population moved — \
+             re-derive this pin, don't just loosen it; got {dropped:#?}"
+        );
+
+        let byte_identical = dropped
+            .iter()
+            .filter(|d| d.kept_version == d.dropped_version)
+            .count();
+        assert_eq!(
+            byte_identical, 10,
+            "10 of CDO's 12 drops are the SAME version cached in both the \
+             workspace's own and its ancestor's .alpackages; got {dropped:#?}"
+        );
+
+        let mut stale_names: Vec<&str> = dropped
+            .iter()
+            .filter(|d| d.kept_version != d.dropped_version)
+            .map(|d| d.name.as_str())
+            .collect();
+        stale_names.sort_unstable();
+        assert_eq!(
+            stale_names,
+            vec!["Continia Connector App", "Continia Document Output"],
+            "exactly these two drops must be a genuine version mismatch \
+             (the stale-ancestor-copy scenario); got {dropped:#?}"
+        );
+    }
+
     #[test]
     fn builds_snapshot_over_cdo_workspace() {
         let Some(ws) = std::env::var_os("CDO_WS")

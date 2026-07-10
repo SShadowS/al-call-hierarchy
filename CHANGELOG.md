@@ -404,6 +404,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **CDO re-measure + harness rebaseline for the H-1/H-2/H-3 dependency-ingest
+  trio (Tier-1 remediation Task T1.2).** `aldump --program-call-graph-stats`
+  on the frozen CDO workspace: `primaryScoped` (workspace-only edges) is
+  BYTE-IDENTICAL before/after all three fixes (`total` 18108, `unknown` 0,
+  `realUnknownRate` 0.0 — the north-star zero holds exactly). The only
+  `wholeProgram`-scope delta is `total`/`honestEmpty` 43408 → 43369 (-39),
+  attributed ENTIRELY to H-2 by incremental per-commit measurement (H-1 alone:
+  byte-identical; H-1+H-2: exactly this delta; H-1+H-2+H-3: no further
+  change). Root cause: CDO's workspace root has its OWN `.alpackages`, and
+  its ANCESTOR folder (`find_all_alpackages_folders` scans both by design)
+  has a SECOND `.alpackages` caching the SAME 12 real dependency apps — 10
+  byte-identical duplicates plus 2 genuinely stale extra copies (`Continia
+  Document Output` 28.0.0.227530, `Continia Connector App` 28.0.0.225760),
+  confirmed real-world instances of exactly the scenario H-2 fixes (pinned in
+  a new CDO-gated `cdo_dedup_names_the_real_dropped_duplicates` test).
+  Removing the 12 duplicate AppUnits eliminated 39 duplicate call-site
+  obligations that were being double-counted in the `wholeProgram` (not
+  `primaryScoped`) `honestEmpty` bucket — H-1 (event-subscriber orphan fix)
+  and H-3 (NUL-tolerant parse) are CONFIRMED CDO-DORMANT: `abiIntegrity`
+  (`abiMapped`/`abiRoutesTotal`/`abiUnmapped`) and every other histogram
+  field are byte-identical throughout — no NUL-padded or genuinely-corrupt
+  dependency file exists in CDO's real `.alpackages`, and no `local`/
+  `internal` publisher in CDO's real deps gained a NEW subscriber binding
+  (dormancy here is the documented "fine, honest answer," not a fix that
+  didn't work). `genuine_wrong` stayed 0 throughout every measurement.
+  One pre-existing test asserted the OLD buggy H-1 behavior as correct:
+  `program_resolve_harness.rs`'s `ws_protected_abi_internal_and_local_still_absent`
+  expected an `internal`/`local` ABI member to resolve `Unknown(MemberNotFound)`
+  (dropped-at-ingestion, indistinguishable from a name that never existed);
+  renamed to `..._still_declines_but_with_precise_reason` and rebaselined to
+  the correct, more precise `Unknown(InternalNotVisible)`/`Unknown(LocalNotVisible)`
+  — a genuine improvement (the member now demonstrably exists and is
+  access-declined, not silently absent), not a regression.
 - **NUL-padded `SymbolReference.json` silently ingested as an empty ABI, and
   every read/parse failure had zero production reads anywhere (H-3, Tier-1
   remediation Task T1.2).** Some `.app` emitters pad `SymbolReference.json`
