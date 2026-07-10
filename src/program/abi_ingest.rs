@@ -439,9 +439,22 @@ pub fn ingest_abi(
         });
 
         for routine in &abi_obj.routines {
-            if routine.is_local || routine.is_internal {
-                continue;
-            }
+            // Tier-1 remediation (H-1): `local`/`internal` ABI routines are no
+            // longer dropped here. AL's `local` on an event PUBLISHER
+            // restricts RAISING, not SUBSCRIBING — modern BaseApp integration
+            // events are `local procedure` + `[IntegrationEvent]` (a real
+            // dependency probe found 13,581 such publisher attributes in
+            // BaseApp's SymbolReference.json, every one previously discarded
+            // here, silently orphaning subscriber wiring downstream —
+            // `resolve::index::ResolveIndex::build`'s event-index loop hit
+            // `0 => continue` with no record). Dropping `is_internal` also
+            // made the InternalsVisibleTo friend map inert for SymbolOnly
+            // deps (nothing ever carried `Access::Internal` to gate). Both
+            // are now ingested and carry the matching `Access` variant below,
+            // so the resolver's EXISTING visibility model
+            // (`resolver::object_access_visible_from` /
+            // `internal_visible_across`) enforces call-time visibility —
+            // ingestion no longer makes that decision by deletion.
             let name_lc = routine.name.to_ascii_lowercase();
             // Tri-state arity (Task 1): a genuinely-parsed `Parameters` array
             // (even empty) carries its real `len()`; an absent/unparseable one
@@ -468,11 +481,19 @@ pub fn ingest_abi(
                 id: rid,
                 name: routine.name.clone(),
                 is_trigger: false,
-                // `protected` ABI members are KEPT (unlike local/internal,
-                // dropped above) and carried as `Access::Protected` — an
-                // extension of the declaring object may call them (Task 1).
+                // `protected` ABI members are carried as `Access::Protected` —
+                // an extension of the declaring object may call them (Task 1).
+                // H-1: `local`/`internal` now map to their matching `Access`
+                // variant instead of being dropped (see the loop-entry doc
+                // above). Precedence mirrors the source-side modifiers
+                // (mutually exclusive in real AL: a routine is at most one of
+                // local/internal/protected).
                 access: if routine.is_protected {
                     Access::Protected
+                } else if routine.is_local {
+                    Access::Local
+                } else if routine.is_internal {
+                    Access::Internal
                 } else {
                     Access::Public
                 },
@@ -844,8 +865,17 @@ mod tests {
         );
     }
 
+    /// Tier-1 remediation (H-1): `local`/`internal` ABI routines are no longer
+    /// dropped at ingest — AL's `local` on an event PUBLISHER restricts
+    /// RAISING, not SUBSCRIBING (modern BaseApp integration events are
+    /// `local procedure` + `[IntegrationEvent]`), and dropping `internal`
+    /// routines made the InternalsVisibleTo friend map inert for SymbolOnly
+    /// deps. Both must now survive ingestion, carrying the matching `Access`
+    /// variant so the resolver's EXISTING visibility model
+    /// (`object_access_visible_from`/`internal_visible_across`) enforces
+    /// call-time visibility instead of ingestion silently deleting the node.
     #[test]
-    fn local_and_internal_routines_skipped() {
+    fn local_and_internal_routines_kept_with_correct_access() {
         let dep = dep_id("SkipTest");
         let abi = SymbolReferenceAbi {
             objects: vec![AbiObject {
@@ -945,15 +975,29 @@ mod tests {
             routines_in_skip.iter().any(|r| r.id.name_lc == "public"),
             "Public must be included"
         );
-        assert!(
-            routines_in_skip.iter().all(|r| r.id.name_lc != "localproc"),
-            "is_local must be skipped"
+        let local_proc = routines_in_skip
+            .iter()
+            .find(|r| r.id.name_lc == "localproc")
+            .expect(
+                "is_local must be KEPT (H-1: local restricts raising, not \
+                 subscribing — dropping it silently orphaned publisher wiring)",
+            );
+        assert_eq!(
+            local_proc.access,
+            Access::Local,
+            "IsLocal:true must carry Access::Local, never be dropped"
         );
-        assert!(
-            routines_in_skip
-                .iter()
-                .all(|r| r.id.name_lc != "internalproc"),
-            "is_internal must be skipped"
+        let internal_proc = routines_in_skip
+            .iter()
+            .find(|r| r.id.name_lc == "internalproc")
+            .expect(
+                "is_internal must be KEPT (H-1: dropping it made the \
+                 InternalsVisibleTo friend map inert for SymbolOnly deps)",
+            );
+        assert_eq!(
+            internal_proc.access,
+            Access::Internal,
+            "IsInternal:true must carry Access::Internal, never be dropped"
         );
         let protected_proc = routines_in_skip
             .iter()
@@ -972,6 +1016,221 @@ mod tests {
             public_proc.access,
             Access::Public,
             "a routine with neither IsLocal/IsInternal/IsProtected must default to Access::Public"
+        );
+    }
+
+    /// H-1 fixture (Tier-1 remediation, Task T1.2): a SymbolOnly dep whose
+    /// SymbolReference declares a `local procedure` `[IntegrationEvent]`
+    /// publisher — the real modern BaseApp shape (13,581 publisher
+    /// attributes in BaseApp's SymbolReference.json, ALL `local procedure`;
+    /// AL's `local` on a PUBLISHER restricts RAISING, not SUBSCRIBING) — plus
+    /// a workspace subscriber targeting it. Pre-fix, `ingest_abi` dropped
+    /// every `is_local` ABI routine outright, so this publisher never became
+    /// a graph node and the subscription silently vanished (`0 => continue`
+    /// in `ResolveIndex::build`'s event-index loop, with no diagnostic).
+    /// Post-fix: the publisher survives with `Access::Local`, and the
+    /// subscription resolves — proving subscribing is not gated by the
+    /// publisher's call-visibility (subscribing is not calling).
+    #[test]
+    fn local_procedure_integration_event_publisher_subscription_resolves() {
+        use crate::program::resolve::event::PublisherKind;
+        use crate::program::resolve::index::ResolveIndex;
+        use crate::snapshot::embedded::SourceFile;
+        use crate::snapshot::provider::SourceRoot;
+
+        let dep = dep_id("LocalPubDep");
+        let abi = SymbolReferenceAbi {
+            objects: vec![AbiObject {
+                object_type: "Codeunit".into(),
+                object_number: 60100,
+                name: "Local Pub Dep".into(),
+                routines: vec![AbiRoutine {
+                    name: "OnDoStuff".into(),
+                    kind: "event-publisher".into(),
+                    event_kind: SrAbiEventKind::Integration,
+                    parameters: vec![],
+                    return_type_text: None,
+                    return_type_id: None,
+                    is_local: true,
+                    is_internal: false,
+                    is_protected: false,
+                    parameters_known: true,
+                    attributes: vec![],
+                    attributes_parsed: vec![],
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let ws = ws_id();
+        let cache = AbiCache::new();
+        cache.seed(
+            &dep.guid,
+            &dep.name,
+            &dep.publisher,
+            &dep.version,
+            Arc::new(abi),
+        );
+
+        let sub_src = r#"
+codeunit 50900 "Subscriber CU"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Local Pub Dep", 'OnDoStuff', '', false, false)]
+    local procedure HandleIt()
+    begin
+    end;
+}
+"#;
+        let mut ws_unit = make_ws_unit(&ws);
+        ws_unit.source = Some(SourceRoot {
+            files: vec![SourceFile {
+                virtual_path: "Subscriber.al".into(),
+                text: sub_src.into(),
+            }],
+            tier: TrustTier::Workspace,
+            content_hash: String::new(),
+        });
+        // A dependency edge is required — event-subscriber wiring resolves
+        // the publisher object at whole-snapshot scope, but `resolve_object`
+        // (used to locate that object from the subscriber's app) is still
+        // closure-scoped.
+        ws_unit.declared_deps = vec![crate::dependencies::AppDependency {
+            app_id: dep.guid.clone(),
+            name: dep.name.clone(),
+            publisher: dep.publisher.clone(),
+            version: dep.version.clone(),
+        }];
+
+        let snap = AppSetSnapshot {
+            apps: vec![ws_unit, make_symbolonly_dep_unit(&dep)],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        let publisher = g
+            .routines
+            .iter()
+            .find(|r| r.id.name_lc == "ondostuff")
+            .expect(
+                "a local-procedure IntegrationEvent publisher must survive \
+                 ingestion, not be dropped",
+            );
+        assert_eq!(
+            publisher.access,
+            Access::Local,
+            "an ABI is_local routine must carry Access::Local"
+        );
+        assert_eq!(publisher.publisher_kind, Some(PublisherKind::Integration));
+
+        let index = ResolveIndex::build(&g);
+        let subs = index.subscribers_of(&publisher.id);
+        assert_eq!(
+            subs.len(),
+            1,
+            "the workspace subscriber must bind to the local-procedure \
+             publisher — subscribing is not calling, so access must never \
+             gate subscription eligibility"
+        );
+        assert!(
+            index.orphaned_subscriptions().is_empty(),
+            "no orphan should be recorded once the publisher exists"
+        );
+    }
+
+    /// H-1 corollary fixture: an `internal` ABI routine on a SymbolOnly dep,
+    /// whose manifest grants `InternalsVisibleTo` friendship to the calling
+    /// workspace app. Pre-fix, `ingest_abi` dropped `is_internal` routines
+    /// outright, making `ProgramGraph.friends` (wired from
+    /// `AppUnit.internals_visible_to` in `build_program_graph`'s Step 3b)
+    /// INERT for SymbolOnly deps — there was never a node to check
+    /// friendship against, regardless of what the manifest declared.
+    /// Post-fix: the routine survives as `Access::Internal` and the friend
+    /// map is live. (The resolver's `internal_visible_across` friend-check
+    /// MECHANICS are tier-agnostic and already proven in
+    /// `resolver::tests`'s Task 1.5 suite — this fixture proves the missing
+    /// half: that ABI ingestion now feeds it a node to check at all.)
+    #[test]
+    fn internal_routine_with_internals_visible_to_friend_map_is_live() {
+        use crate::app_package::FriendApp;
+
+        let dep = dep_id("FriendDep");
+        let abi = SymbolReferenceAbi {
+            objects: vec![AbiObject {
+                object_type: "Codeunit".into(),
+                object_number: 60200,
+                name: "Friend Dep CU".into(),
+                routines: vec![AbiRoutine {
+                    name: "Secret".into(),
+                    kind: "procedure".into(),
+                    event_kind: SrAbiEventKind::Unknown,
+                    parameters: vec![],
+                    return_type_text: None,
+                    return_type_id: None,
+                    is_local: false,
+                    is_internal: true,
+                    is_protected: false,
+                    parameters_known: true,
+                    attributes: vec![],
+                    attributes_parsed: vec![],
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let ws = ws_id();
+        let cache = AbiCache::new();
+        cache.seed(
+            &dep.guid,
+            &dep.name,
+            &dep.publisher,
+            &dep.version,
+            Arc::new(abi),
+        );
+
+        let mut dep_unit = make_symbolonly_dep_unit(&dep);
+        // The dep's own manifest grants the workspace app friendship.
+        dep_unit.internals_visible_to = vec![FriendApp {
+            app_id: ws.guid.clone(),
+            name: ws.name.clone(),
+            publisher: ws.publisher.clone(),
+        }];
+
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), dep_unit],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        let secret = g
+            .routines
+            .iter()
+            .find(|r| r.id.name_lc == "secret")
+            .expect("an internal ABI routine must survive ingestion, not be dropped");
+        assert_eq!(
+            secret.access,
+            Access::Internal,
+            "an ABI is_internal routine must carry Access::Internal"
+        );
+
+        let ws_ref = g
+            .apps
+            .find_by_name("Workspace")
+            .expect("workspace app must be interned");
+        let dep_ref = g
+            .apps
+            .find_by_name("FriendDep")
+            .expect("dep app must be interned");
+        assert!(
+            g.friends.get(&dep_ref).is_some_and(|f| f.contains(&ws_ref)),
+            "the dep's InternalsVisibleTo must wire the workspace app as a \
+             friend — this map was previously inert for SymbolOnly deps \
+             because there was never an Access::Internal node to check it \
+             against; got friends: {:?}",
+            g.friends
         );
     }
 

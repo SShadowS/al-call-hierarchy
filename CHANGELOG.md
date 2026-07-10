@@ -404,6 +404,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **Dependency ABI ingestion silently dropped every `local`/`internal` routine,
+  orphaning event-subscriber wiring and making the InternalsVisibleTo friend
+  map inert for SymbolOnly deps (H-1, Tier-1 remediation Task T1.2).**
+  `abi_ingest::ingest_abi` unconditionally skipped any ABI routine with
+  `IsLocal`/`IsInternal` set. AL's `local` on an event PUBLISHER restricts
+  RAISING, not SUBSCRIBING — modern BaseApp integration events are `local
+  procedure` + `[IntegrationEvent]` (a real dependency probe found 13,581 such
+  publisher attributes in BaseApp's `SymbolReference.json`, every one
+  discarded); with the publisher routine never becoming a graph node,
+  `resolve::index::ResolveIndex::build`'s event-index loop hit `0 => continue`
+  with **no record at all** — the subscription (the charter's
+  data-is-control-flow wiring) simply vanished. Separately, dropping
+  `is_internal` routines meant `ProgramGraph.friends` (wired from a dep's own
+  `<InternalsVisibleTo>`) was permanently inert for SymbolOnly deps — there
+  was never an `Access::Internal` node to check friendship against. Fixed by
+  ingesting ALL routines carrying an access field and mapping `IsLocal`/
+  `IsInternal`/`IsProtected` to their matching `Access` variant (`Local`/
+  `Internal`/`Protected`, `Public` otherwise) instead of dropping — the
+  resolver's EXISTING visibility model (`resolver::object_access_visible_from`
+  / `internal_visible_across`) now enforces call-time visibility, so ingestion
+  no longer makes that decision by silent deletion; a publisher-kind routine
+  stays subscription-eligible regardless of its own `Access` (subscribing is
+  not calling — `ResolveIndex`'s candidate filter was already access-blind, so
+  no change was needed there once the node exists). `resolve::abi_check::
+  RawAbiIndex::build` (the independent re-derivation the integrity harness
+  checks `ingest_abi`'s output against) carried the identical stale skip and
+  is fixed in lockstep — left alone it would have turned every newly-ingested
+  local/internal routine into a false `abi_unmapped` integrity failure. A
+  0-candidate subscription (`ResolveIndex`'s event-index loop, the `0` arm of
+  the candidate-count dispatch) now records an additive `OrphanSub` diagnostic
+  (`ResolveIndex::orphaned_subscriptions()`) instead of a bare `continue`, so
+  a genuinely-absent publisher is observable rather than silently invisible.
 - **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
   (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
   PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
