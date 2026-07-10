@@ -404,6 +404,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **NUL-padded `SymbolReference.json` silently ingested as an empty ABI, and
+  every read/parse failure had zero production reads anywhere (H-3, Tier-1
+  remediation Task T1.2).** Some `.app` emitters pad `SymbolReference.json`
+  with trailing NUL bytes after the real JSON content. The legacy
+  `app_package::parse_symbols` parser (a `serde_json::StreamDeserializer`
+  reading only the first JSON value) already tolerated this; the newer engine
+  path (`engine::deps::symbol_reference::parse_symbol_reference`) used a
+  STRICT `serde_json::from_str`, which fails on the trailing NUL padding
+  (not JSON whitespace) even though the leading content is perfectly
+  well-formed — a genuinely correct dependency silently ingested with EMPTY
+  objects/tables. Worse, `SymbolReferenceAbi.error` (the field meant to
+  surface exactly this) had ZERO production reads anywhere in the codebase,
+  and a SEPARATE I/O-level failure path (`AbiCache::get_or_load`'s
+  `unwrap_or_else(|_| SymbolReferenceAbi::default())`) silently swallowed
+  zip-open/file-read failures the same way. Fixed with ONE shared tolerant
+  parser (`app_package::parse_first_json_value`, extracted from the legacy
+  path's existing technique) now used by BOTH `parse_symbols` and
+  `parse_symbol_reference` — `resolve::abi_check`'s integrity harness
+  re-parses through the same fixed function, so it was never
+  "synchronized-blind" as a separate concern. `AbiCache::get_or_load`'s I/O
+  swallow now routes through the SAME `error` field a JSON parse failure
+  uses. `abi_ingest::ingest_abi` now returns a named `AbiIngestResult`
+  (objects + routines + an optional `error`) instead of a bare tuple, and
+  `build_program_graph` collects every non-empty one into a new
+  `ProgramGraph.abi_ingest_errors: Vec<AbiIngestError>` (per-app, additive) —
+  a broken dependency is now observable instead of silently indistinguishable
+  from a genuinely-empty one.
 - **Duplicate dependency `.app` versions silently picked the stale one, or
   poisoned an entire app's ABI (H-2, Tier-1 remediation Task T1.2).**
   `dependencies::load_all_apps` scans EVERY `.alpackages` folder reachable by

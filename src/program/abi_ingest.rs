@@ -200,8 +200,17 @@ impl AbiCache {
         }
         self.parse_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let abi = read_symbol_reference_from_app(app_path)
-            .unwrap_or_else(|_| SymbolReferenceAbi::default());
+        // H-3 (Tier-1 remediation, Task T1.2): an I/O-level failure (can't
+        // open the zip, SymbolReference.json missing, invalid UTF-8) used to
+        // swallow silently into `SymbolReferenceAbi::default()` — identical
+        // to a genuinely-empty dep, with no way to tell the two apart. Route
+        // it through the SAME `error` field a JSON parse failure already
+        // uses, so both failure modes surface through the one channel
+        // `ingest_abi` propagates below.
+        let abi = read_symbol_reference_from_app(app_path).unwrap_or_else(|e| SymbolReferenceAbi {
+            error: Some(format!("failed to read {}: {e}", app_path.display())),
+            ..Default::default()
+        });
         let arc = Arc::new(abi);
         let key = (
             guid.to_string(),
@@ -363,15 +372,28 @@ pub(crate) const UNKNOWN_ARITY: usize = usize::MAX;
 // Public entry point
 // ---------------------------------------------------------------------------
 
+/// Result of [`ingest_abi`] — the extracted graph nodes plus an optional
+/// per-app ingest diagnostic (Tier-1 remediation, H-3).
+pub struct AbiIngestResult {
+    pub objects: Vec<ObjectNode>,
+    pub routines: Vec<RoutineNode>,
+    /// Set when the underlying `SymbolReference.json` could not be read or
+    /// parsed (`SymbolReferenceAbi.error`, propagated verbatim — see that
+    /// field's doc). Previously this signal existed but had ZERO production
+    /// reads: a broken dependency ingested as a silently empty ABI with no
+    /// way to tell it apart from a genuinely-empty one.
+    pub error: Option<String>,
+}
+
 /// Ingest one SymbolOnly dep unit into `ObjectNode` + `RoutineNode` lists.
 ///
 /// Returns empty vecs when the ABI is not available (no `app_path` and not
-/// seeded in `cache`).  Local and internal routines are silently skipped.
-pub fn ingest_abi(
-    unit: &AppUnit,
-    app: AppRef,
-    cache: &AbiCache,
-) -> (Vec<ObjectNode>, Vec<RoutineNode>) {
+/// seeded in `cache`) — this specific case is not itself flagged as an
+/// `error`; it is the pre-existing, deliberate "no ABI source at all"
+/// contract, distinct from "a source existed but failed to read/parse"
+/// (H-3's `error` field covers the latter). Local and internal routines are
+/// no longer skipped (H-1) — see the loop-entry doc below.
+pub fn ingest_abi(unit: &AppUnit, app: AppRef, cache: &AbiCache) -> AbiIngestResult {
     let id = &unit.id;
     let abi: Arc<SymbolReferenceAbi> =
         if let Some(cached) = cache.get(&id.guid, &id.name, &id.publisher, &id.version) {
@@ -379,7 +401,11 @@ pub fn ingest_abi(
         } else if let Some(path) = &unit.app_path {
             cache.get_or_load(&id.guid, &id.name, &id.publisher, &id.version, path)
         } else {
-            return (vec![], vec![]);
+            return AbiIngestResult {
+                objects: vec![],
+                routines: vec![],
+                error: None,
+            };
         };
 
     let mut objects: Vec<ObjectNode> = Vec::new();
@@ -571,7 +597,11 @@ pub fn ingest_abi(
         }
     }
 
-    (objects, routines)
+    AbiIngestResult {
+        objects,
+        routines,
+        error: abi.error.clone(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1231,6 +1261,129 @@ codeunit 50900 "Subscriber CU"
              because there was never an Access::Internal node to check it \
              against; got friends: {:?}",
             g.friends
+        );
+    }
+
+    /// H-3 fixture: an unreadable `.app` path (I/O failure — the file
+    /// doesn't exist). Pre-fix, `AbiCache::get_or_load`'s
+    /// `unwrap_or_else(|_| SymbolReferenceAbi::default())` swallowed this
+    /// into an ABI indistinguishable from a genuinely-empty dependency, with
+    /// nothing anywhere recording that ingestion actually failed. Post-fix,
+    /// the I/O error is routed through the same `error` channel a JSON
+    /// parse failure uses and surfaces as a `ProgramGraph.abi_ingest_errors`
+    /// entry — a genuinely-corrupt dep is now observable, never silently
+    /// empty.
+    #[test]
+    fn abi_read_failure_surfaces_as_graph_diagnostic() {
+        let dep = dep_id("BrokenDep");
+        let ws = ws_id();
+        let cache = AbiCache::new(); // not seeded — forces a real disk read.
+
+        let mut dep_unit = make_symbolonly_dep_unit(&dep);
+        dep_unit.app_path = Some(std::path::PathBuf::from(
+            "Z:/definitely/does/not/exist/broken.app",
+        ));
+
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), dep_unit],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        assert_eq!(
+            g.abi_ingest_errors.len(),
+            1,
+            "an unreadable dep .app must surface exactly one ingest \
+             diagnostic, not silently ingest as empty; got {:?}",
+            g.abi_ingest_errors
+                .iter()
+                .map(|e| &e.message)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            g.abi_ingest_errors[0].message.contains("failed to read"),
+            "got: {}",
+            g.abi_ingest_errors[0].message
+        );
+        assert!(
+            g.objects
+                .iter()
+                .all(|o| !o.name.eq_ignore_ascii_case("Broken Dep CU")),
+            "an unreadable dep must still fail closed to no objects"
+        );
+    }
+
+    /// H-3: a JSON-parse-failure `error` (the OTHER failure mode —
+    /// `SymbolReferenceAbi.error` set by `parse_symbol_reference` itself,
+    /// simulated directly here via `AbiCache::seed` rather than a real
+    /// malformed file — `nul_padded_json_still_parses_full_content` and
+    /// `bad_json_yields_error_not_panic` in `engine::deps::symbol_reference`
+    /// already prove the parser's own behavior; this proves the SEPARATE
+    /// propagation wiring from `abi.error` through `ingest_abi` into
+    /// `ProgramGraph.abi_ingest_errors`) must surface, while a HEALTHY dep
+    /// in the SAME snapshot produces no diagnostic at all — proving the
+    /// channel is per-app and selective, not a blanket flag.
+    #[test]
+    fn abi_parse_error_propagates_selectively_per_app() {
+        let broken = dep_id("BrokenParse");
+        let healthy = dep_id("HealthyDep");
+        let ws = ws_id();
+        let cache = AbiCache::new();
+        cache.seed(
+            &broken.guid,
+            &broken.name,
+            &broken.publisher,
+            &broken.version,
+            Arc::new(SymbolReferenceAbi {
+                error: Some("SymbolReference.json parse failed: trailing characters".into()),
+                ..Default::default()
+            }),
+        );
+        cache.seed(
+            &healthy.guid,
+            &healthy.name,
+            &healthy.publisher,
+            &healthy.version,
+            Arc::new(make_dep_pub_abi()),
+        );
+
+        let snap = AppSetSnapshot {
+            apps: vec![
+                make_ws_unit(&ws),
+                make_symbolonly_dep_unit(&broken),
+                make_symbolonly_dep_unit(&healthy),
+            ],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        assert_eq!(
+            g.abi_ingest_errors.len(),
+            1,
+            "only the broken dep must be flagged; got {:?}",
+            g.abi_ingest_errors
+                .iter()
+                .map(|e| &e.message)
+                .collect::<Vec<_>>()
+        );
+        let broken_ref = g
+            .apps
+            .find_by_name("BrokenParse")
+            .expect("broken dep interned");
+        assert_eq!(g.abi_ingest_errors[0].app, broken_ref);
+        assert!(
+            g.abi_ingest_errors[0]
+                .message
+                .contains("trailing characters")
+        );
+
+        // The healthy dep's own routines must still be fully ingested,
+        // unaffected by the OTHER app's ingest failure.
+        assert!(
+            g.routines.iter().any(|r| r.id.name_lc == "dodepwork"),
+            "the healthy dep's routines must still be ingested"
         );
     }
 

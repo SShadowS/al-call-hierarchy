@@ -392,6 +392,36 @@ fn parse_manifest_xml(content: &str) -> Result<AppMetadata> {
     })
 }
 
+/// Parse the first JSON value from `s` via `serde_json`'s
+/// `StreamDeserializer`, tolerating trailing non-JSON bytes after the
+/// value's closing token. Some `.app` emitters pad `SymbolReference.json`
+/// with trailing NUL bytes after the real content; a strict
+/// `serde_json::from_str` fails on that padding because NUL is not JSON
+/// whitespace, even though the leading content is perfectly well-formed.
+/// Requiring only the FIRST value to parse cleanly matches the file's real
+/// (valid-JSON-prefix, garbage-suffix) shape.
+///
+/// Shared by this module's own `parse_symbols` (the original home of this
+/// technique) and `engine::deps::symbol_reference::parse_symbol_reference`
+/// (Tier-1 remediation, H-2: that path previously used a strict full-string
+/// parse and silently ingested a NUL-padded dependency as an empty ABI) —
+/// ONE tolerant parser, not two independently-maintained copies.
+///
+/// Returns an error when the string carries no JSON value at all
+/// (empty/whitespace-only) or the leading content itself is malformed.
+pub(crate) fn parse_first_json_value<T: serde::de::DeserializeOwned>(
+    s: &str,
+) -> std::result::Result<T, serde_json::Error> {
+    use serde::de::Error as _;
+    match serde_json::Deserializer::from_str(s)
+        .into_iter::<T>()
+        .next()
+    {
+        Some(result) => result,
+        None => Err(serde_json::Error::custom("no JSON content in input")),
+    }
+}
+
 /// Parse SymbolReference.json to extract object definitions
 fn parse_symbols<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Vec<ExternalObject>> {
     let mut symbols_file = archive
@@ -410,14 +440,10 @@ fn parse_symbols<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Vec
         std::str::from_utf8(&content).context("Invalid UTF-8 in SymbolReference.json")?
     };
 
-    // The JSON may have null byte padding after the actual content
-    // Use serde_json's StreamDeserializer to only parse the first JSON value
-    let mut deserializer = serde_json::Deserializer::from_str(json_str).into_iter();
-
-    let symbols: SymbolReference = deserializer
-        .next()
-        .context("No JSON content in SymbolReference.json")?
-        .context("Failed to parse SymbolReference.json")?;
+    // The JSON may have null byte padding after the actual content — see
+    // `parse_first_json_value`'s doc.
+    let symbols: SymbolReference =
+        parse_first_json_value(json_str).context("Failed to parse SymbolReference.json")?;
 
     let mut objects = Vec::new();
     collect_objects_top(symbols, &mut objects);
