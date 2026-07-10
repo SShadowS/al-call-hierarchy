@@ -182,6 +182,18 @@ redesign spec under `docs/superpowers/specs/`.
   `al-sem-OBOLETE`; nothing in this repo reads from it or writes into it at test
   time, and zero tests point at it any more. Every differential/golden is
   Rust-owned and regenerable via `REGEN_TEMP_GOLDENS=1 cargo test` (see above).
+- **CDO ratchet tests skip silently by default, but can be made to fail loudly.**
+  The north-star zero-ratchets (real-unknown rate, unknown count, `ambiguousResolved`
+  pin, coverage contract) live in tests gated on the `CDO_WS` env var pointing at a
+  real Business Central workspace — a tree that only exists on machines with access
+  to it, so CI cannot run them and they no-op (skip) when `CDO_WS` is unset. Setting
+  `ENFORCE_CDO_WS=1` alongside makes every one of those gates panic instead of
+  skipping when the workspace is missing, so a moved/lost `CDO_WS` fails loudly
+  rather than silently passing (`tests/common/cdo.rs`). Run `scripts/cdo-gate
+  <path-to-cdo-workspace>` (or `CDO_WS=<path> scripts/cdo-gate`) to run the full
+  CDO-gated suite this way — it exports `ENFORCE_CDO_WS=1` itself and exits non-zero
+  on any failure. The user schedules this locally (cron / Task Scheduler); it is not
+  part of CI.
 
 ## Working Principle
 

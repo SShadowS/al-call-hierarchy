@@ -1,11 +1,17 @@
 //! Plan 1B.1: building the whole-program node graph over the real CDO snapshot
 //! is panic-free and yields a deep, app-qualified node set.
+
+// Task T0.2: shared CDO_WS/ENFORCE_CDO_WS gating helper — see
+// `tests/common/cdo.rs` for why this is `#[path]`-included rather than a
+// regular crate dependency (separate test-binary crates can't `use` each
+// other's `mod`s).
+#[path = "common/cdo.rs"]
+mod cdo;
+use cdo::cdo_ws_or_enforce;
+
 #[test]
 fn cdo_program_graph_is_app_qualified_and_panic_free() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
     let snap = al_call_hierarchy::snapshot::SnapshotBuilder {

@@ -1,3 +1,7 @@
+# Shell scripts run via Git Bash on Windows; force LF so autocrlf
+# (core.autocrlf=true on this checkout) does not corrupt the shebang line.
+scripts/* text eol=lf
+
 # Goldens are byte-compared by several differential tests; force LF so autocrlf
 # (core.autocrlf=true on this checkout) does not corrupt the byte-exact comparison.
 tests/**/*.json text eol=lf

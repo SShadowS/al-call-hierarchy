@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`scripts/cdo-gate` — the local release-gate runner for the CDO ratchet
+  (Task T0.2, Tier-0 remediation arc).** A Git-Bash-compatible shell script
+  that requires a CDO workspace path (positional arg or `CDO_WS` env var —
+  refuses with exit 2 and a clear message if neither is set or the path
+  doesn't exist; never hardcodes a machine-specific default), exports
+  `ENFORCE_CDO_WS=1`, runs `cargo test --release --test
+  program_resolve_harness -- --test-threads=1` followed by `cargo test
+  --release --test program_graph --test snapshot_robustness`, and exits
+  non-zero with a one-line `cdo-gate: PASS`/`cdo-gate: FAIL` summary if
+  either step failed. CI cannot reach the CDO workspace, so this is meant to
+  be scheduled locally (cron / Task Scheduler) — see the new CLAUDE.md
+  testing note. `.gitattributes` gained a `scripts/* text eol=lf` rule so
+  `core.autocrlf=true` checkouts don't corrupt the shebang line.
 - **ABI param-type retention — the SymbolOnly arg-type dispatch lift, behind
   a structural guard (Task 2, roadmap-closure plan).** `AbiParameter`
   (`engine/deps/symbol_reference.rs`) already carried full parameter Subtype
@@ -252,6 +265,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **Every CDO-gated test could silently skip forever — including the north-star
+  ratchet itself (Task T0.2, Tier-0 remediation arc).** `CDO_WS`-gated tests used
+  the bare `let Some(ws) = std::env::var_os("CDO_WS")...else { return; }` idiom,
+  which no-ops with zero signal when `CDO_WS` is unset or points at a moved
+  tree — including `program_resolve_harness.rs`'s Test 13
+  (`cdo_full_program_coverage_and_self_reported_metric`, the coverage +
+  `real_unknown_rate` ceiling ratchet). A loud-fail helper
+  (`cdo_ws_or_enforce()`) already existed but was wired into only 4 of the
+  suite's CDO-gated tests. Routed EVERY bare gate through it: in
+  `program_resolve_harness.rs`, lines 866
+  (`abi_ingestion_integrity_cdo_gate`), 1321 (Test 13, the ratchet), 3089
+  (`route_applicability_zero_violations`), 3150/3236/3290 (the 3
+  `#[ignore]`d diagnostic-dump tests), 3393
+  (`cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero`), and
+  5243 (`fan_out_applicability_zero_violations`); plus the whole-body gates
+  in `program_graph.rs:5`
+  (`cdo_program_graph_is_app_qualified_and_panic_free`) and
+  `snapshot_robustness.rs:5` (`cdo_snapshot_deep_parse_is_panic_free`). Since
+  `cargo test` compiles each `tests/*.rs` file as a separate binary/crate, a
+  private fn in one can't be `use`d from another — moved the single
+  implementation to new `tests/common/cdo.rs` (cargo doesn't treat files
+  under a `tests/` subdirectory as their own test targets, only top-level
+  `tests/*.rs`), included via `#[path = "common/cdo.rs"] mod cdo;` in all
+  three binaries, so the whole suite now shares exactly one implementation
+  (the panic message also now names the failing test via
+  `std::thread::current().name()`, which libtest sets to the test's path).
+  Gate 1 (`CDO_WS` unset): all three binaries green, 179 passed / 0 failed /
+  3 ignored + 1 + 1, confirming silent-skip behavior is unchanged. Gate 2
+  (`ENFORCE_CDO_WS=1`, `CDO_WS` unset): all 9 non-ignored rewired tests (5
+  newly wired + 4 pre-existing) panic loudly naming themselves; the 3
+  `#[ignore]`d dumps panic the same way when run with `--ignored`. Gate 3
+  (real `CDO_WS`, `ENFORCE_CDO_WS=1`, via the new `scripts/cdo-gate`): PASS,
+  and CDO's `--program-call-graph-stats` SHA-256 is unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`),
+  confirming R5 — behavior with a valid `CDO_WS` is byte-identical. A broader
+  `rg -n 'var_os("CDO_WS")' tests/ src/` sweep also found 6 more bare gates
+  embedded as `#[cfg(test)]` unit tests inside `src/{snapshot/snapshot.rs,
+  snapshot/parse.rs, program/l3_mint.rs, program/build.rs}` — left unrewired
+  as out of scope for this task (the roadmap's T0.2 site enumeration and the
+  `scripts/cdo-gate` invocations cover only the `tests/*.rs` ratchet suite;
+  these are a different, lower-tier population, not part of the north-star
+  ratchet, and would need a second `#[cfg(test)]`-scoped helper since a lib
+  unit test can't reach `tests/common/cdo.rs` either) — flagged as a
+  candidate follow-up, not fixed here.
 - **`aldump`'s stats/projection modes could not fail — a broken/unusable
   workspace silently reported a PERFECT north-star score (Task T0.1, Tier-0
   remediation arc).** `aldump --l3-call-graph-stats <workspace>` is the

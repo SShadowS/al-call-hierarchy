@@ -24,6 +24,14 @@ use al_call_hierarchy::program::resolve::differential::{
 };
 use al_call_hierarchy::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
 
+// Task T0.2: the CDO_WS/ENFORCE_CDO_WS gating helper is shared with
+// `program_graph.rs` and `snapshot_robustness.rs` via `#[path]` inclusion —
+// see `tests/common/cdo.rs` for why (separate test-binary crates can't
+// `use` each other's `mod`s).
+#[path = "common/cdo.rs"]
+mod cdo;
+use cdo::cdo_ws_or_enforce;
+
 // ---------------------------------------------------------------------------
 // Test 1 (from brief): one missing L3 site must NOT cascade
 // ---------------------------------------------------------------------------
@@ -863,10 +871,7 @@ fn histogram_taxonomy_split() {
 /// A miss = an ingestion/key-derivation bug — investigate and fix, do NOT relax.
 #[test]
 fn abi_ingestion_integrity_cdo_gate() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -1318,10 +1323,7 @@ fn dropped_obligation_is_caught_by_coverage_contract() {
 ///   - `real_unknown_rate` ≤ recorded ceiling (regression guard)
 #[test]
 fn cdo_full_program_coverage_and_self_reported_metric() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -2827,27 +2829,12 @@ use al_call_hierarchy::program::resolve::receiver::{
 };
 use sha2::{Digest, Sha256};
 
-/// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 1 — the `CDO_WS` presence check).
-///
-/// Returns the workspace path when `CDO_WS` is set and exists. When `CDO_WS`
-/// is absent: returns `None` (caller should skip) UNLESS `ENFORCE_CDO_WS=1`,
-/// in which case this PANICS — a gated/internal run that loses its `CDO_WS`
-/// must fail loudly, not skip silently (no fail-open). Scoped to the three
-/// frozen-golden audits this task adds/modifies (Tests 16–18) — the OTHER
-/// pre-existing CDO-gated dual-run tests are unaffected (out of Task 1's
-/// scope; they stay live L3 comparisons until 1B.3b Task 3).
-fn cdo_ws_or_enforce() -> Option<std::path::PathBuf> {
-    let ws = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists());
-    if ws.is_none() {
-        assert!(
-            std::env::var("ENFORCE_CDO_WS").as_deref() != Ok("1"),
-            "ENFORCE_CDO_WS=1 but CDO_WS is unset or does not point at an existing path"
-        );
-    }
-    ws
-}
+// 1B.3b Task 1 originally defined `cdo_ws_or_enforce()` here, scoped to only
+// the three frozen-golden audits it added (Tests 16–18). Task T0.2 routes
+// EVERY bare CDO_WS gate in this file (and in `program_graph.rs` /
+// `snapshot_robustness.rs`) through the same guard, so the definition moved
+// to the shared `tests/common/cdo.rs` (imported near the top of this file as
+// `cdo::cdo_ws_or_enforce`) — see that file's doc comment for the contract.
 
 /// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 2 — the audit-ran-and-checked-something
 /// check).
@@ -3086,10 +3073,7 @@ fn route_applicability_zero_violations() {
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -3147,10 +3131,7 @@ fn task2_dump_argtype_dispatch_flips_on_cdo() {
     use al_call_hierarchy::program::resolve::index::ResolveIndex;
     use al_call_hierarchy::snapshot::SnapshotBuilder;
 
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -3233,10 +3214,7 @@ fn task2_dump_argtype_dispatch_flips_on_cdo() {
 #[test]
 #[ignore]
 fn task3_dump_untracked_receiver_sites_on_cdo() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
     let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
@@ -3287,10 +3265,7 @@ fn task3_dump_untracked_receiver_sites_on_cdo() {
 fn task3_dump_remaining_ambiguous_resolved_sites_on_cdo() {
     use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
     let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
@@ -3390,10 +3365,7 @@ fn task3_dump_remaining_ambiguous_resolved_sites_on_cdo() {
 /// letting the policy discard it silently (see the diagnostic's own doc).
 #[test]
 fn cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -5240,10 +5212,7 @@ fn fan_out_applicability_zero_violations() {
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
