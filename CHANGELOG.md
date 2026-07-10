@@ -252,6 +252,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **`aldump`'s stats/projection modes could not fail — a broken/unusable
+  workspace silently reported a PERFECT north-star score (Task T0.1, Tier-0
+  remediation arc).** `aldump --l3-call-graph-stats <workspace>` is the
+  north-star measurement command (the real-`unknown` edge rate); on an
+  unusable/fail-closed layout it printed a stderr warning but then emitted
+  `Histogram::default()` (`realUnknownRate: 0.0`) on stdout and exited
+  `ExitCode::SUCCESS` — any CI/jq ratchet built on it would pass forever
+  regardless of whether the tool actually ran. Two other modes
+  (`--l3-call-graph-stats-cross-app`, `--l3-unknown-breakdown-cross-app`) had
+  the same defect in a different guise: they emitted a JSON body containing
+  `"error": "..."` on stdout and STILL exited SUCCESS. Audited all ~24
+  `aldump` modes for the shape; 19 had it (every mode gated on
+  `assemble_and_resolve_workspace_default`/`build_cross_app_l3_from_workspace`
+  returning `None`, plus `--r3a4-dep-hooks`/`--r3a5-cross-app-summary`, whose
+  underlying library functions are intentionally "engine-never-throws" for
+  their differential/oracle test callers and so needed a CLI-boundary
+  pre-check instead of a signature change; `--r2.5a-merged-index`, gated on
+  path existence since it legitimately accepts a dep-less `.app`/dir). Fixed
+  by converting every `None`/`"error"`-body case to `eprintln!` + no stdout +
+  `ExitCode::FAILURE` — never a silent default-shaped success. 5 modes were
+  already correct (`--program-call-graph-stats`, `--graphify-export{,
+  -fragments}`, `--integration-points`, default/`--l2`) and were left
+  untouched; they follow the same `let Some(x) = ... else { eprintln!(...);
+  return ExitCode::FAILURE; }` idiom the fix now applies everywhere else. The
+  success path is byte-unchanged (verified via the r2.5a/r3a4/r3a5
+  differential/oracle suites + the CDO gate). New `tests/aldump_smoke.rs` CLI
+  cases lock a nonexistent-path failure (both source-only and cross-app) and
+  a good-path success.
 - **`cli_a_{html,json,terminal}_differential.rs` were silently reporting `ok`
   while running ZERO real assertions, ever since al-sem left disk (Task 3.6,
   al-sem parity retirement arc capstone).** Each file's main byte-match test
