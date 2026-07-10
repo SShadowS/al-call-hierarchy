@@ -20,6 +20,9 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// The R4-F scoped-guarantees corpus (mirrors al-sem `R4F_SCOPED_GUARANTEE_FIXTURES`).
 const FIXTURES: &[&str] = &[
     "ws-txn-d47-pos-http-nocommit",
@@ -79,19 +82,43 @@ fn r4f_scoped_guarantees_matches_goldens() {
     let mut failures: Vec<String> = Vec::new();
     for fixture in FIXTURES {
         let golden_path = goldens_dir().join(format!("{fixture}.scoped.golden.json"));
+        let rust_text = run_rust(fixture);
+
+        // REGEN path (Task T0.6 — this family previously had none). When
+        // `REGEN_TEMP_GOLDENS=1`, write the ENGINE output straight to the golden
+        // file instead of comparing — the goldens are Rust-owned baselines (TS
+        // oracle retired). `run_rust` already returns the exact on-disk pretty +
+        // trailing-newline form the assert path below reads.
+        if regen::regen_mode() {
+            std::fs::write(&golden_path, &rust_text)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!(
+                "REGEN r4f scoped-guarantees golden: {}",
+                golden_path.display()
+            );
+            continue;
+        }
+
         let golden_text = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
             panic!(
                 "cannot read R4-F scoped golden {}: {e}",
                 golden_path.display()
             )
         });
-        let rust_text = run_rust(fixture);
         if rust_text != golden_text {
             failures.push(format!(
                 "MISMATCH {fixture}:\n--- GOLDEN ---\n{golden_text}\n--- RUST ---\n{rust_text}"
             ));
         }
     }
+    if regen::regen_mode() {
+        eprintln!(
+            "REGEN r4f scoped-guarantees: wrote {} golden(s)",
+            FIXTURES.len()
+        );
+        return;
+    }
+
     assert!(
         failures.is_empty(),
         "R4-F ACCEPTANCE GATE: {} fixture(s) did NOT byte-match:\n{}",

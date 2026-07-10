@@ -849,6 +849,32 @@ mod tests {
     // over the whole r0-corpus before deletion; the forward regression gate is now the
     // `projection_snapshot_over_r0_corpus` digest golden at the end of this module.
 
+    /// Pure resolution core (Task T0.6): only the exact value `"1"` regenerates;
+    /// `"0"`/empty/anything else takes the normal assert path. No env state, so
+    /// this is unit-testable without racing `projection_snapshot_over_r0_corpus`
+    /// (below), which reads the real env var under real `cargo test` parallelism.
+    fn resolve_regen_mode(raw: Option<&str>) -> bool {
+        raw == Some("1")
+    }
+
+    /// Value-gated `REGEN_TEMP_GOLDENS` check. This is the ONE in-library unit
+    /// test that reads the env var, so it cannot share code with the
+    /// integration-test helper at `tests/common/regen.rs` (a lib unit test
+    /// compiles inside `src/`, which cannot reach across into `tests/` without
+    /// an awkward relative `#[path]`); it mirrors that helper's value-semantics
+    /// contract instead.
+    fn regen_mode() -> bool {
+        resolve_regen_mode(std::env::var("REGEN_TEMP_GOLDENS").ok().as_deref())
+    }
+
+    #[test]
+    fn resolve_regen_mode_true_only_for_exact_one() {
+        assert!(resolve_regen_mode(Some("1")));
+        assert!(!resolve_regen_mode(Some("0")), "\"0\" must NOT regenerate");
+        assert!(!resolve_regen_mode(Some("")));
+        assert!(!resolve_regen_mode(None));
+    }
+
     #[test]
     fn test_variable_extraction() {
         let source = r#"
@@ -1392,7 +1418,7 @@ codeunit 50100 "Sample Publisher"
             out.push_str(&format!("{rel}\t{digest:016x}\n"));
         }
 
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen_mode() {
             std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
             std::fs::write(&golden, &out).unwrap();
             return;

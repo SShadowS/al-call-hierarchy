@@ -31,6 +31,9 @@ use al_call_hierarchy::engine::gate::policy::pipeline::{
     PolicyCheckOptions, PolicyExplainOptions, run_policy_check, run_policy_explain,
 };
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const ALSEM_VERSION: &str = "cli-c-v1";
 
 fn repo_root() -> PathBuf {
@@ -53,6 +56,49 @@ fn load_golden(name: &str) -> String {
     let path = golden_dir().join(name);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read golden {}: {e}", path.display()))
+}
+
+/// Byte-compare `got` against the named golden, or — under `REGEN_TEMP_GOLDENS=1`
+/// — write `got` to the golden file instead of comparing (Task T0.6; this family
+/// previously had no regen path at all).
+fn check_or_regen(name: &str, got: &str) {
+    if regen::regen_mode() {
+        let path = golden_dir().join(name);
+        std::fs::write(&path, got)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
+        eprintln!("REGEN cli-c policy golden: {}", path.display());
+        return;
+    }
+    let golden = load_golden(name);
+    assert_eq!(got, golden, "{name} mismatch");
+}
+
+/// `cli-c-policy-goldens/manifest.json`'s `totalGoldens` was read by no test
+/// (Task T0.6 — a silently deleted golden would pass unnoticed). Checks `>=`,
+/// not `==`: a frozen al-sem-era provenance floor, not a live inventory that
+/// must match exactly forever.
+#[test]
+fn manifest_total_goldens_floor() {
+    let manifest_path = golden_dir().join("manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} not valid JSON: {e}", manifest_path.display()));
+    let claimed = manifest
+        .get("totalGoldens")
+        .and_then(|v| v.as_u64())
+        .expect("manifest missing totalGoldens") as usize;
+    let discovered = std::fs::read_dir(golden_dir())
+        .unwrap_or_else(|e| panic!("read {}: {e}", golden_dir().display()))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name() != std::ffi::OsStr::new("manifest.json"))
+        .count();
+    assert!(
+        discovered >= claimed,
+        "cli-c-policy-goldens/manifest.json claims totalGoldens={claimed} but only \
+         {discovered} golden file(s) were found — a golden may have been silently deleted"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -101,8 +147,7 @@ fn default_policy_human_json_sarif_byte_match() {
     for fixture in DEFAULT_CORPUS {
         for (format, ext) in [("human", "human.txt"), ("json", "json"), ("sarif", "sarif")] {
             let got = check_text(fixture, format, false);
-            let golden = load_golden(&format!("{fixture}.default.{ext}"));
-            assert_eq!(got, golden, "{fixture}.default.{format} mismatch");
+            check_or_regen(&format!("{fixture}.default.{ext}"), &got);
         }
     }
 }
@@ -122,8 +167,7 @@ fn custom_policy_human_json_sarif_byte_match() {
     let fixture = "ws-policy-custom";
     for (format, ext) in [("human", "human.txt"), ("json", "json"), ("sarif", "sarif")] {
         let got = check_text(fixture, format, false);
-        let golden = load_golden(&format!("{fixture}.custom.{ext}"));
-        assert_eq!(got, golden, "{fixture}.custom.{format} mismatch");
+        check_or_regen(&format!("{fixture}.custom.{ext}"), &got);
     }
 }
 
@@ -139,8 +183,7 @@ fn no_policy_json_byte_match() {
         fixtures_dir().display()
     );
     let got = check_text("ws-policy-clean", "json", true);
-    let golden = load_golden("ws-policy-clean.nopolicy.json");
-    assert_eq!(got, golden, "ws-policy-clean.nopolicy.json mismatch");
+    check_or_regen("ws-policy-clean.nopolicy.json", &got);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,8 +205,7 @@ fn explain_rules_byte_match() {
         let outcome = run_policy_explain(&opts);
         assert_eq!(outcome.exit_code, 0, "explain {rule} must exit 0");
         let got = outcome.stdout.expect("explain must produce stdout");
-        let golden = load_golden(&format!("{rule}.explain.txt"));
-        assert_eq!(got, golden, "{rule}.explain.txt mismatch");
+        check_or_regen(&format!("{rule}.explain.txt"), &got);
     }
 }
 
@@ -178,22 +220,19 @@ fn explain_rule_not_found_exit_1() {
     let outcome = run_policy_explain(&opts);
 
     // exit code 1 (golden notfound.explain.exitcode.txt is "1\n").
-    let exit_golden = load_golden("notfound.explain.exitcode.txt");
-    assert_eq!(
-        format!("{}\n", outcome.exit_code),
-        exit_golden,
-        "notfound exit code mismatch"
+    check_or_regen(
+        "notfound.explain.exitcode.txt",
+        &format!("{}\n", outcome.exit_code),
     );
 
     // stderr line matches the golden (which has a trailing newline).
-    let stderr_golden = load_golden("notfound.explain.stderr.txt");
     assert_eq!(outcome.stdout, None, "notfound must produce no stdout");
     let stderr_text = if outcome.stderr_lines.is_empty() {
         String::new()
     } else {
         format!("{}\n", outcome.stderr_lines.join("\n"))
     };
-    assert_eq!(stderr_text, stderr_golden, "notfound stderr mismatch");
+    check_or_regen("notfound.explain.stderr.txt", &stderr_text);
 }
 
 // ===========================================================================

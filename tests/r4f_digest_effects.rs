@@ -22,6 +22,9 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::digest::project_r4f_digest_effects;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// The R4-F digest-effects corpus (mirrors al-sem `R4F_DIGEST_FIXTURES`).
 const FIXTURES: &[&str] = &[
     "ws-txn-d47-pos-http-nocommit",
@@ -71,14 +74,27 @@ fn run_rust_value(fixture: &str) -> serde_json::Value {
 fn r4f_digest_effects_matches_goldens() {
     for fixture in FIXTURES {
         let golden_path = goldens_dir().join(format!("{fixture}.digest.golden.json"));
+
+        let rust_text = run_rust(fixture);
+
+        // REGEN path (Task T0.6 — this family previously had none). When
+        // `REGEN_TEMP_GOLDENS=1`, write the ENGINE output straight to the golden
+        // file instead of comparing — the goldens are Rust-owned baselines (TS
+        // oracle retired). `run_rust` already returns the exact on-disk pretty +
+        // trailing-newline form the assert path below reads.
+        if regen::regen_mode() {
+            std::fs::write(&golden_path, &rust_text)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN r4f digest-effects golden: {}", golden_path.display());
+            continue;
+        }
+
         let golden_text = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
             panic!(
                 "cannot read R4-F digest golden {}: {e}",
                 golden_path.display()
             )
         });
-
-        let rust_text = run_rust(fixture);
 
         assert_eq!(
             rust_text,

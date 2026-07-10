@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Golden-regen completeness + value-gated `REGEN_TEMP_GOLDENS` (Task T0.6,
+  Tier-0 remediation arc).** Doctrine says every Rust-owned golden regenerates
+  via `REGEN_TEMP_GOLDENS=1 cargo test`; review proved 10 golden-writing
+  functions across 8 families had no regen path at all (R0 identity, R2c L3
+  event-graph, r3a2-trace, cli-c policy [4 sub-tests], cli-c cache [2
+  sub-tests], and all 5 R4-F families [digest-effects, ordering-facts,
+  return-summaries, root-classifications, scoped-guarantees]) and that the
+  regen trigger itself was presence-tested everywhere (`.is_ok()`/`.is_err()`),
+  so `REGEN_TEMP_GOLDENS=0 cargo test` silently rewrote every golden while
+  reporting green. New `tests/common/regen.rs` (the `#[path]`-included pattern
+  established by `tests/common/cdo.rs`, Task T0.2) provides one shared,
+  unit-tested `regen_mode()`: only the exact value `"1"` regenerates. Wired
+  into all ~30 golden-writing call sites across ~38 test files (replacing
+  every ad-hoc `std::env::var("REGEN_TEMP_GOLDENS").is_ok()`/`.is_err()`), plus
+  a colocated mirror in `src/parser.rs`'s own `#[cfg(test)]` module (a lib
+  unit test can't reach across the `src/`/`tests/` boundary via `#[path]`).
+  Added the 10 missing regen paths, each proven to reproduce its committed
+  golden byte-for-byte from the unchanged engine (R1). Wired all 9 previously-
+  decorative `manifest.json`/`suppress-baseline-manifest.json` oracle files
+  (read by zero tests — a silently deleted golden passed unnoticed) into a new
+  floor-check test per family (`discovered >= manifest's fixtureCount/
+  totalGoldens`; `>=` not `==` since several corpora have legitimately grown
+  past their frozen al-sem-era snapshot count). `tests/r0-goldens/README.md`
+  rewritten to describe the real mechanism (previously documented a regen path
+  for R0 identity that did not exist in code).
 - **Builtin-dispatch justification audit — pinned-baseline ratchet (Task T0.3,
   Tier-0 remediation arc).** The north-star real-`unknown` rate cannot see a
   missed dispatch edge that lands in `builtin` instead: `Page.RunModal(Page::"X")`
@@ -342,6 +367,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
+  (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
+  PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
+  the negated guard) rather than its VALUE — `is_ok()` is `true` for ANY set
+  value, including `"0"`. Fixed by routing every gate through the new
+  value-gated `regen_mode()` helper (see Added, above); `REGEN_TEMP_GOLDENS=0
+  cargo test` now correctly takes the normal assert path and leaves the
+  working tree clean (verified: full-suite `cargo test` and `REGEN_TEMP_
+  GOLDENS=0 cargo test` both green with zero golden diffs; `REGEN_TEMP_
+  GOLDENS=1 cargo test` green with a no-op diff on every family except one
+  pre-existing, unrelated finding, left unresolved and undisturbed: `ws-
+  interface-dispatch`'s R0 identity output turned out to be non-deterministic
+  depending on unrelated prior test execution in the same process — NOT a
+  simple stale golden. Its two `Interface` objects (`IEmpty`, `IProcessor`)
+  collide on `stableObjectId` (AL interfaces carry no object number, so
+  `engine::snapshot` assigns every interface `0`); the committed golden's
+  `IEmpty` entry carries a `signatureFingerprint` that duplicates
+  `IProcessor`'s. Running `differential_identity_subset_matches_goldens` in
+  isolation reproducibly regenerates the mathematically correct, distinct
+  fingerprint for `IEmpty` (`sha256("Interface|0|IEmpty")`); running it as
+  part of the full `differential.rs` binary (the normal `cargo test` path)
+  reproducibly regenerates `IProcessor`'s hash instead, matching what's
+  committed. `object_signature_fingerprint` is a pure function and file
+  processing is strictly sequential over an already-sorted list, so the cause
+  is upstream — `al_syntax::parse`/`extract_from_ir`'s `Interface` object
+  extraction — and unidentified; needs its own dedicated investigation. Full
+  reproduction steps in `tests/r0-goldens/README.md`).
+- **Regen-write trailing-newline bug (`program_resolve_harness.rs`
+  `fixture_semantic_golden_matches_l3`, Task T0.6).** Its pre-existing regen
+  path omitted the trailing newline every other regen path in the repo
+  writes, making a byte-identical regen impossible even though the
+  assert-mode comparison (structural JSON diff, not byte-compare) never
+  surfaced it. One-line fix; the committed golden's own bytes are unchanged.
 - **Every CDO-gated test could silently skip forever — including the north-star
   ratchet itself (Task T0.2, Tier-0 remediation arc).** `CDO_WS`-gated tests used
   the bare `let Some(ws) = std::env::var_os("CDO_WS")...else { return; }` idiom,

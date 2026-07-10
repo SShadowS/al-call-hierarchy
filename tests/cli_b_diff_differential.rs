@@ -29,6 +29,9 @@ use al_call_hierarchy::engine::gate::diff::{
 };
 use al_call_hierarchy::engine::gate::snapshot_deserialize::{SnapshotFormat, deserialize_snapshot};
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 
 fn repo_root() -> PathBuf {
@@ -50,10 +53,11 @@ fn snapshots_dir() -> PathBuf {
     goldens_dir().join("snapshots")
 }
 
-/// Whether `REGEN_TEMP_GOLDENS` is set — Rust-owned baselines are regenerated
-/// from THIS engine, never copied from al-sem (retired).
+/// Whether `REGEN_TEMP_GOLDENS=1` is set — Rust-owned baselines are
+/// regenerated from THIS engine, never copied from al-sem (retired). Delegates
+/// to the shared value-gated helper (Task T0.6) rather than checking presence.
 fn regen_mode() -> bool {
-    std::env::var("REGEN_TEMP_GOLDENS").is_ok()
+    regen::regen_mode()
 }
 
 fn load_snap(name: &str) -> CborValue {

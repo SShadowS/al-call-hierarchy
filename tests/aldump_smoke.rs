@@ -12,6 +12,9 @@ use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 use std::path::PathBuf;
 use std::process::Command;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -139,7 +142,7 @@ fn ws_d2_l3_event_graph_matches_golden() {
     // REGEN path (Task 3.3 vendoring): `REGEN_TEMP_GOLDENS=1` writes the ENGINE
     // projection to the in-repo golden instead of comparing — this is a
     // Rust-owned baseline, not a copy of al-sem's TS output.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let mut pretty = serde_json::to_string_pretty(&projection).expect("regen serialize l3eg");
         pretty.push('\n');
         std::fs::create_dir_all(golden_path.parent().expect("golden has a parent"))

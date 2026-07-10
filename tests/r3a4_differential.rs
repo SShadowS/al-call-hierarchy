@@ -31,6 +31,9 @@ use al_call_hierarchy::engine::deps::r3a4_projection::{
 };
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R3A4_TEST_NAME: &str = "differential_r3a4_dep_hooks_match_goldens";
 const FIXTURE: &str = "cross-app-dep-hooks";
 
@@ -156,7 +159,7 @@ fn differential_r3a4_dep_hooks_match_goldens() {
     // set, write the ENGINE-serialized projection straight to the golden file
     // instead of comparing — the goldens are Rust-owned baselines (TS oracle
     // retired).
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let mut pretty = serde_json::to_string_pretty(&projection)
             .unwrap_or_else(|e| panic!("regen serialize R3a-4 projection: {e}"));
         pretty.push('\n');

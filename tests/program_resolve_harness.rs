@@ -32,6 +32,9 @@ use al_call_hierarchy::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, Tru
 mod cdo;
 use cdo::cdo_ws_or_enforce;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 // ---------------------------------------------------------------------------
 // Test 1 (from brief): one missing L3 site must NOT cascade
 // ---------------------------------------------------------------------------
@@ -2892,9 +2895,14 @@ fn fixture_semantic_golden_matches_l3() {
     let golden_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens/semantic-edges/fixture.json");
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let golden = mint_l3_validated_golden(&fixture);
-        let json = serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
+        let mut json =
+            serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
+        // Task T0.6 R1 fix: the committed golden carries a trailing newline (the
+        // convention every other regen path in this repo follows); this write
+        // previously omitted it, so a byte-identical regen was impossible.
+        json.push('\n');
         std::fs::create_dir_all(golden_path.parent().unwrap())
             .expect("create goldens/semantic-edges dir");
         std::fs::write(&golden_path, &json).expect("write fixture golden");
@@ -2970,7 +2978,7 @@ fn implicit_trigger_fixture_resolves_exact_target_set() {
     let golden_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens/semantic-edges/implicit-trigger-fixture.json");
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let golden = mint_fresh_golden_for_kind(&fixture, EdgeKind::ImplicitTrigger);
         let json = serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
         std::fs::create_dir_all(golden_path.parent().unwrap())

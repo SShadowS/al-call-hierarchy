@@ -42,6 +42,9 @@ use al_call_hierarchy::engine::l4::capability_cone::{
 };
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R3A3_TEST_NAME: &str = "differential_r3a3_cone_coverage_match_goldens";
 
 /// Re-inline string-only array blocks to match the EXACT on-disk r3a3 golden form
@@ -440,7 +443,7 @@ fn differential_r3a3_cone_coverage_match_goldens() {
         // "\t")`), so we serialize with a tab `PrettyFormatter` to keep the diff
         // minimal (the comparison is structural via serde_json::Value, so indent
         // is irrelevant to PASS — but matters for a reviewable diff).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             // ORDER-PRESERVING regen: the (retired) al-sem golden orders the `extra`
             // object's keys differently from the Rust struct's field order, so a
             // naive re-serialize would churn ~all goldens with pure key-order noise
@@ -496,7 +499,7 @@ fn differential_r3a3_cone_coverage_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN r3a3: wrote {} golden(s)", goldens.len());
         return;
     }

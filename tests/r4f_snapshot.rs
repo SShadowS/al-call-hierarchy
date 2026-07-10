@@ -20,6 +20,9 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// The R4-F snapshot corpus (mirrors al-sem `R4F_SNAPSHOT_FIXTURES`).
 const FIXTURES: &[&str] = &[
     "ws-txn-d47-pos-http-nocommit",
@@ -79,7 +82,7 @@ fn r4f_snapshot_matches_goldens() {
         // Rust-owned baseline: `REGEN_TEMP_GOLDENS=1` rewrites the golden from THIS
         // engine (al-sem byte-parity retired — see CLAUDE.md). The anti-degenerate
         // oracles below assert the structural contract regardless.
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             std::fs::write(&golden_path, &rust_text)
                 .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
             eprintln!("REGEN r4f snapshot golden: {}", golden_path.display());

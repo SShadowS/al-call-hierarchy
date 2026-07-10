@@ -26,6 +26,9 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::summary::{R3a2Trace, project_r3a2_with_trace};
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R3A2_TRACE_TEST_NAME: &str = "differential_r3a2_trace_match_goldens";
 
 fn repo_root() -> PathBuf {
@@ -171,6 +174,26 @@ fn differential_r3a2_trace_match_goldens() {
             fixture_dir.display()
         );
 
+        // Rust side: source-only assemble+resolve → project_r3a2_with_trace → JSON.
+        let trace = match assemble_and_resolve_workspace_default(&fixture_dir) {
+            Some(resolved) => project_r3a2_with_trace(&resolved).1,
+            None => R3a2Trace { traces: vec![] },
+        };
+
+        // REGEN path (Task T0.6 — this family previously had none; mirrors
+        // `differential.rs` / r2_5a). When `REGEN_TEMP_GOLDENS=1`, write the
+        // ENGINE-serialized trace straight to the golden file instead of
+        // comparing — the goldens are Rust-owned baselines (TS oracle retired).
+        if regen::regen_mode() {
+            let mut pretty = serde_json::to_string_pretty(&trace)
+                .unwrap_or_else(|e| panic!("regen serialize R3a-2 trace {fixture}: {e}"));
+            pretty.push('\n');
+            std::fs::write(golden_path, pretty)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN r3a2-trace golden: {}", golden_path.display());
+            continue;
+        }
+
         let golden_text = std::fs::read_to_string(golden_path)
             .unwrap_or_else(|e| panic!("read R3a-2 trace golden {}: {e}", golden_path.display()));
         let golden_json: Value = serde_json::from_str(&golden_text).unwrap_or_else(|e| {
@@ -186,12 +209,6 @@ fn differential_r3a2_trace_match_goldens() {
                 golden_path.display()
             )
         });
-
-        // Rust side: source-only assemble+resolve → project_r3a2_with_trace → JSON.
-        let trace = match assemble_and_resolve_workspace_default(&fixture_dir) {
-            Some(resolved) => project_r3a2_with_trace(&resolved).1,
-            None => R3a2Trace { traces: vec![] },
-        };
         let rust_json = serde_json::to_value(&trace)
             .unwrap_or_else(|e| panic!("serialize Rust R3a-2 trace for {fixture}: {e}"));
 
@@ -207,6 +224,13 @@ fn differential_r3a2_trace_match_goldens() {
         }
 
         diff_value(fixture, "", &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing (including the
+    // anti-degenerate/manifest cross-checks below, which read committed goldens).
+    if regen::regen_mode() {
+        eprintln!("REGEN r3a2-trace: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     all_divergences

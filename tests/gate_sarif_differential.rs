@@ -28,6 +28,9 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze};
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const PIN_VERSION: &str = "gate-sarif-v1";
 
 /// How a golden's txn slot was produced on the al-sem side.
@@ -181,13 +184,37 @@ fn run_gate(workspace: &str, preset: Option<&str>, detector: Option<&str>) -> St
 /// comparing — the goldens are Rust-owned baselines (the TS oracle is retired).
 /// Returns `true` when a regen write happened (the caller then skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     let path = goldens_dir().join(name);
     std::fs::write(&path, rust).unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
     eprintln!("REGEN gate-sarif golden: {}", path.display());
     true
+}
+
+/// `gate-goldens/manifest.json`'s `fixtureCount` was read by no test (Task
+/// T0.6 — a silently deleted `CORPUS` entry would pass unnoticed). Checks
+/// `>=`, not `==`: `fixtureCount` is a frozen al-sem-era provenance floor, not
+/// a live inventory that must match exactly forever.
+#[test]
+fn manifest_fixture_count_floor() {
+    let manifest_path = goldens_dir().join("manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} not valid JSON: {e}", manifest_path.display()));
+    let claimed = manifest
+        .get("fixtureCount")
+        .and_then(|v| v.as_u64())
+        .expect("manifest missing fixtureCount") as usize;
+    assert!(
+        CORPUS.len() >= claimed,
+        "gate-goldens/manifest.json claims fixtureCount={claimed} but CORPUS only has {} \
+         entries — a fixture may have been silently dropped",
+        CORPUS.len()
+    );
 }
 
 fn read_golden(name: &str) -> String {

@@ -28,6 +28,9 @@ use al_call_hierarchy::engine::gate::events::{
     EventsChainsOptions, EventsFanoutOptions, format_chains_human, format_chains_json,
     format_fanout_human, format_fanout_json, run_events_chains, run_events_fanout,
 };
+
+#[path = "common/regen.rs"]
+mod regen;
 use al_call_hierarchy::engine::l5::event_flow::Scope;
 
 // ---------------------------------------------------------------------------
@@ -56,7 +59,7 @@ fn load_golden(name: &str) -> String {
 /// it (so the caller's compare trivially passes) instead of reading the existing
 /// golden. Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
 fn golden_or_regen(name: &str, actual: &str) -> String {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let path = golden_dir().join(name);
         std::fs::write(&path, actual)
             .unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
@@ -64,6 +67,36 @@ fn golden_or_regen(name: &str, actual: &str) -> String {
         return actual.to_string();
     }
     load_golden(name)
+}
+
+/// `cli-c-events-goldens/manifest.json`'s `totalGoldens` was read by no test
+/// (Task T0.6 — a silently deleted golden would pass unnoticed). Checks `>=`,
+/// not `==`: `totalGoldens` (54) is a frozen al-sem-era provenance floor, and
+/// this suite's own coverage-policy + scope-all goldens (added post-retirement,
+/// per this file's module doc — 70 total today) have since grown the corpus
+/// past it — an exact-equality check would break the moment more are added.
+#[test]
+fn manifest_total_goldens_floor() {
+    let manifest_path = golden_dir().join("manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} not valid JSON: {e}", manifest_path.display()));
+    let claimed = manifest
+        .get("totalGoldens")
+        .and_then(|v| v.as_u64())
+        .expect("manifest missing totalGoldens") as usize;
+    let discovered = std::fs::read_dir(golden_dir())
+        .unwrap_or_else(|e| panic!("read {}: {e}", golden_dir().display()))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name() != std::ffi::OsStr::new("manifest.json"))
+        .count();
+    assert!(
+        discovered >= claimed,
+        "cli-c-events-goldens/manifest.json claims totalGoldens={claimed} but only \
+         {discovered} golden file(s) were found — a golden may have been silently deleted"
+    );
 }
 
 const ALSEM_VERSION: &str = "cli-c-v1";

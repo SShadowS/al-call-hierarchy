@@ -25,6 +25,9 @@ use std::sync::Mutex;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const TEST_NAME: &str = "cli_a_terminal_differential";
 
 /// Version override — terminal output doesn't embed a version, but set it for
@@ -137,7 +140,7 @@ fn detector_arg(names: &[&str]) -> String {
 /// engine output differs from the existing baseline, leaving an already-matching
 /// golden untouched. Returns `true` in regen mode.
 fn maybe_regen(name: &str, rust: &str) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     let resolved = resolve_golden(name);

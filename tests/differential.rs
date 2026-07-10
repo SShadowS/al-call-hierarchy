@@ -57,6 +57,9 @@ use al_call_hierarchy::engine::snapshot::{
     IdentitySnapshot, ObjectIdentity, RoutineIdentity, snapshot_workspace,
 };
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// A single, machine-checkable divergence between a golden and the Rust output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Divergence {
@@ -110,6 +113,35 @@ fn discover_goldens() -> Vec<(String, PathBuf)> {
 
 /// Parse a golden file into the SAME `IdentitySnapshot` structs the engine
 /// produces.
+/// Reads a `manifest.json`'s top-level `fixtureCount` field and asserts the
+/// currently-discovered golden count is AT LEAST that many (Task T0.6 — these
+/// `manifest.json` files were previously read by no test, so a silently
+/// deleted golden would pass unnoticed). `fixtureCount` is a frozen al-sem-era
+/// PROVENANCE floor, not a live inventory: the Rust engine's own corpus for
+/// some families has grown past it since al-sem retirement, so this checks
+/// `>=`, not `==` — an exact-equality check would break the moment a family
+/// legitimately gains a fixture.
+fn assert_meets_manifest_fixture_count_floor(manifest_dir: &Path, discovered: usize) {
+    let manifest_path = manifest_dir.join("manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} not valid JSON: {e}", manifest_path.display()));
+    let claimed = manifest
+        .get("fixtureCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| panic!("{} missing fixtureCount", manifest_path.display()))
+        as usize;
+    assert!(
+        discovered >= claimed,
+        "{} claims fixtureCount={claimed} but only {discovered} golden(s) were discovered \
+         under {} — a golden may have been silently deleted",
+        manifest_path.display(),
+        manifest_dir.display()
+    );
+}
+
 fn parse_golden(path: &Path) -> IdentitySnapshot {
     let text = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("failed to read golden {}: {e}", path.display()));
@@ -279,12 +311,32 @@ fn differential_identity_subset_matches_goldens() {
             fixture_dir.display()
         );
 
-        let golden = parse_golden(golden_path);
         let rust = snapshot_workspace(&fixture_dir)
             .unwrap_or_else(|e| panic!("snapshot_workspace failed on {fixture}: {e:#}"));
 
+        // REGEN path (Task T0.6 — R0 identity previously had none). When
+        // `REGEN_TEMP_GOLDENS=1`, write the ENGINE-serialized snapshot straight to
+        // the golden file instead of comparing — the goldens are Rust-owned
+        // baselines (TS oracle retired). Same serializer + form as the assert path
+        // reads (`parse_golden` deserializes the identical `IdentitySnapshot`).
+        if regen::regen_mode() {
+            let mut pretty = serde_json::to_string_pretty(&rust)
+                .unwrap_or_else(|e| panic!("regen serialize R0 identity {fixture}: {e}"));
+            pretty.push('\n');
+            std::fs::write(golden_path, pretty)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            continue;
+        }
+
+        let golden = parse_golden(golden_path);
         let mut divs = diff_snapshots(fixture, &golden, &rust);
         all_divergences.append(&mut divs);
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing.
+    if regen::regen_mode() {
+        eprintln!("REGEN R0 identity: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     // --- Strict comparison ---------------------------------------------------
@@ -315,6 +367,8 @@ fn differential_identity_subset_matches_goldens() {
         "R0 differential: {} fixture(s), 0 divergences.",
         goldens.len()
     );
+
+    assert_meets_manifest_fixture_count_floor(&goldens_dir(), goldens.len());
 }
 
 // =============================================================================
@@ -567,6 +621,7 @@ fn differential_l2_features_match_goldens() {
         "no L2 goldens discovered under {} — corpus missing?",
         r1a_goldens_dir().display()
     );
+    let all_goldens_len = all_goldens.len();
 
     // Scope gate: which fixtures this test ASSERTS on. Committed default is the
     // FULL 152-fixture corpus (R1a exit gate); `small` is the dev subset.
@@ -622,7 +677,7 @@ fn differential_l2_features_match_goldens() {
         // `REGEN_TEMP_GOLDENS` is set, write the ENGINE projection to the golden
         // file (matching the on-disk pretty form) instead of comparing — the
         // goldens are Rust-owned baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize L2 {fixture}: {e}"));
             pretty.push('\n');
@@ -647,7 +702,7 @@ fn differential_l2_features_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN l2: wrote {} golden(s)", goldens.len());
         return;
     }
@@ -687,6 +742,9 @@ fn differential_l2_features_match_goldens() {
         "R1a L2 differential: set={set:?}, {} fixture(s), 0 divergences.",
         goldens.len()
     );
+
+    // Full-corpus floor check regardless of the dev-subset gate above (Task T0.6).
+    assert_meets_manifest_fixture_count_floor(&r1a_goldens_dir(), all_goldens_len);
 }
 
 // =============================================================================
@@ -854,6 +912,7 @@ fn differential_l3_record_types_match_goldens() {
         !all_goldens.is_empty(),
         "no L3 goldens discovered under tests/r2a-goldens — corpus missing?"
     );
+    let all_goldens_len = all_goldens.len();
 
     // Scope gate. Committed default since R2a Task 4 (the EXIT GATE) is the FULL
     // 153-fixture corpus; `small` is the proven-green dev subset.
@@ -918,7 +977,7 @@ fn differential_l3_record_types_match_goldens() {
         // `REGEN_TEMP_GOLDENS` is set, write the ENGINE projection to the golden
         // file (matching the on-disk pretty form) instead of comparing — the
         // goldens are Rust-owned baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize L3 {fixture}: {e}"));
             pretty.push('\n');
@@ -946,7 +1005,7 @@ fn differential_l3_record_types_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN l3rt: wrote {} golden(s)", goldens.len());
         return;
     }
@@ -1023,6 +1082,12 @@ fn differential_l3_record_types_match_goldens() {
     eprintln!(
         "R2a L3 differential: set={set:?}, {} fixture(s), 0 divergences.",
         goldens.len()
+    );
+
+    // Full-corpus floor check regardless of the dev-subset gate above (Task T0.6).
+    assert_meets_manifest_fixture_count_floor(
+        &repo_root().join("tests").join("r2a-goldens"),
+        all_goldens_len,
     );
 }
 
@@ -1451,7 +1516,7 @@ fn differential_l3_call_graph_match_goldens() {
         // REGEN path (mirrors the l2 / l3rt branches). When `REGEN_TEMP_GOLDENS`
         // is set, write the ENGINE projection to the golden file instead of
         // comparing — Rust-owned baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize L3cg {fixture}: {e}"));
             pretty.push('\n');
@@ -1478,7 +1543,7 @@ fn differential_l3_call_graph_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN l3cg: wrote {} golden(s)", goldens.len());
         return;
     }
@@ -1987,6 +2052,20 @@ fn differential_l3_event_graph_match_goldens() {
         let rust_json = serde_json::to_value(&projection)
             .unwrap_or_else(|e| panic!("serialize Rust L3eg projection for {fixture}: {e}"));
 
+        // REGEN path (Task T0.6 — L3eg previously had none; mirrors the l2 / l3rt /
+        // l3cg / l3cov branches). When `REGEN_TEMP_GOLDENS=1`, write the ENGINE
+        // projection to the golden file instead of comparing — Rust-owned
+        // baselines (TS oracle retired).
+        if regen::regen_mode() {
+            let mut pretty = serde_json::to_string_pretty(&projection)
+                .unwrap_or_else(|e| panic!("regen serialize L3eg {fixture}: {e}"));
+            pretty.push('\n');
+            std::fs::write(golden_path, pretty)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN l3eg golden: {}", golden_path.display());
+            continue;
+        }
+
         // Forbidden later-gate / L4 field scan on BOTH sides (hard fail).
         scan_l3eg_forbidden(
             &golden_json,
@@ -2001,6 +2080,12 @@ fn differential_l3_event_graph_match_goldens() {
 
         // Keyed structural compare (events by id, edges by (eventId, subscriber)).
         diff_l3eg(fixture, &golden_json, &rust_json, &mut all_divergences);
+    }
+
+    // REGEN mode wrote every golden above and asserts nothing.
+    if regen::regen_mode() {
+        eprintln!("REGEN l3eg: wrote {} golden(s)", goldens.len());
+        return;
     }
 
     // --- Inclusion-rule guard (FULL set only): every corpus fixture WITHOUT a
@@ -2398,7 +2483,7 @@ fn differential_l3_coverage_match_goldens() {
         // REGEN path (mirrors the l2 / l3rt / l3cg branches). When `REGEN_TEMP_GOLDENS`
         // is set, write the ENGINE projection to the golden file instead of
         // comparing — Rust-owned baselines (TS oracle retired for reclassified axes).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize L3cov {fixture}: {e}"));
             pretty.push('\n');
@@ -2432,7 +2517,7 @@ fn differential_l3_coverage_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN l3cov: wrote {} golden(s)", goldens.len());
         return;
     }

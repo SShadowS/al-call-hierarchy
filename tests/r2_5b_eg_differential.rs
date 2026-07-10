@@ -47,6 +47,9 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::deps::cross_app_l3::build_cross_app_l3_from_workspace;
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 
 /// The dep app guids — a stable id (eventId/subscriberRoutineId) starting with one of
@@ -333,7 +336,7 @@ fn differential_r2_5b_event_graph_match_goldens() {
         // is set, write the ENGINE projection to the golden file (matching the
         // on-disk pretty form) instead of comparing — the goldens are Rust-owned
         // baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize R2.5b-eg {fixture}: {e}"));
             pretty.push('\n');
@@ -361,7 +364,7 @@ fn differential_r2_5b_event_graph_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN r2.5b-eg: wrote {} golden(s)", goldens.len());
         return;
     }
