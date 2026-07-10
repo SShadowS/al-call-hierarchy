@@ -451,7 +451,11 @@ fn push_variables_ir(result: &mut ParsedFile, vars: &[VarDecl], containing: Opti
 /// Cyclomatic complexity over the IR body. Base 1; +1 per if (+1 more if it has an
 /// else), +1 per loop, +1 per case branch, +1 per `and`/`or`. The canonical
 /// complexity metric (the tree-sitter `analysis::calculate_complexity` is retired).
-pub(crate) fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
+///
+/// `pub` not `pub(crate)` (T0.5): this module is now library-owned and
+/// `main.rs`'s `extract_metrics_ir` calls it via the `crate::parser`
+/// re-export, which is a separate crate boundary from the library.
+pub fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
     let mut c = 1u32;
     if let Some(body) = r.body {
         complexity_block(ir, body, &mut c);
