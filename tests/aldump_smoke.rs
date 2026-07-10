@@ -166,9 +166,10 @@ fn ws_d2_l3_event_graph_matches_golden() {
 
 /// Task T0.1: `aldump --l3-call-graph-stats` on a NONEXISTENT workspace path must
 /// fail loudly rather than silently emitting an all-zero histogram with
-/// `realUnknownRate: 0.0` and exiting SUCCESS — that shape makes the north-star
-/// metric indistinguishable from tool failure, so any CI/jq ratchet built on it
-/// would pass forever regardless of reality.
+/// `legacyL3UnknownRate: 0.0` (renamed from `realUnknownRate` by Task T0.4 — this
+/// is the legacy/advisory L3 surface, not the authoritative metric) and exiting
+/// SUCCESS — that shape makes the L3 metric indistinguishable from tool failure,
+/// so any CI/jq ratchet built on it would pass forever regardless of reality.
 #[test]
 fn aldump_l3_call_graph_stats_nonexistent_path_fails_loudly() {
     let bin = env!("CARGO_BIN_EXE_aldump");
@@ -191,13 +192,13 @@ fn aldump_l3_call_graph_stats_nonexistent_path_fails_loudly() {
         "stderr must carry the fail-closed/error diagnostic, got: {stderr}"
     );
 
-    // stdout must NOT look like a valid (if empty) histogram — a `realUnknownRate:
+    // stdout must NOT look like a valid (if empty) histogram — a `legacyL3UnknownRate:
     // 0.0` on stdout is exactly the "perfect score for a broken tool" shape this
     // task exists to close.
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !stdout.contains("realUnknownRate"),
-        "stdout must not emit a realUnknownRate histogram on failure, got: {stdout}"
+        !stdout.contains("legacyL3UnknownRate"),
+        "stdout must not emit a legacyL3UnknownRate histogram on failure, got: {stdout}"
     );
 }
 
@@ -223,8 +224,9 @@ fn aldump_l3_call_graph_stats_cross_app_nonexistent_path_fails_loudly() {
 }
 
 /// Task T0.1 R4 guard: a good-path fixture workspace must still exit 0 with a
-/// parseable histogram carrying `realUnknownRate` — the fail-closed fix must not
-/// regress the success path.
+/// parseable histogram carrying `legacyL3UnknownRate` (renamed from
+/// `realUnknownRate` by Task T0.4) — the fail-closed fix must not regress the
+/// success path.
 #[test]
 fn aldump_l3_call_graph_stats_good_path_still_succeeds() {
     let bin = env!("CARGO_BIN_EXE_aldump");
@@ -245,7 +247,7 @@ fn aldump_l3_call_graph_stats_good_path_still_succeeds() {
     let v: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("aldump emits valid JSON histogram");
     assert!(
-        v.get("realUnknownRate").is_some(),
-        "good-path histogram must carry realUnknownRate, got: {v}"
+        v.get("legacyL3UnknownRate").is_some(),
+        "good-path histogram must carry legacyL3UnknownRate, got: {v}"
     );
 }

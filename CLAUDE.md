@@ -151,11 +151,14 @@ wrapper nodes that broke the v2 assumptions above.
 
 The product's moat is **precise whole-program call-graph resolution** for AL. The
 north-star metric is the **real-`unknown` edge rate** on real BC apps (measure with
-`aldump --l3-call-graph-stats <workspace>`): drive it toward zero, where the residual
-is provably dynamic. The honest resolution taxonomy is `resolved` / `builtin` (platform
-intrinsic, not a hole) / `dynamic` (runtime-typed) / `external` (dependency object) /
-`unknown` (a TRUE failure — the signal to eliminate). See the call-graph resolution
-redesign spec under `docs/superpowers/specs/`.
+`aldump --program-call-graph-stats <workspace>`): drive it toward zero, where the
+residual is provably dynamic. The honest resolution taxonomy is `resolved` / `builtin`
+(platform intrinsic, not a hole) / `dynamic` (runtime-typed) / `external` (dependency
+object) / `unknown` (a TRUE failure — the signal to eliminate). `aldump
+--l3-call-graph-stats` and its `-cross-app`/`-unknown-breakdown` siblings are the legacy
+L3 engine — advisory only, under a different metric definition (`legacyL3UnknownRate`),
+never the ratcheted number. See the call-graph resolution redesign spec under
+`docs/superpowers/specs/`.
 
 ## Testing Philosophy & Goldens
 

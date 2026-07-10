@@ -821,14 +821,24 @@ fn main() -> ExitCode {
 
     if l3_call_graph_stats {
         // Honest-taxonomy histogram (spec §6/§8): bucket every resolved call edge
-        // by ResolutionClass + report the real-`unknown` rate. Read-only over the
-        // resolved edges (the same capture `--l3-call-graph` uses).
+        // by ResolutionClass + report the LEGACY L3 real-`unknown` rate. Read-only
+        // over the resolved edges (the same capture `--l3-call-graph` uses).
         //
-        // FAIL-CLOSED IS FATAL HERE (Task T0.1): this is the north-star measurement
-        // command — `realUnknownRate` on an unusable workspace must not silently
-        // read as a perfect 0.0. A `None` layout is a genuine tool/layout failure,
-        // not a legitimate empty answer, so it exits non-zero with NO stdout output
-        // (never a `Histogram::default()` masquerading as a real result).
+        // Task T0.4: this is the legacy L3 engine, advisory only — the
+        // authoritative metric is `aldump --program-call-graph-stats`
+        // (`resolve_full_program`). The emitted rate key is `legacyL3UnknownRate`
+        // (renamed from `realUnknownRate`, which that key's DIFFERENT semantics —
+        // excluding memberNotFound/ambiguous — made unsafe to compare against the
+        // fresh resolver's own `realUnknownRate`) plus an `advisory` field naming
+        // the authoritative command. See CLAUDE.md's "Project Direction & The
+        // Moat".
+        //
+        // FAIL-CLOSED IS FATAL HERE (Task T0.1): even though this surface is
+        // advisory, `legacyL3UnknownRate` on an unusable workspace must not
+        // silently read as a perfect 0.0. A `None` layout is a genuine
+        // tool/layout failure, not a legitimate empty answer, so it exits
+        // non-zero with NO stdout output (never a `Histogram::default()`
+        // masquerading as a real result).
         use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
         use al_call_hierarchy::engine::l3::resolution_class::Histogram;
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
@@ -849,8 +859,14 @@ fn main() -> ExitCode {
         let mut value = serde_json::to_value(histogram).unwrap_or(serde_json::json!({}));
         if let Some(obj) = value.as_object_mut() {
             obj.insert(
-                "realUnknownRate".to_string(),
+                "legacyL3UnknownRate".to_string(),
                 serde_json::json!(histogram.real_unknown_rate()),
+            );
+            obj.insert(
+                "advisory".to_string(),
+                serde_json::json!(
+                    "legacy L3 engine; authoritative metric is --program-call-graph-stats"
+                ),
             );
         }
         return match serde_json::to_string_pretty(&value) {
@@ -941,8 +957,14 @@ fn main() -> ExitCode {
                 let mut value = serde_json::to_value(histogram).unwrap_or(serde_json::json!({}));
                 if let Some(obj) = value.as_object_mut() {
                     obj.insert(
-                        "realUnknownRate".to_string(),
+                        "legacyL3UnknownRate".to_string(),
                         serde_json::json!(histogram.real_unknown_rate()),
+                    );
+                    obj.insert(
+                        "advisory".to_string(),
+                        serde_json::json!(
+                            "legacy L3 engine; authoritative metric is --program-call-graph-stats"
+                        ),
                     );
                     obj.insert(
                         "depAppsLoaded".to_string(),
@@ -992,7 +1014,8 @@ fn main() -> ExitCode {
         let value = serde_json::json!({
             "totalEdges": histogram.total,
             "unknownTotal": histogram.unknown,
-            "realUnknownRate": histogram.real_unknown_rate(),
+            "legacyL3UnknownRate": histogram.real_unknown_rate(),
+            "advisory": "legacy L3 engine; authoritative metric is --program-call-graph-stats",
             "byReason": breakdown,
             "bareCallDetail": bare_detail,
             "frameworkMethodDetail": framework_detail,
@@ -1011,8 +1034,10 @@ fn main() -> ExitCode {
     }
 
     if l3_unknown_breakdown_cross_app {
-        // DEPS-LOADED, PRIMARY-SCOPED unknown breakdown — the north-star work-list.
-        // Same merged-model + primary-edge scoping as `--l3-call-graph-stats-cross-app`
+        // DEPS-LOADED, PRIMARY-SCOPED unknown breakdown — the legacy L3 work-list
+        // (advisory; Task T0.4 — the authoritative metric is
+        // `aldump --program-call-graph-stats`). Same merged-model + primary-edge
+        // scoping as `--l3-call-graph-stats-cross-app`
         // (deps present for resolution; metric measured over WORKSPACE call sites
         // only), but attributes every residual TRUE-`unknown` edge to its
         // `UnknownReason` so the real (whole-program) holes can be targeted directly
@@ -1099,7 +1124,8 @@ fn main() -> ExitCode {
                 let value = serde_json::json!({
                     "totalEdges": histogram.total,
                     "unknownTotal": histogram.unknown,
-                    "realUnknownRate": histogram.real_unknown_rate(),
+                    "legacyL3UnknownRate": histogram.real_unknown_rate(),
+                    "advisory": "legacy L3 engine; authoritative metric is --program-call-graph-stats",
                     "depAppsLoaded": cross.fetched_app_guids.len(),
                     "byReason": breakdown,
                     "bareCallDetail": bare_detail,

@@ -125,6 +125,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **BREAKING: legacy L3 histogram's `realUnknownRate` key renamed to
+  `legacyL3UnknownRate` (Task T0.4, Tier-0 remediation arc) — one metric, one
+  owner.** `aldump --l3-call-graph-stats` (legacy L3 engine) and `aldump
+  --program-call-graph-stats` (fresh resolver, `resolve_full_program`) emitted
+  DIFFERENT semantics under the identical `realUnknownRate` JSON key — the L3
+  histogram excludes `memberNotFound`/`ambiguous` from `unknown`, the fresh
+  engine counts `MemberNotFound` as `Unknown` — while CLAUDE.md's "Project
+  Direction & The Moat" pointed the north-star measurement at the L3 command.
+  A reader comparing the two numbers, or ratcheting the wrong one, got silently
+  different answers. Per the roadmap's binding decision, the fresh resolver is
+  now the SOLE authoritative metric: `realUnknownRate` is reserved exclusively
+  for `--program-call-graph-stats`'s `wholeProgram`/`primaryScoped` output
+  (byte-identical, unchanged — no metric-computation change anywhere in this
+  task). All 4 L3-family JSON emission sites in `src/bin/aldump.rs`
+  (`--l3-call-graph-stats`, `--l3-call-graph-stats-cross-app`,
+  `--l3-unknown-breakdown`, `--l3-unknown-breakdown-cross-app` — the brief that
+  scoped this task named only 2; scouting found all 4 emit the same
+  `engine::l3::resolution_class::Histogram`, so the rename was applied
+  consistently across all of them) now emit `legacyL3UnknownRate` plus an
+  additive self-describing `"advisory": "legacy L3 engine; authoritative
+  metric is --program-call-graph-stats"` field. No `Histogram` sibling field
+  implies authority (`total`/`resolved`/`builtin`/`dynamic`/`external`/
+  `ambiguous`/`memberNotFound`/`unknown` are all plainly descriptive), so only
+  the one key needed renaming. CLAUDE.md's moat section now measures with
+  `--program-call-graph-stats` and states the L3 command is legacy/advisory.
+  Neither `graphify_export.rs` nor any `engine/l5` detector reads this JSON
+  key programmatically — both consume L3 `CallEdge`s directly — so R6 is a
+  clean no-op there; nothing to fix. 2 test files pinned the old key and are
+  updated (`tests/l3cg_stats_smoke.rs`, `tests/aldump_smoke.rs`'s 3 T0.1
+  fail-closed/good-path guards); no committed golden ever pinned
+  `realUnknownRate` (grepped every file type), so no golden regen was needed.
+  Gates: `cargo test` full workspace green (0 failed); `cargo clippy
+  --all-targets --all-features -- -D warnings` clean; CDO's
+  `--program-call-graph-stats` SHA-256 confirmed BYTE-IDENTICAL to the frozen
+  baseline (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`);
+  `rg -n '"realUnknownRate"' src/` afterward shows exactly 2 hits, both inside
+  `program_call_graph_stats`'s `wholeProgram`/`primaryScoped` blocks — the only
+  emission sites left.
 - **Docs + CLAUDE.md doctrine + a legacy-token TRIAGE (Task 3.6, al-sem
   parity retirement arc capstone).** `docs/engine-migration.md` moved to
   `docs/history/` (git mv) with an `ARCHIVED (2026-07-05)` header —
