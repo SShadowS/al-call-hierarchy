@@ -36,6 +36,9 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::combined_graph::R3a1Projection;
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// Keys that must NEVER appear on either side of the R3a-1 comparison — later-gate
 /// (R3a-2/3/4) surfaces. Mirrors the al-sem manifest's `forbiddenKeys`.
 const R3A1_FORBIDDEN_KEYS: &[&str] = &[
@@ -371,7 +374,7 @@ fn differential_r3a1_combined_graph_match_goldens() {
         // Rust-owned baseline: `REGEN_TEMP_GOLDENS=1` rewrites each golden from THIS
         // engine (al-sem byte-parity retired — see CLAUDE.md). The manifest `matrix`
         // block is then updated by hand to the Rust corpus totals.
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize r3a1 {fixture}: {e}"));
             pretty.push('\n');
@@ -398,7 +401,7 @@ fn differential_r3a1_combined_graph_match_goldens() {
         diff_value(fixture, "", &golden_json, &rust_json, &mut all_divergences);
     }
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!(
             "REGEN r3a1: wrote {} golden(s); now update tests/r3a1-goldens/manifest.json `matrix` to the Rust totals",
             goldens.len()

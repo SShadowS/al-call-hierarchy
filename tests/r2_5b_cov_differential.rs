@@ -51,6 +51,9 @@ use al_call_hierarchy::engine::deps::cross_app_l3::{
 };
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 
 /// Keys that must NEVER appear on either side of the coverage comparison — call-graph /
@@ -359,7 +362,7 @@ fn differential_r2_5b_coverage_match_goldens() {
         // is set, write the ENGINE projection to the golden file (matching the
         // on-disk pretty form) instead of comparing — the goldens are Rust-owned
         // baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize R2.5b-cov {fixture}: {e}"));
             pretty.push('\n');
@@ -389,7 +392,7 @@ fn differential_r2_5b_coverage_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN r2.5b-cov: wrote {} golden(s)", goldens.len());
         return;
     }

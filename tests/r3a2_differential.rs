@@ -43,6 +43,9 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::summary::{R3a2Projection, project_r3a2};
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R3A2_TEST_NAME: &str = "differential_r3a2_summary_core_match_goldens";
 
 /// Keys that must NEVER appear on either side of the R3a-2 comparison — later-gate
@@ -415,7 +418,7 @@ fn differential_r3a2_summary_core_match_goldens() {
         // `REGEN_TEMP_GOLDENS` is set, write the ENGINE projection to the golden
         // file (matching the on-disk pretty form) instead of comparing — the
         // goldens are Rust-owned baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             let mut pretty = serde_json::to_string_pretty(&projection)
                 .unwrap_or_else(|e| panic!("regen serialize R3a-2 {fixture}: {e}"));
             pretty.push('\n');
@@ -443,7 +446,7 @@ fn differential_r3a2_summary_core_match_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN r3a2: wrote {} golden(s)", goldens.len());
         return;
     }

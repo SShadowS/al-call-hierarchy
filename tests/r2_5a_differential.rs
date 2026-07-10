@@ -44,6 +44,9 @@ use al_call_hierarchy::engine::deps::merged_index::{
 };
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const R2_5A_MODEL_INSTANCE_ID: &str = "r2.5a";
 
 /// Keys that must NEVER appear anywhere in the R2.5a projection (L4/summary/cone —
@@ -509,7 +512,7 @@ fn differential_r2_5a_merged_index_matches_goldens() {
         // `REGEN_TEMP_GOLDENS` is set, write the ENGINE-serialized text straight to
         // the golden file instead of comparing — the goldens are Rust-owned
         // baselines (TS oracle retired).
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             std::fs::write(golden_path, &rust_text)
                 .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
             eprintln!("REGEN r2.5a golden: {}", golden_path.display());
@@ -537,7 +540,7 @@ fn differential_r2_5a_merged_index_matches_goldens() {
     }
 
     // REGEN mode wrote every golden above and asserts nothing.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         eprintln!("REGEN r2.5a: wrote {} golden(s)", goldens.len());
         return;
     }

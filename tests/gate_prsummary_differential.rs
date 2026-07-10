@@ -26,6 +26,9 @@ use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// How a golden's txn slot was produced on the al-sem side (mirrors the SARIF corpus).
 #[derive(Clone, Copy)]
 enum TxnSelection {
@@ -149,7 +152,7 @@ fn read_golden(name: &str) -> String {
 /// goldens live in-repo (NOT al-sem), so the write target is the resolved golden
 /// path directly. Returns `true` when a regen write happened (caller skips assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     let path = goldens_dir().join(name);
@@ -386,7 +389,7 @@ fn gate_exit_code_matrix_matches() {
     // committed text in place line-by-line, preserving the committed key + fixture
     // order: track the current top-level fixture and slot, and rewrite ONLY the
     // numeric leaf value on each `"<key>": <n>` line. The goldens stay Rust-owned.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let golden_text = read_golden("exit-codes.json");
         // (preset, detector) per fixture, by name.
         let mut sel: std::collections::HashMap<&str, (Option<&str>, Option<&str>)> =

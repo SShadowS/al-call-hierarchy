@@ -13,12 +13,24 @@ pub mod app_package;
 pub mod config;
 pub mod dependencies;
 pub mod engine;
+/// The legacy LSP call-hierarchy pipeline (T0.5): moved here — not duplicated
+/// — so `benches/` and `tests/` can index a project and query the graph
+/// in-process (no LSP stdio loop). `main.rs` re-exports these five under
+/// `crate::{graph,handlers,indexer,parser,protocol}` via `pub use
+/// al_call_hierarchy::{...}` (same pattern as `config`/`telemetry` above) so
+/// the binary-only modules (`server.rs`, `watcher.rs`, `analysis.rs`) keep
+/// compiling unchanged.
+pub mod graph;
+pub mod handlers;
+pub mod indexer;
 /// Tree-sitter AL language bindings. Exposed from the library so additive
 /// binaries (e.g. the R0 `aldump`) can parse without duplicating the `extern`
 /// declaration. `main.rs` keeps its own `mod language;` for the LSP binary;
 /// the duplicate compilation is benign and pre-existing in this repo.
 pub mod language;
+pub mod parser;
 pub mod program;
+pub mod protocol;
 pub mod snapshot;
 pub mod telemetry;
 /// Core AL object-type enum shared between lib and binary targets.

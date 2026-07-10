@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 
 // ObjectType is defined in the library crate's `types` module and re-exported
 // here so all binary-crate modules can continue using `crate::graph::ObjectType`.
-pub use al_call_hierarchy::types::ObjectType;
+// (This module is itself owned by the library as of T0.5 — see lib.rs — so
+// `crate::` here refers to the library crate root, same as `types` below.)
+pub use crate::types::ObjectType;
 
 use crate::protocol::normalize_path;
 use std::sync::Arc;

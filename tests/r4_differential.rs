@@ -36,6 +36,9 @@ use al_call_hierarchy::engine::l5::finding::{
 };
 use serde_json::Value;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// A smoke entry — the wave representative fixtures (one per substrate wave).
 /// These are kept from R4-0 for continuity; the per-detector fixtures below are the
 /// actual byte-match entries for R4-A.
@@ -957,6 +960,36 @@ fn corpus_dir() -> PathBuf {
     repo_root().join("tests").join("r0-corpus")
 }
 
+/// `r4-goldens/manifest.json`'s `fixtureCount` was read by no test (Task
+/// T0.6 — a silently deleted golden would pass unnoticed). Checks `>=`, not
+/// `==`: `fixtureCount` is a frozen al-sem-era provenance floor (52), and the
+/// Rust engine's own R4-A..R4-H per-detector waves have since grown the
+/// corpus well past it — an exact-equality check would break the moment a
+/// wave legitimately gains a fixture.
+#[test]
+fn manifest_fixture_count_floor() {
+    let manifest_path = goldens_dir().join("manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} not valid JSON: {e}", manifest_path.display()));
+    let claimed = manifest
+        .get("fixtureCount")
+        .and_then(|v| v.as_u64())
+        .expect("manifest missing fixtureCount") as usize;
+    let discovered = std::fs::read_dir(goldens_dir())
+        .unwrap_or_else(|e| panic!("read {}: {e}", goldens_dir().display()))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".r4.golden.json"))
+        .count();
+    assert!(
+        discovered >= claimed,
+        "r4-goldens/manifest.json claims fixtureCount={claimed} but only {discovered} \
+         `.r4.golden.json` file(s) were found — a golden may have been silently deleted"
+    );
+}
+
 #[derive(Debug, Clone)]
 struct Divergence {
     fixture: String,
@@ -1153,7 +1186,7 @@ fn pretty_with_newline(proj: &R4FindingsProjection) -> String {
 /// form) to the golden file instead of comparing — the goldens are Rust-owned
 /// baselines (TS oracle retired). Returns `true` when a regen write happened.
 fn maybe_regen_r4(golden_path: &std::path::Path, rust: &R4FindingsProjection) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     std::fs::write(golden_path, pretty_with_newline(rust))

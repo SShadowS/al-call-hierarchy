@@ -10,6 +10,10 @@
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 use std::path::PathBuf;
+use std::process::Command;
+
+#[path = "common/regen.rs"]
+mod regen;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -138,7 +142,7 @@ fn ws_d2_l3_event_graph_matches_golden() {
     // REGEN path (Task 3.3 vendoring): `REGEN_TEMP_GOLDENS=1` writes the ENGINE
     // projection to the in-repo golden instead of comparing — this is a
     // Rust-owned baseline, not a copy of al-sem's TS output.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let mut pretty = serde_json::to_string_pretty(&projection).expect("regen serialize l3eg");
         pretty.push('\n');
         std::fs::create_dir_all(golden_path.parent().expect("golden has a parent"))
@@ -160,5 +164,93 @@ fn ws_d2_l3_event_graph_matches_golden() {
     assert_eq!(
         rust, golden,
         "ws-d2 L3 event-graph projection must match ws-d2.l3eg.golden.json exactly"
+    );
+}
+
+/// Task T0.1: `aldump --l3-call-graph-stats` on a NONEXISTENT workspace path must
+/// fail loudly rather than silently emitting an all-zero histogram with
+/// `legacyL3UnknownRate: 0.0` (renamed from `realUnknownRate` by Task T0.4 — this
+/// is the legacy/advisory L3 surface, not the authoritative metric) and exiting
+/// SUCCESS — that shape makes the L3 metric indistinguishable from tool failure,
+/// so any CI/jq ratchet built on it would pass forever regardless of reality.
+#[test]
+fn aldump_l3_call_graph_stats_nonexistent_path_fails_loudly() {
+    let bin = env!("CARGO_BIN_EXE_aldump");
+    let nonexistent = repo_root().join("tests/fixtures/DOES-NOT-EXIST-t0-task-1");
+
+    let out = Command::new(bin)
+        .arg("--l3-call-graph-stats")
+        .arg(&nonexistent)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn aldump: {e}"));
+
+    assert!(
+        !out.status.success(),
+        "aldump --l3-call-graph-stats on a nonexistent path must exit non-zero"
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("fail-closed") || stderr.contains("error"),
+        "stderr must carry the fail-closed/error diagnostic, got: {stderr}"
+    );
+
+    // stdout must NOT look like a valid (if empty) histogram — a `legacyL3UnknownRate:
+    // 0.0` on stdout is exactly the "perfect score for a broken tool" shape this
+    // task exists to close.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("legacyL3UnknownRate"),
+        "stdout must not emit a legacyL3UnknownRate histogram on failure, got: {stdout}"
+    );
+}
+
+/// Task T0.1 R2: the cross-app variant on an unusable (nonexistent) workspace must
+/// also exit non-zero — it previously emitted `{"error": "..."}`  JSON on stdout
+/// and still exited SUCCESS, which is precisely the shape R2 forbids (a JSON body
+/// containing "error" is not success).
+#[test]
+fn aldump_l3_call_graph_stats_cross_app_nonexistent_path_fails_loudly() {
+    let bin = env!("CARGO_BIN_EXE_aldump");
+    let nonexistent = repo_root().join("tests/fixtures/DOES-NOT-EXIST-t0-task-1-cross-app");
+
+    let out = Command::new(bin)
+        .arg("--l3-call-graph-stats-cross-app")
+        .arg(&nonexistent)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn aldump: {e}"));
+
+    assert!(
+        !out.status.success(),
+        "aldump --l3-call-graph-stats-cross-app on a nonexistent path must exit non-zero"
+    );
+}
+
+/// Task T0.1 R4 guard: a good-path fixture workspace must still exit 0 with a
+/// parseable histogram carrying `legacyL3UnknownRate` (renamed from
+/// `realUnknownRate` by Task T0.4) — the fail-closed fix must not regress the
+/// success path.
+#[test]
+fn aldump_l3_call_graph_stats_good_path_still_succeeds() {
+    let bin = env!("CARGO_BIN_EXE_aldump");
+    let ws = ws_d2_dir();
+
+    let out = Command::new(bin)
+        .arg("--l3-call-graph-stats")
+        .arg(&ws)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn aldump: {e}"));
+
+    assert!(
+        out.status.success(),
+        "aldump --l3-call-graph-stats on a good-path workspace must exit 0: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("aldump emits valid JSON histogram");
+    assert!(
+        v.get("legacyL3UnknownRate").is_some(),
+        "good-path histogram must carry legacyL3UnknownRate, got: {v}"
     );
 }

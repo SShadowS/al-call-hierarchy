@@ -269,7 +269,20 @@ fn main() -> ExitCode {
         // and emit the producer payloads + consumed effect in the SAME stable shape /
         // key-order as the al-sem `cross-app-dep-hooks.r3a4.golden.json`. CAPTURE POINT:
         // post-inject/collect hooks; the R3a-5 cross-app cone is NOT projected here.
-        // Fail-closed → an empty projection (never throws).
+        //
+        // `project_r3a4_from_workspace` itself is "engine-never-throws" (a missing dep
+        // ledger is a legitimate empty answer, and several differential/oracle tests
+        // call it directly expecting that always-succeeds shape) — it has no signal
+        // for "the workspace itself is unusable". Task T0.1: gate that ONE genuine
+        // failure mode at the CLI boundary with the SAME predicate every other L3-based
+        // mode already uses, without touching the library function's tested contract.
+        if assemble_and_resolve_workspace_default(&workspace).is_none() {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-4 dep-hook projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        }
         let projection =
             al_call_hierarchy::engine::deps::r3a4_projection::project_r3a4_from_workspace(
                 &workspace,
@@ -298,6 +311,19 @@ fn main() -> ExitCode {
         // the injected intra-app typed edges let the cone propagate the dep's Insert
         // capabilityFactsDirect to the PRIMARY caller's capabilityFactsInherited.
         // CAPTURE POINT: post-computeSummaries WITH dep hooks. Fail-closed → empty.
+        //
+        // Same T0.1 gate as `--r3a4-dep-hooks` above: `project_r3a5_cross_app` itself
+        // stays engine-never-throws (zero deps is legitimate, and its `empty` fallback
+        // is exercised directly by differential/oracle tests), so the ONE genuine
+        // failure — an unbuildable primary workspace — is caught at the CLI boundary
+        // with the same predicate every other L3-based mode uses.
+        if assemble_and_resolve_workspace_default(&workspace).is_none() {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-5 cross-app summary",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        }
         let projection = al_call_hierarchy::engine::l4::capability_cone::project_r3a5_cross_app(
             &workspace,
             "r0",
@@ -324,17 +350,18 @@ fn main() -> ExitCode {
         // inRecursiveCycle / hasUnresolvedCalls) in the SAME stable shape/key-order as
         // the al-sem `<fixture>.r3a2.golden.json`. CAPTURE POINT: POST-computeSummaries;
         // NO dep hooks (R3a-4); the cone/coverage (R3a-3) are never declared on the
-        // projected types. Fail-closed/empty layouts → an empty projection (never throws).
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => al_call_hierarchy::engine::l4::summary::project_r3a2(&resolved),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-2 projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l4::summary::R3a2Projection { summaries: vec![] }
-            }
+        // projected types.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure, not a
+        // legitimate empty answer — exits non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-2 summary-core projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = al_call_hierarchy::engine::l4::summary::project_r3a2(&resolved);
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -354,19 +381,18 @@ fn main() -> ExitCode {
         // the stable projection (capabilityFactsDirect / capabilityFactsInherited /
         // coverage per routine) in the SAME shape/key-order as the al-sem
         // `<fixture>.r3a3.golden.json`. CAPTURE POINT: POST-computeSummaries cone pass;
-        // NO dep hooks (R3a-4). Fail-closed/empty layouts → an empty projection.
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                al_call_hierarchy::engine::l4::capability_cone::project_r3a3(&resolved)
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-3 projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l4::capability_cone::R3a3Projection { summaries: vec![] }
-            }
+        // NO dep hooks (R3a-4).
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-3 cone+coverage projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = al_call_hierarchy::engine::l4::capability_cone::project_r3a3(&resolved);
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -385,33 +411,28 @@ fn main() -> ExitCode {
         // stable projection) and emit the R4FindingsProjection in the SAME
         // shape/key-order as the al-sem `<fixture>.r4.golden.json`. Only the ported
         // detectors are registered, so the projection carries their subset.
-        // Fail-closed/empty layouts → an empty projection (never throws).
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let detectors = al_call_hierarchy::engine::l5::detectors::registered_detectors();
         let detector_names: Vec<String> = detectors.iter().map(|d| d.name.clone()).collect();
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => al_call_hierarchy::engine::l5::finding::project_r4_findings(
-                &resolved,
-                &detectors,
-                &fixture_name,
-                &detector_names,
-            ),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4 projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l5::finding::R4FindingsProjection {
-                    fixture_name,
-                    detectors: detector_names,
-                    finding_count: 0,
-                    findings: vec![],
-                }
-            }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4 findings projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = al_call_hierarchy::engine::l5::finding::project_r4_findings(
+            &resolved,
+            &detectors,
+            &fixture_name,
+            &detector_names,
+        );
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -428,31 +449,25 @@ fn main() -> ExitCode {
         // R4-F RETURN SUMMARIES: run the SOURCE-ONLY L0→L3 pipeline, then compute
         // per-routine returnability summaries (spec §J5), and emit the stable
         // projection in the SAME shape/key-order as the al-sem
-        // `<fixture>.returnsummary.golden.json`. Fail-closed/empty layout →
-        // an empty projection (never throws).
+        // `<fixture>.returnsummary.golden.json`.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                al_call_hierarchy::engine::return_summary::project_r4f_return_summaries(
-                    &resolved,
-                    &fixture_name,
-                )
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F return-summary projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::return_summary::R4FReturnSummaryProjection {
-                    fixture_name,
-                    summary_count: 0,
-                    summaries: vec![],
-                }
-            }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4-F return-summary projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = al_call_hierarchy::engine::return_summary::project_r4f_return_summaries(
+            &resolved,
+            &fixture_name,
+        );
         return match serde_json::to_string_pretty(&projection) {
             Ok(mut json) => {
                 json.push('\n');
@@ -472,33 +487,26 @@ fn main() -> ExitCode {
         // ordering-facts subset) in the SAME shape/key-order as the al-sem
         // `<fixture>.snapshot.golden.json`. The projection re-projects the R3a
         // source-only base (cone facts / typed edges / event graph / coverage /
-        // root classifications). Fail-closed/empty layout → an empty projection.
+        // root classifications).
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                let json = al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot(
-                    &resolved,
-                    &fixture_name,
-                );
-                // `project_r4f_snapshot` already appends a trailing newline.
-                print!("{json}");
-                return ExitCode::SUCCESS;
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F snapshot projection",
-                    workspace.display()
-                );
-                println!(
-                    "{{\n  \"fixtureName\": {}\n}}",
-                    serde_json::json!(fixture_name)
-                );
-                return ExitCode::SUCCESS;
-            }
-        }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4-F snapshot projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        };
+        let json =
+            al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot(&resolved, &fixture_name);
+        // `project_r4f_snapshot` already appends a trailing newline.
+        print!("{json}");
+        return ExitCode::SUCCESS;
     }
 
     if r4f_digest_effects {
@@ -506,33 +514,28 @@ fn main() -> ExitCode {
         // the CapabilitySnapshot, then run the digest witness + effects + occurrence-build
         // path per reportable root, emitting the per-root DigestEffectResult[] (each with a
         // stable occurrenceId = factId) in the SAME shape/key-order as the al-sem
-        // `<fixture>.digest.golden.json`. Fail-closed/empty layout → an empty projection.
+        // `<fixture>.digest.golden.json`.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                let json = al_call_hierarchy::engine::l5::digest::project_r4f_digest_effects(
-                    &resolved,
-                    &fixture_name,
-                );
-                // `project_r4f_digest_effects` already appends a trailing newline.
-                print!("{json}");
-                return ExitCode::SUCCESS;
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F digest-effects projection",
-                    workspace.display()
-                );
-                println!(
-                    "{{\n  \"fixtureName\": {},\n  \"entryCount\": 0,\n  \"entries\": []\n}}",
-                    serde_json::json!(fixture_name)
-                );
-                return ExitCode::SUCCESS;
-            }
-        }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4-F digest-effects projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        };
+        let json = al_call_hierarchy::engine::l5::digest::project_r4f_digest_effects(
+            &resolved,
+            &fixture_name,
+        );
+        // `project_r4f_digest_effects` already appends a trailing newline.
+        print!("{json}");
+        return ExitCode::SUCCESS;
     }
 
     if r4f_scoped_guarantees {
@@ -540,32 +543,27 @@ fn main() -> ExitCode {
         // the CapabilitySnapshot, compute return summaries + isolated event ids, run the
         // digest + ORDERING-ENGINE path, and emit the per-root per-effect scopedGuarantees
         // (filtered to the 5 RELEVANT labels) in the al-sem `<fixture>.scoped.golden.json`
-        // shape. Fail-closed/empty layout → an empty projection.
+        // shape.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                let json = al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees(
-                    &resolved,
-                    &fixture_name,
-                );
-                print!("{json}");
-                return ExitCode::SUCCESS;
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F scoped-guarantees projection",
-                    workspace.display()
-                );
-                println!(
-                    "{{\n  \"fixtureName\": {},\n  \"entryCount\": 0,\n  \"entries\": []\n}}",
-                    serde_json::json!(fixture_name)
-                );
-                return ExitCode::SUCCESS;
-            }
-        }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4-F scoped-guarantees projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        };
+        let json = al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees(
+            &resolved,
+            &fixture_name,
+        );
+        print!("{json}");
+        return ExitCode::SUCCESS;
     }
 
     if r4f_ordering_facts {
@@ -573,64 +571,53 @@ fn main() -> ExitCode {
         // the ordering-facts facade (compute_ordering_facts: composeSnapshot → return
         // summaries → isolated events → digest+ordering → resolve each scopedGuarantee
         // to its IO/write/commit anchors) and emit the per-routine resolved OrderingFact[]
-        // in the al-sem `<fixture>.orderingfacts.golden.json` shape. Fail-closed → empty.
+        // in the al-sem `<fixture>.orderingfacts.golden.json` shape.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                let json =
-                    al_call_hierarchy::engine::l5::ordering_facts::project_r4f_ordering_facts(
-                        &resolved,
-                        &fixture_name,
-                    );
-                print!("{json}");
-                return ExitCode::SUCCESS;
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F ordering-facts projection",
-                    workspace.display()
-                );
-                println!(
-                    "{{\n  \"fixtureName\": {},\n  \"routineCount\": 0,\n  \"entries\": []\n}}",
-                    serde_json::json!(fixture_name)
-                );
-                return ExitCode::SUCCESS;
-            }
-        }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4-F ordering-facts projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        };
+        let json = al_call_hierarchy::engine::l5::ordering_facts::project_r4f_ordering_facts(
+            &resolved,
+            &fixture_name,
+        );
+        print!("{json}");
+        return ExitCode::SUCCESS;
     }
 
     if r4f_root_classifications {
         // R4-F ROOT CLASSIFICATIONS: run the SOURCE-ONLY L0→L3 pipeline (which now
         // classifies AST roots + overlays `<workspace>/roots.config.json`), then
         // emit the STABLE RootClassification projection in the SAME shape/key-order
-        // as the al-sem `<fixture>.rootclass.golden.json`. Fail-closed/empty layout
-        // → an empty projection (never throws).
+        // as the al-sem `<fixture>.rootclass.golden.json`.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         let fixture_name = workspace
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                al_call_hierarchy::engine::root_classification::project_r4f_root_classifications(
-                    &resolved,
-                    &fixture_name,
-                )
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R4-F root-classification projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::root_classification::R4FRootClassProjection {
-                    fixture_name,
-                    classification_count: 0,
-                    classifications: vec![],
-                }
-            }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R4-F root-classification projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection =
+            al_call_hierarchy::engine::root_classification::project_r4f_root_classifications(
+                &resolved,
+                &fixture_name,
+            );
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -651,19 +638,18 @@ fn main() -> ExitCode {
         // (the per-iteration stable fingerprint sequence + iteration count + per-pass
         // `changed`), in the SAME shape/key-order as the al-sem
         // `<fixture>.r3a2-trace.golden.json`. Proves JACOBI parity (frozen prior-pass
-        // snapshot, not Gauss-Seidel). Fail-closed → an empty trace (never throws).
-        let trace = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                al_call_hierarchy::engine::l4::summary::project_r3a2_with_trace(&resolved).1
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-2 trace",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l4::summary::R3a2Trace { traces: vec![] }
-            }
+        // snapshot, not Gauss-Seidel).
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-2 trace",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let trace = al_call_hierarchy::engine::l4::summary::project_r3a2_with_trace(&resolved).1;
         return match serde_json::to_string_pretty(&trace) {
             Ok(json) => {
                 println!("{json}");
@@ -683,22 +669,17 @@ fn main() -> ExitCode {
         // reverse-topo SCC list) in the SAME shape/key-order as the al-sem
         // `<fixture>.r3a1.golden.json`. CAPTURE POINT: POST-buildCombinedGraph /
         // POST-tarjanScc / PRE-computeSummaries — NO dep hooks, NO summaries (R3a-2+).
-        // Fail-closed/empty layouts → an empty projection (never throws).
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => resolved.project_r3a1_combined_graph(),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty R3a-1 projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l4::combined_graph::R3a1Projection {
-                    combined_edges: vec![],
-                    uncertainty_edges: vec![],
-                    typed_edges: vec![],
-                    sccs: vec![],
-                }
-            }
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-1 projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = resolved.project_r3a1_combined_graph();
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -717,28 +698,26 @@ fn main() -> ExitCode {
         // pipeline over workspace+deps, and emit the four cross-app surfaces (record
         // types / call graph / event graph / coverage) as one JSON envelope. Task 1
         // proves the pipeline RUNS + produces NON-EMPTY cross-app resolution; Tasks 2-5
-        // add the per-surface byte-goldens + matrices. Fail-closed → an empty envelope.
-        let envelope = match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID)
-        {
-            Some(cross) => serde_json::json!({
-                "recordTypes": cross.project_record_types(),
-                "callGraph": cross.project_call_graph(),
-                "eventGraph": cross.project_event_graph(),
-                "coverage": cross.project_coverage_disk(&workspace),
-            }),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty cross-app layout at {} — emitting empty envelope",
-                    workspace.display()
-                );
-                serde_json::json!({
-                    "recordTypes": { "tables": [], "routines": [] },
-                    "callGraph": { "groups": [], "bindings": [] },
-                    "eventGraph": { "events": [], "edges": [] },
-                    "coverage": serde_json::Value::Null,
-                })
-            }
+        // add the per-surface byte-goldens + matrices.
+        //
+        // Task T0.1: `None` here is exclusively a primary-workspace-unbuildable
+        // failure (see the identical note on `--l3-call-graph-stats-cross-app` above)
+        // — a genuine tool/layout failure, not a legitimate empty answer. Exits
+        // non-zero with no stdout output.
+        let Some(cross) = build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID)
+        else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — primary workspace not buildable",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let envelope = serde_json::json!({
+            "recordTypes": cross.project_record_types(),
+            "callGraph": cross.project_call_graph(),
+            "eventGraph": cross.project_event_graph(),
+            "coverage": cross.project_coverage_disk(&workspace),
+        });
         return match serde_json::to_string_pretty(&envelope) {
             Ok(json) => {
                 println!("{json}");
@@ -757,9 +736,25 @@ fn main() -> ExitCode {
         // extension-field merge — the post-resolveModel capture-point invariant),
         // and emit the dependency-entity subset in the SAME stable JSON shape as the
         // al-sem `*.r2.5a.golden.json`. NO cross-app L3 resolution (that is R2.5b).
-        // Fail-closed: an unreadable / empty path yields an all-empty projection
-        // (never throws). Output is byte-stable (serialize_projection appends the
-        // trailing newline to match the TS goldens).
+        // `workspace` here is a single `.app` file OR a dir/`.alpackages` of them —
+        // `build_merged_index_from_path` legitimately yields an all-empty projection
+        // for a valid, dep-less path (never throws; several oracle/differential
+        // tests call it directly expecting that contract), so it is NOT gated the
+        // same way as the L3-workspace-based modes above. Output is byte-stable
+        // (serialize_projection appends the trailing newline to match the TS
+        // goldens).
+        //
+        // Task T0.1: the ONE thing this mode CAN distinguish as a genuine tool
+        // failure is a `workspace` argument that doesn't exist on disk at all
+        // (neither a readable `.app` file nor a directory) — gate that at the CLI
+        // boundary without touching the library function's tested contract.
+        if !workspace.exists() {
+            eprintln!(
+                "aldump: error: path does not exist: {} — cannot compute R2.5a merged-index projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        }
         let projection = build_merged_index_from_path(&workspace, R2_5A_MODEL_INSTANCE_ID);
         print!("{}", serialize_projection(&projection));
         return ExitCode::SUCCESS;
@@ -772,26 +767,17 @@ fn main() -> ExitCode {
         // (StableCallsiteId multiset), dynamicDispatchSites (StableOperationId
         // multiset). Runs assemble→resolve→project_coverage_disk (reads the resolved
         // call graph + L2 routine flags; the post-resolve read the dump captures).
-        // Fail-closed → an all-empty AnalysisCoverage (never throws).
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => resolved.project_coverage_disk(&workspace),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty coverage",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l3::coverage::AnalysisCoverage {
-                    source_units_total: 0,
-                    source_units_parsed: 0,
-                    routines_total: 0,
-                    routines_body_available: 0,
-                    routines_parse_incomplete: vec![],
-                    opaque_apps: vec![],
-                    unresolved_callsites: vec![],
-                    dynamic_dispatch_sites: vec![],
-                }
-            }
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute L3 coverage projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = resolved.project_coverage_disk(&workspace);
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -809,20 +795,18 @@ fn main() -> ExitCode {
         // (publishers + synthesized maybe/unknown) + EventEdges (subscribers,
         // open-world) — in stable id form. Runs assemble→resolve→build_event_graph
         // →project_event_graph (reads model.eventGraph; never re-runs the builder
-        // for a later gate). Fail-closed → empty `{events, edges}` (never throws).
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => resolved.project_event_graph(),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l3::event_graph::L3EventGraphProjection {
-                    events: vec![],
-                    edges: vec![],
-                }
-            }
+        // for a later gate).
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute L3 event-graph projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = resolved.project_event_graph();
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -837,35 +821,52 @@ fn main() -> ExitCode {
 
     if l3_call_graph_stats {
         // Honest-taxonomy histogram (spec §6/§8): bucket every resolved call edge
-        // by ResolutionClass + report the real-`unknown` rate. Read-only over the
-        // resolved edges (the same capture `--l3-call-graph` uses). Fail-closed →
-        // an all-zero histogram (never throws).
+        // by ResolutionClass + report the LEGACY L3 real-`unknown` rate. Read-only
+        // over the resolved edges (the same capture `--l3-call-graph` uses).
+        //
+        // Task T0.4: this is the legacy L3 engine, advisory only — the
+        // authoritative metric is `aldump --program-call-graph-stats`
+        // (`resolve_full_program`). The emitted rate key is `legacyL3UnknownRate`
+        // (renamed from `realUnknownRate`, which that key's DIFFERENT semantics —
+        // excluding memberNotFound/ambiguous — made unsafe to compare against the
+        // fresh resolver's own `realUnknownRate`) plus an `advisory` field naming
+        // the authoritative command. See CLAUDE.md's "Project Direction & The
+        // Moat".
+        //
+        // FAIL-CLOSED IS FATAL HERE (Task T0.1): even though this surface is
+        // advisory, `legacyL3UnknownRate` on an unusable workspace must not
+        // silently read as a perfect 0.0. A `None` layout is a genuine
+        // tool/layout failure, not a legitimate empty answer, so it exits
+        // non-zero with NO stdout output (never a `Histogram::default()`
+        // masquerading as a real result).
         use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
         use al_call_hierarchy::engine::l3::resolution_class::Histogram;
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
-        let histogram = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => {
-                let ws = &resolved.workspace;
-                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-                let no_deps: Vec<DeclaredDependency> = Vec::new();
-                let no_fetched: Vec<String> = Vec::new();
-                let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-                Histogram::of_edges(&r.edges)
-            }
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty histogram",
-                    workspace.display()
-                );
-                Histogram::default()
-            }
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute call-graph stats",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let ws = &resolved.workspace;
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+        let no_deps: Vec<DeclaredDependency> = Vec::new();
+        let no_fetched: Vec<String> = Vec::new();
+        let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+        let histogram = Histogram::of_edges(&r.edges);
         let mut value = serde_json::to_value(histogram).unwrap_or(serde_json::json!({}));
         if let Some(obj) = value.as_object_mut() {
             obj.insert(
-                "realUnknownRate".to_string(),
+                "legacyL3UnknownRate".to_string(),
                 serde_json::json!(histogram.real_unknown_rate()),
+            );
+            obj.insert(
+                "advisory".to_string(),
+                serde_json::json!(
+                    "legacy L3 engine; authoritative metric is --program-call-graph-stats"
+                ),
             );
         }
         return match serde_json::to_string_pretty(&value) {
@@ -898,27 +899,19 @@ fn main() -> ExitCode {
         use std::collections::HashSet;
 
         match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID) {
+            // FATAL (Task T0.1, R2): `None` here means the PRIMARY workspace itself
+            // could not be assembled (see `build_cross_app_l3_impl` — the `?` on
+            // `assemble_l3_workspace_from_disk` is the ONLY `None` producer; a
+            // workspace with zero deps still returns `Some`). That is a genuine
+            // tool/layout failure, never a legitimate "no deps" answer, so it must
+            // exit non-zero with no stdout JSON — a `"error"` key inside a
+            // SUCCESS-exiting body is exactly the shape this task closes.
             None => {
                 eprintln!(
-                    "aldump: warning: fail-closed/empty cross-app layout at {} — \
-                     no deps loaded or workspace not buildable",
+                    "aldump: error: fail-closed/empty layout at {} — primary workspace not buildable",
                     workspace.display()
                 );
-                // Emit an informative JSON rather than silently exiting.
-                let value = serde_json::json!({
-                    "error": "no deps loaded or workspace not buildable",
-                    "depAppsLoaded": 0,
-                });
-                return match serde_json::to_string_pretty(&value) {
-                    Ok(json) => {
-                        println!("{json}");
-                        ExitCode::SUCCESS
-                    }
-                    Err(e) => {
-                        eprintln!("aldump: error: failed to serialize cross-app stats: {e}");
-                        ExitCode::FAILURE
-                    }
-                };
+                return ExitCode::FAILURE;
             }
             Some(cross) => {
                 let ws = &cross.resolved.workspace;
@@ -964,8 +957,14 @@ fn main() -> ExitCode {
                 let mut value = serde_json::to_value(histogram).unwrap_or(serde_json::json!({}));
                 if let Some(obj) = value.as_object_mut() {
                     obj.insert(
-                        "realUnknownRate".to_string(),
+                        "legacyL3UnknownRate".to_string(),
                         serde_json::json!(histogram.real_unknown_rate()),
+                    );
+                    obj.insert(
+                        "advisory".to_string(),
+                        serde_json::json!(
+                            "legacy L3 engine; authoritative metric is --program-call-graph-stats"
+                        ),
                     );
                     obj.insert(
                         "depAppsLoaded".to_string(),
@@ -990,47 +989,33 @@ fn main() -> ExitCode {
 
     if l3_unknown_breakdown {
         // Attribute every TRUE-`unknown` edge to its resolver cause (UnknownReason)
-        // — the work-list for the typed-resolution phases. Read-only; fail-closed
-        // → empty breakdown.
+        // — the work-list for the typed-resolution phases. Read-only.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
         use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
         use al_call_hierarchy::engine::l3::resolution_class::{Histogram, unknown_breakdown};
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
 
-        let (histogram, breakdown, framework_detail, shape_detail, bare_detail) =
-            match assemble_and_resolve_workspace_default(&workspace) {
-                Some(resolved) => {
-                    let ws = &resolved.workspace;
-                    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-                    let no_deps: Vec<DeclaredDependency> = Vec::new();
-                    let no_fetched: Vec<String> = Vec::new();
-                    let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-                    let (bd, fw_det, shape_det, bare_det) = unknown_breakdown(&r.edges);
-                    (
-                        Histogram::of_edges(&r.edges),
-                        bd,
-                        fw_det,
-                        shape_det,
-                        bare_det,
-                    )
-                }
-                None => {
-                    eprintln!(
-                        "aldump: warning: fail-closed/empty layout at {} — emitting empty breakdown",
-                        workspace.display()
-                    );
-                    (
-                        Histogram::default(),
-                        std::collections::BTreeMap::new(),
-                        std::collections::BTreeMap::new(),
-                        std::collections::BTreeMap::new(),
-                        std::collections::BTreeMap::new(),
-                    )
-                }
-            };
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute unknown breakdown",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
+        };
+        let ws = &resolved.workspace;
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+        let no_deps: Vec<DeclaredDependency> = Vec::new();
+        let no_fetched: Vec<String> = Vec::new();
+        let r = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+        let (breakdown, framework_detail, shape_detail, bare_detail) = unknown_breakdown(&r.edges);
+        let histogram = Histogram::of_edges(&r.edges);
         let value = serde_json::json!({
             "totalEdges": histogram.total,
             "unknownTotal": histogram.unknown,
-            "realUnknownRate": histogram.real_unknown_rate(),
+            "legacyL3UnknownRate": histogram.real_unknown_rate(),
+            "advisory": "legacy L3 engine; authoritative metric is --program-call-graph-stats",
             "byReason": breakdown,
             "bareCallDetail": bare_detail,
             "frameworkMethodDetail": framework_detail,
@@ -1049,8 +1034,10 @@ fn main() -> ExitCode {
     }
 
     if l3_unknown_breakdown_cross_app {
-        // DEPS-LOADED, PRIMARY-SCOPED unknown breakdown — the north-star work-list.
-        // Same merged-model + primary-edge scoping as `--l3-call-graph-stats-cross-app`
+        // DEPS-LOADED, PRIMARY-SCOPED unknown breakdown — the legacy L3 work-list
+        // (advisory; Task T0.4 — the authoritative metric is
+        // `aldump --program-call-graph-stats`). Same merged-model + primary-edge
+        // scoping as `--l3-call-graph-stats-cross-app`
         // (deps present for resolution; metric measured over WORKSPACE call sites
         // only), but attributes every residual TRUE-`unknown` edge to its
         // `UnknownReason` so the real (whole-program) holes can be targeted directly
@@ -1062,26 +1049,16 @@ fn main() -> ExitCode {
         use std::collections::HashSet;
 
         match build_cross_app_l3_from_workspace(&workspace, R2_5B_MODEL_INSTANCE_ID) {
+            // FATAL (Task T0.1, R2): see the identical `None` note on
+            // `--l3-call-graph-stats-cross-app` above — `None` is exclusively a
+            // primary-workspace-unbuildable failure, never a legitimate "no deps"
+            // result, so it must exit non-zero with no stdout JSON.
             None => {
                 eprintln!(
-                    "aldump: warning: fail-closed/empty cross-app layout at {} — \
-                     no deps loaded or workspace not buildable",
+                    "aldump: error: fail-closed/empty layout at {} — primary workspace not buildable",
                     workspace.display()
                 );
-                let value = serde_json::json!({
-                    "error": "no deps loaded or workspace not buildable",
-                    "depAppsLoaded": 0,
-                });
-                return match serde_json::to_string_pretty(&value) {
-                    Ok(json) => {
-                        println!("{json}");
-                        ExitCode::SUCCESS
-                    }
-                    Err(e) => {
-                        eprintln!("aldump: error: failed to serialize cross-app breakdown: {e}");
-                        ExitCode::FAILURE
-                    }
-                };
+                return ExitCode::FAILURE;
             }
             Some(cross) => {
                 let ws = &cross.resolved.workspace;
@@ -1147,7 +1124,8 @@ fn main() -> ExitCode {
                 let value = serde_json::json!({
                     "totalEdges": histogram.total,
                     "unknownTotal": histogram.unknown,
-                    "realUnknownRate": histogram.real_unknown_rate(),
+                    "legacyL3UnknownRate": histogram.real_unknown_rate(),
+                    "advisory": "legacy L3 engine; authoritative metric is --program-call-graph-stats",
                     "depAppsLoaded": cross.fetched_app_guids.len(),
                     "byReason": breakdown,
                     "bareCallDetail": bare_detail,
@@ -1172,20 +1150,18 @@ fn main() -> ExitCode {
         // L3 call-graph projection (R2b): the resolved call graph (grouped
         // callsiteId → CallEdge[], multi-edge interface dispatch preserved,
         // group-level dispatchMeta) + the upgraded argumentBindings, all in stable
-        // id form. Fail-closed → empty `{groups, bindings}` (never throws).
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => resolved.project_call_graph(),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l3::call_graph_projection::L3CallGraphProjection {
-                    groups: vec![],
-                    bindings: vec![],
-                }
-            }
+        // id form.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute L3 call-graph projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = resolved.project_call_graph();
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");
@@ -1200,21 +1176,18 @@ fn main() -> ExitCode {
 
     if l3_record_types {
         // L3 record-type projection (R2a): resolved record-var/op StableTableIds
-        // (omitted when unresolved) + per-Table merged fields. Fail-closed →
-        // empty `{tables, routines}` (never throws).
-        let projection = match assemble_and_resolve_workspace_default(&workspace) {
-            Some(resolved) => resolved.project(),
-            None => {
-                eprintln!(
-                    "aldump: warning: fail-closed/empty layout at {} — emitting empty projection",
-                    workspace.display()
-                );
-                al_call_hierarchy::engine::l3::l3_workspace::L3RecordTypeProjection {
-                    tables: vec![],
-                    routines: vec![],
-                }
-            }
+        // (omitted when unresolved) + per-Table merged fields.
+        //
+        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
+        // non-zero with no stdout output.
+        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
+            eprintln!(
+                "aldump: error: fail-closed/empty layout at {} — cannot compute L3 record-type projection",
+                workspace.display()
+            );
+            return ExitCode::FAILURE;
         };
+        let projection = resolved.project();
         return match serde_json::to_string_pretty(&projection) {
             Ok(json) => {
                 println!("{json}");

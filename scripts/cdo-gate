@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# scripts/cdo-gate — Task T0.2: the CDO ratchet's ENFORCE-gated release runner.
+#
+# Runs the north-star CDO-gated test suite against a real Business Central
+# workspace with ENFORCE_CDO_WS=1, so any test that would otherwise silently
+# skip when CDO_WS is unset fails loudly instead (see tests/common/cdo.rs).
+# CI cannot reach the CDO workspace — this script is meant to be scheduled
+# locally (cron / Task Scheduler), not run in CI.
+#
+# Usage:
+#   scripts/cdo-gate <path-to-cdo-workspace>
+#   CDO_WS=/path/to/workspace scripts/cdo-gate
+#
+# A positional argument takes precedence over the CDO_WS env var when both
+# are given.
+set -uo pipefail
+
+ws="${1:-${CDO_WS:-}}"
+
+if [[ -z "$ws" ]]; then
+    echo "cdo-gate: error: no workspace given and CDO_WS is unset" >&2
+    echo "usage: scripts/cdo-gate <path-to-cdo-workspace>   (or: CDO_WS=<path> scripts/cdo-gate)" >&2
+    exit 2
+fi
+
+if [[ ! -e "$ws" ]]; then
+    echo "cdo-gate: error: workspace path does not exist: $ws" >&2
+    exit 2
+fi
+
+export CDO_WS="$ws"
+export ENFORCE_CDO_WS=1
+
+echo "cdo-gate: CDO_WS=$CDO_WS ENFORCE_CDO_WS=1"
+
+status=0
+
+echo "cdo-gate: running program_resolve_harness (--test-threads=1)..."
+if ! cargo test --release --test program_resolve_harness -- --test-threads=1; then
+    status=1
+fi
+
+echo "cdo-gate: running program_graph + snapshot_robustness..."
+if ! cargo test --release --test program_graph --test snapshot_robustness; then
+    status=1
+fi
+
+if [[ "$status" -eq 0 ]]; then
+    echo "cdo-gate: PASS"
+else
+    echo "cdo-gate: FAIL"
+fi
+
+exit "$status"

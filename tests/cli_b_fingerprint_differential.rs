@@ -44,6 +44,9 @@ use al_call_hierarchy::engine::l5::snapshot_full::{
     serialize_sharded,
 };
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 
 /// The fingerprint corpus (same 20 fixtures as the snapshot corpus).
@@ -95,7 +98,7 @@ fn goldens_dir() -> PathBuf {
 /// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
 /// return true so the caller skips the byte-compare. al-sem byte-parity retired.
 fn regen_golden(golden_path: &std::path::Path, got: &[u8]) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     if let Some(parent) = golden_path.parent() {
@@ -492,7 +495,7 @@ fn shard_output_matches_goldens() {
     // Goldens live under shards/<fixture-name>/<shard-name>.
     let shard_dir = goldens_dir().join("shards").join(SHARD_FIXTURE);
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let _ = std::fs::remove_dir_all(&shard_dir);
         std::fs::create_dir_all(&shard_dir)
             .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", shard_dir.display()));

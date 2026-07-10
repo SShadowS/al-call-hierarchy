@@ -49,10 +49,13 @@ use crate::program::resolve::edge::{
     OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, UnknownReason, Witness,
     callee_fp, classify_obligation,
 };
-use crate::program::resolve::extract::{CalleeShape, WithState, extract_sites_for_routine};
+use crate::program::resolve::extract::{
+    CalleeShape, WithState, extract_sites_for_routine, static_database_reference_target,
+};
 use crate::program::resolve::index::ResolveIndex;
+use crate::program::resolve::member_catalog::is_entry_dispatch_builtin;
 use crate::program::resolve::receiver::{
-    ReceiverType, infer_receiver_type, is_atomic_receiver_token,
+    FrameworkKind, ReceiverType, infer_receiver_type, is_atomic_receiver_token,
 };
 use crate::program::resolve::resolver::{
     emit_event_flow_edges, resolve_bare, resolve_bare_with_args, resolve_implicit_trigger,
@@ -84,6 +87,61 @@ pub enum ObligationId {
 pub struct ClassifiedEdge {
     pub obligation_id: ObligationId,
     pub edge: Edge,
+}
+
+// ---------------------------------------------------------------------------
+// T0.3: builtin-dispatch justification audit (diagnostic-only)
+// ---------------------------------------------------------------------------
+
+/// One call site whose `Route` resolved to `RouteTarget::Builtin` via a
+/// [`crate::program::resolve::member_catalog::ENTRY_DISPATCH_BUILTIN_IDS`]
+/// entry AND whose target object is PROVEN statically named — a missed
+/// entry-trigger dispatch (T0.3; see that const's doc for the classifier
+/// gaps this makes visible). `object` is `"{ObjectKind}::{name_lc}"`
+/// (e.g. `"Page::some page"`), always lowercased for deterministic sorting
+/// regardless of which extraction path produced it (a declared receiver's
+/// own type, or a call argument's `Page::"X"` reference).
+///
+/// Diagnostic-only: never consulted by `classify_obligation`/
+/// `ObligationOutcome`, never compared against a semantic golden — does not
+/// change any route/edge/histogram.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FlaggedBuiltinDispatchSite {
+    pub file: String,
+    pub object: String,
+    pub method: String,
+    pub line: u32,
+}
+
+/// A call site whose method is in
+/// [`crate::program::resolve::member_catalog::ENTRY_DISPATCH_BUILTIN_IDS`]
+/// and whose route resolved to `Builtin`, but whose target could NOT be
+/// proven statically (fail-closed — e.g. a runtime variable/expression
+/// argument, or a receiver shape the audit does not attempt to prove).
+/// Reported so the flagged population is honest about what it excludes,
+/// never silently dropped. Diagnostic-only (see [`FlaggedBuiltinDispatchSite`]'s doc).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IndeterminateBuiltinDispatchSite {
+    pub file: String,
+    pub method: String,
+    pub line: u32,
+}
+
+/// T0.3 builtin-dispatch justification audit output: the deterministic,
+/// sorted `flagged`/`indeterminate` populations produced by
+/// [`resolve_full_program`]. See [`FlaggedBuiltinDispatchSite`]'s doc.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BuiltinDispatchAudit {
+    pub flagged: Vec<FlaggedBuiltinDispatchSite>,
+    pub indeterminate: Vec<IndeterminateBuiltinDispatchSite>,
+}
+
+/// Per-call-site signal threaded out of [`resolve_call_site_obligation`] for
+/// the T0.3 audit — populated ONLY by the `CalleeShape::Member` arm (every
+/// other arm returns `None`); see [`builtin_dispatch_finding`].
+enum BuiltinDispatchFinding {
+    Flagged { object: String, method: String },
+    Indeterminate { method: String },
 }
 
 /// Coverage report: the distinct-id SET equality contract.
@@ -133,6 +191,10 @@ pub struct ProgramReport {
     /// well-formed workspace; any entry means that file's IR may be missing
     /// content tree-sitter could not parse.
     pub recovered_files: Vec<String>,
+    /// T0.3 builtin-dispatch justification audit — see [`BuiltinDispatchAudit`]'s
+    /// doc. ADDITIVE diagnostic: never consulted by `histogram`/
+    /// `classify_obligation`, does not change any route/edge.
+    pub builtin_dispatch_audit: BuiltinDispatchAudit,
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +266,80 @@ fn completeness_for_shape(shape: DispatchShape) -> SetCompleteness {
     }
 }
 
-/// Resolve one call-site obligation to `(kind, shape, completeness, routes)`.
+/// T0.3 builtin-dispatch audit: classify one `CalleeShape::Member` call's
+/// ALREADY-RESOLVED `routes` for the "entry-dispatching builtin absorbed a
+/// statically-named target" bug class (see
+/// `member_catalog::ENTRY_DISPATCH_BUILTIN_IDS`'s doc for the two classifier
+/// gaps this makes visible). Returns `None` when no route in `routes`
+/// actually landed on a flagged catalog entry — a no-op for the
+/// overwhelming majority of member calls, including every OTHER
+/// `PageInstance`/`ReportInstance` method (`SetRecord`, `Caption`, …).
+///
+/// Fail-closed (T0.3 constraint): a flagged method whose target cannot be
+/// PROVEN static returns `Indeterminate`, never a guessed `Flagged`.
+///
+/// - `recv == ReceiverType::Object { kind, name_lc, .. }` (a declared
+///   Page/Report-typed variable/param/global receiver, or the `CurrPage.
+///   <part>.Page` subpage shape): the target is the receiver's OWN resolved
+///   type — 100% proven, no argument inspection needed. `Flagged`.
+/// - `recv == ReceiverType::Framework(PageInstance | ReportInstance)` (the
+///   literal `Page`/`CurrPage`/`Report`/`CurrReport` singleton receiver,
+///   `receiver.rs:714-715`): the target can ONLY come from a
+///   `Page::"X"`/`Report::"X"`-shaped first argument
+///   ([`static_database_reference_target`]). `Flagged` when present,
+///   `Indeterminate` otherwise (e.g. a runtime variable/expression argument
+///   — dynamic dispatch, or zero args — `CurrPage`/`CurrReport` self-dispatch,
+///   deliberately not claimed as a foreign target by this audit).
+/// - Any other receiver shape reaching a flagged route (not expected given
+///   `member_catalog.rs`'s receiver-name-gated `Framework` mapping, but
+///   fail-closed rather than assumed impossible): `Indeterminate`.
+fn builtin_dispatch_finding(
+    recv: &ReceiverType,
+    method_lc: &str,
+    routes: &[Route],
+    file: &al_syntax::ir::AlFile,
+    call_args: &[al_syntax::ir::ExprId],
+) -> Option<BuiltinDispatchFinding> {
+    let flagged = routes.iter().any(|r| match &r.target {
+        RouteTarget::Builtin(bid) => is_entry_dispatch_builtin(bid),
+        _ => false,
+    });
+    if !flagged {
+        return None;
+    }
+    match recv {
+        ReceiverType::Object { kind, name_lc, .. } => Some(BuiltinDispatchFinding::Flagged {
+            object: format!("{kind:?}::{name_lc}"),
+            method: method_lc.to_string(),
+        }),
+        ReceiverType::Framework(
+            fk @ (FrameworkKind::PageInstance | FrameworkKind::ReportInstance),
+        ) => {
+            let kind_str = match fk {
+                FrameworkKind::PageInstance => "Page",
+                FrameworkKind::ReportInstance => "Report",
+                _ => unreachable!("guarded by the outer match arm"),
+            };
+            match static_database_reference_target(file, call_args) {
+                Some((target, _target_is_name)) => Some(BuiltinDispatchFinding::Flagged {
+                    object: format!("{kind_str}::{}", target.to_ascii_lowercase()),
+                    method: method_lc.to_string(),
+                }),
+                None => Some(BuiltinDispatchFinding::Indeterminate {
+                    method: method_lc.to_string(),
+                }),
+            }
+        }
+        _ => Some(BuiltinDispatchFinding::Indeterminate {
+            method: method_lc.to_string(),
+        }),
+    }
+}
+
+/// Resolve one call-site obligation to `(kind, shape, completeness, routes,
+/// builtin_dispatch_finding)`. The 5th element is the T0.3 audit signal
+/// (`Some` only from the `CalleeShape::Member` arm — see
+/// [`builtin_dispatch_finding`]); every other arm returns `None`.
 #[allow(clippy::too_many_arguments)]
 fn resolve_call_site_obligation(
     shape: &CalleeShape,
@@ -230,7 +365,13 @@ fn resolve_call_site_obligation(
     // `resolve_member_with_args` so `resolve_in_object`'s fail-closed pick
     // has real argument evidence to work with.
     call_args: &[al_syntax::ir::ExprId],
-) -> (EdgeKind, DispatchShape, SetCompleteness, Vec<Route>) {
+) -> (
+    EdgeKind,
+    DispatchShape,
+    SetCompleteness,
+    Vec<Route>,
+    Option<BuiltinDispatchFinding>,
+) {
     // Built ONCE per obligation (not per-arm): SOURCE-tier only (`arg_
     // dispatch`'s own SymbolOnly gate lives in `resolve_in_object`, but
     // there is nothing to type at all without a resolved calling object).
@@ -277,7 +418,13 @@ fn resolve_call_site_obligation(
                     vec![unknown_route(UnknownReason::IndexIntegrationGap)],
                 )
             };
-            (EdgeKind::Call, shape, completeness_for_shape(shape), routes)
+            (
+                EdgeKind::Call,
+                shape,
+                completeness_for_shape(shape),
+                routes,
+                None,
+            )
         }
 
         CalleeShape::Member {
@@ -287,6 +434,7 @@ fn resolve_call_site_obligation(
         } => {
             let receiver_lc = receiver_text.to_ascii_lowercase();
             let method_lc = method.to_ascii_lowercase();
+            let mut finding: Option<BuiltinDispatchFinding> = None;
             let (member_shape, mut routes) = if let Some(obj_node) = obj_node_opt {
                 let recv = infer_receiver_type(
                     &receiver_lc,
@@ -298,9 +446,11 @@ fn resolve_call_site_obligation(
                     receiver.map(|id| (file, id)),
                     Some((body_map, with_state)),
                 );
-                resolve_member_with_args(
+                let (s, r) = resolve_member_with_args(
                     &recv, &method_lc, arity, obj_node, graph, index, body_map, &args_info,
-                )
+                );
+                finding = builtin_dispatch_finding(&recv, &method_lc, &r, file, call_args);
+                (s, r)
             } else {
                 (
                     DispatchShape::Exact,
@@ -335,7 +485,7 @@ fn resolve_call_site_obligation(
                 }
             }
             let completeness = completeness_for_shape(member_shape);
-            (EdgeKind::Call, member_shape, completeness, routes)
+            (EdgeKind::Call, member_shape, completeness, routes, finding)
         }
 
         CalleeShape::ObjectRun {
@@ -359,7 +509,7 @@ fn resolve_call_site_obligation(
                     index,
                     body_map,
                 );
-                (EdgeKind::Run, shape, completeness, routes)
+                (EdgeKind::Run, shape, completeness, routes, None)
             } else {
                 // Unrecognised object kind — honest Unknown.
                 (
@@ -367,6 +517,7 @@ fn resolve_call_site_obligation(
                     DispatchShape::Exact,
                     SetCompleteness::Complete,
                     vec![unknown_route(UnknownReason::UnclassifiedCallee)],
+                    None,
                 )
             }
         }
@@ -415,7 +566,7 @@ fn resolve_call_site_obligation(
                     vec![],
                 )
             };
-            (EdgeKind::ImplicitTrigger, shape, completeness, routes)
+            (EdgeKind::ImplicitTrigger, shape, completeness, routes, None)
         }
 
         CalleeShape::Commit => {
@@ -438,7 +589,13 @@ fn resolve_call_site_obligation(
                     vec![unknown_route(UnknownReason::IndexIntegrationGap)],
                 )
             };
-            (EdgeKind::Call, shape, completeness_for_shape(shape), routes)
+            (
+                EdgeKind::Call,
+                shape,
+                completeness_for_shape(shape),
+                routes,
+                None,
+            )
         }
 
         CalleeShape::Unknown => {
@@ -448,6 +605,7 @@ fn resolve_call_site_obligation(
                 DispatchShape::Exact,
                 SetCompleteness::Complete,
                 vec![unknown_route(unclassified_callee_reason(callee_text))],
+                None,
             )
         }
     }
@@ -463,7 +621,7 @@ fn resolve_full_program_from_parts(
     parsed: &[ParsedUnit],
     primary_app_ref: AppRef,
     ws_file_set: &HashSet<String>,
-) -> (Vec<ClassifiedEdge>, Coverage) {
+) -> (Vec<ClassifiedEdge>, Coverage, BuiltinDispatchAudit) {
     // Quick ObjectNodeId → &ObjectNode lookup.
     let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
         graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
@@ -473,6 +631,9 @@ fn resolve_full_program_from_parts(
 
     let mut obligation_id_set: HashSet<ObligationId> = HashSet::new();
     let mut classified_edges: Vec<ClassifiedEdge> = Vec::new();
+    // T0.3: builtin-dispatch audit accumulators — sorted once, after the loop.
+    let mut flagged: Vec<FlaggedBuiltinDispatchSite> = Vec::new();
+    let mut indeterminate: Vec<IndeterminateBuiltinDispatchSite> = Vec::new();
 
     // ── Phase 1: resolve call-site obligations (workspace source routines) ────
     for unit in parsed {
@@ -533,21 +694,41 @@ fn resolve_full_program_from_parts(
                         };
                         obligation_id_set.insert(obl_id.clone());
 
-                        let (kind, shape, completeness, routes) = resolve_call_site_obligation(
-                            &site.shape,
-                            site.arity,
-                            &site.callee_text,
-                            obj_node_opt,
-                            routine,
-                            obj,
-                            primary_app_ref,
-                            graph,
-                            &index,
-                            &body_map,
-                            site.with_state,
-                            &pf.file,
-                            &site.args,
-                        );
+                        let (kind, shape, completeness, routes, finding) =
+                            resolve_call_site_obligation(
+                                &site.shape,
+                                site.arity,
+                                &site.callee_text,
+                                obj_node_opt,
+                                routine,
+                                obj,
+                                primary_app_ref,
+                                graph,
+                                &index,
+                                &body_map,
+                                site.with_state,
+                                &pf.file,
+                                &site.args,
+                            );
+
+                        match finding {
+                            Some(BuiltinDispatchFinding::Flagged { object, method }) => {
+                                flagged.push(FlaggedBuiltinDispatchSite {
+                                    file: pf.virtual_path.clone(),
+                                    object,
+                                    method,
+                                    line: site.span.start.line,
+                                });
+                            }
+                            Some(BuiltinDispatchFinding::Indeterminate { method }) => {
+                                indeterminate.push(IndeterminateBuiltinDispatchSite {
+                                    file: pf.virtual_path.clone(),
+                                    method,
+                                    line: site.span.start.line,
+                                });
+                            }
+                            None => {}
+                        }
 
                         classified_edges.push(ClassifiedEdge {
                             obligation_id: obl_id,
@@ -609,7 +790,18 @@ fn resolve_full_program_from_parts(
         extra,
     };
 
-    (classified_edges, coverage)
+    // T0.3: deterministic sort — the accumulation order above already follows
+    // parsed-file/object/routine/site document order (no HashMap iteration),
+    // but sorting here makes the output ORDER independent of that traversal
+    // order too, per the audit's determinism constraint.
+    flagged.sort();
+    indeterminate.sort();
+    let builtin_dispatch_audit = BuiltinDispatchAudit {
+        flagged,
+        indeterminate,
+    };
+
+    (classified_edges, coverage, builtin_dispatch_audit)
 }
 
 // ---------------------------------------------------------------------------
@@ -649,7 +841,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
     let primary_app_ref = *primary_app_ref;
 
     // ── Step 5: Resolve all obligations ──────────────────────────────────────
-    let (edges, coverage) =
+    let (edges, coverage, builtin_dispatch_audit) =
         resolve_full_program_from_parts(graph, parsed, primary_app_ref, ws_file_set);
 
     // ── Step 6: Histograms ────────────────────────────────────────────────────
@@ -697,6 +889,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         primary_app_ref,
         event_flow_dual_publisher_alias_skips,
         recovered_files,
+        builtin_dispatch_audit,
     })
 }
 
@@ -712,7 +905,7 @@ pub fn resolve_full_program_for_export(
     workspace_root: &Path,
 ) -> Option<(ProgramGraph, Vec<ClassifiedEdge>, AppRef)> {
     let ctx = build_context(workspace_root)?;
-    let (edges, _coverage) = resolve_full_program_from_parts(
+    let (edges, _coverage, _builtin_dispatch_audit) = resolve_full_program_from_parts(
         &ctx.graph,
         &ctx.parsed,
         ctx.primary_app_ref,

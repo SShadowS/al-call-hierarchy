@@ -15,6 +15,9 @@
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
 use std::path::PathBuf;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -101,7 +104,7 @@ fn ws_d2_l2_features_match_golden_and_have_no_forbidden_fields() {
     // REGEN path (Task 3.3 vendoring): `REGEN_TEMP_GOLDENS=1` writes the ENGINE
     // projection to the in-repo golden instead of comparing — this is a
     // Rust-owned baseline, not a copy of al-sem's TS output.
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let mut pretty =
             serde_json::to_string_pretty(&projection).expect("regen serialize l2 ws-d2");
         pretty.push('\n');

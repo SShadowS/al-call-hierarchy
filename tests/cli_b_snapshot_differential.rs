@@ -42,6 +42,9 @@ use al_call_hierarchy::engine::l5::snapshot_full::{
     serialize_cbor_gz, serialize_envelope, serialize_json, serialize_sharded,
 };
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// al-sem `DEFAULT_DETECTORS` (34) by name — `analyzeWorkspace` runs this set, so
 /// the envelope's detector diagnostics (e.g. d43's substrate guard) must come from
 /// exactly these (NOT the opt-in detectors, which `analyzeWorkspace` omits).
@@ -151,7 +154,7 @@ fn goldens_dir() -> PathBuf {
 /// Byte-compare a golden, or rewrite it when `REGEN_TEMP_GOLDENS` is set
 /// (Rust-owned baseline). Creates parent dirs on regen.
 fn check_or_regen(golden_path: &Path, got: &[u8], label: &str) {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         if let Some(parent) = golden_path.parent() {
             std::fs::create_dir_all(parent)
                 .unwrap_or_else(|e| panic!("regen mkdir {}: {e}", parent.display()));
@@ -261,7 +264,7 @@ fn cbor_matches_goldens() {
         let tree = tree_for(fixture);
         let got = serialize_cbor(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.cbor"));
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             if let Some(p) = golden_path.parent() {
                 std::fs::create_dir_all(p).ok();
             }
@@ -301,7 +304,7 @@ fn cbor_gz_matches_goldens() {
         let tree = tree_for(fixture);
         let got = serialize_cbor_gz(&tree);
         let golden_path = goldens_dir().join(format!("{fixture}.cbor.gz"));
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             if let Some(p) = golden_path.parent() {
                 std::fs::create_dir_all(p).ok();
             }
@@ -340,7 +343,7 @@ fn shards_match_goldens() {
     for (variant, primary_only) in [("all", false), ("primary", true)] {
         let files = serialize_sharded(&tree, VERSION_OVERRIDE, primary_only);
         let dir = shards_base.join(variant);
-        if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+        if regen::regen_mode() {
             // Fresh write of the exact shard set (clear stale files first).
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir)

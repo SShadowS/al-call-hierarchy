@@ -24,6 +24,9 @@ use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::l5::digest_cli::run_digest_pipeline;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 
 /// The digest corpus (same 20 fixtures as dump-digest.ts DIGEST_CORPUS).
@@ -76,7 +79,7 @@ fn goldens_dir() -> PathBuf {
 /// When `REGEN_TEMP_GOLDENS` is set, write the golden (Rust-owned baseline) and
 /// return true so the caller skips the byte-compare. al-sem byte-parity retired.
 fn regen_golden(golden_path: &std::path::Path, got: &str) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     if let Some(parent) = golden_path.parent() {

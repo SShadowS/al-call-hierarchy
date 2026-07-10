@@ -30,6 +30,9 @@ use std::sync::Mutex;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const TEST_NAME: &str = "cli_a_html_differential";
 
 /// The version pin used for all HTML golden captures (same as JSON / terminal / stats).
@@ -148,7 +151,7 @@ fn all_detector_csv() -> String {
 /// engine output differs from the existing baseline, leaving an already-matching
 /// golden untouched. Returns `true` when in regen mode (caller skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     let resolved = resolve_golden(name);

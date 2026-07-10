@@ -24,6 +24,17 @@ use al_call_hierarchy::program::resolve::differential::{
 };
 use al_call_hierarchy::snapshot::{AppId, ParsedFile, ParsedUnit, Provenance, TrustTier};
 
+// Task T0.2: the CDO_WS/ENFORCE_CDO_WS gating helper is shared with
+// `program_graph.rs` and `snapshot_robustness.rs` via `#[path]` inclusion —
+// see `tests/common/cdo.rs` for why (separate test-binary crates can't
+// `use` each other's `mod`s).
+#[path = "common/cdo.rs"]
+mod cdo;
+use cdo::cdo_ws_or_enforce;
+
+#[path = "common/regen.rs"]
+mod regen;
+
 // ---------------------------------------------------------------------------
 // Test 1 (from brief): one missing L3 site must NOT cascade
 // ---------------------------------------------------------------------------
@@ -863,10 +874,7 @@ fn histogram_taxonomy_split() {
 /// A miss = an ingestion/key-derivation bug — investigate and fix, do NOT relax.
 #[test]
 fn abi_ingestion_integrity_cdo_gate() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -1318,10 +1326,7 @@ fn dropped_obligation_is_caught_by_coverage_contract() {
 ///   - `real_unknown_rate` ≤ recorded ceiling (regression guard)
 #[test]
 fn cdo_full_program_coverage_and_self_reported_metric() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -2827,27 +2832,12 @@ use al_call_hierarchy::program::resolve::receiver::{
 };
 use sha2::{Digest, Sha256};
 
-/// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 1 — the `CDO_WS` presence check).
-///
-/// Returns the workspace path when `CDO_WS` is set and exists. When `CDO_WS`
-/// is absent: returns `None` (caller should skip) UNLESS `ENFORCE_CDO_WS=1`,
-/// in which case this PANICS — a gated/internal run that loses its `CDO_WS`
-/// must fail loudly, not skip silently (no fail-open). Scoped to the three
-/// frozen-golden audits this task adds/modifies (Tests 16–18) — the OTHER
-/// pre-existing CDO-gated dual-run tests are unaffected (out of Task 1's
-/// scope; they stay live L3 comparisons until 1B.3b Task 3).
-fn cdo_ws_or_enforce() -> Option<std::path::PathBuf> {
-    let ws = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists());
-    if ws.is_none() {
-        assert!(
-            std::env::var("ENFORCE_CDO_WS").as_deref() != Ok("1"),
-            "ENFORCE_CDO_WS=1 but CDO_WS is unset or does not point at an existing path"
-        );
-    }
-    ws
-}
+// 1B.3b Task 1 originally defined `cdo_ws_or_enforce()` here, scoped to only
+// the three frozen-golden audits it added (Tests 16–18). Task T0.2 routes
+// EVERY bare CDO_WS gate in this file (and in `program_graph.rs` /
+// `snapshot_robustness.rs`) through the same guard, so the definition moved
+// to the shared `tests/common/cdo.rs` (imported near the top of this file as
+// `cdo::cdo_ws_or_enforce`) — see that file's doc comment for the contract.
 
 /// 1B.3b Task 1 ENFORCE_CDO_WS guard (part 2 — the audit-ran-and-checked-something
 /// check).
@@ -2905,9 +2895,14 @@ fn fixture_semantic_golden_matches_l3() {
     let golden_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens/semantic-edges/fixture.json");
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let golden = mint_l3_validated_golden(&fixture);
-        let json = serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
+        let mut json =
+            serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
+        // Task T0.6 R1 fix: the committed golden carries a trailing newline (the
+        // convention every other regen path in this repo follows); this write
+        // previously omitted it, so a byte-identical regen was impossible.
+        json.push('\n');
         std::fs::create_dir_all(golden_path.parent().unwrap())
             .expect("create goldens/semantic-edges dir");
         std::fs::write(&golden_path, &json).expect("write fixture golden");
@@ -2983,7 +2978,7 @@ fn implicit_trigger_fixture_resolves_exact_target_set() {
     let golden_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/goldens/semantic-edges/implicit-trigger-fixture.json");
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let golden = mint_fresh_golden_for_kind(&fixture, EdgeKind::ImplicitTrigger);
         let json = serde_json::to_string_pretty(&golden).expect("golden must serialize to JSON");
         std::fs::create_dir_all(golden_path.parent().unwrap())
@@ -3086,10 +3081,7 @@ fn route_applicability_zero_violations() {
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -3147,10 +3139,7 @@ fn task2_dump_argtype_dispatch_flips_on_cdo() {
     use al_call_hierarchy::program::resolve::index::ResolveIndex;
     use al_call_hierarchy::snapshot::SnapshotBuilder;
 
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -3233,10 +3222,7 @@ fn task2_dump_argtype_dispatch_flips_on_cdo() {
 #[test]
 #[ignore]
 fn task3_dump_untracked_receiver_sites_on_cdo() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
     let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
@@ -3287,10 +3273,7 @@ fn task3_dump_untracked_receiver_sites_on_cdo() {
 fn task3_dump_remaining_ambiguous_resolved_sites_on_cdo() {
     use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
 
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
     let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
@@ -3390,10 +3373,7 @@ fn task3_dump_remaining_ambiguous_resolved_sites_on_cdo() {
 /// letting the policy discard it silently (see the diagnostic's own doc).
 #[test]
 fn cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero() {
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -5240,10 +5220,7 @@ fn fan_out_applicability_zero_violations() {
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
-    let Some(ws) = std::env::var_os("CDO_WS")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-    else {
+    let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
@@ -10700,4 +10677,153 @@ fn ws_report_dataitem_extension_resolves_base_dataitem_name() {
     };
     assert_eq!(rid.name_lc, "getdisplayname");
     assert!(rid.object.id_equals_number(51710));
+}
+
+// ---------------------------------------------------------------------------
+// T0.3: builtin-dispatch justification audit
+// ---------------------------------------------------------------------------
+//
+// The north-star metric counts only `unknown` edges as holes; a missed
+// dispatch edge that lands in `builtin` is structurally invisible to it (see
+// `member_catalog::ENTRY_DISPATCH_BUILTIN_IDS`'s doc for the two classifier
+// gaps this audit makes visible: `Page.RunModal(Page::"X")`-shaped keyword
+// calls, and declared Page/Report-typed variable `.RunModal()` calls). This
+// audit is DIAGNOSTIC + ratchet only — it never changes resolution outcome.
+
+/// Loads `tests/r0-corpus/ws-builtin-dispatch-audit` and returns the full
+/// `resolve_full_program` report.
+fn ws_builtin_dispatch_audit_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-builtin-dispatch-audit");
+    resolve_full_program(&fixture)
+        .expect("resolve_full_program must succeed on ws-builtin-dispatch-audit")
+}
+
+/// T0.3 fixture-level proof (no CDO needed): the audit flags EXACTLY the 3
+/// statically-named RunModal sites in `AuditCaller.Codeunit.al` — the
+/// brief's cited `Page.RunModal(Page::"X")` keyword-receiver shape, its
+/// `Report.RunModal(Report::"X")` analog, AND the declared-Page-variable
+/// shape (`MyPage.RunModal()`, which the brief's own roadmap doc explicitly
+/// scopes into this audit even though it's a SEPARATE classifier gap from
+/// the keyword-receiver one T1.3 targets first) — and marks the
+/// dynamic-target call `Indeterminate`: fail-closed, never guessed, never
+/// silently dropped.
+#[test]
+fn ws_builtin_dispatch_audit_flags_exactly_the_static_runmodal_sites() {
+    let report = ws_builtin_dispatch_audit_report();
+    let audit = &report.builtin_dispatch_audit;
+
+    assert_eq!(
+        audit.flagged.len(),
+        3,
+        "expected exactly 3 flagged sites; got {:#?}",
+        audit.flagged
+    );
+    assert_eq!(
+        audit.indeterminate.len(),
+        1,
+        "expected exactly 1 indeterminate site; got {:#?}",
+        audit.indeterminate
+    );
+
+    // Every flagged/indeterminate site must come from AuditCaller.Codeunit.al.
+    for s in &audit.flagged {
+        assert!(
+            s.file.ends_with("AuditCaller.Codeunit.al"),
+            "unexpected file on a flagged site: {s:?}"
+        );
+        assert_eq!(s.method, "runmodal");
+    }
+    for s in &audit.indeterminate {
+        assert!(
+            s.file.ends_with("AuditCaller.Codeunit.al"),
+            "unexpected file on an indeterminate site: {s:?}"
+        );
+        assert_eq!(s.method, "runmodal");
+    }
+
+    // The 2 keyword/declared-var Page sites both resolve to the SAME target
+    // identity string ("Page::audit target page") and sort before the single
+    // Report site ('P' < 'R') — proving BOTH populations (keyword-receiver +
+    // declared-variable) are caught, not just one.
+    let objects: Vec<&str> = audit.flagged.iter().map(|s| s.object.as_str()).collect();
+    assert_eq!(
+        objects,
+        vec![
+            "Page::audit target page",
+            "Page::audit target page",
+            "Report::audit target report",
+        ],
+        "flagged objects (sorted) must be exactly 2 Page + 1 Report site; got {objects:?}"
+    );
+
+    // Determinism: output is sorted (never HashMap iteration order).
+    let mut sorted_flagged = audit.flagged.clone();
+    sorted_flagged.sort();
+    assert_eq!(
+        audit.flagged, sorted_flagged,
+        "flagged sites must already be sorted"
+    );
+    let mut sorted_indeterminate = audit.indeterminate.clone();
+    sorted_indeterminate.sort();
+    assert_eq!(
+        audit.indeterminate, sorted_indeterminate,
+        "indeterminate sites must already be sorted"
+    );
+}
+
+/// T0.3 CDO ratchet (gated — no `CDO_WS`, silently skips): the flagged
+/// population on the real CDO workspace is PINNED to
+/// `CDO_ENTRY_DISPATCH_FLAGGED_PIN` — this pin drops to 0 only when T1.3
+/// (the RunModal entry-trigger dispatch fix) lands for BOTH populations this
+/// audit covers (see `docs/superpowers/plans/2026-07-10-deep-review-
+/// remediation.md`'s T1.3 entry — its CURRENT scope is the keyword-receiver
+/// shape only, so the pin may only PARTIALLY drop when T1.3 first lands; a
+/// residual nonzero pin after that landing is expected until the
+/// declared-variable population is ALSO fixed, not a regression by itself —
+/// re-measure and re-pin deliberately, don't assume 0). A DIFFERENT number
+/// in EITHER direction from a re-measurement that was not an intentional
+/// classifier change is a regression: either a resolver change silently
+/// started/stopped landing sites in the flagged catalog, or this audit's own
+/// logic drifted.
+#[test]
+fn cdo_builtin_dispatch_audit_flagged_count_is_pinned() {
+    let Some(ws) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    const CDO_ENTRY_DISPATCH_FLAGGED_PIN: usize = 94;
+
+    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+    let audit = &report.builtin_dispatch_audit;
+
+    // Determinism: sorted output, stable across repeated re-derivation from
+    // the SAME report (not re-parsing CDO twice — this test asserts the
+    // audit's own sort is idempotent, not merely "ran once").
+    let mut resorted = audit.flagged.clone();
+    resorted.sort();
+    assert_eq!(
+        audit.flagged, resorted,
+        "flagged sites must already be sorted"
+    );
+
+    assert_eq!(
+        audit.flagged.len(),
+        CDO_ENTRY_DISPATCH_FLAGGED_PIN,
+        "CDO flagged builtin-dispatch population moved off the pinned baseline \
+         ({} vs pinned {}) — investigate before re-pinning: either a resolver \
+         change intentionally landed/removed sites in the flagged catalog \
+         (expected direction: DOWN, once T1.3 lands), or this is a real \
+         regression.\nflagged sites:\n{:#?}",
+        audit.flagged.len(),
+        CDO_ENTRY_DISPATCH_FLAGGED_PIN,
+        audit.flagged,
+    );
+
+    eprintln!(
+        "T0.3 CDO builtin-dispatch audit: flagged={} indeterminate={}\nflagged sites:\n{:#?}",
+        audit.flagged.len(),
+        audit.indeterminate.len(),
+        audit.flagged,
+    );
 }

@@ -29,6 +29,9 @@
 
 use std::path::PathBuf;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 use al_call_hierarchy::engine::l4::capability_cone::{
     R3a5FullSummaryProjection, project_r3a5_cross_app,
 };
@@ -159,7 +162,7 @@ fn differential_r3a5_cross_app_summary_match_goldens() {
     // is set, write the ENGINE projection to the golden file (matching the on-disk
     // pretty form) instead of comparing — the goldens are Rust-owned baselines (TS
     // oracle retired).
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         let mut pretty = serde_json::to_string_pretty(&projection)
             .unwrap_or_else(|e| panic!("regen serialize R3a-5: {e}"));
         pretty.push('\n');

@@ -23,6 +23,9 @@ use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::l2::ir_walk::project_routine_features_ir;
 
+#[path = "common/regen.rs"]
+mod regen;
+
 fn collect_al_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -112,7 +115,7 @@ fn ir_l2_features_snapshot_over_r0_corpus() {
         }
     }
 
-    if std::env::var("REGEN_TEMP_GOLDENS").is_ok() {
+    if regen::regen_mode() {
         std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
         std::fs::write(&golden, &lines).unwrap();
         return;

@@ -67,14 +67,21 @@ AL Source Files → Tree-sitter Parser (language.rs) → Parsed Definitions/Call
 
 ## Performance Targets
 
-| Operation | Target |
-|-----------|--------|
-| Initial index (100 files) | < 500ms |
-| Initial index (1000 files) | < 2s |
-| prepareCallHierarchy | < 1ms |
-| incomingCalls | < 1ms |
-| outgoingCalls | < 1ms |
-| File change update | < 50ms |
+Measured by `cargo bench --bench lsp_pipeline` (Criterion; `benches/lsp_pipeline.rs`)
+against a deterministic synthetic corpus (`tests/perf_support/`) — 1000 codeunits with
+real cross-file call fan-in/fan-out for the query/reindex rows. A release-only CI gate
+(`tests/perf_bounds.rs`, wired into `.github/workflows/ci.yml`) asserts every operation
+stays within 3x its target on every PR, so an order-of-magnitude regression fails loudly
+even though the day-to-day numbers below have wide headroom.
+
+| Operation | Target | Measured (2026-07-10, dev machine) |
+|-----------|--------|-------------------------------------|
+| Initial index (100 files) | < 500ms | ~1.97ms |
+| Initial index (1000 files) | < 2s | ~15.9ms |
+| prepareCallHierarchy | < 1ms | ~893ns |
+| incomingCalls (1000-file graph, 999-way fan-in) | < 1ms | ~399µs |
+| outgoingCalls (1000-file graph) | < 1ms | ~1.9µs |
+| File change update (single-file reindex, 1000-file graph) | < 50ms | ~197µs |
 
 ## Key Data Structures
 
@@ -151,11 +158,14 @@ wrapper nodes that broke the v2 assumptions above.
 
 The product's moat is **precise whole-program call-graph resolution** for AL. The
 north-star metric is the **real-`unknown` edge rate** on real BC apps (measure with
-`aldump --l3-call-graph-stats <workspace>`): drive it toward zero, where the residual
-is provably dynamic. The honest resolution taxonomy is `resolved` / `builtin` (platform
-intrinsic, not a hole) / `dynamic` (runtime-typed) / `external` (dependency object) /
-`unknown` (a TRUE failure — the signal to eliminate). See the call-graph resolution
-redesign spec under `docs/superpowers/specs/`.
+`aldump --program-call-graph-stats <workspace>`): drive it toward zero, where the
+residual is provably dynamic. The honest resolution taxonomy is `resolved` / `builtin`
+(platform intrinsic, not a hole) / `dynamic` (runtime-typed) / `external` (dependency
+object) / `unknown` (a TRUE failure — the signal to eliminate). `aldump
+--l3-call-graph-stats` and its `-cross-app`/`-unknown-breakdown` siblings are the legacy
+L3 engine — advisory only, under a different metric definition (`legacyL3UnknownRate`),
+never the ratcheted number. See the call-graph resolution redesign spec under
+`docs/superpowers/specs/`.
 
 ## Testing Philosophy & Goldens
 
@@ -182,6 +192,18 @@ redesign spec under `docs/superpowers/specs/`.
   `al-sem-OBOLETE`; nothing in this repo reads from it or writes into it at test
   time, and zero tests point at it any more. Every differential/golden is
   Rust-owned and regenerable via `REGEN_TEMP_GOLDENS=1 cargo test` (see above).
+- **CDO ratchet tests skip silently by default, but can be made to fail loudly.**
+  The north-star zero-ratchets (real-unknown rate, unknown count, `ambiguousResolved`
+  pin, coverage contract) live in tests gated on the `CDO_WS` env var pointing at a
+  real Business Central workspace — a tree that only exists on machines with access
+  to it, so CI cannot run them and they no-op (skip) when `CDO_WS` is unset. Setting
+  `ENFORCE_CDO_WS=1` alongside makes every one of those gates panic instead of
+  skipping when the workspace is missing, so a moved/lost `CDO_WS` fails loudly
+  rather than silently passing (`tests/common/cdo.rs`). Run `scripts/cdo-gate
+  <path-to-cdo-workspace>` (or `CDO_WS=<path> scripts/cdo-gate`) to run the full
+  CDO-gated suite this way — it exports `ENFORCE_CDO_WS=1` itself and exits non-zero
+  on any failure. The user schedules this locally (cron / Task Scheduler); it is not
+  part of CI.
 
 ## Working Principle
 

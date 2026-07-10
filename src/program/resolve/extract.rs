@@ -314,6 +314,42 @@ fn object_run_kind(text: &str) -> Option<&'static str> {
     }
 }
 
+/// Extract a statically-named target from `args`' first element, when it is
+/// an `ExprKind::DatabaseReference` (`Page::"X"` / `Report::42` / …).
+/// Returns `Some((target_ref, target_is_name))`; `None` when the first
+/// argument is absent or not a `DatabaseReference` (a runtime
+/// variable/expression — dynamic dispatch, not statically named). Mirrors
+/// L3's `object_run_callee` target extraction.
+///
+/// Factored out of `classify_call`'s `ObjectRun` check (Check 2 below) so the
+/// SAME extraction backs both that check AND the T0.3 builtin-dispatch audit
+/// (`program::resolve::full`'s `builtin_dispatch_finding`, which needs the
+/// identical logic for a `Page.RunModal(Page::"X")`-shaped call that Check 2
+/// does NOT classify as `ObjectRun` — `method_lc == "run"`-only, see
+/// `member_catalog::ENTRY_DISPATCH_BUILTIN_IDS`'s doc) — never drift between
+/// the two.
+pub(crate) fn static_database_reference_target(
+    file: &AlFile,
+    args: &[ExprId],
+) -> Option<(String, bool)> {
+    let &first_arg = args.first()?;
+    let ExprKind::DatabaseReference(text) = &file.ir.expr(first_arg).kind else {
+        return None;
+    };
+    let (_, tn) = text.split_once("::")?;
+    let tn = tn.trim();
+    if tn.starts_with('"') {
+        // Quoted name: strip surrounding quotes.
+        Some((strip_quote_chars(tn), true))
+    } else if tn.parse::<i64>().is_ok() {
+        // Decimal integer id.
+        Some((tn.to_string(), false))
+    } else {
+        // Bare (unquoted) name.
+        Some((tn.to_string(), true))
+    }
+}
+
 /// Classify a single call's callee into a [`CalleeShape`].
 ///
 /// Classification precedence (mirrors L3's `classify_callee` + record-op filter
@@ -371,29 +407,11 @@ fn classify_call(
             if obj.origin.kind_text == "keyword_identifier" && method_lc == "run" {
                 let obj_text = &src[obj.origin.byte.clone()];
                 if let Some(okind) = object_run_kind(obj_text) {
-                    let mut target_ref: Option<String> = None;
-                    let mut target_is_name = false;
-                    if let Some(&first_arg) = args.first()
-                        && let ExprKind::DatabaseReference(text) = &file.ir.expr(first_arg).kind
-                        && let Some((_, tn)) = text.split_once("::")
-                    {
-                        let tn = tn.trim();
-                        if tn.starts_with('"') {
-                            // Quoted name: strip surrounding quotes.
-                            target_ref = Some(strip_quote_chars(tn));
-                            target_is_name = true;
-                        } else if tn.parse::<i64>().is_ok() {
-                            // Decimal integer id.
-                            target_ref = Some(tn.to_string());
-                            // target_is_name stays false
-                        } else {
-                            // Bare (unquoted) name.
-                            target_ref = Some(tn.to_string());
-                            target_is_name = true;
-                        }
-                        // Non-DatabaseReference first arg (variable, expression, etc.)
-                        // → let-chain falls through; target_ref stays None (dynamic).
-                    }
+                    let (target_ref, target_is_name) =
+                        match static_database_reference_target(file, args) {
+                            Some((name, is_name)) => (Some(name), is_name),
+                            None => (None, false),
+                        };
                     return CalleeShape::ObjectRun {
                         object_kind: okind.to_string(),
                         target_ref,

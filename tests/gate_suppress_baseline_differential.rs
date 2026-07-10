@@ -30,6 +30,9 @@ use al_call_hierarchy::engine::gate::run::{
     AnalyzeArgs, OutputFormat, run_analyze, run_analyze_with_exit,
 };
 
+#[path = "common/regen.rs"]
+mod regen;
+
 const PIN_VERSION: &str = "gate-sarif-v1";
 
 fn repo_root() -> PathBuf {
@@ -54,13 +57,47 @@ fn read_golden(name: &str) -> String {
 /// file instead of comparing — the goldens are Rust-owned baselines. Returns
 /// `true` when a regen write happened (the caller then skips the assert).
 fn maybe_regen(name: &str, rust: &str) -> bool {
-    if std::env::var("REGEN_TEMP_GOLDENS").is_err() {
+    if !regen::regen_mode() {
         return false;
     }
     let path = goldens_dir().join(name);
     std::fs::write(&path, rust).unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
     eprintln!("REGEN gate-suppress golden: {}", path.display());
     true
+}
+
+/// `gate-goldens/suppress-baseline-manifest.json`'s `stageA.goldens` (3 files)
+/// and `stageB.goldens` (4 files) lists were read by no test (Task T0.6 — a
+/// silently deleted golden would pass unnoticed). Asserts each named file
+/// still exists.
+#[test]
+fn manifest_named_goldens_exist() {
+    let manifest_path = goldens_dir().join("suppress-baseline-manifest.json");
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display())),
+    )
+    .unwrap_or_else(|e| panic!("{} not valid JSON: {e}", manifest_path.display()));
+    let mut checked = 0usize;
+    for stage in ["stageA", "stageB"] {
+        let named = manifest
+            .get(stage)
+            .and_then(|s| s.get("goldens"))
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("manifest missing {stage}.goldens array"));
+        for entry in named {
+            let name = entry.as_str().expect("goldens entry must be a string");
+            let path = goldens_dir().join(name);
+            assert!(
+                path.is_file(),
+                "suppress-baseline-manifest.json's {stage} names {name} but {} does not \
+                 exist — a golden may have been silently deleted",
+                path.display()
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no named goldens found across stageA/stageB");
 }
 
 /// The al-sem inline-suppress capture runs `[...DEFAULT_DETECTORS, d47-io-unsafe-txn]`

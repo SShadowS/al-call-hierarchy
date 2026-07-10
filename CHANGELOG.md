@@ -8,6 +8,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Golden-regen completeness + value-gated `REGEN_TEMP_GOLDENS` (Task T0.6,
+  Tier-0 remediation arc).** Doctrine says every Rust-owned golden regenerates
+  via `REGEN_TEMP_GOLDENS=1 cargo test`; review proved 10 golden-writing
+  functions across 8 families had no regen path at all (R0 identity, R2c L3
+  event-graph, r3a2-trace, cli-c policy [4 sub-tests], cli-c cache [2
+  sub-tests], and all 5 R4-F families [digest-effects, ordering-facts,
+  return-summaries, root-classifications, scoped-guarantees]) and that the
+  regen trigger itself was presence-tested everywhere (`.is_ok()`/`.is_err()`),
+  so `REGEN_TEMP_GOLDENS=0 cargo test` silently rewrote every golden while
+  reporting green. New `tests/common/regen.rs` (the `#[path]`-included pattern
+  established by `tests/common/cdo.rs`, Task T0.2) provides one shared,
+  unit-tested `regen_mode()`: only the exact value `"1"` regenerates. Wired
+  into all ~30 golden-writing call sites across ~38 test files (replacing
+  every ad-hoc `std::env::var("REGEN_TEMP_GOLDENS").is_ok()`/`.is_err()`), plus
+  a colocated mirror in `src/parser.rs`'s own `#[cfg(test)]` module (a lib
+  unit test can't reach across the `src/`/`tests/` boundary via `#[path]`).
+  Added the 10 missing regen paths, each proven to reproduce its committed
+  golden byte-for-byte from the unchanged engine (R1). Wired all 9 previously-
+  decorative `manifest.json`/`suppress-baseline-manifest.json` oracle files
+  (read by zero tests — a silently deleted golden passed unnoticed) into a new
+  floor-check test per family (`discovered >= manifest's fixtureCount/
+  totalGoldens`; `>=` not `==` since several corpora have legitimately grown
+  past their frozen al-sem-era snapshot count). `tests/r0-goldens/README.md`
+  rewritten to describe the real mechanism (previously documented a regen path
+  for R0 identity that did not exist in code).
+- **Performance targets: measured + CI-asserted generous bounds (Task T0.5,
+  Tier-0 remediation arc).** CLAUDE.md's Performance Targets table (initial index
+  <500ms/100 files, <2s/1000 files; prepareCallHierarchy/incomingCalls/outgoingCalls
+  <1ms; file change update <50ms) was measured NOWHERE: `benches/telemetry_hot_path.rs`
+  registered only `bench_disabled`, CI ran fmt/clippy/test/build and no bench, and no
+  test asserted any timing bound against the legacy LSP pipeline. New
+  `tests/perf_support/` is a deterministic (index-driven, no RNG) synthetic AL corpus
+  generator — N codeunits with a real cross-file call topology (every non-hub file's
+  `Proc0` makes one qualified call into a designated hub codeunit plus 2 local calls),
+  giving `incomingCalls`/`outgoingCalls` genuine fan-in/fan-out rather than an
+  all-isolated corpus. New `benches/lsp_pipeline.rs` (Criterion, `cargo bench --bench
+  lsp_pipeline`) measures initial index of 100/1000-file corpora, the 3 call-hierarchy
+  query handlers against a 1000-file indexed graph, and a single-file reindex — all
+  in-process, no LSP stdio loop. New `tests/perf_bounds.rs`, compiled for real only
+  under `#[cfg(not(debug_assertions))]` (a debug-build timing assert is meaningless;
+  an always-present marker test guarantees the binary never silently reports 0 tests),
+  asserts every operation stays within 3x its CLAUDE.md target (USER DECISION, binding:
+  generous margins accept occasional flake on loaded CI runners in exchange for
+  catching real order-of-magnitude regressions), using a warm-up pass plus a median of
+  3-5 timed runs. `.github/workflows/ci.yml` gained a `cargo test --release --test
+  perf_bounds` step reusing the existing release build. CLAUDE.md's perf table now
+  carries measured numbers alongside each target (all with wide headroom: e.g.
+  1000-file initial index ~15.9ms against a 2s target).
+  **Enabling refactor:** `graph.rs`/`indexer.rs`/`handlers.rs`/`parser.rs`/`protocol.rs`
+  were bin-only modules (declared in `main.rs`), invisible to bench/test targets that
+  only link the library crate — benching them required exposing them. Moved module
+  ownership to `lib.rs` (`pub mod`) and re-exported from `main.rs` via `pub use
+  al_call_hierarchy::{...}`, extending the pattern the repo already used for
+  `config`/`telemetry`/`app_package`/`dependencies` (whose own doc comment already said
+  this was "so library consumers \[i.e. benches\] can use them"). Fixed the one
+  self-crate-reference this exposed (`graph.rs`'s `ObjectType` re-export) and widened
+  one `pub(crate)` function (`parser::routine_complexity_ir`) to `pub`, since `main.rs`
+  now consumes it across a real crate boundary. The 3 handler functions
+  (`prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls`) are now `pub fn` (were
+  private) so benches/tests can call them directly. Zero behavior change: all 1340 lib
+  tests + 24 bin tests pass unchanged (92 of the 1340 are the graph/indexer/handlers
+  suites, now running as part of the lib target instead of the bin target).
+- **Builtin-dispatch justification audit — pinned-baseline ratchet (Task T0.3,
+  Tier-0 remediation arc).** The north-star real-`unknown` rate cannot see a
+  missed dispatch edge that lands in `builtin` instead: `Page.RunModal(Page::"X")`
+  (a keyword receiver + `DatabaseReference` argument) and a declared
+  Page/Report-typed variable's `.RunModal()` both currently resolve as an
+  ordinary `Evidence::Catalog` `Builtin` route (`PageInstance::runmodal` /
+  `ReportInstance::runmodal`) instead of an entry-trigger `Run` edge into the
+  named target — two separate classifier gaps (`extract::classify_call`'s
+  `ObjectRun` check only recognizes method `"run"`, never `"runmodal"`, for a
+  keyword receiver; `resolver::resolve_member_with_args`'s `Object{kind,
+  name_lc}` arm never special-cases a declared Page/Report variable's
+  `Run`/`RunModal` as an entry dispatch at all — only `Codeunit.Run` has that
+  special case). New `member_catalog::ENTRY_DISPATCH_BUILTIN_IDS` names the 4
+  flagged catalog entries (`PageInstance`/`ReportInstance` × `run`/`runmodal`;
+  Codeunit/XmlPort/Query excluded with documented MS-Learn-grounded reasoning).
+  `resolve_full_program`'s `ProgramReport` gained an ADDITIVE
+  `builtin_dispatch_audit: BuiltinDispatchAudit` field (sorted `flagged: Vec<
+  FlaggedBuiltinDispatchSite>` + `indeterminate: Vec<IndeterminateBuiltinDispatchSite>`),
+  computed inline in `resolve_call_site_obligation`'s `CalleeShape::Member` arm
+  from data already in scope (the resolved `ReceiverType` + the call's raw
+  argument expressions) — no change to `Route`/`Edge`/`CalleeShape`, no change
+  to any resolution outcome or histogram (CDO `aldump
+  --program-call-graph-stats` SHA-256 confirmed byte-identical to the frozen
+  baseline). Fail-closed: a flagged method whose target cannot be PROVEN
+  static (e.g. a runtime-variable `RunModal` argument) is reported separately
+  as `indeterminate`, never guessed into `flagged`. `extract::classify_call`'s
+  existing `DatabaseReference`-target extraction was factored into a shared
+  `static_database_reference_target` helper so the audit and the `ObjectRun`
+  classifier check can never drift. New fixture `tests/r0-corpus/
+  ws-builtin-dispatch-audit` proves the audit flags exactly its 3 statically-named
+  RunModal sites (both populations) and marks 1 dynamic-target call
+  indeterminate, with zero `CDO_WS` dependency. New CDO-gated ratchet test
+  `cdo_builtin_dispatch_audit_flagged_count_is_pinned` (via the shared
+  `cdo::cdo_ws_or_enforce()` helper) pins the measured real population —
+  **94 flagged sites, 13 indeterminate** — as a binding, user-decided
+  pinned-baseline ratchet (mirrors the `ambiguousResolved=56` precedent): the
+  pin holds the gate green until Task T1.3 lands the classifier fix, at which
+  point it drops (verified stable across 2 consecutive CDO runs, byte-identical
+  flagged-site lists both times).
+- **`scripts/cdo-gate` — the local release-gate runner for the CDO ratchet
+  (Task T0.2, Tier-0 remediation arc).** A Git-Bash-compatible shell script
+  that requires a CDO workspace path (positional arg or `CDO_WS` env var —
+  refuses with exit 2 and a clear message if neither is set or the path
+  doesn't exist; never hardcodes a machine-specific default), exports
+  `ENFORCE_CDO_WS=1`, runs `cargo test --release --test
+  program_resolve_harness -- --test-threads=1` followed by `cargo test
+  --release --test program_graph --test snapshot_robustness`, and exits
+  non-zero with a one-line `cdo-gate: PASS`/`cdo-gate: FAIL` summary if
+  either step failed. CI cannot reach the CDO workspace, so this is meant to
+  be scheduled locally (cron / Task Scheduler) — see the new CLAUDE.md
+  testing note. `.gitattributes` gained a `scripts/* text eol=lf` rule so
+  `core.autocrlf=true` checkouts don't corrupt the shebang line.
 - **ABI param-type retention — the SymbolOnly arg-type dispatch lift, behind
   a structural guard (Task 2, roadmap-closure plan).** `AbiParameter`
   (`engine/deps/symbol_reference.rs`) already carried full parameter Subtype
@@ -73,6 +187,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **BREAKING: legacy L3 histogram's `realUnknownRate` key renamed to
+  `legacyL3UnknownRate` (Task T0.4, Tier-0 remediation arc) — one metric, one
+  owner.** `aldump --l3-call-graph-stats` (legacy L3 engine) and `aldump
+  --program-call-graph-stats` (fresh resolver, `resolve_full_program`) emitted
+  DIFFERENT semantics under the identical `realUnknownRate` JSON key — the L3
+  histogram excludes `memberNotFound`/`ambiguous` from `unknown`, the fresh
+  engine counts `MemberNotFound` as `Unknown` — while CLAUDE.md's "Project
+  Direction & The Moat" pointed the north-star measurement at the L3 command.
+  A reader comparing the two numbers, or ratcheting the wrong one, got silently
+  different answers. Per the roadmap's binding decision, the fresh resolver is
+  now the SOLE authoritative metric: `realUnknownRate` is reserved exclusively
+  for `--program-call-graph-stats`'s `wholeProgram`/`primaryScoped` output
+  (byte-identical, unchanged — no metric-computation change anywhere in this
+  task). All 4 L3-family JSON emission sites in `src/bin/aldump.rs`
+  (`--l3-call-graph-stats`, `--l3-call-graph-stats-cross-app`,
+  `--l3-unknown-breakdown`, `--l3-unknown-breakdown-cross-app` — the brief that
+  scoped this task named only 2; scouting found all 4 emit the same
+  `engine::l3::resolution_class::Histogram`, so the rename was applied
+  consistently across all of them) now emit `legacyL3UnknownRate` plus an
+  additive self-describing `"advisory": "legacy L3 engine; authoritative
+  metric is --program-call-graph-stats"` field. No `Histogram` sibling field
+  implies authority (`total`/`resolved`/`builtin`/`dynamic`/`external`/
+  `ambiguous`/`memberNotFound`/`unknown` are all plainly descriptive), so only
+  the one key needed renaming. CLAUDE.md's moat section now measures with
+  `--program-call-graph-stats` and states the L3 command is legacy/advisory.
+  Neither `graphify_export.rs` nor any `engine/l5` detector reads this JSON
+  key programmatically — both consume L3 `CallEdge`s directly — so R6 is a
+  clean no-op there; nothing to fix. 2 test files pinned the old key and are
+  updated (`tests/l3cg_stats_smoke.rs`, `tests/aldump_smoke.rs`'s 3 T0.1
+  fail-closed/good-path guards); no committed golden ever pinned
+  `realUnknownRate` (grepped every file type), so no golden regen was needed.
+  Gates: `cargo test` full workspace green (0 failed); `cargo clippy
+  --all-targets --all-features -- -D warnings` clean; CDO's
+  `--program-call-graph-stats` SHA-256 confirmed BYTE-IDENTICAL to the frozen
+  baseline (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`);
+  `rg -n '"realUnknownRate"' src/` afterward shows exactly 2 hits, both inside
+  `program_call_graph_stats`'s `wholeProgram`/`primaryScoped` blocks — the only
+  emission sites left.
 - **Docs + CLAUDE.md doctrine + a legacy-token TRIAGE (Task 3.6, al-sem
   parity retirement arc capstone).** `docs/engine-migration.md` moved to
   `docs/history/` (git mv) with an `ARCHIVED (2026-07-05)` header —
@@ -252,6 +404,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
+  (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
+  PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
+  the negated guard) rather than its VALUE — `is_ok()` is `true` for ANY set
+  value, including `"0"`. Fixed by routing every gate through the new
+  value-gated `regen_mode()` helper (see Added, above); `REGEN_TEMP_GOLDENS=0
+  cargo test` now correctly takes the normal assert path and leaves the
+  working tree clean (verified: full-suite `cargo test` and `REGEN_TEMP_
+  GOLDENS=0 cargo test` both green with zero golden diffs; `REGEN_TEMP_
+  GOLDENS=1 cargo test` green with a no-op diff on every family except one
+  pre-existing, unrelated finding, left unresolved and undisturbed: `ws-
+  interface-dispatch`'s R0 identity output turned out to be non-deterministic
+  depending on unrelated prior test execution in the same process — NOT a
+  simple stale golden. Its two `Interface` objects (`IEmpty`, `IProcessor`)
+  collide on `stableObjectId` (AL interfaces carry no object number, so
+  `engine::snapshot` assigns every interface `0`); the committed golden's
+  `IEmpty` entry carries a `signatureFingerprint` that duplicates
+  `IProcessor`'s. Running `differential_identity_subset_matches_goldens` in
+  isolation reproducibly regenerates the mathematically correct, distinct
+  fingerprint for `IEmpty` (`sha256("Interface|0|IEmpty")`); running it as
+  part of the full `differential.rs` binary (the normal `cargo test` path)
+  reproducibly regenerates `IProcessor`'s hash instead, matching what's
+  committed. `object_signature_fingerprint` is a pure function and file
+  processing is strictly sequential over an already-sorted list, so the cause
+  is upstream — `al_syntax::parse`/`extract_from_ir`'s `Interface` object
+  extraction — and unidentified; needs its own dedicated investigation. Full
+  reproduction steps in `tests/r0-goldens/README.md`).
+- **`tests/common/regen.rs` env-mutating unit test could race a real golden
+  gate into silently rewriting a golden (whole-branch review finding on Task
+  T0.6, Tier-0 remediation arc).** Because `regen.rs` is `#[path]`-included
+  into ~40 golden-asserting test binaries, its own `#[cfg(test)]` integration
+  test — `regen_mode_reads_real_env_var_by_value`, which `unsafe { set_var
+  ("REGEN_TEMP_GOLDENS", ...) }`'d the process env to exercise all three
+  value states, serialized only by a private `ENV_LOCK` that no other test in
+  the binary honored — ran concurrently, under `cargo test`'s parallel test
+  threads, with every other test in the same binary reading `regen_mode()`
+  unlocked. During the window where the var was set to `"1"`, a racing golden
+  gate could enter its regen branch and rewrite its committed golden without
+  asserting: the exact silent-rewrite hazard T0.6 exists to eliminate,
+  reintroduced by the test meant to guard it. Also plain UB (concurrent
+  `setenv`/`getenv` is why `set_var` is `unsafe` since edition 2024). Fixed by
+  deleting the test outright rather than adding save/restore locking (the
+  race window would remain); the five pure `resolve_regen_mode_*` tests fully
+  cover `regen_mode()`'s value semantics (a trivial composition over
+  `resolve_regen_mode`) without touching the environment, so no coverage was
+  lost.
+- **Regen-write trailing-newline bug (`program_resolve_harness.rs`
+  `fixture_semantic_golden_matches_l3`, Task T0.6).** Its pre-existing regen
+  path omitted the trailing newline every other regen path in the repo
+  writes, making a byte-identical regen impossible even though the
+  assert-mode comparison (structural JSON diff, not byte-compare) never
+  surfaced it. One-line fix; the committed golden's own bytes are unchanged.
+- **Every CDO-gated test could silently skip forever — including the north-star
+  ratchet itself (Task T0.2, Tier-0 remediation arc).** `CDO_WS`-gated tests used
+  the bare `let Some(ws) = std::env::var_os("CDO_WS")...else { return; }` idiom,
+  which no-ops with zero signal when `CDO_WS` is unset or points at a moved
+  tree — including `program_resolve_harness.rs`'s Test 13
+  (`cdo_full_program_coverage_and_self_reported_metric`, the coverage +
+  `real_unknown_rate` ceiling ratchet). A loud-fail helper
+  (`cdo_ws_or_enforce()`) already existed but was wired into only 4 of the
+  suite's CDO-gated tests. Routed EVERY bare gate through it: in
+  `program_resolve_harness.rs`, lines 866
+  (`abi_ingestion_integrity_cdo_gate`), 1321 (Test 13, the ratchet), 3089
+  (`route_applicability_zero_violations`), 3150/3236/3290 (the 3
+  `#[ignore]`d diagnostic-dump tests), 3393
+  (`cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero`), and
+  5243 (`fan_out_applicability_zero_violations`); plus the whole-body gates
+  in `program_graph.rs:5`
+  (`cdo_program_graph_is_app_qualified_and_panic_free`) and
+  `snapshot_robustness.rs:5` (`cdo_snapshot_deep_parse_is_panic_free`). Since
+  `cargo test` compiles each `tests/*.rs` file as a separate binary/crate, a
+  private fn in one can't be `use`d from another — moved the single
+  implementation to new `tests/common/cdo.rs` (cargo doesn't treat files
+  under a `tests/` subdirectory as their own test targets, only top-level
+  `tests/*.rs`), included via `#[path = "common/cdo.rs"] mod cdo;` in all
+  three binaries, so the whole suite now shares exactly one implementation
+  (the panic message also now names the failing test via
+  `std::thread::current().name()`, which libtest sets to the test's path).
+  Gate 1 (`CDO_WS` unset): all three binaries green, 179 passed / 0 failed /
+  3 ignored + 1 + 1, confirming silent-skip behavior is unchanged. Gate 2
+  (`ENFORCE_CDO_WS=1`, `CDO_WS` unset): all 9 non-ignored rewired tests (5
+  newly wired + 4 pre-existing) panic loudly naming themselves; the 3
+  `#[ignore]`d dumps panic the same way when run with `--ignored`. Gate 3
+  (real `CDO_WS`, `ENFORCE_CDO_WS=1`, via the new `scripts/cdo-gate`): PASS,
+  and CDO's `--program-call-graph-stats` SHA-256 is unchanged
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`),
+  confirming R5 — behavior with a valid `CDO_WS` is byte-identical. A broader
+  `rg -n 'var_os("CDO_WS")' tests/ src/` sweep also found 6 more bare gates
+  embedded as `#[cfg(test)]` unit tests inside `src/{snapshot/snapshot.rs,
+  snapshot/parse.rs, program/l3_mint.rs, program/build.rs}` — left unrewired
+  as out of scope for this task (the roadmap's T0.2 site enumeration and the
+  `scripts/cdo-gate` invocations cover only the `tests/*.rs` ratchet suite;
+  these are a different, lower-tier population, not part of the north-star
+  ratchet, and would need a second `#[cfg(test)]`-scoped helper since a lib
+  unit test can't reach `tests/common/cdo.rs` either) — flagged as a
+  candidate follow-up, not fixed here.
+- **`aldump`'s stats/projection modes could not fail — a broken/unusable
+  workspace silently reported a PERFECT north-star score (Task T0.1, Tier-0
+  remediation arc).** `aldump --l3-call-graph-stats <workspace>` is the
+  north-star measurement command (the real-`unknown` edge rate); on an
+  unusable/fail-closed layout it printed a stderr warning but then emitted
+  `Histogram::default()` (`realUnknownRate: 0.0`) on stdout and exited
+  `ExitCode::SUCCESS` — any CI/jq ratchet built on it would pass forever
+  regardless of whether the tool actually ran. Two other modes
+  (`--l3-call-graph-stats-cross-app`, `--l3-unknown-breakdown-cross-app`) had
+  the same defect in a different guise: they emitted a JSON body containing
+  `"error": "..."` on stdout and STILL exited SUCCESS. Audited all 29
+  `aldump` dispatch branches (28 flag-gated modes + the no-flag default) for
+  the shape; 23 had it (every mode gated on
+  `assemble_and_resolve_workspace_default`/`build_cross_app_l3_from_workspace`
+  returning `None`, plus `--r3a4-dep-hooks`/`--r3a5-cross-app-summary`, whose
+  underlying library functions are intentionally "engine-never-throws" for
+  their differential/oracle test callers and so needed a CLI-boundary
+  pre-check instead of a signature change; `--r2.5a-merged-index`, gated on
+  path existence since it legitimately accepts a dep-less `.app`/dir). Fixed
+  by converting every `None`/`"error"`-body case to `eprintln!` + no stdout +
+  `ExitCode::FAILURE` — never a silent default-shaped success. 6 modes were
+  already correct (`--l2`, `--program-call-graph-stats`, `--graphify-export{,
+  -fragments}`, `--integration-points`, the no-flag default) and were left
+  untouched; they follow the same `let Some(x) = ... else { eprintln!(...);
+  return ExitCode::FAILURE; }` idiom the fix now applies everywhere else. The
+  success path is byte-unchanged (verified via the r2.5a/r3a4/r3a5
+  differential/oracle suites + the CDO gate). New `tests/aldump_smoke.rs` CLI
+  cases lock a nonexistent-path failure (both source-only and cross-app) and
+  a good-path success.
 - **`cli_a_{html,json,terminal}_differential.rs` were silently reporting `ok`
   while running ZERO real assertions, ever since al-sem left disk (Task 3.6,
   al-sem parity retirement arc capstone).** Each file's main byte-match test

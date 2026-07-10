@@ -24,8 +24,11 @@
 use std::path::PathBuf;
 
 use al_call_hierarchy::engine::gate::cache_prune::{
-    PruneStatus, classify_artifact_for_prune, format_prune_report, prune_cache,
+    PruneCacheEntry, PruneStatus, classify_artifact_for_prune, format_prune_report, prune_cache,
 };
+
+#[path = "common/regen.rs"]
+mod regen;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,6 +71,29 @@ fn load_golden(name: &str) -> String {
     let path = cache_goldens_dir().join(name);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("failed to read golden {}: {e}", path.display()))
+}
+
+/// Render `entries` in the exact on-disk `classification.json` form (2-space
+/// indent, `file`/`bytes`/`status` key order per object). Hand-built rather
+/// than via `serde_json::Value` because this crate's `serde_json` does not
+/// enable `preserve_order`, so a generic `Value::Object` would alphabetize
+/// keys (`bytes`,`file`,`status`) instead of matching the committed golden's
+/// `file`,`bytes`,`status` order.
+fn classification_json_text(entries: &[PruneCacheEntry]) -> String {
+    let mut out = String::from("[\n");
+    for (i, e) in entries.iter().enumerate() {
+        out.push_str("  {\n");
+        out.push_str(&format!("    \"file\": {:?},\n", e.file));
+        out.push_str(&format!("    \"bytes\": {},\n", e.bytes));
+        out.push_str(&format!("    \"status\": {:?}\n", e.status.as_str()));
+        out.push_str(if i + 1 == entries.len() {
+            "  }\n"
+        } else {
+            "  },\n"
+        });
+    }
+    out.push_str("]\n");
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +185,26 @@ fn classification_oracle_bad_name() {
 #[test]
 fn classification_oracle_all_vs_golden_json() {
     require_fixture_cache();
+
+    // REGEN path (Task T0.6 — this family previously had none; the retired-
+    // al-sem-oracle note below is about refreshing from al-sem, which is a
+    // separate, still-impossible concern — this regenerates from THIS engine's
+    // OWN current classification, the Rust-owned-baseline doctrine). When
+    // `REGEN_TEMP_GOLDENS=1`, reclassify every file `prune_cache` sees (dry-run,
+    // so nothing is deleted) and write `classification.json` from that.
+    if regen::regen_mode() {
+        let cache_dir = fixture_cache_dir();
+        let result = prune_cache(Some(&cache_dir.to_string_lossy()), true);
+        let golden_path = cache_goldens_dir().join("classification.json");
+        std::fs::write(&golden_path, classification_json_text(&result.entries))
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        eprintln!(
+            "REGEN cli-c cache classification golden: {}",
+            golden_path.display()
+        );
+        return;
+    }
+
     // Load and parse the classification golden.
     let golden_text = load_golden("classification.json");
     let golden: serde_json::Value =
@@ -210,6 +256,21 @@ fn dry_run_differential_vs_golden() {
     // Normalize: replace the abs cache dir path in the first line with `<CACHE_DIR>`.
     // al-sem golden: `al-sem cache: <CACHE_DIR>`
     let normalized = report.replacen(cache_dir_str.as_ref(), "<CACHE_DIR>", 1);
+
+    // REGEN path (Task T0.6 — this family previously had none; see the note on
+    // `classification_oracle_all_vs_golden_json` above). When
+    // `REGEN_TEMP_GOLDENS=1`, write the already-normalized report straight to
+    // the golden file instead of comparing.
+    if regen::regen_mode() {
+        let golden_path = cache_goldens_dir().join("dry-run.txt");
+        std::fs::write(&golden_path, &normalized)
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+        eprintln!(
+            "REGEN cli-c cache dry-run golden: {}",
+            golden_path.display()
+        );
+        return;
+    }
 
     // Load the committed golden.
     let golden = load_golden("dry-run.txt");
@@ -545,10 +606,15 @@ fn sha256_hex_test(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Refresh test RETIRED (Task 3.3): the retired al-sem oracle's symbolReader
-// version is permanently stuck at 17 while the engine's is 18, so it can
-// never again regenerate a `kept`-classified fixture — refreshing from it
-// would silently re-break the corpus. The in-repo golden corpus at
-// `tests/cli-c-goldens/cache/` (Task 16 rebaseline) is the sole source of
-// truth; there is no automated refresh path.
+// Refresh-FROM-AL-SEM test RETIRED (Task 3.3): the retired al-sem oracle's
+// symbolReader version is permanently stuck at 17 while the engine's is 18,
+// so it can never again regenerate a `kept`-classified fixture — refreshing
+// from IT would silently re-break the corpus. That is unrelated to
+// rebaselining from THIS engine's own output: `classification_oracle_all_vs_
+// golden_json` and `dry_run_differential_vs_golden` above both gained a
+// `REGEN_TEMP_GOLDENS=1` path (Task T0.6) that reclassifies the vendored
+// fixture-cache and writes the Rust-owned baseline — al-sem is never
+// consulted. The in-repo `fixture-cache/` corpus itself (Task 16 rebaseline)
+// remains the sole source of INPUT fixtures; there is no automated way to
+// refresh THOSE from al-sem, only the derived goldens from this engine.
 // ---------------------------------------------------------------------------

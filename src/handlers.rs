@@ -120,7 +120,10 @@ pub fn handle_notification(indexer: &Arc<RwLock<Indexer>>, notif: &lsp_server::N
 }
 
 /// Prepare call hierarchy - find the item at the given position
-fn prepare_call_hierarchy(
+///
+/// `pub` (T0.5): benches call this directly to measure the handler layer
+/// in-process, without an LSP stdio loop.
+pub fn prepare_call_hierarchy(
     indexer: &Arc<RwLock<Indexer>>,
     params: CallHierarchyPrepareParams,
 ) -> Result<Option<Vec<CallHierarchyItem>>> {
@@ -163,7 +166,9 @@ fn prepare_call_hierarchy(
 }
 
 /// Get incoming calls - who calls this procedure
-fn incoming_calls(
+///
+/// `pub` (T0.5): benches call this directly (see `prepare_call_hierarchy`).
+pub fn incoming_calls(
     indexer: &Arc<RwLock<Indexer>>,
     params: CallHierarchyIncomingCallsParams,
 ) -> Result<Option<Vec<CallHierarchyIncomingCall>>> {
@@ -273,7 +278,9 @@ fn incoming_calls(
 }
 
 /// Get outgoing calls - what does this procedure call
-fn outgoing_calls(
+///
+/// `pub` (T0.5): benches call this directly (see `prepare_call_hierarchy`).
+pub fn outgoing_calls(
     indexer: &Arc<RwLock<Indexer>>,
     params: CallHierarchyOutgoingCallsParams,
 ) -> Result<Option<Vec<CallHierarchyOutgoingCall>>> {

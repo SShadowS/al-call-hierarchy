@@ -21,6 +21,9 @@ use al_call_hierarchy::engine::return_summary::{
     R4FReturnSummaryProjection, project_r4f_return_summaries,
 };
 
+#[path = "common/regen.rs"]
+mod regen;
+
 /// The R4-F return-summaries corpus (8 fixtures).
 const FIXTURES: &[&str] = &[
     "ws-d51-jobqueue",
@@ -77,15 +80,28 @@ fn run_rust(fixture: &str) -> R4FReturnSummaryProjection {
 fn r4f_return_summaries_match_goldens() {
     for fixture in FIXTURES {
         let golden_path = goldens_dir().join(format!("{fixture}.returnsummary.golden.json"));
+
+        let projection = run_rust(fixture);
+        let rust_text = pretty_with_newline(&projection);
+
+        // REGEN path (Task T0.6 — this family previously had none). When
+        // `REGEN_TEMP_GOLDENS=1`, write the ENGINE output straight to the golden
+        // file instead of comparing — the goldens are Rust-owned baselines (TS
+        // oracle retired). `pretty_with_newline` already produces the exact
+        // on-disk form the assert path below reads.
+        if regen::regen_mode() {
+            std::fs::write(&golden_path, &rust_text)
+                .unwrap_or_else(|e| panic!("regen write {}: {e}", golden_path.display()));
+            eprintln!("REGEN r4f return-summary golden: {}", golden_path.display());
+            continue;
+        }
+
         let golden_text = std::fs::read_to_string(&golden_path).unwrap_or_else(|e| {
             panic!(
                 "cannot read R4-F return-summary golden {}: {e}",
                 golden_path.display()
             )
         });
-
-        let projection = run_rust(fixture);
-        let rust_text = pretty_with_newline(&projection);
 
         assert_eq!(
             rust_text,
