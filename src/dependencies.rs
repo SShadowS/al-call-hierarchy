@@ -39,6 +39,102 @@ pub struct ResolvedDependency {
     pub package: ParsedAppPackage,
 }
 
+/// One `.app` file dropped during GUID-level dependency dedup (Tier-1
+/// remediation, H-2). Two or more entries discovered under `.alpackages`
+/// shared a real GUID — a stale version cached in an ancestor folder
+/// alongside the correct one, or the SAME version physically present twice
+/// (a file copied into two scanned folders) — so only the highest-version
+/// (or, for a byte-identical tie, first-encountered) survivor is kept. This
+/// names the loser so the drop is never silent; see
+/// [`load_all_apps`]'s doc for the defect this closes.
+#[derive(Debug, Clone)]
+pub struct DroppedDuplicateDependency {
+    pub guid: String,
+    pub name: String,
+    pub kept_version: String,
+    pub kept_path: PathBuf,
+    pub dropped_version: String,
+    pub dropped_path: PathBuf,
+}
+
+/// Collapse `deps` down to one entry per non-empty GUID, keeping the
+/// highest-version survivor (Tier-1 remediation, H-2 root cause).
+///
+/// Before this, EVERY physically-discovered `.app` became its own graph-level
+/// app unit — including a stale version cached in an ancestor `.alpackages`
+/// (`find_all_alpackages_folders` walks ancestors on purpose) or the
+/// IDENTICAL file present under two scanned folders. Two consequences: (1)
+/// `program::build::build_program_graph`'s dependency-closure GUID-match
+/// (`by_guid.find(...)`, picking the FIRST match in whatever order the caller
+/// iterates) silently bound to whichever version sorted first — determined by
+/// the naive lexicographic-string sort below, not version magnitude
+/// ("stale-wins"); (2) a byte-identical duplicate ingests TWICE, producing
+/// IDENTICAL `RoutineNodeId`s for every one of that app's ABI routines —
+/// `dedup_routines_preserving_genuine_overloads` then marks EVERY survivor
+/// `abi_overload_collapsed` (a same-key run of >=2 raw entries is
+/// indistinguishable from a genuine fingerprint collision), so the entire
+/// app's routines decline for chain-typing and plain-dispatch alike
+/// ("collapse-poisoning").
+///
+/// GUID-less entries (a malformed/legacy manifest) are never deduped against
+/// each other — without a real identity, collapsing two coincidentally
+/// similar entries risks silently merging two GENUINELY different apps,
+/// which is worse than leaving both (fail-closed: only collapse what we can
+/// prove is the same app).
+///
+/// Ties (identical version under the same GUID — the true byte-identical-
+/// duplicate case) keep the entry with the lexicographically-first path
+/// (arbitrary but deterministic, independent of filesystem iteration order —
+/// same "arbitrary but stable" convention as
+/// `program::build::dedup_routines_preserving_genuine_overloads`).
+fn dedup_by_guid_keep_highest_version(
+    deps: Vec<ResolvedDependency>,
+) -> (Vec<ResolvedDependency>, Vec<DroppedDuplicateDependency>) {
+    let mut by_guid: std::collections::HashMap<String, Vec<ResolvedDependency>> =
+        std::collections::HashMap::new();
+    let mut kept: Vec<ResolvedDependency> = Vec::new();
+
+    for rd in deps {
+        if rd.dependency.app_id.is_empty() {
+            kept.push(rd);
+        } else {
+            by_guid
+                .entry(rd.dependency.app_id.clone())
+                .or_default()
+                .push(rd);
+        }
+    }
+
+    let mut dropped: Vec<DroppedDuplicateDependency> = Vec::new();
+    for (_guid, mut group) in by_guid {
+        if group.len() == 1 {
+            kept.push(group.pop().expect("len == 1"));
+            continue;
+        }
+        // Highest version first (`compare_versions`: higher version sorts
+        // first — see its doc); ties broken by path for determinism.
+        group.sort_by(|a, b| {
+            compare_versions(&a.dependency.version, &b.dependency.version)
+                .then_with(|| a.app_path.cmp(&b.app_path))
+        });
+        let mut iter = group.into_iter();
+        let winner = iter.next().expect("group.len() > 1");
+        for loser in iter {
+            dropped.push(DroppedDuplicateDependency {
+                guid: winner.dependency.app_id.clone(),
+                name: winner.dependency.name.clone(),
+                kept_version: winner.dependency.version.clone(),
+                kept_path: winner.app_path.clone(),
+                dropped_version: loser.dependency.version.clone(),
+                dropped_path: loser.app_path.clone(),
+            });
+        }
+        kept.push(winner);
+    }
+
+    (kept, dropped)
+}
+
 /// Parse app.json to extract dependencies
 pub fn parse_app_json(path: &Path) -> Result<Vec<AppDependency>> {
     let content = std::fs::read_to_string(path)
@@ -277,14 +373,23 @@ pub fn find_matching_app(alpackages: &Path, dep: &AppDependency) -> Option<PathB
 /// every package found is parsed. Lets us index transitive dependencies
 /// (e.g. Base Application) that are sitting in `.alpackages` but aren't
 /// listed in the project's direct dependency tree. Mirrors AL LSP behavior.
-pub fn load_all_apps(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
+///
+/// Results are deduped at the GUID level (Tier-1 remediation, H-2 — see
+/// [`dedup_by_guid_keep_highest_version`]'s doc for the defect this closes)
+/// BEFORE the caller ever sees them, so every downstream consumer (this
+/// function has more than one caller) is protected uniformly. The second
+/// return value names every dropped duplicate; callers that don't need it
+/// can ignore it, but it is never silently discarded here.
+pub fn load_all_apps(
+    project_root: &Path,
+) -> Result<(Vec<ResolvedDependency>, Vec<DroppedDuplicateDependency>)> {
     let folders = find_all_alpackages_folders(project_root);
     if folders.is_empty() {
         debug!(
             "load_all_apps: no .alpackages folder at {} or any ancestor",
             project_root.display()
         );
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     let mut out: Vec<ResolvedDependency> = Vec::new();
@@ -342,25 +447,38 @@ pub fn load_all_apps(project_root: &Path) -> Result<Vec<ResolvedDependency>> {
         }
     }
 
+    // GUID-level dedup (H-1... H-2): collapse duplicate/stale versions BEFORE
+    // determining order, so the sort below never has to arbitrate between
+    // two entries claiming to be the same real app.
+    let (out, dropped) = dedup_by_guid_keep_highest_version(out);
+
     // Deterministic, filesystem-independent order so downstream AppRef/NodeId
-    // numbering is reproducible across machines (charter C8). Version is compared
-    // lexicographically purely as a stable tiebreak, not as semver.
+    // numbering is reproducible across machines (charter C8). `parse_version`
+    // gives a REAL numeric multi-part comparison (not raw string) for the
+    // version component — H-2 fix: the prior string `.cmp()` here was NOT
+    // "purely a stable tiebreak" as its old comment claimed, since (pre-dedup)
+    // downstream GUID-matching picked the first entry in this very order,
+    // making this sort the de facto (and wrong — lexicographic, not semver)
+    // version-selection policy. Post-dedup there is at most one entry per
+    // non-empty GUID, so this now IS purely a determinism tiebreak — but it's
+    // still fixed to a real comparator rather than left honest-but-wrong.
+    let mut out = out;
     out.sort_by(|a, b| {
         (
             &a.dependency.app_id,
             &a.dependency.name,
             &a.dependency.publisher,
-            &a.dependency.version,
+            parse_version(&a.dependency.version),
         )
             .cmp(&(
                 &b.dependency.app_id,
                 &b.dependency.name,
                 &b.dependency.publisher,
-                &b.dependency.version,
+                parse_version(&b.dependency.version),
             ))
     });
 
-    Ok(out)
+    Ok((out, dropped))
 }
 
 /// Resolve all dependencies for a project
@@ -603,6 +721,191 @@ mod tests {
         assert_eq!(compare_versions("26.0.0.0", "25.0.0.0"), Ordering::Less);
         assert_eq!(compare_versions("26.0.0.0", "26.0.0.0"), Ordering::Equal);
         assert_eq!(compare_versions("25.0.0.0", "26.0.0.0"), Ordering::Greater);
+    }
+
+    // -----------------------------------------------------------------------
+    // H-2 (Tier-1 remediation, Task T1.2): dedup_by_guid_keep_highest_version
+    // -----------------------------------------------------------------------
+
+    fn resolved_dep(guid: &str, name: &str, version: &str, path: &str) -> ResolvedDependency {
+        ResolvedDependency {
+            dependency: AppDependency {
+                app_id: guid.to_string(),
+                name: name.to_string(),
+                publisher: "Pub".to_string(),
+                version: version.to_string(),
+            },
+            app_path: PathBuf::from(path),
+            package: ParsedAppPackage {
+                metadata: crate::app_package::AppMetadata {
+                    app_id: guid.to_string(),
+                    name: name.to_string(),
+                    publisher: "Pub".to_string(),
+                    version: version.to_string(),
+                    runtime: String::new(),
+                    platform: String::new(),
+                    application: String::new(),
+                    dependencies: vec![],
+                    internals_visible_to: vec![],
+                },
+                objects: vec![],
+            },
+        }
+    }
+
+    /// The "stale wins" scenario: two entries share a GUID at different
+    /// versions, ordinary ascending-numeric order (24.0.0.0 < 25.0.0.0, no
+    /// digit-count trickery needed — the OLD bug was simply "sort ascending,
+    /// take first", which always favors the LOWEST version, not a semver
+    /// edge case). The highest-version entry must survive, and the drop must
+    /// be named.
+    #[test]
+    fn dedup_keeps_highest_version_and_names_the_dropped_file() {
+        let deps = vec![
+            resolved_dep(
+                "11111111-0000-0000-0000-000000000001",
+                "DupApp",
+                "24.0.0.0",
+                "/alpackages/Pub_DupApp_24.0.0.0.app",
+            ),
+            resolved_dep(
+                "11111111-0000-0000-0000-000000000001",
+                "DupApp",
+                "25.0.0.0",
+                "/alpackages/Pub_DupApp_25.0.0.0.app",
+            ),
+        ];
+
+        let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
+
+        assert_eq!(kept.len(), 1, "only the higher version must survive");
+        assert_eq!(kept[0].dependency.version, "25.0.0.0");
+
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].guid, "11111111-0000-0000-0000-000000000001");
+        assert_eq!(dropped[0].kept_version, "25.0.0.0");
+        assert_eq!(dropped[0].dropped_version, "24.0.0.0");
+        assert_eq!(
+            dropped[0].dropped_path,
+            PathBuf::from("/alpackages/Pub_DupApp_24.0.0.0.app")
+        );
+    }
+
+    /// The genuinely-diverging-order case named in the task brief: a naive
+    /// STRING sort of "10.0.0.0" vs "9.0.0.0" disagrees with numeric
+    /// magnitude ("10.0.0.0" < "9.0.0.0" lexicographically). The real
+    /// `compare_versions` comparator (multi-part numeric, already used
+    /// elsewhere in this file) must still pick 10.0.0.0 as higher.
+    #[test]
+    fn dedup_picks_numerically_higher_version_even_when_lexicographically_smaller() {
+        let deps = vec![
+            resolved_dep(
+                "22222222-0000-0000-0000-000000000002",
+                "DigitApp",
+                "9.0.0.0",
+                "/alpackages/Pub_DigitApp_9.0.0.0.app",
+            ),
+            resolved_dep(
+                "22222222-0000-0000-0000-000000000002",
+                "DigitApp",
+                "10.0.0.0",
+                "/alpackages/Pub_DigitApp_10.0.0.0.app",
+            ),
+        ];
+
+        let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
+
+        assert_eq!(kept.len(), 1);
+        assert_eq!(
+            kept[0].dependency.version, "10.0.0.0",
+            "10.0.0.0 is numerically higher despite sorting lexicographically \
+             smaller than 9.0.0.0"
+        );
+        assert_eq!(dropped[0].dropped_version, "9.0.0.0");
+    }
+
+    /// Byte-identical duplicate: same GUID, SAME version, present twice
+    /// (e.g. the identical file physically copied into two scanned
+    /// `.alpackages` folders). Must dedup cleanly to exactly one survivor —
+    /// this is the input-side half of the H-2 fix that prevents
+    /// `abi_overload_collapsed` poisoning downstream (see
+    /// `program::build::dedup_routines_preserving_genuine_overloads`'s
+    /// `abi_sig_fp_collision_marks_survivor_collapsed`, which proves what
+    /// happens if a duplicate DOES reach ingestion — this test proves it
+    /// never will).
+    #[test]
+    fn dedup_collapses_byte_identical_duplicate_pair_to_one_survivor() {
+        let deps = vec![
+            resolved_dep(
+                "33333333-0000-0000-0000-000000000003",
+                "SameVerApp",
+                "1.0.0.0",
+                "/alpackages/a/Pub_SameVerApp_1.0.0.0.app",
+            ),
+            resolved_dep(
+                "33333333-0000-0000-0000-000000000003",
+                "SameVerApp",
+                "1.0.0.0",
+                "/alpackages/b/Pub_SameVerApp_1.0.0.0.app",
+            ),
+        ];
+
+        let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
+
+        assert_eq!(
+            kept.len(),
+            1,
+            "a byte-identical duplicate (same GUID, same version) must \
+             collapse to exactly one survivor"
+        );
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].kept_version, dropped[0].dropped_version);
+    }
+
+    /// GUID-less entries (a malformed/legacy manifest) are never deduped
+    /// against each other — fail-closed: without a real identity, collapsing
+    /// two coincidentally-similar entries risks silently merging two
+    /// GENUINELY different apps.
+    #[test]
+    fn dedup_never_merges_guid_less_entries() {
+        let deps = vec![
+            resolved_dep("", "NoGuidApp", "1.0.0.0", "/alpackages/a.app"),
+            resolved_dep("", "NoGuidApp", "1.0.0.0", "/alpackages/b.app"),
+        ];
+
+        let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
+
+        assert_eq!(
+            kept.len(),
+            2,
+            "GUID-less entries must never be collapsed against each other"
+        );
+        assert!(dropped.is_empty());
+    }
+
+    /// Control: a single entry per GUID (the ordinary, non-duplicated case)
+    /// passes through untouched with no diagnostic.
+    #[test]
+    fn dedup_no_op_when_every_guid_is_unique() {
+        let deps = vec![
+            resolved_dep(
+                "44444444-0000-0000-0000-000000000004",
+                "AppA",
+                "1.0.0.0",
+                "/alpackages/AppA.app",
+            ),
+            resolved_dep(
+                "55555555-0000-0000-0000-000000000005",
+                "AppB",
+                "2.0.0.0",
+                "/alpackages/AppB.app",
+            ),
+        ];
+
+        let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
+
+        assert_eq!(kept.len(), 2);
+        assert!(dropped.is_empty());
     }
 
     #[test]

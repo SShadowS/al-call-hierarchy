@@ -404,6 +404,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **Duplicate dependency `.app` versions silently picked the stale one, or
+  poisoned an entire app's ABI (H-2, Tier-1 remediation Task T1.2).**
+  `dependencies::load_all_apps` scans EVERY `.alpackages` folder reachable by
+  walking up the directory tree (own + every ancestor, e.g. for a monorepo's
+  shared package cache) and parsed every `.app` found with no GUID-level
+  dedup at all; the only dedup was by exact canonical PATH. Two consequences:
+  (1) `program::build::build_program_graph`'s dependency-closure GUID match
+  (`by_guid.find(...)`) bound to whichever version happened to sort first in
+  `load_all_apps`'s final ordering — sorted by raw STRING comparison on the
+  version field (the "purely a stable tiebreak" doc comment was false: sorting
+  ascending and taking the first match always favors the LOWEST version, e.g.
+  a stale ancestor-folder copy silently won over the correct local one); (2)
+  the SAME version physically present twice (a file copied into two scanned
+  folders) ingested TWICE, producing IDENTICAL `RoutineNodeId`s for every one
+  of that app's ABI routines — `dedup_routines_preserving_genuine_overloads`
+  then marked EVERY survivor `abi_overload_collapsed`, declining the entire
+  app's routines for chain-typing and plain dispatch alike. Fixed with a new
+  `dependencies::dedup_by_guid_keep_highest_version`, wired into
+  `load_all_apps` itself (protecting every caller uniformly): collapses every
+  non-empty-GUID group down to its highest-version survivor (via the existing
+  numeric `compare_versions`, never raw-string comparison), naming every
+  dropped file in a new `DroppedDuplicateDependency` diagnostic;
+  GUID-less entries (malformed/legacy manifests) are never merged against
+  each other (fail-closed — no real identity to prove they're the same app).
+  `load_all_apps`'s own final sort is also fixed to compare versions
+  numerically (`parse_version`) instead of lexicographically, making its
+  determinism-tiebreak comment honest again now that at most one entry per
+  GUID survives to reach it. `SnapshotBuilder::build` gains a
+  `build_with_diagnostics` sibling that surfaces the dropped-duplicate list to
+  callers that want it (`build` itself is an unchanged thin wrapper).
+  `indexer.rs`'s legacy `index_dependencies` path now logs every drop instead
+  of silently absorbing the signature change. `program::build::
+  build_program_graph`'s GUID-based dependency-closure matcher is documented
+  (not yet behavior-changed) as still not consulting a specific edge's
+  MinVersion once dedup leaves at most one candidate per GUID — a narrower,
+  separate soundness question left open deliberately rather than risk
+  trading a real match for a stricter decline on unconfirmed real-world data.
 - **Dependency ABI ingestion silently dropped every `local`/`internal` routine,
   orphaning event-subscriber wiring and making the InternalsVisibleTo friend
   map inert for SymbolOnly deps (H-1, Tier-1 remediation Task T1.2).**

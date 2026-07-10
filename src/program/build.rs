@@ -75,6 +75,24 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
             // Match the dep to a snapshot app: GUID is globally unique and tried
             // first; fall through to name (case-insensitive) + version when no
             // GUID match (e.g. a snapshot unit whose manifest GUID was unavailable).
+            //
+            // H-2 note (Tier-1 remediation, Task T1.2): `snap.apps` is now
+            // GUID-deduped upstream — `dependencies::load_all_apps` collapses
+            // every physically-discovered `.app` to at most one survivor per
+            // non-empty GUID (the highest available version) BEFORE the
+            // snapshot is built (see `SnapshotBuilder::build_with_diagnostics`
+            // and `dependencies::dedup_by_guid_keep_highest_version`'s doc).
+            // So `.find(...)` below can match at most one candidate per GUID —
+            // the prior "first match in a version-lexicographic-sorted list"
+            // stale-wins hazard is closed at the source. `dep.version` (the
+            // MinVersion this specific edge requires) is still NOT consulted
+            // here: if the one surviving version undercuts it, this still
+            // binds anyway rather than declining. Left as-is deliberately —
+            // enforcing it would mean FALLING BACK to "not in closure" for a
+            // real dependency purely because the newest AVAILABLE `.app`
+            // happens to be older than a MinVersion string, which is a
+            // distinct, unconfirmed-on-real-data soundness/coverage
+            // trade-off, not part of this fix's scope.
             let by_guid = (!dep.app_id.is_empty())
                 .then(|| {
                     snap.apps
