@@ -169,6 +169,13 @@ path = "src/bin/mint-goldens.rs"
 name = "telemetry_hot_path"
 harness = false
 
+# T0.5: the legacy LSP call-hierarchy pipeline (initial index, the 3
+# call-hierarchy query handlers, single-file reindex) — the surface
+# CLAUDE.md's Performance Targets table describes.
+[[bench]]
+name = "lsp_pipeline"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1

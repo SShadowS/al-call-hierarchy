@@ -67,14 +67,21 @@ AL Source Files → Tree-sitter Parser (language.rs) → Parsed Definitions/Call
 
 ## Performance Targets
 
-| Operation | Target |
-|-----------|--------|
-| Initial index (100 files) | < 500ms |
-| Initial index (1000 files) | < 2s |
-| prepareCallHierarchy | < 1ms |
-| incomingCalls | < 1ms |
-| outgoingCalls | < 1ms |
-| File change update | < 50ms |
+Measured by `cargo bench --bench lsp_pipeline` (Criterion; `benches/lsp_pipeline.rs`)
+against a deterministic synthetic corpus (`tests/perf_support/`) — 1000 codeunits with
+real cross-file call fan-in/fan-out for the query/reindex rows. A release-only CI gate
+(`tests/perf_bounds.rs`, wired into `.github/workflows/ci.yml`) asserts every operation
+stays within 3x its target on every PR, so an order-of-magnitude regression fails loudly
+even though the day-to-day numbers below have wide headroom.
+
+| Operation | Target | Measured (2026-07-10, dev machine) |
+|-----------|--------|-------------------------------------|
+| Initial index (100 files) | < 500ms | ~1.97ms |
+| Initial index (1000 files) | < 2s | ~15.9ms |
+| prepareCallHierarchy | < 1ms | ~893ns |
+| incomingCalls (1000-file graph, 999-way fan-in) | < 1ms | ~399µs |
+| outgoingCalls (1000-file graph) | < 1ms | ~1.9µs |
+| File change update (single-file reindex, 1000-file graph) | < 50ms | ~197µs |
 
 ## Key Data Structures
 
