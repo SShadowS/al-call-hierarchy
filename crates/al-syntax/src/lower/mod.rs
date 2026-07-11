@@ -84,6 +84,22 @@ fn is_preproc_wrapper(n: RawNode) -> bool {
     n.kind_str().starts_with("preproc_conditional")
 }
 
+/// Non-trivia named children, in document order — the ONE shared filter for every
+/// positional argument/child-list read (H-8, Tier-1.4 preproc plan). A `comment` /
+/// `multiline_comment` is a legal named child almost anywhere (grammar `extra`), so a
+/// bare `named_children()` scan silently lets it occupy a real positional slot: as the
+/// sole child of a `parenthesized_expression` (replacing the real inner expression), as
+/// a phantom argument in a `call_expression`'s `argument_list` (breaking arity-exact
+/// dispatch), or in an `[Attribute(...)]`'s `attribute_argument_list` (shifting every
+/// later positional read — e.g. `parse_event_subscriber_ir`'s `attr.args[N]` — silently
+/// unregistering the whole construct). Every one of those sites now goes through here.
+fn structural_children(node: RawNode) -> Vec<RawNode> {
+    node.named_children()
+        .into_iter()
+        .filter(|c| crate::schema::class_of(c.kind()) != crate::schema::Class::Trivia)
+        .collect()
+}
+
 fn object_kind_of(k: RawKind) -> Option<ObjectKind> {
     use ObjectKind as O;
     Some(match k {
@@ -497,7 +513,27 @@ fn collect_routines<'t>(
     for child in node.named_children() {
         match child.kind() {
             RawKind::AttributeItem => pending.push(child),
-            RawKind::Procedure | RawKind::TriggerDeclaration | RawKind::InterfaceProcedure => {
+            RawKind::Procedure
+            | RawKind::TriggerDeclaration
+            | RawKind::InterfaceProcedure
+            // `preproc_split_procedure` / `preproc_split_procedure_preamble` (H-6, Tier-1.4
+            // preproc plan): a procedure whose HEADER (signature, and for the `_preamble`
+            // variant also its `var` section) differs across `#if`/`#elif`/`#else` branches
+            // but shares ONE body compiled into every build. Both `_procedure_header` and
+            // `_routine_regular_body` are grammar-INLINED sub-rules, so their `field('name',
+            // ..)` / `field('parameters', ..)` / `field('body', ..)` tags flatten straight
+            // onto the wrapper node — repeated once per branch for name/parameters (VERIFIED
+            // against the pinned grammar: `.field()` returns the FIRST match, mirroring the
+            // already-established first-branch-wins policy `PreprocSplitDeclaration` uses for
+            // object name/id) and ONCE (shared, after `#endif`) for `preproc_split_procedure`'s
+            // body. Previously matched only the `_` catch-all below, which recurses without
+            // ever emitting a `RoutineDecl` — the ENTIRE shared body (including calls that
+            // compile into every build) had no routine, no edges, no diagnostics: the
+            // fleet-confirmed H-6 defect. `lower_routine`'s body extraction has a dedicated
+            // fallback for `preproc_split_procedure_preamble`, whose trailing `code_block` is
+            // a BARE child (no `body` field) — see that fallback's doc.
+            | RawKind::PreprocSplitProcedure
+            | RawKind::PreprocSplitProcedurePreamble => {
                 // `interface_procedure` (receiver-closure plan, Task 1): a SIGNATURE-ONLY
                 // procedure declaration — no body, no access modifier — used by BOTH
                 // `interface_body` and `controladdin_body` (the same grammar rule; a
@@ -672,7 +708,10 @@ fn lower_routine<'t>(
         if let Some(args_node) = content.field(FieldName::Arguments) {
             for list in args_node.named_children() {
                 if list.kind() == RawKind::AttributeArgumentList {
-                    for arg in list.named_children() {
+                    // H-8: a comment interleaved between args must never occupy a
+                    // positional slot — see `structural_children`'s doc (the
+                    // `[EventSubscriber(...)]` silent-unregister case this fixes).
+                    for arg in structural_children(list) {
                         args.push(lower_expr(arg, ir, issues, source));
                     }
                 }
@@ -759,6 +798,22 @@ fn lower_routine<'t>(
     let body = node
         .field(FieldName::Body)
         .filter(|b| b.kind() == RawKind::CodeBlock)
+        .or_else(|| {
+            // `preproc_split_procedure_preamble` (H-6): unlike `_routine_regular_body`'s
+            // `field('body', $.code_block)`, this shape's shared trailing `code_block` (the
+            // ONE body after `#endif`) is a BARE child with no field tag at all — VERIFIED
+            // against the pinned grammar (`tree-sitter parse`), so `.field(Body)` above always
+            // misses it for this one kind. Fall back to the last `CodeBlock`-kind child (there
+            // is exactly one, by construction).
+            if node.kind() == RawKind::PreprocSplitProcedurePreamble {
+                node.named_children()
+                    .into_iter()
+                    .rev()
+                    .find(|c| c.kind() == RawKind::CodeBlock)
+            } else {
+                None
+            }
+        })
         .map(|cb| lower_code_block(cb, ir, issues, source));
 
     RoutineDecl {
@@ -924,7 +979,12 @@ fn lower_block_child(
     // statements — skip them, exactly as legacy `block_statements`/CFN `build_block` do.
     // Trivia (`comment` / `multiline_comment` / `pragma`) are named children of a
     // block but are NOT statements — skip them (legacy CFN `build_block` does too).
-    // Lowering them as `Unknown` produced phantom "other" CFN nodes.
+    // Lowering them as `Unknown` produced phantom "other" CFN nodes. `#region`/
+    // `#endregion` (H-7, Tier-1.4 preproc plan) are the same kind of pure editor-fold
+    // marker — previously MISSING here, so one reaching this point fell through to
+    // `lower_stmt`'s catch-all and became a phantom `Unknown` statement with a
+    // misleading "unlowered statement" issue for a marker that carries no content at
+    // all.
     if matches!(
         node.kind(),
         RawKind::EmptyStatement
@@ -945,6 +1005,8 @@ fn lower_block_child(
             | RawKind::Comment
             | RawKind::MultilineComment
             | RawKind::Pragma
+            | RawKind::PreprocRegion
+            | RawKind::PreprocEndregion
     ) {
         return;
     }
@@ -1075,15 +1137,169 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         RawKind::BreakStatement => StmtKind::Break,
         RawKind::ContinueStatement => StmtKind::Continue,
         RawKind::CodeBlock => StmtKind::Block(lower_code_block(node, ir, issues, source)),
-        _ => {
-            issues.push(SyntaxIssue {
-                message: format!("unlowered statement `{}`", node.kind_str()),
-                origin: origin.clone(),
-            });
-            StmtKind::Unknown
-        }
+        _ => lower_unmodelled_stmt(node, &origin, ir, issues, source),
     };
     ir.add_stmt(Stmt { kind, origin })
+}
+
+/// Preprocessor directive/marker nodes belonging to a preproc-split/guarded statement
+/// wrapper (H-7, Tier-1.4 preproc plan) that never carry lowerable AL content
+/// themselves: the `#if`/`#elif`/`#else`/`#endif` directive tokens (their OWN
+/// `condition` field is a preprocessor-SYMBOL expression — `preproc_and_expression` /
+/// `preproc_or_expression` / `preproc_not_expression` — never real AL code, since it
+/// evaluates macro symbols like `CLEAN24`, not AL identifiers) and the `begin`/`end`
+/// split markers used by the flat `if...then begin`-family constructs.
+fn is_preproc_scaffold(k: RawKind) -> bool {
+    matches!(
+        k,
+        RawKind::PreprocIf
+            | RawKind::PreprocElif
+            | RawKind::PreprocElse
+            | RawKind::PreprocEndif
+            | RawKind::PreprocSplitBegin
+            | RawKind::PreprocSplitEnd
+            | RawKind::PreprocSplitBraceClose
+            | RawKind::PreprocSplitBraceCloseIfOnly
+    )
+}
+
+/// Recover a preproc-split/guarded STATEMENT-position construct (H-7, Tier-1.4 preproc
+/// plan) — the nine grammar shapes `lower_stmt`'s main match does not natively model
+/// (`preproc_split_if_statement`, `preproc_guarded_statement`,
+/// `preproc_split_if_else_statement`, `preproc_split_if_then_begin`,
+/// `preproc_split_if_begin_asymmetric`, `preproc_split_if_then_begin_else_shared`,
+/// `preproc_split_if_begin_else`, `preproc_split_call_statement`,
+/// `preproc_split_code_block_end`). Never a silent drop: a `SyntaxIssue` is always
+/// recorded (this is never the ordinary path), but the returned `StmtKind` still
+/// carries every call the shared, always-compiled source contains.
+///
+/// Three shapes get PRECISE modelling:
+/// - `preproc_split_call_statement` is unambiguously a single call by construction (its
+///   argument list, not its identity, is what's split) — the callee is the first
+///   non-scaffold child, every remaining non-scaffold child is a unioned argument —
+///   reconstructed as a real `StmtKind::Call`.
+/// - `preproc_split_if_statement` / `preproc_guarded_statement` /
+///   `preproc_split_if_else_statement` expose clean `condition` / `then_branch` /
+///   `else_branch` fields (flattened up from their inlined `_preproc_if_header` /
+///   `_then_branch` / `_else_branch` sub-rules — VERIFIED against the pinned grammar).
+///   `condition`/`then_branch` may repeat once per `#if`/`#elif`/`#else` arm; `.field()`
+///   takes the FIRST, mirroring the established first-branch-wins policy
+///   (`PreprocSplitDeclaration`'s name/id resolution). Reconstructed as a real
+///   `StmtKind::If`, indistinguishable from an ordinary `if`.
+///
+/// Everything else — the remaining begin/end-fragmented shapes
+/// (`preproc_split_if_then_begin` and its asymmetric/shared/begin-else siblings,
+/// `preproc_split_code_block_end`), any arm's content NOT consumed by the `If`
+/// reconstruction above (extra `#elif`/`#else` arms, `preproc_guarded_statement`'s
+/// leading guard statements, a `preproc_fragmented_else_tail`), and any other
+/// genuinely-unmodelled preproc/unknown statement kind — holds its content as a FLAT
+/// `repeat($._statement)` run with no field boundary: every leftover non-scaffold,
+/// non-trivia child is recovered generically through [`lower_block_child`] (the SAME
+/// dispatcher real block content uses), so a nested call is never lost even though the
+/// exact conditional shape (which statement belongs to which `#if` arm) is not
+/// preserved. Genuinely empty recoveries (no leftover content, no `If`) stay
+/// `StmtKind::Unknown` — never a fabricated empty block.
+fn lower_unmodelled_stmt(
+    node: RawNode,
+    origin: &Origin,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> StmtKind {
+    issues.push(SyntaxIssue {
+        message: format!(
+            "unlowered statement `{}` — recovering shared content for call-graph \
+             completeness (exact preprocessor-conditional control flow not modelled)",
+            node.kind_str()
+        ),
+        origin: origin.clone(),
+    });
+
+    if node.kind() == RawKind::PreprocSplitCallStatement {
+        let mut children = structural_children(node)
+            .into_iter()
+            .filter(|c| !is_preproc_scaffold(c.kind()));
+        return match children.next() {
+            Some(callee) => {
+                let function = lower_expr(callee, ir, issues, source);
+                let args = children
+                    .map(|a| lower_expr(a, ir, issues, source))
+                    .collect();
+                let call = ir.add_expr(Expr {
+                    kind: ExprKind::Call { function, args },
+                    origin: origin.clone(),
+                });
+                StmtKind::Call(call)
+            }
+            None => StmtKind::Unknown,
+        };
+    }
+
+    let if_shape = matches!(
+        node.kind(),
+        RawKind::PreprocSplitIfStatement
+            | RawKind::PreprocGuardedStatement
+            | RawKind::PreprocSplitIfElseStatement
+    );
+    let cond_node = if if_shape {
+        node.field(FieldName::Condition)
+    } else {
+        None
+    };
+    let then_node = if if_shape {
+        node.field(FieldName::ThenBranch)
+    } else {
+        None
+    };
+    let else_node = if if_shape {
+        node.field(FieldName::ElseBranch)
+    } else {
+        None
+    };
+    let reconstructed_if = then_node.map(|_| StmtKind::If {
+        cond: match cond_node {
+            Some(c) => lower_expr(c, ir, issues, source),
+            None => ir.add_expr(Expr {
+                kind: ExprKind::Unknown,
+                origin: origin.clone(),
+            }),
+        },
+        then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source),
+        else_block: else_node.map(|b| lower_branch(b, ir, issues, source)),
+    });
+    let consumed_ids: [Option<usize>; 3] = [
+        cond_node.map(|n| n.id()),
+        then_node.map(|n| n.id()),
+        else_node.map(|n| n.id()),
+    ];
+
+    let mut items = Vec::new();
+    for c in structural_children(node) {
+        if is_preproc_scaffold(c.kind()) || consumed_ids.contains(&Some(c.id())) {
+            continue;
+        }
+        lower_block_child(c, ir, issues, source, &mut items);
+    }
+
+    match (reconstructed_if, items.is_empty()) {
+        (Some(if_kind), true) => if_kind,
+        (Some(if_kind), false) => {
+            let if_id = ir.add_stmt(Stmt {
+                kind: if_kind,
+                origin: origin.clone(),
+            });
+            items.push(BlockItem::Stmt(if_id));
+            StmtKind::Block(ir.add_block(Block {
+                items,
+                origin: origin.clone(),
+            }))
+        }
+        (None, true) => StmtKind::Unknown,
+        (None, false) => StmtKind::Block(ir.add_block(Block {
+            items,
+            origin: origin.clone(),
+        })),
+    }
 }
 
 /// Lower `case_body` → (branches, else block).
@@ -1095,51 +1311,153 @@ fn lower_case_body(
 ) -> (Vec<CaseBranch>, Option<BlockId>) {
     let mut branches = Vec::new();
     let mut else_block = None;
-    // Branches live under the `case_body`; each `case_branch` has a `body` field.
     if let Some(body) = case_node.field(FieldName::Body) {
-        for child in body.named_children() {
-            if child.kind() == RawKind::CaseBranch {
-                // The `pattern` field now binds a single value node per branch value
-                // (grammar rule `_case_pattern_item`), so the `,` separators are NOT
-                // tagged `pattern`. The `is_named()` filter is kept as defense-in-depth:
-                // an anonymous `,` token has no `RawKind` and would panic in `lower_expr`.
-                let patterns = child
-                    .children_by_field(FieldName::Pattern)
-                    .into_iter()
-                    .filter(|p| p.is_named())
-                    .map(|p| lower_expr(p, ir, issues, source))
-                    .collect();
-                let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
-                branches.push(CaseBranch {
-                    patterns,
-                    body,
-                    origin: origin_of(child),
-                });
-            }
-        }
+        collect_case_branches(body, ir, issues, source, &mut branches, &mut else_block);
     }
-    // The `case_else_branch` is a DIRECT child of the case_statement (not under
-    // case_body) and holds its content as direct children (the `else` keyword + a
-    // `code_block` or bare statements; no `body` field). Lower it like a branch body:
-    // a SOLE `code_block`/`statement_block` is unwrapped (`lower_branch`) so we don't
-    // double-nest a block inside the else block — matching then/loop branches and the
-    // legacy CFN, which builds the code_block child directly.
-    if let Some(else_node) = case_node
-        .named_children()
-        .into_iter()
-        .find(|c| c.kind() == RawKind::CaseElseBranch)
-    {
-        let content: Vec<RawNode> = else_node
+    // The UNCONDITIONAL `case_else_branch` is a DIRECT child of `case_statement` itself
+    // (not `case_body`) — only consulted when no `#if`-nested else was already found by
+    // `collect_case_branches` (first-match-wins, mirroring `PreprocSplitDeclaration`'s
+    // established name/id policy; an unconditional else AND a conditional nested else
+    // together in the same `case` is legal AL but vanishingly rare).
+    if else_block.is_none()
+        && let Some(else_node) = case_node
             .named_children()
             .into_iter()
-            .filter(|c| c.kind() != RawKind::ElseKeyword)
-            .collect();
-        else_block = Some(match content.as_slice() {
-            [only] => lower_branch(*only, ir, issues, source),
-            _ => lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source),
-        });
+            .find(|c| c.kind() == RawKind::CaseElseBranch)
+    {
+        else_block = Some(lower_case_else_branch(else_node, ir, issues, source));
     }
     (branches, else_block)
+}
+
+/// Recursive worker for [`lower_case_body`] (H-7, Tier-1.4 preproc plan): walks one
+/// `case_body` — or, recursively, one `preproc_conditional_case`'s own flat child list
+/// (the grammar does not re-nest per `#if`/`#elif`/`#else` arm) — collecting every
+/// branch additively (mirrors the established `implements`-list union-read policy: a
+/// branch reachable in AT LEAST one build is a sound over-approximation to include) and
+/// the singular `else_block` first-match-wins.
+fn collect_case_branches(
+    node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+    branches: &mut Vec<CaseBranch>,
+    else_block: &mut Option<BlockId>,
+) {
+    for child in node.named_children() {
+        match child.kind() {
+            RawKind::CaseBranch => push_case_branch(child, ir, issues, source, branches),
+            RawKind::CaseElseBranch => {
+                if else_block.is_none() {
+                    *else_block = Some(lower_case_else_branch(child, ir, issues, source));
+                }
+            }
+            // `#if`-conditional case content: every arm's `case_branch`/`case_else_branch`
+            // children are direct, FLAT children of this ONE wrapper (VERIFIED against the
+            // pinned grammar — `preproc_conditional_case` is not re-nested per arm) —
+            // union-read, recurse into the same wrapper node. Previously unmatched here
+            // (silently skipped, no trace at all — worse than an empty branch).
+            RawKind::PreprocConditionalCase => {
+                collect_case_branches(child, ir, issues, source, branches, else_block);
+            }
+            // "#if adds complete branches + provides a header for the next shared branch":
+            // any direct `case_branch` children are complete extra branches (additive,
+            // real pattern+body of their own); the wrapper's OWN flattened `pattern`
+            // fields (unioned across every `#if`/`#elif`/`#else` arm's header-only
+            // pattern, plus the shared trailing pattern) plus its single shared `body`
+            // field make ONE more branch. Previously unmatched here (same silent-skip as
+            // above).
+            RawKind::PreprocSplitCaseExtended => {
+                for extra in child
+                    .named_children()
+                    .into_iter()
+                    .filter(|c| c.kind() == RawKind::CaseBranch)
+                {
+                    push_case_branch(extra, ir, issues, source, branches);
+                }
+                let patterns = case_patterns(child, ir, issues, source);
+                if !patterns.is_empty() || child.field(FieldName::Body).is_some() {
+                    let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
+                    branches.push(CaseBranch {
+                        patterns,
+                        body,
+                        origin: origin_of(child),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// One `case_branch` → a `CaseBranch`. The grammar's `preproc_split_case_branch`
+/// alternative still wraps its content in an OUTER `case_branch` node (VERIFIED against
+/// the pinned grammar with `tree-sitter parse` — a `choice()` alternative that is
+/// itself a single named symbol is NOT unwrapped here), so the outer node's OWN
+/// `pattern`/`body` fields are unset in that case — reading them directly fabricates an
+/// empty branch (the fleet-confirmed H-7 defect). Descend to the nested
+/// `preproc_split_case_branch` (whose flattened `pattern` fields already union every
+/// `#if`-arm's extra patterns with the shared trailing pattern, and whose `body` field
+/// is the single shared body) before reading fields.
+fn push_case_branch(
+    case_branch_node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+    branches: &mut Vec<CaseBranch>,
+) {
+    let effective = case_branch_node
+        .named_children()
+        .into_iter()
+        .find(|c| c.kind() == RawKind::PreprocSplitCaseBranch)
+        .unwrap_or(case_branch_node);
+    let patterns = case_patterns(effective, ir, issues, source);
+    let body = lower_branch_field(effective, FieldName::Body, ir, issues, source);
+    branches.push(CaseBranch {
+        patterns,
+        body,
+        origin: origin_of(case_branch_node),
+    });
+}
+
+/// A branch/extended-split node's `pattern` field values. The `pattern` field binds a
+/// single value node per branch value (grammar rule `_case_pattern_item`), so the `,`
+/// separators are NOT tagged `pattern`. The `is_named()` filter is kept as
+/// defense-in-depth: an anonymous `,` token has no `RawKind` and would panic in
+/// `lower_expr`.
+fn case_patterns(
+    node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> Vec<ExprId> {
+    node.children_by_field(FieldName::Pattern)
+        .into_iter()
+        .filter(|p| p.is_named())
+        .map(|p| lower_expr(p, ir, issues, source))
+        .collect()
+}
+
+/// A `case_else_branch`'s content (the `else` keyword + a `code_block` or bare
+/// statements; no `body` field). Lower it like a branch body: a SOLE
+/// `code_block`/`statement_block` is unwrapped (`lower_branch`) so we don't double-nest
+/// a block inside the else block — matching then/loop branches and the legacy CFN,
+/// which builds the code_block child directly.
+fn lower_case_else_branch(
+    else_node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> BlockId {
+    let content: Vec<RawNode> = else_node
+        .named_children()
+        .into_iter()
+        .filter(|c| c.kind() != RawKind::ElseKeyword)
+        .collect();
+    match content.as_slice() {
+        [only] => lower_branch(*only, ir, issues, source),
+        _ => lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source),
+    }
 }
 
 /// Lower a required-expression field; missing → `Unknown` placeholder (recorded).
@@ -1208,10 +1526,12 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         }
         RawKind::CallExpression => {
             let function = lower_opt_field(node, FieldName::Function, ir, issues, source);
+            // H-8: a mid-argument comment (`P(a, /* c */ b)`) must never become a
+            // phantom `Unknown` argument — see `structural_children`'s doc.
             let args = node
                 .field(FieldName::Arguments)
                 .map(|al| {
-                    al.named_children()
+                    structural_children(al)
                         .into_iter()
                         .map(|a| lower_expr(a, ir, issues, source))
                         .collect()
@@ -1223,7 +1543,9 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             base: lower_opt_field(node, FieldName::Object, ir, issues, source),
             index: lower_opt_field(node, FieldName::Index, ir, issues, source),
         },
-        RawKind::ParenthesizedExpression => match node.named_children().into_iter().next() {
+        // H-8: a leading comment (`(/* c */ Expr)`) must never be mistaken for the
+        // real inner expression — see `structural_children`'s doc.
+        RawKind::ParenthesizedExpression => match structural_children(node).into_iter().next() {
             Some(inner) => ExprKind::Parenthesized(lower_expr(inner, ir, issues, source)),
             None => ExprKind::Unknown,
         },
@@ -1264,10 +1586,8 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             // Unmodelled expression container (in/is/as expression, list_literal,
             // ternary, …): lower its non-trivia children so nested calls/members are
             // still captured in the arena (completeness). The node itself is Unknown.
-            for c in node.named_children() {
-                if crate::schema::class_of(c.kind()) != crate::schema::Class::Trivia {
-                    lower_expr(c, ir, issues, source);
-                }
+            for c in structural_children(node) {
+                lower_expr(c, ir, issues, source);
             }
             ExprKind::Unknown
         }
@@ -2045,5 +2365,329 @@ codeunit 50100 "My Codeunit"
         let r = &obj.routines[0];
         assert_eq!(r.return_name, None);
         assert_eq!(r.return_type, None);
+    }
+
+    // ── Task T1.4 (deep-review-t1-4): preproc-split/guarded lowering + trivia ──
+
+    /// Whether a `Call` targeting the bare identifier `name` is reachable by walking
+    /// `Block`/`Stmt` LINKAGE from `start` — mirrors the engine's `walk_block_v2`/
+    /// `walk_stmt_v2` (`src/program/resolve/extract.rs`) closely enough to prove a fix
+    /// produces a DISCOVERABLE edge, not just an arena-orphaned node (the real
+    /// call-graph walker only ever follows `Block.items`/`StmtKind` linkage, never a
+    /// bare arena scan).
+    fn call_reachable(af: &crate::ir::AlFile, start: crate::ir::BlockId, name: &str) -> bool {
+        fn expr_is_call_to(af: &crate::ir::AlFile, id: crate::ir::ExprId, name: &str) -> bool {
+            match &af.ir.expr(id).kind {
+                ExprKind::Call { function, .. } => matches!(
+                    &af.ir.expr(*function).kind,
+                    ExprKind::Identifier(n) if n.eq_ignore_ascii_case(name)
+                ),
+                _ => false,
+            }
+        }
+        fn walk_block(af: &crate::ir::AlFile, b: crate::ir::BlockId, name: &str) -> bool {
+            af.ir.block(b).items.iter().any(|item| match item {
+                crate::ir::BlockItem::Stmt(sid) => walk_stmt(af, &af.ir.stmt(*sid).kind, name),
+                crate::ir::BlockItem::Preproc(g) => {
+                    g.branches.iter().any(|bb| walk_block(af, *bb, name))
+                }
+            })
+        }
+        fn walk_stmt(af: &crate::ir::AlFile, kind: &StmtKind, name: &str) -> bool {
+            match kind {
+                StmtKind::Call(eid) => expr_is_call_to(af, *eid, name),
+                StmtKind::If {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    walk_block(af, *then_block, name)
+                        || else_block.is_some_and(|b| walk_block(af, b, name))
+                }
+                StmtKind::Block(b) => walk_block(af, *b, name),
+                StmtKind::Case {
+                    branches,
+                    else_block,
+                    ..
+                } => {
+                    branches.iter().any(|br| walk_block(af, br.body, name))
+                        || else_block.is_some_and(|b| walk_block(af, b, name))
+                }
+                StmtKind::While { body, .. }
+                | StmtKind::Repeat { body, .. }
+                | StmtKind::For { body, .. }
+                | StmtKind::Foreach { body, .. }
+                | StmtKind::With { body, .. }
+                | StmtKind::AssertError(body) => walk_block(af, *body, name),
+                StmtKind::Try { body, catch_block } => {
+                    walk_block(af, *body, name)
+                        || catch_block.is_some_and(|b| walk_block(af, b, name))
+                }
+                _ => false,
+            }
+        }
+        walk_block(af, start, name)
+    }
+
+    /// H-6: `preproc_split_procedure` — the procedure header differs across `#if`/
+    /// `#else` branches but the body (after `#endif`) is SHARED, compiled into every
+    /// build. Pre-fix, this fell into `collect_routines`'s `_` catch-all (recurses
+    /// without ever creating a `RoutineDecl`) — the routine, and the call in its
+    /// shared body, silently ceased to exist: no routine, no edge, no diagnostic.
+    #[test]
+    fn preproc_split_procedure_shared_body_call_is_reachable() {
+        let src = r#"
+codeunit 50100 T
+{
+#if DEBUGMODE
+    procedure Foo(A: Integer)
+#else
+    procedure Foo(A: Integer; B: Integer)
+#endif
+    begin
+        DoWork(A);
+    end;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        let r = obj
+            .routines
+            .iter()
+            .find(|r| r.name == "Foo")
+            .expect("preproc_split_procedure must yield a RoutineDecl named Foo");
+        let body = r.body.expect("shared body must be lowered");
+        assert!(
+            call_reachable(&af, body, "DoWork"),
+            "the shared body's call must be a discoverable edge"
+        );
+    }
+
+    /// H-6: `preproc_split_procedure_preamble` — header AND `var` section differ
+    /// across branches; the shared `code_block` (after `#endif`) has NO `body` field
+    /// at all (VERIFIED against the pinned grammar with `tree-sitter parse`) — a
+    /// stricter variant of the same defect, needing `lower_routine`'s dedicated
+    /// CodeBlock fallback.
+    #[test]
+    fn preproc_split_procedure_preamble_shared_body_call_is_reachable() {
+        let src = r#"
+codeunit 50101 T
+{
+#if DEBUGMODE
+    procedure Foo(A: Integer)
+    var
+        X: Integer;
+#else
+    procedure Foo(A: Integer; B: Integer)
+#endif
+    begin
+        DoWork(A);
+    end;
+}
+"#;
+        let af = parse(src);
+        let obj = &af.objects[0];
+        let r = obj
+            .routines
+            .iter()
+            .find(|r| r.name == "Foo")
+            .expect("preproc_split_procedure_preamble must yield a RoutineDecl named Foo");
+        let body = r
+            .body
+            .expect("shared body must be lowered via the CodeBlock fallback");
+        assert!(call_reachable(&af, body, "DoWork"));
+    }
+
+    /// H-7: `preproc_conditional_case` — a whole extra case branch gated behind
+    /// `#if`, nested INSIDE `case_body` (not a direct child of `case_statement`).
+    /// Pre-fix, `lower_case_body` matched only plain `CaseBranch` under `case_body`,
+    /// silently skipping this wrapper (and every branch inside it) — worse than an
+    /// empty branch, no trace at all.
+    #[test]
+    fn preproc_conditional_case_branches_are_unioned() {
+        let src = r#"
+codeunit 50102 T
+{
+    procedure P(I: Integer)
+    begin
+        case I of
+#if EXTRA
+            1:
+                DoOne();
+#endif
+            2:
+                DoTwo();
+        end;
+    end;
+}
+"#;
+        let af = parse(src);
+        let (branches, _else) = first_case(&af);
+        assert_eq!(
+            branches.len(),
+            2,
+            "both the conditional branch and the plain branch must be present"
+        );
+    }
+
+    /// H-7: `preproc_split_case_branch` — the grammar's `case_branch` alternative
+    /// still wraps this in an OUTER `case_branch` node whose OWN `pattern`/`body`
+    /// fields are unset (VERIFIED against the pinned grammar); reading them directly
+    /// fabricates an EMPTY branch (the fleet-confirmed defect) instead of descending
+    /// to the nested `preproc_split_case_branch`.
+    #[test]
+    fn preproc_split_case_branch_is_not_an_empty_block() {
+        let src = r#"
+codeunit 50103 T
+{
+    procedure P(I: Integer)
+    begin
+        case I of
+#if EXTRA
+            1,
+#endif
+            2:
+                DoWork();
+            3:
+                DoThree();
+        end;
+    end;
+}
+"#;
+        let af = parse(src);
+        let (branches, _else) = first_case(&af);
+        assert_eq!(branches.len(), 2);
+        assert!(
+            !branches[0].patterns.is_empty(),
+            "the split branch's patterns must not be empty"
+        );
+        assert!(
+            call_reachable(&af, branches[0].body, "DoWork"),
+            "the split branch's shared body call must not be fabricated as an empty block"
+        );
+    }
+
+    /// H-7: statement-position `#if` (`preproc_split_if_statement`) — the `if`'s
+    /// CONDITION differs across `#if`/`#else` branches but the `then`-branch is
+    /// SHARED. Pre-fix, `lower_stmt`'s `_` catch-all recorded an issue and returned
+    /// bare `Unknown` without descending — the call in the shared then-branch had no
+    /// edge. Post-fix this reconstructs a real `StmtKind::If`.
+    #[test]
+    fn preproc_split_if_statement_shared_then_branch_call_is_reachable() {
+        let src = r#"
+codeunit 50104 T
+{
+    procedure P(A: Boolean; B: Boolean)
+    begin
+#if DEBUGMODE
+        if A then
+#else
+        if B then
+#endif
+            DoWork();
+    end;
+}
+"#;
+        let af = parse(src);
+        let r = &af.objects[0].routines[0];
+        let body = r.body.expect("body must be lowered");
+        assert!(call_reachable(&af, body, "DoWork"));
+    }
+
+    /// H-7: `#region`/`#endregion` markers inside a body must never become a phantom
+    /// `Unknown` statement — they are pure editor-fold markers with zero content.
+    #[test]
+    fn region_markers_produce_no_phantom_statement() {
+        let src = r#"
+codeunit 50105 T
+{
+    procedure P()
+    begin
+#region My Region
+        DoWork();
+#endregion
+    end;
+}
+"#;
+        let af = parse(src);
+        let r = &af.objects[0].routines[0];
+        let body = r.body.expect("body must be lowered");
+        assert!(call_reachable(&af, body, "DoWork"));
+        assert!(
+            af.ir
+                .iter_stmts()
+                .all(|s| !matches!(s.kind, StmtKind::Unknown)),
+            "#region/#endregion must never fabricate an Unknown statement"
+        );
+    }
+
+    /// H-8: a leading comment inside parens must not be mistaken for the real inner
+    /// expression (pre-fix: `ParenthesizedExpression`'s first NAMED child was the
+    /// comment, since a comment is a legal named child almost anywhere).
+    #[test]
+    fn parenthesized_leading_comment_does_not_replace_the_expression() {
+        let src = r#"
+codeunit 50106 T
+{
+    procedure P()
+    var
+        X: Integer;
+    begin
+        X := (/* c */ Foo());
+    end;
+}
+"#;
+        let af = parse(src);
+        let found = af.ir.iter_exprs().any(|e| match &e.kind {
+            ExprKind::Parenthesized(inner) => matches!(
+                &af.ir.expr(*inner).kind,
+                ExprKind::Call { function, .. }
+                    if matches!(&af.ir.expr(*function).kind, ExprKind::Identifier(n) if n == "Foo")
+            ),
+            _ => false,
+        });
+        assert!(
+            found,
+            "the parenthesized expression must wrap the real call, not the comment"
+        );
+    }
+
+    /// H-8: a mid-argument comment must not become a phantom `Unknown` argument,
+    /// breaking arity-exact dispatch.
+    #[test]
+    fn mid_argument_comment_does_not_shift_arity() {
+        let src = r#"
+codeunit 50107 T
+{
+    procedure P()
+    begin
+        DoWork(1, /* mid */ 2);
+    end;
+}
+"#;
+        let af = parse(src);
+        let call = af
+            .ir
+            .iter_exprs()
+            .find_map(|e| match &e.kind {
+                ExprKind::Call { function, args }
+                    if matches!(&af.ir.expr(*function).kind, ExprKind::Identifier(n) if n == "DoWork") =>
+                {
+                    Some(args.clone())
+                }
+                _ => None,
+            })
+            .expect("DoWork call must exist");
+        assert_eq!(
+            call.len(),
+            2,
+            "the comment must not count as a third argument"
+        );
+        for &a in &call {
+            assert!(matches!(
+                af.ir.expr(a).kind,
+                ExprKind::Literal(Literal::Int(_))
+            ));
+        }
     }
 }
