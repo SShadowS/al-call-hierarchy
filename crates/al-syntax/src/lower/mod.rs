@@ -13,6 +13,38 @@ use crate::ir::{
 };
 use crate::raw::{FieldName, RawKind, RawNode};
 
+/// Maximum AL syntactic nesting depth (statement or expression) the statement/
+/// expression lowerer will descend into via ordinary recursion.
+///
+/// `lower_stmt` / `lower_expr` (mutually recursive with several plumbing helpers:
+/// `lower_branch`, `lower_code_block`, `lower_stmt_seq`, `lower_block_child`,
+/// `lower_case_body`, `lower_opt_field`, `lower_branch_field`, …) are a classic
+/// recursive-descent walk with no bound of its own — a generated or hostile file
+/// (`x := 1 + 1 + … 50k terms`, or 50k-deep nested `if`) recurses the NATIVE call
+/// stack proportionally to input size, and release builds are `panic=abort`, so a
+/// stack overflow is an uncatchable process kill (T2.1). This budget makes the
+/// caller's big stack (`al_call_hierarchy::big_stack`) belt-and-suspenders rather
+/// than load-bearing: past this depth, lowering fails closed — a `SyntaxIssue` +
+/// `ExprKind::Unknown` / `StmtKind::Unknown` — instead of recursing further.
+///
+/// `depth` counts `lower_stmt` / `lower_expr` stack frames specifically (the two
+/// truly self-recursive functions) — plumbing helpers forward it unchanged — so
+/// it tracks AL syntactic nesting depth, not raw native-frame count.
+///
+/// This repo's other depth-budget precedent (`MAX_CBOR_DEPTH`,
+/// `src/engine/gate/snapshot_deserialize.rs`) uses 256; **measured empirically**
+/// against the actual small-stack red fixture this budget exists for (a 50k-term
+/// binary-expression chain lowered on a 1 MiB thread — the LSP main thread's real
+/// Windows stack size), 256 was NOT safe: an unoptimized debug build's `lower_expr`
+/// / `lower_opt_field` frame pair is large enough that 256 levels came within the
+/// failure margin (crashed at 256, passed at 224). 128 gives a comfortable ~2x
+/// safety margin under that measured boundary, in the WORST case (debug,
+/// unoptimized — a release build's smaller, optimized frames make this even safer
+/// there). Still nowhere near what real AL source nests to, so a legitimate file
+/// never trips it. Re-measure (`cargo test -p al-syntax deep_`) if this recursive
+/// family's frame footprint changes materially.
+const MAX_LOWER_DEPTH: u32 = 128;
+
 /// Lower a parsed file root into the owned IR.
 pub fn lower_file(root: RawNode, source: &str) -> AlFile {
     let parse_status = if root.has_error() {
@@ -712,7 +744,7 @@ fn lower_routine<'t>(
                     // positional slot — see `structural_children`'s doc (the
                     // `[EventSubscriber(...)]` silent-unregister case this fixes).
                     for arg in structural_children(list) {
-                        args.push(lower_expr(arg, ir, issues, source));
+                        args.push(lower_expr(arg, ir, issues, source, 0));
                     }
                 }
             }
@@ -799,7 +831,7 @@ fn lower_routine<'t>(
         .field(FieldName::Body)
         .filter(|b| b.kind() == RawKind::CodeBlock)
     {
-        Some(lower_code_block(cb, ir, issues, source))
+        Some(lower_code_block(cb, ir, issues, source, 0))
     } else if node.kind() == RawKind::PreprocSplitProcedurePreamble {
         // `preproc_split_procedure_preamble` (H-6): unlike `_routine_regular_body`'s
         // `field('body', $.code_block)`, this shape's shared trailing `code_block` (the
@@ -811,7 +843,7 @@ fn lower_routine<'t>(
             .into_iter()
             .rev()
             .find(|c| c.kind() == RawKind::CodeBlock)
-            .map(|cb| lower_code_block(cb, ir, issues, source))
+            .map(|cb| lower_code_block(cb, ir, issues, source, 0))
     } else {
         // `preproc_split_procedure_body` / `preproc_split_complete_body` (T1.4 review,
         // sibling-gap fix): unlike `preproc_split_procedure_preamble` above, `node.kind()`
@@ -830,7 +862,7 @@ fn lower_routine<'t>(
                     RawKind::PreprocSplitProcedureBody | RawKind::PreprocSplitCompleteBody
                 )
             })
-            .map(|wrapper| lower_preproc_split_routine_body(wrapper, ir, issues, source))
+            .map(|wrapper| lower_preproc_split_routine_body(wrapper, ir, issues, source, 0))
     };
 
     RoutineDecl {
@@ -884,12 +916,13 @@ fn lower_preproc_split_routine_body(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> BlockId {
     push_unlowered_issue(wrapper, "routine body", issues);
     let mut items = Vec::new();
     for body in wrapper.children_by_field(FieldName::Body) {
         for child in body.named_children() {
-            lower_block_child(child, ir, issues, source, &mut items);
+            lower_block_child(child, ir, issues, source, &mut items, depth);
         }
     }
     ir.add_block(Block {
@@ -997,11 +1030,12 @@ fn lower_code_block(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> BlockId {
     let mut items = Vec::new();
     if let Some(body) = cb.field(FieldName::Body) {
         for child in body.named_children() {
-            lower_block_child(child, ir, issues, source, &mut items);
+            lower_block_child(child, ir, issues, source, &mut items, depth);
         }
     }
     if let Some(split_end) = cb
@@ -1014,7 +1048,7 @@ fn lower_code_block(
             if is_preproc_scaffold(c.kind()) {
                 continue;
             }
-            lower_block_child(c, ir, issues, source, &mut items);
+            lower_block_child(c, ir, issues, source, &mut items, depth);
         }
     }
     ir.add_block(Block {
@@ -1030,13 +1064,14 @@ fn lower_branch(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> BlockId {
     match node.kind() {
-        RawKind::CodeBlock => lower_code_block(node, ir, issues, source),
-        RawKind::StatementBlock => lower_stmt_seq(node, origin_of(node), ir, issues, source),
+        RawKind::CodeBlock => lower_code_block(node, ir, issues, source, depth),
+        RawKind::StatementBlock => lower_stmt_seq(node, origin_of(node), ir, issues, source, depth),
         _ => {
             let mut items = Vec::new();
-            lower_block_child(node, ir, issues, source, &mut items);
+            lower_block_child(node, ir, issues, source, &mut items, depth);
             ir.add_block(Block {
                 items,
                 origin: origin_of(node),
@@ -1051,10 +1086,11 @@ fn lower_stmt_seq(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> BlockId {
     let mut items = Vec::new();
     for child in container.named_children() {
-        lower_block_child(child, ir, issues, source, &mut items);
+        lower_block_child(child, ir, issues, source, &mut items, depth);
     }
     ir.add_block(Block { items, origin })
 }
@@ -1065,10 +1101,11 @@ fn lower_block_child(
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
     items: &mut Vec<BlockItem>,
+    depth: u32,
 ) {
     if is_preproc_wrapper(node) {
         for c in node.named_children() {
-            lower_block_child(c, ir, issues, source, items);
+            lower_block_child(c, ir, issues, source, items, depth);
         }
         return;
     }
@@ -1127,11 +1164,37 @@ fn lower_block_child(
     if node.kind() == RawKind::CallStatement && node.has_error() {
         return;
     }
-    let sid = lower_stmt(node, ir, issues, source);
+    let sid = lower_stmt(node, ir, issues, source, depth + 1);
     items.push(BlockItem::Stmt(sid));
 }
 
-fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> StmtId {
+fn lower_stmt(
+    node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+    depth: u32,
+) -> StmtId {
+    let origin = origin_of(node);
+    // Depth-budget check (T2.1, stack-overflow hardening): a pathologically deep
+    // statement nesting (generated or hostile input, never real AL source) must
+    // fail closed here rather than keep recursing toward a native stack overflow
+    // — see [`MAX_LOWER_DEPTH`]'s doc.
+    if depth > MAX_LOWER_DEPTH {
+        issues.push(SyntaxIssue {
+            message: format!(
+                "statement nesting exceeds the {MAX_LOWER_DEPTH}-level lowering depth \
+                 budget at `{}` — degrading to Unknown rather than recursing further \
+                 (pathological input, not real AL source)",
+                node.kind_str()
+            ),
+            origin: origin.clone(),
+        });
+        return ir.add_stmt(Stmt {
+            kind: StmtKind::Unknown,
+            origin,
+        });
+    }
     // A parenless no-arg call statement (`Initialize;`) — the grammar wraps a bare
     // identifier that owns its `;` in a `call_statement` (distinct from ERROR-recovery
     // debris, which lacks a terminator and stays a raw identifier — never reaching here,
@@ -1141,7 +1204,7 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
     // preserving golden parity with the pre-grammar form.
     if node.kind() == RawKind::CallStatement {
         let callee = node.field(FieldName::Function).unwrap_or(node);
-        let function = lower_expr(callee, ir, issues, source);
+        let function = lower_expr(callee, ir, issues, source, depth + 1);
         let call = ir.add_expr(Expr {
             kind: ExprKind::Call {
                 function,
@@ -1154,20 +1217,19 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             origin: origin_of(callee),
         });
     }
-    let origin = origin_of(node);
     let kind = match node.kind() {
         RawKind::AssignmentStatement => {
-            let target = lower_opt_field(node, FieldName::Left, ir, issues, source);
-            let value = lower_opt_field(node, FieldName::Right, ir, issues, source);
+            let target = lower_opt_field(node, FieldName::Left, ir, issues, source, depth);
+            let value = lower_opt_field(node, FieldName::Right, ir, issues, source, depth);
             StmtKind::Assignment { target, value }
         }
-        RawKind::CallExpression => StmtKind::Call(lower_expr(node, ir, issues, source)),
+        RawKind::CallExpression => StmtKind::Call(lower_expr(node, ir, issues, source, depth + 1)),
         // Parenless member / subscript call statements (`Rec.Find;`, `X[1];`) parse as a
         // bare member/subscript in statement position (the grammar leaves these UNCHANGED
         // — only a bare identifier became `call_statement`). AL has no field-access
         // statement, so these ARE calls — normalize to a Call with empty args.
         RawKind::MemberExpression | RawKind::SubscriptExpression => {
-            let function = lower_expr(node, ir, issues, source);
+            let function = lower_expr(node, ir, issues, source, depth + 1);
             let call = ir.add_expr(Expr {
                 kind: ExprKind::Call {
                     function,
@@ -1178,19 +1240,19 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             StmtKind::Call(call)
         }
         RawKind::IfStatement => StmtKind::If {
-            cond: lower_opt_field(node, FieldName::Condition, ir, issues, source),
-            then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source),
+            cond: lower_opt_field(node, FieldName::Condition, ir, issues, source, depth),
+            then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source, depth),
             else_block: node
                 .field(FieldName::ElseBranch)
-                .map(|b| lower_branch(b, ir, issues, source)),
+                .map(|b| lower_branch(b, ir, issues, source, depth)),
         },
         RawKind::WhileStatement => StmtKind::While {
-            cond: lower_opt_field(node, FieldName::Condition, ir, issues, source),
-            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+            cond: lower_opt_field(node, FieldName::Condition, ir, issues, source, depth),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source, depth),
         },
         RawKind::RepeatStatement => StmtKind::Repeat {
-            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
-            until: lower_opt_field(node, FieldName::Condition, ir, issues, source),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source, depth),
+            until: lower_opt_field(node, FieldName::Condition, ir, issues, source, depth),
         },
         RawKind::ForStatement => {
             let down = node
@@ -1198,25 +1260,25 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
                 .map(|d| d.text(source).eq_ignore_ascii_case("downto"))
                 .unwrap_or(false);
             StmtKind::For {
-                var: lower_opt_field(node, FieldName::Variable, ir, issues, source),
-                from: lower_opt_field(node, FieldName::Start, ir, issues, source),
-                to: lower_opt_field(node, FieldName::End, ir, issues, source),
+                var: lower_opt_field(node, FieldName::Variable, ir, issues, source, depth),
+                from: lower_opt_field(node, FieldName::Start, ir, issues, source, depth),
+                to: lower_opt_field(node, FieldName::End, ir, issues, source, depth),
                 down,
-                body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+                body: lower_branch_field(node, FieldName::Body, ir, issues, source, depth),
             }
         }
         RawKind::ForeachStatement => StmtKind::Foreach {
-            var: lower_opt_field(node, FieldName::Variable, ir, issues, source),
-            iterable: lower_opt_field(node, FieldName::Iterable, ir, issues, source),
-            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+            var: lower_opt_field(node, FieldName::Variable, ir, issues, source, depth),
+            iterable: lower_opt_field(node, FieldName::Iterable, ir, issues, source, depth),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source, depth),
         },
         RawKind::WithStatement => StmtKind::With {
-            receiver: lower_opt_field(node, FieldName::Record, ir, issues, source),
-            body: lower_branch_field(node, FieldName::Body, ir, issues, source),
+            receiver: lower_opt_field(node, FieldName::Record, ir, issues, source, depth),
+            body: lower_branch_field(node, FieldName::Body, ir, issues, source, depth),
         },
         RawKind::CaseStatement => {
-            let scrutinee = lower_opt_field(node, FieldName::Expression, ir, issues, source);
-            let (branches, else_block) = lower_case_body(node, ir, issues, source);
+            let scrutinee = lower_opt_field(node, FieldName::Expression, ir, issues, source, depth);
+            let (branches, else_block) = lower_case_body(node, ir, issues, source, depth);
             StmtKind::Case {
                 scrutinee,
                 branches,
@@ -1229,15 +1291,16 @@ fn lower_stmt(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             ir,
             issues,
             source,
+            depth,
         )),
         RawKind::ExitStatement => StmtKind::Exit(
             node.field(FieldName::ReturnValue)
-                .map(|e| lower_expr(e, ir, issues, source)),
+                .map(|e| lower_expr(e, ir, issues, source, depth + 1)),
         ),
         RawKind::BreakStatement => StmtKind::Break,
         RawKind::ContinueStatement => StmtKind::Continue,
-        RawKind::CodeBlock => StmtKind::Block(lower_code_block(node, ir, issues, source)),
-        _ => lower_unmodelled_stmt(node, &origin, ir, issues, source),
+        RawKind::CodeBlock => StmtKind::Block(lower_code_block(node, ir, issues, source, depth)),
+        _ => lower_unmodelled_stmt(node, &origin, ir, issues, source, depth),
     };
     ir.add_stmt(Stmt { kind, origin })
 }
@@ -1334,6 +1397,7 @@ fn lower_unmodelled_stmt(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> StmtKind {
     push_unlowered_issue(node, "statement", issues);
 
@@ -1343,9 +1407,9 @@ fn lower_unmodelled_stmt(
             .filter(|c| !is_preproc_scaffold(c.kind()));
         return match children.next() {
             Some(callee) => {
-                let function = lower_expr(callee, ir, issues, source);
+                let function = lower_expr(callee, ir, issues, source, depth + 1);
                 let args = children
-                    .map(|a| lower_expr(a, ir, issues, source))
+                    .map(|a| lower_expr(a, ir, issues, source, depth + 1))
                     .collect();
                 let call = ir.add_expr(Expr {
                     kind: ExprKind::Call { function, args },
@@ -1380,14 +1444,14 @@ fn lower_unmodelled_stmt(
     };
     let reconstructed_if = then_node.map(|_| StmtKind::If {
         cond: match cond_node {
-            Some(c) => lower_expr(c, ir, issues, source),
+            Some(c) => lower_expr(c, ir, issues, source, depth + 1),
             None => ir.add_expr(Expr {
                 kind: ExprKind::Unknown,
                 origin: origin.clone(),
             }),
         },
-        then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source),
-        else_block: else_node.map(|b| lower_branch(b, ir, issues, source)),
+        then_block: lower_branch_field(node, FieldName::ThenBranch, ir, issues, source, depth),
+        else_block: else_node.map(|b| lower_branch(b, ir, issues, source, depth)),
     });
     let consumed_ids: [Option<usize>; 3] = [
         cond_node.map(|n| n.id()),
@@ -1400,7 +1464,7 @@ fn lower_unmodelled_stmt(
         if is_preproc_scaffold(c.kind()) || consumed_ids.contains(&Some(c.id())) {
             continue;
         }
-        lower_block_child(c, ir, issues, source, &mut items);
+        lower_block_child(c, ir, issues, source, &mut items, depth);
     }
 
     match (reconstructed_if, items.is_empty()) {
@@ -1430,11 +1494,20 @@ fn lower_case_body(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> (Vec<CaseBranch>, Option<BlockId>) {
     let mut branches = Vec::new();
     let mut else_block = None;
     if let Some(body) = case_node.field(FieldName::Body) {
-        collect_case_branches(body, ir, issues, source, &mut branches, &mut else_block);
+        collect_case_branches(
+            body,
+            ir,
+            issues,
+            source,
+            &mut branches,
+            &mut else_block,
+            depth,
+        );
     }
     // The UNCONDITIONAL `case_else_branch` is a DIRECT child of `case_statement` itself
     // (not `case_body`) — only consulted when no `#if`-nested else was already found by
@@ -1447,7 +1520,7 @@ fn lower_case_body(
             .into_iter()
             .find(|c| c.kind() == RawKind::CaseElseBranch)
     {
-        else_block = Some(lower_case_else_branch(else_node, ir, issues, source));
+        else_block = Some(lower_case_else_branch(else_node, ir, issues, source, depth));
     }
     (branches, else_block)
 }
@@ -1465,13 +1538,14 @@ fn collect_case_branches(
     source: &str,
     branches: &mut Vec<CaseBranch>,
     else_block: &mut Option<BlockId>,
+    depth: u32,
 ) {
     for child in node.named_children() {
         match child.kind() {
-            RawKind::CaseBranch => push_case_branch(child, ir, issues, source, branches),
+            RawKind::CaseBranch => push_case_branch(child, ir, issues, source, branches, depth),
             RawKind::CaseElseBranch => {
                 if else_block.is_none() {
-                    *else_block = Some(lower_case_else_branch(child, ir, issues, source));
+                    *else_block = Some(lower_case_else_branch(child, ir, issues, source, depth));
                 }
             }
             // `#if`-conditional case content: every arm's `case_branch`/`case_else_branch`
@@ -1480,7 +1554,7 @@ fn collect_case_branches(
             // union-read, recurse into the same wrapper node. Previously unmatched here
             // (silently skipped, no trace at all — worse than an empty branch).
             RawKind::PreprocConditionalCase => {
-                collect_case_branches(child, ir, issues, source, branches, else_block);
+                collect_case_branches(child, ir, issues, source, branches, else_block, depth);
             }
             // "#if adds complete branches + provides a header for the next shared branch":
             // any direct `case_branch` children are complete extra branches (additive,
@@ -1495,11 +1569,12 @@ fn collect_case_branches(
                     .into_iter()
                     .filter(|c| c.kind() == RawKind::CaseBranch)
                 {
-                    push_case_branch(extra, ir, issues, source, branches);
+                    push_case_branch(extra, ir, issues, source, branches, depth);
                 }
-                let patterns = case_patterns(child, ir, issues, source);
+                let patterns = case_patterns(child, ir, issues, source, depth);
                 if !patterns.is_empty() || child.field(FieldName::Body).is_some() {
-                    let body = lower_branch_field(child, FieldName::Body, ir, issues, source);
+                    let body =
+                        lower_branch_field(child, FieldName::Body, ir, issues, source, depth);
                     branches.push(CaseBranch {
                         patterns,
                         body,
@@ -1527,14 +1602,15 @@ fn push_case_branch(
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
     branches: &mut Vec<CaseBranch>,
+    depth: u32,
 ) {
     let effective = case_branch_node
         .named_children()
         .into_iter()
         .find(|c| c.kind() == RawKind::PreprocSplitCaseBranch)
         .unwrap_or(case_branch_node);
-    let patterns = case_patterns(effective, ir, issues, source);
-    let body = lower_branch_field(effective, FieldName::Body, ir, issues, source);
+    let patterns = case_patterns(effective, ir, issues, source, depth);
+    let body = lower_branch_field(effective, FieldName::Body, ir, issues, source, depth);
     branches.push(CaseBranch {
         patterns,
         body,
@@ -1552,11 +1628,12 @@ fn case_patterns(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> Vec<ExprId> {
     node.children_by_field(FieldName::Pattern)
         .into_iter()
         .filter(|p| p.is_named())
-        .map(|p| lower_expr(p, ir, issues, source))
+        .map(|p| lower_expr(p, ir, issues, source, depth + 1))
         .collect()
 }
 
@@ -1570,6 +1647,7 @@ fn lower_case_else_branch(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> BlockId {
     let content: Vec<RawNode> = else_node
         .named_children()
@@ -1577,8 +1655,8 @@ fn lower_case_else_branch(
         .filter(|c| c.kind() != RawKind::ElseKeyword)
         .collect();
     match content.as_slice() {
-        [only] => lower_branch(*only, ir, issues, source),
-        _ => lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source),
+        [only] => lower_branch(*only, ir, issues, source, depth),
+        _ => lower_stmt_seq(else_node, origin_of(else_node), ir, issues, source, depth),
     }
 }
 
@@ -1589,9 +1667,10 @@ fn lower_opt_field(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> ExprId {
     match node.field(f) {
-        Some(e) => lower_expr(e, ir, issues, source),
+        Some(e) => lower_expr(e, ir, issues, source, depth + 1),
         None => {
             let origin = origin_of(node);
             issues.push(SyntaxIssue {
@@ -1612,9 +1691,10 @@ fn lower_branch_field(
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
+    depth: u32,
 ) -> BlockId {
     match node.field(f) {
-        Some(b) => lower_branch(b, ir, issues, source),
+        Some(b) => lower_branch(b, ir, issues, source, depth),
         None => ir.add_block(Block {
             items: Vec::new(),
             origin: origin_of(node),
@@ -1622,15 +1702,40 @@ fn lower_branch_field(
     }
 }
 
-fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source: &str) -> ExprId {
+fn lower_expr(
+    node: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+    depth: u32,
+) -> ExprId {
     let origin = origin_of(node);
+    // Depth-budget check (T2.1, stack-overflow hardening): mirrors `lower_stmt`'s
+    // — see [`MAX_LOWER_DEPTH`]'s doc. This is the primary guard for the
+    // `x := 1 + 1 + … 50k terms` pathological-expression shape (binary
+    // expressions recurse through here directly).
+    if depth > MAX_LOWER_DEPTH {
+        issues.push(SyntaxIssue {
+            message: format!(
+                "expression nesting exceeds the {MAX_LOWER_DEPTH}-level lowering depth \
+                 budget at `{}` — degrading to Unknown rather than recursing further \
+                 (pathological input, not real AL source)",
+                node.kind_str()
+            ),
+            origin: origin.clone(),
+        });
+        return ir.add_expr(Expr {
+            kind: ExprKind::Unknown,
+            origin,
+        });
+    }
     let kind = match node.kind() {
         RawKind::Identifier | RawKind::KeywordIdentifier => {
             ExprKind::Identifier(node.text(source).to_string())
         }
         RawKind::QuotedIdentifier => ExprKind::QuotedIdentifier(ident_text(node, source)),
         RawKind::MemberExpression => {
-            let object = lower_opt_field(node, FieldName::Object, ir, issues, source);
+            let object = lower_opt_field(node, FieldName::Object, ir, issues, source, depth);
             // RAW member text (quotes preserved) — source-faithful; consumers strip
             // when needed. Legacy keeps quotes for var-assignment lhs names.
             let member_node = node.field(FieldName::Member);
@@ -1647,7 +1752,7 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             }
         }
         RawKind::CallExpression => {
-            let function = lower_opt_field(node, FieldName::Function, ir, issues, source);
+            let function = lower_opt_field(node, FieldName::Function, ir, issues, source, depth);
             // H-8: a mid-argument comment (`P(a, /* c */ b)`) must never become a
             // phantom `Unknown` argument — see `structural_children`'s doc.
             let args = node
@@ -1655,25 +1760,27 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
                 .map(|al| {
                     structural_children(al)
                         .into_iter()
-                        .map(|a| lower_expr(a, ir, issues, source))
+                        .map(|a| lower_expr(a, ir, issues, source, depth + 1))
                         .collect()
                 })
                 .unwrap_or_default();
             ExprKind::Call { function, args }
         }
         RawKind::SubscriptExpression => ExprKind::Index {
-            base: lower_opt_field(node, FieldName::Object, ir, issues, source),
-            index: lower_opt_field(node, FieldName::Index, ir, issues, source),
+            base: lower_opt_field(node, FieldName::Object, ir, issues, source, depth),
+            index: lower_opt_field(node, FieldName::Index, ir, issues, source, depth),
         },
         // H-8: a leading comment (`(/* c */ Expr)`) must never be mistaken for the
         // real inner expression — see `structural_children`'s doc.
         RawKind::ParenthesizedExpression => match structural_children(node).into_iter().next() {
-            Some(inner) => ExprKind::Parenthesized(lower_expr(inner, ir, issues, source)),
+            Some(inner) => {
+                ExprKind::Parenthesized(lower_expr(inner, ir, issues, source, depth + 1))
+            }
             None => ExprKind::Unknown,
         },
         RawKind::UnaryExpression => ExprKind::Unary {
             op: unary_op(node, source),
-            operand: lower_opt_field(node, FieldName::Operand, ir, issues, source),
+            operand: lower_opt_field(node, FieldName::Operand, ir, issues, source, depth),
         },
         RawKind::AdditiveExpression
         | RawKind::MultiplicativeExpression
@@ -1681,15 +1788,15 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
         | RawKind::LogicalExpression
         | RawKind::InExpression => ExprKind::Binary {
             op: binary_op(node, source),
-            lhs: lower_opt_field(node, FieldName::Left, ir, issues, source),
-            rhs: lower_opt_field(node, FieldName::Right, ir, issues, source),
+            lhs: lower_opt_field(node, FieldName::Left, ir, issues, source, depth),
+            rhs: lower_opt_field(node, FieldName::Right, ir, issues, source, depth),
         },
         RawKind::RangeExpression => ExprKind::RangeExpr {
-            start: lower_opt_field(node, FieldName::Left, ir, issues, source),
-            end: lower_opt_field(node, FieldName::Right, ir, issues, source),
+            start: lower_opt_field(node, FieldName::Left, ir, issues, source, depth),
+            end: lower_opt_field(node, FieldName::Right, ir, issues, source, depth),
         },
         RawKind::QualifiedEnumValue => ExprKind::QualifiedEnum {
-            enum_type: lower_opt_field(node, FieldName::EnumType, ir, issues, source),
+            enum_type: lower_opt_field(node, FieldName::EnumType, ir, issues, source, depth),
             value: node
                 .field(FieldName::Value)
                 .map(|v| ident_text(v, source))
@@ -1709,7 +1816,7 @@ fn lower_expr(node: RawNode, ir: &mut Ir, issues: &mut Vec<SyntaxIssue>, source:
             // ternary, …): lower its non-trivia children so nested calls/members are
             // still captured in the arena (completeness). The node itself is Unknown.
             for c in structural_children(node) {
-                lower_expr(c, ir, issues, source);
+                lower_expr(c, ir, issues, source, depth + 1);
             }
             ExprKind::Unknown
         }

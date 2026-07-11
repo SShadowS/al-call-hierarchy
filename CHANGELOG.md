@@ -8,6 +8,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Stack-overflow hardening everywhere the `al_syntax` lowerer and the L4 CFG
+  walker run (Task T2.1, crash/DoS arc).** `src/snapshot/parse.rs` had
+  documented an OBSERVED stack overflow lowering real BaseApp source and
+  worked around it with a local 32 MiB rayon pool — the ONLY hardened
+  `al_syntax::parse` call site in the repo. Every other site running the same
+  recursive lowerer (the LSP indexer, `didSave` on the LSP main thread — ~1
+  MiB on Windows — the file-watcher thread, CLI `--analyze`, and the engine's
+  sequential per-workspace parse loops used by `aldump`/`alsem`) was
+  unhardened, and release builds are `panic=abort`, so a deep AL expression or
+  hostile file could SIGSEGV/abort the whole process uncatchably.
+  - **New `src/big_stack.rs`** generalizes the one working mitigation:
+    `run_with_big_stack` (a scoped 32 MiB thread — borrows freely, no
+    `'static` bound, so an owned value's DROP never lands on the small
+    thread) for sequential call sites, `big_stack_pool` (a local
+    `rayon::ThreadPool`) for parallel ones. Wired into `snapshot::parse_snapshot`
+    (refactored onto the shared helper), `Indexer::index_directory` (parallel
+    pool) and `Indexer::reindex_file` (covers both `didSave` and the watcher
+    thread), CLI `run_analysis`, and the engine's `engine::snapshot::snapshot_workspace`,
+    `engine::l2::l2_workspace::project_workspace`,
+    `engine::l3::l3_workspace::{assemble_workspace,assemble_workspace_units}`,
+    and `engine::gate::workspace_diagnostics::compute_workspace_diagnostics`
+    sequential parse loops (one big-stack thread per WHOLE loop, not per file).
+  - **Depth budget in the lowerer** (`crates/al-syntax/src/lower/mod.rs`):
+    `lower_stmt`/`lower_expr` (mutually recursive with `lower_branch`,
+    `lower_code_block`, `lower_stmt_seq`, `lower_block_child`, `lower_case_body`
+    and its helpers, `lower_opt_field`, `lower_branch_field`) had no bound of
+    their own — a generated `x := 1 + 1 + … 50k terms` or 50k-deep nested `if`
+    recursed the native stack proportionally to input size. A `depth: u32`
+    counter now threads through the whole family (plumbing helpers forward it
+    unchanged; only `lower_stmt`/`lower_expr` increment, so it tracks AL
+    syntactic nesting depth, not raw native-frame count) and fails closed past
+    `MAX_LOWER_DEPTH` to a `SyntaxIssue` + `ExprKind::Unknown`/`StmtKind::Unknown`
+    — never crashes. 128, not the in-repo `MAX_CBOR_DEPTH` precedent of 256:
+    measured empirically against the actual red fixture (a 50k-term binary
+    chain lowered on a 1 MiB thread, simulating the real Windows LSP
+    main-thread stack) — 256 crashed an unoptimized debug build, 224 passed;
+    128 gives a ~2x margin, still nowhere near real AL nesting.
+  - **`walk_cfg` depth bound** (`src/engine/l4/cfg_walker.rs`): the single
+    self-recursive branch-aware CFG walker gained the same `depth: usize`
+    treatment (mutual helper `apply_condition_leaves` forwards it, `walk_cfg`
+    itself increments and checks). Past `MAX_CFG_WALK_DEPTH` it degrades to the
+    SAME conservative `saturate_unknown` path already used for bounded-loop
+    overshoot — never recurses further; T1.1's LoopFrame/Reach machinery is
+    untouched. `walk_cfg`'s own frame proved heavier than the lowerer's (a
+    single 12-arm-match function with several `PerParamState` clones per arm):
+    measured empirically the same way, 96 crashed, 64 passed; 32 gives a ~2x
+    margin. `PCFNNode` is `Deserialize`, so this input can arrive from a
+    cache/snapshot, not only from fresh lowering — the budget is not
+    contingent on the lowerer's own cap.
+  - Both budgets were proven genuinely red-first: temporarily disabling each
+    (`MAX_LOWER_DEPTH = u32::MAX` / `MAX_CFG_WALK_DEPTH = usize::MAX`)
+    reproduced a real `STATUS_STACK_OVERFLOW` crash on the small-stack test
+    fixture before the fix, confirmed by-hand with `cargo test`.
+  - CDO byte-identity verified: real-code resolution and L4 facts are
+    unchanged (the budgets only fire past pathological, non-real-AL depth);
+    all 1378 lib tests + 42 `al-syntax` tests pass.
 - **The `al-syntax` lowerer silently dropped preproc-split procedures, case
   branches, and statement-position `#if`/guarded constructs, and let comments
   pollute positional argument reads — including silently unregistering a whole

@@ -33,16 +33,6 @@ pub struct ParsedUnit {
 // Entry point
 // ---------------------------------------------------------------------------
 
-/// Worker stack for the snapshot deep-parse pool.
-///
-/// The `al_syntax` lowerer recurses on nested AL statements. Rayon worker
-/// threads default to the OS thread stack — ~1 MiB on Windows — which is too
-/// shallow for the deepest files in large BC packages (observed stack overflow
-/// on Base Application source). 32 MiB is ~32× that failing default, leaving
-/// generous headroom. The exact maximum depth is unmeasured; revisit if BC
-/// codebase complexity grows substantially.
-const SNAPSHOT_PARSE_STACK_SIZE: usize = 32 * 1024 * 1024;
-
 /// File paths (`"<app name>::<virtual_path>"`, sorted) of every parsed source
 /// file whose [`al_syntax::ir::ParseStatus`] is `Recovered` — tree-sitter hit
 /// error recovery, so that file's IR is PARTIAL (Task 3, preprocessor
@@ -83,14 +73,12 @@ pub fn recovered_file_paths(units: &[ParsedUnit]) -> Vec<String> {
 /// Units whose `source` is `None` (symbol-only boundary apps) are skipped;
 /// their ABI is used for resolution in later phases.
 ///
-/// A local rayon thread pool is built with [`SNAPSHOT_PARSE_STACK_SIZE`] per
-/// worker (see that constant for why the global pool's default is insufficient).
+/// Runs on [`crate::big_stack::big_stack_pool`] — a local rayon pool sized for
+/// the `al_syntax` lowerer's recursion (see that module's doc for why the
+/// global pool's default stack is insufficient).
 #[must_use]
 pub fn parse_snapshot(snap: &AppSetSnapshot) -> Vec<ParsedUnit> {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .stack_size(SNAPSHOT_PARSE_STACK_SIZE)
-        .build()
-        .expect("rayon pool for snapshot parse");
+    let pool = crate::big_stack::big_stack_pool();
     pool.install(|| {
         snap.apps
             .iter()

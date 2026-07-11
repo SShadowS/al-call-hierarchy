@@ -55,15 +55,21 @@ impl Indexer {
             walk_start.elapsed().as_secs_f64() * 1000.0
         );
 
-        // Parse files in parallel
+        // Parse files in parallel, on a big-stack pool (T2.1: the `al_syntax`
+        // lowerer recurses on nested AL statements — the global rayon pool's
+        // default worker stack, ~1 MiB on Windows, is too shallow for the
+        // deepest files in large BC packages; see `big_stack`'s doc).
         let parse_start = Instant::now();
-        let parsed_files: Vec<(PathBuf, Result<ParsedFile>)> = al_files
-            .par_iter()
-            .map(|path| {
-                let result = self.parse_file(path);
-                (path.clone(), result)
-            })
-            .collect();
+        let pool = crate::big_stack::big_stack_pool();
+        let parsed_files: Vec<(PathBuf, Result<ParsedFile>)> = pool.install(|| {
+            al_files
+                .par_iter()
+                .map(|path| {
+                    let result = self.parse_file(path);
+                    (path.clone(), result)
+                })
+                .collect()
+        });
         info!(
             "Parsed {} files in {:.1}ms ({:.2} files/sec)",
             al_files.len(),
@@ -311,7 +317,12 @@ impl Indexer {
         }
     }
 
-    /// Re-index a single file (for incremental updates)
+    /// Re-index a single file (for incremental updates).
+    ///
+    /// Called from both the LSP main thread (`didSave`, ~1 MiB stack on
+    /// Windows) and the file-watcher thread — neither has the indexer's
+    /// parallel `index_directory` pool's big stack, so the single-file parse
+    /// runs on [`crate::big_stack::run_with_big_stack`] (T2.1).
     pub fn reindex_file(&self, path: &Path) -> Result<()> {
         let mut graph = self.graph.lock().unwrap();
 
@@ -320,7 +331,7 @@ impl Indexer {
 
         // Parse and add new data
         if path.exists() {
-            let parsed = self.parse_file(path)?;
+            let parsed = crate::big_stack::run_with_big_stack(|| self.parse_file(path))?;
             self.add_to_graph(&mut graph, path, parsed);
         }
 

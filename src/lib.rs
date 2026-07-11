@@ -10,6 +10,9 @@
 //! crate cannot compile.
 
 pub mod app_package;
+/// Shared big-stack execution for anywhere the `al_syntax` lowerer runs (T2.1,
+/// stack-overflow hardening) — see the module doc.
+pub mod big_stack;
 pub mod config;
 pub mod dependencies;
 pub mod engine;

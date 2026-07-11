@@ -1128,18 +1128,23 @@ pub fn assemble_workspace(
         routines: Vec::new(),
     };
 
-    for (fname, source) in sorted {
-        let source_unit_id = format!("ws:{fname}");
-        let cols = Utf16Cols::new(source);
-        project_file(
-            source,
-            app_guid,
-            model_instance_id,
-            &source_unit_id,
-            &cols,
-            &mut workspace,
-        );
-    }
+    // Sequential parse loop, run on a big-stack thread (T2.1): callers include
+    // the CLI main thread (`aldump`/`alsem`), which has no guaranteed-generous
+    // stack — see `big_stack`'s doc. One big-stack thread for the WHOLE loop.
+    crate::big_stack::run_with_big_stack(|| {
+        for (fname, source) in sorted {
+            let source_unit_id = format!("ws:{fname}");
+            let cols = Utf16Cols::new(source);
+            project_file(
+                source,
+                app_guid,
+                model_instance_id,
+                &source_unit_id,
+                &cols,
+                &mut workspace,
+            );
+        }
+    });
 
     workspace
 }
@@ -1169,17 +1174,21 @@ pub fn assemble_workspace_units(
         routines: Vec::new(),
     };
 
-    for (source_unit_id, source) in sorted {
-        let cols = Utf16Cols::new(source);
-        project_file(
-            source,
-            app_guid,
-            model_instance_id,
-            source_unit_id,
-            &cols,
-            &mut workspace,
-        );
-    }
+    // Sequential parse loop, run on a big-stack thread (T2.1) — see the sibling
+    // `assemble_workspace`'s comment above.
+    crate::big_stack::run_with_big_stack(|| {
+        for (source_unit_id, source) in sorted {
+            let cols = Utf16Cols::new(source);
+            project_file(
+                source,
+                app_guid,
+                model_instance_id,
+                source_unit_id,
+                &cols,
+                &mut workspace,
+            );
+        }
+    });
 
     workspace
 }

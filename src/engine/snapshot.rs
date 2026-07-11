@@ -372,16 +372,23 @@ pub fn snapshot_workspace(workspace: &Path) -> anyhow::Result<IdentitySnapshot> 
         routines: Vec::new(),
     };
 
-    for file in &files {
-        let source = match read_al_source(&file.abs_path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("warning: skipping {} (read error: {e})", file.sort_key);
-                continue;
-            }
-        };
-        extract_from_ir(&al_syntax::parse(&source), &app_guid, &mut snapshot);
-    }
+    // Sequential parse loop, run on a big-stack thread (T2.1): this CLI path
+    // (`aldump`/`alsem`) runs on the process main thread, which has no
+    // guaranteed-generous stack — see `big_stack`'s doc. One big-stack thread
+    // for the WHOLE loop, not per-file (thousands of files in a real
+    // workspace; per-file spawn/join overhead would be wasteful).
+    crate::big_stack::run_with_big_stack(|| {
+        for file in &files {
+            let source = match read_al_source(&file.abs_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("warning: skipping {} (read error: {e})", file.sort_key);
+                    continue;
+                }
+            };
+            extract_from_ir(&al_syntax::parse(&source), &app_guid, &mut snapshot);
+        }
+    });
 
     // `objects` sorted by stableObjectId; `routines` by stableRoutineId. Plain
     // lexicographic (byte) sort — for these ASCII strings it matches the JS
