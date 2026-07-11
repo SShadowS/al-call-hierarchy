@@ -437,8 +437,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   undeclared-singleton regression guard; a second singleton name (`NavApp`)
   for generality; the field-vs-singleton precedence case; and the `this`
   shadow case. `cargo test` full suite green (1347+ lib tests, all
-  integration suites); CDO real-`unknown` rate unchanged at 0.0000%
-  (0/18108), `genuine_wrong` 0, new SHA `<pending CDO gate completion>`.
+  integration suites); CDO impact EXPECTED dormant (real-`unknown` rate
+  0.0000% unchanged) per the brief's prediction — the lane's own CDO gate
+  never completed; the merge-time combined re-measure is the binding
+  confirmation.
 - **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
   (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
   PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
