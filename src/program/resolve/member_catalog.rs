@@ -544,19 +544,31 @@ pub fn member_builtin_id(kind: MemberCatalogKind<'_>, method_lc: &str) -> Option
 /// `Run`/`RunModal` on the Page/Report instance catalogs (`PAGE_INSTANCE`
 /// above, `member_catalog.rs:307`; `REPORT_INSTANCE`, `:316`) open the named
 /// page/report — a real entry-trigger dispatch into caller-named user code,
-/// not a leaf platform call. Two classifier gaps currently land this shape as
-/// an ordinary `Evidence::Catalog` `Builtin` route instead of an entry-trigger
-/// `Run` edge into the target object:
+/// not a leaf platform call. T0.3 found TWO classifier gaps that landed this
+/// shape as an ordinary `Evidence::Catalog` `Builtin` route instead of an
+/// entry-trigger `Run` edge into the target object; T1.3 (deep-review-
+/// remediation plan) closed BOTH:
 /// - `extract::classify_call`'s `ObjectRun` check
-///   (`src/program/resolve/extract.rs:371`) only recognizes bare
-///   `Page.Run(...)`/`Report.Run(...)` (`method_lc == "run"`), never
-///   `RunModal`, for a KEYWORD receiver (`Page`/`Report` used as a
-///   pseudo-namespace).
-/// - `resolver::resolve_member_with_args`'s `Object{kind, name_lc}` arm
-///   (`resolver.rs:2553-2573`) never recognizes ANY declared Page/Report-typed
-///   VARIABLE receiver (`MyPage.RunModal()`) as an entry dispatch at all —
-///   only `Codeunit.Run` has a special-cased entry-trigger arm
-///   (`resolver.rs:2433`).
+///   (`src/program/resolve/extract.rs`) now also accepts `RunModal` (not just
+///   `Run`) for a Page/Report KEYWORD receiver (`Page`/`Report` used as a
+///   pseudo-namespace) — classifying it as `CalleeShape::ObjectRun` instead of
+///   falling through to `Member`.
+/// - `resolver::resolve_member_with_args`'s `Object{kind, name_lc}` arm now
+///   dispatches a declared Page/Report-typed VARIABLE receiver's
+///   `Run`/`RunModal` call (`MyPage.RunModal()`) to the entry trigger too,
+///   via the same `resolver::dispatch_entry_trigger` machinery
+///   `resolve_object_run`'s keyword-receiver form uses — not just
+///   `Codeunit.Run`.
+///
+/// Because of this fix, `is_entry_dispatch_builtin` should now be
+/// UNREACHABLE for `Run`/`RunModal` sites in practice — every such call
+/// classifies as `ObjectRun` or hits the entry-trigger special case before
+/// ever reaching the instance-builtin catalog fallback that produces a
+/// `Builtin` route. The const and audit stay in place as a live regression
+/// backstop (see the T0.3/T1.3 CDO ratchet,
+/// `cdo_builtin_dispatch_audit_flagged_count_is_pinned`, pinned at 0) — a
+/// future classifier change that reopens either gap would re-populate
+/// `audit.flagged` and fail that pin.
 ///
 /// This const is consulted ONLY by the T0.3 builtin-dispatch audit
 /// (`program::resolve::full`'s `builtin_dispatch_finding`) — NEVER by

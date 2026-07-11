@@ -358,7 +358,8 @@ pub(crate) fn static_database_reference_target(
 /// 1. `Member` with `Identifier`/`QuotedIdentifier` receiver in `rvars` AND
 ///    method in [`record_op_names`] → `RecordOp`.
 /// 2. `Member` with `keyword_identifier` receiver (`codeunit`/`page`/`report`)
-///    AND method `"run"` → `ObjectRun`.
+///    AND method `"run"` (any kind) OR `"runmodal"` (Page/Report only —
+///    Codeunit has no RunModal member) → `ObjectRun`.
 /// 3. Any other `Member` → `Member`.
 /// 4. Bare `Identifier("commit")` / `QuotedIdentifier("commit")` → `Commit`.
 /// 5. Any other bare `Identifier` / `QuotedIdentifier` → `Bare`.
@@ -399,14 +400,21 @@ fn classify_call(
 
             // --- Check 2: ObjectRun -----------------------------------------------
             // Mirrors L2's `object_run_callee`: receiver is `keyword_identifier`
-            // (Codeunit/Page/Report) AND method is "run".
+            // (Codeunit/Page/Report) AND method is "run" — OR "runmodal" for
+            // Page/Report only (T1.3, deep-review-remediation plan: Codeunit has
+            // no RunModal member at all — MS Learn documents it only on
+            // Page/Report — so `object_kind == "Codeunit"` must never take this
+            // branch on "runmodal"; see `member_catalog::ENTRY_DISPATCH_BUILTIN_
+            // IDS`'s doc for the classifier-gap analysis this closes).
             // Target extraction: only `ExprKind::DatabaseReference` arguments carry
             // a static target; all other argument kinds (variables, integer literals
             // NOT wrapped in DatabaseReference) produce `target_ref = None` (dynamic
             // dispatch — mirrors L3's behaviour).
-            if obj.origin.kind_text == "keyword_identifier" && method_lc == "run" {
+            if obj.origin.kind_text == "keyword_identifier" {
                 let obj_text = &src[obj.origin.byte.clone()];
-                if let Some(okind) = object_run_kind(obj_text) {
+                if let Some(okind) = object_run_kind(obj_text)
+                    && (method_lc == "run" || (method_lc == "runmodal" && okind != "Codeunit"))
+                {
                     let (target_ref, target_is_name) =
                         match static_database_reference_target(file, args) {
                             Some((name, is_name)) => (Some(name), is_name),
