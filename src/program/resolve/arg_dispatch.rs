@@ -269,7 +269,7 @@ fn split_generic_clause(ty_text: &str) -> (&str, Option<Result<&str, ()>>) {
         Some(i) => (&trimmed[..i], trimmed[i + 1..].trim()),
         None => return (trimmed, None),
     };
-    if rest.len() < 2 || !rest[..2].eq_ignore_ascii_case("of") {
+    if !rest.get(..2).is_some_and(|s| s.eq_ignore_ascii_case("of")) {
         return (first_tok, None);
     }
     // Word-boundary check: the character right after "of" must be
@@ -1690,6 +1690,29 @@ mod tests {
             dispatch_canonical_type_text("Dictionary of [Integer,]", &from, &graph, &index),
             None,
             "a trailing empty argument slot must be UNDECIDED, not silently dropped"
+        );
+    }
+
+    /// CJK characters can have byte offsets that are not on char boundaries.
+    /// The generic-clause probe must use `get(..2)` (fail-closed) rather than
+    /// indexing `[..2]` (panic) when a CJK character lands at position 2,
+    /// causing char-boundary validation to reject the slice.
+    #[test]
+    fn split_generic_clause_multibyte_char_boundary_is_fail_closed() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        // "Text 中文" has a multibyte CJK character (3 bytes), ensuring that
+        // byte position 2 is not a char boundary. The function must NOT panic;
+        // it must fail-closed to the non-generic interpretation.
+        let result = dispatch_canonical_type_text("Text 中文", &from, &graph, &index);
+        // The result should be a non-generic Base type (fail-closed), not a
+        // panic.
+        assert_eq!(
+            result,
+            Some(CanonicalArgType::Base("text".to_string())),
+            "a type with CJK characters must not panic; it must fail-closed to the non-generic path"
         );
     }
 
