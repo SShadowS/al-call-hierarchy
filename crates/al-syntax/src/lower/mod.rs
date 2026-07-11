@@ -795,26 +795,43 @@ fn lower_routine<'t>(
         collect_globals(child, source, &mut locals);
     }
 
-    let body = node
+    let body = if let Some(cb) = node
         .field(FieldName::Body)
         .filter(|b| b.kind() == RawKind::CodeBlock)
-        .or_else(|| {
-            // `preproc_split_procedure_preamble` (H-6): unlike `_routine_regular_body`'s
-            // `field('body', $.code_block)`, this shape's shared trailing `code_block` (the
-            // ONE body after `#endif`) is a BARE child with no field tag at all — VERIFIED
-            // against the pinned grammar (`tree-sitter parse`), so `.field(Body)` above always
-            // misses it for this one kind. Fall back to the last `CodeBlock`-kind child (there
-            // is exactly one, by construction).
-            if node.kind() == RawKind::PreprocSplitProcedurePreamble {
-                node.named_children()
-                    .into_iter()
-                    .rev()
-                    .find(|c| c.kind() == RawKind::CodeBlock)
-            } else {
-                None
-            }
-        })
-        .map(|cb| lower_code_block(cb, ir, issues, source));
+    {
+        Some(lower_code_block(cb, ir, issues, source))
+    } else if node.kind() == RawKind::PreprocSplitProcedurePreamble {
+        // `preproc_split_procedure_preamble` (H-6): unlike `_routine_regular_body`'s
+        // `field('body', $.code_block)`, this shape's shared trailing `code_block` (the
+        // ONE body after `#endif`) is a BARE child with no field tag at all — VERIFIED
+        // against the pinned grammar (`tree-sitter parse`), so `.field(Body)` above always
+        // misses it for this one kind. Fall back to the last `CodeBlock`-kind child (there
+        // is exactly one, by construction).
+        node.named_children()
+            .into_iter()
+            .rev()
+            .find(|c| c.kind() == RawKind::CodeBlock)
+            .map(|cb| lower_code_block(cb, ir, issues, source))
+    } else {
+        // `preproc_split_procedure_body` / `preproc_split_complete_body` (T1.4 review,
+        // sibling-gap fix): unlike `preproc_split_procedure_preamble` above, `node.kind()`
+        // is STILL plain `Procedure`/`TriggerDeclaration` for these two shapes — only the
+        // BODY position is a `#if`-guarded choice (grammar: `choice($._routine_regular_body,
+        // $.preproc_split_procedure_body, $.preproc_split_complete_body)`). Both wrapper
+        // rules are NAMED (non-inlined), so neither one's `field('body', ..)` flattens onto
+        // `node` itself — `node.field(Body)` above is unconditionally `None` for both,
+        // and the `_preamble` branch above does not apply (`node.kind()` never becomes
+        // one of these two). Recover directly from the wrapper child instead.
+        node.named_children()
+            .into_iter()
+            .find(|c| {
+                matches!(
+                    c.kind(),
+                    RawKind::PreprocSplitProcedureBody | RawKind::PreprocSplitCompleteBody
+                )
+            })
+            .map(|wrapper| lower_preproc_split_routine_body(wrapper, ir, issues, source))
+    };
 
     RoutineDecl {
         kind,
@@ -834,6 +851,55 @@ fn lower_routine<'t>(
         body,
         origin: origin_of(node),
     }
+}
+
+/// Recover a `preproc_split_procedure_body` / `preproc_split_complete_body` routine
+/// body (T1.4 review, sibling-gap fix). Both are NAMED (non-inlined) choice arms of
+/// `procedure`/`trigger_declaration`'s body position, so — unlike `_routine_regular_body`,
+/// whose `field('body', code_block)` flattens straight onto the routine node — the
+/// routine node's OWN `field(Body)` is always `None` for these two shapes; the real
+/// content is one level down, on `wrapper`.
+///
+/// - `preproc_split_complete_body`: each `#if`/`#elif`/`#else` arm is a COMPLETE,
+///   MUTUALLY EXCLUSIVE body (grammar comment: "the entire body differs across
+///   branches") — `.field(Body)` (single, first match) is exactly right, mirroring the
+///   established first-branch-wins policy (`PreprocSplitDeclaration`'s name/id
+///   resolution).
+/// - `preproc_split_procedure_body`: the `#if`-branch's own (possibly-empty) body and
+///   the trailing SHARED body (compiled into every build, after `#endif`) are NOT
+///   alternatives — both inlined sub-rules' `field('body', ..)` tags flatten onto THIS
+///   SAME node (grammar-VERIFIED with `tree-sitter parse`: a `#if`-branch with its own
+///   statements produces TWO `body:`-tagged `statement_block` children on
+///   `preproc_split_procedure_body`), so `children_by_field(Body)` returns both in
+///   document order; union-reading them (rather than taking only the first) is required
+///   for call-graph soundness — the shared tail always runs and the conditional
+///   `#if`-branch content is still a real, reachable call under some build.
+///
+/// Always records a `SyntaxIssue` (never the ordinary path — the exact conditional
+/// control flow across the split is not preserved), even when the recovered content is
+/// empty.
+fn lower_preproc_split_routine_body(
+    wrapper: RawNode,
+    ir: &mut Ir,
+    issues: &mut Vec<SyntaxIssue>,
+    source: &str,
+) -> BlockId {
+    push_unlowered_issue(wrapper, "routine body", issues);
+    let bodies: Vec<RawNode> = if wrapper.kind() == RawKind::PreprocSplitCompleteBody {
+        wrapper.field(FieldName::Body).into_iter().collect()
+    } else {
+        wrapper.children_by_field(FieldName::Body)
+    };
+    let mut items = Vec::new();
+    for body in bodies {
+        for child in body.named_children() {
+            lower_block_child(child, ir, issues, source, &mut items);
+        }
+    }
+    ir.add_block(Block {
+        items,
+        origin: origin_of(wrapper),
+    })
 }
 
 fn lower_param(node: RawNode, source: &str) -> Param {
@@ -913,14 +979,52 @@ fn extract_var_section(section: RawNode, source: &str, out: &mut Vec<VarDecl>) {
 // dual-run). Unmodelled nodes become `Unknown` + a `SyntaxIssue` — never dropped.
 
 /// `code_block` → its `statement_block` (v3) → a `Block`.
+///
+/// `preproc_split_code_block_end` (T1.4 review, sibling-gap fix) — grammar:
+/// `code_block`'s closing arm is `choice(seq(end, ';'), $.preproc_split_code_block_end)`
+/// — is a SIBLING of the (optional) `body` field, never nested inside it, present
+/// whenever the closing `end` itself differs across `#if`/`#else` branches. The old
+/// `cb.field(Body).unwrap_or(cb)` fallback only ever exposed it when `body` was ABSENT
+/// (then `inner == cb`, so `lower_stmt_seq` walked `cb`'s own children and happened to
+/// reach it); a `code_block` with real LEADING content before the split took the
+/// `Some(body)` arm and never looked at the sibling again — its content (everything
+/// after the split, including a `#else`-guarded tail AND — grammar-verified via
+/// `tree-sitter parse` — a following unconditional `else` clause the grammar folds into
+/// the SAME node) was silently dropped. Always checked now, regardless of whether
+/// `body` was present, and recovered through the SAME generic dispatcher
+/// [`lower_unmodelled_stmt`] uses for its other flat/fragmented shapes (filtering
+/// `is_preproc_scaffold` first, since this sibling is walked directly rather than via
+/// `lower_stmt`'s catch-all) — folded flat into the SAME block, not wrapped in an extra
+/// synthetic statement.
 fn lower_code_block(
     cb: RawNode,
     ir: &mut Ir,
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
 ) -> BlockId {
-    let inner = cb.field(FieldName::Body).unwrap_or(cb);
-    lower_stmt_seq(inner, origin_of(cb), ir, issues, source)
+    let mut items = Vec::new();
+    if let Some(body) = cb.field(FieldName::Body) {
+        for child in body.named_children() {
+            lower_block_child(child, ir, issues, source, &mut items);
+        }
+    }
+    if let Some(split_end) = cb
+        .named_children()
+        .into_iter()
+        .find(|c| c.kind() == RawKind::PreprocSplitCodeBlockEnd)
+    {
+        push_unlowered_issue(split_end, "statement", issues);
+        for c in structural_children(split_end) {
+            if is_preproc_scaffold(c.kind()) {
+                continue;
+            }
+            lower_block_child(c, ir, issues, source, &mut items);
+        }
+    }
+    ir.add_block(Block {
+        items,
+        origin: origin_of(cb),
+    })
 }
 
 /// A branch position (then/else/loop body): a `code_block`, a bare `statement_block`,
@@ -1163,15 +1267,43 @@ fn is_preproc_scaffold(k: RawKind) -> bool {
     )
 }
 
+/// Shared `SyntaxIssue` for every "grammar shape not natively modelled, recovering
+/// shared/first-branch content generically" recovery path (H-7/T1.4-review doctrine:
+/// never a silent drop). `noun` distinguishes what kind of construct is being
+/// recovered (a statement vs. a routine body) in the message text; callers:
+/// [`lower_unmodelled_stmt`], [`lower_code_block`]'s `preproc_split_code_block_end`
+/// sibling recovery, and [`lower_preproc_split_routine_body`].
+fn push_unlowered_issue(node: RawNode, noun: &str, issues: &mut Vec<SyntaxIssue>) {
+    issues.push(SyntaxIssue {
+        message: format!(
+            "unlowered {noun} `{}` — recovering shared content for call-graph \
+             completeness (exact preprocessor-conditional control flow not modelled)",
+            node.kind_str()
+        ),
+        origin: origin_of(node),
+    });
+}
+
 /// Recover a preproc-split/guarded STATEMENT-position construct (H-7, Tier-1.4 preproc
-/// plan) — the nine grammar shapes `lower_stmt`'s main match does not natively model
+/// plan) — the eight grammar shapes `lower_stmt`'s main match does not natively model
 /// (`preproc_split_if_statement`, `preproc_guarded_statement`,
 /// `preproc_split_if_else_statement`, `preproc_split_if_then_begin`,
 /// `preproc_split_if_begin_asymmetric`, `preproc_split_if_then_begin_else_shared`,
-/// `preproc_split_if_begin_else`, `preproc_split_call_statement`,
-/// `preproc_split_code_block_end`). Never a silent drop: a `SyntaxIssue` is always
-/// recorded (this is never the ordinary path), but the returned `StmtKind` still
-/// carries every call the shared, always-compiled source contains.
+/// `preproc_split_if_begin_else`, `preproc_split_call_statement`). Never a silent drop:
+/// a `SyntaxIssue` is always recorded (this is never the ordinary path), but the
+/// returned `StmtKind` still carries every call the shared, always-compiled source
+/// contains.
+///
+/// NOTE (T1.4 review fix): `preproc_split_code_block_end` — the closing `end` of a
+/// `code_block` itself split across `#if`/`#else` — is NOT one of these shapes. It is
+/// always a SIBLING of the `code_block`'s own (optional) `body` field, never a
+/// statement-position node reachable through `lower_stmt` in its own right, and is
+/// recovered directly by [`lower_code_block`] instead — see that function's doc. (An
+/// earlier version of this comment incorrectly claimed it landed here "recovered
+/// generically through `lower_block_child`"; that was only ever true when the
+/// enclosing `code_block` had NO leading content, via a since-removed
+/// `cb.field(Body).unwrap_or(cb)` fallback that happened to also expose this sibling as
+/// one of `cb`'s own children.)
 ///
 /// Three shapes get PRECISE modelling:
 /// - `preproc_split_call_statement` is unambiguously a single call by construction (its
@@ -1188,17 +1320,18 @@ fn is_preproc_scaffold(k: RawKind) -> bool {
 ///   `StmtKind::If`, indistinguishable from an ordinary `if`.
 ///
 /// Everything else — the remaining begin/end-fragmented shapes
-/// (`preproc_split_if_then_begin` and its asymmetric/shared/begin-else siblings,
-/// `preproc_split_code_block_end`), any arm's content NOT consumed by the `If`
-/// reconstruction above (extra `#elif`/`#else` arms, `preproc_guarded_statement`'s
-/// leading guard statements, a `preproc_fragmented_else_tail`), and any other
-/// genuinely-unmodelled preproc/unknown statement kind — holds its content as a FLAT
-/// `repeat($._statement)` run with no field boundary: every leftover non-scaffold,
-/// non-trivia child is recovered generically through [`lower_block_child`] (the SAME
-/// dispatcher real block content uses), so a nested call is never lost even though the
-/// exact conditional shape (which statement belongs to which `#if` arm) is not
-/// preserved. Genuinely empty recoveries (no leftover content, no `If`) stay
-/// `StmtKind::Unknown` — never a fabricated empty block.
+/// (`preproc_split_if_then_begin` and its asymmetric/shared/begin-else siblings), any
+/// arm's content NOT consumed by the `If` reconstruction above (extra `#elif`/`#else`
+/// arms, `preproc_guarded_statement`'s leading guard statements, a
+/// `preproc_fragmented_else_tail`), and any other genuinely-unmodelled preproc/unknown
+/// statement kind — holds its content as a FLAT `repeat($._statement)` run with no
+/// field boundary: every leftover non-scaffold, non-trivia child is recovered
+/// generically through [`lower_block_child`] (the SAME dispatcher real block content
+/// uses, and the SAME dispatcher `lower_code_block`'s sibling recovery uses), so a
+/// nested call is never lost even though the exact conditional shape (which statement
+/// belongs to which `#if` arm) is not preserved. Genuinely empty recoveries (no
+/// leftover content, no `If`) stay `StmtKind::Unknown` — never a fabricated empty
+/// block.
 fn lower_unmodelled_stmt(
     node: RawNode,
     origin: &Origin,
@@ -1206,14 +1339,7 @@ fn lower_unmodelled_stmt(
     issues: &mut Vec<SyntaxIssue>,
     source: &str,
 ) -> StmtKind {
-    issues.push(SyntaxIssue {
-        message: format!(
-            "unlowered statement `{}` — recovering shared content for call-graph \
-             completeness (exact preprocessor-conditional control flow not modelled)",
-            node.kind_str()
-        ),
-        origin: origin.clone(),
-    });
+    push_unlowered_issue(node, "statement", issues);
 
     if node.kind() == RawKind::PreprocSplitCallStatement {
         let mut children = structural_children(node)
@@ -2618,6 +2744,167 @@ codeunit 50105 T
                 .iter_stmts()
                 .all(|s| !matches!(s.kind, StmtKind::Unknown)),
             "#region/#endregion must never fabricate an Unknown statement"
+        );
+    }
+
+    /// T1.4 review finding 1a: `preproc_split_procedure_body` — a plain (non-preamble,
+    /// non-header-split) `procedure` whose VAR SECTION and `begin` differ across
+    /// `#if`/`#else` but whose TAIL is shared, compiled into every build. Grammar-
+    /// VERIFIED (`tree-sitter parse`): `preproc_split_procedure_body` is a NAMED
+    /// (non-inlined) choice arm of `procedure`'s body position, so — unlike
+    /// `_routine_regular_body`'s inlined `field('body', code_block)` — the routine
+    /// node's OWN `field(Body)` is `None`; the pre-fix code's `PreprocSplitProcedurePreamble`-
+    /// only fallback never caught this sibling shape at all, so the whole shared tail
+    /// (and its call) was silently dropped: `RoutineDecl.body == None`, zero issues.
+    #[test]
+    fn preproc_split_procedure_body_shared_tail_call_is_reachable() {
+        let src = r#"
+codeunit 50200 T
+{
+    procedure P()
+#if CLEAN24
+    var
+        X: Integer;
+    begin
+#else
+    begin
+#endif
+        DoWork();
+    end;
+}
+"#;
+        let af = parse(src);
+        let r = &af.objects[0].routines[0];
+        let body = r
+            .body
+            .expect("preproc_split_procedure_body's shared tail must be lowered");
+        assert!(
+            call_reachable(&af, body, "DoWork"),
+            "the shared tail's call must be a discoverable edge"
+        );
+    }
+
+    /// T1.4 review finding 1a (union-read half): when the `#if`-branch of a
+    /// `preproc_split_procedure_body` ALSO has its own content (not just the shared
+    /// tail), that content and the shared tail are TWO SEPARATE `field('body', ..)`-
+    /// tagged `statement_block`s on the SAME node (grammar-verified: the inlined
+    /// `_pspb_if_branch`'s own `body` field flattens up alongside the wrapper's
+    /// trailing one) — a single `.field(Body)` read only ever sees the FIRST. Both
+    /// calls must survive: the `#if`-branch's is conditionally real, the tail's is
+    /// unconditionally real, and dropping either would lose a genuine call-graph edge.
+    #[test]
+    fn preproc_split_procedure_body_unions_if_branch_and_shared_tail() {
+        let src = r#"
+codeunit 50201 T
+{
+    procedure P()
+#if CLEAN24
+    var
+        X: Integer;
+    begin
+        DoIfBranch();
+#else
+    begin
+#endif
+        DoWork();
+    end;
+}
+"#;
+        let af = parse(src);
+        let r = &af.objects[0].routines[0];
+        let body = r
+            .body
+            .expect("preproc_split_procedure_body's content must be lowered");
+        assert!(
+            call_reachable(&af, body, "DoIfBranch"),
+            "the #if-branch's own call must not be dropped by a first-field-only read"
+        );
+        assert!(
+            call_reachable(&af, body, "DoWork"),
+            "the shared tail's call must still be reachable"
+        );
+    }
+
+    /// T1.4 review finding 1b: `preproc_split_complete_body` — EVERY `#if`/`#else` arm
+    /// is a COMPLETE, mutually-exclusive body (grammar comment: "the entire body
+    /// differs across branches"), no shared tail at all. Same missing-fallback defect
+    /// as finding 1a: the routine node's `field(Body)` is `None` since
+    /// `preproc_split_complete_body` is a named, non-inlined wrapper. First-branch-wins
+    /// (mirrors `PreprocSplitDeclaration`'s established policy) — the `#if` arm's call
+    /// must be reachable.
+    #[test]
+    fn preproc_split_complete_body_first_branch_call_is_reachable() {
+        let src = r#"
+codeunit 50202 T
+{
+    procedure P()
+#if CLEAN24
+    begin
+        DoNew();
+    end;
+#else
+    begin
+        DoOld();
+    end;
+#endif
+}
+"#;
+        let af = parse(src);
+        let r = &af.objects[0].routines[0];
+        let body = r
+            .body
+            .expect("preproc_split_complete_body's first branch must be lowered");
+        assert!(
+            call_reachable(&af, body, "DoNew"),
+            "the #if (first) branch's call must be a discoverable edge"
+        );
+    }
+
+    /// T1.4 review finding 2: `preproc_split_code_block_end` — a `code_block` whose
+    /// closing `end` itself differs across `#if`/`#else` is a SIBLING child of
+    /// `code_block`, never nested inside its `body` field. `lower_code_block`'s old
+    /// `cb.field(Body).unwrap_or(cb)` trick only ever reached this sibling when `body`
+    /// was ABSENT (empty leading run) — a `code_block` with real LEADING content before
+    /// the split (here, `then_branch`'s `DoFirst()`) took the `Some(body)` arm and never
+    /// looked at the sibling again, silently dropping both `DoSecond()` (the split's
+    /// `#else` content) and `DoThird()` (the outer `if`'s unconditional `else` clause,
+    /// folded into the SAME `preproc_split_code_block_end` node by the grammar).
+    #[test]
+    fn preproc_split_code_block_end_sibling_recovered_with_leading_content() {
+        let src = r#"
+codeunit 50203 T
+{
+    procedure P(X: Boolean)
+    begin
+        if X then
+        begin
+            DoFirst();
+#if COND
+        end;
+#else
+            DoSecond();
+        end
+        else begin
+            DoThird();
+        end;
+#endif
+    end;
+}
+"#;
+        let af = parse(src);
+        let r = &af.objects[0].routines[0];
+        let body = r.body.expect("body must be lowered");
+        assert!(
+            call_reachable(&af, body, "DoFirst"),
+            "the leading content before the split must still be reachable"
+        );
+        assert!(
+            call_reachable(&af, body, "DoSecond"),
+            "the split-end sibling's #else content must not be dropped"
+        );
+        assert!(
+            call_reachable(&af, body, "DoThird"),
+            "the split-end sibling's unconditional else-clause must not be dropped"
         );
     }
 
