@@ -860,20 +860,21 @@ fn lower_routine<'t>(
 /// routine node's OWN `field(Body)` is always `None` for these two shapes; the real
 /// content is one level down, on `wrapper`.
 ///
-/// - `preproc_split_complete_body`: each `#if`/`#elif`/`#else` arm is a COMPLETE,
-///   MUTUALLY EXCLUSIVE body (grammar comment: "the entire body differs across
-///   branches") — `.field(Body)` (single, first match) is exactly right, mirroring the
-///   established first-branch-wins policy (`PreprocSplitDeclaration`'s name/id
-///   resolution).
-/// - `preproc_split_procedure_body`: the `#if`-branch's own (possibly-empty) body and
-///   the trailing SHARED body (compiled into every build, after `#endif`) are NOT
-///   alternatives — both inlined sub-rules' `field('body', ..)` tags flatten onto THIS
-///   SAME node (grammar-VERIFIED with `tree-sitter parse`: a `#if`-branch with its own
-///   statements produces TWO `body:`-tagged `statement_block` children on
-///   `preproc_split_procedure_body`), so `children_by_field(Body)` returns both in
-///   document order; union-reading them (rather than taking only the first) is required
-///   for call-graph soundness — the shared tail always runs and the conditional
-///   `#if`-branch content is still a real, reachable call under some build.
+/// Both shapes place MULTIPLE `field('body', ..)`-tagged `statement_block` children
+/// directly on `wrapper` — grammar-VERIFIED with `tree-sitter parse` for both:
+/// `preproc_split_complete_body`'s `#if`/`#elif`/`#else` arms (each a COMPLETE,
+/// mutually-exclusive body — grammar comment: "the entire body differs across
+/// branches") AND `preproc_split_procedure_body`'s `#if`-branch content plus its
+/// trailing SHARED tail (compiled into every build, after `#endif`). `field(Body)` is
+/// SINGULAR — it returns only the first — so a body position here is Vec-shaped, not a
+/// forced-singular slot; `children_by_field(Body)` is the correct read regardless of
+/// which of the two wrapper kinds this is. Union-reading ALL of them (rather than only
+/// the first) is required for call-graph soundness: every arm's calls are real,
+/// reachable calls under SOME build, and this codebase's dominant `#if`-handling policy
+/// is exactly this superset union-read (see `is_preproc_wrapper`'s doc) — mirrored by
+/// the pre-existing two-`RoutineDecl` precedent for a `#if`-split HEADER
+/// (`preproc_both_arms_distinct_signature_yield_two_routine_decls`). Taking only the
+/// first branch here would silently drop the `#else`/`#elif` arms' calls entirely.
 ///
 /// Always records a `SyntaxIssue` (never the ordinary path — the exact conditional
 /// control flow across the split is not preserved), even when the recovered content is
@@ -885,13 +886,8 @@ fn lower_preproc_split_routine_body(
     source: &str,
 ) -> BlockId {
     push_unlowered_issue(wrapper, "routine body", issues);
-    let bodies: Vec<RawNode> = if wrapper.kind() == RawKind::PreprocSplitCompleteBody {
-        wrapper.field(FieldName::Body).into_iter().collect()
-    } else {
-        wrapper.children_by_field(FieldName::Body)
-    };
     let mut items = Vec::new();
-    for body in bodies {
+    for body in wrapper.children_by_field(FieldName::Body) {
         for child in body.named_children() {
             lower_block_child(child, ir, issues, source, &mut items);
         }
@@ -2825,15 +2821,20 @@ codeunit 50201 T
         );
     }
 
-    /// T1.4 review finding 1b: `preproc_split_complete_body` — EVERY `#if`/`#else` arm
-    /// is a COMPLETE, mutually-exclusive body (grammar comment: "the entire body
-    /// differs across branches"), no shared tail at all. Same missing-fallback defect
-    /// as finding 1a: the routine node's `field(Body)` is `None` since
-    /// `preproc_split_complete_body` is a named, non-inlined wrapper. First-branch-wins
-    /// (mirrors `PreprocSplitDeclaration`'s established policy) — the `#if` arm's call
-    /// must be reachable.
+    /// T1.4 review finding 1b (re-review): `preproc_split_complete_body` — EVERY
+    /// `#if`/`#else` arm is a COMPLETE, mutually-exclusive body (grammar comment: "the
+    /// entire body differs across branches"), no shared tail at all. Same missing-
+    /// fallback defect as finding 1a: the routine node's `field(Body)` is `None` since
+    /// `preproc_split_complete_body` is a named, non-inlined wrapper. Reviewer's live
+    /// probe (verbatim): a first-branch-wins fix recovers `DoNew` but silently drops
+    /// `DoOld` — this codebase's dominant policy is UNION-read across `#if` branches
+    /// (see `is_preproc_wrapper`'s doc: sound for absence proofs, a deliberate superset
+    /// over-approximation), matched by the pre-existing two-`RoutineDecl` precedent
+    /// (`preproc_both_arms_distinct_signature_yield_two_routine_decls`) and this
+    /// function's own `preproc_split_procedure_body` sibling one function up — both
+    /// arms' calls must be reachable, not just the first.
     #[test]
-    fn preproc_split_complete_body_first_branch_call_is_reachable() {
+    fn preproc_split_complete_body_unions_both_arms() {
         let src = r#"
 codeunit 50202 T
 {
@@ -2853,10 +2854,14 @@ codeunit 50202 T
         let r = &af.objects[0].routines[0];
         let body = r
             .body
-            .expect("preproc_split_complete_body's first branch must be lowered");
+            .expect("preproc_split_complete_body's arms must be lowered");
         assert!(
             call_reachable(&af, body, "DoNew"),
-            "the #if (first) branch's call must be a discoverable edge"
+            "the #if branch's call must be a discoverable edge"
+        );
+        assert!(
+            call_reachable(&af, body, "DoOld"),
+            "the #else branch's call must not be dropped by a first-field-only read"
         );
     }
 
