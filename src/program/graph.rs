@@ -49,6 +49,24 @@ pub struct ProgramGraph {
     /// (Step 3b); empty in every in-memory test fixture that doesn't
     /// explicitly wire it (`..Default::default()`).
     pub friends: HashMap<AppRef, BTreeSet<AppRef>>,
+    /// Per-app dependency-ABI ingest diagnostics (Tier-1 remediation, H-3):
+    /// one entry per SymbolOnly dep whose `SymbolReference.json` could not
+    /// be read or parsed. Previously this signal (`SymbolReferenceAbi::
+    /// error`) existed but had ZERO production reads — a broken dependency
+    /// silently ingested as an empty ABI, indistinguishable from a
+    /// genuinely-empty one. Populated in `build::build_program_graph`'s Step
+    /// 2b; empty on every successful ingest (the overwhelmingly common
+    /// case) and in every in-memory test fixture that doesn't explicitly
+    /// wire it.
+    pub abi_ingest_errors: Vec<AbiIngestError>,
+}
+
+/// One dependency-ABI ingest failure (H-3) — see
+/// [`ProgramGraph::abi_ingest_errors`]'s doc.
+#[derive(Debug, Clone)]
+pub struct AbiIngestError {
+    pub app: AppRef,
+    pub message: String,
 }
 
 impl ProgramGraph {

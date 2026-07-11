@@ -117,6 +117,174 @@ fn conditional_insert_yields_unknown_dirty_at_exit() {
 }
 
 // ---------------------------------------------------------------------------
+// T1.1: `repeat` bodies are FLAT multi-statement children — the walker must
+// visit ALL of them, not just the first. Coupled with a real break/continue
+// exit-join (see below); a repeat body containing an unconditional-per-branch
+// break is covered separately once both fixes land.
+// ---------------------------------------------------------------------------
+
+const WORKER_TABLE: &str = r#"table 50010 WorkerEntry
+{
+    fields
+    {
+        field(1; "Entry No."; Integer) { }
+        field(2; "Field A"; Text[50]) { }
+    }
+
+    keys
+    {
+        key(PK; "Entry No.") { Clustered = true; }
+    }
+}
+"#;
+
+/// `repeat Rec.Validate(...); Rec.Get(...); Done := true; until Done;` — the
+/// walker must see ALL THREE statements. `Get` (loadsFromDb) resets `dirty` to
+/// pristine every iteration, so the SOUND fixpoint is `dirtyAtExit = no`. The
+/// buggy walker (repeat body truncated to its first child) only ever sees
+/// `Validate` and converges to the WRONG `dirtyAtExit = yes`. `until Done`
+/// (a plain local Boolean, not a record op) is deliberately inert so the
+/// until-condition itself cannot mask the truncation bug — an earlier draft
+/// used `until Rec.Next() = 0`, whose `Next()` is ITSELF a `loadsFromDb` op on
+/// `Rec` and silently reset dirty every iteration regardless of the bug.
+#[test]
+fn repeat_multi_statement_body_sees_all_statements() {
+    let src = r#"codeunit 50010 RepeatWorker
+{
+    procedure ProcessRepeat(var Rec: Record WorkerEntry)
+    var
+        Done: Boolean;
+    begin
+        repeat
+            Rec.Validate("Field A");
+            Rec.Get(Rec."Entry No.");
+            Done := true;
+        until Done;
+    end;
+}
+"#;
+    let resolved = assemble_and_resolve(
+        &files(&[("Codeunit.al", src), ("Table.al", WORKER_TABLE)]),
+        APP_GUID,
+        MODEL_INSTANCE_ID,
+    );
+    let proj = project_r3a2(&resolved);
+    let summaries = serde_json::to_value(&proj.summaries).unwrap();
+    let summaries = summaries.as_array().unwrap();
+    assert_eq!(summaries.len(), 1, "fixture has exactly one routine");
+
+    let role = &summaries[0]["parameterRoles"][0];
+
+    assert_eq!(
+        role["dirtyAtExit"], "no",
+        "repeat body must walk BOTH Validate and Get — Get resets dirty every \
+         iteration so the sound answer is dirtyAtExit=no; got summary {}",
+        summaries[0]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T1.1: break/continue currently lower to an inert `other` CFN kind, so
+// dataflow state threads through statements a break actually skips (unsound:
+// hides a dirty-exit path). A real break must contribute its at-break state
+// to the enclosing loop's exit join.
+// ---------------------------------------------------------------------------
+
+/// `while Cont do begin Rec.Validate(...); if StopNow then break; Rec.Get(...); end;`
+/// — on the `StopNow` path the loop exits immediately after `Validate`
+/// (dirty), never reaching `Get` (which would reset it). The sound answer is
+/// `dirtyAtExit = yes` (a real dirty-exiting path exists). Treating `break` as
+/// a no-op makes `Get` always execute, converging to the WRONG
+/// `dirtyAtExit = no`.
+#[test]
+fn while_conditional_break_contributes_dirty_state_to_loop_exit() {
+    let src = r#"codeunit 50011 WhileWorker
+{
+    procedure ProcessWhile(var Rec: Record WorkerEntry; StopNow: Boolean)
+    var
+        Cont: Boolean;
+    begin
+        Cont := true;
+        while Cont do begin
+            Rec.Validate("Field A");
+            if StopNow then
+                break;
+            Rec.Get(Rec."Entry No.");
+        end;
+    end;
+}
+"#;
+    let resolved = assemble_and_resolve(
+        &files(&[("Codeunit.al", src), ("Table.al", WORKER_TABLE)]),
+        APP_GUID,
+        MODEL_INSTANCE_ID,
+    );
+    let proj = project_r3a2(&resolved);
+    let summaries = serde_json::to_value(&proj.summaries).unwrap();
+    let summaries = summaries.as_array().unwrap();
+    assert_eq!(summaries.len(), 1, "fixture has exactly one routine");
+
+    let role = &summaries[0]["parameterRoles"][0];
+
+    assert_eq!(
+        role["dirtyAtExit"], "yes",
+        "an unconditional break right after Validate (before Get resets it) must \
+         contribute its dirty state to the loop's exit join; got summary {}",
+        summaries[0]
+    );
+}
+
+/// The COUPLED case: `repeat Rec.Get(...); if StopNow then break; Rec.Validate(...); Done := true; until Done;`.
+/// The buggy repeat-truncation walker sees ONLY `Get` (first statement) and
+/// converges to `dirtyAtExit = no` — `Validate` is invisible to it, so it
+/// never sees ANY dirty-producing path. Both fixes together must land on the
+/// sound answer: the non-break path reaches `Validate` (dirty), so
+/// `dirtyAtExit = yes`. (Landing only the repeat-traversal fix while leaving
+/// `break` a no-op would ALSO reach `dirtyAtExit = yes` here — via the
+/// opposite unsoundness of never letting `break` skip `Validate` at all —
+/// which is exactly why the brief mandates the two fixes land together: see
+/// the report for the `[Validate; break; Get]` ordering that exposes that
+/// specific danger, where fixing repeat-traversal alone flips an
+/// accidentally-correct answer to an actively wrong one.)
+#[test]
+fn repeat_with_conditional_break_is_sound() {
+    let src = r#"codeunit 50012 RepeatBreakWorker
+{
+    procedure ProcessRepeat(var Rec: Record WorkerEntry; StopNow: Boolean)
+    var
+        Done: Boolean;
+    begin
+        repeat
+            Rec.Get(Rec."Entry No.");
+            if StopNow then
+                break;
+            Rec.Validate("Field A");
+            Done := true;
+        until Done;
+    end;
+}
+"#;
+    let resolved = assemble_and_resolve(
+        &files(&[("Codeunit.al", src), ("Table.al", WORKER_TABLE)]),
+        APP_GUID,
+        MODEL_INSTANCE_ID,
+    );
+    let proj = project_r3a2(&resolved);
+    let summaries = serde_json::to_value(&proj.summaries).unwrap();
+    let summaries = summaries.as_array().unwrap();
+    assert_eq!(summaries.len(), 1, "fixture has exactly one routine");
+
+    let role = &summaries[0]["parameterRoles"][0];
+
+    assert_eq!(
+        role["dirtyAtExit"], "yes",
+        "repeat must walk all statements AND fold the break's state into the \
+         loop's exit — the non-break path reaches Validate; got summary {}",
+        summaries[0]
+    );
+}
+
+// ---------------------------------------------------------------------------
 // FIX 3: opaque-callee uncertainty on a resolved edge to a bodyless callee.
 // ---------------------------------------------------------------------------
 

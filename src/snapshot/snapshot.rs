@@ -75,7 +75,25 @@ pub struct SnapshotBuilder {
 
 impl SnapshotBuilder {
     /// Build the snapshot, loading the workspace and all `.alpackages` deps.
+    ///
+    /// Thin wrapper over [`Self::build_with_diagnostics`] for callers that
+    /// don't need the dependency-load diagnostics (Tier-1 remediation, H-2).
     pub fn build(&self) -> Result<AppSetSnapshot> {
+        self.build_with_diagnostics().map(|(snap, _dropped)| snap)
+    }
+
+    /// Same as [`Self::build`], but also returns every
+    /// [`crate::dependencies::DroppedDuplicateDependency`] the underlying
+    /// `load_all_apps` GUID-level dedup dropped (H-2) — two or more `.app`
+    /// files discovered under `.alpackages` shared a real GUID (a stale
+    /// ancestor-folder copy, or the identical file present under two scanned
+    /// folders) and only the highest-version survivor became an `AppUnit`.
+    pub fn build_with_diagnostics(
+        &self,
+    ) -> Result<(
+        AppSetSnapshot,
+        Vec<crate::dependencies::DroppedDuplicateDependency>,
+    )> {
         let ws = &self.workspace_root;
 
         // ------------------------------------------------------------------
@@ -154,7 +172,7 @@ impl SnapshotBuilder {
         // ------------------------------------------------------------------
         // Dependency units
         // ------------------------------------------------------------------
-        let resolved_deps = load_all_apps(ws)?;
+        let (resolved_deps, dropped_dep_versions) = load_all_apps(ws)?;
 
         let mut apps: Vec<AppUnit> = Vec::with_capacity(1 + resolved_deps.len());
         apps.push(ws_unit);
@@ -256,11 +274,14 @@ impl SnapshotBuilder {
             });
         }
 
-        Ok(AppSetSnapshot {
-            workspace_app,
-            apps,
-            world: World::Closed,
-        })
+        Ok((
+            AppSetSnapshot {
+                workspace_app,
+                apps,
+                world: World::Closed,
+            },
+            dropped_dep_versions,
+        ))
     }
 }
 
@@ -271,6 +292,261 @@ impl SnapshotBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // H-2 (Tier-1 remediation, Task T1.2): end-to-end `.app` fixtures for
+    // `SnapshotBuilder::build_with_diagnostics`'s GUID-level dedup.
+    // -----------------------------------------------------------------------
+
+    /// Write a minimal, REAL `.app` file (40-byte NAVX header + a zip
+    /// containing `NavxManifest.xml` + `SymbolReference.json`) — exercises
+    /// the actual `open_app_zip`/`extract_app_package`/`load_all_apps`
+    /// pipeline, not a hand-built in-memory shortcut.
+    fn write_minimal_app(
+        dir: &std::path::Path,
+        filename: &str,
+        guid: &str,
+        name: &str,
+        publisher: &str,
+        version: &str,
+    ) -> std::path::PathBuf {
+        use std::io::Write;
+
+        let manifest = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?><Package xmlns="http://schemas.microsoft.com/navx/2015/manifest"><App Id="{guid}" Name="{name}" Publisher="{publisher}" Version="{version}" Runtime="13.0" /></Package>"#
+        );
+        // One Codeunit with one Method — enough for `abi_overload_collapsed`
+        // to have something to collapse (or not) when this app's ABI is
+        // ingested twice vs once.
+        let symbol_reference =
+            r#"{"Codeunits":[{"Id":50100,"Name":"DupCU","Methods":[{"Name":"DoIt","Id":1}]}]}"#;
+
+        // Build the zip in memory at offset 0 first (guaranteed-correct),
+        // then prepend the NAVX header when writing to disk — avoids any
+        // dependency on the `zip` crate's handling of a pre-offset writer.
+        let mut zip_bytes = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_bytes);
+            let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default();
+            zip.start_file("NavxManifest.xml", options).unwrap();
+            zip.write_all(manifest.as_bytes()).unwrap();
+            zip.start_file("SymbolReference.json", options).unwrap();
+            zip.write_all(symbol_reference.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let path = dir.join(filename);
+        let mut out = std::fs::File::create(&path).unwrap();
+        out.write_all(&[0u8; 40]).unwrap(); // NAVX header (content unused)
+        out.write_all(zip_bytes.get_ref()).unwrap();
+        path
+    }
+
+    fn write_app_json(dir: &std::path::Path) {
+        std::fs::write(
+            dir.join("app.json"),
+            r#"{
+    "id": "99999999-0000-0000-0000-000000000099",
+    "name": "H2Probe",
+    "publisher": "probe",
+    "version": "1.0.0.0"
+}"#,
+        )
+        .unwrap();
+    }
+
+    /// "Stale wins" reproduction: two `.app` files sharing one GUID at
+    /// different versions (24.0.0.0, 25.0.0.0) sit in `.alpackages`. The
+    /// higher version must win, and the drop must be named in the returned
+    /// diagnostics — proving the fix end-to-end through the REAL
+    /// `load_all_apps` → `SnapshotBuilder` pipeline, not just the pure dedup
+    /// function.
+    #[test]
+    fn build_with_diagnostics_keeps_highest_version_dep_and_reports_the_drop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_app_json(dir.path());
+        let alpackages = dir.path().join(".alpackages");
+        std::fs::create_dir_all(&alpackages).unwrap();
+        let guid = "aaaaaaaa-1111-1111-1111-111111111111";
+        write_minimal_app(
+            &alpackages,
+            "Pub_DupApp_24.0.0.0.app",
+            guid,
+            "DupApp",
+            "Pub",
+            "24.0.0.0",
+        );
+        write_minimal_app(
+            &alpackages,
+            "Pub_DupApp_25.0.0.0.app",
+            guid,
+            "DupApp",
+            "Pub",
+            "25.0.0.0",
+        );
+
+        let (snap, dropped) = (SnapshotBuilder {
+            workspace_root: dir.path().to_path_buf(),
+            local_providers: vec![],
+        })
+        .build_with_diagnostics()
+        .expect("snapshot build");
+
+        let dup_units: Vec<_> = snap.apps.iter().filter(|u| u.id.guid == guid).collect();
+        assert_eq!(
+            dup_units.len(),
+            1,
+            "exactly one AppUnit must survive for the duplicated GUID; got {:?}",
+            dup_units.iter().map(|u| &u.id.version).collect::<Vec<_>>()
+        );
+        assert_eq!(dup_units[0].id.version, "25.0.0.0");
+
+        assert_eq!(
+            dropped.len(),
+            1,
+            "the dropped stale version must be reported"
+        );
+        assert_eq!(dropped[0].guid, guid);
+        assert_eq!(dropped[0].kept_version, "25.0.0.0");
+        assert_eq!(dropped[0].dropped_version, "24.0.0.0");
+    }
+
+    /// Byte-identical duplicate: the SAME version physically present twice —
+    /// once in the project's OWN `.alpackages`, once in an ANCESTOR's
+    /// `.alpackages` (`find_all_alpackages_folders` walks up the directory
+    /// tree on purpose, e.g. for a monorepo's shared package cache; this is
+    /// the real-world shape the H-2 brief describes, not two files sitting
+    /// side by side in the same scanned folder). Must dedup to exactly one
+    /// `AppUnit` BEFORE `build_program_graph` ever ingests it — proving the
+    /// fix prevents the `abi_overload_collapsed` poisoning at its source,
+    /// not just after the fact.
+    #[test]
+    fn build_with_diagnostics_dedups_byte_identical_duplicate_no_collapse() {
+        let base = tempfile::tempdir().expect("tempdir");
+        let project = base.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        write_app_json(&project);
+        let own_alpackages = project.join(".alpackages");
+        std::fs::create_dir_all(&own_alpackages).unwrap();
+        let ancestor_alpackages = base.path().join(".alpackages");
+        std::fs::create_dir_all(&ancestor_alpackages).unwrap();
+
+        let guid = "bbbbbbbb-2222-2222-2222-222222222222";
+        // Same GUID, same version, two different physical files/locations —
+        // `load_all_apps`'s canonical-path dedup only catches the SAME path,
+        // not two distinct copies.
+        write_minimal_app(
+            &own_alpackages,
+            "Pub_SameVerApp_1.0.0.0.app",
+            guid,
+            "SameVerApp",
+            "Pub",
+            "1.0.0.0",
+        );
+        write_minimal_app(
+            &ancestor_alpackages,
+            "Pub_SameVerApp_1.0.0.0_copy.app",
+            guid,
+            "SameVerApp",
+            "Pub",
+            "1.0.0.0",
+        );
+
+        let (snap, dropped) = (SnapshotBuilder {
+            workspace_root: project,
+            local_providers: vec![],
+        })
+        .build_with_diagnostics()
+        .expect("snapshot build");
+
+        let dup_units: Vec<_> = snap.apps.iter().filter(|u| u.id.guid == guid).collect();
+        assert_eq!(
+            dup_units.len(),
+            1,
+            "a byte-identical duplicate must collapse to exactly one AppUnit"
+        );
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].kept_version, dropped[0].dropped_version);
+
+        // Graph-level proof: with only one AppUnit for this GUID,
+        // `build_program_graph`'s Step 2b ingests its ABI exactly once, so
+        // `DoIt` must NOT be marked `abi_overload_collapsed` (pre-fix, TWO
+        // AppUnits sharing this identity would intern to the SAME AppRef,
+        // ingest twice, and collapse-poison every routine in the app).
+        let cache = crate::program::abi_ingest::AbiCache::new();
+        let graph = crate::program::build::build_program_graph(&snap, &cache);
+        let do_it = graph
+            .routines
+            .iter()
+            .find(|r| r.id.name_lc == "doit")
+            .expect("DoIt must be ingested");
+        assert!(
+            !do_it.abi_overload_collapsed,
+            "DoIt must NOT be abi_overload_collapsed — the duplicate was \
+             dedupped before it ever reached ingestion"
+        );
+    }
+
+    /// CDO pin (Tier-1 remediation, Task T1.2, H-2 re-measure protocol):
+    /// names the real duplicate-GUID dependencies the fix found and dropped
+    /// on the frozen CDO workspace, so the fix's real-world effect (not just
+    /// the synthetic fixtures above) is a durable regression guard.
+    ///
+    /// Investigative run (2026-07-10): CDO's workspace root
+    /// (`DO.Support-SlowDOSetup/DocumentOutput/Cloud`) has its OWN
+    /// `.alpackages`, and its ANCESTOR (`DO.Support-SlowDOSetup/
+    /// DocumentOutput`) has a SECOND `.alpackages` that `find_all_alpackages_
+    /// folders` also scans (by design — a monorepo's shared package cache) —
+    /// 10 of CDO's 12 real dependency apps are cached in BOTH,
+    /// byte-identical. TWO (`Continia Document Output`, `Continia Connector
+    /// App`) additionally have a genuinely STALE extra copy in the ancestor
+    /// folder — the literal "stale ancestor-folder copy" scenario the H-2 fix
+    /// exists for, confirmed on real data, not just a constructed fixture.
+    #[test]
+    fn cdo_dedup_names_the_real_dropped_duplicates() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            return;
+        };
+        let (_snap, dropped) = (SnapshotBuilder {
+            workspace_root: ws,
+            local_providers: vec![],
+        })
+        .build_with_diagnostics()
+        .expect("snapshot build");
+
+        assert_eq!(
+            dropped.len(),
+            12,
+            "CDO's real .alpackages duplicate-GUID population moved — \
+             re-derive this pin, don't just loosen it; got {dropped:#?}"
+        );
+
+        let byte_identical = dropped
+            .iter()
+            .filter(|d| d.kept_version == d.dropped_version)
+            .count();
+        assert_eq!(
+            byte_identical, 10,
+            "10 of CDO's 12 drops are the SAME version cached in both the \
+             workspace's own and its ancestor's .alpackages; got {dropped:#?}"
+        );
+
+        let mut stale_names: Vec<&str> = dropped
+            .iter()
+            .filter(|d| d.kept_version != d.dropped_version)
+            .map(|d| d.name.as_str())
+            .collect();
+        stale_names.sort_unstable();
+        assert_eq!(
+            stale_names,
+            vec!["Continia Connector App", "Continia Document Output"],
+            "exactly these two drops must be a genuine version mismatch \
+             (the stale-ancestor-copy scenario); got {dropped:#?}"
+        );
+    }
 
     #[test]
     fn builds_snapshot_over_cdo_workspace() {

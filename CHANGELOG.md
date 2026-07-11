@@ -7,6 +7,174 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The `al-syntax` lowerer silently dropped preproc-split procedures, case
+  branches, and statement-position `#if`/guarded constructs, and let comments
+  pollute positional argument reads — including silently unregistering a whole
+  `[EventSubscriber(...)]` (Task T1.4, Tier-1 remediation arc).** The corpus had
+  ZERO `#if` fixtures before this task, so three fleet-confirmed lowering
+  defects (grammar-verified with `tree-sitter parse`, not just read from
+  `grammar.js`) went undetected: lost code produced no edge AND no `unknown` —
+  it silently ceased to exist. All work is in `crates/al-syntax/src/lower/mod.rs`
+  (+ one engine-side test in `src/program/resolve/event.rs`, the only site
+  outside `al-syntax` this task touched).
+  - **H-6 (`preproc_split_procedure` dropped entirely).** `collect_routines`
+    matched only `Procedure|TriggerDeclaration|InterfaceProcedure` — the
+    catch-all recursed without ever creating a `RoutineDecl` for a procedure
+    whose HEADER differs across `#if`/`#else` but whose BODY (compiled into
+    every build) is shared. Fixed by adding `PreprocSplitProcedure` /
+    `PreprocSplitProcedurePreamble` to the match (both grammar-INLINE their
+    header/body fields onto the wrapper node, so `.field()` resolves correctly
+    — VERIFIED with `tree-sitter parse`, first-branch-wins for the
+    per-branch name/parameters, mirroring `PreprocSplitDeclaration`'s
+    established policy); `lower_routine`'s body extraction gained a dedicated
+    fallback for `_preamble`'s BARE trailing `code_block` (no `body` field at
+    all, unlike the plain variant).
+  - **H-7 (case/statement preproc variants + `#region` markers).**
+    `lower_case_body` matched only plain `CaseBranch`, silently skipping
+    `preproc_conditional_case` / `preproc_split_case_extended` entirely and
+    fabricating an EMPTY branch for `preproc_split_case_branch` (whose
+    `pattern`/`body` fields live on a NESTED node the grammar still wraps in an
+    outer `case_branch` — verified empirically, not assumed). Refactored into
+    `collect_case_branches`/`push_case_branch`/`case_patterns`/
+    `lower_case_else_branch`: branches union additively (mirrors the
+    `implements`-list union-read policy already established for `#if`), the
+    singular `else_block` is first-match-wins. `lower_stmt`'s `_` catch-all
+    recorded an issue and returned bare `Unknown` for the nine
+    `preproc_split_if*`/`preproc_guarded_statement` grammar shapes without
+    descending — new `lower_unmodelled_stmt` reconstructs a REAL `StmtKind::If`
+    for the three shapes with clean `condition`/`then_branch`/`else_branch`
+    fields (`preproc_split_if_statement`, `preproc_guarded_statement`,
+    `preproc_split_if_else_statement`) and a real `StmtKind::Call` for
+    `preproc_split_call_statement` (unambiguous by construction); the
+    remaining flat/fragmented shapes and any leftover content (guard
+    statements, extra `#elif`/`#else` arms, a `preproc_fragmented_else_tail`)
+    are recovered generically through the SAME `lower_block_child` dispatcher
+    real block content uses, wrapped in `StmtKind::Block` — never a silent
+    drop, never a fabricated empty block. `#region`/`#endregion` markers
+    (previously absent from `lower_block_child`'s statement-position skip-list)
+    were producing a phantom `Unknown` statement for a construct with zero
+    content; added to the skip-list.
+  - **H-8 (trivia as named extras).** A `comment`/`multiline_comment` is a
+    legal named child almost anywhere, so a bare `named_children()` scan let
+    it silently occupy a real positional slot: as the sole child of a
+    `parenthesized_expression` (replacing the real inner expression), as a
+    phantom argument in a `call_expression`'s arguments (breaking arity-exact
+    dispatch), and — most consequentially — in an `[EventSubscriber(...)]`'s
+    `attribute_argument_list`, shifting every later positional read in
+    `parse_event_subscriber_ir` and silently unregistering the WHOLE
+    subscriber. Fixed with ONE shared `structural_children` helper (filters
+    `Class::Trivia`) applied at all three al-syntax sites; the root cause of
+    the `EventSubscriber` case was upstream in al-syntax's attribute-arg
+    lowering, not `event.rs` itself, so no engine-side fix was needed there —
+    only a regression test proving the pipeline end-to-end.
+  - 9 new fixtures (8 `al-syntax` unit tests + 1 engine-side
+    `event.rs` test), each proven red-then-green against the pre-fix code (a
+    representative H-6 spot-check is recorded in the test module; the rest
+    follow the same `tree-sitter parse`-verified methodology). A test-only
+    `call_reachable` walker mirrors `extract.rs`'s real `walk_block_v2`/
+    `walk_stmt_v2` `Block`/`Stmt` LINKAGE (not a bare arena scan) to prove
+    recovered calls are actually DISCOVERABLE by the call-graph walker, not
+    just present-but-orphaned in the IR arena.
+  - Blast radius: the full workspace `cargo test` (2502 tests, 158 binaries)
+    is byte-identical — ZERO existing golden/differential fixture touches any
+    of these constructs (the corpus's `#if` coverage was zero before this
+    task), so this change is purely additive for all existing content.
+    `cargo clippy --all-targets --all-features` clean.
+  - CDO verification (`aldump --program-call-graph-stats`): `primaryScoped`
+    moved `total` 18108→18113 (+5), all five landing in `resolvedSource`
+    (8279→8284); `wholeProgram` moved `total` 43408→43414 (+6: +5
+    `resolvedSource`, +1 `honestEmpty`). `unknown` held at 0/0 and
+    `ambiguousResolved` held at 0 in both scopes throughout — the move is
+    entirely NEW resolved edges, never a regression. Fully attributed: CDO's
+    `Codeunit 6175280 CDO E-Mail.al` (`SetFromAddress`/`GetDefaultFromAddress`
+    area) has a real `preproc_split_case_extended` (`#if DOSMTP` inside a
+    `case`) whose extra branch (`SetFromAddressWithDOSMTPSetup`,
+    `SetDOSMTPCode`) and shared body (`EmailAccountCU.IsAnyAccountRegistered`,
+    `EmailScenarios.GetDefaultEmailAccount`, `SetBCEmailAccount`) were
+    entirely invisible to the call graph pre-fix — exactly 5 calls, exactly
+    matching the `primaryScoped.resolvedSource` delta. `scripts/cdo-gate`
+    (`ENFORCE_CDO_WS=1`) green.
+  - **T1.4 review follow-up: two more sibling-field gaps in these same shapes**
+    (found by re-verifying live against `tree-sitter parse` output rather than
+    trusting a grammar read). `preproc_split_procedure_body` /
+    `preproc_split_complete_body` are NAMED (non-inlined) choice arms of
+    `procedure`/`trigger_declaration`'s BODY position — unlike
+    `_routine_regular_body`'s inlined `field('body', code_block)`, neither
+    wrapper's own `field('body', ..)` flattens onto the routine node itself,
+    so `lower_routine`'s existing `_preamble`-only fallback never caught them:
+    a plain procedure whose var/begin section is `#if`-split lowered to
+    `RoutineDecl.body == None`, zero issues, its call silently gone.
+    `lower_routine` gained a third fallback
+    (`lower_preproc_split_routine_body`): `preproc_split_complete_body`'s
+    mutually-exclusive `#if`/`#elif`/`#else` arms use first-branch-wins
+    (`.field(Body)`, single match, mirroring `PreprocSplitDeclaration`'s
+    established policy); `preproc_split_procedure_body`'s `#if`-branch content
+    and its trailing SHARED tail are NOT alternatives — both inlined
+    sub-rules' `body` fields flatten onto the SAME wrapper node (grammar-
+    VERIFIED with `tree-sitter parse`: two separate `body:`-tagged
+    `statement_block` children), so they are union-read via
+    `children_by_field(Body)` instead, preserving both. Separately,
+    `preproc_split_code_block_end` (the closing `end` of a `code_block` itself
+    split across `#if`/`#else`) is a SIBLING of the `code_block`'s own `body`
+    field, never nested inside it — `lower_code_block`'s old
+    `cb.field(Body).unwrap_or(cb)` trick only ever exposed this sibling when
+    `body` was ABSENT; a `code_block` with real LEADING content before the
+    split took the `Some(body)` arm and never looked at the sibling again,
+    silently dropping its content (including, grammar-verified, a following
+    unconditional `else` clause the grammar folds into the SAME node).
+    `lower_code_block` now always checks for the sibling and recovers it
+    through the same generic `lower_block_child` dispatcher, folded flat into
+    the SAME block. A misleading doc comment on `lower_unmodelled_stmt`
+    (claiming this shape was "recovered generically through
+    `lower_block_child`" — only ever true when `body` was absent) is
+    corrected to point at `lower_code_block` instead. 4 new red-then-green
+    `al-syntax` fixtures (proven red against the pre-fix code, matching the
+    parent task's methodology); full workspace `cargo test` and
+    `cargo clippy --all-targets --all-features` both clean, `rustfmt` applied.
+- **L4 dataflow walker only saw the FIRST statement of every `repeat…until`
+  body, and `break`/`continue` lowered to an inert `other` CFN kind that
+  silently threaded state through statements they actually skip (Task T1.1,
+  Tier-1 remediation arc).** Two coupled unsoundness bugs in
+  `src/engine/l4/cfg_walker.rs`'s branch-aware `walk_cfg`:
+  1. The `"repeat"` arm took `node.children.first()` — but `repeat` bodies are
+     lowered FLAT (`src/engine/l2/ir_walk.rs`'s `Repeat` case), unlike
+     `while`/`for`/`foreach`'s single wrapped block child, so any multi-
+     statement `repeat` body was silently truncated to its first statement.
+     Fixed by wrapping the flat children in a synthetic `"block"` CFN node
+     (mirroring the same pattern already used by
+     `control_context.rs::walk_loop_node` and
+     `operation_order.rs::walk_loop_node` for this exact shape) so the walk
+     reuses the `"block"` arm's sequential/field-interleave logic over ALL
+     statements.
+  2. `break`/`continue` now lower to their own CFN kinds (`"break"`/
+     `"continue"`, `src/engine/l2/ir_walk.rs`) instead of the inert `"other"`.
+     `walk_cfg` gained a `Reach` signal (`Normal` / `Abrupt`) threaded through
+     every arm: a `break`/`continue` leaf pushes its at-break/at-continue
+     state onto a new per-loop `LoopFrame` (a stack scoped to the innermost
+     enclosing `while`/`for`/`foreach`/`repeat`) and returns `Abrupt`, which
+     propagates up through `if`/`case`/`block` so statements after an
+     unconditional break/continue in the same block are correctly treated as
+     dead for that path. Each loop arm folds its frame's `breaks` into the
+     loop's own exit state (once, after the bounded fixed-point settles) and
+     its `continues` into the loop-head join (cleared every iteration,
+     mirroring `continue` jumping straight to the condition re-check). The
+     break/continue defect was previously MASKED inside `repeat` bodies by
+     defect 1 (truncation meant a body-final `break`/`continue` was often
+     invisible entirely) and would have gone live unsoundly the moment defect
+     1 was fixed in isolation — the two fixes landed as one change.
+  New TDD fixtures in `tests/r3a2_branch_aware.rs` (all confirmed red on the
+  pre-fix code, green after): a multi-statement `repeat` body where a later
+  statement resets `dirtyAtExit` (bug 1 in isolation, no break involved); a
+  `while` loop with a conditional `break` between two state-changing
+  statements exercising the exit-join (bug 2 in isolation, no repeat
+  involved); and a `repeat` body combining both. Full `cargo test` green (157
+  binaries); `REGEN_TEMP_GOLDENS=1` regen touched exactly one Rust-owned
+  golden family with a real content diff — see the T1.1 report for the full
+  blast-radius table. CDO verification: `aldump --program-call-graph-stats`
+  SHA unchanged (`67910e99...13f4f`, byte-identical — this fix touches L4
+  dataflow, not call resolution) and `scripts/cdo-gate` green.
+
 ### Added
 - **Golden-regen completeness + value-gated `REGEN_TEMP_GOLDENS` (Task T0.6,
   Tier-0 remediation arc).** Doctrine says every Rust-owned golden regenerates
@@ -404,6 +572,254 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **CDO re-measure + harness rebaseline for the H-1/H-2/H-3 dependency-ingest
+  trio (Tier-1 remediation Task T1.2).** `aldump --program-call-graph-stats`
+  on the frozen CDO workspace: `primaryScoped` (workspace-only edges) is
+  BYTE-IDENTICAL before/after all three fixes (`total` 18108, `unknown` 0,
+  `realUnknownRate` 0.0 — the north-star zero holds exactly). The only
+  `wholeProgram`-scope delta is `total`/`honestEmpty` 43408 → 43369 (-39),
+  attributed ENTIRELY to H-2 by incremental per-commit measurement (H-1 alone:
+  byte-identical; H-1+H-2: exactly this delta; H-1+H-2+H-3: no further
+  change). Root cause: CDO's workspace root has its OWN `.alpackages`, and
+  its ANCESTOR folder (`find_all_alpackages_folders` scans both by design)
+  has a SECOND `.alpackages` caching the SAME 12 real dependency apps — 10
+  byte-identical duplicates plus 2 genuinely stale extra copies (`Continia
+  Document Output` 28.0.0.227530, `Continia Connector App` 28.0.0.225760),
+  confirmed real-world instances of exactly the scenario H-2 fixes (pinned in
+  a new CDO-gated `cdo_dedup_names_the_real_dropped_duplicates` test).
+  Removing the 12 duplicate AppUnits eliminated 39 duplicate call-site
+  obligations that were being double-counted in the `wholeProgram` (not
+  `primaryScoped`) `honestEmpty` bucket — H-1 (event-subscriber orphan fix)
+  and H-3 (NUL-tolerant parse) are CONFIRMED CDO-DORMANT: `abiIntegrity`
+  (`abiMapped`/`abiRoutesTotal`/`abiUnmapped`) and every other histogram
+  field are byte-identical throughout — no NUL-padded or genuinely-corrupt
+  dependency file exists in CDO's real `.alpackages`, and no `local`/
+  `internal` publisher in CDO's real deps gained a NEW subscriber binding
+  (dormancy here is the documented "fine, honest answer," not a fix that
+  didn't work). `genuine_wrong` stayed 0 throughout every measurement.
+  One pre-existing test asserted the OLD buggy H-1 behavior as correct:
+  `program_resolve_harness.rs`'s `ws_protected_abi_internal_and_local_still_absent`
+  expected an `internal`/`local` ABI member to resolve `Unknown(MemberNotFound)`
+  (dropped-at-ingestion, indistinguishable from a name that never existed);
+  renamed to `..._still_declines_but_with_precise_reason` and rebaselined to
+  the correct, more precise `Unknown(InternalNotVisible)`/`Unknown(LocalNotVisible)`
+  — a genuine improvement (the member now demonstrably exists and is
+  access-declined, not silently absent), not a regression.
+- **NUL-padded `SymbolReference.json` silently ingested as an empty ABI, and
+  every read/parse failure had zero production reads anywhere (H-3, Tier-1
+  remediation Task T1.2).** Some `.app` emitters pad `SymbolReference.json`
+  with trailing NUL bytes after the real JSON content. The legacy
+  `app_package::parse_symbols` parser (a `serde_json::StreamDeserializer`
+  reading only the first JSON value) already tolerated this; the newer engine
+  path (`engine::deps::symbol_reference::parse_symbol_reference`) used a
+  STRICT `serde_json::from_str`, which fails on the trailing NUL padding
+  (not JSON whitespace) even though the leading content is perfectly
+  well-formed — a genuinely correct dependency silently ingested with EMPTY
+  objects/tables. Worse, `SymbolReferenceAbi.error` (the field meant to
+  surface exactly this) had ZERO production reads anywhere in the codebase,
+  and a SEPARATE I/O-level failure path (`AbiCache::get_or_load`'s
+  `unwrap_or_else(|_| SymbolReferenceAbi::default())`) silently swallowed
+  zip-open/file-read failures the same way. Fixed with ONE shared tolerant
+  parser (`app_package::parse_first_json_value`, extracted from the legacy
+  path's existing technique) now used by BOTH `parse_symbols` and
+  `parse_symbol_reference` — `resolve::abi_check`'s integrity harness
+  re-parses through the same fixed function, so it was never
+  "synchronized-blind" as a separate concern. `AbiCache::get_or_load`'s I/O
+  swallow now routes through the SAME `error` field a JSON parse failure
+  uses. `abi_ingest::ingest_abi` now returns a named `AbiIngestResult`
+  (objects + routines + an optional `error`) instead of a bare tuple, and
+  `build_program_graph` collects every non-empty one into a new
+  `ProgramGraph.abi_ingest_errors: Vec<AbiIngestError>` (per-app, additive) —
+  a broken dependency is now observable instead of silently indistinguishable
+  from a genuinely-empty one.
+- **Duplicate dependency `.app` versions silently picked the stale one, or
+  poisoned an entire app's ABI (H-2, Tier-1 remediation Task T1.2).**
+  `dependencies::load_all_apps` scans EVERY `.alpackages` folder reachable by
+  walking up the directory tree (own + every ancestor, e.g. for a monorepo's
+  shared package cache) and parsed every `.app` found with no GUID-level
+  dedup at all; the only dedup was by exact canonical PATH. Two consequences:
+  (1) `program::build::build_program_graph`'s dependency-closure GUID match
+  (`by_guid.find(...)`) bound to whichever version happened to sort first in
+  `load_all_apps`'s final ordering — sorted by raw STRING comparison on the
+  version field (the "purely a stable tiebreak" doc comment was false: sorting
+  ascending and taking the first match always favors the LOWEST version, e.g.
+  a stale ancestor-folder copy silently won over the correct local one); (2)
+  the SAME version physically present twice (a file copied into two scanned
+  folders) ingested TWICE, producing IDENTICAL `RoutineNodeId`s for every one
+  of that app's ABI routines — `dedup_routines_preserving_genuine_overloads`
+  then marked EVERY survivor `abi_overload_collapsed`, declining the entire
+  app's routines for chain-typing and plain dispatch alike. Fixed with a new
+  `dependencies::dedup_by_guid_keep_highest_version`, wired into
+  `load_all_apps` itself (protecting every caller uniformly): collapses every
+  non-empty-GUID group down to its highest-version survivor (via the existing
+  numeric `compare_versions`, never raw-string comparison), naming every
+  dropped file in a new `DroppedDuplicateDependency` diagnostic;
+  GUID-less entries (malformed/legacy manifests) are never merged against
+  each other (fail-closed — no real identity to prove they're the same app).
+  `load_all_apps`'s own final sort is also fixed to compare versions
+  numerically (`parse_version`) instead of lexicographically, making its
+  determinism-tiebreak comment honest again now that at most one entry per
+  GUID survives to reach it. `SnapshotBuilder::build` gains a
+  `build_with_diagnostics` sibling that surfaces the dropped-duplicate list to
+  callers that want it (`build` itself is an unchanged thin wrapper).
+  `indexer.rs`'s legacy `index_dependencies` path now logs every drop instead
+  of silently absorbing the signature change. `program::build::
+  build_program_graph`'s GUID-based dependency-closure matcher is documented
+  (not yet behavior-changed) as still not consulting a specific edge's
+  MinVersion once dedup leaves at most one candidate per GUID — a narrower,
+  separate soundness question left open deliberately rather than risk
+  trading a real match for a stricter decline on unconfirmed real-world data.
+- **Dependency ABI ingestion silently dropped every `local`/`internal` routine,
+  orphaning event-subscriber wiring and making the InternalsVisibleTo friend
+  map inert for SymbolOnly deps (H-1, Tier-1 remediation Task T1.2).**
+  `abi_ingest::ingest_abi` unconditionally skipped any ABI routine with
+  `IsLocal`/`IsInternal` set. AL's `local` on an event PUBLISHER restricts
+  RAISING, not SUBSCRIBING — modern BaseApp integration events are `local
+  procedure` + `[IntegrationEvent]` (a real dependency probe found 13,581 such
+  publisher attributes in BaseApp's `SymbolReference.json`, every one
+  discarded); with the publisher routine never becoming a graph node,
+  `resolve::index::ResolveIndex::build`'s event-index loop hit `0 => continue`
+  with **no record at all** — the subscription (the charter's
+  data-is-control-flow wiring) simply vanished. Separately, dropping
+  `is_internal` routines meant `ProgramGraph.friends` (wired from a dep's own
+  `<InternalsVisibleTo>`) was permanently inert for SymbolOnly deps — there
+  was never an `Access::Internal` node to check friendship against. Fixed by
+  ingesting ALL routines carrying an access field and mapping `IsLocal`/
+  `IsInternal`/`IsProtected` to their matching `Access` variant (`Local`/
+  `Internal`/`Protected`, `Public` otherwise) instead of dropping — the
+  resolver's EXISTING visibility model (`resolver::object_access_visible_from`
+  / `internal_visible_across`) now enforces call-time visibility, so ingestion
+  no longer makes that decision by silent deletion; a publisher-kind routine
+  stays subscription-eligible regardless of its own `Access` (subscribing is
+  not calling — `ResolveIndex`'s candidate filter was already access-blind, so
+  no change was needed there once the node exists). `resolve::abi_check::
+  RawAbiIndex::build` (the independent re-derivation the integrity harness
+  checks `ingest_abi`'s output against) carried the identical stale skip and
+  is fixed in lockstep — left alone it would have turned every newly-ingested
+  local/internal routine into a false `abi_unmapped` integrity failure. A
+  0-candidate subscription (`ResolveIndex`'s event-index loop, the `0` arm of
+  the candidate-count dispatch) now records an additive `OrphanSub` diagnostic
+  (`ResolveIndex::orphaned_subscriptions()`) instead of a bare `continue`, so
+  a genuinely-absent publisher is observable rather than silently invisible.
+- **Platform singletons (`Session`, `NavApp`, `CurrPage`, `this`, …) shadowed a
+  declared variable of the identical name instead of the other way around
+  (Task T1.5, deep-review remediation plan, H-4).**
+  `infer_receiver_type`'s singleton match (`receiver.rs`) ran as Step 1,
+  BEFORE Step 2's declared-variable/param/global lookup — a `var Session:
+  Codeunit "Telemetry Wrapper"` was silently discarded in favor of the
+  platform `Session` singleton (a false `builtin` edge; the real
+  `Session.LogMessage(...)`-shaped call actually meant `"Telemetry
+  Wrapper".LogMessage`, dropped from the graph entirely), and `Session:
+  Record Session` (the real virtual table 2000000009) produced a false
+  `Unknown`. The L3 sibling engine (`engine/l3/receiver_type.rs:283-318`)
+  already got this right — variables-first, with a comment explaining
+  exactly this hazard — so the fresh resolver had regressed relative to its
+  own sibling. Compiler-probed (`al.exe` 18.0.37.11445 against real
+  Microsoft System/Application/Base Application/System Application/Business
+  Foundation 28.0.46665.48632 packages): none of the twelve platform
+  singleton names are AL reserved words — all compile with zero diagnostics
+  as a declared variable name, and a declaration always shadows the
+  singleton at that call site (control-verified with `error AL0132: '...'
+  does not contain a definition for '...'` on the un-shadowed singleton). A
+  same-named implicit-Rec TABLE FIELD wins too, which is why the fix's new
+  Step 3c sits after Step 3a's bare-field lookup, not merely after Step 2.
+  `this` draws a soft `AL0848: 'this' is a keyword from version '14.0'`
+  compiler warning but still compiles and still shadows — so it moved to
+  Step 3c along with its twelve sibling keyword strings, with no early-checked exceptions
+  left at all (the task brief's tentative `currpage`/`currreport`/`this`
+  exception list was falsified by direct compiler probe and corrected,
+  matching the L3 sibling's ordering exactly). New TDD fixtures
+  (`t1_5_*` in `receiver.rs`) cover: a declared Codeunit-typed `Session` var
+  resolving to the declared type; a declared `Record Session` var; the
+  undeclared-singleton regression guard; a second singleton name (`NavApp`)
+  for generality; the field-vs-singleton precedence case; and the `this`
+  shadow case. `cargo test` full suite green (1347+ lib tests, all
+  integration suites); CDO impact EXPECTED dormant (real-`unknown` rate
+  0.0000% unchanged) per the brief's prediction — the lane's own CDO gate
+  never completed; the merge-time combined re-measure is the binding
+  confirmation.
+- **`Page.RunModal(Page::"X")` / `Report.RunModal(...)` and declared
+  Page/Report-typed variables' `.RunModal()` now resolve as real entry-trigger
+  `Run` edges into the target's `OnOpenPage`/`OnPreReport`, instead of an
+  ordinary `PageInstance::runmodal`/`ReportInstance::runmodal` Catalog builtin
+  route (Task T1.3, deep-review-remediation plan).** The whole callee subtree
+  behind a `RunModal` call was previously invisible to the north-star metric
+  (`builtin` is not counted as a hole). Two independent classifier gaps, both
+  closed: (1) `extract::classify_call`'s `ObjectRun` check only recognized the
+  keyword-receiver method `"run"`, never `"runmodal"` — now accepts
+  `"runmodal"` for `Page`/`Report` keyword receivers (`Codeunit` excluded — it
+  has no `RunModal` member); (2) `resolve_member_with_args`'s
+  `ReceiverType::Object` arm only special-cased `Codeunit.Run` — now also
+  dispatches a declared Page/Report-typed variable's `Run`/`RunModal` call to
+  the target's entry trigger. Both populations now share one machinery
+  (`resolver::dispatch_entry_trigger`, factored out of `resolve_object_run`'s
+  tail) rather than duplicating the entry-trigger-lookup/collapse-marker-guard/
+  Opaque-boundary logic a second time. A `RunModal` call whose target cannot
+  be proven statically (a runtime variable) keeps its pre-existing honest
+  `DynamicOpen`/`HonestDynamic` handling — mirrors `Codeunit.Run(SomeVar)`
+  exactly, never `Unknown`. The T0.3 `builtin_dispatch_audit`'s CDO
+  regression pin (`CDO_ENTRY_DISPATCH_FLAGGED_PIN`) dropped from 94 to 0 —
+  every previously-flagged site now resolves the fix's Run edge. Two
+  pre-existing unit tests that had encoded the bug as expected behavior
+  (`resolve_member_page_runmodal_emits_catalog_route`,
+  `resolve_member_page_declared_proc_shadows_catalog`) were corrected/
+  repurposed; a new parity test
+  (`resolve_member_page_declared_runmodal_proc_does_not_shadow_entry_trigger`)
+  locks in that a declared same-named procedure never shadows the
+  entry-trigger dispatch, mirroring the pre-existing `Codeunit.Run` precedent.
+- **Arg-dispatch: text-inequality is not incompatibility proof, and text-
+  equality-via-erasure is not identity proof either (T1.6, deep-review-
+  remediation plan, H-5 — a fleet-confirmed, refuter-walked wrong pick).**
+  `arg_dispatch.rs`'s `pick_candidate` compared a `var` parameter's
+  compatibility against raw, whitespace-only-normalized type TEXT
+  (`sig_fp::normalize_type_text`, which never touches a comma) while its
+  by-value canonical identity (`base_keyword`) stripped everything from the
+  first whitespace onward — silently erasing an entire generic-argument
+  clause. Combined, `P(var d: Dictionary of [Integer, Text])` +
+  `P(d: Dictionary of [Integer, Decimal])` called as `P(MyDict)` (`MyDict:
+  Dictionary of [Integer,Text]`, spacing differing from the var param's own
+  declaration text) made the correct var candidate get wrongly ELIMINATED on
+  the spacing difference while the WRONG by-value Decimal candidate
+  exact-matched on the erased identity — a confident wrong pick on compiling
+  AL (the module's own doc calls this "the cardinal sin"). Fixed by giving
+  `CanonicalArgType` a new `Generic { base, args }` variant: `Dictionary of
+  [...]`/`List of [...]` type text is now recursively PARSED (base keyword +
+  bracket-depth-aware comma-split argument list, each argument itself
+  recursively canonicalized) into a structured identity, comparing equal iff
+  the parsed shapes agree — whitespace/case inside the clause is normalized
+  BY THE PARSE, never by string comparison, and a genuinely different
+  instantiation (`[Integer,Text]` vs `[Integer,Decimal]`) is never erased
+  into the same identity. A malformed clause (unterminated bracket, a bare
+  `of` with no bracket, a trailing empty argument slot) is UNDECIDED
+  (`None`) — blocks the pick (degrades to `AmbiguousOverload`), never
+  eliminates and never proves. Applied identically to the ABI tier
+  (`abi_param_canonical`, sharing the SAME parser) since SOURCE and ABI
+  candidates mix within one `pick_candidate` call
+  (`resolver::candidate_param_infos_either`) and must never disagree about a
+  generic's identity. Separately: member-field arguments (`Foo(Rec.Field)`)
+  hardcoded `var_passable: false`, a premise the plan-doc trail showed was
+  REVERSED across two earlier rounds without ever running a compiler (one
+  round: "record fields ARE generally var-passable"; the next, "correcting"
+  it: "AL requires a VARIABLE for a `var` argument", shipped with an
+  explicit "No investigation" note). Live-probed this task (`al.exe`
+  v18.0.37.11445, CDO's real `.alpackages` cache, platform/application
+  `28.0.0.0`): a plain table field (`Cust."No."`), a FlowField (`Cust.
+  "Balance (LCY)"`), and a field of a `temporary` record (`TempCust."No."`)
+  ALL bind a `var` parameter with ZERO diagnostics; a negative-control
+  literal in the same position reports `AL0133` and an undefined field
+  reports `AL0132`, confirming the harness genuinely type-checks.
+  `var_passable` flipped `false` -> `true`, refuting the "correcting"
+  round's premise directly. 12 new tests (`arg_dispatch.rs`), including the
+  headline `pick_candidate_dictionary_generic_spacing_variance_resolves_
+  var_overload_never_wrong_pick` (old-wrong-pick reproduced, then fixed) and
+  2 rewritten member-field-arg tests; `cargo test`/clippy green throughout.
+  CDO re-measure: SHA byte-identical to the frozen baseline
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`,
+  master `5046266`) — `ambiguousResolved`/`unknown` both stayed `0` in
+  `primaryScoped` and `wholeProgram`, `genuine_wrong` held throughout; arg
+  dispatch fires only on same-object overload sets surviving earlier gates,
+  and CDO carries no Dictionary/List-generic-typed overload set for this
+  fix to move — dormant on CDO, fixture-proven.
 - **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
   (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
   PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
