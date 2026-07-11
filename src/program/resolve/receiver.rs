@@ -24,8 +24,17 @@
 //!    resolves unambiguously; a `SystemPart`/`UserControl`, a bare part, a
 //!    deeper chain, or an unresolved/ambiguous target all fall through to
 //!    `Unknown` (see [`infer_receiver_type`]'s Step 0).
-//! 1. **Singletons** — hardcoded platform names (`currpage`, `session`, `this`, …)
-//!    that are never declared as AL variables; returns immediately.
+//! 1. **(Retired — moved to 3c, T1.5 deep-review remediation.)** Platform
+//!    singletons (`currpage`, `session`, `this`, …) used to be checked HERE,
+//!    unconditionally, before any variable lookup ever ran — a real bug: a
+//!    declared `var Session: Codeunit "Telemetry Wrapper"` was silently
+//!    shadowed by the framework `Session` singleton (false `builtin` edge,
+//!    or a false `Unknown` for `Session: Record Session`). Compiler-probed
+//!    (see Step 3c below): none of these names are AL reserved words, so a
+//!    declaration always wins — moved to Step 3c, after every
+//!    higher-precedence declared-symbol lookup (2/2b/3a/3b) has missed. The
+//!    numbering gap at 1 is deliberate — kept rather than renumbering every
+//!    later step's pervasive in-file cross-references.
 //! 2. **Variable lookup** — searches `routine.params` then `routine.locals` then
 //!    `object_globals` by lowercased name → calls [`classify_type_text`] on the
 //!    declared type → resolves Record table names and Object names against the graph.
@@ -65,6 +74,21 @@
 //!      which never declares one) has no implicit-Rec entity to type and
 //!      returns `Unknown`; every other object kind not listed above
 //!      (Report/ReportExtension aside) also returns `Unknown`.
+//!
+//! **Step 3c — platform singletons** (T1.5, deep-review remediation plan —
+//! formerly Step 1, see the retirement note above) — hardcoded platform
+//! names (`currpage`/`page`, `currreport`/`report`, `session`, `navapp`,
+//! `database`, `isolatedstorage`, `taskscheduler`, `system`,
+//! `companyproperty`, `sessioninformation`, `this`). Reached only on a Step
+//! 2/2b/3a/3b miss, so a declared var/param/global, a report dataitem name,
+//! an implicit-Rec table field, or the `rec`/`xrec` identity ALL shadow a
+//! same-named singleton — matching both AL compiler semantics
+//! (compiler-probed: none of these twelve names are reserved words; `this`
+//! alone draws a soft `AL0848` "keyword since 14.0" warning but still
+//! compiles and still shadows) and the L3 sibling
+//! (`engine/l3/receiver_type.rs:283-318`), which checks every one of them,
+//! `this` included, in the identical position.
+//!
 //! 4. **Static framework type name** — when the receiver name matches a framework
 //!    type name (e.g. `XmlDocument`, `Text`, `File`, `Version`) and no variable was
 //!    found, type it as `Framework(kind)` so Phase B dispatches the static method
@@ -701,33 +725,6 @@ pub fn infer_receiver_type(
     }
 
     // -----------------------------------------------------------------------
-    // Step 1 — platform singletons (never declared as AL variables).
-    // -----------------------------------------------------------------------
-
-    // `this` — the enclosing object instance.
-    if receiver_lc == "this" {
-        return ReceiverType::SelfObject;
-    }
-
-    // Named platform singletons → Framework kind.
-    let singleton = match receiver_lc {
-        "currpage" | "page" => Some(FrameworkKind::PageInstance),
-        "currreport" | "report" => Some(FrameworkKind::ReportInstance),
-        "session" => Some(FrameworkKind::Session),
-        "navapp" => Some(FrameworkKind::NavApp),
-        "database" => Some(FrameworkKind::Database),
-        "isolatedstorage" => Some(FrameworkKind::IsolatedStorage),
-        "taskscheduler" => Some(FrameworkKind::TaskScheduler),
-        "system" => Some(FrameworkKind::System),
-        "companyproperty" => Some(FrameworkKind::CompanyProperty),
-        "sessioninformation" => Some(FrameworkKind::SessionInformation),
-        _ => None,
-    };
-    if let Some(kind) = singleton {
-        return ReceiverType::Framework(kind);
-    }
-
-    // -----------------------------------------------------------------------
     // Step 2 — variable lookup (params → locals → the routine's own
     // named-return binding → object globals), via the shared
     // [`caller_scope_symbol`] helper (T3, receiver-closure-and-arg-increments
@@ -954,6 +951,70 @@ pub fn infer_receiver_type(
 
     if receiver_lc == "rec" || receiver_lc == "xrec" {
         return infer_implicit_rec(routine, from_object, graph, index);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 3c — platform singletons (T1.5, deep-review remediation plan —
+    // formerly Step 1, which ran BEFORE Step 2's variable lookup; see the
+    // module doc's retirement note). Reached only on a Step 2/2b/3a/3b miss —
+    // a declared local/param/named-return/global var, a report dataitem
+    // name, or an implicit-Rec table field ALL shadow a same-named platform
+    // singleton; AL scoping means a declaration always wins over an ambient
+    // compiler-provided identifier.
+    //
+    // Compiler-probed (`al.exe` 18.0.37.11445, `alc` backend, against real
+    // `Microsoft_System_28.0.48590.0`/`Microsoft_Application`/`Microsoft_Base
+    // Application`/`Microsoft_System Application`/`Microsoft_Business
+    // Foundation_28.0.46665.48632` packages — the CDO workspace's own
+    // `.alpackages`):
+    //   - `var Session: Codeunit "Probe Shadow Target"` + `Session.DoWork()`
+    //     (a real member of the DECLARED type, not of the platform `Session`
+    //     singleton) compiles clean and dispatches to the declared
+    //     codeunit — a declared var fully shadows the singleton. Control:
+    //     with NO such var declared, the identical `Session.DoWork()` fails
+    //     `error AL0132: 'Session' does not contain a definition for
+    //     'DoWork'` — proving `DoWork` is not a real Session member and the
+    //     positive case above is a genuine shadow, not a coincidental
+    //     Session API match.
+    //   - A same-named table FIELD wins too, which is why this step must run
+    //     AFTER Step 3a, not merely after Step 2: a `field(2; Session; Blob)`
+    //     on a Table lets `Session.CreateInStream(...)` compile bare inside
+    //     that table's own procedure (`CreateInStream` is confirmed, by the
+    //     same control technique, to not be a real Session member either).
+    //   - None of `currpage`/`page`/`currreport`/`report`/`session`/
+    //     `navapp`/`database`/`isolatedstorage`/`taskscheduler`/`system`/
+    //     `companyproperty`/`sessioninformation` are AL reserved words — all
+    //     twelve compile with ZERO diagnostics as a declared local/global var
+    //     name, so none of them get early/exceptional treatment; every one
+    //     is checked in this same step. `this` is the sole name with ANY
+    //     compiler opinion: declaring/using it emits `warning AL0848: 'this'
+    //     is a keyword from version '14.0'`, but both the declaration and
+    //     the shadowed call still compile clean (a SOFT, warn-only
+    //     reservation) — so `this` shadows exactly like its siblings and
+    //     also moves here, matching the L3 sibling
+    //     (`engine/l3/receiver_type.rs:283-318`) exactly, which checks every
+    //     platform singleton — `this` included — in this identical position.
+    // -----------------------------------------------------------------------
+
+    if receiver_lc == "this" {
+        return ReceiverType::SelfObject;
+    }
+
+    let singleton = match receiver_lc {
+        "currpage" | "page" => Some(FrameworkKind::PageInstance),
+        "currreport" | "report" => Some(FrameworkKind::ReportInstance),
+        "session" => Some(FrameworkKind::Session),
+        "navapp" => Some(FrameworkKind::NavApp),
+        "database" => Some(FrameworkKind::Database),
+        "isolatedstorage" => Some(FrameworkKind::IsolatedStorage),
+        "taskscheduler" => Some(FrameworkKind::TaskScheduler),
+        "system" => Some(FrameworkKind::System),
+        "companyproperty" => Some(FrameworkKind::CompanyProperty),
+        "sessioninformation" => Some(FrameworkKind::SessionInformation),
+        _ => None,
+    };
+    if let Some(kind) = singleton {
+        return ReceiverType::Framework(kind);
     }
 
     // -----------------------------------------------------------------------
@@ -4100,6 +4161,226 @@ mod tests {
         let result =
             infer_receiver_type("this", &routine, &[], &from_obj, &graph, &index, None, None);
         assert_eq!(result, ReceiverType::SelfObject);
+    }
+
+    // -----------------------------------------------------------------------
+    // T1.5 (deep-review remediation plan, H-4) — a declared variable/field
+    // must shadow a same-named platform singleton (Step 3c now runs strictly
+    // after Step 2/2b/3a/3b's higher-precedence declared-symbol lookups; see
+    // Step 3c's doc comment for the `al.exe` compiler-probe transcript this
+    // ordering is grounded in). Before this fix, the singleton match ran as
+    // Step 1, BEFORE Step 2's variable lookup, so a declared `Session`/
+    // `NavApp`/etc. var was silently discarded in favor of the platform
+    // singleton — a false `builtin` edge (or a false `Unknown` for a
+    // `Record Session` virtual-table declaration).
+    // -----------------------------------------------------------------------
+
+    /// POSITIVE (fixture 1, the bug report's exact shape): `var Session:
+    /// Codeunit "MyCodeunit"` must shadow the platform `Session` singleton —
+    /// the receiver types as the declared Codeunit, never
+    /// `Framework(FrameworkKind::Session)`.
+    #[test]
+    fn t1_5_declared_session_var_shadows_singleton() {
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
+        let globals = vec![var_decl("Session", "Codeunit \"MyCodeunit\"")];
+
+        let result = infer_receiver_type(
+            "session", &routine, &globals, &from_obj, &graph, &index, None, None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Object {
+                kind: ObjectKind::Codeunit,
+                name_lc: "mycodeunit".into(),
+                id: Some(mycodeunit_id)
+            },
+            "a declared `Session` var must shadow the platform Session singleton"
+        );
+    }
+
+    /// POSITIVE (fixture 2, virtual-table shape): `var Session: Record
+    /// Session` — the declared var still shadows the singleton and types as
+    /// `Record{None}` (no "Session" Table object exists in the test graph,
+    /// mirroring `infer_record_unresolvable_table_is_record_none`'s
+    /// established pattern for any other unresolvable declared Record type)
+    /// rather than `Framework(FrameworkKind::Session)`.
+    #[test]
+    fn t1_5_declared_session_record_var_shadows_singleton() {
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let globals = vec![var_decl("Session", "Record Session")];
+
+        let result = infer_receiver_type(
+            "session", &routine, &globals, &from_obj, &graph, &index, None, None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Record { table: None },
+            "a declared `Session: Record Session` var must shadow the platform \
+             singleton and type as Record (unresolved table id, same as any \
+             other undeclared-in-graph Record type)"
+        );
+    }
+
+    /// NEGATIVE / regression guard (fixture 3): with NO declared var/param/
+    /// global named `Session` anywhere in scope, the bare receiver must
+    /// still resolve to the platform Session singleton — Step 3c is reached
+    /// on the Step 2 miss and must still fire. The fix must not break
+    /// genuine singleton usage.
+    #[test]
+    fn t1_5_undeclared_session_still_resolves_singleton() {
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+
+        let result = infer_receiver_type(
+            "session",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Framework(FrameworkKind::Session),
+            "with no declared var, `Session` must still resolve to the platform \
+             singleton — the fix must not break genuine singleton usage"
+        );
+    }
+
+    /// GENERALITY (fixture 4): a DIFFERENT singleton name (`NavApp`, not
+    /// `Session`) is also shadowed by a declared var, and still resolves to
+    /// the platform singleton when undeclared — proves the fix applies to
+    /// the whole match arm, not merely the one name the bug report named.
+    #[test]
+    fn t1_5_declared_navapp_var_shadows_singleton() {
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
+        let globals = vec![var_decl("NavApp", "Codeunit \"MyCodeunit\"")];
+
+        let result = infer_receiver_type(
+            "navapp", &routine, &globals, &from_obj, &graph, &index, None, None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Object {
+                kind: ObjectKind::Codeunit,
+                name_lc: "mycodeunit".into(),
+                id: Some(mycodeunit_id)
+            },
+            "a declared `NavApp` var must shadow the platform NavApp singleton too"
+        );
+
+        let result_undeclared = infer_receiver_type(
+            "navapp",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            None,
+        );
+        assert_eq!(
+            result_undeclared,
+            ReceiverType::Framework(FrameworkKind::NavApp),
+            "with no declared var, `NavApp` must still resolve to the platform singleton"
+        );
+    }
+
+    /// PRECEDENCE (compiler-probed, `al.exe` control-tested — see Step 3c's
+    /// doc comment): a same-named implicit-Rec table FIELD wins over the
+    /// platform singleton too, not merely a declared var — proving Step 3c
+    /// must sit AFTER Step 3a, not merely after Step 2. A Blob field
+    /// literally named `Session` on the Customer table, accessed bare
+    /// (`Session.CreateInStream(...)`-shaped) inside the table's own
+    /// procedure, must type as `Framework(Blob)`, never
+    /// `Framework(FrameworkKind::Session)`.
+    #[test]
+    fn t1_5_table_field_named_session_wins_over_singleton() {
+        let (mut graph, _app) = build_test_graph();
+        let customer_idx = graph
+            .objects
+            .iter()
+            .position(|o| o.name == "Customer")
+            .unwrap();
+        graph.objects[customer_idx].fields.push(FieldNode {
+            name_lc: "session".to_string(),
+            type_text: "Blob".to_string(),
+        });
+        let index = ResolveIndex::build(&graph);
+        let routine = routine_with_locals(vec![]);
+        let from_obj = graph.objects[customer_idx].clone();
+        let body_map = BodyMap::build(&graph, &[]);
+
+        let result = infer_receiver_type(
+            "session",
+            &routine,
+            &[],
+            &from_obj,
+            &graph,
+            &index,
+            None,
+            Some((&body_map, WithState::NoWithProven)),
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Framework(FrameworkKind::Blob),
+            "a same-named implicit-Rec table field must win over the platform \
+             singleton (Step 3a runs before Step 3c)"
+        );
+    }
+
+    /// `this` shadow (compiler-probed: `this` draws only a soft `AL0848`
+    /// warning, never a hard error, and still shadows exactly like its
+    /// singleton siblings — see Step 3c's doc). A declared global var
+    /// literally named `This` must shadow the self-reference.
+    #[test]
+    fn t1_5_declared_this_var_shadows_self_object() {
+        let (graph, app) = build_test_graph();
+        let index = ResolveIndex::build(&graph);
+        let routine = build_test_routine();
+        let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
+        let mycodeunit_id = graph
+            .resolve_object(app, ObjectKind::Codeunit, "MyCodeunit")
+            .unwrap()
+            .id
+            .clone();
+        let globals = vec![var_decl("This", "Codeunit \"MyCodeunit\"")];
+
+        let result = infer_receiver_type(
+            "this", &routine, &globals, &from_obj, &graph, &index, None, None,
+        );
+        assert_eq!(
+            result,
+            ReceiverType::Object {
+                kind: ObjectKind::Codeunit,
+                name_lc: "mycodeunit".into(),
+                id: Some(mycodeunit_id)
+            },
+            "a declared `This` var must shadow the self-object reference"
+        );
     }
 
     #[test]

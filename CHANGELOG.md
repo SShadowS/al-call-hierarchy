@@ -404,6 +404,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **Platform singletons (`Session`, `NavApp`, `CurrPage`, `this`, …) shadowed a
+  declared variable of the identical name instead of the other way around
+  (Task T1.5, deep-review remediation plan, H-4).**
+  `infer_receiver_type`'s singleton match (`receiver.rs`) ran as Step 1,
+  BEFORE Step 2's declared-variable/param/global lookup — a `var Session:
+  Codeunit "Telemetry Wrapper"` was silently discarded in favor of the
+  platform `Session` singleton (a false `builtin` edge; the real
+  `Session.LogMessage(...)`-shaped call actually meant `"Telemetry
+  Wrapper".LogMessage`, dropped from the graph entirely), and `Session:
+  Record Session` (the real virtual table 2000000009) produced a false
+  `Unknown`. The L3 sibling engine (`engine/l3/receiver_type.rs:283-318`)
+  already got this right — variables-first, with a comment explaining
+  exactly this hazard — so the fresh resolver had regressed relative to its
+  own sibling. Compiler-probed (`al.exe` 18.0.37.11445 against real
+  Microsoft System/Application/Base Application/System Application/Business
+  Foundation 28.0.46665.48632 packages): none of the twelve platform
+  singleton names are AL reserved words — all compile with zero diagnostics
+  as a declared variable name, and a declaration always shadows the
+  singleton at that call site (control-verified with `error AL0132: '...'
+  does not contain a definition for '...'` on the un-shadowed singleton). A
+  same-named implicit-Rec TABLE FIELD wins too, which is why the fix's new
+  Step 3c sits after Step 3a's bare-field lookup, not merely after Step 2.
+  `this` draws a soft `AL0848: 'this' is a keyword from version '14.0'`
+  compiler warning but still compiles and still shadows — so it moved to
+  Step 3c along with its eleven siblings, with no early-checked exceptions
+  left at all (the task brief's tentative `currpage`/`currreport`/`this`
+  exception list was falsified by direct compiler probe and corrected,
+  matching the L3 sibling's ordering exactly). New TDD fixtures
+  (`t1_5_*` in `receiver.rs`) cover: a declared Codeunit-typed `Session` var
+  resolving to the declared type; a declared `Record Session` var; the
+  undeclared-singleton regression guard; a second singleton name (`NavApp`)
+  for generality; the field-vs-singleton precedence case; and the `this`
+  shadow case. `cargo test` full suite green (1347+ lib tests, all
+  integration suites); CDO real-`unknown` rate unchanged at 0.0000%
+  (0/18108), `genuine_wrong` 0, new SHA `<pending CDO gate completion>`.
 - **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
   (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
   PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
