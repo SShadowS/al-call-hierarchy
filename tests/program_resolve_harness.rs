@@ -10699,100 +10699,185 @@ fn ws_builtin_dispatch_audit_report() -> ProgramReport {
         .expect("resolve_full_program must succeed on ws-builtin-dispatch-audit")
 }
 
-/// T0.3 fixture-level proof (no CDO needed): the audit flags EXACTLY the 3
-/// statically-named RunModal sites in `AuditCaller.Codeunit.al` — the
-/// brief's cited `Page.RunModal(Page::"X")` keyword-receiver shape, its
-/// `Report.RunModal(Report::"X")` analog, AND the declared-Page-variable
-/// shape (`MyPage.RunModal()`, which the brief's own roadmap doc explicitly
-/// scopes into this audit even though it's a SEPARATE classifier gap from
-/// the keyword-receiver one T1.3 targets first) — and marks the
-/// dynamic-target call `Indeterminate`: fail-closed, never guessed, never
-/// silently dropped.
+/// T1.3 (deep-review-remediation plan) fixture-level proof (no CDO needed):
+/// the audit flags ZERO sites in `AuditCaller.Codeunit.al` now that BOTH
+/// classifier gaps are closed — the brief's cited `Page.RunModal(Page::"X")`
+/// keyword-receiver shape, its `Report.RunModal(Report::"X")` analog, AND the
+/// declared-Page-variable shape (`MyPage.RunModal()`) all now classify as
+/// `CalleeShape::ObjectRun` / dispatch through `resolve_member_with_args`'s
+/// entry-trigger special case respectively — neither ever reaches
+/// `resolve_member_with_args`'s generic Member arm, so `builtin_dispatch_
+/// finding` (populated ONLY by that arm) never fires. Pre-fix this asserted
+/// flagged==3/indeterminate==1 (T0.3); this is the red-then-green flip —
+/// `ws_builtin_dispatch_audit_sites_produce_entry_trigger_run_edges` below
+/// proves the counts dropped BECAUSE real `Run` edges appeared, not because
+/// the audit went quiet for the wrong reason.
+///
+/// The dynamic-target call (`Page.RunModal(DynamicPageId)`) drops out of
+/// `indeterminate` too — it is now `CalleeShape::ObjectRun` from
+/// classification onward (the classifier only inspects the callee, not the
+/// argument shape; `target_ref` extraction is what decides static vs.
+/// dynamic, same as `Codeunit.Run(SomeVar)` already worked), so it never
+/// touches the `Member`-arm audit path either. It keeps its honest dynamic
+/// handling via `resolve_object_run`'s `DynamicOpen` branch — see the
+/// companion test for the positive `HonestDynamic` assertion.
 #[test]
-fn ws_builtin_dispatch_audit_flags_exactly_the_static_runmodal_sites() {
+fn ws_builtin_dispatch_audit_flags_zero_after_entry_trigger_fix() {
     let report = ws_builtin_dispatch_audit_report();
     let audit = &report.builtin_dispatch_audit;
 
     assert_eq!(
         audit.flagged.len(),
-        3,
-        "expected exactly 3 flagged sites; got {:#?}",
+        0,
+        "T1.3 must close every flagged builtin-dispatch site; got {:#?}",
         audit.flagged
     );
     assert_eq!(
         audit.indeterminate.len(),
-        1,
-        "expected exactly 1 indeterminate site; got {:#?}",
+        0,
+        "the dynamic-target RunModal call must classify as ObjectRun (never \
+         reaching the Member-arm audit) after T1.3 — got {:#?}",
         audit.indeterminate
-    );
-
-    // Every flagged/indeterminate site must come from AuditCaller.Codeunit.al.
-    for s in &audit.flagged {
-        assert!(
-            s.file.ends_with("AuditCaller.Codeunit.al"),
-            "unexpected file on a flagged site: {s:?}"
-        );
-        assert_eq!(s.method, "runmodal");
-    }
-    for s in &audit.indeterminate {
-        assert!(
-            s.file.ends_with("AuditCaller.Codeunit.al"),
-            "unexpected file on an indeterminate site: {s:?}"
-        );
-        assert_eq!(s.method, "runmodal");
-    }
-
-    // The 2 keyword/declared-var Page sites both resolve to the SAME target
-    // identity string ("Page::audit target page") and sort before the single
-    // Report site ('P' < 'R') — proving BOTH populations (keyword-receiver +
-    // declared-variable) are caught, not just one.
-    let objects: Vec<&str> = audit.flagged.iter().map(|s| s.object.as_str()).collect();
-    assert_eq!(
-        objects,
-        vec![
-            "Page::audit target page",
-            "Page::audit target page",
-            "Report::audit target report",
-        ],
-        "flagged objects (sorted) must be exactly 2 Page + 1 Report site; got {objects:?}"
-    );
-
-    // Determinism: output is sorted (never HashMap iteration order).
-    let mut sorted_flagged = audit.flagged.clone();
-    sorted_flagged.sort();
-    assert_eq!(
-        audit.flagged, sorted_flagged,
-        "flagged sites must already be sorted"
-    );
-    let mut sorted_indeterminate = audit.indeterminate.clone();
-    sorted_indeterminate.sort();
-    assert_eq!(
-        audit.indeterminate, sorted_indeterminate,
-        "indeterminate sites must already be sorted"
     );
 }
 
-/// T0.3 CDO ratchet (gated — no `CDO_WS`, silently skips): the flagged
+/// T1.3 positive proof: the audit going quiet above is BECAUSE real
+/// entry-trigger `Run` edges now exist, not because the sites vanished or
+/// silently declined. All 3 previously-flagged sites resolve to
+/// `EdgeKind::Run` / `Evidence::Source` routes targeting the exact trigger
+/// `resolve_object_run`'s `entry_trigger_name` mapping predicts (Page →
+/// `OnOpenPage`, Report → `OnPreReport`) — proven against REAL declared
+/// triggers in `AuditTargetPage.Page.al`/`AuditTargetReport.Report.al` (added
+/// by T1.3), not merely an Opaque boundary. The dynamic-target call resolves
+/// to `ObligationOutcome::HonestDynamic` via the same `EdgeKind::Run`
+/// machinery, `Codeunit.Run(var)`'s pre-existing dynamic handling mirrored
+/// exactly for Page/Report (never `Unknown`).
+#[test]
+fn ws_builtin_dispatch_audit_sites_produce_entry_trigger_run_edges() {
+    let report = ws_builtin_dispatch_audit_report();
+
+    // Both Page-targeting sites (keyword-receiver + declared-variable) hit
+    // the SAME target trigger: Page 50951's OnOpenPage. The keyword-receiver
+    // form classifies as `CalleeShape::ObjectRun` → `EdgeKind::Run`; the
+    // declared-variable form stays `CalleeShape::Member` → `EdgeKind::Call`
+    // (only its ROUTE changes — same as `Codeunit.Run(TypedVar)`'s
+    // pre-existing entry-trigger special case, which is also `EdgeKind::Call`)
+    // — both are genuine dispatches into the SAME Source routine, just
+    // extracted through different classifier paths.
+    for (routine_lc, expected_kind) in [
+        ("flaggedpagekeywordrunmodal", EdgeKind::Run),
+        ("flaggeddeclaredpagevarrunmodal", EdgeKind::Call),
+    ] {
+        let edges = edges_for_object_routine(&report, 50953, routine_lc);
+        let run_edge = edges
+            .iter()
+            .find(|ce| ce.edge.kind == expected_kind)
+            .unwrap_or_else(|| {
+                panic!("{routine_lc}: expected exactly one {expected_kind:?}-kind edge")
+            });
+        assert_eq!(
+            run_edge.edge.routes.len(),
+            1,
+            "{routine_lc}: expected exactly one route; got {:?}",
+            run_edge.edge.routes
+        );
+        let route = &run_edge.edge.routes[0];
+        assert_eq!(
+            route.evidence,
+            Evidence::Source,
+            "{routine_lc}: must dispatch to Page 50951's declared OnOpenPage \
+             trigger, not fall back to Opaque/Unknown/Catalog; got {route:?}"
+        );
+        let RouteTarget::Routine(ref rid) = route.target else {
+            panic!(
+                "{routine_lc}: expected RouteTarget::Routine (OnOpenPage), got {:?}",
+                route.target
+            );
+        };
+        assert_eq!(rid.name_lc, "onopenpage");
+        assert_eq!(rid.object.kind, ObjectKind::Page);
+        assert!(
+            rid.object.id_equals_number(50951),
+            "{routine_lc}: must target Page 50951 (Audit Target Page); got {:?}",
+            rid.object
+        );
+    }
+
+    // Report-keyword site hits Report 50952's OnPreReport.
+    {
+        let edges = edges_for_object_routine(&report, 50953, "flaggedreportkeywordrunmodal");
+        let run_edge = edges
+            .iter()
+            .find(|ce| ce.edge.kind == EdgeKind::Run)
+            .expect("flaggedreportkeywordrunmodal: expected exactly one Run-kind edge");
+        assert_eq!(run_edge.edge.routes.len(), 1);
+        let route = &run_edge.edge.routes[0];
+        assert_eq!(
+            route.evidence,
+            Evidence::Source,
+            "must dispatch to Report 50952's declared OnPreReport trigger; got {route:?}"
+        );
+        let RouteTarget::Routine(ref rid) = route.target else {
+            panic!(
+                "expected RouteTarget::Routine (OnPreReport), got {:?}",
+                route.target
+            );
+        };
+        assert_eq!(rid.name_lc, "onprereport");
+        assert_eq!(rid.object.kind, ObjectKind::Report);
+        assert!(
+            rid.object.id_equals_number(50952),
+            "must target Report 50952 (Audit Target Report); got {:?}",
+            rid.object
+        );
+    }
+
+    // Dynamic-target site: honest dynamic dispatch, never Unknown.
+    {
+        use al_call_hierarchy::program::resolve::edge::{ObligationOutcome, classify_obligation};
+
+        let edges =
+            edges_for_object_routine(&report, 50953, "indeterminatepagekeyworddynamictarget");
+        let run_edge = edges
+            .iter()
+            .find(|ce| ce.edge.kind == EdgeKind::Run)
+            .expect("dynamic-target call: expected exactly one Run-kind edge");
+        assert_eq!(
+            run_edge.edge.shape,
+            DispatchShape::DynamicOpen,
+            "a runtime-variable RunModal target must keep the SAME dynamic \
+             handling Codeunit.Run(var) already had; got {:?}",
+            run_edge.edge.shape
+        );
+        assert_eq!(
+            classify_obligation(&run_edge.edge),
+            ObligationOutcome::HonestDynamic,
+            "must never classify as Unknown — the north-star metric gate"
+        );
+    }
+}
+
+/// T1.3 CDO ratchet (gated — no `CDO_WS`, silently skips): the flagged
 /// population on the real CDO workspace is PINNED to
-/// `CDO_ENTRY_DISPATCH_FLAGGED_PIN` — this pin drops to 0 only when T1.3
-/// (the RunModal entry-trigger dispatch fix) lands for BOTH populations this
-/// audit covers (see `docs/superpowers/plans/2026-07-10-deep-review-
-/// remediation.md`'s T1.3 entry — its CURRENT scope is the keyword-receiver
-/// shape only, so the pin may only PARTIALLY drop when T1.3 first lands; a
-/// residual nonzero pin after that landing is expected until the
-/// declared-variable population is ALSO fixed, not a regression by itself —
-/// re-measure and re-pin deliberately, don't assume 0). A DIFFERENT number
-/// in EITHER direction from a re-measurement that was not an intentional
-/// classifier change is a regression: either a resolver change silently
-/// started/stopped landing sites in the flagged catalog, or this audit's own
-/// logic drifted.
+/// `CDO_ENTRY_DISPATCH_FLAGGED_PIN`. T0.3 pinned this at 94 (both
+/// classifier gaps still open); T1.3 (deep-review-remediation plan) closed
+/// BOTH populations the audit covers — the keyword-receiver shape
+/// (`extract::classify_call`'s Check 2 now also accepts `runmodal` for
+/// Page/Report) AND the declared-variable shape (`resolve_member_with_args`'s
+/// `ReceiverType::Object` arm now dispatches Page/Report `Run`/`RunModal` to
+/// the entry trigger via the shared `dispatch_entry_trigger`, not just
+/// Codeunit.Run) — MEASURED at 0, exactly as this doc predicted for the
+/// both-populations-fixed case. A DIFFERENT number in EITHER direction from a
+/// re-measurement that was not an intentional classifier change is a
+/// regression: either a resolver change silently started/stopped landing
+/// sites in the flagged catalog, or this audit's own logic drifted.
 #[test]
 fn cdo_builtin_dispatch_audit_flagged_count_is_pinned() {
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
 
-    const CDO_ENTRY_DISPATCH_FLAGGED_PIN: usize = 94;
+    const CDO_ENTRY_DISPATCH_FLAGGED_PIN: usize = 0;
 
     let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
     let audit = &report.builtin_dispatch_audit;

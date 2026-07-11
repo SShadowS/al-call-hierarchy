@@ -1828,6 +1828,69 @@ fn opaque_boundary_route(key: AbiRoutineKey) -> Route {
     }
 }
 
+/// Shared entry-trigger dispatch machinery: given an ALREADY-RESOLVED target
+/// object, look up its entry trigger ([`entry_trigger_name`]) and build the
+/// resulting route — collapse-marker guard, Opaque-boundary-when-absent, and
+/// Source-route-when-present. Used by BOTH `resolve_object_run` (T1.3,
+/// keyword-receiver form: `Codeunit.Run` / `Page.RunModal` / `Report.RunModal`)
+/// and the typed-variable `Run`/`RunModal` special case in
+/// `resolve_member_with_args`'s `ReceiverType::Object` arm — the SAME
+/// machinery for both populations, never a parallel resolver (T1.3 brief).
+fn dispatch_entry_trigger(
+    target_id: &ObjectNodeId,
+    target_tier: TrustTier,
+    object_kind: ObjectKind,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+) -> (DispatchShape, Vec<Route>) {
+    let trigger_name = entry_trigger_name(object_kind);
+    let candidates = index.routines_in_object(target_id, trigger_name);
+
+    // Object-level triggers have `enclosing_member_lc == None`.
+    let entry_rid = candidates
+        .iter()
+        .find(|r| r.enclosing_member_lc.is_none())
+        .or_else(|| candidates.first());
+
+    let Some(entry_rid) = entry_rid else {
+        // Trigger not found in index — Opaque (e.g. an object with no explicit trigger).
+        let (obj_num, obj_name_lc) = match &target_id.key {
+            ObjKey::Id(n) => (*n, String::new()),
+            ObjKey::Name(s) => (0i64, s.clone()),
+        };
+        let key = AbiRoutineKey {
+            app: target_id.app,
+            object_type: format!("{:?}", target_id.kind).to_ascii_lowercase(),
+            object_number: obj_num,
+            object_name_lc: obj_name_lc,
+            routine_name_lc: trigger_name.to_string(),
+            params_count: 0,
+            param_type_fp: 0,
+            routine_kind: AbiRoutineKind::Procedure,
+            event_kind: AbiEventKind::None,
+        };
+        return (DispatchShape::Exact, vec![opaque_boundary_route(key)]);
+    };
+
+    // COLLAPSE-MARKER GUARD (Task 2 review fix): this entry-trigger lookup
+    // bypasses `resolve_in_object`'s name+arity selection entirely (it picks
+    // by ROLE — the object-level trigger — never by counting candidates), so
+    // it must consult the marker itself; see `routine_is_collapse_marked`'s
+    // doc for the full enumeration of guarded sites.
+    if routine_is_collapse_marked(entry_rid, graph) {
+        return (
+            DispatchShape::Exact,
+            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
+        );
+    }
+
+    (
+        DispatchShape::Exact,
+        vec![make_routine_route(entry_rid, target_tier, body_map, graph)],
+    )
+}
+
 /// Resolve an `ObjectRun` dispatch (Codeunit.Run / Page.RunModal / Report.Run …)
 /// to the entry trigger of the statically-named/numbered target object.
 ///
@@ -1897,55 +1960,17 @@ pub fn resolve_object_run(
         );
     };
 
-    // Look up the entry trigger by kind-specific name.
-    let trigger_name = entry_trigger_name(object_kind);
-    let candidates = index.routines_in_object(&target_obj.id, trigger_name);
-
-    // Object-level triggers have `enclosing_member_lc == None`.
-    let entry_rid = candidates
-        .iter()
-        .find(|r| r.enclosing_member_lc.is_none())
-        .or_else(|| candidates.first());
-
-    let Some(entry_rid) = entry_rid else {
-        // Trigger not found in index — Opaque (e.g. an object with no explicit trigger).
-        let (obj_num, obj_name_lc) = match &target_obj.id.key {
-            ObjKey::Id(n) => (*n, String::new()),
-            ObjKey::Name(s) => (0i64, s.clone()),
-        };
-        let key = AbiRoutineKey {
-            app: target_obj.id.app,
-            object_type: format!("{:?}", target_obj.id.kind).to_ascii_lowercase(),
-            object_number: obj_num,
-            object_name_lc: obj_name_lc,
-            routine_name_lc: trigger_name.to_string(),
-            params_count: 0,
-            param_type_fp: 0,
-            routine_kind: AbiRoutineKind::Procedure,
-            event_kind: AbiEventKind::None,
-        };
-        return (
-            DispatchShape::Exact,
-            SetCompleteness::Complete,
-            vec![opaque_boundary_route(key)],
-        );
-    };
-
-    // COLLAPSE-MARKER GUARD (Task 2 review fix): this entry-trigger lookup
-    // bypasses `resolve_in_object`'s name+arity selection entirely (it picks
-    // by ROLE — the object-level trigger — never by counting candidates), so
-    // it must consult the marker itself; see `routine_is_collapse_marked`'s
-    // doc for the full enumeration of guarded sites.
-    if routine_is_collapse_marked(entry_rid, graph) {
-        return (
-            DispatchShape::Exact,
-            SetCompleteness::Complete,
-            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
-        );
-    }
-
-    let route = make_routine_route(entry_rid, target_obj.tier, body_map, graph);
-    (DispatchShape::Exact, SetCompleteness::Complete, vec![route])
+    // Look up the entry trigger and build the route — shared machinery (T1.3)
+    // with the typed-variable special case in `resolve_member_with_args`.
+    let (shape, routes) = dispatch_entry_trigger(
+        &target_obj.id,
+        target_obj.tier,
+        object_kind,
+        graph,
+        index,
+        body_map,
+    );
+    (shape, SetCompleteness::Complete, routes)
 }
 
 // ---------------------------------------------------------------------------
@@ -2222,8 +2247,10 @@ fn is_metadata_sensitive_instance_method(kind: ObjectKind, method_lc: &str) -> b
 ///   catalog); zero candidates (or `table == None`) → consult the Record
 ///   builtin catalog; no catalog hit either → `Unknown`.
 /// - `Object{kind, name_lc}` → resolve target object via `graph.resolve_object`, then
-///   dispatch method via `resolve_in_object`.  Special case: `Codeunit.Run(arity≤1)` →
-///   entry `OnRun` trigger (mirrors `resolve_object_run`).
+///   dispatch method via `resolve_in_object`.  Special case (arity≤1): `Codeunit.Run` →
+///   entry `OnRun` trigger; `Page.Run`/`Page.RunModal` → `OnOpenPage`; `Report.Run`/
+///   `Report.RunModal` → `OnPreReport` (T1.3 — shares `dispatch_entry_trigger` with
+///   `resolve_object_run`'s keyword-receiver form).
 /// - `SelfObject` → `resolve_in_object` on the calling object itself.
 /// - `Interface{name_lc}` → `Polymorphic` fan-out to all known implementers via
 ///   `index.implementers_of`.  For each implementer: Source-tier → unique-arity-matched
@@ -2428,52 +2455,26 @@ pub(crate) fn resolve_member_with_args(
             let target_id = target.id.clone();
             let target_tier = target.tier;
 
-            // Codeunit.Run(arity≤1) special case: dispatch to the OnRun entry
-            // trigger, mirroring `resolve_object_run`'s entry-trigger semantics.
-            if *kind == ObjectKind::Codeunit && method_lc == "run" && arity <= 1 {
-                let candidates = index.routines_in_object(&target_id, "onrun");
-                // Object-level triggers have `enclosing_member_lc == None`.
-                let entry_rid = candidates
-                    .iter()
-                    .find(|r| r.enclosing_member_lc.is_none())
-                    .or_else(|| candidates.first());
-                return if let Some(entry_rid) = entry_rid {
-                    // COLLAPSE-MARKER GUARD (Task 2 review fix): mirrors
-                    // `resolve_object_run`'s own guard — this arm looks up
-                    // the entry trigger by ROLE, never through
-                    // `resolve_in_object`'s name+arity selection, so it must
-                    // consult the marker itself; see `routine_is_collapse_
-                    // marked`'s doc.
-                    if routine_is_collapse_marked(entry_rid, graph) {
-                        (
-                            DispatchShape::Exact,
-                            vec![unresolved_route(UnknownReason::OverloadAmbiguous)],
-                        )
-                    } else {
-                        (
-                            DispatchShape::Exact,
-                            vec![make_routine_route(entry_rid, target_tier, body_map, graph)],
-                        )
-                    }
-                } else {
-                    // OnRun not indexed — Opaque boundary (object exists, trigger absent).
-                    let (obj_num, obj_name_lc) = match &target_id.key {
-                        ObjKey::Id(n) => (*n, String::new()),
-                        ObjKey::Name(s) => (0i64, s.clone()),
-                    };
-                    let key = AbiRoutineKey {
-                        app: target_id.app,
-                        object_type: format!("{:?}", target_id.kind).to_ascii_lowercase(),
-                        object_number: obj_num,
-                        object_name_lc: obj_name_lc,
-                        routine_name_lc: "onrun".to_string(),
-                        params_count: 0,
-                        param_type_fp: 0,
-                        routine_kind: AbiRoutineKind::Procedure,
-                        event_kind: AbiEventKind::None,
-                    };
-                    (DispatchShape::Exact, vec![opaque_boundary_route(key)])
-                };
+            // Entry-trigger special case (arity≤1): a declared Codeunit/Page/
+            // Report-typed receiver's `Run`/`RunModal` call dispatches to the
+            // target's entry trigger, mirroring `resolve_object_run`'s
+            // keyword-receiver semantics via the SAME shared machinery
+            // (T1.3, deep-review-remediation plan — closes the second of the
+            // two classifier gaps documented on `member_catalog::
+            // ENTRY_DISPATCH_BUILTIN_IDS`). Codeunit has no RunModal member
+            // (MS Learn documents RunModal only on Page/Report), so "runmodal"
+            // is only an entry dispatch for Page/Report.
+            let is_entry_trigger_dispatch = match *kind {
+                ObjectKind::Codeunit => method_lc == "run",
+                ObjectKind::Page | ObjectKind::Report => {
+                    method_lc == "run" || method_lc == "runmodal"
+                }
+                _ => false,
+            };
+            if is_entry_trigger_dispatch && arity <= 1 {
+                let (shape, routes) =
+                    dispatch_entry_trigger(&target_id, target_tier, *kind, graph, index, body_map);
+                return (shape, routes);
             }
 
             // General dispatch: resolve the method among the target object's
@@ -8409,14 +8410,25 @@ codeunit 52702 "CallerK"
     // Phase 4 Task 1 — instance-builtin resolution for Object/Enum receivers
     // -----------------------------------------------------------------------
 
-    // Test 1: Page Object receiver + `runmodal` → Catalog route PageInstance::runmodal
+    // Test 1: Page Object receiver + `runmodal` → entry-trigger `Run` dispatch
+    // into the target's declared `OnOpenPage`, NOT a `PageInstance::runmodal`
+    // Catalog route. T1.3 (deep-review-remediation plan) fix: this test used
+    // to assert the very bug T1.3 closes — a declared Page-typed variable's
+    // `.RunModal()` falling through to the instance-builtin catalog instead
+    // of the target's own trigger chain (see `member_catalog::ENTRY_
+    // DISPATCH_BUILTIN_IDS`'s doc for the two classifier gaps; this is the
+    // declared-variable population, closed via `resolve_member_with_args`'s
+    // broadened entry-trigger special case + shared `dispatch_entry_trigger`).
     #[test]
-    fn resolve_member_page_runmodal_emits_catalog_route() {
+    fn resolve_member_page_runmodal_dispatches_to_entry_trigger() {
         use crate::program::resolve::receiver::ReceiverType;
 
         let src_page: &'static str = r#"
 page 50610 "MyPage"
 {
+    trigger OnOpenPage()
+    begin
+    end;
 }
 "#;
         let src_caller: &'static str = r#"
@@ -8447,21 +8459,26 @@ codeunit 50611 "PageCaller"
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
-        assert!(
-            matches!(routes[0].target, RouteTarget::Builtin(_)),
-            "target must be Builtin; got {:?}",
-            routes[0].target
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Source,
+            "must dispatch to MyPage's declared OnOpenPage trigger, not the \
+             PageInstance::runmodal Catalog builtin (the T1.3 bug); got {:?}",
+            routes[0]
         );
-        assert_eq!(routes[0].evidence, Evidence::Catalog);
         assert!(
-            matches!(routes[0].witness, Witness::CatalogEntry { .. }),
-            "witness must be CatalogEntry; got {:?}",
+            matches!(routes[0].witness, Witness::SourceSpan { .. }),
+            "witness must be SourceSpan; got {:?}",
             routes[0].witness
         );
-        let RouteTarget::Builtin(ref bid) = routes[0].target else {
-            unreachable!()
+        let RouteTarget::Routine(ref rid) = routes[0].target else {
+            panic!(
+                "expected RouteTarget::Routine (OnOpenPage), got {:?}",
+                routes[0].target
+            );
         };
-        assert_eq!(bid.0, "PageInstance::runmodal");
+        assert_eq!(rid.name_lc, "onopenpage");
+        assert_eq!(rid.object.kind, ObjectKind::Page);
     }
 
     // Test 2: Report Object receiver + `saveaspdf` → Catalog route ReportInstance::saveaspdf
@@ -9176,12 +9193,80 @@ codeunit 50629 "SaveRecordPageCaller"
         assert_eq!(bid.0, "PageInstance::update");
     }
 
-    // Test 7: Page Object receiver + declared proc (shadows catalog) → Source route
+    // Test 7: Page Object receiver + declared proc (shadows catalog) → Source route.
+    // Uses `Close` rather than `Run`/`RunModal` (T1.3, deep-review-remediation
+    // plan): `Run`/`RunModal` are now special-cased (both Codeunit AND
+    // Page/Report) to dispatch UNCONDITIONALLY to the target's entry trigger,
+    // bypassing `resolve_in_object`/`resolve_in_page_scope` (and any declared
+    // same-named procedure) entirely BY DESIGN — see the companion test
+    // `resolve_member_page_declared_runmodal_proc_does_not_shadow_entry_
+    // trigger` below and `resolve_member_object_run_arm_*`'s doc for the
+    // pre-existing Codeunit precedent this now mirrors. `Close` is an
+    // ordinary `PageInstance` catalog entry with no entry-trigger special
+    // case, so it still exercises the general source-shadows-catalog
+    // precedence this test was written to prove.
     #[test]
     fn resolve_member_page_declared_proc_shadows_catalog() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        // This page declares its own RunModal — should shadow the PageInstance catalog entry.
+        // This page declares its own Close — should shadow the PageInstance catalog entry.
+        let src_page: &'static str = r#"
+page 50616 "PageWithClose"
+{
+    procedure Close()
+    begin
+    end;
+}
+"#;
+        let src_caller: &'static str = r#"
+codeunit 50617 "ShadowCaller"
+{
+    procedure Go()
+    begin
+    end;
+}
+"#;
+        let app_id = make_app_id("TestApp");
+        let unit_page = make_unit(app_id.clone(), "PageWithClose.al", src_page);
+        let unit_caller = make_unit(app_id, "ShadowCaller.al", src_caller);
+        let units = [unit_page, unit_caller];
+        let graph = build_graph(&units, None);
+        let index = ResolveIndex::build(&graph);
+        let body_map = BodyMap::build(&graph, &units);
+
+        let from_obj = find_obj(&graph, "ShadowCaller");
+        let receiver = ReceiverType::Object {
+            kind: ObjectKind::Page,
+            name_lc: "pagewithclose".into(),
+            id: None,
+        };
+        let (shape, routes) =
+            resolve_member(&receiver, "close", 0, from_obj, &graph, &index, &body_map);
+
+        assert_eq!(shape, DispatchShape::Exact);
+        assert_eq!(routes.len(), 1);
+        assert!(
+            matches!(routes[0].target, RouteTarget::Routine(_)),
+            "declared proc must shadow catalog; target must be Routine, got {:?}",
+            routes[0].target
+        );
+        assert_eq!(routes[0].evidence, Evidence::Source);
+        assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
+    }
+
+    /// T1.3 (deep-review-remediation plan) parity proof: a Page that declares
+    /// its OWN `procedure RunModal()` does NOT shadow the entry-trigger
+    /// dispatch — `RunModal` (like Codeunit's `Run`) is special-cased to
+    /// bypass `resolve_in_page_scope` (and therefore any declared same-named
+    /// procedure) entirely, exactly mirroring `resolve_member_object_run_
+    /// arm_resolves_unmarked_entry_trigger_normally`'s pre-existing Codeunit
+    /// precedent. `PageWithRunModal` declares no `OnOpenPage` trigger, so
+    /// this also proves the Opaque-boundary-when-absent fallback fires for
+    /// the declared-variable population, not just a Source hit.
+    #[test]
+    fn resolve_member_page_declared_runmodal_proc_does_not_shadow_entry_trigger() {
+        use crate::program::resolve::receiver::ReceiverType;
+
         let src_page: &'static str = r#"
 page 50616 "PageWithRunModal"
 {
@@ -9218,13 +9303,20 @@ codeunit 50617 "ShadowCaller"
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
+        assert_eq!(
+            routes[0].evidence,
+            Evidence::Opaque,
+            "the declared RunModal PROCEDURE must never be selected — RunModal \
+             dispatches to OnOpenPage unconditionally, which is absent here; \
+             got {:?}",
+            routes[0]
+        );
         assert!(
-            matches!(routes[0].target, RouteTarget::Routine(_)),
-            "declared proc must shadow catalog; target must be Routine, got {:?}",
+            matches!(routes[0].target, RouteTarget::AbiSymbol { .. }),
+            "expected an Opaque AbiSymbol boundary (OnOpenPage not indexed); \
+             got {:?}",
             routes[0].target
         );
-        assert_eq!(routes[0].evidence, Evidence::Source);
-        assert!(matches!(routes[0].witness, Witness::SourceSpan { .. }));
     }
 
     // -----------------------------------------------------------------------

@@ -5854,6 +5854,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ERROR token. Rebaselined the one affected Rust-owned golden
   (`ws-callsite-resolutions`).
 
+### Fixed
+- **`Page.RunModal(Page::"X")` / `Report.RunModal(...)` and declared
+  Page/Report-typed variables' `.RunModal()` now resolve as real entry-trigger
+  `Run` edges into the target's `OnOpenPage`/`OnPreReport`, instead of an
+  ordinary `PageInstance::runmodal`/`ReportInstance::runmodal` Catalog builtin
+  route (Task T1.3, deep-review-remediation plan).** The whole callee subtree
+  behind a `RunModal` call was previously invisible to the north-star metric
+  (`builtin` is not counted as a hole). Two independent classifier gaps, both
+  closed: (1) `extract::classify_call`'s `ObjectRun` check only recognized the
+  keyword-receiver method `"run"`, never `"runmodal"` — now accepts
+  `"runmodal"` for `Page`/`Report` keyword receivers (`Codeunit` excluded — it
+  has no `RunModal` member); (2) `resolve_member_with_args`'s
+  `ReceiverType::Object` arm only special-cased `Codeunit.Run` — now also
+  dispatches a declared Page/Report-typed variable's `Run`/`RunModal` call to
+  the target's entry trigger. Both populations now share one machinery
+  (`resolver::dispatch_entry_trigger`, factored out of `resolve_object_run`'s
+  tail) rather than duplicating the entry-trigger-lookup/collapse-marker-guard/
+  Opaque-boundary logic a second time. A `RunModal` call whose target cannot
+  be proven statically (a runtime variable) keeps its pre-existing honest
+  `DynamicOpen`/`HonestDynamic` handling — mirrors `Codeunit.Run(SomeVar)`
+  exactly, never `Unknown`. The T0.3 `builtin_dispatch_audit`'s CDO
+  regression pin (`CDO_ENTRY_DISPATCH_FLAGGED_PIN`) dropped from 94 to 0 —
+  every previously-flagged site now resolves the fix's Run edge. Two
+  pre-existing unit tests that had encoded the bug as expected behavior
+  (`resolve_member_page_runmodal_emits_catalog_route`,
+  `resolve_member_page_declared_proc_shadows_catalog`) were corrected/
+  repurposed; a new parity test
+  (`resolve_member_page_declared_runmodal_proc_does_not_shadow_entry_trigger`)
+  locks in that a declared same-named procedure never shadows the
+  entry-trigger dispatch, mirroring the pre-existing `Codeunit.Run` precedent.
+
 ## [0.9.3] - 2026-06-26
 
 The tree-sitter-al v3 compliance work. (v0.9.1 and v0.9.2 were tagged during the

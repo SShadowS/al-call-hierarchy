@@ -46,8 +46,8 @@ ws-baseapp-closure/src/WsBaseCaller.Codeunit.al	8797168955b41e98
 ws-baseapp-closure-control/src/WsBaseCaller.Codeunit.al	cb20b32909be32c3
 ws-builtin-dispatch-audit/src/AuditCaller.Codeunit.al	455f8fe801bc84ab
 ws-builtin-dispatch-audit/src/AuditTable.Table.al	c500eeeafd741874
-ws-builtin-dispatch-audit/src/AuditTargetPage.Page.al	00a9ee5f661f0d7a
-ws-builtin-dispatch-audit/src/AuditTargetReport.Report.al	2b50390f7064b6ac
+ws-builtin-dispatch-audit/src/AuditTargetPage.Page.al	e127819725029915
+ws-builtin-dispatch-audit/src/AuditTargetReport.Report.al	6bac4cf0d9012eb1
 ws-builtin-shadow/Acme.Table.al	a0cac9abb6d1c7d1
 ws-builtin-shadow/ShadowCallerA.Codeunit.al	a8d2f39e9de71314
 ws-builtin-shadow/ShadowCallerB.Codeunit.al	a9878460b642c254
