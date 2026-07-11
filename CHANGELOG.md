@@ -614,6 +614,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.0000% unchanged) per the brief's prediction — the lane's own CDO gate
   never completed; the merge-time combined re-measure is the binding
   confirmation.
+- **Arg-dispatch: text-inequality is not incompatibility proof, and text-
+  equality-via-erasure is not identity proof either (T1.6, deep-review-
+  remediation plan, H-5 — a fleet-confirmed, refuter-walked wrong pick).**
+  `arg_dispatch.rs`'s `pick_candidate` compared a `var` parameter's
+  compatibility against raw, whitespace-only-normalized type TEXT
+  (`sig_fp::normalize_type_text`, which never touches a comma) while its
+  by-value canonical identity (`base_keyword`) stripped everything from the
+  first whitespace onward — silently erasing an entire generic-argument
+  clause. Combined, `P(var d: Dictionary of [Integer, Text])` +
+  `P(d: Dictionary of [Integer, Decimal])` called as `P(MyDict)` (`MyDict:
+  Dictionary of [Integer,Text]`, spacing differing from the var param's own
+  declaration text) made the correct var candidate get wrongly ELIMINATED on
+  the spacing difference while the WRONG by-value Decimal candidate
+  exact-matched on the erased identity — a confident wrong pick on compiling
+  AL (the module's own doc calls this "the cardinal sin"). Fixed by giving
+  `CanonicalArgType` a new `Generic { base, args }` variant: `Dictionary of
+  [...]`/`List of [...]` type text is now recursively PARSED (base keyword +
+  bracket-depth-aware comma-split argument list, each argument itself
+  recursively canonicalized) into a structured identity, comparing equal iff
+  the parsed shapes agree — whitespace/case inside the clause is normalized
+  BY THE PARSE, never by string comparison, and a genuinely different
+  instantiation (`[Integer,Text]` vs `[Integer,Decimal]`) is never erased
+  into the same identity. A malformed clause (unterminated bracket, a bare
+  `of` with no bracket, a trailing empty argument slot) is UNDECIDED
+  (`None`) — blocks the pick (degrades to `AmbiguousOverload`), never
+  eliminates and never proves. Applied identically to the ABI tier
+  (`abi_param_canonical`, sharing the SAME parser) since SOURCE and ABI
+  candidates mix within one `pick_candidate` call
+  (`resolver::candidate_param_infos_either`) and must never disagree about a
+  generic's identity. Separately: member-field arguments (`Foo(Rec.Field)`)
+  hardcoded `var_passable: false`, a premise the plan-doc trail showed was
+  REVERSED across two earlier rounds without ever running a compiler (one
+  round: "record fields ARE generally var-passable"; the next, "correcting"
+  it: "AL requires a VARIABLE for a `var` argument", shipped with an
+  explicit "No investigation" note). Live-probed this task (`al.exe`
+  v18.0.37.11445, CDO's real `.alpackages` cache, platform/application
+  `28.0.0.0`): a plain table field (`Cust."No."`), a FlowField (`Cust.
+  "Balance (LCY)"`), and a field of a `temporary` record (`TempCust."No."`)
+  ALL bind a `var` parameter with ZERO diagnostics; a negative-control
+  literal in the same position reports `AL0133` and an undefined field
+  reports `AL0132`, confirming the harness genuinely type-checks.
+  `var_passable` flipped `false` -> `true`, refuting the "correcting"
+  round's premise directly. 12 new tests (`arg_dispatch.rs`), including the
+  headline `pick_candidate_dictionary_generic_spacing_variance_resolves_
+  var_overload_never_wrong_pick` (old-wrong-pick reproduced, then fixed) and
+  2 rewritten member-field-arg tests; `cargo test`/clippy green throughout.
+  CDO re-measure: SHA byte-identical to the frozen baseline
+  (`67910e992777b6bdef07b3b0046d1077c96cc03f581743d6404ee93d49913f4f`,
+  master `5046266`) — `ambiguousResolved`/`unknown` both stayed `0` in
+  `primaryScoped` and `wholeProgram`, `genuine_wrong` held throughout; arg
+  dispatch fires only on same-object overload sets surviving earlier gates,
+  and CDO carries no Dictionary/List-generic-typed overload set for this
+  fix to move — dormant on CDO, fixture-proven.
 - **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
   (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
   PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as
