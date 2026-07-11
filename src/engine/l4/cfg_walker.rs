@@ -240,9 +240,13 @@ pub fn walk_param(
 
     let indexes = build_indexes(routine);
     let mut exit_states: Vec<PerParamState> = Vec::new();
+    let mut loop_stack: Vec<LoopFrame> = Vec::new();
 
     let final_state = if let Some(tree) = &routine.statement_tree {
-        walk_cfg(
+        // The top-level `Reach` is always `Normal` in valid AL: a bare
+        // break/continue outside any loop is a compile error, and a loop
+        // node's own Reach never propagates past itself (see `Reach` doc).
+        let (state, _reach) = walk_cfg(
             tree,
             PerParamState::initial(),
             &param,
@@ -254,7 +258,9 @@ pub fn walk_param(
             body_avail_by_id,
             &indexes,
             &mut exit_states,
-        )
+            &mut loop_stack,
+        );
+        state
     } else {
         walk_flat(
             PerParamState::initial(),
@@ -331,6 +337,38 @@ fn build_indexes(routine: &L3Routine) -> WalkIndexes<'_> {
 
 const LOOP_BOUND: usize = 3;
 
+/// Whether a CFN subtree can fall through to whatever follows it in its
+/// enclosing block (`Normal`), or every path through it ends in an
+/// unconditional `break`/`continue` (`Abrupt` — statements after it in the
+/// same block are dead for that path). A loop node always ABSORBS an
+/// `Abrupt` reach produced by a `break`/`continue` inside its OWN body: code
+/// after a `while`/`for`/`repeat` executes normally regardless of breaks
+/// inside it, so `walk_cfg` never returns `Reach::Abrupt` for a loop node
+/// itself (valid AL also never lets `break`/`continue` escape past its
+/// enclosing loop). `exit`/`error`/`try` do NOT participate in this signal —
+/// out of scope for T1.1, their pre-existing fallthrough behavior is
+/// unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    Normal,
+    Abrupt,
+}
+
+/// Per-loop break/continue state collector. Pushed when entering a
+/// `while`/`for`/`foreach`/`repeat` body walk, popped when that arm returns —
+/// `break`/`continue` always affect the INNERMOST enclosing loop
+/// (`loop_stack.last_mut()`). `break` contributes its at-break state here,
+/// folded into the loop's own exit once the bounded fixed-point settles.
+/// `continue` contributes here too, folded into the loop-head join for the
+/// CURRENT iteration only — `continues` is cleared at the start of each
+/// iteration by the loop arm, mirroring `continue` jumping straight to the
+/// condition re-check.
+#[derive(Debug, Default)]
+struct LoopFrame {
+    breaks: Vec<PerParamState>,
+    continues: Vec<PerParamState>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn walk_cfg(
     node: &PCFNNode,
@@ -344,7 +382,8 @@ fn walk_cfg(
     body_avail_by_id: &HashMap<String, bool>,
     idx: &WalkIndexes,
     exit_states: &mut Vec<PerParamState>,
-) -> PerParamState {
+    loop_stack: &mut Vec<LoopFrame>,
+) -> (PerParamState, Reach) {
     match node.kind.as_str() {
         "block" => {
             // Interleave field-access events with child CFN nodes by source position.
@@ -379,10 +418,11 @@ fn walk_cfg(
             });
 
             let mut state = pre;
+            let mut reach = Reach::Normal;
             for e in events {
                 match e {
                     Ev::Child(c, _, _) => {
-                        state = walk_cfg(
+                        let (post, r) = walk_cfg(
                             c,
                             state,
                             param,
@@ -394,14 +434,22 @@ fn walk_cfg(
                             body_avail_by_id,
                             idx,
                             exit_states,
+                            loop_stack,
                         );
+                        state = post;
+                        reach = r;
+                        if reach == Reach::Abrupt {
+                            // Everything after this position in the block is
+                            // dead for this path (unconditional break/continue).
+                            break;
+                        }
                     }
                     Ev::Fa(fa, _, _) => {
                         state = apply_field_read(state, fa, param);
                     }
                 }
             }
-            state
+            (state, reach)
         }
         "if" => {
             let pre_branch = apply_condition_leaves(
@@ -416,10 +464,11 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             let then_branch = node.children.as_ref().and_then(|c| c.first());
             let else_branch = node.else_children.as_ref().and_then(|c| c.first());
-            let then_state = match then_branch {
+            let (then_state, then_reach) = match then_branch {
                 Some(b) => walk_cfg(
                     b,
                     pre_branch.clone(),
@@ -432,10 +481,11 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 ),
-                None => pre_branch.clone(),
+                None => (pre_branch.clone(), Reach::Normal),
             };
-            let else_state = match else_branch {
+            let (else_state, else_reach) = match else_branch {
                 Some(b) => walk_cfg(
                     b,
                     pre_branch.clone(),
@@ -448,10 +498,24 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 ),
-                None => pre_branch, // missing else = no-match path = preBranch.
+                None => (pre_branch, Reach::Normal), // missing else = no-match path = preBranch.
             };
-            join_states(&then_state, &else_state)
+            // A branch that ends in an unconditional break/continue (Abrupt)
+            // never falls through into the continuation — its state was
+            // already recorded into loop_stack at the break/continue leaf, so
+            // it must NOT be joined into the if-statement's own fallthrough.
+            match (then_reach, else_reach) {
+                (Reach::Normal, Reach::Normal) => {
+                    (join_states(&then_state, &else_state), Reach::Normal)
+                }
+                (Reach::Normal, Reach::Abrupt) => (then_state, Reach::Normal),
+                (Reach::Abrupt, Reach::Normal) => (else_state, Reach::Normal),
+                (Reach::Abrupt, Reach::Abrupt) => {
+                    (join_states(&then_state, &else_state), Reach::Abrupt)
+                }
+            }
         }
         "case" => {
             let pre_branch = apply_condition_leaves(
@@ -466,6 +530,7 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             let empty: Vec<PCFNNode> = Vec::new();
             let branches = node.children.as_ref().unwrap_or(&empty);
@@ -475,7 +540,7 @@ fn walk_cfg(
                 if c.is_case_else {
                     has_else = true;
                 }
-                let post = walk_cfg(
+                let (post, reach) = walk_cfg(
                     c,
                     pre_branch.clone(),
                     param,
@@ -487,19 +552,35 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 );
-                acc = Some(match acc {
-                    None => post,
-                    Some(a) => join_states(&a, &post),
-                });
+                // Abrupt branches contribute nothing to the case's own
+                // fallthrough join — already recorded via loop_stack.
+                if reach == Reach::Normal {
+                    acc = Some(match acc {
+                        None => post,
+                        Some(a) => join_states(&a, &post),
+                    });
+                }
             }
             match acc {
-                None => pre_branch, // empty case
+                None => {
+                    if has_else {
+                        // Exhaustive AND every branch abrupt: no path falls
+                        // through past the case statement.
+                        (pre_branch, Reach::Abrupt)
+                    } else {
+                        // No branch had normal reach, but an absent else
+                        // means the implicit no-match path always falls
+                        // through normally.
+                        (pre_branch, Reach::Normal)
+                    }
+                }
                 Some(a) => {
                     if has_else {
-                        a
+                        (a, Reach::Normal)
                     } else {
-                        join_states(&a, &pre_branch)
+                        (join_states(&a, &pre_branch), Reach::Normal)
                     }
                 }
             }
@@ -507,8 +588,12 @@ fn walk_cfg(
         "case-branch" => {
             let empty: Vec<PCFNNode> = Vec::new();
             let mut state = pre;
+            let mut reach = Reach::Normal;
             for c in node.children.as_ref().unwrap_or(&empty) {
-                state = walk_cfg(
+                if reach == Reach::Abrupt {
+                    break;
+                }
+                let (post, r) = walk_cfg(
                     c,
                     state,
                     param,
@@ -520,9 +605,12 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 );
+                state = post;
+                reach = r;
             }
-            state
+            (state, reach)
         }
         "while" | "for" | "foreach" => {
             // Bounded fixed-point (max LOOP_BOUND); saturate decidable fields on overshoot.
@@ -539,13 +627,21 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             let Some(body_node) = body_node else {
-                return pre_cond;
+                return (pre_cond, Reach::Normal);
             };
+            loop_stack.push(LoopFrame::default());
             let mut body_pre = pre_cond;
+            let mut fixpoint_state: Option<PerParamState> = None;
             for _ in 0..LOOP_BOUND {
-                let body_post = walk_cfg(
+                loop_stack
+                    .last_mut()
+                    .expect("just pushed")
+                    .continues
+                    .clear();
+                let (body_post_raw, body_reach) = walk_cfg(
                     body_node,
                     body_pre.clone(),
                     param,
@@ -557,6 +653,13 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
+                );
+                let body_post = fold_continue_states(
+                    body_reach,
+                    body_post_raw,
+                    &body_pre,
+                    &loop_stack.last().expect("just pushed").continues,
                 );
                 let next_iter_pre = apply_condition_leaves(
                     body_post,
@@ -570,36 +673,76 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 );
                 let joined = join_states(&body_pre, &next_iter_pre);
                 if joined == body_pre {
-                    return joined;
+                    fixpoint_state = Some(joined);
+                    break;
                 }
                 body_pre = joined;
             }
-            saturate_unknown(&body_pre)
+            let exit_state = fixpoint_state.unwrap_or_else(|| saturate_unknown(&body_pre));
+            let frame = loop_stack.pop().expect("pushed at loop entry");
+            let mut final_exit = exit_state;
+            for b in &frame.breaks {
+                final_exit = join_states(&final_exit, b);
+            }
+            (final_exit, Reach::Normal)
         }
         "repeat" => {
-            let body_node = node.children.as_ref().and_then(|c| c.first());
-            let Some(body_node) = body_node else {
-                return apply_condition_leaves(
-                    pre,
-                    node.condition_leaves.as_deref(),
-                    param,
-                    routine,
-                    snapshot,
-                    final_map,
-                    upgraded_bindings,
-                    graph,
-                    body_avail_by_id,
-                    idx,
-                    exit_states,
+            let has_body = node.children.as_ref().is_some_and(|c| !c.is_empty());
+            if !has_body {
+                return (
+                    apply_condition_leaves(
+                        pre,
+                        node.condition_leaves.as_deref(),
+                        param,
+                        routine,
+                        snapshot,
+                        final_map,
+                        upgraded_bindings,
+                        graph,
+                        body_avail_by_id,
+                        idx,
+                        exit_states,
+                        loop_stack,
+                    ),
+                    Reach::Normal,
                 );
+            }
+            // `repeat` bodies are FLAT children (ir_walk.rs Repeat lowering) —
+            // unlike while/for/foreach's single wrapped block child. Wrap them
+            // in a SYNTHETIC "block" node (source_range: None, so it
+            // reconstructs its own range purely from the body's leaves — NOT
+            // the repeat statement's full range, which would also cover the
+            // `until` condition) to reuse the "block" arm's sequential /
+            // field-interleave / dead-code-cutoff logic verbatim. Mirrors the
+            // same synthetic-block pattern control_context.rs::walk_loop_node
+            // and operation_order.rs::walk_loop_node already use for this
+            // exact flat-children shape.
+            let synthetic = PCFNNode {
+                kind: "block".to_string(),
+                operation_id: None,
+                callsite_id: None,
+                condition_guard: None,
+                condition_leaves: None,
+                children: node.children.clone(),
+                else_children: None,
+                is_case_else: false,
+                source_range: None,
             };
+            loop_stack.push(LoopFrame::default());
             let mut body_pre = pre;
+            let mut fixpoint_state: Option<PerParamState> = None;
             for _ in 0..LOOP_BOUND {
-                let body_post = walk_cfg(
-                    body_node,
+                loop_stack
+                    .last_mut()
+                    .expect("just pushed")
+                    .continues
+                    .clear();
+                let (body_post_raw, body_reach) = walk_cfg(
+                    &synthetic,
                     body_pre.clone(),
                     param,
                     routine,
@@ -610,6 +753,13 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
+                );
+                let body_post = fold_continue_states(
+                    body_reach,
+                    body_post_raw,
+                    &body_pre,
+                    &loop_stack.last().expect("just pushed").continues,
                 );
                 let after_cond = apply_condition_leaves(
                     body_post,
@@ -623,18 +773,42 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 );
                 let joined = join_states(&body_pre, &after_cond);
                 if joined == body_pre {
-                    return joined;
+                    fixpoint_state = Some(joined);
+                    break;
                 }
                 body_pre = joined;
             }
-            saturate_unknown(&body_pre)
+            let exit_state = fixpoint_state.unwrap_or_else(|| saturate_unknown(&body_pre));
+            let frame = loop_stack.pop().expect("pushed at loop entry");
+            let mut final_exit = exit_state;
+            for b in &frame.breaks {
+                final_exit = join_states(&final_exit, b);
+            }
+            (final_exit, Reach::Normal)
+        }
+        "break" => {
+            // No enclosing loop is unreachable in valid AL (the compiler
+            // rejects a bare break outside a loop) — fail soft to a no-op
+            // rather than panic on malformed/recovered input.
+            if let Some(frame) = loop_stack.last_mut() {
+                frame.breaks.push(pre.clone());
+            }
+            (pre, Reach::Abrupt)
+        }
+        "continue" => {
+            // Same fail-soft guard as "break" above.
+            if let Some(frame) = loop_stack.last_mut() {
+                frame.continues.push(pre.clone());
+            }
+            (pre, Reach::Abrupt)
         }
         "exit" => {
             exit_states.push(pre.clone());
-            pre
+            (pre, Reach::Normal)
         }
         "error" => {
             let post = apply_condition_leaves(
@@ -649,9 +823,10 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             exit_states.push(post.clone());
-            post
+            (post, Reach::Normal)
         }
         "op" => {
             let pre_op = apply_condition_leaves(
@@ -666,15 +841,17 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             let op = node
                 .operation_id
                 .as_deref()
                 .and_then(|id| idx.op_by_id.get(id));
-            match op {
+            let state = match op {
                 Some(op) => apply_op(pre_op, op, param),
                 None => pre_op,
-            }
+            };
+            (state, Reach::Normal)
         }
         "call" => {
             let pre_call = apply_condition_leaves(
@@ -689,12 +866,13 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             let cs = node
                 .callsite_id
                 .as_deref()
                 .and_then(|id| idx.call_by_id.get(id));
-            match cs {
+            let state = match cs {
                 Some(cs) => apply_call(
                     pre_call,
                     cs,
@@ -707,12 +885,13 @@ fn walk_cfg(
                     body_avail_by_id,
                 ),
                 None => pre_call,
-            }
+            };
+            (state, Reach::Normal)
         }
         "try" => {
             let sat = saturate_unknown(&pre);
             exit_states.push(sat.clone());
-            sat
+            (sat, Reach::Normal)
         }
         _ => {
             // "other" (and any unrecognised kind).
@@ -728,10 +907,15 @@ fn walk_cfg(
                 body_avail_by_id,
                 idx,
                 exit_states,
+                loop_stack,
             );
             let empty: Vec<PCFNNode> = Vec::new();
+            let mut reach = Reach::Normal;
             for c in node.children.as_ref().unwrap_or(&empty) {
-                state = walk_cfg(
+                if reach == Reach::Abrupt {
+                    break;
+                }
+                let (post, r) = walk_cfg(
                     c,
                     state,
                     param,
@@ -743,11 +927,39 @@ fn walk_cfg(
                     body_avail_by_id,
                     idx,
                     exit_states,
+                    loop_stack,
                 );
+                state = post;
+                reach = r;
             }
-            state
+            (state, reach)
         }
     }
+}
+
+/// Fold a loop iteration's `continue` contributions into its post-body state.
+/// `continue` jumps straight to the loop's condition re-check — the SAME
+/// place a normal (non-abrupt) body completion joins from — so a `continue`'s
+/// at-continue state is just another candidate for "what state enters the
+/// condition check", alongside the body's own normal-completion state (when
+/// it has one). If the body itself is `Abrupt` (e.g. every path breaks or
+/// continues) and there were zero continues recorded, there is no live state
+/// for this iteration; fall back to the incoming pre-state as a conservative
+/// no-op (the surrounding fixed-point join stabilizes on it).
+fn fold_continue_states(
+    body_reach: Reach,
+    body_post_raw: PerParamState,
+    body_pre: &PerParamState,
+    continues: &[PerParamState],
+) -> PerParamState {
+    let mut merged = (body_reach == Reach::Normal).then_some(body_post_raw);
+    for c in continues {
+        merged = Some(match merged {
+            None => c.clone(),
+            Some(m) => join_states(&m, c),
+        });
+    }
+    merged.unwrap_or_else(|| body_pre.clone())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -763,13 +975,14 @@ fn apply_condition_leaves(
     body_avail_by_id: &HashMap<String, bool>,
     idx: &WalkIndexes,
     exit_states: &mut Vec<PerParamState>,
+    loop_stack: &mut Vec<LoopFrame>,
 ) -> PerParamState {
     let Some(leaves) = leaves else {
         return pre;
     };
     let mut state = pre;
     for leaf in leaves {
-        state = walk_cfg(
+        let (post, _reach) = walk_cfg(
             leaf,
             state,
             param,
@@ -781,7 +994,9 @@ fn apply_condition_leaves(
             body_avail_by_id,
             idx,
             exit_states,
+            loop_stack,
         );
+        state = post;
     }
     state
 }

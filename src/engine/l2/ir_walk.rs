@@ -1499,7 +1499,18 @@ impl<'a> IrCfn<'a> {
                 n
             }
             Block(b) => self.build_block(*b),
-            Break | Continue | Unknown => cfn_node("other"),
+            // `break`/`continue` get their OWN CFN kinds (not the inert `other`)
+            // so the L4 dataflow walker (cfg_walker.rs) can join their at-break /
+            // at-continue state into the enclosing loop's exit/head instead of
+            // silently threading state through statements they actually skip.
+            // Other flat-children consumers (control_context.rs, return_summary.rs,
+            // dep_artifact_l4.rs, operation_order.rs, control_flow.rs) fall through
+            // their generic default arm for any unmatched kind — verified they do
+            // not special-case "other" vs an unrecognised kind, so this rename is
+            // behavior-preserving for them.
+            Break => cfn_node("break"),
+            Continue => cfn_node("continue"),
+            Unknown => cfn_node("other"),
         };
         // The L4 walker reads `source_range` (serde-skip) to attribute field accesses
         // to the right block level. Set it to the statement's range for any node that

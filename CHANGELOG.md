@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **L4 dataflow walker only saw the FIRST statement of every `repeat…until`
+  body, and `break`/`continue` lowered to an inert `other` CFN kind that
+  silently threaded state through statements they actually skip (Task T1.1,
+  Tier-1 remediation arc).** Two coupled unsoundness bugs in
+  `src/engine/l4/cfg_walker.rs`'s branch-aware `walk_cfg`:
+  1. The `"repeat"` arm took `node.children.first()` — but `repeat` bodies are
+     lowered FLAT (`src/engine/l2/ir_walk.rs`'s `Repeat` case), unlike
+     `while`/`for`/`foreach`'s single wrapped block child, so any multi-
+     statement `repeat` body was silently truncated to its first statement.
+     Fixed by wrapping the flat children in a synthetic `"block"` CFN node
+     (mirroring the same pattern already used by
+     `control_context.rs::walk_loop_node` and
+     `operation_order.rs::walk_loop_node` for this exact shape) so the walk
+     reuses the `"block"` arm's sequential/field-interleave logic over ALL
+     statements.
+  2. `break`/`continue` now lower to their own CFN kinds (`"break"`/
+     `"continue"`, `src/engine/l2/ir_walk.rs`) instead of the inert `"other"`.
+     `walk_cfg` gained a `Reach` signal (`Normal` / `Abrupt`) threaded through
+     every arm: a `break`/`continue` leaf pushes its at-break/at-continue
+     state onto a new per-loop `LoopFrame` (a stack scoped to the innermost
+     enclosing `while`/`for`/`foreach`/`repeat`) and returns `Abrupt`, which
+     propagates up through `if`/`case`/`block` so statements after an
+     unconditional break/continue in the same block are correctly treated as
+     dead for that path. Each loop arm folds its frame's `breaks` into the
+     loop's own exit state (once, after the bounded fixed-point settles) and
+     its `continues` into the loop-head join (cleared every iteration,
+     mirroring `continue` jumping straight to the condition re-check). The
+     break/continue defect was previously MASKED inside `repeat` bodies by
+     defect 1 (truncation meant a body-final `break`/`continue` was often
+     invisible entirely) and would have gone live unsoundly the moment defect
+     1 was fixed in isolation — the two fixes landed as one change.
+  New TDD fixtures in `tests/r3a2_branch_aware.rs` (all confirmed red on the
+  pre-fix code, green after): a multi-statement `repeat` body where a later
+  statement resets `dirtyAtExit` (bug 1 in isolation, no break involved); a
+  `while` loop with a conditional `break` between two state-changing
+  statements exercising the exit-join (bug 2 in isolation, no repeat
+  involved); and a `repeat` body combining both. Full `cargo test` green (157
+  binaries); `REGEN_TEMP_GOLDENS=1` regen touched exactly one Rust-owned
+  golden family with a real content diff — see the T1.1 report for the full
+  blast-radius table. CDO verification: `aldump --program-call-graph-stats`
+  SHA unchanged (`67910e99...13f4f`, byte-identical — this fix touches L4
+  dataflow, not call resolution) and `scripts/cdo-gate` green.
+
 ### Added
 - **Golden-regen completeness + value-gated `REGEN_TEMP_GOLDENS` (Task T0.6,
   Tier-0 remediation arc).** Doctrine says every Rust-owned golden regenerates
