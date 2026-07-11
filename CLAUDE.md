@@ -23,42 +23,121 @@ cargo clippy --all-targets --all-features  # Lint
 # LSP mode (default) - communicates via stdio
 cargo run
 
-# CLI mode for testing/debugging
-cargo run -- --project /path/to/al-project --no-lsp
+# CLI mode: index a project and report definition/call-site counts
+cargo run -- --project /path/to/al-project
+
+# CLI mode: code quality analysis (complexity, params, line count, fan-in, unused procs)
+cargo run -- --project /path/to/al-project --analyze --format text   # or json | csv
 
 # With verbose logging
 cargo run -- --project /path/to/al-project --verbose
 ```
 
+There is no `--no-lsp` flag — `clap` rejects unknown flags outright. LSP server mode is
+the default whenever `--project` is *not* given; passing `--project` alone switches to
+CLI mode (index-and-report, or `--analyze` for the quality-diagnostics report). `--lsp`
+exists as an explicit no-op for symmetry. Other flags: `--no-watcher` (disable the file
+watcher; rely on LSP change notifications instead), `--no-telemetry` (see `docs/telemetry.md`).
+See `src/main.rs`'s `Args` (clap derive) for the authoritative flag list.
+
 ## Prerequisites
 
 - Rust 1.75+
-- tree-sitter-al V2 grammar (included as git submodule at `tree-sitter-al/`)
+- tree-sitter-al **v3.2.0** grammar (included as a git submodule at `tree-sitter-al/`,
+  pinned in the superproject's index; CI instead checks out the grammar repo's `main`
+  branch unpinned — see the Grammar section below)
   - Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after clone
-  - Override path with `TREE_SITTER_AL_PATH` env var if needed
+  - **Git worktrees do not get their own submodule checkout.** From a worktree, either
+    run `git submodule update --init` there too, or set `TREE_SITTER_AL_PATH` to point
+    at an already-checked-out `tree-sitter-al/` (e.g. the main checkout's copy) — the
+    `al-syntax` build script falls back to `../../tree-sitter-al` (relative to
+    `crates/al-syntax`) when the env var is unset, which resolves correctly only for a
+    normal (non-worktree) checkout.
 
 ## Architecture
 
-**Data Flow:**
-```
-AL Source Files → Tree-sitter Parser (language.rs) → Parsed Definitions/Calls (parser.rs)
-    → Call Graph Builder (indexer.rs) → Call Graph (graph.rs) → LSP Server (server.rs)
-    ← File Watcher (watcher.rs) for incremental updates
-    → Request Handlers (handlers.rs) → Resolver (resolver.rs) → LSP Responses
-```
+There are honestly **two pipelines** in this repo, sharing one parser front-end
+(`crates/al-syntax`) but otherwise independent. Neither is legacy — the LSP surface
+ships the editor feature; the program engine is the moat (see Project Direction below).
 
-**Key Modules:**
-- `main.rs` - CLI entry point, argument parsing
+**Pipeline 1 — the LSP surface** (call hierarchy / code lens / diagnostics the editor sees):
+```
+AL Source Files → al_syntax::parse (crates/al-syntax) → owned AL syntax IR
+    → ParsedFile projection (parser.rs, parse_file_ir)
+    → Call Graph Builder (indexer.rs, parallel via rayon)
+    → Call Graph (graph.rs, O(1) lookups)
+    → LSP Server (server.rs) ← File Watcher (watcher.rs) for incremental updates
+    → Request Handlers (handlers.rs: prepareCallHierarchy / incomingCalls / outgoingCalls
+      / codeLens / diagnostics) → LSP Responses
+```
+`graph.rs` / `handlers.rs` / `indexer.rs` / `parser.rs` / `protocol.rs` live in `lib.rs`
+(so benches/tests can index+query in-process); `main.rs` re-exports them for the binary
+modules (`server.rs`, `watcher.rs`, `analysis.rs`) to keep using unchanged.
+
+**Pipeline 2 — the program engine** (whole-program call-graph resolution, the moat):
+```
+Workspace + .alpackages → snapshot::snapshot_workspace (AppSetSnapshot, identity-verified
+    source roots per app) → al_syntax::parse per file → program::build (ProgramGraph:
+    nodes + app-qualified identity + topology index) → program::resolve::full::
+    resolve_full_program (the fresh, clean-room edge resolver — no L3 oracle) → Histogram
+    (taxonomy'd edge counts) + per-edge Route report
+```
+Driven via `aldump --program-call-graph-stats <workspace>` (the north-star metric command)
+or consumed programmatically by `src/engine/l4`/`l5` (effect summaries, detectors) and
+`src/engine/gate` (the `analyze` CLI's SARIF/JSON/HTML report path).
+
+**Key Modules — LSP surface:**
+- `main.rs` - CLI entry point (clap), dispatches to LSP server / CLI index / `--analyze`
 - `server.rs` - LSP server initialization and main loop
-- `handlers.rs` - LSP request handlers (prepareCallHierarchy, incomingCalls, outgoingCalls)
-- `graph.rs` - Call graph data structures with O(1) lookups
-- `parser.rs` - Tree-sitter AL parsing, extracts definitions and call sites
-- `indexer.rs` - Parallel file indexing using rayon
-- `language.rs` - Tree-sitter queries for definitions, calls, event subscribers, variables
+- `handlers.rs` - LSP request handlers (prepareCallHierarchy, incomingCalls, outgoingCalls, codeLens)
+- `graph.rs` - Call graph data structures with O(1) lookups (`Definition`, `CallSite`, `QualifiedName`)
+- `parser.rs` - Projects the owned al-syntax IR into `ParsedFile` (definitions/calls/vars/events)
+- `indexer.rs` - Parallel file indexing using rayon; also indexes `.app` dependencies
 - `watcher.rs` - File system watcher for incremental updates
-- `resolver.rs` - Call resolution logic (qualified and unqualified calls)
+- `analysis.rs` - Code quality metrics (cyclomatic complexity, params, line count) for `--analyze`
+- `config.rs` - Diagnostic threshold config (global `~/.al-call-hierarchy/config.json` + per-workspace)
 - `app_package.rs` - Parser for .app files (extracts SymbolReference.json)
 - `dependencies.rs` - Dependency resolution from app.json and .alpackages
+- `protocol.rs` - LSP protocol URI/path conversion helpers
+- `types.rs` - Core AL object-type enum shared across lib/binary
+- `language.rs` - Re-exports `al_syntax::language::language()`; also holds the legacy
+  tree-sitter S-expression queries (`DEFINITIONS`/`CALLS`/`EVENT_SUBSCRIBERS`/`VARIABLES`),
+  which are dead code — retired by the owned-IR migration, zero call sites repo-wide.
+  Kept only because `queries/highlights.scm`/`queries/tags.scm` (editor syntax
+  highlighting, a separate consumer) still reference the same grammar node names.
+
+**Key Modules — program engine (`src/engine/`, `src/program/`, `src/snapshot/`):**
+- `src/snapshot/` - App-set ingestion: turns a workspace + symbol-only dep tables into
+  identity-verified per-app source roots (`snapshot_workspace`, `AppSetSnapshot`)
+- `src/program/` - Whole-program semantic graph: `node`/`topology` (app-qualified identity
+  + index), `build` (assembly), `sig_fp` (signature fingerprints)
+- `src/program/resolve/` - **The fresh call/behaviour-edge resolver** — `full.rs`
+  (`resolve_full_program`, the entry point), `resolver.rs`/`receiver.rs`/`arg_dispatch.rs`
+  (dispatch), `builtins.rs`/`member_catalog.rs` (platform intrinsic catalogs), `edge.rs`
+  (the `Histogram` taxonomy + `ObligationOutcome`), `abi_ingest.rs` (dependency ABI)
+- `src/engine/l2/` - Structural body-walk + feature projection over the owned IR
+- `src/engine/l3/` - Legacy workspace symbol table + call resolver (the RETIRED al-sem
+  port; `--l3-call-graph-stats` and siblings are advisory-only — see Project Direction)
+- `src/engine/l4/` - Per-routine effect summaries over the call graph's SCC condensation
+- `src/engine/l5/` - Detectors + query substrate (findings, event-flow, digests, fingerprints)
+- `src/engine/gate/` - The production `analyze` CLI path (SARIF/JSON/HTML/terminal report,
+  baseline diffing, inline suppression, policy)
+- `src/engine/deps/` - `.app` symbol-reference ingestion (manifest + SymbolReference.json → ABI)
+- `src/bin/aldump.rs` - Multi-mode dump CLI: `--program-call-graph-stats` (north-star),
+  `--l2`/`--l3-*` (legacy engine layers), `--graphify-export`, etc. — see its `usage()`
+- `src/bin/alsem.rs` - The production `analyze`/diagnostics CLI (installed binary name)
+- `src/bin/mint-goldens.rs` - Mints/regenerates committed golden fixtures
+
+**`crates/al-syntax`** is the **only** crate that touches tree-sitter: FFI grammar
+binding (`language.rs`), the generated raw vocabulary + typed CST (`raw/generated/`),
+the CST→IR lowerer (`lower/mod.rs`), and the owned AL syntax IR (`ir/`) every consumer
+above builds on. See the Grammar section below.
+
+**Testing:** `tests/common/{cdo,regen}.rs` are shared `#[path = "common/..."]`-included
+helpers (each `tests/*.rs` file is its own crate, so plain `mod`/`use` can't share code
+across them) — `cdo.rs` gates CDO-workspace tests, `regen.rs` gates golden-regeneration
+paths. `scripts/cdo-gate` runs the full CDO-gated suite with `ENFORCE_CDO_WS=1` (see
+Testing Philosophy & Goldens below).
 
 **Core Patterns:**
 - **String interning** (`string-interner`): All symbol names deduplicated for memory efficiency
@@ -91,81 +170,151 @@ Definition { file, range, object_type, object_name, name, kind }  // Procedure/t
 CallSite { file, range, caller, callee_object, callee_method }  // Call location with context
 ```
 
-## Tree-sitter-al V2 Grammar Notes
+## Grammar (tree-sitter-al v3.2.0)
 
-This project uses the V2 tree-sitter-al grammar. Key differences from V1:
+**Current reality:** the grammar is **v3.2.0** (`tree-sitter-al/package.json`, tag
+`v3.2.0`). The submodule pointer in this repo's git index is pinned to a specific
+commit (reproducible local/dev builds); CI instead checks out `SShadowS/tree-sitter-al`
+`main` **unpinned** (`.github/workflows/ci.yml`) so a breaking grammar change surfaces
+on the next PR rather than silently drifting. `crates/al-syntax` is the **only** crate
+that links tree-sitter or walks its raw CST — every other consumer (`parser.rs`,
+`src/engine/l2` and everything layered on it, `src/program/resolve`) reads the owned
+AL syntax IR that `al-syntax`'s lowerer (`crates/al-syntax/src/lower/mod.rs`) produces.
+Practical effect: the "flat vs. recursive walk" hazard that mattered under the old
+tree-sitter-query architecture (see History below) no longer applies to engine code at
+all — the IR's `Block`/`Stmt` items are already flattened once, at the lowering
+boundary, so nothing downstream ever sees a `statement_block`/`declaration_body`
+wrapper node.
 
-- **No wrapper nodes**: `procedure name:` and `trigger_declaration name:` fields hold `(identifier)` or `(quoted_identifier)` directly (no `(name)` or `(trigger_name)` wrapper)
-- **Parameter field renamed**: `parameter_name:` → `name:`
-- **Member expression field renamed**: `property:` → `member:`
-- **`field_access` removed**: merged into `member_expression` with `quoted_identifier` as member
-- **`named_trigger`/`onrun_trigger` removed**: unified into `trigger_declaration`
-- **Attributes are siblings**: `attribute_item` nodes are siblings of `procedure`, not children. The EVENT_SUBSCRIBERS query matches attributes separately and resolves the adjacent procedure in Rust code.
-- **Unified `property` node**: Individual `*_property` nodes replaced by a single `property` node with `name: (property_name)` and `value:` fields
-- **`preproc_split_codeunit_declaration` renamed**: now `preproc_split_declaration`
+**Notes still relevant if you touch the lowerer itself** (`crates/al-syntax/src/lower/mod.rs`,
+the one place that still reads raw grammar shapes):
+- A scoped member trigger (`Object::Member` triggers) is a single named
+  `member_trigger_name` CST node (`object`/`member` fields, no literal `::` token in its
+  field set) rather than a plain `(identifier)`/`(quoted_identifier)` — `routine_name_text`
+  joins the two fields back into `Object::Member` text. Editor consumers
+  (`queries/highlights.scm` + `queries/tags.scm`) capture `member_trigger_name` directly;
+  the engine does not use `.scm` queries at all (IR-only).
+- A `case` branch's `pattern` field binds one `_single_pattern` value per branch value —
+  the `,` separators are never tagged `pattern` — and an `in`-as-case-pattern lowers to
+  the named `in_expression` node, never an inline `seq` leaking `left`/`operator`/`right`.
+  The lowerer keeps a defensive `is_named()` filter on `children_by_field(Pattern)` as
+  belt-and-suspenders (an anonymous `,` token has no `RawKind` and would panic if it ever
+  reached `lower_expr`).
+- Object/field/action bodies wrap their content in a `declaration_body` node (repeat1 of
+  `_body_element`); a code block's statements wrap in `statement_block`; report dataitem
+  bodies in `report_body`; `var_section`'s body in `var_body`. `grammar.js`'s own rule
+  definitions are the source of truth — grep it rather than trusting this list to stay
+  current.
+- **Validate a lowerer change with the differential goldens** (`cargo test`): zero
+  divergences = behaviour-preserving. Goldens are **Rust-owned baselines** regenerated
+  from this engine — see Testing Philosophy & Goldens below.
+- Dump a real tree with `tree-sitter parse <file.al>` from `tree-sitter-al/` — always
+  verify a grammar-shape claim against real `tree-sitter parse` output, not just a read
+  of `grammar.js` (two owned-grammar field-pollution bugs upstream of the lowerer were
+  found exactly this way; see CHANGELOG history).
 
-## tree-sitter-al grammar migrations
-
-The grammar is now **v3** (the project builds against `tree-sitter-al` `main`,
-checked out unpinned by CI — `cargo test` runs against whatever HEAD is). v3 added
-wrapper nodes that broke the v2 assumptions above.
-
-- **Recursive AST walks survive a grammar bump; flat direct-child iterations break.**
-  v3 wraps contents in nodes between a container and its children: `code_block.body`
-  → `statement_block` (holds the statements), object/field/action bodies →
-  `declaration_body`, report dataitem body → `report_body`, case branches →
-  `case_body`, `var_section.body` → `var_body`. Any `named_children(x)` reading
-  statements/properties/members directly must descend the wrapper.
-  - Statements: use `node_util::block_statements` (flattens `statement_block`
-    inline, preserving trailing trivia).
-  - Object/field properties: `decl.child_by_field_name("body")` then iterate.
-  - A member-trigger's parent is now a `*_body` wrapper, not the named member.
-- **Owned grammar fixes (we maintain `tree-sitter-al`).** Two field-pollution fixes
-  landed on grammar `main` and changed node shapes the lowerer relies on:
-  - `trigger_declaration name:` is no longer only `(identifier)`/`(quoted_identifier)` —
-    a scoped member trigger (`Object::Member`) is a single named `member_trigger_name`
-    node (`object` / `member` fields). The `name` field is `multiple:false` (no `::`
-    token in its type set). `lower::routine_name_text` joins it to `Object::Member`.
-  - The case `pattern` field binds ONE `_single_pattern` value, never the `,`/`:`
-    separators (rule `_case_pattern_item`); an `in`-as-case-pattern is the named
-    `in_expression`, not an inline `seq` leaking `left`/`operator`/`right`. The lowerer
-    keeps a defensive `is_named()` filter on `children_by_field("pattern")`.
-  - Editor consumers: `queries/highlights.scm` + `queries/tags.scm` capture
-    `member_trigger_name`. The engine does NOT use `.scm` queries (IR-only).
-- **Validate a migration with the differential goldens** (`cargo test`): zero
-  divergences = behaviour-preserving. The goldens are **Rust-owned baselines**
-  regenerated from this engine — the Rust engine is the source of truth
-  (al-sem is retired; see Testing Philosophy & Goldens below).
-- Dump a real tree with `tree-sitter parse <file.al>` from `tree-sitter-al/`.
+**History (V1 → V2 → V3, kept for archaeology — not actionable for engine code today):**
+V2 removed V1's wrapper nodes (`procedure name:`/`trigger_declaration name:` held
+`identifier`/`quoted_identifier` directly, no `name`/`trigger_name` wrapper), renamed
+`parameter_name:` → `name:` and `property:` → `member:`, merged `field_access` into
+`member_expression`, unified `named_trigger`/`onrun_trigger` into `trigger_declaration`,
+and unified the individual `*_property` nodes into one `property` node. V3 then
+reintroduced wrapper nodes for a different reason (structural grouping, not per-field
+naming) — `code_block`'s body wraps in `statement_block`, object/field/action bodies in
+`declaration_body`, etc. (see above) — which broke direct-child (`named_children`) reads
+written against V2's flat shape; the fix at the time was recursive walks or explicit
+`child_by_field_name("body")` descent. All of that now lives entirely inside the
+`al-syntax` lowerer; nothing else needs to know it happened.
 
 ## Adding New AL Constructs
 
-1. Update tree-sitter queries in `language.rs` (DEFINITIONS, CALLS, EVENT_SUBSCRIBERS, VARIABLES)
-2. Update parsing logic in `parser.rs`
-3. Test against fixtures in `tests/fixtures/`
+1. **Grammar first.** If the construct isn't already parseable, add/fix the rule in
+   `tree-sitter-al/grammar.js` (a separate repo we own — `SShadowS/tree-sitter-al`) and
+   regenerate (`tree-sitter generate` from `tree-sitter-al/`). Verify the real shape with
+   `tree-sitter parse <file.al>` — never assume from reading `grammar.js` alone (see
+   Grammar section above for why).
+2. **Lower it.** Teach `crates/al-syntax/src/lower/mod.rs` to turn the new CST shape into
+   the owned IR (`crates/al-syntax/src/ir/`) — extend `ObjectKind`/`RoutineKind`/`StmtKind`/
+   `ExprKind` etc. as needed. This is the ONLY place that reads raw tree-sitter nodes for
+   the new construct; get it right here and every consumer below sees a clean IR node.
+3. **Wire the IR consumers that need it**, as applicable:
+   - LSP surface: `parser.rs`'s `parse_file_ir` (definitions/calls/vars/events projection)
+   - Program engine (the moat): `src/program/resolve/extract.rs` (obligation extraction)
+     and/or `src/program/resolve/resolver.rs` (dispatch) if it's a new call/edge shape
+   - Legacy L3 engine (advisory-only; rarely needs touching for new work):
+     `src/engine/l2/ir_walk.rs`, `src/engine/l3/`
+4. **Add a fixture** under `tests/fixtures/` (or the plan/task-specific golden family) and
+   **regenerate goldens**: `REGEN_TEMP_GOLDENS=1 cargo test` rewrites Rust-owned goldens —
+   inspect the diff before committing; it is a measurement, never an auto-bless (see
+   Testing Philosophy & Goldens below). `REGEN_TEMP_GOLDENS` is value-tested (`=1`
+   specifically), not presence-tested — `REGEN_TEMP_GOLDENS=0` does NOT trigger a regen.
+5. Format touched files with `rustfmt <file>` (never `cargo fmt`), run
+   `cargo clippy --all-targets --all-features`, and — if the change could move the
+   call-graph resolution needle — re-measure with `aldump --program-call-graph-stats`
+   (see Project Direction & The Moat below).
 
 ## Resolution Coverage
 
-| Call Pattern | Status |
-|--------------|--------|
-| Local procedures | Yes |
-| Qualified calls (Object.Method) | Yes |
-| Record methods | Partial |
-| Event subscribers | Yes |
-| External .app dependencies | Yes |
+The old table here (`Local procedures | Yes`, `Record methods | Partial`, ...) predated
+the whole resolution program and is gone — a binary yes/no doesn't describe the fresh
+resolver's output. The honest taxonomy, as emitted by `aldump
+--program-call-graph-stats <workspace>` (`src/program/resolve/edge.rs`'s `Histogram`;
+JSON keys shown):
+
+| Bucket | JSON key | Meaning |
+|--------|----------|---------|
+| Resolved (source) | `resolvedSource` | Target routine found in first-party/workspace source |
+| Resolved (catalog) | `resolvedCatalog` | Platform intrinsic — a cataloged builtin, not a hole |
+| Resolved (ABI/external) | `resolvedAbiExternal` | Target routine found via a dependency's ABI |
+| Conditionally resolved | `conditionalResolved` | Resolved under a stated precondition (e.g. interface dispatch) |
+| Honest dynamic | `honestDynamic` | Provably runtime-typed — no static target exists to find |
+| Honest empty | `honestEmpty` | Provably no callee (e.g. an empty event subscriber slot) |
+| **Unknown** | `unknown` | **A TRUE resolution failure — the signal to eliminate** |
+| Ambiguous, resolved | `ambiguousResolved` | Closed same-object overload-ambiguity candidate set — NOT counted as `unknown` |
+
+Both `wholeProgram` (every edge, including dependency-internal ones) and `primaryScoped`
+(workspace-only edges — mirrors `--l3-call-graph-stats-cross-app`'s scoping) variants are
+emitted, each with `realUnknownRate = unknown / total`. **Last measured** (CDO,
+Continia's real BC workspace — requires `CDO_WS`; not reproducible in this sandbox, see
+`scripts/cdo-gate`), immediately after the Tier-1 deep-review-remediation merge (commit
+`f171d0f`), JSON SHA-256 `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`:
+
+| Scope | total | resolvedSource | resolvedCatalog | resolvedAbiExternal | honestDynamic | honestEmpty | conditionalResolved | unknown | ambiguousResolved |
+|-------|------:|----------------:|-----------------:|----------------------:|----------------:|-------------:|----------------------:|--------:|--------------------:|
+| primaryScoped | 18113 | 8325 | 5783 | 57 | 55 | 3876 | 17 | **0** | 0 |
+| wholeProgram | 43375 | 10219 | 5783 | 57 | 55 | 26942 | 319 | **0** | 0 |
+
+`realUnknownRate` is **0.0000%** in both scopes — but treat that as a point-in-time
+measurement to re-verify (`scripts/cdo-gate <CDO_WS>`), not an immutable fact: the deep
+review that produced Tier 0 found the metric had been structurally unfalsifiable (missed
+edges could land in `builtin`/vanish entirely/never get measured/report success on
+failure) before Tier 0's instrument-honesty fixes landed. Tier 0 closed those specific
+holes; the zero above is the first measurement taken with the hardened instrument.
 
 ## Project Direction & The Moat
 
 The product's moat is **precise whole-program call-graph resolution** for AL. The
 north-star metric is the **real-`unknown` edge rate** on real BC apps (measure with
-`aldump --program-call-graph-stats <workspace>`): drive it toward zero, where the
-residual is provably dynamic. The honest resolution taxonomy is `resolved` / `builtin`
-(platform intrinsic, not a hole) / `dynamic` (runtime-typed) / `external` (dependency
-object) / `unknown` (a TRUE failure — the signal to eliminate). `aldump
---l3-call-graph-stats` and its `-cross-app`/`-unknown-breakdown` siblings are the legacy
-L3 engine — advisory only, under a different metric definition (`legacyL3UnknownRate`),
-never the ratcheted number. See the call-graph resolution redesign spec under
-`docs/superpowers/specs/`.
+`aldump --program-call-graph-stats <workspace>`, the FRESH clean-room resolver — no L3
+oracle): drive it toward zero, where the residual is provably dynamic. See Resolution
+Coverage above for the full honest taxonomy (`resolved`/`builtin`/`dynamic`/`external`/
+`unknown`) and the current CDO numbers, and the call-graph resolution redesign spec
+under `docs/superpowers/specs/`.
+
+**Two distinct "legacy" axes exist — do not conflate them:**
+1. **Engine axis** (which resolver produced the number): `aldump
+   --program-call-graph-stats` (the fresh resolver, above — **authoritative**) vs.
+   `aldump --l3-call-graph-stats` and its `-cross-app`/`-unknown-breakdown` siblings (the
+   legacy L3 engine, a al-sem-era port — **advisory only**, reported under a DIFFERENT
+   key, `legacyL3UnknownRate`; L3 excludes `MemberNotFound`/ambiguous cases the fresh
+   engine counts as `Unknown`, so the two numbers are not directly comparable even when
+   both are non-zero).
+2. **Definition axis** (within the fresh resolver only): `realUnknownRate` (current
+   authoritative definition — `ambiguousResolved` is a closed candidate set, not a hole,
+   so it is excluded from `unknown`) vs. `realUnknownRateLegacyIncludingAmbiguous`
+   (the PRE-reclassification definition, which counted `ambiguousResolved` as `unknown`
+   too — reported side-by-side, additively, so a metric-definition change is never
+   stat-juked).
 
 ## Testing Philosophy & Goldens
 

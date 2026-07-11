@@ -355,6 +355,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **CLAUDE.md + README rewritten against the real tree (Task T4-A, Tier-4
+  hygiene arc).** Onboarding docs still described a retired system: "Adding New
+  AL Constructs" pointed at `language.rs` tree-sitter query consts with zero
+  execution repo-wide (owned-IR migration retired them); "Key Modules" named a
+  nonexistent top-level `resolver.rs` and omitted `src/engine/`, `src/program/`,
+  `crates/al-syntax/`, `src/bin/` entirely; a "V2 grammar" section directly
+  contradicted the v3 section below it and instructed using
+  `node_util::block_statements` — a deleted function; both README and
+  CLAUDE.md documented a `--no-lsp` CLI flag that `clap` now hard-errors on;
+  README pointed the grammar submodule at `../tree-sitter-al` (outside the
+  repo) instead of the real in-repo `tree-sitter-al/` submodule; the
+  Resolution Coverage table ("Record methods: Partial") predated the entire
+  resolution program. Rewrote: Architecture/Data Flow now documents BOTH
+  pipelines honestly (the LSP surface — `graph.rs`/`handlers.rs`/etc., now lib
+  modules — and the program engine — `snapshot` → al-syntax IR →
+  `program::resolve` → `Histogram` report); Key Modules lists the real tree
+  including `src/engine/{l2,l3,l4,l5,gate,deps}`, `src/program/{resolve,...}`,
+  `crates/al-syntax`, `src/bin/{aldump,alsem,mint-goldens}`, plus a testing
+  note on `tests/common/{cdo,regen}.rs` + `scripts/cdo-gate`; the Grammar
+  section is now one coherent v3.2.0-reality section (V1→V2→V3 history kept,
+  explicitly marked non-actionable for engine code since `al-syntax`'s
+  lowerer now absorbs all grammar-shape handling); "Adding New AL Constructs"
+  documents the real workflow (grammar → al-syntax lowerer → IR consumers →
+  `REGEN_TEMP_GOLDENS=1 cargo test`); Resolution Coverage replaced with the
+  honest taxonomy (`resolvedSource`/`resolvedCatalog`/`resolvedAbiExternal`/
+  `conditionalResolved`/`honestDynamic`/`honestEmpty`/`unknown`/
+  `ambiguousResolved`) and the CDO numbers last measured immediately after the
+  Tier-1 merge (commit `f171d0f`; both scopes `unknown`=0, `ambiguousResolved`=0,
+  `realUnknownRate`=0.0000%; JSON SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` — sourced
+  from the coordinating session's own post-merge measurement, not
+  independently re-run in this worktree, which lacks `CDO_WS` access); the two
+  distinct "legacy" metric axes (engine axis: fresh resolver vs. legacy L3;
+  definition axis: `realUnknownRate` vs.
+  `realUnknownRateLegacyIncludingAmbiguous`) now get one explicit paragraph so
+  neither gets conflated with the other again. Every documented command
+  (`cargo run` flag set, `aldump --program-call-graph-stats`,
+  `cargo bench --bench lsp_pipeline`/`cargo check --bench lsp_pipeline`) was
+  run or built against this worktree before being written down; the CLI flag
+  list was read from `src/main.rs`'s `Args` derive, not guessed. Docs-only —
+  zero code changes.
 - **BREAKING: legacy L3 histogram's `realUnknownRate` key renamed to
   `legacyL3UnknownRate` (Task T0.4, Tier-0 remediation arc) — one metric, one
   owner.** `aldump --l3-call-graph-stats` (legacy L3 engine) and `aldump
