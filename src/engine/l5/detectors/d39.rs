@@ -24,13 +24,16 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor, is_auto_persist_trigger_rec};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d39-record-left-dirty-across-chain";
 
 const PERSIST_OPS: &[&str] = &["Modify", "Insert", "Rename"];
 
-pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d39(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -235,5 +238,5 @@ pub fn detect_d39(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("callerPersists", skipped_caller_persists);
     stats.add_skip("tempRecord", skipped_temp_record);
     stats.add_skip("autoPersistTriggerRec", skipped_auto_persist_trigger);
-    DetectorOutput::no_diag(findings, stats)
+    Ok(DetectorOutput::no_diag(findings, stats))
 }

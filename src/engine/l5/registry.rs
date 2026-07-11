@@ -2,8 +2,9 @@
 //! `src/detectors/registry.ts`.
 //!
 //! `run_detectors` builds the shared `DetectorContext`, runs each detector
-//! (catching a panic into a diagnostic so one detector cannot kill the run),
-//! applies the role-scoping filter, then sorts the combined Finding[] by
+//! (an `Err` becomes a diagnostic so one detector cannot kill the run — the real,
+//! abort-safe contract; see the `run_detectors` doc comment), applies the
+//! role-scoping filter, then sorts the combined Finding[] by
 //! `(detector compareNatural, primaryLocationKey compareStrings, rootCauseKey
 //! compareStrings)` over the INTERNAL ids. Per-detector dedup-by-id happens INSIDE
 //! each detector, not here.
@@ -18,7 +19,8 @@ use crate::engine::l5::detector_context::{
 };
 use crate::engine::l5::finding::Finding;
 
-/// A diagnostic emitted when a detector panics (stage = "detect").
+/// A diagnostic emitted when a detector fails — returns `Err`, or (debug builds
+/// only) panics — (stage = "detect").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub severity: String,
@@ -151,12 +153,39 @@ impl DetectorOutput {
     }
 }
 
+/// A recoverable detector failure. THE isolation contract (see `run_detectors`):
+/// every detector returns `Result<DetectorOutput, DetectorError>`, and `run_each`
+/// turns an `Err` into the `Detector "<name>" threw: <msg>` warning diagnostic —
+/// the SAME message format a caught panic produces, so callers cannot tell the two
+/// apart. `Display` supplies `<msg>`.
+#[derive(Debug, Clone)]
+pub struct DetectorError(String);
+
+impl DetectorError {
+    pub fn new(msg: impl Into<String>) -> Self {
+        DetectorError(msg.into())
+    }
+}
+
+impl std::fmt::Display for DetectorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DetectorError {}
+
 /// A detector: a pure query over the resolved model + shared context. The closure
 /// receives `(resolved, ctx)`; al-sem also passes the combined graph, which the
 /// ctx already carries (`ctx.graph`), so detectors read it from there.
+///
+/// Returns `Result` — this IS the isolation contract (see `run_detectors`): an
+/// `Err` degrades to a warning diagnostic while every other detector still runs,
+/// and unlike `catch_unwind` this works identically under `panic = "abort"`
+/// (`[profile.release]`, Cargo.toml), the profile every shipped binary uses.
 pub struct Detector {
     pub name: String,
-    pub run: fn(&L3Resolved, &DetectorContext) -> DetectorOutput,
+    pub run: fn(&L3Resolved, &DetectorContext) -> Result<DetectorOutput, DetectorError>,
 }
 
 /// The combined output of `run_detectors`.
@@ -173,8 +202,18 @@ fn primary_location_key(f: &Finding) -> String {
     format!("{}:{}:{}", a.source_unit_id, a.start_line, a.start_column)
 }
 
-/// Run every registered detector in isolation, then role-scope + sort. A detector
-/// that panics becomes a `Diagnostic(stage: "detect")` and the rest still run.
+/// Run every registered detector in isolation, then role-scope + sort.
+///
+/// Isolation is a `Result` CONTRACT (see `Detector::run` / `run_each`): every
+/// detector returns `Result<DetectorOutput, DetectorError>`, and an `Err` becomes a
+/// `Diagnostic(stage: "detect")` while the rest still run. This holds under BOTH
+/// panic=unwind (`cargo test`) and the shipped `[profile.release] panic = "abort"`
+/// (Cargo.toml) — it never depends on unwinding. `run_each` ALSO wraps each call in
+/// `catch_unwind` as debug-build-only defense-in-depth (a detector that panics
+/// despite the contract still degrades to the identical diagnostic under
+/// panic=unwind); that wrapper is INERT in an abort release binary — `catch_unwind`
+/// never catches anything there — so it must never be relied on as the real
+/// guarantee.
 pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput {
     let ctx = build_detector_context(resolved);
     let (findings, diagnostics, detector_stats) = run_each(resolved, &ctx, detectors);
@@ -267,21 +306,33 @@ fn run_each(
     let mut detector_stats: Vec<DetectorStats> = Vec::new();
 
     for detector in detectors {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // `catch_unwind` here is debug-build-only defense-in-depth (see the
+        // `run_detectors` doc comment) — it is INERT under `panic = "abort"`. The
+        // real, abort-safe isolation is the `Result` returned by `detector.run`
+        // itself, handled in the `Ok(Err(e))` arm below with the identical
+        // diagnostic shape a caught panic produces.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             (detector.run)(resolved, ctx)
         }));
-        match result {
-            Ok(output) => {
+        match outcome {
+            Ok(Ok(output)) => {
                 findings.extend(output.findings);
-                // Collect detector-emitted diagnostics (non-panic; d43 substrate guard etc.)
+                // Collect detector-emitted diagnostics (non-error; d43 substrate guard etc.)
                 diagnostics.extend(output.diagnostics);
                 detector_stats.push(output.stats);
             }
-            Err(err) => {
-                let msg = err
+            Ok(Err(e)) => {
+                diagnostics.push(Diagnostic {
+                    severity: "warning".to_string(),
+                    stage: "detect".to_string(),
+                    message: format!("Detector \"{}\" threw: {e}", detector.name),
+                });
+            }
+            Err(panic_payload) => {
+                let msg = panic_payload
                     .downcast_ref::<&str>()
                     .map(|s| s.to_string())
-                    .or_else(|| err.downcast_ref::<String>().cloned())
+                    .or_else(|| panic_payload.downcast_ref::<String>().cloned())
                     .unwrap_or_else(|| "panic".to_string());
                 diagnostics.push(Diagnostic {
                     severity: "warning".to_string(),
@@ -395,7 +446,159 @@ fn tokenize(s: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::l3::l3_workspace::L3Workspace;
+    use crate::engine::l5::finding::{Finding, FindingConfidence, SourceAnchor};
     use std::cmp::Ordering;
+
+    fn empty_resolved() -> L3Resolved {
+        L3Resolved {
+            workspace: L3Workspace {
+                objects: vec![],
+                tables: vec![],
+                routines: vec![],
+            },
+            root_classifications: vec![],
+            primary_app: None,
+            infra_diagnostics: vec![],
+        }
+    }
+
+    fn test_finding(id: &str) -> Finding {
+        Finding {
+            id: id.to_string(),
+            root_cause_key: id.to_string(),
+            detector: "test-ok-detector".to_string(),
+            title: "test finding".to_string(),
+            root_cause: "test root cause".to_string(),
+            severity: "info".to_string(),
+            confidence: FindingConfidence {
+                level: "likely".to_string(),
+                capped_by: None,
+                evidence: vec![],
+            },
+            primary_location: SourceAnchor {
+                source_unit_id: "u0".to_string(),
+                start_line: 1,
+                start_column: 1,
+                end_line: 1,
+                end_column: 1,
+                enclosing_routine_id: "r0".to_string(),
+                syntax_kind: "call".to_string(),
+                normalized_text_hash: None,
+                leading_context_hash: None,
+                trailing_context_hash: None,
+            },
+            evidence_path: vec![],
+            additional_paths: None,
+            affected_objects: vec![],
+            affected_tables: vec![],
+            fix_options: vec![],
+            provenance: vec![],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+        }
+    }
+
+    fn ok_detector(
+        _resolved: &L3Resolved,
+        _ctx: &DetectorContext,
+    ) -> Result<DetectorOutput, DetectorError> {
+        Ok(DetectorOutput::no_diag(
+            vec![test_finding("ok-detector-finding")],
+            DetectorStats::new("test-ok-detector", 1, 1),
+        ))
+    }
+
+    /// THE MISSING TEST (T2.3): a detector that returns `Err` — the abort-safe
+    /// isolation path — degrades to the exact warning-diagnostic format while every
+    /// other registered detector still runs to completion.
+    fn err_detector(
+        _resolved: &L3Resolved,
+        _ctx: &DetectorContext,
+    ) -> Result<DetectorOutput, DetectorError> {
+        Err(DetectorError::new("boom"))
+    }
+
+    /// A detector that panics despite the `Result` contract. Only reachable via the
+    /// debug-build-only `catch_unwind` backstop (see `run_each`) — this test runs
+    /// under `cargo test`, which unwinds (unlike the shipped `panic = "abort"`
+    /// release profile), so it exercises that backstop specifically.
+    fn panic_detector(
+        _resolved: &L3Resolved,
+        _ctx: &DetectorContext,
+    ) -> Result<DetectorOutput, DetectorError> {
+        panic!("boom-panic");
+    }
+
+    #[test]
+    fn err_returning_detector_degrades_to_warning_others_still_run() {
+        let resolved = empty_resolved();
+        let detectors = vec![
+            Detector {
+                name: "d-ok".to_string(),
+                run: ok_detector,
+            },
+            Detector {
+                name: "d-err".to_string(),
+                run: err_detector,
+            },
+        ];
+        let out = run_detectors(&resolved, &detectors);
+
+        assert_eq!(
+            out.findings.len(),
+            1,
+            "the ok detector's finding must still appear"
+        );
+        assert_eq!(out.findings[0].id, "ok-detector-finding");
+
+        assert_eq!(out.diagnostics.len(), 1);
+        assert_eq!(out.diagnostics[0].severity, "warning");
+        assert_eq!(out.diagnostics[0].stage, "detect");
+        assert_eq!(
+            out.diagnostics[0].message, "Detector \"d-err\" threw: boom",
+            "exact message format is relied on by consumers (may be golden-pinned)"
+        );
+
+        assert_eq!(
+            out.detector_stats.len(),
+            1,
+            "the failing detector never reaches the stats-push line"
+        );
+    }
+
+    #[test]
+    fn panicking_detector_degrades_to_warning_others_still_run() {
+        let resolved = empty_resolved();
+        let detectors = vec![
+            Detector {
+                name: "d-ok".to_string(),
+                run: ok_detector,
+            },
+            Detector {
+                name: "d-panic".to_string(),
+                run: panic_detector,
+            },
+        ];
+        let out = run_detectors(&resolved, &detectors);
+
+        assert_eq!(
+            out.findings.len(),
+            1,
+            "the ok detector's finding must still appear"
+        );
+        assert_eq!(out.findings[0].id, "ok-detector-finding");
+
+        assert_eq!(out.diagnostics.len(), 1);
+        assert_eq!(out.diagnostics[0].severity, "warning");
+        assert_eq!(out.diagnostics[0].stage, "detect");
+        assert_eq!(
+            out.diagnostics[0].message, "Detector \"d-panic\" threw: boom-panic",
+            "a caught panic and a returned Err must produce the IDENTICAL message shape"
+        );
+    }
 
     #[test]
     fn natural_orders_detectors_numerically() {

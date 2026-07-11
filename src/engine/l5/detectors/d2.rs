@@ -48,7 +48,7 @@ use crate::engine::l5::path_merge::merge_by_terminal;
 use crate::engine::l5::path_walker::{
     PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
 };
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::table_display::{DescribeOp, describe_table};
 
 const DETECTOR: &str = "d2-event-fanout-in-loop";
@@ -241,7 +241,10 @@ impl<'a> WalkPolicy for D2Policy<'a> {
     }
 }
 
-pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d2(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
 
@@ -540,11 +543,11 @@ pub fn detect_d2(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("unresolvedSubscriber", unresolved_subscriber);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: merged,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
 
 /// al-sem reads `subRoutine.summary.uncertainties` (the CORE RoutineSummary

@@ -21,7 +21,7 @@ use crate::engine::l5::detectors::{
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d21-read-without-load";
 
@@ -31,7 +31,10 @@ const LOAD_OPS: &[&str] = RECORD_LOAD_OPS;
 
 const READING_OPS: &[&str] = &["TestField", "CalcFields", "CalcSums"];
 
-pub fn detect_d21(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d21(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -178,5 +181,5 @@ pub fn detect_d21(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("parameter", skipped_parameter);
     stats.add_skip("triggerRec", skipped_trigger_rec);
-    DetectorOutput::no_diag(findings, stats)
+    Ok(DetectorOutput::no_diag(findings, stats))
 }

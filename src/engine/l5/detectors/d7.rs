@@ -30,7 +30,7 @@ use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d7-recursive-event-expansion";
 
@@ -135,7 +135,10 @@ fn routine_anchor(a: &PAnchor, routine: &L3Routine) -> SourceAnchor {
     super::anchor_of(a, routine)
 }
 
-pub fn detect_d7(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d7(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
 
@@ -278,9 +281,9 @@ pub fn detect_d7(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats: DetectorStats::new(DETECTOR, candidates_considered, emitted),
         diagnostics: vec![],
-    }
+    })
 }

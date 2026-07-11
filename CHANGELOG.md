@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **L5 detectors now return `Result<DetectorOutput, DetectorError>` instead of
+  `DetectorOutput` — the abort-safe detector-isolation contract (Task T2.3, Tier-2
+  crash/DoS arc).** `[profile.release] panic = "abort"` makes `catch_unwind`
+  (`registry.rs`) INERT in every shipped binary, so the documented "a detector that
+  panics becomes a Diagnostic and the rest still run" guarantee never actually held
+  outside `cargo test` (which unwinds) — one panicking detector aborted the whole
+  `alsem analyze` run. All 41 registered detectors (`d1`..`d51`) were converted
+  mechanically: the signature change plus wrapping each existing return in `Ok(...)`;
+  no detector logic changed. `run_each` now maps a detector `Err` to the identical
+  `Detector "<name>" threw: <msg>` warning diagnostic the panic path already used, so
+  the message format consumers rely on (possibly golden-pinned) is unchanged.
+  `catch_unwind` is KEPT around the `Result` call as debug-build-only
+  defense-in-depth (still catches an errant `panic!` under `cargo test`) but the doc
+  contract on `run_detectors`/`Detector` now states plainly that it is inert under
+  `panic = "abort"` and must never be relied on as the real guarantee.
+
+### Fixed
+- **`finding.rs`'s `map_table_id` doc comment falsely claimed detector-run
+  `catch_unwind` covered it (Task T2.3).** `map_table_id` runs in `project_finding`,
+  AFTER `run_detectors` has already returned — it was never inside any per-detector
+  isolation boundary (neither the old `catch_unwind` nor the new `Result` contract).
+  The comment now states the true safety characterization: a malformed TableId here
+  is an engine bug (every TableId a detector emits is internally constructed), so it
+  remains a hard panic, matching al-sem's uncaught throw.
+- **The never-written failing-detector test (Task T2.3).** No test anywhere
+  constructed a panicking or failing detector to exercise the isolation contract;
+  `registry.rs` now has `err_returning_detector_degrades_to_warning_others_still_run`
+  and `panicking_detector_degrades_to_warning_others_still_run`, asserting the exact
+  diagnostic message/severity/stage and that the other registered detector's finding
+  still appears.
+
 ### Fixed
 - **The `al-syntax` lowerer silently dropped preproc-split procedures, case
   branches, and statement-position `#if`/guarded constructs, and let comments

@@ -23,7 +23,7 @@ use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::{anchor_of, group_and_cap};
 
@@ -40,7 +40,10 @@ struct SubWrite {
     op: String,
 }
 
-pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d44(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let ix = &ctx.event_flow_indexes;
@@ -311,11 +314,11 @@ pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut kept = kept;
     kept.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = kept.len();
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: kept,
         stats: DetectorStats::new(DETECTOR, candidates, emitted),
         diagnostics: vec![],
-    }
+    })
 }
 
 /// Split a `${a}|${b}` key into (a, b) at the FIRST pipe (al-sem `key.split("|", 2)`).
