@@ -8,6 +8,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The `al-syntax` lowerer silently dropped preproc-split procedures, case
+  branches, and statement-position `#if`/guarded constructs, and let comments
+  pollute positional argument reads — including silently unregistering a whole
+  `[EventSubscriber(...)]` (Task T1.4, Tier-1 remediation arc).** The corpus had
+  ZERO `#if` fixtures before this task, so three fleet-confirmed lowering
+  defects (grammar-verified with `tree-sitter parse`, not just read from
+  `grammar.js`) went undetected: lost code produced no edge AND no `unknown` —
+  it silently ceased to exist. All work is in `crates/al-syntax/src/lower/mod.rs`
+  (+ one engine-side test in `src/program/resolve/event.rs`, the only site
+  outside `al-syntax` this task touched).
+  - **H-6 (`preproc_split_procedure` dropped entirely).** `collect_routines`
+    matched only `Procedure|TriggerDeclaration|InterfaceProcedure` — the
+    catch-all recursed without ever creating a `RoutineDecl` for a procedure
+    whose HEADER differs across `#if`/`#else` but whose BODY (compiled into
+    every build) is shared. Fixed by adding `PreprocSplitProcedure` /
+    `PreprocSplitProcedurePreamble` to the match (both grammar-INLINE their
+    header/body fields onto the wrapper node, so `.field()` resolves correctly
+    — VERIFIED with `tree-sitter parse`, first-branch-wins for the
+    per-branch name/parameters, mirroring `PreprocSplitDeclaration`'s
+    established policy); `lower_routine`'s body extraction gained a dedicated
+    fallback for `_preamble`'s BARE trailing `code_block` (no `body` field at
+    all, unlike the plain variant).
+  - **H-7 (case/statement preproc variants + `#region` markers).**
+    `lower_case_body` matched only plain `CaseBranch`, silently skipping
+    `preproc_conditional_case` / `preproc_split_case_extended` entirely and
+    fabricating an EMPTY branch for `preproc_split_case_branch` (whose
+    `pattern`/`body` fields live on a NESTED node the grammar still wraps in an
+    outer `case_branch` — verified empirically, not assumed). Refactored into
+    `collect_case_branches`/`push_case_branch`/`case_patterns`/
+    `lower_case_else_branch`: branches union additively (mirrors the
+    `implements`-list union-read policy already established for `#if`), the
+    singular `else_block` is first-match-wins. `lower_stmt`'s `_` catch-all
+    recorded an issue and returned bare `Unknown` for the nine
+    `preproc_split_if*`/`preproc_guarded_statement` grammar shapes without
+    descending — new `lower_unmodelled_stmt` reconstructs a REAL `StmtKind::If`
+    for the three shapes with clean `condition`/`then_branch`/`else_branch`
+    fields (`preproc_split_if_statement`, `preproc_guarded_statement`,
+    `preproc_split_if_else_statement`) and a real `StmtKind::Call` for
+    `preproc_split_call_statement` (unambiguous by construction); the
+    remaining flat/fragmented shapes and any leftover content (guard
+    statements, extra `#elif`/`#else` arms, a `preproc_fragmented_else_tail`)
+    are recovered generically through the SAME `lower_block_child` dispatcher
+    real block content uses, wrapped in `StmtKind::Block` — never a silent
+    drop, never a fabricated empty block. `#region`/`#endregion` markers
+    (previously absent from `lower_block_child`'s statement-position skip-list)
+    were producing a phantom `Unknown` statement for a construct with zero
+    content; added to the skip-list.
+  - **H-8 (trivia as named extras).** A `comment`/`multiline_comment` is a
+    legal named child almost anywhere, so a bare `named_children()` scan let
+    it silently occupy a real positional slot: as the sole child of a
+    `parenthesized_expression` (replacing the real inner expression), as a
+    phantom argument in a `call_expression`'s arguments (breaking arity-exact
+    dispatch), and — most consequentially — in an `[EventSubscriber(...)]`'s
+    `attribute_argument_list`, shifting every later positional read in
+    `parse_event_subscriber_ir` and silently unregistering the WHOLE
+    subscriber. Fixed with ONE shared `structural_children` helper (filters
+    `Class::Trivia`) applied at all three al-syntax sites; the root cause of
+    the `EventSubscriber` case was upstream in al-syntax's attribute-arg
+    lowering, not `event.rs` itself, so no engine-side fix was needed there —
+    only a regression test proving the pipeline end-to-end.
+  - 9 new fixtures (8 `al-syntax` unit tests + 1 engine-side
+    `event.rs` test), each proven red-then-green against the pre-fix code (a
+    representative H-6 spot-check is recorded in the test module; the rest
+    follow the same `tree-sitter parse`-verified methodology). A test-only
+    `call_reachable` walker mirrors `extract.rs`'s real `walk_block_v2`/
+    `walk_stmt_v2` `Block`/`Stmt` LINKAGE (not a bare arena scan) to prove
+    recovered calls are actually DISCOVERABLE by the call-graph walker, not
+    just present-but-orphaned in the IR arena.
+  - Blast radius: the full workspace `cargo test` (2502 tests, 158 binaries)
+    is byte-identical — ZERO existing golden/differential fixture touches any
+    of these constructs (the corpus's `#if` coverage was zero before this
+    task), so this change is purely additive for all existing content.
+    `cargo clippy --all-targets --all-features` clean.
+  - CDO verification (`aldump --program-call-graph-stats`): `primaryScoped`
+    moved `total` 18108→18113 (+5), all five landing in `resolvedSource`
+    (8279→8284); `wholeProgram` moved `total` 43408→43414 (+6: +5
+    `resolvedSource`, +1 `honestEmpty`). `unknown` held at 0/0 and
+    `ambiguousResolved` held at 0 in both scopes throughout — the move is
+    entirely NEW resolved edges, never a regression. Fully attributed: CDO's
+    `Codeunit 6175280 CDO E-Mail.al` (`SetFromAddress`/`GetDefaultFromAddress`
+    area) has a real `preproc_split_case_extended` (`#if DOSMTP` inside a
+    `case`) whose extra branch (`SetFromAddressWithDOSMTPSetup`,
+    `SetDOSMTPCode`) and shared body (`EmailAccountCU.IsAnyAccountRegistered`,
+    `EmailScenarios.GetDefaultEmailAccount`, `SetBCEmailAccount`) were
+    entirely invisible to the call graph pre-fix — exactly 5 calls, exactly
+    matching the `primaryScoped.resolvedSource` delta. `scripts/cdo-gate`
+    (`ENFORCE_CDO_WS=1`) green.
+  - **T1.4 review follow-up: two more sibling-field gaps in these same shapes**
+    (found by re-verifying live against `tree-sitter parse` output rather than
+    trusting a grammar read). `preproc_split_procedure_body` /
+    `preproc_split_complete_body` are NAMED (non-inlined) choice arms of
+    `procedure`/`trigger_declaration`'s BODY position — unlike
+    `_routine_regular_body`'s inlined `field('body', code_block)`, neither
+    wrapper's own `field('body', ..)` flattens onto the routine node itself,
+    so `lower_routine`'s existing `_preamble`-only fallback never caught them:
+    a plain procedure whose var/begin section is `#if`-split lowered to
+    `RoutineDecl.body == None`, zero issues, its call silently gone.
+    `lower_routine` gained a third fallback
+    (`lower_preproc_split_routine_body`): `preproc_split_complete_body`'s
+    mutually-exclusive `#if`/`#elif`/`#else` arms use first-branch-wins
+    (`.field(Body)`, single match, mirroring `PreprocSplitDeclaration`'s
+    established policy); `preproc_split_procedure_body`'s `#if`-branch content
+    and its trailing SHARED tail are NOT alternatives — both inlined
+    sub-rules' `body` fields flatten onto the SAME wrapper node (grammar-
+    VERIFIED with `tree-sitter parse`: two separate `body:`-tagged
+    `statement_block` children), so they are union-read via
+    `children_by_field(Body)` instead, preserving both. Separately,
+    `preproc_split_code_block_end` (the closing `end` of a `code_block` itself
+    split across `#if`/`#else`) is a SIBLING of the `code_block`'s own `body`
+    field, never nested inside it — `lower_code_block`'s old
+    `cb.field(Body).unwrap_or(cb)` trick only ever exposed this sibling when
+    `body` was ABSENT; a `code_block` with real LEADING content before the
+    split took the `Some(body)` arm and never looked at the sibling again,
+    silently dropping its content (including, grammar-verified, a following
+    unconditional `else` clause the grammar folds into the SAME node).
+    `lower_code_block` now always checks for the sibling and recovers it
+    through the same generic `lower_block_child` dispatcher, folded flat into
+    the SAME block. A misleading doc comment on `lower_unmodelled_stmt`
+    (claiming this shape was "recovered generically through
+    `lower_block_child`" — only ever true when `body` was absent) is
+    corrected to point at `lower_code_block` instead. 4 new red-then-green
+    `al-syntax` fixtures (proven red against the pre-fix code, matching the
+    parent task's methodology); full workspace `cargo test` and
+    `cargo clippy --all-targets --all-features` both clean, `rustfmt` applied.
 - **L4 dataflow walker only saw the FIRST statement of every `repeat…until`
   body, and `break`/`continue` lowered to an inert `other` CFN kind that
   silently threaded state through statements they actually skip (Task T1.1,

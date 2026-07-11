@@ -444,6 +444,42 @@ mod tests {
         assert_eq!(r2.event_name, "onaftery");
     }
 
+    // Task T1.4 (deep-review-t1-4), H-8: a comment interleaved between
+    // `[EventSubscriber(...)]` args is a legal named child (a `comment`/
+    // `multiline_comment` can appear almost anywhere) — pre-fix, `lower_routine`
+    // pushed it into `AttributeIr.args` as a positional slot, shifting every
+    // later arg (event name / element / skip flags) by one and silently
+    // unregistering the WHOLE subscriber (`parse_event_subscriber_ir` rejects
+    // an arg-0/1/2 kind mismatch). The fix lives entirely in `al-syntax`
+    // (`structural_children`, applied to the attribute-arg lowering loop) — this
+    // engine-side test proves the whole `al_syntax::parse` → `attributes_parsed`
+    // → `parse_event_subscriber_ir` pipeline still resolves the subscriber
+    // correctly with the comment present.
+    #[test]
+    fn comment_between_attribute_args_does_not_shift_positional_parsing() {
+        let src = r#"codeunit 50105 Sub
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Pub", 'OnAfterX', /* comment */ '', false, false)]
+    local procedure OnAfterX()
+    begin
+    end;
+}"#;
+        let af = al_syntax::parse(src);
+        let attr = &af.objects[0].routines[0].attributes_parsed[0];
+        assert_eq!(
+            parse_event_subscriber_ir(attr, &af.ir),
+            Some(ParsedSubscriberArgs {
+                publisher_object_type: "codeunit".into(),
+                publisher_name: "pub".into(),
+                event_name: "onafterx".into(),
+                element: None,
+                skip_on_missing_license: false,
+                skip_on_missing_permission: false,
+            }),
+            "the subscriber must still be registered despite the inline comment"
+        );
+    }
+
     // ── is_event_publisher ────────────────────────────────────────────────────
 
     #[test]
