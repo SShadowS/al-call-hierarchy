@@ -957,8 +957,15 @@ fn collect_raw_objects(map: &serde_json::Map<String, Value>, key: &str, out: &mu
 
 /// Parse the raw `SymbolReference.json` text into the neutral ABI DTO. Never panics.
 /// Mirrors `parseSymbolReference`.
+///
+/// H-3 (Tier-1 remediation, Task T1.2): uses the SAME NUL-tolerant
+/// first-JSON-value parse `app_package::parse_symbols` (the legacy path)
+/// always used — a strict full-string parse fails on the trailing NUL
+/// padding some `.app` emitters append after the real JSON content, which
+/// previously made a genuinely well-formed dependency silently ingest as an
+/// EMPTY ABI (see `app_package::parse_first_json_value`'s doc).
 pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
-    let parsed: Result<Value, _> = serde_json::from_str(json);
+    let parsed: Result<Value, _> = crate::app_package::parse_first_json_value(json);
     let root = match parsed {
         Ok(Value::Object(m)) => m,
         Ok(_) => {
@@ -1226,6 +1233,37 @@ mod tests {
         let abi = parse_symbol_reference("{ not json");
         assert!(abi.error.is_some());
         assert!(abi.objects.is_empty());
+    }
+
+    /// H-3 (Tier-1 remediation, Task T1.2): some `.app` emitters pad
+    /// `SymbolReference.json` with trailing NUL bytes after the real JSON
+    /// content. The legacy `app_package.rs` parser (`StreamDeserializer`,
+    /// "parse only the first JSON value") already tolerates this; this
+    /// engine path used a STRICT `serde_json::from_str` that requires the
+    /// ENTIRE string to be valid JSON (trailing NUL is not JSON whitespace),
+    /// so a genuinely well-formed dependency silently ingested as an EMPTY
+    /// ABI — no objects, no error surfaced anywhere. Fixed via the SAME
+    /// tolerant first-JSON-value parse both paths now share
+    /// (`app_package::parse_first_json_value`).
+    #[test]
+    fn nul_padded_json_still_parses_full_content() {
+        let json = r#"{"Codeunits":[{"Id":50100,"Name":"NulPadded","Methods":[{"Name":"DoIt","Parameters":[]}]}]}"#;
+        let mut padded = json.to_string();
+        padded.push_str("\0\0\0\0\0\0\0\0");
+
+        let abi = parse_symbol_reference(&padded);
+        assert!(
+            abi.error.is_none(),
+            "NUL padding after valid JSON must NOT surface as a parse error; got {:?}",
+            abi.error
+        );
+        let cu = abi
+            .objects
+            .iter()
+            .find(|o| o.name == "NulPadded")
+            .expect("the Codeunit must be ingested despite trailing NUL padding");
+        assert_eq!(cu.routines.len(), 1);
+        assert_eq!(cu.routines[0].name, "DoIt");
     }
 
     // -- Task 1: `IsProtected` parsing + tri-state arity ---------------------

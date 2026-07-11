@@ -3301,6 +3301,7 @@ mod tests {
             routines,
             obj_index,
             friends: friends_map,
+            abi_ingest_errors: Default::default(),
         }
     }
 

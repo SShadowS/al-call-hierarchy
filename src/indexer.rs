@@ -353,8 +353,21 @@ impl Indexer {
         // Load every .app — this is what gives us Base Application, System
         // Application, etc. for projects that depend on them transitively.
         // load_all_apps returns packages in closest-first order: the project's
-        // own .alpackages comes before parent / grandparent folders.
-        let all_apps = dependencies::load_all_apps(project_root)?;
+        // own .alpackages comes before parent / grandparent folders. It also
+        // dedups duplicate GUIDs internally now (Tier-1 remediation, H-2) —
+        // log the drops so this legacy path stays observable even though it
+        // doesn't feed the north-star ProgramGraph metric.
+        let (all_apps, dropped_dep_versions) = dependencies::load_all_apps(project_root)?;
+        for d in &dropped_dep_versions {
+            warn!(
+                "index_dependencies: dropped duplicate dependency {} v{} ({}) — kept v{} ({})",
+                d.name,
+                d.dropped_version,
+                d.dropped_path.display(),
+                d.kept_version,
+                d.kept_path.display()
+            );
+        }
 
         // Also pull declared deps for their authoritative publisher/version,
         // and to surface any deps that resolve from a different alpackages

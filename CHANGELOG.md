@@ -448,6 +448,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown-argument rejection instead of the bespoke stub.
 
 ### Fixed
+- **CDO re-measure + harness rebaseline for the H-1/H-2/H-3 dependency-ingest
+  trio (Tier-1 remediation Task T1.2).** `aldump --program-call-graph-stats`
+  on the frozen CDO workspace: `primaryScoped` (workspace-only edges) is
+  BYTE-IDENTICAL before/after all three fixes (`total` 18108, `unknown` 0,
+  `realUnknownRate` 0.0 — the north-star zero holds exactly). The only
+  `wholeProgram`-scope delta is `total`/`honestEmpty` 43408 → 43369 (-39),
+  attributed ENTIRELY to H-2 by incremental per-commit measurement (H-1 alone:
+  byte-identical; H-1+H-2: exactly this delta; H-1+H-2+H-3: no further
+  change). Root cause: CDO's workspace root has its OWN `.alpackages`, and
+  its ANCESTOR folder (`find_all_alpackages_folders` scans both by design)
+  has a SECOND `.alpackages` caching the SAME 12 real dependency apps — 10
+  byte-identical duplicates plus 2 genuinely stale extra copies (`Continia
+  Document Output` 28.0.0.227530, `Continia Connector App` 28.0.0.225760),
+  confirmed real-world instances of exactly the scenario H-2 fixes (pinned in
+  a new CDO-gated `cdo_dedup_names_the_real_dropped_duplicates` test).
+  Removing the 12 duplicate AppUnits eliminated 39 duplicate call-site
+  obligations that were being double-counted in the `wholeProgram` (not
+  `primaryScoped`) `honestEmpty` bucket — H-1 (event-subscriber orphan fix)
+  and H-3 (NUL-tolerant parse) are CONFIRMED CDO-DORMANT: `abiIntegrity`
+  (`abiMapped`/`abiRoutesTotal`/`abiUnmapped`) and every other histogram
+  field are byte-identical throughout — no NUL-padded or genuinely-corrupt
+  dependency file exists in CDO's real `.alpackages`, and no `local`/
+  `internal` publisher in CDO's real deps gained a NEW subscriber binding
+  (dormancy here is the documented "fine, honest answer," not a fix that
+  didn't work). `genuine_wrong` stayed 0 throughout every measurement.
+  One pre-existing test asserted the OLD buggy H-1 behavior as correct:
+  `program_resolve_harness.rs`'s `ws_protected_abi_internal_and_local_still_absent`
+  expected an `internal`/`local` ABI member to resolve `Unknown(MemberNotFound)`
+  (dropped-at-ingestion, indistinguishable from a name that never existed);
+  renamed to `..._still_declines_but_with_precise_reason` and rebaselined to
+  the correct, more precise `Unknown(InternalNotVisible)`/`Unknown(LocalNotVisible)`
+  — a genuine improvement (the member now demonstrably exists and is
+  access-declined, not silently absent), not a regression.
+- **NUL-padded `SymbolReference.json` silently ingested as an empty ABI, and
+  every read/parse failure had zero production reads anywhere (H-3, Tier-1
+  remediation Task T1.2).** Some `.app` emitters pad `SymbolReference.json`
+  with trailing NUL bytes after the real JSON content. The legacy
+  `app_package::parse_symbols` parser (a `serde_json::StreamDeserializer`
+  reading only the first JSON value) already tolerated this; the newer engine
+  path (`engine::deps::symbol_reference::parse_symbol_reference`) used a
+  STRICT `serde_json::from_str`, which fails on the trailing NUL padding
+  (not JSON whitespace) even though the leading content is perfectly
+  well-formed — a genuinely correct dependency silently ingested with EMPTY
+  objects/tables. Worse, `SymbolReferenceAbi.error` (the field meant to
+  surface exactly this) had ZERO production reads anywhere in the codebase,
+  and a SEPARATE I/O-level failure path (`AbiCache::get_or_load`'s
+  `unwrap_or_else(|_| SymbolReferenceAbi::default())`) silently swallowed
+  zip-open/file-read failures the same way. Fixed with ONE shared tolerant
+  parser (`app_package::parse_first_json_value`, extracted from the legacy
+  path's existing technique) now used by BOTH `parse_symbols` and
+  `parse_symbol_reference` — `resolve::abi_check`'s integrity harness
+  re-parses through the same fixed function, so it was never
+  "synchronized-blind" as a separate concern. `AbiCache::get_or_load`'s I/O
+  swallow now routes through the SAME `error` field a JSON parse failure
+  uses. `abi_ingest::ingest_abi` now returns a named `AbiIngestResult`
+  (objects + routines + an optional `error`) instead of a bare tuple, and
+  `build_program_graph` collects every non-empty one into a new
+  `ProgramGraph.abi_ingest_errors: Vec<AbiIngestError>` (per-app, additive) —
+  a broken dependency is now observable instead of silently indistinguishable
+  from a genuinely-empty one.
+- **Duplicate dependency `.app` versions silently picked the stale one, or
+  poisoned an entire app's ABI (H-2, Tier-1 remediation Task T1.2).**
+  `dependencies::load_all_apps` scans EVERY `.alpackages` folder reachable by
+  walking up the directory tree (own + every ancestor, e.g. for a monorepo's
+  shared package cache) and parsed every `.app` found with no GUID-level
+  dedup at all; the only dedup was by exact canonical PATH. Two consequences:
+  (1) `program::build::build_program_graph`'s dependency-closure GUID match
+  (`by_guid.find(...)`) bound to whichever version happened to sort first in
+  `load_all_apps`'s final ordering — sorted by raw STRING comparison on the
+  version field (the "purely a stable tiebreak" doc comment was false: sorting
+  ascending and taking the first match always favors the LOWEST version, e.g.
+  a stale ancestor-folder copy silently won over the correct local one); (2)
+  the SAME version physically present twice (a file copied into two scanned
+  folders) ingested TWICE, producing IDENTICAL `RoutineNodeId`s for every one
+  of that app's ABI routines — `dedup_routines_preserving_genuine_overloads`
+  then marked EVERY survivor `abi_overload_collapsed`, declining the entire
+  app's routines for chain-typing and plain dispatch alike. Fixed with a new
+  `dependencies::dedup_by_guid_keep_highest_version`, wired into
+  `load_all_apps` itself (protecting every caller uniformly): collapses every
+  non-empty-GUID group down to its highest-version survivor (via the existing
+  numeric `compare_versions`, never raw-string comparison), naming every
+  dropped file in a new `DroppedDuplicateDependency` diagnostic;
+  GUID-less entries (malformed/legacy manifests) are never merged against
+  each other (fail-closed — no real identity to prove they're the same app).
+  `load_all_apps`'s own final sort is also fixed to compare versions
+  numerically (`parse_version`) instead of lexicographically, making its
+  determinism-tiebreak comment honest again now that at most one entry per
+  GUID survives to reach it. `SnapshotBuilder::build` gains a
+  `build_with_diagnostics` sibling that surfaces the dropped-duplicate list to
+  callers that want it (`build` itself is an unchanged thin wrapper).
+  `indexer.rs`'s legacy `index_dependencies` path now logs every drop instead
+  of silently absorbing the signature change. `program::build::
+  build_program_graph`'s GUID-based dependency-closure matcher is documented
+  (not yet behavior-changed) as still not consulting a specific edge's
+  MinVersion once dedup leaves at most one candidate per GUID — a narrower,
+  separate soundness question left open deliberately rather than risk
+  trading a real match for a stricter decline on unconfirmed real-world data.
+- **Dependency ABI ingestion silently dropped every `local`/`internal` routine,
+  orphaning event-subscriber wiring and making the InternalsVisibleTo friend
+  map inert for SymbolOnly deps (H-1, Tier-1 remediation Task T1.2).**
+  `abi_ingest::ingest_abi` unconditionally skipped any ABI routine with
+  `IsLocal`/`IsInternal` set. AL's `local` on an event PUBLISHER restricts
+  RAISING, not SUBSCRIBING — modern BaseApp integration events are `local
+  procedure` + `[IntegrationEvent]` (a real dependency probe found 13,581 such
+  publisher attributes in BaseApp's `SymbolReference.json`, every one
+  discarded); with the publisher routine never becoming a graph node,
+  `resolve::index::ResolveIndex::build`'s event-index loop hit `0 => continue`
+  with **no record at all** — the subscription (the charter's
+  data-is-control-flow wiring) simply vanished. Separately, dropping
+  `is_internal` routines meant `ProgramGraph.friends` (wired from a dep's own
+  `<InternalsVisibleTo>`) was permanently inert for SymbolOnly deps — there
+  was never an `Access::Internal` node to check friendship against. Fixed by
+  ingesting ALL routines carrying an access field and mapping `IsLocal`/
+  `IsInternal`/`IsProtected` to their matching `Access` variant (`Local`/
+  `Internal`/`Protected`, `Public` otherwise) instead of dropping — the
+  resolver's EXISTING visibility model (`resolver::object_access_visible_from`
+  / `internal_visible_across`) now enforces call-time visibility, so ingestion
+  no longer makes that decision by silent deletion; a publisher-kind routine
+  stays subscription-eligible regardless of its own `Access` (subscribing is
+  not calling — `ResolveIndex`'s candidate filter was already access-blind, so
+  no change was needed there once the node exists). `resolve::abi_check::
+  RawAbiIndex::build` (the independent re-derivation the integrity harness
+  checks `ingest_abi`'s output against) carried the identical stale skip and
+  is fixed in lockstep — left alone it would have turned every newly-ingested
+  local/internal routine into a false `abi_unmapped` integrity failure. A
+  0-candidate subscription (`ResolveIndex`'s event-index loop, the `0` arm of
+  the candidate-count dispatch) now records an additive `OrphanSub` diagnostic
+  (`ResolveIndex::orphaned_subscriptions()`) instead of a bare `continue`, so
+  a genuinely-absent publisher is observable rather than silently invisible.
 - **`REGEN_TEMP_GOLDENS=0` silently rewrote every golden while reporting green
   (Task T0.6, Tier-0 remediation arc).** Every regen gate checked env-var
   PRESENCE (`std::env::var("REGEN_TEMP_GOLDENS").is_ok()`, or `.is_err()` as

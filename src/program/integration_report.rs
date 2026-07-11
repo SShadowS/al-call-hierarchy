@@ -420,6 +420,7 @@ mod tests {
             routines,
             obj_index,
             friends: Default::default(),
+            abi_ingest_errors: Default::default(),
         };
 
         let pubr = rid(dep, 80, "OnAfterPost", 1);

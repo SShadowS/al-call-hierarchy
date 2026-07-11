@@ -1163,6 +1163,7 @@ mod tests {
             routines,
             obj_index,
             friends: Default::default(),
+            abi_ingest_errors: Default::default(),
         };
 
         let caller = rid(a, 50100, "Foo", 0);
@@ -1338,6 +1339,7 @@ mod tests {
             routines,
             obj_index,
             friends: Default::default(),
+            abi_ingest_errors: Default::default(),
         };
 
         let pubr = rid(a, 50100, "OnAfterPost", 0);

@@ -9568,13 +9568,23 @@ fn ws_protected_abi_genuine_extension_sees_protected() {
     assert!(matches!(route.witness, Witness::AbiSymbol { .. }));
 }
 
-/// Test 31d (fixture d, CONTROL): `internal`/`local` ABI routines are DROPPED
-/// entirely at ingestion (unchanged by Task 1) — the name is genuinely
-/// absent, so these stay `Unknown(MemberNotFound)`, never
-/// `ProtectedNotVisible`. Proves the local/internal drop is untouched by the
-/// protected-carry fix.
+/// Test 31d (fixture d, CONTROL — Tier-1 remediation H-1 REBASELINE):
+/// `internal`/`local` ABI routines used to be DROPPED entirely at ingestion,
+/// so a caller outside the declaring object/app saw a bare
+/// `Unknown(MemberNotFound)` — indistinguishable from a name that never
+/// existed at all. H-1 (Task T1.2) fixed the root cause: AL's `local` on an
+/// event PUBLISHER restricts raising, not subscribing, and dropping
+/// `internal` made the InternalsVisibleTo friend map inert for SymbolOnly
+/// deps (see `abi_ingest::ingest_abi`'s doc). Both routines now SURVIVE
+/// ingestion carrying their real `Access` variant, and the SAME visibility
+/// check `ws_protected_abi_object_receiver_protected_excluded` already
+/// proves for `Access::Protected` now correctly declines them too — with
+/// the SPECIFIC reason (`InternalNotVisible`/`LocalNotVisible`), not the
+/// generic "name never existed" `MemberNotFound`. This is a genuine,
+/// intended behavior improvement (a more precise decline reason), not a
+/// regression — see CHANGELOG's H-1 entry.
 #[test]
-fn ws_protected_abi_internal_and_local_still_absent() {
+fn ws_protected_abi_internal_and_local_still_declines_but_with_precise_reason() {
     let report = ws_protected_abi_report();
 
     let internal_route = &edges_for_object_routine(&report, 51000, "testinternalabsentcontrol")[0]
@@ -9583,8 +9593,10 @@ fn ws_protected_abi_internal_and_local_still_absent() {
     assert_eq!(internal_route.target, RouteTarget::Unresolved);
     assert_eq!(
         internal_route.evidence,
-        Evidence::Unknown(UnknownReason::MemberNotFound),
-        "IsInternal routines must still be dropped at ingestion; got {internal_route:?}"
+        Evidence::Unknown(UnknownReason::InternalNotVisible),
+        "IsInternal routines now survive ingestion (H-1) and correctly \
+         decline via the SPECIFIC InternalNotVisible reason, not a bare \
+         MemberNotFound; got {internal_route:?}"
     );
 
     let local_route = &edges_for_object_routine(&report, 51000, "testlocalabsentcontrol")[0]
@@ -9593,8 +9605,10 @@ fn ws_protected_abi_internal_and_local_still_absent() {
     assert_eq!(local_route.target, RouteTarget::Unresolved);
     assert_eq!(
         local_route.evidence,
-        Evidence::Unknown(UnknownReason::MemberNotFound),
-        "IsLocal routines must still be dropped at ingestion; got {local_route:?}"
+        Evidence::Unknown(UnknownReason::LocalNotVisible),
+        "IsLocal routines now survive ingestion (H-1) and correctly decline \
+         via the SPECIFIC LocalNotVisible reason, not a bare MemberNotFound; \
+         got {local_route:?}"
     );
 }
 

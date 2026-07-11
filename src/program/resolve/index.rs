@@ -104,6 +104,26 @@ pub struct AmbiguousSub {
     pub candidate_count: usize,
 }
 
+/// A subscription whose publisher OBJECT was resolved but no publisher-kind
+/// routine candidate existed for the given event name + arity bound (Tier-1
+/// remediation, H-1 fix). Additive observability replacing a prior silent
+/// `0 => continue` — the subscription edge (the charter's data-is-control-flow
+/// wiring) used to vanish with no record at all whenever its target publisher
+/// routine was absent from the graph (e.g. because ingestion had wrongly
+/// dropped it — see `abi_ingest::ingest_abi`'s doc). A nonzero count here is
+/// not necessarily a bug: it can also mean the attribute genuinely names an
+/// event that doesn't exist (a real AL compile error) or an arity the
+/// publisher never declares — but it must never again be simply invisible.
+pub struct OrphanSub {
+    /// The subscriber routine carrying the unresolvable `[EventSubscriber]`.
+    pub subscriber: RoutineNodeId,
+    /// The publisher object that WAS found (name/kind resolved).
+    pub publisher_object: ObjectNodeId,
+    /// Lowercased event name from the attribute — the routine name that had
+    /// zero publisher-kind, arity-eligible candidates on `publisher_object`.
+    pub event_name_lc: String,
+}
+
 // ---------------------------------------------------------------------------
 // ResolveIndex
 // ---------------------------------------------------------------------------
@@ -159,6 +179,9 @@ pub struct ResolveIndex {
     subscribers_map: HashMap<RoutineNodeId, Vec<SubscriberEntry>>,
     /// Subscriptions that could not be resolved to a single overload.
     ambiguous_subscriptions: Vec<AmbiguousSub>,
+    /// Subscriptions whose publisher object resolved but had zero eligible
+    /// routine candidates (H-1 fix — see [`OrphanSub`]'s doc).
+    orphaned_subscriptions: Vec<OrphanSub>,
 }
 
 impl ResolveIndex {
@@ -261,6 +284,7 @@ impl ResolveIndex {
         // ── Event subscriber index ────────────────────────────────────────────
         let mut subscribers_map: HashMap<RoutineNodeId, Vec<SubscriberEntry>> = HashMap::new();
         let mut ambiguous_subscriptions: Vec<AmbiguousSub> = Vec::new();
+        let mut orphaned_subscriptions: Vec<OrphanSub> = Vec::new();
 
         for sub_routine in &graph.routines {
             if sub_routine.event_subscribers.is_empty() {
@@ -321,7 +345,19 @@ impl ResolveIndex {
 
                 // (d) Dispatch on candidate count.
                 match candidates.len() {
-                    0 => continue,
+                    0 => {
+                        // H-1 fix: this used to be a bare `continue` — the
+                        // subscription vanished with no record at all. Now an
+                        // additive orphan diagnostic names it (see
+                        // `OrphanSub`'s doc); resolution behavior (no edge
+                        // emitted) is unchanged.
+                        orphaned_subscriptions.push(OrphanSub {
+                            subscriber: sub_routine.id.clone(),
+                            publisher_object: pub_obj_id,
+                            event_name_lc,
+                        });
+                        continue;
+                    }
                     1 => {
                         subscribers_map
                             .entry(candidates[0].clone())
@@ -381,6 +417,7 @@ impl ResolveIndex {
             implementers,
             subscribers_map,
             ambiguous_subscriptions,
+            orphaned_subscriptions,
         }
     }
 
@@ -870,6 +907,12 @@ impl ResolveIndex {
     /// to a single overload (multiple candidates, no unique strict arity match).
     pub fn ambiguous_subscriptions(&self) -> &[AmbiguousSub] {
         &self.ambiguous_subscriptions
+    }
+
+    /// Subscriptions whose publisher object resolved but had zero eligible
+    /// routine candidates (H-1 fix; see [`OrphanSub`]'s doc).
+    pub fn orphaned_subscriptions(&self) -> &[OrphanSub] {
+        &self.orphaned_subscriptions
     }
 }
 
@@ -2468,6 +2511,19 @@ mod tests {
             idx.ambiguous_subscriptions().is_empty(),
             "an orphaned subscriber (no candidate at all) is not ambiguity"
         );
+        // H-1 fix: a 0-candidate subscription must surface as an orphan
+        // diagnostic instead of vanishing via a bare `continue` with no record.
+        assert_eq!(
+            idx.orphaned_subscriptions().len(),
+            1,
+            "a 0-candidate subscription must be recorded as an orphan, not silently dropped"
+        );
+        assert_eq!(
+            idx.orphaned_subscriptions()[0].subscriber.name_lc,
+            "handler"
+        );
+        assert_eq!(idx.orphaned_subscriptions()[0].publisher_object, pub_id);
+        assert_eq!(idx.orphaned_subscriptions()[0].event_name_lc, "onafterx");
     }
 
     // -------------------------------------------------------------------

@@ -80,8 +80,13 @@ impl RawAbiIndex {
     /// Build from `(AppRef, &SymbolReferenceAbi)` pairs.
     ///
     /// `SymbolReferenceAbi` is the raw DTO produced by `parse_symbol_reference`
-    /// — it contains no graph nodes.  Skips `is_local` / `is_internal` routines
-    /// (same filtering as `ingest_abi` in `abi_ingest.rs`).
+    /// — it contains no graph nodes. Tier-1 remediation (H-1): `is_local` /
+    /// `is_internal` routines are INCLUDED here, mirroring `ingest_abi` in
+    /// `abi_ingest.rs` — this index exists to independently re-derive exactly
+    /// what `ingest_abi` ingests, so the two must never diverge on which raw
+    /// entries count (a stale skip here would make every newly-ingested
+    /// local/internal ABI routine show up as a false `abi_unmapped` in the
+    /// integrity check).
     pub fn build<'a>(pairs: impl IntoIterator<Item = (AppRef, &'a SymbolReferenceAbi)>) -> Self {
         let mut entries: HashMap<AppRef, HashSet<RawEntry>> = HashMap::new();
         for (app_ref, abi) in pairs {
@@ -99,9 +104,6 @@ impl RawAbiIndex {
                 };
 
                 for routine in &obj.routines {
-                    if routine.is_local || routine.is_internal {
-                        continue;
-                    }
                     let (routine_kind, event_kind) = map_kind(routine);
                     set.insert(RawEntry {
                         object_type_lc: object_type_lc.clone(),
