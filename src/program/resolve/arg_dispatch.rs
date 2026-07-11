@@ -131,6 +131,62 @@ pub(crate) enum CanonicalArgType {
     /// canonicalize to `"text"`/`"code"`/`"text"` respectively) — exact
     /// keyword identity only, no implicit-conversion modeling.
     Base(String),
+    /// A generic collection type (`Dictionary of [K, V]` / `List of [T]`) —
+    /// base keyword plus its recursively-PARSED generic argument list (T1.6,
+    /// deep-review-remediation plan: text-inequality is not incompatibility
+    /// proof, and text-equality-via-erasure is not identity proof either).
+    /// Two [`CanonicalArgType::Generic`]s compare equal iff the base AND
+    /// every argument position agree — comparison is over the PARSED shape
+    /// ([`GenericArgType`]), never the raw type text, so
+    /// `Dictionary of [Integer,Text]` and `Dictionary of [Integer, Text]`
+    /// (differing only in comma-adjacent whitespace) are the SAME type,
+    /// while `Dictionary of [Integer,Text]` and `Dictionary of [Integer,
+    /// Decimal]` (a genuinely different instantiation) are NOT — closing the
+    /// two-part defect `base_keyword`'s length-suffix-only stripping left
+    /// open: erasing everything from the first whitespace onward silently
+    /// dropped the ENTIRE generic-argument clause, so two different
+    /// instantiations collapsed onto the same `Base` identity and could
+    /// exact-match each other.
+    Generic {
+        base: String,
+        args: Vec<GenericArgType>,
+    },
+}
+
+/// Recursively-parsed identity of ONE generic type ARGUMENT (`Dictionary of
+/// [K, V]`'s `K`/`V`; `List of [T]`'s `T`; recursively for a nested generic
+/// argument, `List of [List of [Integer]]`). Structurally mirrors
+/// [`CanonicalArgType`] with ONE deliberate difference: [`GenericArgType::
+/// Scalar`]'s length suffix is NEVER stripped, unlike [`CanonicalArgType::
+/// Base`]'s top-level by-value rule. That top-level rule ("Text/Code length
+/// brackets are non-discriminating for by-value compatibility", module doc)
+/// has real AL assignability behind it (`Text[10]` truncate-assigns into
+/// `Text[30]`); no equivalent compiler-verified basis exists for treating a
+/// DIFFERENTLY-LENGTHED generic instantiation (`List of [Code[10]]` vs
+/// `List of [Code[20]]`) as interchangeable — generic collection types do
+/// not implicitly convert between instantiations at all. Fail-closed
+/// direction under that genuine doubt: keep the length as part of a generic
+/// argument's identity at every nesting depth. Treating two truly-identical
+/// instantiations as different only ever costs an extra "undecided" (never a
+/// wrong pick); treating two truly-different ones as the same IS a wrong
+/// pick — the cardinal sin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum GenericArgType {
+    /// An object-bearing generic argument, resolved to its concrete
+    /// identity exactly like [`CanonicalArgType::Object`].
+    Object(ObjectNodeId),
+    /// A non-object generic argument's base keyword plus its own,
+    /// length-PRESERVING bracket suffix — both normalized via the PARSE
+    /// (lowercased, trimmed), never via raw text comparison.
+    Scalar {
+        base: String,
+        length: Option<String>,
+    },
+    /// A NESTED generic argument (`List of [List of [Integer]]`).
+    Generic {
+        base: String,
+        args: Vec<GenericArgType>,
+    },
 }
 
 impl CanonicalArgType {
@@ -172,6 +228,167 @@ fn base_keyword(ty: &str) -> String {
         None => first_tok,
     };
     base.to_ascii_lowercase()
+}
+
+/// Extract a leading token's trailing `[N]` length-bracket text, normalized
+/// (trimmed, lowercased) — `"Text[30]"` -> `Some("30")`, `"Text"` -> `None`.
+/// Shared by [`parse_generic_arg`]'s length-PRESERVING scalar identity (see
+/// [`GenericArgType::Scalar`]'s doc for why generic arguments, unlike a
+/// top-level [`CanonicalArgType::Base`], never strip this).
+fn extract_length_suffix(first_tok: &str) -> Option<String> {
+    let start = first_tok.find('[')?;
+    if !first_tok.ends_with(']') || first_tok.len() < start + 2 {
+        return None;
+    }
+    Some(
+        first_tok[start + 1..first_tok.len() - 1]
+            .trim()
+            .to_ascii_lowercase(),
+    )
+}
+
+/// Detect and extract an `of [...]` generic clause from `ty_text`'s tail —
+/// shared by [`dispatch_canonical_type_text`]'s top-level parse,
+/// [`abi_param_canonical`]'s ABI-tier parse, and [`parse_generic_arg`]'s
+/// recursive parse, so "what counts as a generic clause" lives in exactly
+/// ONE place (T1.6 brief: "one parser, not two").
+///
+/// Returns `(first_tok, None)` for a NON-generic type — `rest` is empty, or
+/// its leading word is not (a whitespace/`[`-bounded) `of` — the ORDINARY
+/// base-keyword route applies unchanged. Returns `(first_tok, Some(Ok(inner)))`
+/// for a well-formed `of [...]` clause, `inner` being the trimmed text
+/// strictly between the outermost `[` and the matching final `]`. Returns
+/// `(first_tok, Some(Err(())))` when an `of` keyword is present but the
+/// bracket clause is MALFORMED (missing/empty/unterminated `[`/`]`) — the
+/// caller must treat this as UNDECIDED (`None`), never fall back to a bare
+/// base-keyword guess that would silently erase the unparseable generic
+/// identity.
+fn split_generic_clause(ty_text: &str) -> (&str, Option<Result<&str, ()>>) {
+    let trimmed = ty_text.trim();
+    let (first_tok, rest) = match trimmed.find(char::is_whitespace) {
+        Some(i) => (&trimmed[..i], trimmed[i + 1..].trim()),
+        None => return (trimmed, None),
+    };
+    if rest.len() < 2 || !rest[..2].eq_ignore_ascii_case("of") {
+        return (first_tok, None);
+    }
+    // Word-boundary check: the character right after "of" must be
+    // whitespace, `[`, or NOTHING (rest is exactly "of") — never a
+    // bare-prefix false match (e.g. "Offset"). "Nothing follows" still
+    // counts as the `of` keyword (malformed — no bracket clause at all),
+    // not "absent".
+    match rest[2..].chars().next() {
+        Some(c) if c.is_whitespace() || c == '[' => {}
+        None => {}
+        _ => return (first_tok, None),
+    }
+    let after_of = rest[2..].trim_start();
+    if after_of.len() < 2 || !after_of.starts_with('[') || !after_of.ends_with(']') {
+        return (first_tok, Some(Err(())));
+    }
+    (first_tok, Some(Ok(after_of[1..after_of.len() - 1].trim())))
+}
+
+/// Split `inner` (the trimmed text between a generic clause's outer `[`/`]`)
+/// on TOP-LEVEL commas only — a comma nested inside a further `[...]` (a
+/// nested generic argument, `List of [List of [Integer]]`) does not split.
+/// `None` on bracket mismatch (unequal depth at any point, or a nonzero
+/// depth at the end) or an empty argument slot — a malformed clause,
+/// UNDECIDED per this module's cardinal rule, never guessed at.
+fn split_top_level_commas(inner: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    for (i, ch) in inner.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if depth == 0 => {
+                parts.push(inner[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    parts.push(inner[start..].trim());
+    if parts.iter().any(|p| p.is_empty()) {
+        return None;
+    }
+    Some(parts)
+}
+
+/// Recursively parse one generic-argument TEXT (a single top-level-comma-
+/// separated slice from a `Dictionary of [...]`/`List of [...]` clause) into
+/// its [`GenericArgType`] — mirrors [`dispatch_canonical_type_text`]'s own
+/// object-vs-scalar-vs-nested-generic dispatch exactly, the ONE difference
+/// being [`GenericArgType::Scalar`]'s length-PRESERVING identity (see that
+/// variant's doc). `None` when unparseable/unresolvable — UNDECIDED, module
+/// doc's cardinal rule: an unparseable generic argument degrades the WHOLE
+/// enclosing type, never a partial read.
+fn parse_generic_arg(
+    arg_text: &str,
+    from: &ObjectNodeId,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+) -> Option<GenericArgType> {
+    if arg_text.trim().is_empty() {
+        return None;
+    }
+    let resolve = |kind: ObjectKind, oref: &ObjectRef| match index.resolve_object_ref(
+        graph,
+        from.clone(),
+        kind,
+        oref,
+    ) {
+        ObjectRefResolution::Unique(id) => Some(GenericArgType::Object(id)),
+        ObjectRefResolution::Ambiguous
+        | ObjectRefResolution::OutOfClosure
+        | ObjectRefResolution::Unresolved => None,
+    };
+    match classify_type_text(arg_text) {
+        ParsedType::Record { table_ref } => resolve(ObjectKind::Table, &table_ref),
+        ParsedType::Object { kind, object_ref } => resolve(kind, &object_ref),
+        ParsedType::Interface { name } => {
+            let oref = ObjectRef::Name {
+                raw: name.clone(),
+                normalized_lc: name,
+            };
+            resolve(ObjectKind::Interface, &oref)
+        }
+        ParsedType::EnumType { name } => {
+            let oref = ObjectRef::Name {
+                raw: name.clone(),
+                normalized_lc: name,
+            };
+            resolve(ObjectKind::Enum, &oref)
+        }
+        _ => match split_generic_clause(arg_text) {
+            (first_tok, None) => Some(GenericArgType::Scalar {
+                base: base_keyword(arg_text),
+                length: extract_length_suffix(first_tok),
+            }),
+            (first_tok, Some(Ok(inner))) => {
+                let parts = split_top_level_commas(inner)?;
+                let mut args = Vec::with_capacity(parts.len());
+                for part in parts {
+                    args.push(parse_generic_arg(part, from, graph, index)?);
+                }
+                Some(GenericArgType::Generic {
+                    base: base_keyword(first_tok),
+                    args,
+                })
+            }
+            (_, Some(Err(()))) => None,
+        },
+    }
 }
 
 /// Canonicalize a declared type TEXT (a param's or a variable's `ty`) into
@@ -221,8 +438,24 @@ pub(crate) fn dispatch_canonical_type_text(
         // no object identity to resolve — canonicalize by exact base keyword
         // directly from the raw text (see `base_keyword`'s doc for why this
         // does NOT reuse `classify_type_text`'s own Framework/Primitive
-        // grouping).
-        _ => Some(CanonicalArgType::Base(base_keyword(ty_text))),
+        // grouping), UNLESS an `of [...]` generic clause is present
+        // (`Dictionary of [K, V]` / `List of [T]`, both classify as
+        // `Framework` above) — see [`split_generic_clause`]'s doc.
+        _ => match split_generic_clause(ty_text) {
+            (_, None) => Some(CanonicalArgType::Base(base_keyword(ty_text))),
+            (first_tok, Some(Ok(inner))) => {
+                let parts = split_top_level_commas(inner)?;
+                let mut args = Vec::with_capacity(parts.len());
+                for part in parts {
+                    args.push(parse_generic_arg(part, from, graph, index)?);
+                }
+                Some(CanonicalArgType::Generic {
+                    base: base_keyword(first_tok),
+                    args,
+                })
+            }
+            (_, Some(Err(()))) => None,
+        },
     }
 }
 
@@ -411,8 +644,8 @@ fn type_one_arg(
             Some((canonical, kind)) => {
                 let text = match &canonical {
                     CanonicalArgType::Base(s) => s.clone(),
-                    // `literal_canonical` never produces `Object(..)`.
-                    CanonicalArgType::Object(_) => {
+                    // `literal_canonical` never produces `Object(..)`/`Generic(..)`.
+                    CanonicalArgType::Object(_) | CanonicalArgType::Generic { .. } => {
                         unreachable!("literal_canonical only ever returns CanonicalArgType::Base")
                     }
                 };
@@ -447,10 +680,28 @@ fn type_one_arg(
         //   visibility-scoped surface declines — AL's parens-optional
         //   zero-arg call makes a bare `Member` structurally ambiguous
         //   between a field access and a parens-less routine call.
-        // - `var_passable: false` HARDCODED (round-2 closer, BINDING: AL
-        //   requires a VARIABLE for a `var` argument — "A variable is
-        //   required" — `Rec.Amount` cannot bind a `var` parameter; a field
-        //   expression is never itself a variable).
+        // - `var_passable: true` (T1.6, deep-review-remediation plan —
+        //   REVERSES the prior hardcoded `false`). The plan-doc trail across
+        //   TWO earlier rounds disagreed on this without ever running a
+        //   compiler: one round asserted "record fields ARE generally
+        //   var-passable"; the next ("correcting" it) asserted the opposite
+        //   ("AL requires a VARIABLE for a `var` argument... a field
+        //   expression is never itself a variable") and shipped `false` with
+        //   an explicit "No investigation" note. Live-probed this task
+        //   (`al.exe` v18.0.37.11445, CDO's `.alpackages` cache, platform/
+        //   application `28.0.0.0`): a `var Code[20]` parameter called with
+        //   a plain table field (`Cust."No."`), a FlowField (`Cust."Balance
+        //   (LCY)"`), and a field of a `temporary` record (`TempCust."No."`)
+        //   ALL compile with ZERO diagnostics — refuting the "false" round's
+        //   premise directly. A negative control in the SAME probe project
+        //   confirms the harness genuinely type-checks: a literal argument
+        //   in the same `var` position reports `AL0133: cannot convert from
+        //   'Text' to 'var Code[20]'`, and an undefined field name reports
+        //   `AL0132`. `var_passable` therefore now mirrors the declared-var
+        //   bare-identifier arm above exactly (both ARE variables, just
+        //   reached via different AST shapes) — the ONLY remaining
+        //   elimination for a `var` position is a literal/call-result
+        //   argument (never itself a variable, module doc), unchanged.
         ExprKind::Member { object, member, .. } => {
             if with_state != WithState::NoWithProven {
                 return ArgDispatchInfo::untyped();
@@ -497,7 +748,7 @@ fn type_one_arg(
                 canonical: dispatch_canonical_type_text(&field.type_text, from, graph, index),
                 exact_text: Some(normalize_type_text(&field.type_text)),
                 literal_kind: None,
-                var_passable: false,
+                var_passable: true,
             }
         }
         // Call-result arg (T3, pageext-merge-and-final-residual plan): `Foo
@@ -986,8 +1237,30 @@ fn abi_param_canonical(
         ),
         // Scalar / Framework / RecordRef / FieldRef / KeyRef / ControlAddIn /
         // Dynamic / Primitive: no Subtype ever attaches, `type_text` is
-        // already the full text — the ordinary route applies unchanged.
-        _ => return Some(CanonicalArgType::Base(base_keyword(&p.type_text))),
+        // already the full text — the ordinary route applies unchanged,
+        // UNLESS an `of [...]` generic clause is present (mirrors
+        // `dispatch_canonical_type_text`'s identical handling EXACTLY — the
+        // SAME [`split_generic_clause`]/[`parse_generic_arg`] parser, so a
+        // SOURCE candidate and an ABI candidate mixed in the SAME
+        // `pick_candidate` call (`resolver::candidate_param_infos_either`)
+        // can never disagree about a Dictionary/List generic's identity).
+        _ => {
+            return match split_generic_clause(&p.type_text) {
+                (_, None) => Some(CanonicalArgType::Base(base_keyword(&p.type_text))),
+                (first_tok, Some(Ok(inner))) => {
+                    let parts = split_top_level_commas(inner)?;
+                    let mut args = Vec::with_capacity(parts.len());
+                    for part in parts {
+                        args.push(parse_generic_arg(part, from, graph, index)?);
+                    }
+                    Some(CanonicalArgType::Generic {
+                        base: base_keyword(first_tok),
+                        args,
+                    })
+                }
+                (_, Some(Err(()))) => None,
+            };
+        }
     };
     // An empty-name `ObjectRef` means `type_text` was JUST the bare outer
     // keyword with no name/id component at all (the `no_subtype`/`id_only`/
@@ -1333,6 +1606,146 @@ mod tests {
         assert_eq!(base_keyword("  Decimal  "), "decimal");
     }
 
+    // -- dispatch_canonical_type_text: generic types (T1.6, deep-review-
+    // remediation plan — H-5) -------------------------------------------------
+
+    /// Defect (1) from the refuter's finding, closed: `normalize_type_text`
+    /// only collapses whitespace RUNS and never touches a comma, so
+    /// `Dictionary of [Integer,Text]` and `Dictionary of [Integer, Text]`
+    /// produced DIFFERENT normalized strings even though they are the SAME
+    /// type. The structured parse must treat them identically.
+    #[test]
+    fn dispatch_canonical_type_text_generic_dictionary_normalizes_comma_whitespace() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let a = dispatch_canonical_type_text("Dictionary of [Integer,Text]", &from, &graph, &index);
+        let b =
+            dispatch_canonical_type_text("Dictionary of [Integer, Text]", &from, &graph, &index);
+        assert_eq!(
+            a, b,
+            "comma-adjacent whitespace variance must not change a Dictionary \
+             generic's canonical identity"
+        );
+        assert_eq!(
+            a,
+            Some(CanonicalArgType::Generic {
+                base: "dictionary".to_string(),
+                args: vec![
+                    GenericArgType::Scalar {
+                        base: "integer".to_string(),
+                        length: None
+                    },
+                    GenericArgType::Scalar {
+                        base: "text".to_string(),
+                        length: None
+                    },
+                ],
+            })
+        );
+    }
+
+    /// Defect (2) from the refuter's finding, closed: `base_keyword` erased
+    /// EVERYTHING from the first whitespace onward, so two DIFFERENT
+    /// Dictionary instantiations both canonicalized to the bare `"dictionary"`
+    /// keyword and could exact-match each other. Must now differ.
+    #[test]
+    fn dispatch_canonical_type_text_generic_dictionary_distinguishes_type_args() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let text_dict =
+            dispatch_canonical_type_text("Dictionary of [Integer, Text]", &from, &graph, &index);
+        let decimal_dict =
+            dispatch_canonical_type_text("Dictionary of [Integer, Decimal]", &from, &graph, &index);
+        assert_ne!(
+            text_dict, decimal_dict,
+            "Dictionary of [Integer,Text] and Dictionary of [Integer,Decimal] \
+             are DIFFERENT instantiations — must never canonicalize identically"
+        );
+    }
+
+    /// A malformed generic clause (unterminated bracket) must be UNDECIDED
+    /// (`None`), never silently fall back to a bare base-keyword guess that
+    /// would erase the unparseable identity.
+    #[test]
+    fn dispatch_canonical_type_text_generic_malformed_clause_is_undecided() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        assert_eq!(
+            dispatch_canonical_type_text("Dictionary of [Integer, Text", &from, &graph, &index),
+            None,
+            "an unterminated generic clause must be UNDECIDED, not a guess"
+        );
+        assert_eq!(
+            dispatch_canonical_type_text("Dictionary of", &from, &graph, &index),
+            None,
+            "an `of` keyword with no bracket clause at all must be UNDECIDED"
+        );
+        assert_eq!(
+            dispatch_canonical_type_text("Dictionary of [Integer,]", &from, &graph, &index),
+            None,
+            "a trailing empty argument slot must be UNDECIDED, not silently dropped"
+        );
+    }
+
+    /// A NESTED generic argument (`List of [List of [Integer]]`) parses
+    /// recursively — proving the parser is not a single-level special case.
+    #[test]
+    fn dispatch_canonical_type_text_generic_nested_list_parses_recursively() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let a = dispatch_canonical_type_text("List of [List of [Integer]]", &from, &graph, &index);
+        assert_eq!(
+            a,
+            Some(CanonicalArgType::Generic {
+                base: "list".to_string(),
+                args: vec![GenericArgType::Generic {
+                    base: "list".to_string(),
+                    args: vec![GenericArgType::Scalar {
+                        base: "integer".to_string(),
+                        length: None
+                    }],
+                }],
+            })
+        );
+    }
+
+    /// [`GenericArgType::Scalar`]'s length-PRESERVING rule: unlike a
+    /// top-level [`CanonicalArgType::Base`], a generic argument's OWN length
+    /// suffix is part of its identity — `List of [Code[10]]` and
+    /// `List of [Code[20]]` are DIFFERENT canonical types (fail-closed: no
+    /// compiler-verified basis exists for treating them as interchangeable).
+    #[test]
+    fn dispatch_canonical_type_text_generic_argument_length_is_discriminating() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let code10 = dispatch_canonical_type_text("List of [Code[10]]", &from, &graph, &index);
+        let code20 = dispatch_canonical_type_text("List of [Code[20]]", &from, &graph, &index);
+        assert_ne!(
+            code10, code20,
+            "a generic argument's length suffix must be part of its identity"
+        );
+        assert_eq!(
+            code10,
+            Some(CanonicalArgType::Generic {
+                base: "list".to_string(),
+                args: vec![GenericArgType::Scalar {
+                    base: "code".to_string(),
+                    length: Some("10".to_string())
+                }],
+            })
+        );
+    }
+
     // -- pick_candidate: positive shapes -------------------------------------
 
     /// Two candidates, one discriminating position, arg matches candidate 1
@@ -1563,6 +1976,193 @@ mod tests {
             vec![base_param("decimal", false)],
         ];
         assert_eq!(pick_candidate(&args, &candidates), None);
+    }
+
+    // -- pick_candidate: generic types (T1.6, deep-review-remediation plan —
+    // H-5, the refuter's wrong-pick reproduction) ------------------------------
+
+    /// THE HEADLINE TEST — the refuter's end-to-end wrong-pick case,
+    /// reproduced then fixed. Two overloads: `P(var d: Dictionary of
+    /// [Integer, Text])` and `P(d: Dictionary of [Integer, Decimal])`; the
+    /// call site's declared-var argument is `Dictionary of [Integer,Text]`
+    /// (spacing differs from the var-param's OWN declaration text — no space
+    /// after the comma). OLD code: the raw-text ByRef-EXACT check
+    /// (`normalize_type_text` never touches commas) treated the CORRECT var
+    /// candidate as "provably incompatible" on that spacing difference alone,
+    /// while `base_keyword`'s length-suffix-only stripping erased the ENTIRE
+    /// generic-argument clause, exact-matching the WRONG by-value Decimal
+    /// candidate — a confident wrong pick on compiling AL (the module doc's
+    /// cardinal sin). NEW: both the arg's and the var param's type text
+    /// resolve through the SAME structured, whitespace-insensitive parse
+    /// ([`dispatch_canonical_type_text`]), so they canonicalize IDENTICALLY
+    /// despite the raw-text difference, and the by-value Decimal candidate's
+    /// canonical type is now genuinely DIFFERENT (not erased) — the pick
+    /// resolves to the CORRECT var overload, never the wrong one.
+    #[test]
+    fn pick_candidate_dictionary_generic_spacing_variance_resolves_var_overload_never_wrong_pick() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        // The call-site argument's declared var type (no space after comma —
+        // deliberately spelled DIFFERENTLY from the var param's declaration
+        // below, per the refuter's exact repro).
+        let arg_canonical =
+            dispatch_canonical_type_text("Dictionary of [Integer,Text]", &from, &graph, &index)
+                .expect("a well-formed Dictionary generic must parse");
+        let arg = ArgDispatchInfo {
+            canonical: Some(arg_canonical.clone()),
+            exact_text: Some(normalize_type_text("Dictionary of [Integer,Text]")),
+            literal_kind: None,
+            var_passable: true,
+        };
+
+        // The var param's OWN declaration text (WITH a space after the
+        // comma) — same type, different raw spelling.
+        let var_param_canonical =
+            dispatch_canonical_type_text("Dictionary of [Integer, Text]", &from, &graph, &index)
+                .expect("a well-formed Dictionary generic must parse");
+        assert_eq!(
+            arg_canonical, var_param_canonical,
+            "differently-spaced but semantically identical Dictionary \
+             generics must canonicalize IDENTICALLY"
+        );
+
+        let by_value_wrong_canonical =
+            dispatch_canonical_type_text("Dictionary of [Integer, Decimal]", &from, &graph, &index)
+                .expect("a well-formed Dictionary generic must parse");
+        assert_ne!(
+            var_param_canonical, by_value_wrong_canonical,
+            "a DIFFERENT generic instantiation must NEVER canonicalize \
+             identically to the correct one"
+        );
+
+        let candidates = vec![
+            // [0] by-value Dictionary<Integer, Decimal> — the WRONG overload
+            // the old text-erasure bug picked.
+            vec![ParamDispatchInfo {
+                canonical: by_value_wrong_canonical,
+                exact_text: normalize_type_text("Dictionary of [Integer, Decimal]"),
+                by_ref: false,
+            }],
+            // [1] var Dictionary<Integer, Text> — the CORRECT overload.
+            vec![ParamDispatchInfo {
+                canonical: var_param_canonical,
+                exact_text: normalize_type_text("Dictionary of [Integer, Text]"),
+                by_ref: true,
+            }],
+        ];
+
+        assert_eq!(
+            pick_candidate(&[arg], &candidates),
+            Some(1),
+            "must resolve to the var Dictionary<Integer,Text> overload — \
+             NEVER the wrong by-value Decimal overload (the cardinal sin)"
+        );
+    }
+
+    /// Companion to the headline test: when the argument is NOT var-passable
+    /// (a literal/call-result), the var candidate is correctly eliminated
+    /// (ByRef needs a variable) AND the by-value Decimal candidate is
+    /// correctly eliminated too (genuinely different generic instantiation)
+    /// — zero exact matches, a clean fail-closed "no pick", never a wrong
+    /// one.
+    #[test]
+    fn pick_candidate_dictionary_generic_non_var_passable_arg_never_wrong_pick() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let arg_canonical =
+            dispatch_canonical_type_text("Dictionary of [Integer, Text]", &from, &graph, &index)
+                .unwrap();
+        let arg = ArgDispatchInfo {
+            canonical: Some(arg_canonical),
+            exact_text: Some(normalize_type_text("Dictionary of [Integer, Text]")),
+            literal_kind: None,
+            var_passable: false, // e.g. a call-result, never itself a variable
+        };
+        let candidates = vec![
+            vec![ParamDispatchInfo {
+                canonical: dispatch_canonical_type_text(
+                    "Dictionary of [Integer, Decimal]",
+                    &from,
+                    &graph,
+                    &index,
+                )
+                .unwrap(),
+                exact_text: normalize_type_text("Dictionary of [Integer, Decimal]"),
+                by_ref: false,
+            }],
+            vec![ParamDispatchInfo {
+                canonical: dispatch_canonical_type_text(
+                    "Dictionary of [Integer, Text]",
+                    &from,
+                    &graph,
+                    &index,
+                )
+                .unwrap(),
+                exact_text: normalize_type_text("Dictionary of [Integer, Text]"),
+                by_ref: true,
+            }],
+        ];
+        assert_eq!(
+            pick_candidate(&[arg], &candidates),
+            None,
+            "a non-var-passable arg against a var-only-compatible Dictionary \
+             overload must never produce a pick"
+        );
+    }
+
+    /// Item (2)'s stated consequence, verified directly at `pick_candidate`:
+    /// an argument whose generic instantiation matches NEITHER candidate
+    /// must land in a clean no-pick — never an arbitrary guess between two
+    /// candidates the OLD erasure logic would have both called "exact".
+    #[test]
+    fn pick_candidate_dictionary_generic_mismatch_never_arbitrarily_picks() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+
+        let arg_canonical =
+            dispatch_canonical_type_text("Dictionary of [Integer, Boolean]", &from, &graph, &index)
+                .unwrap();
+        let arg = ArgDispatchInfo {
+            canonical: Some(arg_canonical),
+            exact_text: Some(normalize_type_text("Dictionary of [Integer, Boolean]")),
+            literal_kind: None,
+            var_passable: false,
+        };
+        let candidates = vec![
+            vec![ParamDispatchInfo {
+                canonical: dispatch_canonical_type_text(
+                    "Dictionary of [Integer, Text]",
+                    &from,
+                    &graph,
+                    &index,
+                )
+                .unwrap(),
+                exact_text: normalize_type_text("Dictionary of [Integer, Text]"),
+                by_ref: false,
+            }],
+            vec![ParamDispatchInfo {
+                canonical: dispatch_canonical_type_text(
+                    "Dictionary of [Integer, Decimal]",
+                    &from,
+                    &graph,
+                    &index,
+                )
+                .unwrap(),
+                exact_text: normalize_type_text("Dictionary of [Integer, Decimal]"),
+                by_ref: false,
+            }],
+        ];
+        assert_eq!(
+            pick_candidate(&[arg], &candidates),
+            None,
+            "an arg matching NEITHER generic instantiation must never \
+             produce an arbitrary pick"
+        );
     }
 
     // -- type_one_arg: caller-scope-EXACT shadowing --------------------------
@@ -2241,8 +2841,10 @@ codeunit 50100 "C"
             Some(CanonicalArgType::Base("blob".to_string()))
         );
         assert!(
-            !info.var_passable,
-            "member-field args are never var-passable (round-2 closer, hardcoded)"
+            info.var_passable,
+            "member-field args ARE var-passable — al.exe v18.0.37.11445 \
+             compiles `TakesVar(var X: ...); Foo(Cust.\"No.\")` with zero \
+             diagnostics (T1.6 compiler probe; see the Member arm's doc)"
         );
     }
 
@@ -2283,7 +2885,10 @@ codeunit 50100 "C"
             info.canonical,
             Some(CanonicalArgType::Base("text".to_string()))
         );
-        assert!(!info.var_passable);
+        assert!(
+            info.var_passable,
+            "T1.6 compiler probe — see the sibling test"
+        );
     }
 
     /// NEGATIVE: an implicit `Rec` with NO declared var in scope declines —
@@ -2442,19 +3047,26 @@ codeunit 50100 "C"
         );
     }
 
-    /// THE OVERLOAD FIXTURE (round-2 closer, BINDING): a member-field arg's
-    /// canonical type EXACT-MATCHES a by-value overload while its
-    /// `var_passable: false` ELIMINATES the sibling `var`-mode overload of the
-    /// identical type — proves the hardcoded `false` is load-bearing, not
-    /// inert (a wrong `true` here would make BOTH candidates exact-match,
-    /// degrading this to an unpicked ambiguity instead of a clean pick).
+    /// THE OVERLOAD FIXTURE, REVISED (T1.6, deep-review-remediation plan):
+    /// the PRIOR hardcoded `var_passable: false` for a member-field arg was
+    /// itself the defect (see the Member arm's doc — al.exe v18.0.37.11445
+    /// compiler-probe evidence: a record field, a FlowField, and a
+    /// temporary-record field all bind a `var` parameter with zero
+    /// diagnostics). With the corrected `true`, a member-field arg's
+    /// canonical type EXACT-MATCHES BOTH a by-value AND a var-mode overload
+    /// of the identical type — genuinely ambiguous from this dispatcher's
+    /// perspective (no compiler-verified precedence between the two exists),
+    /// so the pick correctly DEGRADES rather than guessing — proving the
+    /// corrected `true` is load-bearing in the OTHER direction: the stale
+    /// `false` would have produced an unjustified confident pick of the
+    /// by-value overload instead of this honest ambiguity.
     #[test]
-    fn pick_candidate_member_field_arg_eliminates_var_param_candidate() {
+    fn pick_candidate_member_field_arg_with_both_overloads_present_stays_ambiguous() {
         let args = vec![ArgDispatchInfo {
             canonical: Some(CanonicalArgType::Base("text".into())),
             exact_text: Some("text".into()),
             literal_kind: None,
-            var_passable: false,
+            var_passable: true,
         }];
         let candidates = vec![
             vec![base_param("text", false)], // by-value Text overload
@@ -2462,9 +3074,34 @@ codeunit 50100 "C"
         ];
         assert_eq!(
             pick_candidate(&args, &candidates),
+            None,
+            "a var-passable member-field arg structurally matches BOTH the \
+             by-value and var-mode Text overloads — 2 exact matches, \
+             correctly no pick, never an arbitrary guess"
+        );
+    }
+
+    /// POSITIVE companion: with NO competing by-value sibling, a
+    /// member-field arg's `var_passable: true` correctly BINDS the sole
+    /// var-mode overload — proving the corrected flag is load-bearing in the
+    /// "enables a pick" direction too, not merely inert.
+    #[test]
+    fn pick_candidate_member_field_arg_binds_sole_var_overload() {
+        let args = vec![ArgDispatchInfo {
+            canonical: Some(CanonicalArgType::Base("text".into())),
+            exact_text: Some("text".into()),
+            literal_kind: None,
+            var_passable: true,
+        }];
+        let candidates = vec![
+            vec![base_param("text", true)],     // var Text overload — the pick
+            vec![base_param("integer", false)], // unrelated family, eliminated
+        ];
+        assert_eq!(
+            pick_candidate(&args, &candidates),
             Some(0),
-            "the var Text overload must be ELIMINATED (a member-field expr is \
-             never var-passable) while the by-value Text overload is picked"
+            "a member-field arg must be able to bind a var parameter when no \
+             competing by-value sibling of the identical type exists"
         );
     }
 
@@ -3072,6 +3709,38 @@ codeunit 50700 "Caller"
             abi_param_canonical(&p, &from, &graph, &index),
             Some(CanonicalArgType::Base("text".to_string()))
         );
+    }
+
+    /// T1.6 ABI-tier symmetry: a Dictionary/List generic ABI param parses
+    /// via the SAME [`split_generic_clause`]/[`parse_generic_arg`] route as
+    /// a SOURCE param — required because `resolver::candidate_param_infos_
+    /// either` mixes SOURCE and ABI candidates in the SAME `pick_candidate`
+    /// call, so the two tiers must never disagree about a generic's
+    /// identity.
+    #[test]
+    fn abi_param_canonical_generic_dictionary_matches_source_route() {
+        let graph = ProgramGraph::default();
+        let index = ResolveIndex::build(&graph);
+        let from = test_object_id();
+        let p = abi_param(
+            "Dictionary of [Integer,Text]",
+            false,
+            None,
+            None,
+            "no_subtype",
+        );
+        let abi_canonical = abi_param_canonical(&p, &from, &graph, &index);
+        let source_canonical =
+            dispatch_canonical_type_text("Dictionary of [Integer, Text]", &from, &graph, &index);
+        assert_eq!(
+            abi_canonical, source_canonical,
+            "an ABI-tier and a SOURCE-tier Dictionary generic must \
+             canonicalize IDENTICALLY (whitespace variance included)"
+        );
+        assert!(matches!(
+            abi_canonical,
+            Some(CanonicalArgType::Generic { .. })
+        ));
     }
 
     /// Fixture (g): an `id_only`-degraded ABI param (`type_text` lost the
