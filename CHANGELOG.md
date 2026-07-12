@@ -97,7 +97,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than once (a pathological ambiguous-overload shape) — the new
   `push_edge_targets` helper dedups per-edge (routes from a DIFFERENT edge
   naming the same target are untouched — those are genuinely distinct
-  callers), pinned by a hand-constructed-`Edge` unit test.
+  callers), pinned by a hand-constructed-`Edge` unit test (plus a mirror
+  test proving 2 DIFFERENT edges to the same target stay 2 `EdgeRef`s, from
+  the review fix-wave below). **Review fix-wave:** `apply_rung3` now
+  `log::warn!`s (matching `server.rs`'s existing `log` idiom) when a rung-3
+  rebuild fails, so a broken `app.json` isn't a silently-dropped event;
+  added `spawn_updater_rebuilds_context_after_rung2_escalation`, an e2e test
+  driving the real background thread through rung 1 → rung 2 → rung 1 and
+  proving the final snapshot resolves correctly against the POST-rung-2
+  graph; corrected a narrative overclaim in the Step 3b write-up (`Updater::
+  apply_rung2`'s snapshot-copy construction redundantly re-parses every
+  workspace file, not just the touched one — included in the measured
+  ~1.46s, flagged as a deferred `Arc<AlFile>`-sharing optimization rather
+  than fixed now).
 - **`src/lsp/snapshot.rs`: `LspSnapshot`, the immutable batch-built
   program-engine snapshot the migrated LSP server will serve queries from
   (T3 LSP-migration arc, Task 8 — the arc's structural centerpiece).**

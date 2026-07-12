@@ -834,4 +834,106 @@ mod tests {
              EdgeRef, not one per route; got {refs:?}"
         );
     }
+
+    // ── build_incoming: TWO DIFFERENT edges to the same target → 2 EdgeRefs ──
+    // (review fix-wave item 4: the per-edge dedup guard above must never
+    // collapse genuinely distinct callers — only a repeated route WITHIN one
+    // edge is deduplicated.)
+
+    #[test]
+    fn build_incoming_keeps_two_different_edges_to_the_same_target_as_2_edgerefs() {
+        use crate::program::node::{AppRef, ObjKey, ObjectNodeId};
+        use crate::program::resolve::edge::{
+            CanonicalSpan, DispatchShape, Evidence, Route, RouteTarget, SetCompleteness, SiteId,
+            SourcePos, Witness,
+        };
+        use al_syntax::ir::ObjectKind;
+
+        fn rid(name: &str) -> RoutineNodeId {
+            RoutineNodeId {
+                object: ObjectNodeId {
+                    app: AppRef(0),
+                    kind: ObjectKind::Codeunit,
+                    key: ObjKey::Id(1),
+                },
+                name_lc: name.to_string(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            }
+        }
+
+        fn single_route_edge(
+            caller: RoutineNodeId,
+            target: &RoutineNodeId,
+            callee_fp: u64,
+        ) -> Edge {
+            Edge {
+                from: caller.clone(),
+                site: SiteId {
+                    caller,
+                    span: CanonicalSpan {
+                        unit: "F.al".into(),
+                        start: SourcePos { line: 1, col: 1 },
+                        end: SourcePos { line: 1, col: 2 },
+                    },
+                    callee_fingerprint: callee_fp,
+                },
+                kind: EdgeKind::Call,
+                shape: DispatchShape::Exact,
+                completeness: SetCompleteness::Complete,
+                routes: vec![Route {
+                    target: RouteTarget::Routine(target.clone()),
+                    evidence: Evidence::Source,
+                    conditions: vec![],
+                    witness: Witness::None,
+                    receiver_tier: None,
+                }],
+            }
+        }
+
+        let target = rid("target");
+        let caller_a = rid("caller_a");
+        let caller_b = rid("caller_b");
+        let edge_a = single_route_edge(caller_a, &target, 1);
+        let edge_b = single_route_edge(caller_b, &target, 2);
+
+        let mut edges_by_file: HashMap<String, Arc<Vec<ClassifiedEdge>>> = HashMap::new();
+        edges_by_file.insert(
+            "F.al".to_string(),
+            Arc::new(vec![
+                ClassifiedEdge {
+                    obligation_id: ObligationId::CallSite {
+                        caller: edge_a.from.clone(),
+                        span: edge_a.site.span.clone(),
+                        callee_fp: edge_a.site.callee_fingerprint,
+                    },
+                    edge: edge_a,
+                },
+                ClassifiedEdge {
+                    obligation_id: ObligationId::CallSite {
+                        caller: edge_b.from.clone(),
+                        span: edge_b.site.span.clone(),
+                        callee_fp: edge_b.site.callee_fingerprint,
+                    },
+                    edge: edge_b,
+                },
+            ]),
+        );
+
+        let incoming = build_incoming(&edges_by_file, &[]);
+        let refs = incoming
+            .get(&target)
+            .expect("target must have incoming entries");
+        assert_eq!(
+            refs.len(),
+            2,
+            "two DIFFERENT edges naming the same target must NOT be deduped \
+             against each other — got {refs:?}"
+        );
+        assert_ne!(
+            refs[0].idx, refs[1].idx,
+            "the two EdgeRefs must point at two distinct edge indices"
+        );
+    }
 }

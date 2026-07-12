@@ -96,6 +96,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use al_syntax::ir::ParseStatus;
+use log::warn;
 
 use crate::lsp::def_surface::def_surface_fingerprint;
 use crate::lsp::snapshot::{
@@ -485,7 +486,24 @@ impl Updater {
     /// reflects whatever content generated any pending rung-1 edits, so
     /// there is nothing in `pending` a disk re-read wouldn't already pick up.
     fn apply_rung3(&mut self, cur: &LspSnapshot) -> Option<(LspSnapshot, Rung)> {
-        let (mut snapshot, parsed) = LspSnapshot::build_full_with_parsed(&self.workspace_root)?;
+        let Some((mut snapshot, parsed)) =
+            LspSnapshot::build_full_with_parsed(&self.workspace_root)
+        else {
+            // Fail-closed (unchanged): `cur` stays published, `self.parsed`
+            // stays untouched. But a silently-dropped rung-3 rebuild (e.g. a
+            // deleted/malformed `app.json`, or an unreadable workspace root)
+            // is otherwise INVISIBLE — nothing else observes this path. Log
+            // it so an operator can tell "the server is stuck serving a
+            // stale snapshot" from "there was nothing to update."
+            warn!(
+                "rung-3 rebuild failed for workspace {} — the previous snapshot \
+                 (generation {}) remains published; check the workspace root's \
+                 app.json and .alpackages",
+                self.workspace_root.display(),
+                cur.generation
+            );
+            return None;
+        };
         // `build_full_with_parsed` always produces generation 0 (a fresh
         // batch build has no prior generation) — override so the counter
         // stays monotonic across every rung, including rung 3, rather than
@@ -1456,6 +1474,158 @@ mod tests {
             counter.load(Ordering::SeqCst),
             1,
             "5 rapid saves of ONE file must coalesce into exactly 1 apply"
+        );
+    }
+
+    // ── e2e: rung 1 → rung 2 → rung 1 through the REAL background thread ──
+    // (review fix-wave item 3): proves `spawn_updater`'s scoped-context loop
+    // actually rebuilds `index`/`body_map`/`obj_node_map` after a rung-2
+    // escalation, rather than the next rung-1 batch silently resolving
+    // against a stale pre-rung-2 context — the exact guarantee the
+    // `{ ... }` block-scoping in `spawn_updater` exists to provide.
+
+    #[test]
+    fn spawn_updater_rebuilds_context_after_rung2_escalation() {
+        use std::sync::Mutex;
+
+        let dir = fixture_dir();
+        let (snapshot, parsed) = build(dir.path());
+        let base_generation = snapshot.generation;
+        let shared = Arc::new(SharedSnapshot::new(Arc::new(snapshot)));
+        let (tx, rx) = mpsc::channel();
+
+        // Classify each swap's rung from Arc identity alone (no test-only
+        // hook needed): rung 1 keeps `graph` Arc-identical; rung 2 rebuilds
+        // `graph` but keeps `dep_layer` Arc-identical; rung 3 rebuilds both.
+        let events: Arc<Mutex<Vec<(u64, Rung)>>> = Arc::new(Mutex::new(Vec::new()));
+        let events2 = Arc::clone(&events);
+
+        let handle = spawn_updater(
+            Arc::clone(&shared),
+            rx,
+            dir.path().to_path_buf(),
+            parsed,
+            move |old, new| {
+                let rung = if !Arc::ptr_eq(&old.dep_layer, &new.dep_layer) {
+                    Rung::Three
+                } else if !Arc::ptr_eq(&old.graph, &new.graph) {
+                    Rung::Two
+                } else {
+                    Rung::One
+                };
+                events2.lock().unwrap().push((new.generation, rung));
+            },
+        );
+
+        // Step 1 (rung 1): Alpha gets a 2nd call to the already-existing
+        // Beta.Process().
+        std::fs::write(
+            dir.path().join("Alpha.al"),
+            r#"codeunit 50100 "Alpha"
+{
+    procedure DoWork()
+    var
+        Beta: Codeunit "Beta";
+    begin
+        Beta.Process();
+        Beta.Process();
+    end;
+}
+"#,
+        )
+        .expect("edit 1 (rung 1)");
+        tx.send(ChangeEvent::FileSaved(dir.path().join("Alpha.al")))
+            .expect("send 1");
+        std::thread::sleep(Duration::from_millis(300));
+
+        // Step 2 (rung 2): Gamma gains a brand-new routine — a
+        // definition-surface change (the routine SET moves).
+        std::fs::write(
+            dir.path().join("Gamma.al"),
+            r#"codeunit 50102 "Gamma"
+{
+    var
+        Beta: Codeunit "Beta";
+    procedure Standalone()
+    begin
+        Beta.Process();
+    end;
+
+    procedure Extra()
+    begin
+    end;
+}
+"#,
+        )
+        .expect("edit 2 (rung 2)");
+        tx.send(ChangeEvent::FileSaved(dir.path().join("Gamma.al")))
+            .expect("send 2");
+        std::thread::sleep(Duration::from_millis(300));
+
+        // Step 3 (rung 1 again, AFTER the rung-2 escalation): Alpha gets a
+        // 3rd call to Beta.Process() — still fingerprint-equal.
+        std::fs::write(
+            dir.path().join("Alpha.al"),
+            r#"codeunit 50100 "Alpha"
+{
+    procedure DoWork()
+    var
+        Beta: Codeunit "Beta";
+    begin
+        Beta.Process();
+        Beta.Process();
+        Beta.Process();
+    end;
+}
+"#,
+        )
+        .expect("edit 3 (rung 1, post-rung-2)");
+        tx.send(ChangeEvent::FileSaved(dir.path().join("Alpha.al")))
+            .expect("send 3");
+        std::thread::sleep(Duration::from_millis(300));
+
+        drop(tx);
+        handle.join().expect("updater thread must exit cleanly");
+
+        let events = events.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            3,
+            "exactly 3 swaps expected (one per debounced, isolated step); got {events:?}"
+        );
+        assert_eq!(
+            events[0],
+            (base_generation + 1, Rung::One),
+            "step 1 must be rung 1"
+        );
+        assert_eq!(
+            events[1],
+            (base_generation + 2, Rung::Two),
+            "step 2 must be rung 2"
+        );
+        assert_eq!(
+            events[2],
+            (base_generation + 3, Rung::One),
+            "step 3 must be rung 1 again"
+        );
+
+        // The FINAL snapshot must reflect BOTH rung 2's change (Gamma.Extra)
+        // AND step 3's own rung-1 edit (Alpha now has 3 call sites) — proof
+        // that step 3 resolved against the POST-rung-2 graph, not a context
+        // cached from before the escalation.
+        let final_snap = shared.get();
+        assert!(
+            final_snap.decls_by_file["Gamma.al"]
+                .iter()
+                .any(|d| d.name == "Extra"),
+            "rung 2's new routine must survive into the final snapshot"
+        );
+        assert_eq!(
+            final_snap.edges_by_file["Alpha.al"].len(),
+            3,
+            "the post-rung-2 rung-1 edit must resolve correctly against the \
+             POST-rung-2 graph — proves the thread rebuilt its cached context \
+             after the escalation"
         );
     }
 
