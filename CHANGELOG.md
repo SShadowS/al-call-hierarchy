@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`src/lsp/encoding.rs`: LSP `positionEncoding` negotiation (LSP 3.17) + a
+  byte<->UTF-16 `LineTable` converter (H-12 infrastructure, Tier-3
+  LSP-migration arc, Task 2).** The engine's `Definition`/`CallSite` ranges
+  are UTF-8 byte columns throughout, but LSP's mandatory fallback encoding is
+  UTF-16 code units — every response has been silently miscolumned for any
+  client that doesn't negotiate `"utf-8"`, on any line containing non-ASCII
+  text or an astral character (e.g. emoji) before the reported column.
+  `negotiate()` reads the client's `general.positionEncodings` capability and
+  picks `"utf-8"` iff the client offers it, else the LSP-mandatory `"utf-16"`
+  fallback; `server.rs`'s `initialize` now negotiates this and advertises the
+  result in `ServerCapabilities.position_encoding`. `LineTable` performs the
+  actual per-line byte<->UTF-16 column conversion on demand (AL lines are
+  short, so a `char_indices()`/`len_utf16()` walk per call is plenty fast —
+  no fancier memoization); both `col_out`/`col_in` clamp out-of-range
+  columns/lines to the line's end rather than panicking (fail-closed).
+  **Legacy handlers keep serving byte columns THIS task** — for a
+  utf-8-negotiating client behavior becomes correct NOW; utf-16 clients stay
+  unchanged-broken until the Task-15 cutover wires conversion into
+  `handlers.rs`.
+
 ### Changed
 - **L5 detectors now return `Result<DetectorOutput, DetectorError>` instead of
   `DetectorOutput` — the abort-safe detector-isolation contract (Task T2.3, Tier-2

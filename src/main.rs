@@ -13,7 +13,7 @@ mod watcher;
 // modules (server, watcher, analysis, etc.) can keep referring to
 // `crate::graph::*` / `crate::handlers::*` / ... without churn.
 pub use al_call_hierarchy::{
-    app_package, big_stack, config, dependencies, graph, handlers, indexer, parser, protocol,
+    app_package, big_stack, config, dependencies, graph, handlers, indexer, lsp, parser, protocol,
     telemetry,
 };
 

@@ -5,7 +5,7 @@ use log::{error, info, warn};
 use lsp_server::{Connection, Message, Notification, Response};
 use lsp_types::{
     CodeLensOptions, Diagnostic, DiagnosticSeverity, InitializeParams, InitializeResult,
-    PublishDiagnosticsParams, ServerCapabilities,
+    PositionEncodingKind, PublishDiagnosticsParams, ServerCapabilities,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,6 +17,7 @@ use crate::config::DiagnosticConfig;
 use crate::graph::CallGraph;
 use crate::handlers::{get_unused_procedure_diagnostics, handle_notification, handle_request};
 use crate::indexer::Indexer;
+use crate::lsp::encoding::{PositionEncoding, negotiate};
 use crate::protocol::{path_to_uri, uri_to_path};
 use crate::watcher::{AlFileWatcher, FileChange};
 
@@ -48,6 +49,20 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
         connection_string: option_env!("AL_CH_TELEMETRY_CONNECTION_STRING").map(String::from),
     });
 
+    // H-12: negotiate the position encoding from `general.positionEncodings`
+    // (LSP 3.17). Legacy handlers still serve byte columns regardless of the
+    // negotiated value THIS task — for a utf-8-negotiating client that is now
+    // correct; utf-16 clients stay unchanged-broken until the Task-15 cutover
+    // wires `LineTable` conversion into the handlers. See CHANGELOG.
+    let client_position_encodings: Option<Vec<String>> = init_params
+        .capabilities
+        .general
+        .as_ref()
+        .and_then(|g| g.position_encodings.as_ref())
+        .map(|encs| encs.iter().map(|e| e.as_str().to_string()).collect());
+    let position_encoding = negotiate(client_position_encodings.as_deref());
+    info!("Negotiated position encoding: {:?}", position_encoding);
+
     let capabilities = ServerCapabilities {
         call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
         code_lens_provider: Some(CodeLensOptions {
@@ -66,6 +81,10 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
                 )),
             },
         )),
+        position_encoding: Some(match position_encoding {
+            PositionEncoding::Utf8 => PositionEncodingKind::UTF8,
+            PositionEncoding::Utf16 => PositionEncodingKind::UTF16,
+        }),
         ..Default::default()
     };
 

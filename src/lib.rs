@@ -34,6 +34,9 @@ pub mod indexer;
 /// declaration. `main.rs` keeps its own `mod language;` for the LSP binary;
 /// the duplicate compilation is benign and pre-existing in this repo.
 pub mod language;
+/// LSP-surface infrastructure for the T3 program-engine migration (H-12
+/// position-encoding negotiation today; snapshot/updater/handlers later).
+pub mod lsp;
 pub mod parser;
 pub mod program;
 pub mod protocol;
