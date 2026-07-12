@@ -22,7 +22,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d41-transitive-filter-loss";
 
@@ -40,7 +40,10 @@ const FILTER_SENSITIVE_OPS: &[&str] = &[
     "IsEmpty",
 ];
 
-pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d41(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -244,5 +247,5 @@ pub fn detect_d41(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("noPriorFilter", skipped_no_prior_filter);
     stats.add_skip("noPostUse", skipped_no_post_use);
     stats.add_skip("reFiltered", skipped_re_filtered);
-    DetectorOutput::no_diag(findings, stats)
+    Ok(DetectorOutput::no_diag(findings, stats))
 }

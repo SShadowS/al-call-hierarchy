@@ -19,13 +19,16 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d10-self-modifying-loop";
 
 const MUTATING_OPS: &[&str] = &["Modify", "ModifyAll", "Validate", "Delete", "DeleteAll"];
 
-pub fn detect_d10(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d10(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -176,9 +179,9 @@ pub fn detect_d10(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("tempRecord", skipped_temp_record);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }

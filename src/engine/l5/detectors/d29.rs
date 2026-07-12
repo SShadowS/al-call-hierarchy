@@ -20,7 +20,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, is_known_temp};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d29-subscriber-modify-on-event-record";
 
@@ -70,7 +70,10 @@ fn is_modify_event(name: Option<&str>) -> bool {
     MODIFY_EVENT_CORES.iter().any(|core| name.contains(core))
 }
 
-pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d29(
+    resolved: &L3Resolved,
+    _ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -150,7 +153,7 @@ pub fn detect_d29(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     stats.add_skip("noRecordParam", skipped_no_record_param);
     stats.add_skip("runTriggerFalse", skipped_run_trigger_false);
     stats.add_skip("tempRecord", skipped_temp_record);
-    DetectorOutput::no_diag(findings, stats)
+    Ok(DetectorOutput::no_diag(findings, stats))
 }
 
 fn emit(

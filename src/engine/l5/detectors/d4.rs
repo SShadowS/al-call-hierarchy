@@ -23,7 +23,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, is_known_temp, op_targets_virtual_system_table};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d4-repeated-lookup-in-loop";
 
@@ -33,7 +33,10 @@ fn is_string_like_literal(info: &PExpressionInfo) -> bool {
     info.kind == "string_literal" || info.kind == "quoted_identifier"
 }
 
-pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d4(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     const LOOKUP_OPS: [&str; 3] = ["Get", "FindFirst", "FindLast"];
 
     let ws = &resolved.workspace;
@@ -242,9 +245,9 @@ pub fn detect_d4(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("other", skipped_other);
     stats.add_skip("tempRecord", skipped_temp_record);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }

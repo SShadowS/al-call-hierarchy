@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **L5 detectors now return `Result<DetectorOutput, DetectorError>` instead of
+  `DetectorOutput` — the abort-safe detector-isolation contract (Task T2.3, Tier-2
+  crash/DoS arc).** `[profile.release] panic = "abort"` makes `catch_unwind`
+  (`registry.rs`) INERT in every shipped binary, so the documented "a detector that
+  panics becomes a Diagnostic and the rest still run" guarantee never actually held
+  outside `cargo test` (which unwinds) — one panicking detector aborted the whole
+  `alsem analyze` run. All 41 registered detectors (`d1`..`d51`) were converted
+  mechanically: the signature change plus wrapping each existing return in `Ok(...)`;
+  no detector logic changed. `run_each` now maps a detector `Err` to the identical
+  `Detector "<name>" threw: <msg>` warning diagnostic the panic path already used, so
+  the message format consumers rely on (possibly golden-pinned) is unchanged.
+  `catch_unwind` is KEPT around the `Result` call as debug-build-only
+  defense-in-depth (still catches an errant `panic!` under `cargo test`) but the doc
+  contract on `run_detectors`/`Detector` now states plainly that it is inert under
+  `panic = "abort"` and must never be relied on as the real guarantee.
+
 ### Fixed
 - **Decompression caps on every zip/gzip site — a hostile `.app` (or a hostile
   `.cbor.gz` snapshot fed to `alsem diff`) could OOM-kill the whole process
@@ -110,6 +127,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CDO byte-identity verified: real-code resolution and L4 facts are
     unchanged (the budgets only fire past pathological, non-real-AL depth);
     all 1378 lib tests + 42 `al-syntax` tests pass.
+- **Four small reachable panics/corruption sites, each confirmed and fixed
+  with a red-then-green fixture (Task T2.4, Tier-2 crash/DoS arc).**
+  - **`unquote_path` lone-quote panic** (`diff_parser.rs`): a one-character
+    `"` token passes both `starts_with('"')` and `ends_with('"')` (the same
+    char), then `trimmed[1..trimmed.len()-1]` underflowed to `[1..0]` and
+    panicked. Reachable via `alsem digest --diff <file>` on a diff truncated
+    mid-header (`--- "`, `rename from "`, `rename to "`) — the surrounding
+    code already has a graceful `ChangedRootsDiagnostic::DiffParseError`
+    path that the panic bypassed. Fixed with a `trimmed.len() < 2` guard that
+    degrades to returning the raw token.
+  - **CBOR map-16 header `debug_assert!`** (`cbor.rs`): the comment claimed
+    the >65535-key guard was "an invariant we ENFORCE, not hope for" but
+    enforced it only via `debug_assert!`, which compiles out under
+    `[profile.release]` and lets `entries.len() as u16` silently wrap,
+    corrupting the stream. Promoted to a release-alive `assert!` (`encode`
+    is infallible-by-signature and called from dozens of snapshot-building
+    sites, so threading a `Result` through wasn't the shallow fix here).
+    Verified empirically both ways: the new test FAILS under
+    `cargo test --release` on the pre-fix code (proving the release-mode
+    corruption is real) and PASSES after the fix.
+  - **`strip_trailing_temporary` Unicode slice bug**, present verbatim in
+    both `engine::l3::record_types` and `program::resolve::receiver`: sliced
+    the ORIGINAL string with a byte offset computed from a `to_lowercase()`
+    copy — panics on `ẞ` (U+1E9E, whose lowercase byte length differs from
+    its own) and silently fails to recognize a real `İ Temporary` (Turkish
+    dotted capital I, U+0130) table name as temporary, leaving " Temporary"
+    stuck on the parsed name. Both copies rewritten to walk `char_indices()`
+    on the original string directly and ASCII-fold-compare against the
+    literal word "temporary", so every slice offset is provably a valid char
+    boundary. **Not deduplicated into one shared helper**: a grep-guard test
+    (`resolve_module_has_no_stray_engine_l3_l2_imports`) enforces that
+    `src/program/resolve` stays L3-independent except `builtins.rs`'s one
+    sanctioned exception, so both copies are fixed independently with a
+    cross-referencing comment instead.
+  - **Sweep for `debug_assert!` siblings** (`rg -n 'debug_assert' src/`):
+    found two more guarding a genuinely input-size-triggerable invariant
+    (silently truncates/corrupts on release, mirroring the CBOR fix above)
+    and promoted both: `cbor.rs`'s `encode_uint_header` (>32-bit
+    length/magnitude truncates via `(n as u32)`, reachable from
+    `encode_text`/`encode_array_header` on a >4GB string/array) got the same
+    `assert!` treatment; `snapshot_full/to_cbor.rs`'s `MapSer::serialize_key`
+    non-text-key guard was a bare `debug_assert!(false, ..)` whose comment
+    claimed it "ENFORCES that invariant rather than silently stringifying a
+    non-text key" — false in release (the `format!()` fallback ran
+    regardless) AND it PANICKED even in debug (an unwind `to_cbor_value`'s
+    `unwrap_or` can't catch), worse than either intended behavior; converted
+    to a real `Err` since `serialize_key` is already `Result`-returning
+    (the shallow, more-correct fix per this task's own precedent for the
+    infallible-signature cases). The remaining `debug_assert!` sites
+    (`fingerprint.rs`'s SHA-256-length self-check, `format_sarif.rs`'s
+    zip-length precondition, `l4/incremental/queries.rs`'s SCC-order
+    self-check, `graphify_export.rs`'s/`edge.rs`'s/`receiver.rs`'s
+    unreachable-arm tripwires) are legitimate: each is either a
+    mathematical/structural invariant no external input can violate, or its
+    release-mode fallback is already the same fail-closed behavior the code
+    would take anyway (no correctness difference between profiles) — none
+    qualify as the wrap/truncate/corrupt shape this sweep targets.
+  - `scripts/cdo-gate` PASS (`program_resolve_harness` 187/187,
+    `program_graph` + `snapshot_robustness` 2/2, `--release`,
+    `ENFORCE_CDO_WS=1`); CDO's `--program-call-graph-stats` SHA-256
+    re-confirmed BYTE-IDENTICAL to the frozen baseline
+    (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`) —
+    all four fixes are pathological-input paths real CDO source never hits.
+    `cargo test --workspace` (160 binaries) and
+    `cargo clippy --all-targets --all-features -D warnings` both clean.
+- **`finding.rs`'s `map_table_id` doc comment falsely claimed detector-run
+  `catch_unwind` covered it (Task T2.3).** `map_table_id` runs in `project_finding`,
+  AFTER `run_detectors` has already returned — it was never inside any per-detector
+  isolation boundary (neither the old `catch_unwind` nor the new `Result` contract).
+  The comment now states the true safety characterization: a malformed TableId here
+  is an engine bug (every TableId a detector emits is internally constructed), so it
+  remains a hard panic, matching al-sem's uncaught throw.
+- **The never-written failing-detector test (Task T2.3).** No test anywhere
+  constructed a panicking or failing detector to exercise the isolation contract;
+  `registry.rs` now has `err_returning_detector_degrades_to_warning_others_still_run`
+  and `panicking_detector_degrades_to_warning_others_still_run`, asserting the exact
+  diagnostic message/severity/stage and that the other registered detector's finding
+  still appears.
 - **The `al-syntax` lowerer silently dropped preproc-split procedures, case
   branches, and statement-position `#if`/guarded constructs, and let comments
   pollute positional argument reads — including silently unregistering a whole

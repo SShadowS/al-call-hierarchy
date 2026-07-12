@@ -14,7 +14,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d20-unreachable-after-exit";
 
@@ -42,7 +42,10 @@ fn leaves_phrase(exit_kind: &str) -> &'static str {
     }
 }
 
-pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d20(
+    resolved: &L3Resolved,
+    _ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -131,9 +134,9 @@ pub fn detect_d20(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = findings.len();
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats: DetectorStats::new(DETECTOR, candidates_considered, emitted),
         diagnostics: vec![],
-    }
+    })
 }

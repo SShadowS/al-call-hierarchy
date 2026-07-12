@@ -51,7 +51,7 @@ use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
 use crate::engine::l5::path_walker::{
     PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop, walk_evidence,
 };
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::table_display::{DescribeOp, describe_table};
 
 const DETECTOR: &str = "d1-db-op-in-loop";
@@ -725,7 +725,10 @@ impl<'a> WalkPolicy for D1Policy<'a> {
     }
 }
 
-pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d1(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
 
@@ -1114,11 +1117,11 @@ pub fn detect_d1(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     stats.add_skip("downgradedToInfo", downgraded_to_info);
     stats.add_skip("downgradedSetupSingleton", downgraded_setup_singleton);
     stats.add_skip("downConfidencedDeadRoutine", down_confidenced_dead_routine);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: merged,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
 
 /// The fixed temp-note fragments (leading space included) `build_finding` appends to

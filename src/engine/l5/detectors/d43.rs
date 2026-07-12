@@ -333,7 +333,8 @@ fn classify_confidence(site: &DispatchSite, setter: SetterClassification) -> &'s
 pub fn detect_d43(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
-) -> crate::engine::l5::registry::DetectorOutput {
+) -> Result<crate::engine::l5::registry::DetectorOutput, crate::engine::l5::registry::DetectorError>
+{
     use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 
     let ws = &resolved.workspace;
@@ -357,7 +358,7 @@ pub fn detect_d43(
     if !saw_any_condition_ref && event_subscriber_count > 0 {
         // al-sem pushes a warning diagnostic + bails (mirrors index.ts ctx.diagnostics.push).
         // This diagnostic propagates to RunOutput.diagnostics and thence to the JSON envelope.
-        return DetectorOutput {
+        return Ok(DetectorOutput {
             findings: Vec::new(),
             stats: DetectorStats::new(DETECTOR, 0, 0),
             diagnostics: vec![crate::engine::l5::registry::Diagnostic {
@@ -368,7 +369,7 @@ pub fn detect_d43(
                     DETECTOR
                 ),
             }],
-        };
+        });
     }
 
     // eventKind per internal eventId.
@@ -564,5 +565,5 @@ pub fn detect_d43(
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates, emitted);
     stats.add_skip("other", skipped_no_guard + skipped_no_setter);
-    DetectorOutput::no_diag(findings, stats)
+    Ok(DetectorOutput::no_diag(findings, stats))
 }

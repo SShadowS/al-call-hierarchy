@@ -17,7 +17,7 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
 
@@ -68,18 +68,21 @@ struct Sample {
     anchor: SourceAnchor,
 }
 
-pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d17(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
 
     let declared = &ctx.declared_dependencies;
     if declared.is_empty() {
-        return DetectorOutput {
+        return Ok(DetectorOutput {
             findings,
             stats: DetectorStats::new(DETECTOR, 0, 0),
             diagnostics: vec![],
-        };
+        });
     }
 
     // Walk cross-app edges (primary caller → dep callee) collecting calledDepGuids +
@@ -221,11 +224,11 @@ pub fn detect_d17(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("other", skipped_other);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -532,7 +535,7 @@ mod tests {
         );
         let resolved = empty_resolved_for(&routines, &objects);
 
-        let output = detect_d17(&resolved, &ctx);
+        let output = detect_d17(&resolved, &ctx).unwrap();
         assert_eq!(output.findings.len(), 1, "should emit 1 finding");
 
         let finding = &output.findings[0];
@@ -593,7 +596,7 @@ mod tests {
         );
         let resolved = empty_resolved_for(&routines, &objects);
 
-        let output = detect_d17(&resolved, &ctx);
+        let output = detect_d17(&resolved, &ctx).unwrap();
         assert_eq!(output.findings.len(), 1, "should emit 1 finding");
 
         let finding = &output.findings[0];

@@ -20,7 +20,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, unquoted_field_name};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d18-constant-filter-in-loop";
 
@@ -42,7 +42,10 @@ fn is_literal_expression(info: &PExpressionInfo) -> bool {
     }
 }
 
-pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d18(
+    resolved: &L3Resolved,
+    _ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -220,9 +223,9 @@ pub fn detect_d18(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutp
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("nonLiteralArgs", skipped_non_literal);
     stats.add_skip("tempRecord", skipped_temp_record);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }

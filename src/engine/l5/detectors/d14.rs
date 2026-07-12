@@ -26,7 +26,7 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d14-dead-routine";
 
@@ -153,7 +153,10 @@ pub(crate) fn provably_dead_routine_ids(
         .collect()
 }
 
-pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d14(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
 
@@ -254,11 +257,11 @@ pub fn detect_d14(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("other", skipped_other);
     stats.add_skip("nonLocal", skipped_non_local);
     stats.add_skip("propertyExpressionHost", skipped_property_expression_host);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
 
 /// Build a `SourceAnchor` from a `PAnchor` with the routine's own id as the
