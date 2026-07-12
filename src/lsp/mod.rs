@@ -4,4 +4,5 @@
 //! backend: position-encoding negotiation (H-12, this task) today, and the
 //! snapshot/updater/handlers modules later tasks add alongside it.
 
+pub mod def_surface;
 pub mod encoding;

@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`src/lsp/def_surface.rs`: the definition-surface fingerprint,
+  `DefSurface`/`def_surface_fingerprint` (T3 LSP-migration arc, Task 7).** A
+  blake3 hash — canonically encoded, length-prefixed strings/lists, no
+  `format!`-glue — of every field Task 4's resolver-read audit
+  (`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §4) found
+  reachable from another file's call-graph resolution: per-object identity/
+  `extends_target`/`implements`/`SourceTable`+`temporary`/`TableNo`/
+  `page_controls`/`fields`/`dataitems`/file-level `parse_incomplete`, and
+  per-routine identity/`access`/`event_subscribers`/
+  `subscriber_instance_manual`/`publisher_kind`/`include_sender`/
+  `return_type`/`param_sig_key`/per-parameter `(ty, by_ref)`/routine-level
+  `parse_incomplete`. Reuses `program::extract_nodes` (the SAME extractor
+  `program::build` calls) rather than a second hand-rolled IR walk, so the
+  fingerprint's notion of "the surface" can never drift from the graph's
+  own. One deliberate ADDITION beyond the audit's literal §4 text: an
+  object's `name` (lowercased) is also hashed per object, even for a
+  NUMBERED object whose §4 identity key is `ObjKey::Id` — the audit's own
+  §2.2 read-table already lists `ObjectNode::name` as consulted
+  (`graph.rs`'s `ObjectIndex::build` keys `graph.resolve_object`'s by-name
+  lookup on it for every object kind), so omitting it from §4's derived list
+  would have been a false-negative gap (a numbered-object rename resolving
+  differently elsewhere without moving the fingerprint) — flagged back for
+  the audit doc to pick up. 30 unit tests: 1 parse-twice determinism check,
+  24 NOT-EQUAL pairs (one per audited field-change class: object
+  add/re-id/rename, `extends_target`, `implements`, `SourceTable`+
+  `temporary`, `TableNo`, `page_controls`, table `fields` add/type-change,
+  report `dataitems`, file-level `parse_incomplete`, routine
+  add/rename/re-arity/param-type-change, `by_ref` flip, `access`,
+  `return_type`, `event_subscribers`, `subscriber_instance_manual`,
+  `publisher_kind`, `include_sender`), and 5 EXCLUSION pairs proving an
+  out-of-scope field never moves the fingerprint (body-only statement,
+  local variable, comment/whitespace-only span shift, an added enum value,
+  a parameter's NAME).
 - **`benches/engine_stages.rs`: program-engine stage-split Criterion bench +
   a CDO-gated stage-split unit test (T3 LSP-migration arc, Task 3 —
   MEASUREMENT ONLY, no engine behavior changed).** Splits the program
