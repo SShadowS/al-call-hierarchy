@@ -72,16 +72,15 @@ fn sweep_fixtures() -> Vec<String> {
     ];
     // Add a broad slice from the r3a3 goldens for coverage.
     let gold_dir = repo_root().join("tests").join("r3a3-goldens");
-    if let Ok(rd) = std::fs::read_dir(&gold_dir) {
-        let mut more: Vec<String> = rd
-            .filter_map(|e| {
-                let n = e.ok()?.file_name().to_string_lossy().to_string();
-                n.strip_suffix(".r3a3.golden.json").map(|s| s.to_string())
-            })
-            .collect();
-        more.sort();
-        out.extend(more.into_iter().take(40));
-    }
+    let mut more: Vec<String> = std::fs::read_dir(&gold_dir)
+        .expect("read r3a3 goldens")
+        .filter_map(|e| {
+            let n = e.ok()?.file_name().to_string_lossy().to_string();
+            n.strip_suffix(".r3a3.golden.json").map(|s| s.to_string())
+        })
+        .collect();
+    more.sort();
+    out.extend(more.into_iter().take(40));
     out.dedup();
     out
 }
@@ -116,7 +115,11 @@ fn r3b_stage2_shuffled_demand_order_is_byte_identical() {
         }
         checked += 1;
     }
-    assert!(checked >= 5, "too few fixtures swept ({checked})");
+    // 30 is well above the 6 hardcoded fixtures alone (the count if the
+    // `tests/r3a3-goldens` discovery silently evaporated) and below the ~46
+    // the current corpus discovers — a floor that actually exercises the
+    // read_dir sweep instead of being satisfied by the hardcoded list.
+    assert!(checked >= 30, "too few fixtures swept ({checked})");
     eprintln!("R3b Stage 2: shuffled-demand-order byte-identical on {checked} fixtures");
 }
 
@@ -184,7 +187,11 @@ fn r3b_stage2_same_edit_db_provenance_invariant() {
         );
         checked += 1;
     }
-    assert!(checked >= 5, "too few fixtures swept ({checked})");
+    // 30 is well above the 6 hardcoded fixtures alone (the count if the
+    // `tests/r3a3-goldens` discovery silently evaporated) and below the ~46
+    // the current corpus discovers — a floor that actually exercises the
+    // read_dir sweep instead of being satisfied by the hardcoded list.
+    assert!(checked >= 30, "too few fixtures swept ({checked})");
     eprintln!(
         "R3b Stage 2: {checked} fixtures — fresh == reused == reused-diff-order == from-scratch \
          (same edit, all byte-equal)"

@@ -193,6 +193,26 @@ pub struct RunOutput {
     pub findings: Vec<Finding>,
     pub diagnostics: Vec<Diagnostic>,
     pub detector_stats: Vec<DetectorStats>,
+    /// The L4 "summarizeDiagnostics" source (TS-order slot 3 — see
+    /// `gate/run.rs`'s `compute_analyzer_diagnostics` doc) — presently just the
+    /// JACOBI fixed-point cap-hit. Kept SEPARATE from `diagnostics` (the
+    /// detect-stage source, slot 6) so the gate boundary can place each in its
+    /// documented TS-concat position rather than collapsing both into "detect".
+    /// Empty whenever every SCC converges (additive).
+    pub summarize_diagnostics: Vec<Diagnostic>,
+}
+
+/// Convert an L4 `SummarizeDiagnostic` into the shared `l5::registry::Diagnostic`
+/// shape — the same seam-conversion `gate/run.rs` already does for
+/// `root_classification::InfraDiagnostic`.
+fn from_summarize_diagnostic(
+    d: &crate::engine::l4::summary_runner::SummarizeDiagnostic,
+) -> Diagnostic {
+    Diagnostic {
+        severity: d.severity.clone(),
+        stage: d.stage.clone(),
+        message: d.message.clone(),
+    }
 }
 
 /// `primaryLocationKey(f) = ${sourceUnitId}:${startLine}:${startColumn}` over the
@@ -216,6 +236,11 @@ fn primary_location_key(f: &Finding) -> String {
 /// guarantee.
 pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput {
     let ctx = build_detector_context(resolved);
+    let summarize_diagnostics: Vec<Diagnostic> = ctx
+        .summarize_diagnostics
+        .iter()
+        .map(from_summarize_diagnostic)
+        .collect();
     let (findings, diagnostics, detector_stats) = run_each(resolved, &ctx, detectors);
 
     // Role-scoping filter (registry.ts:161-172). Source-only: every routine's role
@@ -233,6 +258,7 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
         findings: scoped,
         diagnostics,
         detector_stats,
+        summarize_diagnostics,
     }
 }
 
@@ -247,6 +273,11 @@ pub(crate) fn run_detectors_cross_app(
     detectors: &[Detector],
 ) -> RunOutput {
     let ctx = build_detector_context_cross_app(base);
+    let summarize_diagnostics: Vec<Diagnostic> = ctx
+        .summarize_diagnostics
+        .iter()
+        .map(from_summarize_diagnostic)
+        .collect();
     // The detectors close over `(resolved, ctx)`. Build a throwaway L3Resolved view
     // over the merged routines so the `resolved.workspace` arg is consistent with the
     // ctx (detectors read `resolved.workspace.routines`/`.objects` for the fingerprint
@@ -278,6 +309,7 @@ pub(crate) fn run_detectors_cross_app(
         findings: scoped,
         diagnostics,
         detector_stats,
+        summarize_diagnostics,
     }
 }
 

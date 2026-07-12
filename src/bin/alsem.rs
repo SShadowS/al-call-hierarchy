@@ -375,14 +375,6 @@ struct ProveCli {
     /// Pin timestamps / version for byte-stable output.
     #[arg(long, default_value_t = false)]
     deterministic: bool,
-
-    /// Skip loading roots.config.json (pass the workspace as-is).
-    #[arg(long = "no-roots-config", default_value_t = false)]
-    no_roots_config: bool,
-
-    /// Path to the .alpackages directory.
-    #[arg(long = "alpackages")]
-    alpackages: Option<String>,
 }
 
 /// `FingerprintCli` — arguments for `alsem fingerprint <ws>`.
@@ -994,6 +986,7 @@ fn run_fingerprint_cmd(f: FingerprintCli) -> ExitCode {
         strict: f.strict,
         verbosity: &f.verbosity,
         inventory_only: f.inventory_only,
+        no_roots_config: f.no_roots_config,
     };
 
     match run_fingerprint_pipeline(&opts) {

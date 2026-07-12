@@ -200,7 +200,7 @@ pub fn run_analyze_with_exit(
         // Fail-closed layout → empty output, clean preflight, clean exit.
         None => return empty_output_result(args, &version),
     };
-    let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id) {
+    let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id, false) {
         Some(r) => r,
         // Fail-closed / unreadable workspace → empty output.
         None => return empty_output_result(args, &version),
@@ -236,9 +236,10 @@ pub fn run_analyze_with_exit(
         //     does not resolve `.app` dependency artifacts, so this source is always
         //     empty here. (When dep resolution is wired into the gate, emit it in this
         //     slot so a dep diagnostic lands in TS order before summarize.)
-        // (3) summarizeDiagnostics — TRACKED GAP: L4 `computeSummaries` runs inside
-        //     `run_detectors`'s DetectorContext and currently surfaces no diagnostics
-        //     to the gate. Slotted here for TS order when it does.
+        // (3) summarizeDiagnostics — WIRED: L4 `compute_summaries*` (run inside
+        //     `run_detectors`'s `DetectorContext` build) now surfaces the JACOBI
+        //     fixed-point cap-hit here. Empty whenever every SCC converges.
+        all.extend(run.summarize_diagnostics.iter().cloned());
         // (4) loadedRootsConfig.diagnostics — TRACKED GAP: the roots.config.json LOADER
         //     diagnostics (parse/schema errors) are not yet surfaced separately from the
         //     OVERLAY diagnostics by `compute_root_classifications`. The overlay
@@ -663,7 +664,7 @@ fn range_extent_cmp(
 /// `analyzeWorkspace` (`src/index.ts:287-297`) concat order:
 ///   1. workspace.diagnostics  (provider/discover + index/parse)
 ///   2. depArtifacts.diagnostics (gate gap — empty, source-only)
-///   3. summarizeDiagnostics    (gate gap — empty)
+///   3. summarizeDiagnostics    (L4 JACOBI cap-hit — empty unless an SCC fails to converge)
 ///   4. loadedRootsConfig.diagnostics (gate gap — covered by overlay below)
 ///   5. overlayDiagnostics      (roots.config kinds-mismatch — `infra_diagnostics`)
 ///   6. detectDiagnostics       (L5 detector-emitted, e.g. d43 substrate guard)
@@ -680,6 +681,8 @@ pub fn compute_analyzer_diagnostics(
     let mut all: Vec<crate::engine::l5::registry::Diagnostic> = Vec::new();
     // (1) workspace.diagnostics.
     all.extend(crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path));
+    // (3) summarizeDiagnostics — L4 JACOBI fixed-point cap-hit.
+    all.extend(run.summarize_diagnostics.iter().cloned());
     // (5) overlayDiagnostics — roots.config.json overlay (kinds-mismatch).
     all.extend(resolved.infra_diagnostics.iter().map(|d| {
         crate::engine::l5::registry::Diagnostic {

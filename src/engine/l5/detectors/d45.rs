@@ -202,7 +202,7 @@ pub fn detect_d45(
     }
 
     // Apply the per-publisher cap.
-    let (kept, _truncated) = group_and_cap(
+    let (kept, truncated) = group_and_cap(
         findings,
         |f| {
             // ^d45\/([^|]+)
@@ -218,9 +218,15 @@ pub fn detect_d45(
     let mut kept = kept;
     kept.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = kept.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates, emitted);
+    // Was computed and silently discarded — surface it so a capped publisher's
+    // dropped-finding count is visible instead of vanishing. `add_skip` only
+    // inserts when > 0, so this is additive: byte-identical output whenever no
+    // publisher exceeds `D45_MAX_PER_PUBLISHER`.
+    stats.add_skip("outputCapped", truncated as u64);
     Ok(DetectorOutput {
         findings: kept,
-        stats: DetectorStats::new(DETECTOR, candidates, emitted),
+        stats,
         diagnostics: vec![],
     })
 }

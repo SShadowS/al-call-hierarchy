@@ -75,7 +75,22 @@ fn main() -> Result<()> {
 
     env_logger::Builder::new().filter_level(log_level).init();
 
-    if let Some(project) = args.project {
+    // `--analyze` (documented "requires --project") silently fell through to the
+    // default LSP-server branch when `--project` was omitted, blocking forever on
+    // stdin with no explanation. Hard-error up front instead, before any mode
+    // dispatch — this must fire even when `--lsp` is also (contradictorily) set.
+    if args.analyze && args.project.is_none() {
+        anyhow::bail!("--analyze requires --project <path>");
+    }
+
+    if args.lsp {
+        // `--lsp` was parsed but never consulted below — passing it alongside
+        // `--project` silently ran CLI/analyze mode instead of the LSP server it
+        // asked for. Give it real, unconditional effect (highest precedence): it
+        // always starts the LSP server, regardless of --project/--analyze.
+        info!("Starting AL Call Hierarchy LSP server (--lsp)");
+        run_server(args.no_watcher, args.no_telemetry)?;
+    } else if let Some(project) = args.project {
         if args.analyze {
             // Analysis mode
             run_analysis(&project, &args.format)?;

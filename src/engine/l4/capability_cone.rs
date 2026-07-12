@@ -2097,7 +2097,7 @@ fn compute_uncertainty_coverage_reasons(
         }
     }
 
-    let (summaries, _) = compute_summaries(
+    let (summaries, _, _) = compute_summaries(
         &ws.routines,
         graph,
         &scc,
@@ -2584,7 +2584,7 @@ pub fn project_r3a5_cross_app(
     let direct_full = &base.direct_full;
 
     // From-scratch core (JACOBI) + cone over the assembled base.
-    let (core_summaries, _) = compute_summaries_with_leaves(
+    let (core_summaries, _, _) = compute_summaries_with_leaves(
         ws_routines,
         graph,
         &base.combined_scc,

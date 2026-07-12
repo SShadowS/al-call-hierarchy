@@ -39,7 +39,9 @@ To inspect what telemetry has been sent in the current session, send the LSP req
 
 Prerequisites:
 - Rust 1.75+
-- tree-sitter-al grammar at `../tree-sitter-al`
+- tree-sitter-al grammar: included as a git submodule at `tree-sitter-al/` — clone with
+  `git clone --recurse-submodules`, or run `git submodule update --init` afterwards.
+  Override the location with the `TREE_SITTER_AL_PATH` env var if it lives elsewhere.
 
 ```bash
 cargo build --release
@@ -63,8 +65,12 @@ Communicates via stdio using the LSP protocol. Handles:
 ### CLI Mode (testing)
 
 ```bash
-al-call-hierarchy --project /path/to/al-project --no-lsp
+al-call-hierarchy --project /path/to/al-project
 ```
+
+LSP mode is the default when `--project` is omitted; passing `--project` alone switches
+to CLI mode (index the project and report definition/call-site counts). Add `--analyze`
+for a code-quality report (`--format text|json|csv`). There is no `--no-lsp` flag.
 
 ## Integration
 
@@ -91,15 +97,22 @@ case "textDocument/prepareCallHierarchy",
 | outgoingCalls | < 1ms |
 | File change update | < 50ms |
 
+Enforced on every PR by a release-mode CI gate (3x tolerance); see CLAUDE.md for
+currently-measured numbers and the bench command.
+
 ## Resolution Coverage
 
 | Call Pattern | Resolvable |
 |--------------|------------|
 | Local procedures | Yes |
 | Qualified calls (Object.Method) | Yes |
-| Record methods | Partial |
+| Record methods | Yes |
 | Event subscribers | Yes |
 | External .app dependencies | Yes |
+
+A genuinely dynamic (runtime-typed) call target is honestly reported as such rather than
+guessed — it is never silently dropped or misclassified as resolved. See CLAUDE.md's
+Resolution Coverage section for the full resolution taxonomy and current measured rates.
 
 ## External Dependencies
 

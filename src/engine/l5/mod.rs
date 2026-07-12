@@ -82,6 +82,11 @@ pub mod ordering_facts;
 pub mod conditionality;
 pub mod diff_parser;
 pub mod digest_cli;
+// Shared deterministic routine-selector resolution (5-form resolveSelector
+// cascade). Consumed by BOTH digest_cli (changed-roots selectors) and
+// fingerprint_query (routine selectors) — kept as ONE implementation so the two
+// call sites cannot drift apart (see module docs for the bug this fixed).
+pub mod selector_index;
 pub mod unresolved_cone;
 
 // cli-b/b2 — PROVE CLI (tristate absence-safety query + json/human formatters).

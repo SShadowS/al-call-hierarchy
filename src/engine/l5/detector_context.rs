@@ -160,6 +160,14 @@ pub struct DetectorContext<'a> {
     /// Built by `closed_world_temp::prove_closed_world_temp_params`; EVERY
     /// uncertainty fails the proof (the firing direction) — see module docs.
     pub closed_world_temp_params: crate::engine::l5::closed_world_temp::ClosedWorldTempParams,
+    /// L4 summarize-stage diagnostics — presently just the JACOBI fixed-point
+    /// cap-hit (`summary_runner::run_one_scc`). Harvested from the SAME
+    /// `compute_summaries*` call this module already makes for
+    /// `uncertainties_by_node`/`parameter_roles_by_routine` — not recomputed.
+    /// Empty for every workspace whose SCCs converge, which is the overwhelming
+    /// common case (additive: `run_detectors` folds this into the "summarize"
+    /// slot of the analyze/detect diagnostics envelope).
+    pub summarize_diagnostics: Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
 }
 
 impl DetectorContext<'_> {
@@ -352,7 +360,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
                 .or_insert_with(|| field.id.clone());
         }
     }
-    let (core_summaries, _trace) = compute_summaries(
+    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries(
         &ws.routines,
         &graph,
         &scc,
@@ -448,6 +456,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         root_classifications_by_routine,
         ordering_facts,
         closed_world_temp_params,
+        summarize_diagnostics,
     }
 }
 
@@ -579,7 +588,7 @@ pub(crate) fn build_detector_context_cross_app(
 
     // Core summaries (JACOBI WITH dep leaves) for the path-walker uncertainty union +
     // parameter roles — same as project_r3a5_cross_app's core.
-    let (core_summaries, _trace) = compute_summaries_with_leaves(
+    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_with_leaves(
         ws_routines,
         &graph,
         &base.combined_scc,
@@ -661,5 +670,6 @@ pub(crate) fn build_detector_context_cross_app(
         root_classifications_by_routine: HashMap::new(),
         ordering_facts: HashMap::new(),
         closed_world_temp_params,
+        summarize_diagnostics,
     }
 }

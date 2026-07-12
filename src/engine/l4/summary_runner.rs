@@ -811,6 +811,8 @@ fn summary_fingerprint(s: &PRoutineSummaryCore) -> String {
 /// Returns:
 /// - `final_summaries`: internal-id map of ALL computed summaries.
 /// - `raw_traces`: per-recursive-SCC trace (empty when `collect_trace=false`).
+/// - `cap_diagnostics`: summarize-stage diagnostics (JACOBI cap-hit); empty
+///   unless some SCC failed to converge within `MAX_FIXED_POINT_ITERATIONS`.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_summaries(
     routines: &[L3Routine],
@@ -819,7 +821,11 @@ pub fn compute_summaries(
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     fields: &FieldIndex,
     collect_trace: bool,
-) -> (HashMap<String, RoutineSummary>, Vec<RawSccTrace>) {
+) -> (
+    HashMap<String, RoutineSummary>,
+    Vec<RawSccTrace>,
+    Vec<SummarizeDiagnostic>,
+) {
     let no_leaves: HashMap<String, RoutineSummary> = HashMap::new();
     compute_summaries_with_leaves(
         routines,
@@ -848,7 +854,11 @@ pub fn compute_summaries_with_leaves(
     fields: &FieldIndex,
     collect_trace: bool,
     leaf_summaries: &HashMap<String, RoutineSummary>,
-) -> (HashMap<String, RoutineSummary>, Vec<RawSccTrace>) {
+) -> (
+    HashMap<String, RoutineSummary>,
+    Vec<RawSccTrace>,
+    Vec<SummarizeDiagnostic>,
+) {
     // Build O(1) lookup indexes.
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
@@ -884,6 +894,7 @@ pub fn compute_summaries_with_leaves(
 
     let mut final_map: HashMap<String, RoutineSummary> = HashMap::new();
     let mut raw_traces: Vec<RawSccTrace> = Vec::new();
+    let mut cap_diagnostics: Vec<SummarizeDiagnostic> = Vec::new();
 
     // Pre-seed FIXED LEAVES (routines that arrive with a retained summary) so
     // composition can look them up; they are never recomputed. (al-sem
@@ -913,9 +924,10 @@ pub fn compute_summaries_with_leaves(
         if let Some(trace) = out.trace {
             raw_traces.push(trace);
         }
+        cap_diagnostics.extend(out.cap_diagnostics);
     }
 
-    (final_map, raw_traces)
+    (final_map, raw_traces, cap_diagnostics)
 }
 
 /// The SHARED per-SCC compute context — the workspace-wide lookup structures the
@@ -934,11 +946,30 @@ pub struct SccComputeCtx<'a> {
     pub leaf_summaries: &'a HashMap<String, RoutineSummary>,
 }
 
+/// A diagnostic surfaced by the L4 summarize stage — presently just the JACOBI
+/// fixed-point cap-hit (below). Structurally identical to
+/// `root_classification::InfraDiagnostic` / `l5::registry::Diagnostic`
+/// (severity/stage/message), the shape every engine layer uses for its own
+/// diagnostics; kept local to `l4` rather than importing `l5::registry::Diagnostic`
+/// so this module does not gain an upward dependency. `gate/run.rs` converts it
+/// into the shared `Diagnostic` at the TS-order "summarizeDiagnostics" slot
+/// exactly like it already does for `InfraDiagnostic` at the "overlay" slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummarizeDiagnostic {
+    pub severity: String,
+    pub stage: String,
+    pub message: String,
+}
+
 /// The result of computing one SCC: its members' settled summaries (to fold into
-/// the caller's `final_map`) + the optional per-recursive-SCC fingerprint trace.
+/// the caller's `final_map`) + the optional per-recursive-SCC fingerprint trace +
+/// any summarize-stage diagnostics (cap-hit). `cap_diagnostics` is empty on every
+/// SCC that converges within `MAX_FIXED_POINT_ITERATIONS` — the overwhelmingly
+/// common case — so this field is purely additive.
 pub struct SccComputeOut {
     pub summaries: Vec<(String, RoutineSummary)>,
     pub trace: Option<RawSccTrace>,
+    pub cap_diagnostics: Vec<SummarizeDiagnostic>,
 }
 
 /// Compute ONE SCC's settled summaries, given `predecessor_final_map` = the
@@ -968,6 +999,7 @@ pub fn run_one_scc(
                 return SccComputeOut {
                     summaries: Vec::new(),
                     trace: None,
+                    cap_diagnostics: Vec::new(),
                 };
             }
         };
@@ -976,6 +1008,7 @@ pub fn run_one_scc(
             return SccComputeOut {
                 summaries: Vec::new(),
                 trace: None,
+                cap_diagnostics: Vec::new(),
             };
         }
         let routine = match ctx.routines_by_id.get(id) {
@@ -984,6 +1017,7 @@ pub fn run_one_scc(
                 return SccComputeOut {
                     summaries: Vec::new(),
                     trace: None,
+                    cap_diagnostics: Vec::new(),
                 };
             }
         };
@@ -1000,6 +1034,7 @@ pub fn run_one_scc(
         return SccComputeOut {
             summaries: vec![(id.clone(), summary)],
             trace: None,
+            cap_diagnostics: Vec::new(),
         };
     }
 
@@ -1019,6 +1054,10 @@ pub fn run_one_scc(
     let mut iterations = 0usize;
     let mut changed = true;
     let mut scc_passes: Vec<RawSccTracePass> = Vec::new();
+    // Set on cap-hit (below); drives BOTH the returned diagnostic and the
+    // per-member `Uncertainty` marker so the partial summaries this SCC ships
+    // are never silently definite.
+    let mut cap_hit_stable_members: Option<Vec<String>> = None;
 
     while changed {
         changed = false;
@@ -1104,14 +1143,34 @@ pub fn run_one_scc(
                 "warning: summarize: Summary fixed-point did not converge for SCC [{}]",
                 members.join(", ")
             );
+            cap_hit_stable_members = Some(members.into_iter().map(str::to_string).collect());
             break;
         }
     }
 
-    // Mark all SCC members as inRecursiveCycle=true.
+    // Mark all SCC members as inRecursiveCycle=true. On a cap-hit, ALSO attach a
+    // `fixpoint-capped` Uncertainty to every member: the transfer function is
+    // non-monotone (via `apply_call`), so a capped SCC's summaries are partial
+    // facts, not settled ones — they must never ship as silently definite (the
+    // honesty bar this fix closes). This is the SAME `Uncertainty` mechanism
+    // detectors already read via `uncertainties_by_node` (no parallel channel).
     let mut out_summaries: Vec<(String, RoutineSummary)> = Vec::new();
     for id in &scc_entry.members {
-        if let Some(s) = in_progress.remove(id) {
+        if let Some(mut s) = in_progress.remove(id) {
+            if cap_hit_stable_members.is_some() {
+                let stable_id = ctx
+                    .stable_map
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| id.clone());
+                s.uncertainties.push(Uncertainty {
+                    kind: "fixpoint-capped".to_string(),
+                    callsite_id: None,
+                    operation_id: None,
+                    routine_id: Some(stable_id),
+                    interface_name: None,
+                });
+            }
             out_summaries.push((
                 id.clone(),
                 RoutineSummary {
@@ -1131,9 +1190,22 @@ pub fn run_one_scc(
         None
     };
 
+    let cap_diagnostics = match cap_hit_stable_members {
+        Some(members) => vec![SummarizeDiagnostic {
+            severity: "warning".to_string(),
+            stage: "summarize".to_string(),
+            message: format!(
+                "Summary fixed-point did not converge for SCC [{}]; its facts are lower-confidence",
+                members.join(", ")
+            ),
+        }],
+        None => Vec::new(),
+    };
+
     SccComputeOut {
         summaries: out_summaries,
         trace,
+        cap_diagnostics,
     }
 }
 

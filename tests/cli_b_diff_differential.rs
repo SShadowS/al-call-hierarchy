@@ -194,7 +194,7 @@ fn compose_ws(dir: &std::path::Path) -> CborValue {
         FullSnapshotOptions, compose_full_snapshot,
     };
     let model_id = compute_gate_model_instance_id(dir).expect("modelInstanceId");
-    let resolved = assemble_and_resolve_workspace(dir, &model_id).expect("resolve");
+    let resolved = assemble_and_resolve_workspace(dir, &model_id, false).expect("resolve");
     let opts = FullSnapshotOptions {
         workspace_dir: dir,
         driver_version: VERSION_OVERRIDE,

@@ -32,6 +32,7 @@ use crate::engine::l5::digest::{
     FingerprintIndexesPub, HumanHop, ProjectedPath, QueryWitnessHop, TerminalHopInfo,
     build_fingerprint_indexes_pub, reconstruct_witness_paths_pub,
 };
+use crate::engine::l5::selector_index::{build_selector_indexes, resolve_selector};
 use crate::engine::l5::snapshot::{CapabilitySnapshot, SnapCapabilityExtra, SnapValueSource};
 
 // Re-export for use by the CLI module.
@@ -218,113 +219,13 @@ const CAPABILITY_RESOURCE_KIND_ORDER: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
-// Selector resolution helpers (shared with digest_cli but duplicated locally
-// to avoid making fingerprint indexes public from digest.rs)
+// Selector resolution: shared with digest_cli via `selector_index` (see that
+// module's docs — this used to be a locally-duplicated copy that rebuilt its
+// bucket index from a HashMap, making SelectorAmbiguous.candidates order
+// process-random; both call sites now share one deterministic implementation).
 // ---------------------------------------------------------------------------
 
-fn normalize_display_key(s: &str) -> String {
-    let trimmed = s.trim().to_lowercase();
-    let mut out = String::with_capacity(trimmed.len());
-    let mut prev_ws = false;
-    for c in trimmed.chars() {
-        if c.is_whitespace() {
-            if !prev_ws {
-                out.push(' ');
-            }
-            prev_ws = true;
-        } else {
-            out.push(c);
-            prev_ws = false;
-        }
-    }
-    out
-}
-
-fn strip_type_word_prefix(display: &str) -> Option<&str> {
-    let bytes = display.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-        i += 1;
-    }
-    if i == 0 {
-        return None;
-    }
-    let word_end = i;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-        i += 1;
-    }
-    if i == word_end {
-        return None;
-    }
-    Some(&display[i..])
-}
-
 const MAX_AMBIGUOUS_CANDIDATES: usize = 16;
-
-/// Resolve a selector against the identity table. Returns `(matches, matched_form)`.
-/// mirrors `resolveSelector` in fingerprint-query.ts.
-fn resolve_selector_fp(
-    selector: &str,
-    routine_display_by_id: &HashMap<String, String>,
-    display_to_stable_ids: &[(String, Vec<String>)],
-    display_key_pos: &HashMap<String, usize>,
-) -> (Vec<String>, String) {
-    // Form 1: exact StableRoutineId.
-    if routine_display_by_id.contains_key(selector) {
-        return (vec![selector.to_string()], "stable-routine-id".to_string());
-    }
-
-    let key = normalize_display_key(selector);
-
-    // Form 2: full display name.
-    if let Some(&pos) = display_key_pos.get(&key) {
-        let ids = &display_to_stable_ids[pos].1;
-        if !ids.is_empty() {
-            return (ids.clone(), "full-display".to_string());
-        }
-    }
-
-    // Form 3: two-segment.
-    let mut two: Vec<String> = Vec::new();
-    for (bucket_key, ids) in display_to_stable_ids {
-        if let Some(stripped) = strip_type_word_prefix(bucket_key)
-            && stripped == key
-        {
-            two.extend(ids.iter().cloned());
-        }
-    }
-    if !two.is_empty() {
-        return (two, "two-segment".to_string());
-    }
-
-    // Form 4: one-segment.
-    let mut one: Vec<String> = Vec::new();
-    for (bucket_key, ids) in display_to_stable_ids {
-        let last = match bucket_key.rfind("::") {
-            Some(sep) => &bucket_key[sep + 2..],
-            None => bucket_key.as_str(),
-        };
-        if normalize_display_key(last) == key {
-            one.extend(ids.iter().cloned());
-        }
-    }
-    if !one.is_empty() {
-        return (one, "one-segment".to_string());
-    }
-
-    // Form 5: object-qualified.
-    if let Some(sep) = selector.rfind("::") {
-        let routine_key = normalize_display_key(&selector[sep + 2..]);
-        if let Some(&pos) = display_key_pos.get(&routine_key) {
-            let ids = &display_to_stable_ids[pos].1;
-            if !ids.is_empty() {
-                return (ids.clone(), "object-qualified".to_string());
-            }
-        }
-    }
-
-    (Vec::new(), String::new())
-}
 
 // ---------------------------------------------------------------------------
 // Build the per-block data
@@ -731,29 +632,24 @@ fn build_block(
 
 /// Run the fingerprint query over a fully-composed `CapabilitySnapshot`.
 /// Mirrors `fingerprintQuery` in `src/cli/fingerprint-query.ts`.
+///
+/// `roots_config_ignored`: true when a `roots.config.json` existed but the
+/// caller skipped loading it (`--no-roots-config`) — surfaced verbatim into
+/// `FingerprintQueryResult.roots_config_ignored` (`summary.rootsConfigIgnored`
+/// in the JSON envelope). The `CapabilitySnapshot` carries no `inputsMetadata`
+/// of its own, so the caller (which resolved the workspace and knows both the
+/// flag and whether the file existed) computes and passes this in.
 pub fn fingerprint_query(
     snap: &CapabilitySnapshot,
     filters: &FingerprintFilters,
+    roots_config_ignored: bool,
 ) -> FingerprintQueryResult {
     // Build shared indexes (reuse B1's public entry point).
     let idx = build_fingerprint_indexes_pub(snap);
 
-    // Build the per-routine stable-id index for selector resolution.
-    let routine_display_by_id: HashMap<String, String> = idx.routine_display_by_id.clone();
-
-    // Build display → stable-ids ordered bucket for selectors.
-    let mut display_to_stable_ids: Vec<(String, Vec<String>)> = Vec::new();
-    let mut display_key_pos: HashMap<String, usize> = HashMap::new();
-    for (rid, display) in &routine_display_by_id {
-        let key = normalize_display_key(display);
-        if let Some(&pos) = display_key_pos.get(&key) {
-            display_to_stable_ids[pos].1.push(rid.clone());
-        } else {
-            let pos = display_to_stable_ids.len();
-            display_key_pos.insert(key.clone(), pos);
-            display_to_stable_ids.push((key, vec![rid.clone()]));
-        }
-    }
+    // Selector index (5-form resolveSelector cascade) — built from the identity
+    // table's source Vec, deterministic by construction. Shared with digest_cli.
+    let selector_idx = build_selector_indexes(snap);
 
     let mut diagnostics: Vec<FingerprintQueryDiagnostic> = Vec::new();
 
@@ -761,12 +657,7 @@ pub fn fingerprint_query(
     let mut resolved_set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut any_selector_failed = false;
     for sel in &filters.routine_selectors {
-        let (matches, matched_form) = resolve_selector_fp(
-            sel,
-            &routine_display_by_id,
-            &display_to_stable_ids,
-            &display_key_pos,
-        );
+        let (matches, matched_form) = resolve_selector(sel, &selector_idx);
         if matches.is_empty() {
             diagnostics.push(FingerprintQueryDiagnostic::SelectorUnresolved {
                 selector: sel.clone(),
@@ -781,13 +672,16 @@ pub fn fingerprint_query(
                 .map(|id| {
                     (
                         id.clone(),
-                        routine_display_by_id.get(id).cloned().unwrap_or_default(),
+                        idx.routine_display_by_id
+                            .get(id)
+                            .cloned()
+                            .unwrap_or_default(),
                     )
                 })
                 .collect();
             diagnostics.push(FingerprintQueryDiagnostic::SelectorAmbiguous {
                 selector: sel.clone(),
-                matched_form,
+                matched_form: matched_form.to_string(),
                 candidates,
             });
             any_selector_failed = true;
@@ -797,7 +691,6 @@ pub fn fingerprint_query(
     }
 
     let total_classifications = snap.root_classifications.len();
-    let roots_config_ignored = false; // snap has no inputsMetadata in consumed-core
 
     if any_selector_failed {
         return FingerprintQueryResult {
@@ -1740,4 +1633,89 @@ pub fn format_fingerprint_human_verbosity(
     }
 
     format!("{}\n", lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::l5::snapshot::SnapshotIdentityTable;
+
+    fn snap_with_identities(rows: &[(&str, &str)]) -> CapabilitySnapshot {
+        let mut ids = SnapshotIdentityTable {
+            stable_ids: Vec::new(),
+            display_names: Vec::new(),
+        };
+        for (id, display) in rows {
+            ids.stable_ids.push((*id).into());
+            ids.display_names.push((*display).into());
+        }
+        CapabilitySnapshot {
+            identities: ids,
+            capability_facts: Vec::new(),
+            typed_edges: Vec::new(),
+            operation_index: Vec::new(),
+            callsite_index: Vec::new(),
+            callsite_resolutions: Vec::new(),
+            analysis_gaps: Vec::new(),
+            coverage: Vec::new(),
+            event_declarations: Vec::new(),
+            root_classifications: Vec::new(),
+            routine_order_frames: None,
+        }
+    }
+
+    /// Regression for the HashMap-order bug: `SelectorAmbiguous.candidates` used to
+    /// be built by iterating a `HashMap`, so both the bucket order AND the
+    /// per-bucket id order were process-random and the printed list reordered
+    /// run-to-run. Assert against the ONE known-correct (identity-table insertion)
+    /// order — a random order would fail this assertion on nearly every run.
+    #[test]
+    fn selector_ambiguous_candidates_are_deterministic() {
+        let snap = snap_with_identities(&[
+            ("app:Codeunit:1#aaa", "Codeunit \"A\"::Run"),
+            ("app:Codeunit:2#bbb", "Codeunit \"B\"::Run"),
+            ("app:Codeunit:3#ccc", "Codeunit \"C\"::Run"),
+            ("app:Codeunit:4#ddd", "Codeunit \"D\"::Run"),
+        ]);
+        let filters = FingerprintFilters {
+            roots: None,
+            routine_selectors: vec!["Run".to_string()],
+            include_inherited: true,
+            witness_limit: WitnessLimit::Disabled,
+        };
+        let result = fingerprint_query(&snap, &filters, false);
+        assert_eq!(result.diagnostics.len(), 1);
+        match &result.diagnostics[0] {
+            FingerprintQueryDiagnostic::SelectorAmbiguous {
+                matched_form,
+                candidates,
+                ..
+            } => {
+                assert_eq!(matched_form, "one-segment");
+                assert_eq!(
+                    candidates,
+                    &vec![
+                        (
+                            "app:Codeunit:1#aaa".to_string(),
+                            "Codeunit \"A\"::Run".to_string()
+                        ),
+                        (
+                            "app:Codeunit:2#bbb".to_string(),
+                            "Codeunit \"B\"::Run".to_string()
+                        ),
+                        (
+                            "app:Codeunit:3#ccc".to_string(),
+                            "Codeunit \"C\"::Run".to_string()
+                        ),
+                        (
+                            "app:Codeunit:4#ddd".to_string(),
+                            "Codeunit \"D\"::Run".to_string()
+                        ),
+                    ],
+                    "ambiguous candidates must be in deterministic identity order"
+                );
+            }
+            other => panic!("expected SelectorAmbiguous, got {other:?}"),
+        }
+    }
 }

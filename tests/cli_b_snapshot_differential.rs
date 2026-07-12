@@ -194,7 +194,7 @@ fn compose_for(
     // must be assembled with the SAME id the gate path computes.
     let model_instance_id = compute_gate_model_instance_id(&fixture_dir)
         .unwrap_or_else(|| panic!("{fixture}: could not compute modelInstanceId"));
-    let resolved = assemble_and_resolve_workspace(&fixture_dir, &model_instance_id)
+    let resolved = assemble_and_resolve_workspace(&fixture_dir, &model_instance_id, false)
         .unwrap_or_else(|| panic!("{fixture}: workspace did not resolve"));
     let opts = FullSnapshotOptions {
         workspace_dir: &fixture_dir,

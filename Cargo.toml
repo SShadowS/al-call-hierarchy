@@ -1,5 +1,6 @@
 [package]
 name = "al-call-hierarchy"
+default-run = "al-call-hierarchy"
 version = "0.9.3"
 edition = "2024"
 authors = ["SShadowS"]

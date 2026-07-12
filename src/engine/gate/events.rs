@@ -362,7 +362,7 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
         }
     };
 
-    let resolved = match assemble_and_resolve_workspace(opts.workspace, &model_id) {
+    let resolved = match assemble_and_resolve_workspace(opts.workspace, &model_id, false) {
         Some(r) => r,
         None => {
             return EventsRunResult {
@@ -505,7 +505,7 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
         }
     };
 
-    let resolved = match assemble_and_resolve_workspace(opts.workspace, &model_id) {
+    let resolved = match assemble_and_resolve_workspace(opts.workspace, &model_id, false) {
         Some(r) => r,
         None => {
             return EventsRunResult {

@@ -205,6 +205,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `panicking_detector_degrades_to_warning_others_still_run`, asserting the exact
   diagnostic message/severity/stage and that the other registered detector's finding
   still appears.
+- **`EnumExtensionTypes` was missing from the engine ABI ingestion's BARE table
+  (Task T4-C medium (b), Tier-4 hygiene arc).** `symbol_reference.rs`'s `BARE`
+  lookup table (`EnumTypes`/`ControlAddIns`/`PermissionSets`/etc.) lacked an
+  `("EnumExtensionTypes", "EnumExtension")` entry, so a dependency `.app`'s
+  enum-extension objects never entered `objects` at all — the legacy
+  `app_package.rs` parser has always read this field. `program::abi_ingest`
+  already normalized both `"enumextension"`/`"enumextensiontype"` strings to
+  `ObjectKind::EnumExtension`, so the consumer side was always ready; only the
+  producer was missing the entry. Added the 7th BARE tuple + a regression test.
+- **A caller-scope param/local lookup used raw first-match-wins `Vec::iter().
+  find()` with no duplicate-name awareness at all (Task T4-C medium (e),
+  Tier-4 hygiene arc).** `program::resolve::receiver::caller_scope_symbol` (the
+  ONE shared param→local→named-return→global lookup `receiver.rs`'s Step 2 and
+  `arg_dispatch.rs`'s `type_one_arg` both use) picked whichever param/local
+  happened to be first in declaration order when a name matched more than
+  once — including a genuine `#if`/`#else` union-read where each branch
+  declared the SAME name with a DIFFERENT type (al-syntax does not evaluate
+  preproc conditions, so both branches' declarations survive into the IR).
+  This silently returned an arbitrary, possibly-wrong type instead of
+  declining, unlike its established siblings (`ResolveIndex::field_in_table`,
+  `resolve_dataitem_source_table`), which already dedupe identical duplicates
+  and decline on a genuine conflict. Added `dedupe_type_hits` (mirrors
+  `field_in_table`'s provenance-dedup pattern) and applied it to params,
+  locals, AND globals; a genuinely conflicting duplicate now returns
+  `CallerScopeSymbol::MalformedDuplicate` (decline) instead of guessing.
+  3 regression tests (identical-dedup resolves; conflicting param/local
+  declines).
+- **L4 JACOBI fixed-point cap-hit shipped partial summaries as silently
+  definite (Task T4-C, Tier-4 hygiene arc).** `summary_runner::run_one_scc`'s
+  cap-hit branch (`MAX_FIXED_POINT_ITERATIONS = 1000`) only `eprintln!`'d a
+  warning and returned the last, unconverged in-progress summaries with no
+  marker distinguishing them from settled ones — a real risk given the
+  transfer function is non-monotone via `apply_call`. Fixed two ways,
+  additively: (1) every capped SCC member's `RoutineSummary` now gets a
+  `fixpoint-capped` `Uncertainty` (the SAME mechanism detectors already read
+  via `uncertainties_by_node` — no parallel channel), and (2) a new
+  `SummarizeDiagnostic` (severity "warning", stage "summarize") threads from
+  `run_one_scc` through `compute_summaries`/`compute_summaries_with_leaves`
+  (now 3-tuple returns) into `DetectorContext.summarize_diagnostics`, then
+  `RunOutput.summarize_diagnostics`, filling the "summarizeDiagnostics" TS-order
+  slot 3 that `gate/run.rs` had tracked as an explicit gap since the al-sem
+  6-source diagnostic concat was ported. Empty on every SCC that converges
+  (the overwhelming common case), so this is CDO byte-identity-preserving.
+- **d44/d45 computed their per-event/per-publisher output-cap truncation count
+  and threw it away (Task T4-C, Tier-4 hygiene arc).** Both detectors called
+  `group_and_cap` and destructured `(kept, _truncated)`, discarding the second
+  element. Now surfaced via `stats.add_skip("outputCapped", truncated)` — the
+  existing present-iff-nonzero `DetectorStats.skipped` mechanism, so output is
+  unchanged whenever no event/publisher exceeds its cap.
+- **`tests/r3b_incremental_nondeterminism.rs`'s corpus sweep used the exact
+  shipped silent-skip shape this whole remediation program exists to kill
+  (Task T4-B, Tier-4 hygiene arc).** `sweep_fixtures()` read the ~40-fixture
+  discovered slice from `tests/r3a3-goldens` via `if let Ok(rd) =
+  std::fs::read_dir(...)` — if that directory ever moved or was renamed, the
+  discovery step would silently no-op instead of failing, leaving only the 6
+  hardcoded fixtures. The two floors gating on `checked` asserted only `>= 5`,
+  which the 6 hardcoded fixtures satisfy alone — so an evaporated corpus sweep
+  would pass green with 88% less coverage and no signal anything had changed.
+  Replaced the silent `if let Ok` with `.expect("read r3a3 goldens")`
+  (matching siblings `r3b_minimality.rs` and `r3b_incremental_equality.rs`,
+  which already hard-require) and raised both floors from `>= 5` to `>= 30` —
+  well above the 6-fixture evaporation case, below the ~46 the current corpus
+  discovers. Verified both directions: the full suite passes at 46 fixtures
+  swept; temporarily renaming `tests/r3a3-goldens` now hard-panics with a clear
+  message instead of silently passing.
+- **Three CLI flag-honesty defects across `aldump`/`alsem`/the main binary
+  (Task T4-B, Tier-4 hygiene arc): a mutual-exclusion array missing three mode
+  flags, two dead `alsem prove` flags plus a fingerprint flag that flipped
+  classification behavior but never updated its own honesty field, and the
+  main binary silently blocking on stdin instead of erroring.**
+  - **`aldump`'s mode mutual-exclusion array omitted `--graphify-export` /
+    `--graphify-export-fragments` / `--integration-points`.** Each guards its
+    own dedicated `if`-block exactly like the other 25 mode flags, but a combo
+    like `aldump --graphify-export --l3-call-graph ws` was silently accepted
+    and ran whichever block's `if` happened to come first in source order,
+    dropping the other flag with no diagnostic. Added all three to the array
+    and the error message.
+  - **`alsem prove --no-roots-config` and `--alpackages` were parsed but never
+    read, and had no possible effect even if wired: `run_prove_pipeline` never
+    consults `resolved.root_classifications` or any cross-app dependency
+    path**, unlike `fingerprint` (whose whole output is a walk over root
+    classifications). Implementing "skip roots.config.json" or "load
+    .alpackages deps" for `prove` would be invisible theater, not a real
+    feature — removed both flags (clap now rejects them as unknown arguments,
+    per the "unknown flag beats silent no-op" policy) instead of faking
+    support.
+  - **`alsem fingerprint --no-roots-config` was parsed but never read, and its
+    own `rootsConfigIgnored` output field was hardcoded `false` — actively
+    contradicting the flag whenever a `roots.config.json` existed.** Unlike
+    `prove`, `fingerprint`'s root-classification pool IS the primary output
+    surface, so this one has a real, obvious, small implementation:
+    `assemble_and_resolve_workspace` gained a `skip_roots_config: bool`
+    parameter (threaded through as `false` from its 7 other call sites,
+    preserving their behavior exactly) that skips the `roots.config.json`
+    overlay when set; `fingerprint_query` gained a `roots_config_ignored: bool`
+    parameter so its caller (which knows both the flag and whether the file
+    existed) can report the truth instead of a hardcoded value. Verified live:
+    with a fixture's `roots.config.json` present, `--no-roots-config` now
+    correctly emits `inputsMetadata.rootsConfigIgnored: true` (previously
+    always absent) and the config-sourced root classification it names
+    disappears from the AST-only pool, as expected.
+  - **The main `al-call-hierarchy` binary's `--lsp` flag was parsed but never
+    consulted**, so `--project X --lsp` silently ran CLI/analyze mode instead
+    of the LSP server it explicitly asked for. **`--analyze` without
+    `--project` fell through to the default branch and silently blocked
+    forever as an LSP server reading stdin**, with no indication anything was
+    wrong. Fixed both in `main.rs`'s dispatch: `--analyze` without `--project`
+    now hard-errors immediately (`--analyze requires --project <path>`,
+    checked before any mode dispatch so it fires even if `--lsp` is also set);
+    `--lsp` now has real, unconditional top precedence — it always starts the
+    LSP server regardless of `--project`/`--analyze`. Verified live: both new
+    behaviors observed end-to-end (hard error; genuine LSP-mode startup with
+    `--project` present).
+- **`fingerprintQuery`'s `SelectorAmbiguous.candidates` reordered run-to-run
+  because the index feeding it was rebuilt from `HashMap` iteration (Task T4-B,
+  Tier-4 hygiene arc).** `fingerprint_query.rs` cloned the shared
+  `routine_display_by_id: HashMap<String, String>` and iterated it directly to
+  build the display→stable-ids selector bucket — both the bucket order and the
+  per-bucket id order were process-random, so an ambiguous-selector diagnostic's
+  printed candidate list (truncated at `MAX_AMBIGUOUS_CANDIDATES=16`) reordered
+  between runs, and past the truncation point the displayed SET could change.
+  `digest_cli.rs::build_selector_indexes` already built the equivalent index
+  correctly, from the identity table's source `Vec` (deterministic by
+  construction) — the two implementations had drifted. Extracted the shared
+  logic (`build_selector_indexes` / `resolve_selector` / `normalize_display_key`
+  / the 5-form `resolveSelector` cascade) into a new `selector_index` module and
+  pointed both call sites at it, so they cannot re-diverge. Added a
+  process-deterministic regression test asserting the KNOWN correct
+  (identity-table insertion) order for a 4-way-ambiguous selector.
 - **The `al-syntax` lowerer silently dropped preproc-split procedures, case
   branches, and statement-position `#if`/guarded constructs, and let comments
   pollute positional argument reads — including silently unregistering a whole
@@ -552,6 +681,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **`default-run = "al-call-hierarchy"` restores bare `cargo run` (Task T4-A
+  review fix).** The crate grew multiple `[[bin]]` targets, so bare `cargo run`
+  errored on ambiguous binary selection — contradicting the very first command
+  the docs show. `default-run` pins the LSP binary as documented.
+- **CLAUDE.md + README rewritten against the real tree (Task T4-A, Tier-4
+  hygiene arc).** Onboarding docs still described a retired system: "Adding New
+  AL Constructs" pointed at `language.rs` tree-sitter query consts with zero
+  execution repo-wide (owned-IR migration retired them); "Key Modules" named a
+  nonexistent top-level `resolver.rs` and omitted `src/engine/`, `src/program/`,
+  `crates/al-syntax/`, `src/bin/` entirely; a "V2 grammar" section directly
+  contradicted the v3 section below it and instructed using
+  `node_util::block_statements` — a deleted function; both README and
+  CLAUDE.md documented a `--no-lsp` CLI flag that `clap` now hard-errors on;
+  README pointed the grammar submodule at `../tree-sitter-al` (outside the
+  repo) instead of the real in-repo `tree-sitter-al/` submodule; the
+  Resolution Coverage table ("Record methods: Partial") predated the entire
+  resolution program. Rewrote: Architecture/Data Flow now documents BOTH
+  pipelines honestly (the LSP surface — `graph.rs`/`handlers.rs`/etc., now lib
+  modules — and the program engine — `snapshot` → al-syntax IR →
+  `program::resolve` → `Histogram` report); Key Modules lists the real tree
+  including `src/engine/{l2,l3,l4,l5,gate,deps}`, `src/program/{resolve,...}`,
+  `crates/al-syntax`, `src/bin/{aldump,alsem,mint-goldens}`, plus a testing
+  note on `tests/common/{cdo,regen}.rs` + `scripts/cdo-gate`; the Grammar
+  section is now one coherent v3.2.0-reality section (V1→V2→V3 history kept,
+  explicitly marked non-actionable for engine code since `al-syntax`'s
+  lowerer now absorbs all grammar-shape handling); "Adding New AL Constructs"
+  documents the real workflow (grammar → al-syntax lowerer → IR consumers →
+  `REGEN_TEMP_GOLDENS=1 cargo test`); Resolution Coverage replaced with the
+  honest taxonomy (`resolvedSource`/`resolvedCatalog`/`resolvedAbiExternal`/
+  `conditionalResolved`/`honestDynamic`/`honestEmpty`/`unknown`/
+  `ambiguousResolved`) and the CDO numbers last measured immediately after the
+  Tier-1 merge (commit `f171d0f`; both scopes `unknown`=0, `ambiguousResolved`=0,
+  `realUnknownRate`=0.0000%; JSON SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` — sourced
+  from the coordinating session's own post-merge measurement, not
+  independently re-run in this worktree, which lacks `CDO_WS` access); the two
+  distinct "legacy" metric axes (engine axis: fresh resolver vs. legacy L3;
+  definition axis: `realUnknownRate` vs.
+  `realUnknownRateLegacyIncludingAmbiguous`) now get one explicit paragraph so
+  neither gets conflated with the other again. Every documented command
+  (`cargo run` flag set, `aldump --program-call-graph-stats`,
+  `cargo bench --bench lsp_pipeline`/`cargo check --bench lsp_pipeline`) was
+  run or built against this worktree before being written down; the CLI flag
+  list was read from `src/main.rs`'s `Args` derive, not guessed. Docs-only —
+  zero code changes.
 - **BREAKING: legacy L3 histogram's `realUnknownRate` key renamed to
   `legacyL3UnknownRate` (Task T0.4, Tier-0 remediation arc) — one metric, one
   owner.** `aldump --l3-call-graph-stats` (legacy L3 engine) and `aldump

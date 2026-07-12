@@ -191,7 +191,7 @@ pub fn run_policy_check(opts: &PolicyCheckOptions) -> PolicyCheckOutcome {
             };
         }
     };
-    let resolved = match assemble_and_resolve_workspace(opts.workspace, &model_id) {
+    let resolved = match assemble_and_resolve_workspace(opts.workspace, &model_id, false) {
         Some(r) => r,
         None => {
             return PolicyCheckOutcome {
