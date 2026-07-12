@@ -36,7 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pchar`-complement `AsciiSet` (plus `%` itself and `\`), so arbitrary Unicode and
   reserved-character filenames round-trip through `path_to_uri`/`uri_to_path` losslessly.
   The existing Windows drive-letter normalization and forward-slash join are unchanged;
-  only the per-segment escaping changed. Signature unchanged (`&Path -> Uri`).
+  only the per-segment escaping changed. Signature unchanged (`&Path -> Uri`). **Wire-format
+  note:** `(` and `)` are no longer percent-encoded (the old encoder escaped them as
+  `%28`/`%29`); RFC 3986 allows literal parens unescaped in a path segment (they're
+  `sub-delims`), and the round trip still holds byte-for-byte — this is a deliberate,
+  intentional narrowing of what gets escaped, not an oversight.
 - **Decompression caps on every zip/gzip site — a hostile `.app` (or a hostile
   `.cbor.gz` snapshot fed to `alsem diff`) could OOM-kill the whole process
   (Task T2.2, crash/DoS arc).** Every zip entry and gzip stream in the

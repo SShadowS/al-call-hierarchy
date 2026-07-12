@@ -185,12 +185,18 @@ mod tests {
         assert_eq!(path, Some(PathBuf::from("/C:/dir#name/file@v2.al")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn uri_roundtrip_non_ascii_path() {
         // H-13: Løsninger previously produced file:///unknown via fluent-uri rejection
         // because the hand-rolled encoder only escaped a ~5-char subset (space, (, ),
         // [, ]) and left raw non-ASCII / reserved bytes in the URI, which lsp-types'
         // fluent-uri-backed parser then rejected.
+        //
+        // Windows-only: these literals use `\` as the path separator (real Windows
+        // paths), which `path_to_uri` only rewrites to `/` under `#[cfg(windows)]` —
+        // see the `#[cfg(not(windows))]` sibling below for the native-Unix coverage
+        // of the same character classes.
         for p in [
             r"C:\Løsninger\App\Fil æøå.al",
             r"C:\repo\100%\a#b\c+d @e\f.al",
@@ -201,8 +207,29 @@ mod tests {
             assert_ne!(uri_str, "file:///unknown", "must not hit fallback for {p}");
             // path_to_uri preserves case and leaves the drive-letter colon literal
             // (see test_path_to_uri above) — it does not lowercase; that's normalize_path's job.
-            #[cfg(windows)]
             assert!(uri_str.starts_with("file:///C:/"), "{uri_str}");
+            let back = uri_to_path(&uri).expect("must decode");
+            assert_eq!(back, normalize_path(Path::new(p)), "roundtrip {p}");
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn uri_roundtrip_non_ascii_path() {
+        // H-13, Unix sibling: same character classes as the Windows test above
+        // (non-ASCII text, %, #, +, @, space, emoji), exercised with native
+        // Unix absolute paths (forward-slash separators, no drive letter) so the
+        // round trip is genuinely driven through the `#[cfg(not(windows))]` arms
+        // of both path_to_uri and uri_to_path — CI (ubuntu-latest) runs this arm.
+        for p in [
+            "/repo/Løsninger/Fil æøå.al",
+            "/repo/100%/a#b/c+d @e/f.al",
+            "/repo/emoji 🚀/file.al",
+        ] {
+            let uri = path_to_uri(Path::new(p));
+            let uri_str = uri.as_str();
+            assert_ne!(uri_str, "file:///unknown", "must not hit fallback for {p}");
+            assert!(uri_str.starts_with("file:///repo/"), "{uri_str}");
             let back = uri_to_path(&uri).expect("must decode");
             assert_eq!(back, normalize_path(Path::new(p)), "roundtrip {p}");
         }
