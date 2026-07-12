@@ -604,7 +604,12 @@ pub fn outgoing(snap: &LspSnapshot, enc: PositionEncoding, data: &ItemData) -> V
   TARGET file via `apply_changes`, then run incoming/outgoing from the un-edited caller — every
   returned range must match the target's FRESH parse positions (assert against a fresh batch build),
   proving handlers re-derive spans live from decl_index/BodyMap and never serve stored
-  `Witness::SourceSpan` bytes.
+  `Witness::SourceSpan` bytes. **This rule EXTENDS to EventFlow edges' `SiteId` spans** (Task-10
+  finding): an EventFlow edge's SiteId is anchored at the publisher's name-origin and goes stale
+  under rung-1 edits (rung 1 Arc-clones event_edges by design) — event-derived `fromRanges` and
+  publisher/subscriber item positions must come from `decl_by_id` lookups, NEVER from
+  `edge.site.span` on an EventFlow edge. Add a test: rung-1 body edit above a publisher decl →
+  incoming-on-subscriber's fromRanges match the FRESH publisher position.
 - [ ] **Step 2:** Implement; pass. Clippy, rustfmt, CHANGELOG. Commit
   `feat(lsp): core call-hierarchy handlers on program engine (t3.11)`.
 
