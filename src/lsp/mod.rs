@@ -7,3 +7,4 @@
 pub mod def_surface;
 pub mod encoding;
 pub mod snapshot;
+pub mod updater;

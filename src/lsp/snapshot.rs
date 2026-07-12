@@ -27,7 +27,7 @@ use std::sync::Arc;
 use al_syntax::ir::AlFile;
 
 use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
-use crate::program::node::{ObjKey, ObjectNodeId, RoutineNodeId};
+use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::edge::RouteTarget;
@@ -36,7 +36,7 @@ use crate::program::resolve::full::{ClassifiedEdge, ObligationId, ProgramContext
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::sig_fp::source_routine_node_id;
 use crate::program::{DepLayer, ProgramGraph};
-use crate::snapshot::AppSetSnapshot;
+use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit, parse_snapshot};
 
 /// Reference to one edge: (virtual_path, index into `edges_by_file[path]`).
 /// Index-based — never a borrow — so [`LspSnapshot`] stays self-contained and
@@ -89,10 +89,20 @@ pub struct LspSnapshot {
     /// incremental updater (Task 9) bumps this on each rung-1/rung-2 apply.
     /// Excluded from cross-build equivalence checks (see this module's tests).
     pub generation: u64,
-    pub graph: ProgramGraph,
+    /// `Arc`-shared (T3 Task 9): rung 1 (body-only edit) and rung 2
+    /// (workspace-layer rebuild reusing the cached dep layer) both need to
+    /// hand an UNCHANGED-or-rebuilt graph to a fresh `LspSnapshot` value
+    /// without deep-cloning `ProgramGraph`'s node arrays (`ObjectIndex`
+    /// carries no `Clone` impl, and cloning tens of thousands of
+    /// `ObjectNode`/`RoutineNode` entries on every rung-1 save would itself
+    /// blow the <100ms budget) — mirrors `dep_layer`'s existing pattern.
+    pub graph: Arc<ProgramGraph>,
     pub dep_layer: Arc<DepLayer>,
-    /// Identity/roots for rebuilds.
-    pub snap: AppSetSnapshot,
+    /// Identity/roots for rebuilds. `Arc`-shared for the same reason as
+    /// `graph` above: `AppSetSnapshot` carries every app's full source TEXT
+    /// (`AppUnit::source`), so a plain `.clone()` on every incremental swap
+    /// would copy megabytes of text neither rung 1 nor rung 2 ever touches.
+    pub snap: Arc<AppSetSnapshot>,
     /// `virtual_path` → file+text+`DefSurface`, workspace files ONLY (mirrors
     /// `edges_by_file`'s workspace scoping — a dependency's own source is
     /// never queried by the LSP surface).
@@ -107,8 +117,17 @@ pub struct LspSnapshot {
     /// DERIVED — see [`build_incoming`]'s doc. O(E) wholesale rebuild only;
     /// never incrementally edited.
     pub incoming: HashMap<RoutineNodeId, Vec<EdgeRef>>,
-    /// Sorted by `origin.byte.start` within each file.
-    pub decls_by_file: HashMap<String, Vec<DeclEntry>>,
+    /// Sorted by `origin.byte.start` within each file. `Arc`-wrapped per file
+    /// (T3 Task 9) so an incremental rung-1/rung-2 rebuild can share every
+    /// UNCHANGED file's decl list via a cheap `Arc::clone` instead of
+    /// deep-cloning the whole `HashMap<String, Vec<DeclEntry>>` (every
+    /// `DeclEntry`'s `String` fields would otherwise be re-heap-allocated on
+    /// every save, across the WHOLE workspace, just to replace one file).
+    pub decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>>,
+    /// DERIVED — like [`Self::incoming`], always rebuilt WHOLESALE from
+    /// `decls_by_file` (see [`build_decl_by_id`]) rather than
+    /// cloned-then-patched. Never treat this as an independent source of
+    /// truth to surgically edit (H-10 law).
     pub decl_by_id: HashMap<RoutineNodeId, DeclEntry>,
 }
 
@@ -120,6 +139,40 @@ impl LspSnapshot {
     #[must_use]
     pub fn build_full(workspace_root: &Path) -> Option<LspSnapshot> {
         let ctx = build_context(workspace_root)?;
+        Some(Self::from_context(ctx))
+    }
+
+    /// As [`Self::build_full`], but ALSO returns a fresh, fully INDEPENDENT
+    /// full parse (`parse_snapshot` over the same snapshot — every
+    /// source-bearing app, workspace + embedded-source deps) for T3 Task 9's
+    /// incremental updater (`src/lsp/updater.rs`) to own as its mutable
+    /// working state.
+    ///
+    /// This can't just hand back `ctx.parsed` (the parse [`Self::from_context`]
+    /// itself consumes below) because `AlFile` carries no `Clone` impl — one
+    /// parsed `AlFile`/text can only ever have ONE owner. `LspSnapshot::
+    /// parsed`'s per-file `ParsedFileEntry` needs independent ownership for
+    /// the immutable PUBLISHED snapshot; the updater's `Vec<ParsedUnit>`
+    /// needs independent ownership for its own MUTABLE working copy (rung 1
+    /// splices one file's fresh parse into it; rung 2 replaces the primary
+    /// unit's file list; rung 3 replaces the whole `Vec` wholesale — see
+    /// updater.rs). A second, fully independent `parse_snapshot` pass is the
+    /// honest fix, not a workaround: it runs once here (server startup) and
+    /// again only on a rung-3 rebuild (rare — `.alpackages` change / watcher
+    /// overflow), never on the rung-1/rung-2 hot path.
+    #[must_use]
+    pub(crate) fn build_full_with_parsed(
+        workspace_root: &Path,
+    ) -> Option<(LspSnapshot, Vec<ParsedUnit>)> {
+        let ctx = build_context(workspace_root)?;
+        let parsed_for_updater = parse_snapshot(&ctx.snap);
+        Some((Self::from_context(ctx), parsed_for_updater))
+    }
+
+    /// The composition shared by [`Self::build_full`]/
+    /// [`Self::build_full_with_parsed`]: dep layer → assemble → resolve per
+    /// file → derive indexes, given an already-built [`ProgramContext`].
+    fn from_context(ctx: ProgramContext) -> LspSnapshot {
         let ProgramContext {
             snap,
             graph,
@@ -144,8 +197,7 @@ impl LspSnapshot {
         // for as long as it's alive).
         let mut edges_by_file: HashMap<String, Arc<Vec<ClassifiedEdge>>> = HashMap::new();
         let mut surfaces_by_file: HashMap<String, DefSurface> = HashMap::new();
-        let mut decls_by_file: HashMap<String, Vec<DeclEntry>> = HashMap::new();
-        let mut decl_by_id: HashMap<RoutineNodeId, DeclEntry> = HashMap::new();
+        let mut decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>> = HashMap::new();
         let event_edges: Arc<Vec<ClassifiedEdge>>;
 
         {
@@ -160,7 +212,7 @@ impl LspSnapshot {
                         continue;
                     }
 
-                    let file_res = crate::program::resolve::full::resolve_file_obligations(
+                    let (edges, surface, decls) = recompute_file(
                         pf,
                         primary_app_ref,
                         &graph,
@@ -168,36 +220,9 @@ impl LspSnapshot {
                         &body_map,
                         &obj_node_map,
                     );
-                    edges_by_file.insert(pf.virtual_path.clone(), Arc::new(file_res.edges));
-
-                    surfaces_by_file.insert(pf.virtual_path.clone(), def_surface_fingerprint(pf));
-
-                    let mut decls: Vec<DeclEntry> = Vec::new();
-                    for obj in &pf.file.objects {
-                        let obj_key = match obj.id {
-                            Some(n) => ObjKey::Id(n),
-                            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
-                        };
-                        let obj_node_id = ObjectNodeId {
-                            app: primary_app_ref,
-                            kind: obj.kind,
-                            key: obj_key,
-                        };
-                        for routine in &obj.routines {
-                            let id = source_routine_node_id(obj_node_id.clone(), routine);
-                            let entry = DeclEntry {
-                                id: id.clone(),
-                                name: routine.name.clone(),
-                                origin: routine.origin.clone(),
-                                name_origin: routine.name_origin.clone(),
-                                virtual_path: pf.virtual_path.clone(),
-                            };
-                            decl_by_id.insert(id, entry.clone());
-                            decls.push(entry);
-                        }
-                    }
-                    decls.sort_by_key(|d| d.origin.byte.start);
-                    decls_by_file.insert(pf.virtual_path.clone(), decls);
+                    edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
+                    surfaces_by_file.insert(pf.virtual_path.clone(), surface);
+                    decls_by_file.insert(pf.virtual_path.clone(), Arc::new(decls));
                 }
             }
 
@@ -217,6 +242,7 @@ impl LspSnapshot {
         }
 
         let incoming = build_incoming(&edges_by_file, &event_edges);
+        let decl_by_id = build_decl_by_id(&decls_by_file);
 
         // ── Ownership-move phase: consume `parsed` by value, pairing each
         // workspace file's already-computed `DefSurface` with its owned
@@ -244,18 +270,18 @@ impl LspSnapshot {
             }
         }
 
-        Some(LspSnapshot {
+        LspSnapshot {
             generation: 0,
-            graph,
+            graph: Arc::new(graph),
             dep_layer: Arc::new(dep_layer),
-            snap,
+            snap: Arc::new(snap),
             parsed: parsed_files,
             edges_by_file,
             event_edges,
             incoming,
             decls_by_file,
             decl_by_id,
-        })
+        }
     }
 
     /// Position lookup: file + 0-based line + UTF-8 byte col → routine whose
@@ -343,6 +369,76 @@ pub fn build_incoming(
     }
 
     incoming
+}
+
+/// One workspace file's contribution to a snapshot: its resolved edge list,
+/// definition-surface fingerprint, and (sorted) decl list. Shared by
+/// [`LspSnapshot::from_context`]'s whole-batch build loop and the
+/// incremental updater's rung-1 (one file) / rung-2 (every file) per-file
+/// recompute (`src/lsp/updater.rs`) — the ONE place "what a file
+/// contributes to a snapshot" is defined, so the batch and incremental paths
+/// can never drift apart.
+#[must_use]
+pub(crate) fn recompute_file(
+    pf: &ParsedFile,
+    primary_app_ref: AppRef,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
+) -> (Vec<ClassifiedEdge>, DefSurface, Vec<DeclEntry>) {
+    let file_res = crate::program::resolve::full::resolve_file_obligations(
+        pf,
+        primary_app_ref,
+        graph,
+        index,
+        body_map,
+        obj_node_map,
+    );
+    let surface = def_surface_fingerprint(pf);
+
+    let mut decls: Vec<DeclEntry> = Vec::new();
+    for obj in &pf.file.objects {
+        let obj_key = match obj.id {
+            Some(n) => ObjKey::Id(n),
+            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+        };
+        let obj_node_id = ObjectNodeId {
+            app: primary_app_ref,
+            kind: obj.kind,
+            key: obj_key,
+        };
+        for routine in &obj.routines {
+            let id = source_routine_node_id(obj_node_id.clone(), routine);
+            decls.push(DeclEntry {
+                id,
+                name: routine.name.clone(),
+                origin: routine.origin.clone(),
+                name_origin: routine.name_origin.clone(),
+                virtual_path: pf.virtual_path.clone(),
+            });
+        }
+    }
+    decls.sort_by_key(|d| d.origin.byte.start);
+
+    (file_res.edges, surface, decls)
+}
+
+/// DERIVED index (see [`LspSnapshot::decl_by_id`]'s doc): every `DeclEntry`
+/// across every file, keyed by its `RoutineNodeId`. Always rebuilt WHOLESALE
+/// from `decls_by_file` — never cloned-then-patched — mirroring
+/// [`build_incoming`]'s own H-10-law rebuild pattern.
+#[must_use]
+pub(crate) fn build_decl_by_id(
+    decls_by_file: &HashMap<String, Arc<Vec<DeclEntry>>>,
+) -> HashMap<RoutineNodeId, DeclEntry> {
+    let mut decl_by_id = HashMap::new();
+    for decls in decls_by_file.values() {
+        for d in decls.iter() {
+            decl_by_id.insert(d.id.clone(), d.clone());
+        }
+    }
+    decl_by_id
 }
 
 // ---------------------------------------------------------------------------

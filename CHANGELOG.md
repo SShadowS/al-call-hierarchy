@@ -8,6 +8,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`src/lsp/updater.rs`: the incremental updater — debounced queue, the
+  rung-1/rung-2/(degenerate)rung-3 soundness ladder, and atomic
+  `Arc`-swap publication (T3 LSP-migration arc, Task 9 — the arc's CRUX).**
+  `SharedSnapshot` (`RwLock<Arc<LspSnapshot>>`, swap-only — a query thread's
+  `get()` is a cheap `Arc` clone, never blocked) + `ChangeEvent`
+  (`FileSaved`/`FileRemoved`/`DepsChanged`/`Overflow`) + `Updater` (owns the
+  mutable working `Vec<ParsedUnit>` — every source-bearing app, workspace
+  AND embedded-source deps — that a transient `ResolveIndex`/`BodyMap` pair
+  borrows fresh on every apply, no self-referential struct) +
+  `Updater::apply_batch` (the synchronous, unit-tested core; returns
+  `(LspSnapshot, Rung)` — the brief's "expose the rung taken" test hook,
+  more directly than the originally-suggested `Cell<Rung>`) + `spawn_updater`
+  (the thread wrapper: 100ms debounce, per-path last-wins coalescing, apply,
+  swap, `on_swap` notify hook for a future diagnostics consumer). Implements
+  the plan's now-MANDATORY contingency from Task 3's CDO measurement
+  (`ResolveIndex`+`BodyMap` cost 200-350ms — 2-3.5x rung 1's entire 100ms
+  budget): rung 1 NEVER transiently rebuilds them from a full re-parse:
+  fingerprint-equal saves splice straight into the updater's cached
+  `Vec<ParsedUnit>` and re-resolve only the touched file(s) against a
+  transient index/body_map built over the UNCHANGED cached graph, sharing
+  every untouched file's edge bucket/decl list/parsed entry via `Arc::clone`
+  (proved by an `Arc::ptr_eq` test assertion — the no-re-resolve proof).
+  Rung 2 (a definition-surface change, file add/delete, or a `Recovered`
+  parse — fail-closed, never trusted for rung 1) rebuilds the workspace
+  layer via `assemble_program_graph` over the cached, unchanged `DepLayer`
+  and re-resolves EVERY workspace file (a signature change anywhere can
+  change how any OTHER file's call sites resolve). Rung 3
+  (`DepsChanged`/`Overflow`, or a path outside the workspace source set
+  entirely — e.g. under `.alpackages/`, the Task-4-review dep-file-boundary
+  scenario) is a full rebuild via the new `LspSnapshot::build_full_with_parsed`
+  (returns a SECOND, fully independent `parse_snapshot` pass alongside the
+  snapshot — `AlFile` has no `Clone` impl, so the snapshot's own owned parse
+  and the updater's mutable working parse can never share one `AlFile`
+  instance; this second pass runs only at startup and on the rare rung-3
+  path, never on the rung-1/rung-2 hot path). Batch semantics: any rung-2 (or
+  rung-3) event in a coalesced batch escalates the WHOLE batch — one rebuild
+  serves every file named in it. `LspSnapshot` gained `Arc`-shared `graph`
+  and `snap` fields (were plain owned `ProgramGraph`/`AppSetSnapshot` —
+  neither is cheaply cloneable at CDO scale) and `decls_by_file`'s per-file
+  values became `Arc<Vec<DeclEntry>>` (was a plain `Vec`) so an incremental
+  rebuild can share every untouched file's decl list instead of deep-cloning
+  the whole map; `decl_by_id` is now explicitly documented as a DERIVED
+  index (like `incoming`) always rebuilt wholesale via the new
+  `build_decl_by_id`, never cloned-then-patched. `LspSnapshot::from_context`
+  and the new `recompute_file` helper (used by both the Task-8 batch build
+  and this task's rung 1/2 per-file recompute — the ONE place "what a file
+  contributes to a snapshot" is defined) factor the Task-8 batch-build loop
+  so it can never drift from the incremental path. 8 unit tests over an
+  in-memory fixture workspace cover the brief's binding Step-1 scenarios
+  (a)-(e) (body edit → rung 1 with the `Arc::ptr_eq` sibling-untouched
+  proof; signature edit → rung 2 with the caller's route flipping to
+  `Evidence::Unknown(UnknownReason::ArityMismatch)`; file delete → rung 2
+  with its bucket/incoming entries gone; a `Recovered`-parse save escalating
+  past rung 1; a `.alpackages`-shaped path escalating to rung 3) plus a
+  fail-closed build-failure test (prev snapshot AND the updater's working
+  state both survive untouched), a mixed-batch test (one rung-2 file forces
+  the whole batch), and the Step-3 debounce/coalesce test (5 rapid saves of
+  one file via `spawn_updater`'s real background thread → exactly 1 apply,
+  proven via a counting `on_swap` wrapper).
 - **`src/lsp/snapshot.rs`: `LspSnapshot`, the immutable batch-built
   program-engine snapshot the migrated LSP server will serve queries from
   (T3 LSP-migration arc, Task 8 — the arc's structural centerpiece).**
