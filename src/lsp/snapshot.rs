@@ -30,7 +30,7 @@ use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::body_map::BodyMap;
-use crate::program::resolve::edge::RouteTarget;
+use crate::program::resolve::edge::{Edge, RouteTarget};
 use crate::program::resolve::emit_event_flow_edges;
 use crate::program::resolve::full::{ClassifiedEdge, ObligationId, ProgramContext, build_context};
 use crate::program::resolve::index::ResolveIndex;
@@ -346,29 +346,46 @@ pub fn build_incoming(
 
     for (file, edges) in edges_by_file {
         for (idx, ce) in edges.iter().enumerate() {
-            for route in &ce.edge.routes {
-                if let RouteTarget::Routine(target) = &route.target {
-                    incoming.entry(target.clone()).or_default().push(EdgeRef {
-                        file: file.clone(),
-                        idx: idx as u32,
-                    });
-                }
-            }
+            push_edge_targets(&mut incoming, &ce.edge, file, idx as u32);
         }
     }
 
     for (idx, ce) in event_edges.iter().enumerate() {
-        for route in &ce.edge.routes {
-            if let RouteTarget::Routine(target) = &route.target {
-                incoming.entry(target.clone()).or_default().push(EdgeRef {
-                    file: EVENT_EDGES_KEY.to_string(),
-                    idx: idx as u32,
-                });
-            }
-        }
+        push_edge_targets(&mut incoming, &ce.edge, EVENT_EDGES_KEY, idx as u32);
     }
 
     incoming
+}
+
+/// Push one [`EdgeRef`] per DISTINCT `RouteTarget::Routine` target `edge`
+/// resolves to (T3 Task 9 review carry-over from Task 8: a single edge can
+/// carry >1 route to the exact SAME target — e.g. a pathological
+/// ambiguous-overload candidate set where two routes happen to name the
+/// same routine — and without this per-edge dedup guard, `incoming[target]`
+/// would carry the IDENTICAL `EdgeRef` more than once: pure noise for a
+/// consumer, e.g. `incomingCalls`' `fromRanges` showing the same call site
+/// twice for no reason). Routes from a DIFFERENT edge naming the same
+/// target are NOT deduplicated — those are genuinely distinct callers (a
+/// different `idx`), never touched by this guard.
+fn push_edge_targets(
+    incoming: &mut HashMap<RoutineNodeId, Vec<EdgeRef>>,
+    edge: &Edge,
+    file: &str,
+    idx: u32,
+) {
+    let mut seen_this_edge: Vec<&RoutineNodeId> = Vec::new();
+    for route in &edge.routes {
+        if let RouteTarget::Routine(target) = &route.target {
+            if seen_this_edge.contains(&target) {
+                continue;
+            }
+            seen_this_edge.push(target);
+            incoming.entry(target.clone()).or_default().push(EdgeRef {
+                file: file.to_string(),
+                idx,
+            });
+        }
+    }
 }
 
 /// One workspace file's contribution to a snapshot: its resolved edge list,
@@ -733,5 +750,88 @@ mod tests {
             let ce = snap.edge(r);
             assert_eq!(ce.edge.kind, EdgeKind::EventFlow);
         }
+    }
+
+    // ── build_incoming: one edge, 2 routes to the SAME target → 1 EdgeRef ──
+    // (T3 Task 9 review carry-over from Task 8: a pathological
+    // ambiguous-overload-style edge whose routes list happens to name the
+    // same target twice must not produce a duplicate incoming entry.)
+
+    #[test]
+    fn build_incoming_dedups_one_edges_repeated_route_to_the_same_target() {
+        use crate::program::node::{AppRef, ObjKey, ObjectNodeId};
+        use crate::program::resolve::edge::{
+            CanonicalSpan, DispatchShape, Evidence, Route, RouteTarget, SetCompleteness, SiteId,
+            SourcePos, Witness,
+        };
+        use al_syntax::ir::ObjectKind;
+
+        fn rid(name: &str) -> RoutineNodeId {
+            RoutineNodeId {
+                object: ObjectNodeId {
+                    app: AppRef(0),
+                    kind: ObjectKind::Codeunit,
+                    key: ObjKey::Id(1),
+                },
+                name_lc: name.to_string(),
+                enclosing_member_lc: None,
+                params_count: 0,
+                sig_fp: 0,
+            }
+        }
+
+        fn dup_route(target: &RoutineNodeId) -> Route {
+            Route {
+                target: RouteTarget::Routine(target.clone()),
+                evidence: Evidence::Source,
+                conditions: vec![],
+                witness: Witness::None,
+                receiver_tier: None,
+            }
+        }
+
+        let target = rid("target");
+        let caller = rid("caller");
+        let edge = Edge {
+            from: caller.clone(),
+            site: SiteId {
+                caller,
+                span: CanonicalSpan {
+                    unit: "F.al".into(),
+                    start: SourcePos { line: 1, col: 1 },
+                    end: SourcePos { line: 1, col: 2 },
+                },
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::Call,
+            shape: DispatchShape::AmbiguousOverload,
+            completeness: SetCompleteness::Complete,
+            // Pathological: the SAME target named twice in one edge's routes.
+            routes: vec![dup_route(&target), dup_route(&target)],
+        };
+
+        let mut edges_by_file: HashMap<String, Arc<Vec<ClassifiedEdge>>> = HashMap::new();
+        edges_by_file.insert(
+            "F.al".to_string(),
+            Arc::new(vec![ClassifiedEdge {
+                obligation_id: ObligationId::CallSite {
+                    caller: edge.from.clone(),
+                    span: edge.site.span.clone(),
+                    callee_fp: edge.site.callee_fingerprint,
+                },
+                edge,
+            }]),
+        );
+
+        let incoming = build_incoming(&edges_by_file, &[]);
+        let refs = incoming
+            .get(&target)
+            .expect("target must have an incoming entry");
+        assert_eq!(
+            refs.len(),
+            1,
+            "one edge with 2 routes to the SAME target must produce exactly 1 \
+             EdgeRef, not one per route; got {refs:?}"
+        );
     }
 }

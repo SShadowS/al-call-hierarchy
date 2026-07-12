@@ -84,7 +84,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   either edit — the exact arrangement `spawn_updater`'s hot loop relies on),
   and the Step-3 debounce/coalesce test (5 rapid saves of one file via
   `spawn_updater`'s real background thread → exactly 1 apply, proven via a
-  counting `on_swap` wrapper).
+  counting `on_swap` wrapper). Step 3b re-measured rung 1/rung 2 against this
+  REAL code path on CDO (`.superpowers/sdd/t3-stage-split.md` addendum,
+  `apply_rung1_core`/`Updater::apply_rung2` exercised directly with
+  in-memory-only `ParsedFile`s — zero disk mutation to the real workspace):
+  rung 1 measures ~10.5ms (10x under the 100ms budget, holding the
+  cached-context design's whole point) and rung 2 measures ~1.46s — FASTER
+  than Task 3's ~1.9s pre-implementation upper-bound estimate, because the
+  real rung 2 only re-parses the changed file(s), never the whole workspace.
+  Also fixes a Task 8 review carry-over: `build_incoming` could push a
+  duplicate `EdgeRef` when one edge's `routes` named the same target more
+  than once (a pathological ambiguous-overload shape) — the new
+  `push_edge_targets` helper dedups per-edge (routes from a DIFFERENT edge
+  naming the same target are untouched — those are genuinely distinct
+  callers), pinned by a hand-constructed-`Edge` unit test.
 - **`src/lsp/snapshot.rs`: `LspSnapshot`, the immutable batch-built
   program-engine snapshot the migrated LSP server will serve queries from
   (T3 LSP-migration arc, Task 8 — the arc's structural centerpiece).**

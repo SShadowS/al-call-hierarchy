@@ -1458,4 +1458,140 @@ mod tests {
             "5 rapid saves of ONE file must coalesce into exactly 1 apply"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // T3 Task 9 Step 3b: RE-MEASURE rung 1/rung 2 against the REAL updater
+    // code path (Task 3's original 1.9s rung-2 pin was an UPPER BOUND: it
+    // predated `assemble_program_graph`/this task's real rung-2 path
+    // entirely — see `.superpowers/sdd/t3-stage-split.md`).
+    //
+    // This exercises `apply_rung1_core`/`Updater::apply_rung2` DIRECTLY,
+    // bypassing `Updater::apply_batch`'s classification (which reads from
+    // and would otherwise need to write to real files on the user's ACTUAL
+    // CDO workspace on disk — never done here: every `ParsedFile` this test
+    // constructs is built from a real workspace file's OWN already-parsed
+    // TEXT, re-parsed in memory, with zero `std::fs::write` calls anywhere).
+    // This measures the real code path faithfully: `apply_rung2`'s cost is
+    // dominated by re-resolving EVERY workspace file regardless of which one
+    // "changed," so feeding it the SAME (unchanged) content for one file
+    // exercises the identical splice + assemble_program_graph + fresh
+    // index/body_map + re-resolve-ALL + event-edges + derived-index cost a
+    // real signature edit would pay.
+    // -----------------------------------------------------------------------
+
+    /// Run: `CDO_WS=<path> cargo test --release rung1_rung2_wall_clock -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn rung1_rung2_wall_clock_on_cdo() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            eprintln!("rung1_rung2_wall_clock_on_cdo: CDO_WS unset or missing, skipping");
+            return;
+        };
+
+        const RUNS: usize = 3;
+        fn median(mut xs: Vec<Duration>) -> Duration {
+            xs.sort();
+            xs[xs.len() / 2]
+        }
+
+        let (base, parsed) =
+            LspSnapshot::build_full_with_parsed(&ws).expect("build_full_with_parsed on CDO");
+        let mut updater = Updater::new(ws.clone(), parsed);
+
+        // Any real workspace file — sorted for a deterministic pick.
+        let mut vps: Vec<String> = base.parsed.keys().cloned().collect();
+        vps.sort();
+        let target_vp = vps
+            .into_iter()
+            .next()
+            .expect("CDO must have at least one workspace file");
+        let target_text = base.parsed[&target_vp].text.clone();
+
+        // ── Rung 1: warm context (built ONCE, reused for all RUNS) —
+        // resolve-one-file + incoming rebuild. `updater.parsed` is NEVER
+        // mutated here (the touched file goes into a throwaway local
+        // `pending` map, exactly as `apply_rung1_core`'s real contract
+        // promises), so this block cannot perturb the rung-2 measurement
+        // that follows it.
+        let mut rung1_times = Vec::with_capacity(RUNS);
+        {
+            let index = ResolveIndex::build(&base.graph);
+            let body_map = BodyMap::build(&base.graph, &updater.parsed);
+            let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
+                .graph
+                .objects
+                .iter()
+                .map(|o| (o.id.clone(), o))
+                .collect();
+            let mut pending: HashMap<String, ParsedFile> = HashMap::new();
+
+            for _ in 0..RUNS {
+                let t0 = Instant::now();
+                let provenance = updater.file_provenance(&base, &target_vp);
+                let file = al_syntax::parse(&target_text);
+                let pf = ParsedFile {
+                    virtual_path: target_vp.clone(),
+                    file,
+                    provenance,
+                    text: target_text.clone(),
+                };
+                let _snapshot = apply_rung1_core(
+                    &base,
+                    vec![(target_vp.clone(), pf)],
+                    &index,
+                    &body_map,
+                    &obj_node_map,
+                    &mut pending,
+                );
+                rung1_times.push(t0.elapsed());
+            }
+        }
+
+        // ── Rung 2: splice + assemble_program_graph + fresh index/body_map
+        // + re-resolve ALL workspace files + event edges + derived indexes.
+        // Reuses the SAME `updater` across all RUNS (each run re-splices the
+        // identical, unchanged content — idempotent, so repeating this 3x
+        // measures the same real cost 3 times without needing a fresh
+        // multi-second `build_full_with_parsed` per run).
+        let mut rung2_times = Vec::with_capacity(RUNS);
+        for _ in 0..RUNS {
+            let provenance = updater.file_provenance(&base, &target_vp);
+            let pf = ParsedFile {
+                virtual_path: target_vp.clone(),
+                file: al_syntax::parse(&target_text),
+                provenance,
+                text: target_text.clone(),
+            };
+            let planned = vec![Planned::Save {
+                vp: target_vp.clone(),
+                pf: Box::new(pf),
+                fingerprint_changed: true,
+            }];
+
+            let t0 = Instant::now();
+            let _snapshot = updater.apply_rung2(&base, planned);
+            rung2_times.push(t0.elapsed());
+        }
+
+        let rung1_med = median(rung1_times);
+        let rung2_med = median(rung2_times);
+
+        eprintln!("=== rung1_rung2_wall_clock_on_cdo (median of {RUNS} runs, CDO_WS={ws:?}) ===");
+        eprintln!(
+            "rung 1 (warm context: resolve-one-file + incoming rebuild, swap excluded — \
+             an Arc write, negligible) : {rung1_med:?}"
+        );
+        eprintln!(
+            "rung 2 (splice + assemble_program_graph + fresh index/bodymap + re-resolve-ALL \
+             + event edges + derived indexes) : {rung2_med:?}"
+        );
+        if rung1_med > Duration::from_millis(100) {
+            eprintln!("*** rung-1 EXCEEDED the 100ms budget: {rung1_med:?} ***");
+        } else {
+            eprintln!("rung-1 <100ms HOLDS: {rung1_med:?}");
+        }
+    }
 }
