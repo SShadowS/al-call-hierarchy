@@ -2,8 +2,11 @@
 
 - **Date:** 2026-07-12
 - **Status:** DONE — audit complete, rung 1's body-read question answered, ONE binding
-  implementation constraint discovered (see §6.1) that Task 9 MUST honor.
-- **Scope:** documentation only. No code changed while producing this audit.
+  implementation constraint discovered (see §6.1) that Task 9 MUST honor. **Patched
+  2026-07-12 (Task 7 review fix-wave):** §4's per-object list gained a `name` field
+  Task 7's implementation found missing and this review confirmed — see §6.5.
+- **Scope:** documentation only. No code changed while producing this audit; the
+  2026-07-12 patch above amends this doc's own field list, also documentation-only.
 - **Parent design:** `docs/superpowers/specs/2026-07-12-t3-lsp-migration-design.md`
   §4 (two-rung soundness ladder), §11.1 ("fingerprint completeness is THE
   correctness risk of rung 1").
@@ -285,16 +288,19 @@ sub-fingerprint belongs to, then hashed as one ordered sequence:
    object in `pf.file.objects`) — an add/remove/rename is a surface change by
    itself, independent of any per-field comparison below.
 2. Per object (in a stable, deterministic order — e.g. sorted by `ObjectNodeId`):
-   1. `declared_id`
-   2. `extends_target` (raw, as extracted — see note below on normalization)
-   3. `implements` (as extracted; see §4 note on ordering)
-   4. `source_table` + `source_table_temporary` (already conflict-degraded per
+   1. `name`, lowercased (**added during Task 7 implementation, confirmed by
+      review — see §6.5**; item 1's identity key alone does NOT cover this
+      for a NUMBERED object)
+   2. `declared_id`
+   3. `extends_target` (raw, as extracted — see note below on normalization)
+   4. `implements` (as extracted; see §4 note on ordering)
+   5. `source_table` + `source_table_temporary` (already conflict-degraded per
       §5.4 — hash the RESULT, no separate "had a preproc conflict" bit needed)
-   5. `table_no` (same degrade-then-hash rule)
-   6. `page_controls` (`name_lc`, `kind`, `target`, in document order)
-   7. `fields` (`name_lc`, `type_text`, in document order)
-   8. `dataitems` (`name_lc`, `name`, `source_table`, in document order)
-   9. `parse_incomplete` (file-level parse-health flag)
+   6. `table_no` (same degrade-then-hash rule)
+   7. `page_controls` (`name_lc`, `kind`, `target`, in document order)
+   8. `fields` (`name_lc`, `type_text`, in document order)
+   9. `dataitems` (`name_lc`, `name`, `source_table`, in document order)
+   10. `parse_incomplete` (file-level parse-health flag)
 3. **The SET of `RoutineNodeId`s F declares per object** (name_lc +
    enclosing_member_lc + params_count + sig_fp — an add/remove/rename/re-arity/
    overload change is a surface change by itself, same rationale as #1).
@@ -437,6 +443,44 @@ even though nothing resolution-relevant changed. This is a false-positive-only r
 (an unnecessary rung-1→rung-2 escalation, never an unsound skip) — acceptable
 under the fail-closed doctrine ("any doubt fails toward rung 2"), noted so Task 7
 does not need to chase determinism harder than the fail-closed direction requires.
+
+### 6.5 Object `name` — added during Task 7 implementation, confirmed by review
+
+**Original gap:** §4's per-object list (as first drafted) never mentioned
+`ObjectNode::name` — item 2's fields ran `declared_id`, `extends_target`,
+`implements`, `source_table`+`temporary`, `table_no`, `page_controls`, `fields`,
+`dataitems`, `parse_incomplete`, and item 1's identity key (`kind` +
+`declared_id`-or-`name`-key) only carries the display NAME for an ID-LESS object
+(where the key is `ObjKey::Name(name_lc)`) — for a NUMBERED object the key is
+`ObjKey::Id(n)`, which never changes on a rename.
+
+**Why this was a real false-negative, not a nit:** §2.2's own read-table already
+listed `name` among the `ObjectNode` fields "consulted through the [audited]
+accessors" — but that fact never made it into §4's derived list. Tracing the
+actual consumer confirms the risk is real: `graph.rs:18-28`'s `ObjectIndex::build`
+keys its `by_app_kind_name` index on `(obj.id.app, obj.id.kind,
+obj.name.to_ascii_lowercase())` for **every** object, numbered or not; `graph.rs:
+86-127`'s `resolve_object` looks up purely through that `name_lc`-keyed index (the
+own-app-shadow fast path and the dependency-closure fallback both key on
+`name_lc`) and never reads `declared_id` at all. So renaming a NUMBERED object
+(`codeunit 50100 "A"` → `codeunit 50100 "B"`, id held constant) changes what
+`Codeunit "B".Foo()` call sites elsewhere in the workspace resolve to — a
+resolution-outcome change with NOTHING in §4's then-current field list moving to
+catch it.
+
+**Disposition:** found and fixed during Task 7's implementation (not proposed
+speculatively — the implementer traced the discrepancy between §2.2 and §4 while
+implementing item 1, then verified the `ObjectIndex`/`resolve_object` read path
+before acting), applying this design's own "when in doubt, INCLUDE the field"
+directive rather than leaving the gap for a later task to rediscover. A dedicated
+regression test (`object_renamed_with_same_numeric_id_changes_fingerprint`,
+`src/lsp/def_surface.rs`) pins the numbered-object case; a companion test
+(`id_less_object_renamed_changes_fingerprint_via_obj_key_name_arm`, added in the
+same review fix-wave that produced this section) pins the id-less case via
+`ObjKey::Name`, confirming both branches of the identity key are exercised.
+Independently reviewed and CONFIRMED (re-verified the same `graph.rs` citations
+above) before this doc was patched — §4's per-object list now includes `name` as
+item 2.1, ahead of `declared_id`.
 
 ## 7. Reviewer instruction (per the brief's Step 4 — refute-by-default)
 

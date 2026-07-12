@@ -30,17 +30,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lookup on it for every object kind), so omitting it from §4's derived list
   would have been a false-negative gap (a numbered-object rename resolving
   differently elsewhere without moving the fingerprint) — flagged back for
-  the audit doc to pick up. 30 unit tests: 1 parse-twice determinism check,
-  24 NOT-EQUAL pairs (one per audited field-change class: object
-  add/re-id/rename, `extends_target`, `implements`, `SourceTable`+
-  `temporary`, `TableNo`, `page_controls`, table `fields` add/type-change,
-  report `dataitems`, file-level `parse_incomplete`, routine
-  add/rename/re-arity/param-type-change, `by_ref` flip, `access`,
-  `return_type`, `event_subscribers`, `subscriber_instance_manual`,
-  `publisher_kind`, `include_sender`), and 5 EXCLUSION pairs proving an
-  out-of-scope field never moves the fingerprint (body-only statement,
-  local variable, comment/whitespace-only span shift, an added enum value,
-  a parameter's NAME).
+  the audit doc, and CONFIRMED by an independent review (which verified
+  `graph.rs`'s `ObjectIndex::build` keys by-name unconditionally and
+  `resolve_object` never consults `declared_id`); the audit doc itself
+  (`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §4) was
+  patched in the same review fix-wave to record object `name` in its
+  per-object field list, with the confirmed evidence. 33 unit tests: 1
+  parse-twice determinism check, 24 NOT-EQUAL pairs (one per audited
+  field-change class: object add/re-id/rename, `extends_target`,
+  `implements`, `SourceTable`+`temporary`, `TableNo`, `page_controls`, table
+  `fields` add/type-change, report `dataitems`, file-level
+  `parse_incomplete`, routine add/rename/re-arity/param-type-change,
+  `by_ref` flip, `access`, `return_type`, `event_subscribers`,
+  `subscriber_instance_manual`, `publisher_kind`, `include_sender`), 5
+  EXCLUSION pairs proving an out-of-scope field never moves the fingerprint
+  (body-only statement, local variable, comment/whitespace-only span shift,
+  an added enum value, a parameter's NAME), and 3 review fix-wave additions
+  deliberately constructed to isolate a field the review found NO existing
+  test actually exercised (verified by a temporary deletion-probe on each:
+  neutering the write made ONLY the new test fail, confirmed then
+  restored) — a case-only param type-text change (isolates the raw
+  per-parameter `ty` read from `sig_fp`/`param_sig_key`, both of which
+  normalize case away), a routine-level `parse_incomplete` flip held
+  against a permanently-`Recovered` file (isolates the per-routine flag
+  from the file-level one), and an id-less object rename (exercises
+  `ObjKey::Name`, previously only `ObjKey::Id` was covered).
 - **`benches/engine_stages.rs`: program-engine stage-split Criterion bench +
   a CDO-gated stage-split unit test (T3 LSP-migration arc, Task 3 —
   MEASUREMENT ONLY, no engine behavior changed).** Splits the program

@@ -26,14 +26,18 @@
 //! hashing). Every enum/bool is a single tagged byte; every `Option<T>` is a
 //! 0/1 tag byte followed by `T`'s encoding when `Some`.
 //!
-//! # Field order (fixed; matches the audit's §4 list, plus one addition — see below)
+//! # Field order (fixed; matches the audit's §4 list — see below for one item
+//! this module's implementation found missing from that list, since folded
+//! back into it)
 //!
 //! For each object, in `ObjectNodeId` order (sorted by `(kind, key)` — a
 //! single file's placeholder `AppRef` is constant, so this is effectively
 //! `(kind, key)`):
 //!
 //! 1. `kind` + `key` (the object's [`crate::program::ObjectNodeId`] identity — audit §4 item 1)
-//! 2. `name`, lowercased — **addition beyond the audit's literal item list, see below**
+//! 2. `name`, lowercased — **found missing from the audit's item list while
+//!    implementing this module; the audit doc's §4 item 2.1 now records it
+//!    too, see below**
 //! 3. `declared_id`
 //! 4. `extends_target`
 //! 5. `implements` (document order, as extracted)
@@ -63,22 +67,22 @@
 //!     itself reads through to `RoutineDecl` rather than `RoutineNode`
 //! 21. `parse_incomplete` (routine-level parse-health flag)
 //!
-//! # The one addition beyond the audit's literal §4 text: object `name`
+//! # Object `name`: a gap found here, now closed in the audit doc too
 //!
 //! The audit's own §2.2 read-table lists `ObjectNode::name` as a field
 //! `graph.resolve_object`'s underlying index consults
 //! (`src/program/graph.rs`'s `ObjectIndex::build` keys its by-name lookup on
 //! `obj.name.to_ascii_lowercase()` for EVERY object, numbered or not) — but
-//! §4's derived per-object field list omits it (item 1's identity key only
-//! covers `declared_id`-or-name-key, which for a NUMBERED object is
-//! `ObjKey::Id`, never the display name). Renaming a numbered object
-//! (`codeunit 50100 "A"` -> `codeunit 50100 "B"`) therefore changes what
-//! `Codeunit "B".Foo()` call sites elsewhere resolve to, without moving
-//! item 1's identity key at all — a real false-negative risk this module
-//! closes by hashing `name.to_ascii_lowercase()` per object, in ADDITION to
-//! (not instead of) the audit's literal list. Flagged back for the audit
-//! doc (T3 Task 4) to pick up; the code here is the authoritative behaviour
-//! regardless of which document gets updated first.
+//! §4's derived per-object field list, as first drafted, omitted it (item 1's
+//! identity key only covers `declared_id`-or-name-key, which for a NUMBERED
+//! object is `ObjKey::Id`, never the display name). Renaming a numbered
+//! object (`codeunit 50100 "A"` -> `codeunit 50100 "B"`) therefore changes
+//! what `Codeunit "B".Foo()` call sites elsewhere resolve to, without moving
+//! item 1's identity key at all — a real false-negative risk. Found while
+//! implementing this module (not proposed speculatively), independently
+//! reviewed and CONFIRMED, and folded into the audit doc's own §4 item 2.1
+//! (see that doc's §6.5) in the same review pass — so this is no longer a
+//! deviation from §4, just the paper trail for how item 2.1 got there.
 //!
 //! # Excluded, per the audit's §4 "Explicitly EXCLUDED" list
 //!
@@ -186,7 +190,7 @@ pub fn def_surface_fingerprint(pf: &ParsedFile) -> DefSurface {
     let mut h = Hasher::new();
     write_list(&mut h, &objects, |h, (obj, routines)| {
         write_object_identity(h, &obj.id); // 1
-        write_str(h, &obj.name.to_ascii_lowercase()); // 2 (addition — see module doc)
+        write_str(h, &obj.name.to_ascii_lowercase()); // 2 (see module doc's "object name" section)
         write_opt_i64(h, obj.declared_id); // 3
         write_opt_str(h, &obj.extends_target); // 4
         write_list(h, &obj.implements, |h, s| write_str(h, s)); // 5
@@ -1150,6 +1154,132 @@ codeunit 50100 T
             fp(variant),
             "a parameter's NAME is never part of arg-type dispatch — item 20 \
              hashes only (ty, by_ref) per parameter, never the declared name"
+        );
+    }
+
+    // ── review fix-wave: isolation tests (deletion-probe verified) ────────
+    //
+    // The Task 7 review deleted item 20's `write_list` call (raw per-
+    // parameter `ty`/`by_ref`) and item 21's `write_bool` call (routine-level
+    // `parse_incomplete`) and found ALL 30 prior tests stayed green — every
+    // existing param-type-change fixture also happened to move `sig_fp`
+    // (item 12) and/or `param_sig_key` (item 19), and no prior fixture
+    // isolated a routine's OWN `parse_incomplete` from the file-level one
+    // (item 11). The three tests below are deliberately constructed so that
+    // ONLY the targeted item differs between base/variant — each was run
+    // against a temporarily-neutered `def_surface_fingerprint` (the relevant
+    // write call commented out) and confirmed to FAIL before being restored;
+    // see the fix-wave section of `task-7-report.md` for the probe output.
+
+    #[test]
+    fn param_type_case_only_change_moves_fingerprint_via_raw_param_text() {
+        // `sig_fp` (item 12, via `source_param_sig_fp`/`normalize_type_text`)
+        // and `param_sig_key` (item 19, `trim().to_ascii_lowercase()`) both
+        // fold case away, so a CASE-ONLY change to a parameter's declared
+        // type text is invisible to both. Only item 20's raw `(ty, by_ref)`
+        // read — straight from `RoutineDecl.params`, never normalized — can
+        // catch it. Varying only the subtype identifier's case (`Customer`
+        // vs `CUSTOMER`), never the `Record` keyword itself, keeps this a
+        // pure case difference with zero parsing-ambiguity risk.
+        let base = r#"
+codeunit 50100 T
+{
+    procedure Foo(X: Record Customer)
+    begin
+    end;
+}
+"#;
+        let variant = r#"
+codeunit 50100 T
+{
+    procedure Foo(X: Record CUSTOMER)
+    begin
+    end;
+}
+"#;
+        assert_ne!(
+            fp(base),
+            fp(variant),
+            "a case-only param type-text change must move the fingerprint \
+             even though sig_fp/param_sig_key both normalize case away — \
+             only item 20's raw (ty, by_ref) read catches this"
+        );
+    }
+
+    #[test]
+    fn routine_level_parse_incomplete_isolated_from_file_level() {
+        // `Broken` carries a PERMANENT local body error (a dangling `+`
+        // operator with no right operand — a genuine grammar error tree-
+        // sitter recovers from locally, unlike an unbalanced `#if`, which
+        // was probed and found to swallow the enclosing routine's own
+        // recognition entirely, not just flag it). `Broken` is IDENTICAL,
+        // byte-for-byte, in both base and variant, so the file-level
+        // parse_incomplete (item 11, driven by the file root's `has_error`)
+        // stays `true` in BOTH versions via `Broken` alone — held constant.
+        // `Target` is clean in base and gets the SAME local-error shape in
+        // variant: its header (name/params/return type) is unaffected (the
+        // error is confined to its own body), so only `Target`'s own
+        // routine-level parse_incomplete (item 21) flips.
+        let base = r#"
+codeunit 50100 T
+{
+    procedure Target()
+    begin
+    end;
+
+    procedure Broken()
+    begin
+        X := 1 +;
+    end;
+}
+"#;
+        let variant = r#"
+codeunit 50100 T
+{
+    procedure Target()
+    begin
+        X := 1 +;
+    end;
+
+    procedure Broken()
+    begin
+        X := 1 +;
+    end;
+}
+"#;
+        assert_ne!(
+            fp(base),
+            fp(variant),
+            "Target's OWN parse_incomplete flipping must move the \
+             fingerprint even though the file-level parse_incomplete (item \
+             11, via Broken's unchanged permanent error) stays true in both \
+             — only item 21's routine-level read catches this"
+        );
+    }
+
+    #[test]
+    fn id_less_object_renamed_changes_fingerprint_via_obj_key_name_arm() {
+        // An Interface object has no numeric id (`ObjectDecl.id == None`),
+        // so its `ObjectNodeId::key` is `ObjKey::Name(name_lc)` — exercising
+        // `write_obj_key`'s `Name` branch (the numbered-object tests above
+        // only ever exercise the `Id` branch).
+        let base = r#"
+interface "My Interface"
+{
+    procedure Foo();
+}
+"#;
+        let variant = r#"
+interface "Renamed Interface"
+{
+    procedure Foo();
+}
+"#;
+        assert_ne!(
+            fp(base),
+            fp(variant),
+            "renaming an id-less object changes its ObjKey::Name identity \
+             (item 1) directly"
         );
     }
 }
