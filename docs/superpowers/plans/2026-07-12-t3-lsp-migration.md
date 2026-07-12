@@ -711,7 +711,10 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
   non-vacuous coverage. Also: expected differential classes for T14's taxonomy from Task 11's
   adjudicated deviations — external/AbiSymbol targets (legacy reused the CALLER's range; new emits
   an object-level `al-preview` item) and outgoing per-site cardinality are LEGACY-SHAPE-CHANGED
-  classes, not regressions.
+  classes, not regressions. From Task 12 (adjudicated): unused-proc R2 requires a REAL resolved
+  EventFlow edge (broken subscription: legacy excluded, new flags — NEW_BETTER precision);
+  publisher-as-edge-source is not usage; interface-member exclusion R6 (legacy false-positively
+  flagged interface method signatures as unused, new excludes them — NEW_BETTER(InterfaceExclusion)).
 
 ---
 
@@ -782,6 +785,9 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
 - [ ] **Step 2:** Fix every compile fallout by DELETION (tests of deleted modules go too — list each
   deleted test in the report with the replacement that covers it: graph.rs unit tests → Task 8/10/11
   coverage; indexer issue-#20 tests → Task 12's per-rule ports; parser golden → retired).
+  NOTE (Task-12 review): `routine_complexity_ir`/`is_framework_invocation_attribute`/`is_event_publisher`
+  were RELOCATED out of parser.rs in the t3.12 fix wave (surviving module; parser.rs re-exports them
+  until deletion) — verify no surviving module imports from parser.rs before deleting it.
   `cargo test` full suite green; clippy bar green.
 - [ ] **Step 3:** Docs: CLAUDE.md Pipeline-1 rewritten (the two-pipeline framing becomes one engine,
   two consumers: LSP surface + CLI/aldump); perf table replaced with Task 16's rows + measured numbers;
