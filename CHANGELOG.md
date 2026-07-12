@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`src/lsp/custom.rs`: engine-backed custom LSP requests (T3 LSP-migration
+  arc, Task 13) — `dependency_document_symbol`, `event_publishers_in_file`,
+  and `event_reference_at_position`, the program-engine replacements for
+  `src/handlers.rs`'s `dependency_document_symbol`/`event_publishers_in_file`/
+  `event_reference_at_position` (cut over at Task 15). `fieldProperties`/
+  `actionProperties`/`telemetryStatus` are already graph-independent and were
+  not touched. `dependency_document_symbol`/`event_reference_at_position`
+  read `LspSnapshot::snap.apps[].abi: Option<ParsedAppPackage>` — the SAME
+  `.app`-derived data (`crate::app_package`/`crate::dependencies::
+  load_all_apps`) legacy's `graph.dependency_objects` was built from —
+  rather than `ProgramGraph`'s `RoutineNode`/`ObjectNode` nodes, giving
+  byte-identical, full-parameter-name signatures for every dependency
+  regardless of trust tier (a `RoutineNode`'s ABI-tier parameter metadata
+  deliberately drops parameter names — `AbiParamRetained`'s "MINUS
+  name/is_temporary" — and carries none at all for an embedded-source
+  dependency, so building from graph nodes would have meant a reduced-fidelity
+  synthesized signature). `event_publishers_in_file` reads a workspace file's
+  retained `AlFile` IR directly (`ParsedFileEntry.file`, no re-parsing, no
+  disk I/O) and renders each publisher's signature via a local
+  string-literal-aware raw-text header scan (byte-identical output to
+  `parser.rs`'s `signature_ir`, duplicated rather than shared since
+  `parser.rs` is a documented Task-17 deletion target). Two additive,
+  parity-safe deltas from legacy: numbered-object lookup via `object_id` now
+  actually resolves (legacy parses but never reads that field), and no disk
+  I/O (reads the in-memory snapshot text instead of re-reading the file from
+  disk, so it can't race a live unsaved editor buffer).
 - **`src/lsp/lens.rs` + `src/lsp/diagnostics.rs`: codeLens + a diffing
   diagnostics engine on the program engine (T3 LSP-migration arc, Task 12) —
   the engine-backed replacements for `src/handlers.rs`'s legacy graph-backed

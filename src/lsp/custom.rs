@@ -1,0 +1,1180 @@
+//! Engine-backed custom LSP requests (T3 Task 13): `dependencyDocumentSymbol`,
+//! `eventPublishersInFile`, `eventReferenceAtPosition` — the program-engine
+//! replacements for `src/handlers.rs`'s `dependency_document_symbol` (line
+//! 1552), `event_publishers_in_file` (line 1711), and
+//! `event_reference_at_position` (line 1799).
+//!
+//! `fieldProperties`/`actionProperties`/`telemetryStatus` (`src/handlers.rs:554,566`)
+//! are ALREADY graph-independent and are NOT touched here — they survive as-is
+//! until Task 15's cutover just re-points the dispatcher at them unchanged.
+//!
+//! # Wire shapes (binding — read before changing anything below)
+//!
+//! These are reproduced VERBATIM from the legacy implementations; the JSON a
+//! client sees must not change (real clients — the AL wrapper extension —
+//! depend on it).
+//!
+//! **`dependencyDocumentSymbol`** (`src/handlers.rs:1370-1421`):
+//! ```jsonc
+//! // request params (all optional; uri wins over the explicit fields when
+//! // it parses — see resolve_target below)
+//! { "uri"?: string, "app"?: string, "objectType"?: string, "objectName"?: string, "objectId"?: number }
+//! // response: DocumentSymbol[]-shaped, one per method on the matched object
+//! [{ "name": string, "detail": string, "kind": number, "tags": number[], "range": {...}, "selectionRange": {...} }]
+//! ```
+//! `kind` is the LSP `SymbolKind` numeric value: `24` (Event) for a
+//! publisher-attributed method, `6` (Method) otherwise. `detail` is
+//! `"{attributeTag} {signature}"` when the method carries a publisher/subscriber
+//! attribute tag, else just `{signature}`. `range`/`selectionRange` are ALWAYS
+//! zero (`{start:{0,0},end:{0,0}}`) — a dependency object's synthesized
+//! `al-preview://` preview document carries no real backing text to anchor a
+//! position in, exactly as legacy found (`src/handlers.rs:1580-1581`).
+//!
+//! **`eventPublishersInFile`** (`src/handlers.rs:1705-1752`): params `{ "uri": string }`;
+//! response is the SAME `DependencyDocumentSymbol[]` shape as above, but for
+//! a WORKSPACE file's own event-publisher procedures — `kind` is always `24`,
+//! and `range`/`selectionRange` are REAL positions (this file has real backing
+//! text), unlike the always-zero ranges above.
+//!
+//! **`eventReferenceAtPosition`** (`src/handlers.rs:1777-1877`): params
+//! `{ "uri": string, "position": {line, character} }`; response is `null` unless
+//! the cursor sits on an `[EventSubscriber(...)]` attribute's argument list, in
+//! which case:
+//! ```jsonc
+//! {
+//!   "publisherObjectType": string, "publisherObject": string, "eventName": string,
+//!   "signature": string | null, "attributeKind": string | null,
+//!   "appName": string | null, "appVersion": string | null
+//! }
+//! ```
+//! The first three fields are ALWAYS populated (extracted from the attribute
+//! text itself) once the cursor hit is confirmed; the last four degrade to
+//! `null` independently depending on how far publisher resolution gets (dep
+//! app found vs. not, method found on it vs. not) — see
+//! [`event_reference_at_position`]'s doc for the exact degrade ladder.
+//!
+//! # Design decision: `AppSetSnapshot.apps[].abi`, not `ProgramGraph`
+//!
+//! The brief's own hint text points at `graph` (`ProgramGraph`'s
+//! `TrustTier::SymbolOnly` nodes) for the dependency-ABI side of this work.
+//! This implementation deliberately does NOT go through `graph.objects`/
+//! `graph.routines` for `dependencyDocumentSymbol`/`eventReferenceAtPosition`'s
+//! publisher resolution — it reads [`LspSnapshot::snap`]`.apps[i].abi:
+//! Option<ParsedAppPackage>` instead. Reasons, discovered while implementing:
+//!
+//! 1. **Full-fidelity signatures already exist there, for free.** `AppUnit::abi`
+//!    is populated (`src/snapshot/snapshot.rs:272`, `abi: Some(rd.package)`)
+//!    from `crate::dependencies::load_all_apps` — the EXACT SAME `.app`-parsing
+//!    pipeline `src/indexer.rs`'s `add_app_to_graph` used to build legacy's
+//!    `graph.dependency_objects`. `ParsedAppPackage::objects[].methods[]`
+//!    (`crate::app_package::ExternalMethod`) already carries a pre-formatted,
+//!    real-parameter-name signature string (`app_package.rs::format_signature`)
+//!    — byte-identical to what legacy served, for EVERY dependency, regardless
+//!    of trust tier (SymbolOnly or EmbeddedSource: `abi` is set unconditionally
+//!    for every resolved dependency, source availability is an orthogonal
+//!    `AppUnit::source` concern).
+//! 2. **The graph-node path has a REAL, structural fidelity hole.** A
+//!    `RoutineNode`'s ABI-tier `abi_params: AbiParams` (`node_extract.rs`)
+//!    intentionally drops each parameter's NAME (`AbiParamRetained` — "MINUS
+//!    `name`/`is_temporary`" per its own doc; only `arg_dispatch` needs it, and
+//!    that never needs names) — so reconstructing a signature from it would
+//!    mean synthesizing placeholder parameter names for every dependency
+//!    method, a real regression from legacy's real names. For an
+//!    EmbeddedSource dependency the gap is worse: `RoutineNode::abi_params` is
+//!    unconditionally `AbiParams::Missing` for a non-`SymbolOnly` routine (its
+//!    parameter data lives in `BodyMap`/`RoutineDecl`, which `LspSnapshot`
+//!    deliberately does NOT retain for dependency files — only position data
+//!    survives into `dep_decl_by_id`'s `DeclEntry`). Reaching real fidelity via
+//!    the graph would require either re-parsing the dependency file on demand
+//!    (for embedded-source deps only) or widening `LspSnapshot`'s stored
+//!    fields — both larger changes than this task's scope, and both made
+//!    unnecessary by point 1.
+//! 3. **The 14-vs-18 `ObjectType`/`ObjectKind` gap the task brief flags as a
+//!    carry-forward simply does not apply to this data source.**
+//!    `ExternalObject::object_type` is typed as `crate::types::ObjectType` —
+//!    legacy's OWN 14-variant enum — because `app_package.rs::push_objects`
+//!    (which builds `ParsedAppPackage`) is the SAME parser legacy always used.
+//!    Its own object-collection code only ever constructs the 14 known
+//!    variants (`push_objects`'s explicit per-field calls), so an object of a
+//!    kind legacy's `ObjectType` cannot name (`ReportExtension`/`Entitlement`/
+//!    `Profile`/`Other`) is simply never present in `ParsedAppPackage::objects`
+//!    at all — this handler inherits legacy's exact visible set as a natural
+//!    consequence of reusing legacy's own object collector, not as a
+//!    deliberately-mirrored compromise. Widening that visible set is a
+//!    NEW_BETTER opportunity for a future task that extends `app_package.rs`'s
+//!    `SymbolReference`/`push_objects` (out of scope here — that module isn't
+//!    T3-owned).
+//!
+//! `event_publishers_in_file` (workspace-file publishers) is unaffected by any
+//! of this — it reads `ParsedFileEntry.file` (the real, retained IR for every
+//! workspace file) directly, giving full-fidelity real-parameter signatures
+//! with zero re-parsing.
+//!
+//! # Other known deltas from legacy (flagged, not silently absorbed)
+//!
+//! - **`object_id`-based lookup (NEW_BETTER).** Legacy's
+//!   `DependencyDocumentSymbolParams::object_id` field is parsed but never
+//!   read (`#[allow(dead_code)]`) — `resolve_dependency_object` is
+//!   name-keyed only, so a numbered dependency object could never resolve via
+//!   that field. This implementation DOES consult `object_id` when present
+//!   (preferring an id match over a name match) — a strictly additive
+//!   improvement: it can only find MORE matches than legacy, never fewer or
+//!   different ones, so it cannot regress Task 14's differential.
+//! - **No disk I/O.** Legacy's `event_reference_at_position` re-reads the
+//!   file from disk (`std::fs::read_to_string`) on every call. This
+//!   implementation reads `LspSnapshot::parsed`'s already-in-memory text —
+//!   consistent with the rest of the (unsaved-edit-aware) engine surface, and
+//!   immune to a stale-on-disk vs. live-editor-buffer race legacy was exposed
+//!   to.
+//! - **Dependency-only publisher resolution scope, mirrored exactly.**
+//!   Legacy's `find_dependency_object_by_type_name` only ever scans
+//!   `graph.dependency_objects` — a publisher declared in the user's OWN
+//!   workspace source can never resolve via `eventReferenceAtPosition`. This
+//!   implementation mirrors that scope precisely (only `snap.snap.apps[1..]`,
+//!   never the workspace unit at index 0) for exact behavioural parity;
+//!   extending it to also resolve a workspace-local publisher is a further
+//!   NEW_BETTER opportunity, not implemented here.
+//! - **`ObjectType::Database` → `Table` arg-0 normalization, mirrored
+//!   locally.** Legacy's text-based attribute parser
+//!   (`src/handlers.rs::parse_event_subscriber_args`) treats a literal
+//!   `ObjectType::Database` first argument as an alias for `ObjectType::Table`
+//!   before doing the lookup (and reflects the NORMALIZED value back in the
+//!   response). `crate::program::resolve::event::parse_event_subscriber_ir` —
+//!   the engine's shared, whole-program event-attribute parser used by
+//!   `node_extract`/`index.rs` for real edge resolution — does NOT perform
+//!   this normalization. This module applies the SAME normalization locally
+//!   (see [`extract_subscriber_display`]) purely for wire-parity with
+//!   legacy's `eventReferenceAtPosition` response; it does NOT touch the
+//!   shared resolver. Whether real `[EventSubscriber(ObjectType::Database,
+//!   ...)]` source exists anywhere and is mishandled by the whole-program
+//!   event-flow resolver itself is a separate, unverified question worth a
+//!   follow-up — flagged, not fixed, here (a north-star-metric-affecting
+//!   change needs its own measurement).
+
+use lsp_types::Position;
+use serde::{Deserialize, Serialize};
+
+use crate::app_package::{ExternalMethodKind, ExternalObject};
+use crate::handlers::parse_al_preview_uri;
+use crate::lsp::encoding::{LineTable, PositionEncoding};
+use crate::lsp::handlers::{origin_to_range, resolve_virtual_path};
+use crate::lsp::snapshot::LspSnapshot;
+use crate::program::resolve::event::{PublisherKind, is_event_publisher};
+use crate::snapshot::{AppSetSnapshot, AppUnit};
+use crate::types::ObjectType;
+use al_syntax::ir::{AlFile, AttributeIr, Ir, Origin};
+
+// ---------------------------------------------------------------------------
+// Shared response shapes (dependencyDocumentSymbol + eventPublishersInFile)
+// ---------------------------------------------------------------------------
+
+/// One synthesized `DocumentSymbol` entry — the SAME shape legacy's private
+/// `DependencyDocumentSymbol` used (`src/handlers.rs:1387-1398`), reused
+/// verbatim by both `dependencyDocumentSymbol` and `eventPublishersInFile`.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyDocumentSymbol {
+    pub name: String,
+    pub detail: String,
+    /// LSP `SymbolKind` value: `24` (Event) or `6` (Method).
+    pub kind: u32,
+    /// LSP `SymbolTag` values — always empty today (mirrors legacy).
+    pub tags: Vec<u32>,
+    pub range: DependencyRange,
+    pub selection_range: DependencyRange,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyRange {
+    pub start: DependencyPosition,
+    pub end: DependencyPosition,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyPosition {
+    pub line: u32,
+    pub character: u32,
+}
+
+const ZERO_DEP_RANGE: DependencyRange = DependencyRange {
+    start: DependencyPosition {
+        line: 0,
+        character: 0,
+    },
+    end: DependencyPosition {
+        line: 0,
+        character: 0,
+    },
+};
+
+fn lsp_range_to_dep_range(r: lsp_types::Range) -> DependencyRange {
+    DependencyRange {
+        start: DependencyPosition {
+            line: r.start.line,
+            character: r.start.character,
+        },
+        end: DependencyPosition {
+            line: r.end.line,
+            character: r.end.character,
+        },
+    }
+}
+
+fn external_kind_to_lsp_kind(kind: ExternalMethodKind) -> u32 {
+    match kind {
+        ExternalMethodKind::IntegrationEvent
+        | ExternalMethodKind::BusinessEvent
+        | ExternalMethodKind::InternalEvent => 24,
+        ExternalMethodKind::EventSubscriber | ExternalMethodKind::Procedure => 6,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// dependencyDocumentSymbol
+// ---------------------------------------------------------------------------
+
+/// Request params — mirrors legacy's `DependencyDocumentSymbolParams`
+/// (`src/handlers.rs:1370-1385`) field-for-field (camelCase wire names).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyDocumentSymbolParams {
+    #[serde(default)]
+    pub uri: Option<String>,
+    #[serde(default)]
+    pub app: Option<String>,
+    #[serde(default)]
+    pub object_type: Option<String>,
+    #[serde(default)]
+    pub object_name: Option<String>,
+    /// Unlike legacy (where this field is parsed but never consulted — see
+    /// this module's doc), a numeric id here IS used to resolve the target
+    /// object when present, preferring it over a name match.
+    #[serde(default)]
+    pub object_id: Option<i64>,
+}
+
+/// `dependencyDocumentSymbol` — see the module doc for the exact wire shape
+/// and the design rationale for reading `snap.snap.apps[].abi` rather than
+/// `snap.graph`. Returns an empty `Vec` (never an error) on no match, mirroring
+/// legacy exactly.
+#[must_use]
+pub fn dependency_document_symbol(
+    snap: &LspSnapshot,
+    params: DependencyDocumentSymbolParams,
+) -> Vec<DependencyDocumentSymbol> {
+    // The URI wins over the explicit fields whenever it parses — mirrors
+    // legacy's `resolve_dependency_object` match exactly (`src/handlers.rs:
+    // 1428-1439`): a `Some(uri)` that FAILS to parse still falls through to
+    // the explicit fields below, it does not short-circuit to "no match".
+    let from_uri = params.uri.as_deref().and_then(parse_al_preview_uri);
+
+    let (app, otype, name): (Option<String>, Option<ObjectType>, String) = match from_uri {
+        Some((app, otype, name)) => (Some(app), Some(otype), name),
+        None => {
+            let otype = params
+                .object_type
+                .as_deref()
+                .and_then(|s| ObjectType::try_from(s).ok());
+            (
+                params.app.clone(),
+                otype,
+                params.object_name.clone().unwrap_or_default(),
+            )
+        }
+    };
+
+    let Some(otype) = otype else {
+        return Vec::new();
+    };
+
+    let Some(obj) =
+        resolve_external_object(&snap.snap, app.as_deref(), otype, &name, params.object_id)
+    else {
+        return Vec::new();
+    };
+
+    build_dependency_symbols(obj)
+}
+
+/// Resolve a dependency object: app-scoped exact match first (when `app` is
+/// given and non-empty), then an any-app fallback scan — mirrors legacy's
+/// `resolve_dependency_object` two-tier lookup exactly
+/// (`src/handlers.rs:1444-1449`). Always excludes `snap.apps[0]` (the
+/// workspace unit — `AppSetSnapshot::apps`'s own doc: "index 0 is always the
+/// workspace app"), matching legacy's `dependency_objects` index, which is
+/// populated ONLY from `.app` dependencies, never the workspace.
+fn resolve_external_object<'a>(
+    snap: &'a AppSetSnapshot,
+    app: Option<&str>,
+    ty: ObjectType,
+    name: &str,
+    object_id: Option<i64>,
+) -> Option<&'a ExternalObject> {
+    if name.is_empty() && object_id.is_none() {
+        return None;
+    }
+
+    if let Some(app_name) = app.filter(|s| !s.is_empty())
+        && let Some(unit) = snap
+            .apps
+            .iter()
+            .skip(1)
+            .find(|u| u.id.name.eq_ignore_ascii_case(app_name))
+        && let Some(obj) = find_external_object(unit, ty, name, object_id)
+    {
+        return Some(obj);
+    }
+
+    snap.apps
+        .iter()
+        .skip(1)
+        .find_map(|unit| find_external_object(unit, ty, name, object_id))
+}
+
+fn find_external_object<'a>(
+    unit: &'a AppUnit,
+    ty: ObjectType,
+    name: &str,
+    object_id: Option<i64>,
+) -> Option<&'a ExternalObject> {
+    let abi = unit.abi.as_ref()?;
+    abi.objects.iter().find(|o| {
+        o.object_type == ty
+            && match object_id {
+                Some(id) => o.id == id,
+                None => o.name.eq_ignore_ascii_case(name),
+            }
+    })
+}
+
+fn build_dependency_symbols(obj: &ExternalObject) -> Vec<DependencyDocumentSymbol> {
+    obj.methods
+        .iter()
+        .map(|m| {
+            let kind = external_kind_to_lsp_kind(m.kind);
+            let tag = m.kind.tag();
+            let detail = if tag.is_empty() {
+                m.signature.clone()
+            } else {
+                format!("{tag} {}", m.signature)
+            };
+            DependencyDocumentSymbol {
+                name: m.name.clone(),
+                detail,
+                kind,
+                tags: Vec::new(),
+                range: ZERO_DEP_RANGE,
+                selection_range: ZERO_DEP_RANGE,
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// eventPublishersInFile
+// ---------------------------------------------------------------------------
+
+/// Request params — mirrors legacy's `EventPublishersInFileParams`
+/// (`src/handlers.rs:1705-1709`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventPublishersInFileParams {
+    pub uri: String,
+}
+
+/// `eventPublishersInFile` — event-publisher procedures ([`IntegrationEvent`]/
+/// [`BusinessEvent`]/[`InternalEvent`]) declared in the workspace file at
+/// `uri`, read directly from `snap.parsed`'s retained `AlFile` IR (no
+/// re-parsing, no disk I/O). Returns an empty `Vec` for a URI outside the
+/// workspace, or one this snapshot has no parse for — mirroring legacy's
+/// fail-closed-to-empty behaviour.
+#[must_use]
+pub fn event_publishers_in_file(
+    snap: &LspSnapshot,
+    enc: PositionEncoding,
+    uri: &str,
+) -> Vec<DependencyDocumentSymbol> {
+    let Some(virtual_path) = resolve_virtual_path(snap, uri) else {
+        return Vec::new();
+    };
+    let Some(entry) = snap.parsed.get(&virtual_path) else {
+        return Vec::new();
+    };
+    let table = LineTable::new(&entry.text);
+
+    let mut out = Vec::new();
+    for obj in &entry.file.objects {
+        for routine in &obj.routines {
+            let Some(kind) = is_event_publisher(routine) else {
+                continue;
+            };
+            // `is_event_publisher` only ever classifies a REAL source
+            // attribute (`integrationevent`/`businessevent`/`internalevent`)
+            // — `PublisherKind::Platform` is exclusively synthesized later,
+            // by `program::build::inject_platform_event_publishers`, and can
+            // never be this function's return value.
+            let tag = match kind {
+                PublisherKind::Integration => "[IntegrationEvent]",
+                PublisherKind::Business => "[BusinessEvent]",
+                PublisherKind::Internal => "[InternalEvent]",
+                PublisherKind::Platform => continue,
+            };
+            let signature = routine_header_text(&entry.text, &routine.origin);
+            out.push(DependencyDocumentSymbol {
+                name: routine.name.clone(),
+                detail: format!("{tag} {signature}"),
+                kind: 24,
+                tags: Vec::new(),
+                range: lsp_range_to_dep_range(origin_to_range(&routine.origin, &table, enc)),
+                selection_range: lsp_range_to_dep_range(origin_to_range(
+                    &routine.name_origin,
+                    &table,
+                    enc,
+                )),
+            });
+        }
+    }
+    out
+}
+
+/// Render a procedure/trigger header as raw source text — everything from
+/// `origin`'s start up to (but not including) the body's `var` section or
+/// `begin` keyword, whitespace-collapsed to single spaces. A LOCAL
+/// re-implementation of `parser.rs`'s (Task 7-era) private `signature_ir`
+/// helper: duplicated rather than shared because `parser.rs` is a documented
+/// Task-17 deletion target (see its module doc) — sharing would leave this
+/// permanent module with a dangling dependency on a module scheduled for
+/// removal. The algorithm is copied verbatim (same string-literal-aware body
+/// scan, same whitespace collapse) so a workspace file's signature text here
+/// is byte-identical to what `parser.rs`'s `ParsedEventPublisher::signature`
+/// already produces for the SAME routine — the exact parity Task 14's
+/// differential needs.
+fn routine_header_text(source: &str, origin: &Origin) -> String {
+    let raw = &source[origin.byte.clone()];
+    let end = find_body_start(raw).unwrap_or(raw.len());
+    normalize_signature_ws(&raw[..end])
+}
+
+/// Find the byte offset (relative to the start of `text`) where a procedure
+/// body begins (the `begin` keyword or `var` section) — requires the keyword
+/// to be alone at the start of a line (preceded only by whitespace) so a
+/// `var` parameter modifier is never mistaken for the `var` section, and skips
+/// scanning inside string literals so a quoted identifier/comment containing
+/// "begin"/"var" text can't false-positive.
+fn find_body_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut string_quote = 0u8;
+    while i < len {
+        let b = bytes[i];
+        if in_string {
+            if b == string_quote {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' {
+            in_string = true;
+            string_quote = b;
+            i += 1;
+            continue;
+        }
+        if b == b'\n' {
+            let mut j = i + 1;
+            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1;
+            }
+            if matches_keyword(bytes, j, b"begin") || matches_keyword(bytes, j, b"var") {
+                return Some(j);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
+    if at + kw.len() > bytes.len() {
+        return false;
+    }
+    if &bytes[at..at + kw.len()] != kw {
+        return false;
+    }
+    let next = bytes.get(at + kw.len()).copied().unwrap_or(b' ');
+    !next.is_ascii_alphanumeric() && next != b'_'
+}
+
+/// Collapse runs of whitespace (including newlines) to single spaces, trimmed.
+fn normalize_signature_ws(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_space = false;
+    for ch in raw.chars() {
+        if ch.is_whitespace() {
+            if !prev_space && !out.is_empty() {
+                out.push(' ');
+            }
+            prev_space = true;
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
+// ---------------------------------------------------------------------------
+// eventReferenceAtPosition
+// ---------------------------------------------------------------------------
+
+/// Request params — mirrors legacy's `EventReferenceAtPositionParams`
+/// (`src/handlers.rs:1777-1781`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventReferenceAtPositionParams {
+    pub uri: String,
+    pub position: Position,
+}
+
+/// The resolved (or partially-resolved) event reference — mirrors legacy's
+/// `EventReferenceMatch` (`src/handlers.rs:1784-1797`) field-for-field.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EventReferenceMatch {
+    pub publisher_object_type: String,
+    pub publisher_object: String,
+    pub event_name: String,
+    pub signature: Option<String>,
+    pub attribute_kind: Option<String>,
+    pub app_name: Option<String>,
+    pub app_version: Option<String>,
+}
+
+/// `eventReferenceAtPosition` — see the module doc for the wire shape and the
+/// degrade ladder. Returns `None` unless `pos` sits within an
+/// `[EventSubscriber(...)]` attribute's argument list on a routine in the
+/// WORKSPACE file at `uri`.
+#[must_use]
+pub fn event_reference_at_position(
+    snap: &LspSnapshot,
+    enc: PositionEncoding,
+    uri: &str,
+    pos: Position,
+) -> Option<EventReferenceMatch> {
+    let virtual_path = resolve_virtual_path(snap, uri)?;
+    let entry = snap.parsed.get(&virtual_path)?;
+    let table = LineTable::new(&entry.text);
+    let byte_col = table.col_in(pos.line, pos.character, enc);
+    let target = (pos.line, byte_col);
+
+    let (object_type, object_name, event_name) =
+        find_event_subscriber_display_at(&entry.file, &entry.text, target)?;
+
+    let otype = ObjectType::try_from(object_type.as_str()).ok();
+    let found = otype.and_then(|ty| {
+        snap.snap.apps.iter().skip(1).find_map(|unit| {
+            let abi = unit.abi.as_ref()?;
+            let obj = abi
+                .objects
+                .iter()
+                .find(|o| o.object_type == ty && o.name.eq_ignore_ascii_case(&object_name))?;
+            Some((unit, obj))
+        })
+    });
+
+    let (signature, attribute_kind, app_name, app_version) = match found {
+        Some((unit, obj)) => match obj
+            .methods
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(&event_name))
+        {
+            Some(m) => {
+                let tag = m.kind.tag();
+                let attribute_kind = if tag.is_empty() {
+                    None
+                } else {
+                    Some(tag.to_string())
+                };
+                (
+                    Some(m.signature.clone()),
+                    attribute_kind,
+                    Some(unit.id.name.clone()),
+                    Some(unit.id.version.clone()),
+                )
+            }
+            None => (
+                None,
+                None,
+                Some(unit.id.name.clone()),
+                Some(unit.id.version.clone()),
+            ),
+        },
+        None => (None, None, None, None),
+    };
+
+    Some(EventReferenceMatch {
+        publisher_object_type: object_type,
+        publisher_object: object_name,
+        event_name,
+        signature,
+        attribute_kind,
+        app_name,
+        app_version,
+    })
+}
+
+/// Scan every routine's `[EventSubscriber(...)]` attribute (any object, in
+/// document order) for one whose argument-list span contains `pos`
+/// (`(line, utf8_byte_col)`, inclusive both ends — mirrors legacy's own
+/// inclusive `cursor_offset >= after_open && cursor_offset <= close_idx`
+/// check, `src/handlers.rs:1972`). The span is approximated as
+/// `[first_arg.origin.start, last_arg.origin.end]` — the IR's IntoIterator
+/// already split the attribute's args correctly (handling nested
+/// parens/quotes/comments the grammar itself understands), so this needs no
+/// hand-rolled comma-splitting; it slightly narrows legacy's looser
+/// textual `[EventSubscriber(` … `)]` window (which also covered the
+/// attribute name and the two brackets themselves) to just the argument
+/// list, which is where a real hover/click always lands in practice.
+fn find_event_subscriber_display_at(
+    file: &AlFile,
+    source: &str,
+    pos: (u32, u32),
+) -> Option<(String, String, String)> {
+    for obj in &file.objects {
+        for routine in &obj.routines {
+            for attr in &routine.attributes_parsed {
+                if !attr.name.eq_ignore_ascii_case("eventsubscriber") || attr.args.len() < 3 {
+                    continue;
+                }
+                let first = &file.ir.expr(attr.args[0]).origin;
+                let last = &file
+                    .ir
+                    .expr(*attr.args.last().expect("len checked >= 3 above"))
+                    .origin;
+                let start = (first.start.row, first.start.column);
+                let end = (last.end.row, last.end.column);
+                if pos >= start && pos <= end {
+                    return extract_subscriber_display(source, &file.ir, attr);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extract the raw, ORIGINAL-CASE (object_type, object_name, event_name)
+/// display triple from an `[EventSubscriber(...)]` attribute's first three
+/// args, by slicing each arg's own source span — deliberately NOT
+/// `crate::program::resolve::event::parse_event_subscriber_ir` (which
+/// lowercases every field for case-insensitive dispatch matching; legacy's
+/// response preserves the casing exactly as written in source, e.g.
+/// `"Approvals Mgmt."` not `"approvals mgmt."` — see the module doc's
+/// "Other known deltas" note on why the two parsers deliberately diverge
+/// here). Mirrors legacy's `parse_event_subscriber_args`
+/// (`src/handlers.rs:2063-2107`) field-for-field, including its
+/// `ObjectType::Database` → `Table` arg-0 normalization.
+fn extract_subscriber_display(
+    source: &str,
+    ir: &Ir,
+    attr: &AttributeIr,
+) -> Option<(String, String, String)> {
+    let a0 = &source[ir.expr(attr.args[0]).origin.byte.clone()];
+    let a1 = &source[ir.expr(attr.args[1]).origin.byte.clone()];
+    let a2 = &source[ir.expr(attr.args[2]).origin.byte.clone()];
+
+    let raw_type = a0.split("::").nth(1).unwrap_or(a0).trim();
+    let object_type = if raw_type.eq_ignore_ascii_case("Database") {
+        "Table".to_string()
+    } else {
+        raw_type.to_string()
+    };
+
+    let raw_name = a1.split("::").last().unwrap_or(a1).trim();
+    let object_name = raw_name.trim_matches('"').to_string();
+
+    let event_name = a2.trim().trim_matches('\'').to_string();
+
+    if object_name.is_empty() || event_name.is_empty() {
+        return None;
+    }
+
+    Some((object_type, object_name, event_name))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_package::{AppMetadata, ExternalMethod, ParsedAppPackage};
+    use crate::program::abi_ingest::AbiCache;
+    use crate::program::resolve::full::ProgramContext;
+    use crate::program::{assemble_program_graph, build_dep_layer};
+    use crate::snapshot::compilation::CompilationContext;
+    use crate::snapshot::embedded::SourceFile;
+    use crate::snapshot::provider::SourceRoot;
+    use crate::snapshot::{AppId, AppSetSnapshot, Provenance, TrustTier, World, parse_snapshot};
+    use std::collections::HashSet;
+
+    const WS_SRC: &str = r#"codeunit 50100 "H13WsCu"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnAfterThing(Value: Integer): Boolean
+    begin
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"H13DepCu", 'OnAfterDepEvent', '', false, false)]
+    local procedure HandleDepEvent()
+    begin
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"H13DepCu", 'NoSuchEvent', '', false, false)]
+    local procedure HandleMissingEvent()
+    begin
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"NoSuchDep", 'Whatever', '', false, false)]
+    local procedure HandleUnknownDep()
+    begin
+    end;
+
+    procedure PlainProcedure()
+    begin
+    end;
+}
+"#;
+
+    /// Hand-assembles a two-app `LspSnapshot` in-memory (no disk `.app` zip
+    /// needed) — mirrors `src/lsp/handlers.rs`'s own `two_app_snapshot` test
+    /// helper (Task 11), with the dependency unit's `abi` field populated
+    /// with a hand-built `ParsedAppPackage` (this task's data source — see
+    /// the module doc).
+    fn two_app_snapshot() -> LspSnapshot {
+        let ws_id = AppId {
+            guid: String::new(),
+            name: "H13Ws".into(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        };
+        let dep_id = AppId {
+            guid: String::new(),
+            name: "H13Dep".into(),
+            publisher: "Test".into(),
+            version: "2.1.0.0".into(),
+        };
+
+        let mut ws_unit = AppUnit {
+            id: ws_id.clone(),
+            provenance: Provenance {
+                app: ws_id.clone(),
+                tier: TrustTier::Workspace,
+                content_hash: String::new(),
+            },
+            source: Some(SourceRoot {
+                files: vec![SourceFile {
+                    virtual_path: "Ws.al".to_string(),
+                    text: WS_SRC.to_string(),
+                }],
+                tier: TrustTier::Workspace,
+                content_hash: String::new(),
+            }),
+            compilation: CompilationContext::default(),
+            declared_deps: vec![],
+            internals_visible_to: vec![],
+            abi: None,
+            app_path: None,
+        };
+        ws_unit.declared_deps = vec![crate::dependencies::AppDependency {
+            app_id: String::new(),
+            name: dep_id.name.clone(),
+            publisher: dep_id.publisher.clone(),
+            version: dep_id.version.clone(),
+        }];
+
+        let dep_package = ParsedAppPackage {
+            metadata: AppMetadata {
+                app_id: String::new(),
+                name: dep_id.name.clone(),
+                publisher: dep_id.publisher.clone(),
+                version: dep_id.version.clone(),
+                runtime: String::new(),
+                platform: String::new(),
+                application: String::new(),
+                dependencies: vec![],
+                internals_visible_to: vec![],
+            },
+            objects: vec![ExternalObject {
+                name: "H13DepCu".to_string(),
+                object_type: ObjectType::Codeunit,
+                id: 60100,
+                methods: vec![
+                    ExternalMethod {
+                        name: "OnAfterDepEvent".to_string(),
+                        kind: ExternalMethodKind::IntegrationEvent,
+                        signature: "procedure OnAfterDepEvent(Sender: Codeunit \"H13DepCu\")"
+                            .to_string(),
+                        is_local: false,
+                    },
+                    ExternalMethod {
+                        name: "DoWork".to_string(),
+                        kind: ExternalMethodKind::Procedure,
+                        signature: "procedure DoWork(var Rec: Record \"Customer\")".to_string(),
+                        is_local: false,
+                    },
+                    ExternalMethod {
+                        name: "Helper".to_string(),
+                        kind: ExternalMethodKind::Procedure,
+                        signature: "local procedure Helper()".to_string(),
+                        is_local: true,
+                    },
+                ],
+            }],
+        };
+
+        let dep_unit = AppUnit {
+            id: dep_id.clone(),
+            provenance: Provenance {
+                app: dep_id.clone(),
+                tier: TrustTier::SymbolOnly,
+                content_hash: String::new(),
+            },
+            source: None,
+            compilation: CompilationContext::default(),
+            declared_deps: vec![],
+            internals_visible_to: vec![],
+            abi: Some(dep_package),
+            app_path: None,
+        };
+
+        let snap = AppSetSnapshot {
+            apps: vec![ws_unit, dep_unit],
+            workspace_app: ws_id.clone(),
+            world: World::Closed,
+        };
+
+        let cache = AbiCache::new();
+        let parsed = parse_snapshot(&snap);
+        let dep_layer = build_dep_layer(&snap, &cache, &parsed);
+        let ws_parsed_unit = parsed
+            .iter()
+            .find(|u| u.app == snap.workspace_app)
+            .expect("ws unit must have parsed");
+        let graph = assemble_program_graph(&dep_layer, ws_parsed_unit, &snap);
+        let primary_app_ref = graph
+            .apps
+            .find(&snap.workspace_app)
+            .expect("ws app interned");
+        let ws_file_set: HashSet<String> = ws_parsed_unit
+            .files
+            .iter()
+            .map(|f| f.virtual_path.clone())
+            .collect();
+
+        let ctx = ProgramContext {
+            snap,
+            graph,
+            parsed,
+            primary_app_ref,
+            ws_file_set,
+            dep_layer,
+        };
+        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace"))
+    }
+
+    // ── dependencyDocumentSymbol ───────────────────────────────────────────
+
+    #[test]
+    fn dependency_document_symbol_by_explicit_fields() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: Some("H13Dep".to_string()),
+                object_type: Some("Codeunit".to_string()),
+                object_name: Some("H13DepCu".to_string()),
+                object_id: None,
+            },
+        );
+        assert_eq!(result.len(), 3, "{result:#?}");
+
+        let event = result
+            .iter()
+            .find(|s| s.name == "OnAfterDepEvent")
+            .expect("OnAfterDepEvent symbol");
+        assert_eq!(event.kind, 24, "event publisher must be SymbolKind::Event");
+        assert_eq!(
+            event.detail,
+            "[IntegrationEvent] procedure OnAfterDepEvent(Sender: Codeunit \"H13DepCu\")"
+        );
+        assert_eq!(event.range.start.line, 0);
+        assert_eq!(event.range.end.line, 0);
+
+        let proc = result
+            .iter()
+            .find(|s| s.name == "DoWork")
+            .expect("DoWork symbol");
+        assert_eq!(proc.kind, 6, "plain procedure must be SymbolKind::Method");
+        assert_eq!(
+            proc.detail, "procedure DoWork(var Rec: Record \"Customer\")",
+            "a non-publisher method's detail has no attribute tag prefix"
+        );
+
+        let helper = result
+            .iter()
+            .find(|s| s.name == "Helper")
+            .expect("Helper symbol");
+        assert_eq!(helper.kind, 6);
+        assert_eq!(helper.detail, "local procedure Helper()");
+    }
+
+    #[test]
+    fn dependency_document_symbol_by_al_preview_uri() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: Some("al-preview:/allang/H13Dep/Codeunit/60100/H13DepCu.dal".to_string()),
+                app: None,
+                object_type: None,
+                object_name: None,
+                object_id: None,
+            },
+        );
+        assert_eq!(result.len(), 3, "{result:#?}");
+    }
+
+    #[test]
+    fn dependency_document_symbol_falls_back_to_any_app_when_app_name_is_wrong() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: Some("Not The Real App Name".to_string()),
+                object_type: Some("Codeunit".to_string()),
+                object_name: Some("H13DepCu".to_string()),
+                object_id: None,
+            },
+        );
+        assert_eq!(
+            result.len(),
+            3,
+            "an app-name mismatch must still fall back to the any-app scan, \
+             mirroring legacy's resolve_dependency_object"
+        );
+    }
+
+    #[test]
+    fn dependency_document_symbol_resolves_by_numeric_object_id_new_better() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: None,
+                object_type: Some("Codeunit".to_string()),
+                object_name: None,
+                object_id: Some(60100),
+            },
+        );
+        assert_eq!(
+            result.len(),
+            3,
+            "a numeric object_id must resolve even with no object_name — a \
+             legacy-can-never-do-this NEW_BETTER improvement"
+        );
+    }
+
+    #[test]
+    fn dependency_document_symbol_empty_on_no_match() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: None,
+                object_type: Some("Codeunit".to_string()),
+                object_name: Some("Does Not Exist".to_string()),
+                object_id: None,
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn dependency_document_symbol_empty_on_unparseable_object_type() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: None,
+                object_type: Some("NotARealType".to_string()),
+                object_name: Some("H13DepCu".to_string()),
+                object_id: None,
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    // ── eventPublishersInFile ───────────────────────────────────────────────
+
+    #[test]
+    fn event_publishers_in_file_finds_only_the_publisher_procedure() {
+        let snap = two_app_snapshot();
+        let uri = crate::protocol::path_to_uri(&snap.workspace_root.join("Ws.al"));
+        let result = event_publishers_in_file(&snap, PositionEncoding::Utf16, uri.as_str());
+
+        assert_eq!(result.len(), 1, "{result:#?}");
+        let publisher = &result[0];
+        assert_eq!(publisher.name, "OnAfterThing");
+        assert_eq!(publisher.kind, 24);
+        assert_eq!(
+            publisher.detail,
+            "[IntegrationEvent] procedure OnAfterThing(Value: Integer): Boolean"
+        );
+        assert_ne!(
+            publisher.range, ZERO_DEP_RANGE,
+            "a workspace file's publisher must get a REAL, non-zero range"
+        );
+    }
+
+    #[test]
+    fn event_publishers_in_file_empty_for_unknown_uri() {
+        let snap = two_app_snapshot();
+        let result = event_publishers_in_file(
+            &snap,
+            PositionEncoding::Utf16,
+            "file:///nowhere/NoSuchFile.al",
+        );
+        assert!(result.is_empty());
+    }
+
+    // ── eventReferenceAtPosition ────────────────────────────────────────────
+
+    fn ws_uri(snap: &LspSnapshot) -> lsp_types::Uri {
+        crate::protocol::path_to_uri(&snap.workspace_root.join("Ws.al"))
+    }
+
+    /// Locate the byte offset of `needle` in `WS_SRC` and convert it to an
+    /// LSP `Position` (UTF-16, matching the fixture's ASCII-only content so
+    /// byte and UTF-16 columns coincide).
+    fn position_at(needle: &str) -> Position {
+        let idx = WS_SRC.find(needle).expect("needle must be present");
+        let prefix = &WS_SRC[..idx];
+        let line = prefix.matches('\n').count() as u32;
+        let col = match prefix.rfind('\n') {
+            Some(nl) => prefix.len() - nl - 1,
+            None => prefix.len(),
+        };
+        Position {
+            line,
+            character: col as u32,
+        }
+    }
+
+    #[test]
+    fn event_reference_at_position_resolves_a_known_publisher_and_event() {
+        let snap = two_app_snapshot();
+        let uri = ws_uri(&snap);
+        let pos = position_at("'OnAfterDepEvent'");
+
+        let result = event_reference_at_position(&snap, PositionEncoding::Utf16, uri.as_str(), pos)
+            .expect("cursor is inside the EventSubscriber attribute's arg list");
+
+        assert_eq!(result.publisher_object_type, "Codeunit");
+        assert_eq!(result.publisher_object, "H13DepCu");
+        assert_eq!(result.event_name, "OnAfterDepEvent");
+        assert_eq!(
+            result.signature.as_deref(),
+            Some("procedure OnAfterDepEvent(Sender: Codeunit \"H13DepCu\")")
+        );
+        assert_eq!(result.attribute_kind.as_deref(), Some("[IntegrationEvent]"));
+        assert_eq!(result.app_name.as_deref(), Some("H13Dep"));
+        assert_eq!(result.app_version.as_deref(), Some("2.1.0.0"));
+    }
+
+    #[test]
+    fn event_reference_at_position_degrades_when_event_name_not_found_on_a_resolved_publisher() {
+        let snap = two_app_snapshot();
+        let uri = ws_uri(&snap);
+        let pos = position_at("'NoSuchEvent'");
+
+        let result = event_reference_at_position(&snap, PositionEncoding::Utf16, uri.as_str(), pos)
+            .expect("cursor still hits a real EventSubscriber attribute");
+
+        assert_eq!(result.publisher_object, "H13DepCu");
+        assert_eq!(result.event_name, "NoSuchEvent");
+        assert_eq!(
+            result.signature, None,
+            "the publisher app resolves but has no matching method"
+        );
+        assert_eq!(result.attribute_kind, None);
+        assert_eq!(
+            result.app_name.as_deref(),
+            Some("H13Dep"),
+            "app identity must still be reported even when the method isn't found"
+        );
+        assert_eq!(result.app_version.as_deref(), Some("2.1.0.0"));
+    }
+
+    #[test]
+    fn event_reference_at_position_degrades_fully_when_the_publisher_app_is_unresolvable() {
+        let snap = two_app_snapshot();
+        let uri = ws_uri(&snap);
+        let pos = position_at("'Whatever'");
+
+        let result = event_reference_at_position(&snap, PositionEncoding::Utf16, uri.as_str(), pos)
+            .expect("cursor still hits a real EventSubscriber attribute");
+
+        assert_eq!(result.publisher_object, "NoSuchDep");
+        assert_eq!(result.signature, None);
+        assert_eq!(result.attribute_kind, None);
+        assert_eq!(result.app_name, None);
+        assert_eq!(result.app_version, None);
+    }
+
+    #[test]
+    fn event_reference_at_position_none_when_cursor_is_outside_any_attribute() {
+        let snap = two_app_snapshot();
+        let uri = ws_uri(&snap);
+        let pos = position_at("PlainProcedure");
+
+        assert!(
+            event_reference_at_position(&snap, PositionEncoding::Utf16, uri.as_str(), pos)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn database_alias_normalizes_to_table_in_arg0_extraction() {
+        // Isolated unit test for the ObjectType::Database -> Table
+        // normalization (see the module doc's "Other known deltas" note) —
+        // real source using this alias is rare/unverified, so this is
+        // exercised directly rather than via a full attribute fixture.
+        let src = "[EventSubscriber(ObjectType::Database, Database::\"Some Table\", 'OnAfterInsertEvent', '', false, false)]";
+        let file = al_syntax::parse(&format!(
+            "codeunit 1 \"X\" {{ {src}\n    procedure P()\n    begin\n    end; }}"
+        ));
+        let attr = &file.objects[0].routines[0].attributes_parsed[0];
+        let (object_type, object_name, event_name) =
+            extract_subscriber_display(&file_source(src), &file.ir, attr).expect("must parse");
+        assert_eq!(object_type, "Table");
+        assert_eq!(object_name, "Some Table");
+        assert_eq!(event_name, "OnAfterInsertEvent");
+    }
+
+    /// Reconstructs the exact source text `two_app_snapshot`'s parse used for
+    /// the isolated `database_alias_normalizes_to_table_in_arg0_extraction`
+    /// fixture above (byte-identical to what was fed to `al_syntax::parse`).
+    fn file_source(attr_src: &str) -> String {
+        format!("codeunit 1 \"X\" {{ {attr_src}\n    procedure P()\n    begin\n    end; }}")
+    }
+}
