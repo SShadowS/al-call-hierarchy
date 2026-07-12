@@ -189,26 +189,40 @@ enum NewBetterClass {
     /// file loses ANOTHER file's cross-file incoming edges to it (H-10);
     /// new's incremental `apply_batch` of the same edit keeps them.
     H10Repair,
-    /// A SECOND additional class discovered during T14 implementation:
-    /// legacy's `definitions`/`incoming_calls`/`outgoing_calls` are ALL
-    /// keyed purely by `QualifiedName{object, procedure}` — name only, no
-    /// signature. An overload set (e.g. `Calc(Integer)`/`Calc(Text)`) hits
-    /// `self.definitions.insert(qname, def)` (a plain `HashMap` insert)
-    /// TWICE under the IDENTICAL key: the later declaration silently
-    /// overwrites the earlier one, and `add_call_site`'s incoming/outgoing
-    /// buckets for that same key MERGE both overloads' call sites together
-    /// (see `src/graph.rs`'s `add_definition`/`add_call_site`) — a
+    /// A SECOND additional class, discovered during T14 implementation and
+    /// GENERALIZED after the CDO fix-wave (originally named
+    /// `OverloadIdentityCollapsed`, scoped to same-file arg-count overloads
+    /// only — the CDO run surfaced the SAME root cause firing across
+    /// entirely different objects/files too, e.g. `PAGE 6175343 "CDO
+    /// E-Mail"` and `CODEUNIT 6175280 "CDO E-Mail"` sharing routine names,
+    /// so the class and its detection are now workspace-GLOBAL, not
+    /// per-file): legacy's `object_types`/`definitions`/`incoming_calls`/
+    /// `outgoing_calls` are ALL keyed purely by `(object NAME text,
+    /// procedure NAME text)` — no object KIND, no enclosing-member, no
+    /// signature at all. ANY two declarations sharing that bare
+    /// `(object_name, routine_name)` pair — a same-object arg-count
+    /// overload, two different fields' same-named triggers on ONE object,
+    /// or two ENTIRELY DIFFERENT OBJECTS (even different KINDS, e.g. a page
+    /// and a codeunit) that merely happen to share a display name and a
+    /// routine name — collide: `self.definitions.insert(qname, def)`
+    /// (`src/graph.rs`'s `add_definition`) silently overwrites, and
+    /// `add_call_site`'s incoming/outgoing buckets for that key MERGE every
+    /// colliding declaration's call sites together. Legacy can even
+    /// misreport a query against ONE of the colliding declarations with
+    /// data that actually belongs to the OTHER ONE (e.g. `prepare()` on the
+    /// codeunit's own routine returning the page's position) — a
     /// pre-existing legacy limitation, unrelated to any T3 engine change.
-    /// New's `RoutineNodeId` (object + `name_lc` + `params_count` +
-    /// `sig_fp`) keeps every overload distinct. Mechanical predicate: new
-    /// has >1 `DeclEntry` sharing `(file_rel, object_lc, routine_lc)` —
-    /// legacy's single collapsed slot is paired against the LAST-declared
-    /// overload (matching its own last-write-wins insert order); every
-    /// EARLIER overload has no legacy counterpart to compare against at
-    /// all, by construction, so its prepare/incoming/outgoing comparison is
-    /// skipped entirely rather than misreported as a REGRESSION or
-    /// NEW_UNEXPLAINED.
-    OverloadIdentityCollapsed,
+    /// New's `RoutineNodeId` (app-qualified object identity incl. KIND +
+    /// `name_lc` + `enclosing_member_lc` + `params_count` + `sig_fp`) keeps
+    /// every one of these distinct. Mechanical predicate: for the legacy
+    /// identity key `(object_name_lc, routine_name_lc)`, the new side has
+    /// MORE THAN ONE distinct `DeclEntry` (differing in kind, enclosing
+    /// member, file, or signature — checked GLOBALLY, not scoped to one
+    /// file) AND legacy's reported answer for one of them (position for
+    /// `prepare`; attributed caller/count for `incoming`/`outgoing`/
+    /// `codeLens`) actually matches a SIBLING declaration's own new-side
+    /// truth instead of its own.
+    LegacyIdentityCollapse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -459,20 +473,28 @@ fn object_name<'g>(graph: &'g ProgramGraph, id: &ObjectNodeId) -> Option<&'g str
         .map(|i| graph.objects[i].name.as_str())
 }
 
+/// Strips a same-file disambiguator suffix (`"{name}#dup{i}"`, added in
+/// `run_sweep`'s new-identities loop whenever >1 `DeclEntry` shares a
+/// `(file_rel, object_lc, routine_lc)` triple — same-object arg-count
+/// overloads, or two different fields' same-named triggers on ONE object)
+/// back to the bare routine name, for GLOBAL (cross-file)
+/// `LegacyIdentityCollapse` grouping — see `Sweep::legacy_collision_group`.
+fn strip_dup_suffix(routine_lc: &str) -> &str {
+    routine_lc.split_once("#dup").map_or(routine_lc, |(b, _)| b)
+}
+
 /// Resolve `identity` back to its real `DeclEntry` within `decls` (already
 /// sorted by declaration order — `decls_by_file`'s own doc). Mirrors the
-/// overload-grouping this identity was BUILT with (see the new-identities
-/// loop in `run_sweep`): a suffixed `routine_lc` (`"{name}#overload{i}"`)
-/// picks the `i`-th declaration in its `(object_lc, base_name)` group; an
-/// un-suffixed `routine_lc` picks the LAST one (the slot legacy's
-/// last-write-wins semantics actually kept — see
-/// `NewBetterClass::OverloadIdentityCollapsed`).
+/// same-file grouping this identity was BUILT with (see the new-identities
+/// loop in `run_sweep`): a suffixed `routine_lc` (`"{name}#dup{i}"`) picks
+/// the `i`-th declaration in its `(object_lc, base_name)` group; an
+/// un-suffixed `routine_lc` picks the LAST one.
 fn find_new_decl<'a>(
     decls: &'a [al_call_hierarchy::lsp::snapshot::DeclEntry],
     graph: &ProgramGraph,
     identity: &RoutineIdentity,
 ) -> Option<&'a al_call_hierarchy::lsp::snapshot::DeclEntry> {
-    let (base_name, target_idx) = match identity.routine_lc.split_once("#overload") {
+    let (base_name, target_idx) = match identity.routine_lc.split_once("#dup") {
         Some((base, idx)) => (base, idx.parse::<usize>().ok()),
         None => (identity.routine_lc.as_str(), None),
     };
@@ -493,13 +515,6 @@ fn find_new_decl<'a>(
 
 struct RoutineEntry {
     identity: RoutineIdentity,
-    /// `true` for every overload EXCEPT the last-declared one when >1
-    /// `DeclEntry` shares this identity's `(file_rel, object_lc,
-    /// routine_lc)` key (see `NewBetterClass::OverloadIdentityCollapsed`'s
-    /// doc) — legacy structurally has no counterpart for these, so the
-    /// classifier skips prepare/incoming/outgoing comparison entirely and
-    /// emits exactly one `OverloadIdentityCollapsed` finding instead.
-    is_overload_extra: bool,
     legacy_prepare: Option<CallHierarchyItem>,
     new_prepare: Option<CallHierarchyItem>,
     legacy_incoming: Vec<CallHierarchyIncomingCall>,
@@ -510,17 +525,6 @@ struct RoutineEntry {
 
 struct Sweep {
     entries: BTreeMap<String, RoutineEntry>,
-    /// Bare routine names (lowercased) known to have >1 declaration
-    /// SOMEWHERE in the sweep (an overload set) — populated once, during
-    /// identity construction, wherever a per-file `(object_lc, routine_lc)`
-    /// group has more than one member. Name-only (not file/object-scoped):
-    /// a pragmatic simplification, documented here — no fixture in this
-    /// harness has two DIFFERENT objects each independently overloading a
-    /// SAME-named routine, so a coarser, name-only signal is sufficient to
-    /// drive `NewBetterClass::OverloadIdentityCollapsed`'s cross-reference
-    /// checks in `classify_outgoing`/`classify_incoming` without needing a
-    /// full (file, object, name) key at each call site.
-    overloaded_names: BTreeSet<String>,
 }
 
 impl Sweep {
@@ -535,26 +539,36 @@ impl Sweep {
             .collect()
     }
 
-    fn is_overloaded_name(&self, name_lc: &str) -> bool {
-        self.overloaded_names.contains(name_lc)
-    }
-
-    /// Every entry whose routine identity, once its `#overloadN`
-    /// disambiguator is stripped, equals `base_name_lc` — i.e. every member
-    /// of one overload set (the primary, un-suffixed entry AND every
-    /// `is_overload_extra` sibling).
-    fn siblings_by_base_name<'a>(&'a self, base_name_lc: &str) -> Vec<&'a RoutineEntry> {
+    /// Every entry sharing the legacy identity key `(object_lc,
+    /// routine_lc_base)` — GLOBALLY, across every file, not scoped to one
+    /// object's own file (see `NewBetterClass::LegacyIdentityCollapse`'s
+    /// doc: legacy's `object_types`/`definitions` maps are keyed by bare
+    /// NAME TEXT only, no file/kind/member component at all). A same-file
+    /// `#dup{i}`-suffixed identity is un-suffixed via `strip_dup_suffix`
+    /// before comparing, so it's grouped with its siblings correctly.
+    fn legacy_collision_group<'a>(
+        &'a self,
+        object_lc: &str,
+        routine_lc_base: &str,
+    ) -> Vec<&'a RoutineEntry> {
         self.entries
             .values()
             .filter(|e| {
-                e.identity
-                    .routine_lc
-                    .split_once("#overload")
-                    .map(|(base, _)| base)
-                    .unwrap_or(&e.identity.routine_lc)
-                    == base_name_lc
+                e.identity.object_lc == object_lc
+                    && strip_dup_suffix(&e.identity.routine_lc) == routine_lc_base
             })
             .collect()
+    }
+
+    /// `true` iff `(object_lc, routine_lc_base)` names more than one REAL,
+    /// distinct declaration anywhere in the workspace — i.e. legacy's own
+    /// `(object_name, routine_name)`-keyed identity is genuinely collided
+    /// for this pair, regardless of which file(s) the colliding
+    /// declarations live in.
+    fn is_legacy_identity_collision(&self, object_lc: &str, routine_lc_base: &str) -> bool {
+        self.legacy_collision_group(object_lc, routine_lc_base)
+            .len()
+            > 1
     }
 }
 
@@ -574,7 +588,6 @@ fn run_sweep(
     cfg: &DiagnosticConfig,
 ) -> (Sweep, LensPairsByFile) {
     let mut entries: BTreeMap<String, RoutineEntry> = BTreeMap::new();
-    let mut overloaded_names: BTreeSet<String> = BTreeSet::new();
 
     // ---- legacy identities, via iter_definitions (already pub) ----
     {
@@ -592,7 +605,6 @@ fn run_sweep(
             let key = identity.key();
             entries.entry(key).or_insert_with(|| RoutineEntry {
                 identity,
-                is_overload_extra: false,
                 legacy_prepare: None,
                 new_prepare: None,
                 legacy_incoming: Vec::new(),
@@ -605,17 +617,21 @@ fn run_sweep(
 
     // ---- new identities, via decls_by_file ----
     //
-    // Grouped by `(object_lc, routine_lc)` PER FILE first (see
-    // `NewBetterClass::OverloadIdentityCollapsed`'s doc): an overload set
-    // (e.g. `Calc(Integer)`/`Calc(Text)`) shares one `(file_rel, object_lc,
-    // routine_lc)` key, but legacy's `QualifiedName`-keyed graph structurally
-    // has only ONE slot for it (the LAST declaration wins, last-write-wins
-    // `HashMap::insert`). `decls` is already sorted by `origin.byte.start`
-    // (declaration order) per `LspSnapshot::decls_by_file`'s own doc, so the
-    // LAST element of each group is the one legacy's single slot actually
-    // corresponds to; every earlier one gets a disambiguated key
-    // (`#overload{i}`) and is marked `is_overload_extra` so the classifier
-    // skips the (structurally meaningless) legacy comparison for it.
+    // Grouped by `(object_lc, routine_lc)` PER FILE first, purely to give
+    // same-file duplicates (a same-object arg-count overload, or two
+    // different fields' same-named triggers) distinct MAP KEYS — `decls` is
+    // already sorted by `origin.byte.start` (declaration order) per
+    // `LspSnapshot::decls_by_file`'s own doc, so every group member EXCEPT
+    // the last gets a disambiguating `#dup{i}` suffix. Unlike the ORIGINAL
+    // (pre-CDO-fix-wave) design, this suffix is ONLY a map-key
+    // disambiguator now — every identity, suffixed or not, is queried
+    // against legacy normally below (see `NewBetterClass::
+    // LegacyIdentityCollapse`'s doc for why that's safe: legacy's
+    // `get_definitions_in_file` returns the SAME globally-collided
+    // `Definition` regardless of which file/position queries it, so no
+    // identity needs to be skipped — the classifier's GLOBAL sibling
+    // cross-check handles the collision instead of a construction-time
+    // skip).
     for (virtual_path, decls) in &new_snap.decls_by_file {
         let mut groups: BTreeMap<
             (String, String),
@@ -635,28 +651,23 @@ fn run_sweep(
         for ((object_lc, routine_lc), group) in groups {
             let file_rel = virtual_path.to_lowercase();
             let last_idx = group.len() - 1;
-            if group.len() > 1 {
-                overloaded_names.insert(routine_lc.clone());
-            }
             for (i, _decl) in group.iter().enumerate() {
-                let is_extra = i != last_idx;
-                let identity = if is_extra {
-                    RoutineIdentity {
-                        file_rel: file_rel.clone(),
-                        object_lc: object_lc.clone(),
-                        routine_lc: format!("{routine_lc}#overload{i}"),
-                    }
-                } else {
+                let identity = if i == last_idx {
                     RoutineIdentity {
                         file_rel: file_rel.clone(),
                         object_lc: object_lc.clone(),
                         routine_lc: routine_lc.clone(),
                     }
+                } else {
+                    RoutineIdentity {
+                        file_rel: file_rel.clone(),
+                        object_lc: object_lc.clone(),
+                        routine_lc: format!("{routine_lc}#dup{i}"),
+                    }
                 };
                 let key = identity.key();
                 entries.entry(key).or_insert_with(|| RoutineEntry {
                     identity,
-                    is_overload_extra: is_extra,
                     legacy_prepare: None,
                     new_prepare: None,
                     legacy_incoming: Vec::new(),
@@ -673,42 +684,40 @@ fn run_sweep(
         let abs_path = root.join(&entry.identity.file_rel);
         let uri = path_to_uri(&abs_path);
 
-        // An overload-extra identity has no legacy counterpart BY
-        // CONSTRUCTION (see `NewBetterClass::OverloadIdentityCollapsed`) —
-        // never query legacy for it at all; only its (real) new-side decl
-        // is looked up below, so its prepare()/incoming()/outgoing() still
-        // reflect real engine behavior even though nothing is compared
-        // against legacy.
-        if !entry.is_overload_extra {
-            // Legacy: find this identity's own position via a fresh
-            // get_definitions_in_file scan (cheap; fixtures are small) so we
-            // don't need to retain Definition's own range separately above.
-            let legacy_pos = {
-                let idx = legacy.indexer.read().unwrap();
-                let graph = idx.graph();
-                graph
-                    .get_definitions_in_file(&abs_path)
-                    .into_iter()
-                    .find(|d| {
-                        graph
-                            .resolve(d.object_name)
+        // Legacy: find this identity's own position via a fresh
+        // get_definitions_in_file scan (cheap; fixtures are small) so we
+        // don't need to retain Definition's own range separately above.
+        // Queried for EVERY identity, including same-file `#dup{i}`
+        // siblings — legacy's `get_definitions_in_file` returns the same
+        // (possibly globally-collided) `Definition` regardless (see the
+        // comment on the loop above), which the classifier itself
+        // recognizes as `LegacyIdentityCollapse` rather than a REGRESSION.
+        let legacy_pos = {
+            let idx = legacy.indexer.read().unwrap();
+            let graph = idx.graph();
+            let base_routine_lc = strip_dup_suffix(&entry.identity.routine_lc);
+            graph
+                .get_definitions_in_file(&abs_path)
+                .into_iter()
+                .find(|d| {
+                    graph
+                        .resolve(d.object_name)
+                        .unwrap_or("")
+                        .eq_ignore_ascii_case(&entry.identity.object_lc)
+                        && graph
+                            .resolve(d.name)
                             .unwrap_or("")
-                            .eq_ignore_ascii_case(&entry.identity.object_lc)
-                            && graph
-                                .resolve(d.name)
-                                .unwrap_or("")
-                                .eq_ignore_ascii_case(&entry.identity.routine_lc)
-                    })
-                    .map(|d| d.range.start)
-            };
-            if let Some(pos) = legacy_pos {
-                let items = legacy.prepare(&uri, pos.line, pos.character);
-                if let Some(item) = items.as_ref().and_then(|v| v.first()) {
-                    entry.legacy_incoming = legacy.incoming(item);
-                    entry.legacy_outgoing = legacy.outgoing(item);
-                }
-                entry.legacy_prepare = items.and_then(|mut v| v.pop());
+                            .eq_ignore_ascii_case(base_routine_lc)
+                })
+                .map(|d| d.range.start)
+        };
+        if let Some(pos) = legacy_pos {
+            let items = legacy.prepare(&uri, pos.line, pos.character);
+            if let Some(item) = items.as_ref().and_then(|v| v.first()) {
+                entry.legacy_incoming = legacy.incoming(item);
+                entry.legacy_outgoing = legacy.outgoing(item);
             }
+            entry.legacy_prepare = items.and_then(|mut v| v.pop());
         }
 
         // New. `decls_by_file` keys are case-PRESERVING while
@@ -768,13 +777,7 @@ fn run_sweep(
         lenses.insert(file_rel, (legacy_lenses, new_lenses));
     }
 
-    (
-        Sweep {
-            entries,
-            overloaded_names,
-        },
-        lenses,
-    )
+    (Sweep { entries }, lenses)
 }
 
 // ============================================================================
@@ -784,24 +787,32 @@ fn run_sweep(
 fn classify_prepare(ledger: &mut Ledger, sweep: &Sweep) {
     for entry in sweep.entries.values() {
         let routine = entry.identity.key();
-
-        if entry.is_overload_extra {
-            ledger.push(
-                "prepare",
-                &routine,
-                Class::NewBetter(NewBetterClass::OverloadIdentityCollapsed),
-                format!(
-                    "new prepares {:?}; legacy's QualifiedName-keyed graph has no counterpart for this overload (see NewBetterClass::OverloadIdentityCollapsed)",
-                    entry.new_prepare.as_ref().map(|i| i.name.as_str())
-                ),
-            );
-            continue;
-        }
+        let base_name = strip_dup_suffix(&entry.identity.routine_lc);
 
         match (&entry.legacy_prepare, &entry.new_prepare) {
             (Some(l), Some(n)) => {
                 if l.name.eq_ignore_ascii_case(&n.name) && nr(&l.range) == nr(&n.range) {
                     ledger.push("prepare", &routine, Class::Match, "range+name agree");
+                } else if legacy_answer_matches_a_sibling(
+                    sweep,
+                    &entry.identity.object_lc,
+                    base_name,
+                    &entry.identity.key(),
+                    |sib| {
+                        sib.new_prepare.as_ref().is_some_and(|sp| {
+                            l.name.eq_ignore_ascii_case(&sp.name) && nr(&l.range) == nr(&sp.range)
+                        })
+                    },
+                ) {
+                    ledger.push(
+                        "prepare",
+                        &routine,
+                        Class::NewBetter(NewBetterClass::LegacyIdentityCollapse),
+                        format!(
+                            "legacy's answer (name={:?} range={:?}) actually matches a SIBLING declaration sharing legacy's (object,routine) identity key, not this one's own (new name={:?} range={:?})",
+                            l.name, nr(&l.range), n.name, nr(&n.range)
+                        ),
+                    );
                 } else {
                     ledger.push(
                         "prepare",
@@ -837,6 +848,25 @@ fn classify_prepare(ledger: &mut Ledger, sweep: &Sweep) {
     }
 }
 
+/// `true` iff `(object_lc, routine_lc_base)` is a genuine, GLOBAL legacy
+/// identity collision (`Sweep::is_legacy_identity_collision`) AND at least
+/// one OTHER member of that collision group (excluding `self_key`) matches
+/// `predicate` — the shared shape every `LegacyIdentityCollapse` check
+/// across prepare/incoming/outgoing/codeLens uses.
+fn legacy_answer_matches_a_sibling(
+    sweep: &Sweep,
+    object_lc: &str,
+    routine_lc_base: &str,
+    self_key: &str,
+    predicate: impl Fn(&RoutineEntry) -> bool,
+) -> bool {
+    sweep.is_legacy_identity_collision(object_lc, routine_lc_base)
+        && sweep
+            .legacy_collision_group(object_lc, routine_lc_base)
+            .iter()
+            .any(|sib| sib.identity.key() != self_key && predicate(sib))
+}
+
 // ============================================================================
 // Classification: outgoing (per call SITE — the one position both engines
 // derive identically, from the same parsed call/event-name-origin span)
@@ -854,6 +884,19 @@ fn legacy_external_app(item: &CallHierarchyOutgoingCall) -> Option<String> {
         .and_then(|d| d.get("app"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+/// `item.to.data.object` (lowercased) — present ONLY on legacy's arm 1
+/// ("local definition found", `outgoing_calls`'s `data: {"object":...,
+/// "procedure":...}`) — the object identity `LegacyIdentityCollapse`'s
+/// GLOBAL collision check keys on.
+fn legacy_local_object(item: &CallHierarchyOutgoingCall) -> Option<String> {
+    item.to
+        .data
+        .as_ref()
+        .and_then(|d| d.get("object"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase())
 }
 
 fn new_abi_symbol_app(item: &CallHierarchyOutgoingCall) -> Option<String> {
@@ -900,11 +943,6 @@ fn is_new_event_derived_outgoing(
 
 fn classify_outgoing(ledger: &mut Ledger, sweep: &Sweep, new_snap: &LspSnapshot) {
     for entry in sweep.entries.values() {
-        // Adjudicated once, in classify_prepare (OverloadIdentityCollapsed)
-        // — legacy has no counterpart for this identity at all.
-        if entry.is_overload_extra {
-            continue;
-        }
         let routine = entry.identity.key();
         let self_prepare_range = entry.new_prepare.as_ref().map(|i| nr(&i.selection_range));
 
@@ -990,21 +1028,25 @@ fn classify_outgoing_pair(
     l: &CallHierarchyOutgoingCall,
     n: &CallHierarchyOutgoingCall,
 ) {
-    // OverloadIdentityCollapsed: legacy's single collapsed (object, name)
-    // slot can point at the WRONG overload's position entirely (it has no
-    // arg-type dispatch at all — `resolve_call` never looks at argument
-    // types, just the qualified/unqualified object+method name) — so a
-    // SAME-named target with a DIFFERENT range, where the name is a known
-    // overloaded routine, is this class, not an unexplained divergence.
+    // LegacyIdentityCollapse: legacy's single collapsed (object, name) slot
+    // can point at the WRONG declaration's position entirely (it has no
+    // arg-type dispatch, no object-kind discriminator, and no
+    // enclosing-member discriminator at all — `resolve_call` just matches
+    // qualified/unqualified object+method NAME TEXT) — so a SAME-named
+    // target with a DIFFERENT range, where legacy's own claimed object
+    // identity (`data.object`, arm 1's "local definition found") names a
+    // GLOBALLY collided `(object, routine)` pair, is this class, not an
+    // unexplained divergence.
     if l.to.name.eq_ignore_ascii_case(&n.to.name)
-        && sweep.is_overloaded_name(&n.to.name.to_lowercase())
+        && let Some(l_object_lc) = legacy_local_object(l)
+        && sweep.is_legacy_identity_collision(&l_object_lc, &n.to.name.to_lowercase())
     {
         ledger.push(
             "outgoing",
             routine,
-            Class::NewBetter(NewBetterClass::OverloadIdentityCollapsed),
+            Class::NewBetter(NewBetterClass::LegacyIdentityCollapse),
             format!(
-                "target {:?} is overloaded: legacy's single collapsed slot (data={:?}) may not even be the SAME overload new's arg-type dispatch correctly resolves to (new range={:?})",
+                "target {:?} on object {l_object_lc:?} is a GLOBAL legacy identity collision: legacy's single collapsed slot (data={:?}) may not even be the SAME declaration new's resolver correctly targets (new range={:?})",
                 n.to.name, l.to.data, nr(&n.to.range)
             ),
         );
@@ -1060,16 +1102,30 @@ fn classify_outgoing_pair(
         // navigable span legacy's arm 2 could never produce (it always
         // reuses the CALLER's own site as a stand-in, `data: {"external":
         // true, "app": ...}`, never a real target position).
+        //
+        // WIDENED predicate (CDO fix-wave, team-lead finding): the ORIGINAL
+        // predicate additionally required `l_app.eq_ignore_ascii_case(&n_app)`
+        // (legacy's and new's reported APP NAMES agree) — real CDO data
+        // (`LogMessage`/`ToBase64`/`FromBase64`, 7 findings) showed legacy's
+        // arm 2 can report a DIFFERENT app name than new's resolver for the
+        // exact same target (legacy's `DependencyKey`/`ExternalSource`
+        // resolution and new's `AppId` resolution can disagree on which
+        // declaring app "owns" a transitively-visible symbol) — an
+        // app-name mismatch there is NOT evidence of a different target,
+        // just of the two engines' independent app-attribution logic
+        // disagreeing. The robust identity check is the ROUTINE NAME
+        // instead (case-insensitive) — already known to match at this
+        // point in the classifier for every one of these findings.
         if let Some(n_app) = new_dep_source_app(new_snap, n)
-            && l_app.eq_ignore_ascii_case(&n_app)
+            && l.to.name.eq_ignore_ascii_case(&n.to.name)
         {
             ledger.push(
                 "outgoing",
                 routine,
                 Class::NewBetter(NewBetterClass::DepSourceSpan),
                 format!(
-                    "external target app={n_app}: legacy caller-site stand-in vs new REAL dep-source span {:?}",
-                    nr(&n.to.range)
+                    "target {:?}: legacy app={l_app:?} (caller-site stand-in) vs new app={n_app:?} (REAL dep-source span {:?}) — app names need not agree, routine name does",
+                    n.to.name, nr(&n.to.range)
                 ),
             );
             ledger.push(
@@ -1128,10 +1184,6 @@ fn classify_outgoing_legacy_only(
 
 fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
     for entry in sweep.entries.values() {
-        // Adjudicated once, in classify_prepare (OverloadIdentityCollapsed).
-        if entry.is_overload_extra {
-            continue;
-        }
         let routine = entry.identity.key();
 
         // Event-flow-derived legacy entries are adjudicated in
@@ -1198,32 +1250,35 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                     }
                 }
                 (Some(l_name), None) => {
-                    // OverloadIdentityCollapsed: legacy merges every
-                    // overload's callers into ONE incoming bucket (no
-                    // arg-type dispatch at all). If THIS exact site
-                    // resolves, on the new side, into a SIBLING overload's
-                    // own incoming set instead, that's the explanation —
-                    // the caller genuinely targets a different overload new
-                    // correctly distinguishes.
-                    let base_name = entry
-                        .identity
-                        .routine_lc
-                        .split_once("#overload")
-                        .map(|(b, _)| b)
-                        .unwrap_or(&entry.identity.routine_lc);
-                    let found_in_sibling = sweep.is_overloaded_name(base_name)
-                        && sweep.siblings_by_base_name(base_name).iter().any(|sib| {
+                    // LegacyIdentityCollapse: legacy merges every colliding
+                    // declaration's callers into ONE incoming bucket (no
+                    // object-kind/enclosing-member/arg-type discriminator
+                    // at all — see the class's doc). If THIS exact site
+                    // resolves, on the new side, into a GLOBAL collision
+                    // SIBLING's own incoming set instead (same `(object_lc,
+                    // routine_lc)` pair, any file), that's the explanation
+                    // — the caller genuinely targets a different, distinct
+                    // declaration new correctly attributes it to.
+                    let base_name = strip_dup_suffix(&entry.identity.routine_lc);
+                    let found_in_sibling = legacy_answer_matches_a_sibling(
+                        sweep,
+                        &entry.identity.object_lc,
+                        base_name,
+                        &entry.identity.key(),
+                        |sib| {
                             sib.new_incoming
                                 .iter()
                                 .any(|i| i.from_ranges.iter().any(|r| nr(r) == site))
-                        });
+                        },
+                    );
                     if found_in_sibling {
                         ledger.push(
                             "incoming",
                             &routine,
-                            Class::NewBetter(NewBetterClass::OverloadIdentityCollapsed),
+                            Class::NewBetter(NewBetterClass::LegacyIdentityCollapse),
                             format!(
-                                "legacy caller={l_name} at site {site:?} merged into this overload's bucket; new correctly attributes it to a SIBLING overload of {base_name:?}"
+                                "legacy caller={l_name} at site {site:?} merged into this identity's bucket; new correctly attributes it to a SIBLING declaration of ({}, {base_name:?})",
+                                entry.identity.object_lc
                             ),
                         );
                     } else {
@@ -1284,6 +1339,20 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
         // number of DISCRETE response items (legacy never groups by caller;
         // new does) even though the flattened site set already matched
         // above 1:1. Detected by comparing raw item counts per caller name.
+        //
+        // SKIPPED entirely when this identity is a known `LegacyIdentityCollapse`
+        // (`(object_lc, base_name)` genuinely collided): a collided
+        // identity's legacy count is INFLATED by callers of SIBLING
+        // declarations merged into the same bucket — every one of those
+        // sites is already individually explained, per-site, by the
+        // `LegacyIdentityCollapse` check above. Running this raw-count
+        // heuristic on top would double-classify the SAME divergence under
+        // a semantically wrong class (a grouping artifact, when the real
+        // cause is the collision) rather than skip a redundant check.
+        let base_name = strip_dup_suffix(&entry.identity.routine_lc);
+        if sweep.is_legacy_identity_collision(&entry.identity.object_lc, base_name) {
+            continue;
+        }
         let mut legacy_counts: BTreeMap<String, usize> = BTreeMap::new();
         for item in &legacy_ordinary {
             *legacy_counts
@@ -1461,17 +1530,19 @@ fn classify_code_lens(
                             format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a case-fold-only caller)"),
                         );
                     }
-                } else if sweep.is_overloaded_name(&key.1) {
-                    // OverloadIdentityCollapsed: legacy's merged (object,
+                } else if sweep.is_legacy_identity_collision(&key.0, &key.1) {
+                    // LegacyIdentityCollapse: legacy's merged (object,
                     // name) incoming bucket counts callers of EVERY
-                    // overload; new correctly counts only THIS overload's
-                    // own callers.
+                    // colliding declaration (same-object overload, or an
+                    // entirely different object/kind sharing the name);
+                    // new correctly counts only THIS declaration's own
+                    // callers.
                     ledger.push(
                         "codeLens",
                         &routine,
-                        Class::NewBetter(NewBetterClass::OverloadIdentityCollapsed),
+                        Class::NewBetter(NewBetterClass::LegacyIdentityCollapse),
                         format!(
-                            "ref count legacy={l_refs:?} (merges every overload's callers) vs new={n_refs:?} (this overload only)"
+                            "ref count legacy={l_refs:?} (merges every colliding declaration's callers) vs new={n_refs:?} (this declaration only)"
                         ),
                     );
                 } else {
@@ -1714,29 +1785,63 @@ fn lsp_incr_fixture_has_zero_regressions_and_zero_unexplained() {
         2,
         "EventDirectionMoved: Alpha.OnAfterWork / Beta.HandleAfterWork (incoming + codeLens); counts={counts:?}"
     );
+    // OutgoingCardinality is NOT exercised by this fixture: Beta.Process's
+    // 3 callers (Alpha.DoWork, MyTable.OnValidate, MyPage.OnOpenPage) each
+    // have exactly ONE call site — no per-caller grouping-vs-ungrouped item
+    // count ever differs. (A prior version of this pin asserted `1` here,
+    // but that count was an ARTIFACT of a since-fixed double-classification
+    // bug — see the CDO fix-wave's report — where the Calc-overload
+    // collision's raw item-count mismatch was ALSO being caught by this
+    // unrelated cardinality heuristic; the collision is now exhaustively
+    // explained per-site by `LegacyIdentityCollapse` alone, and this
+    // heuristic correctly stays silent for a collided identity.)
+    // OutgoingCardinality is exercised for real by `lsp-diff-core`'s
+    // `Zeta.CallTwice` script below.
     assert_eq!(
         counts
             .get("NewBetter::OutgoingCardinality")
             .copied()
             .unwrap_or(0),
-        1,
-        "OutgoingCardinality: Beta.Process has 3 callers, at least one with >1 call site once grouped; counts={counts:?}"
+        0,
+        "OutgoingCardinality must be 0 on lsp-incr; counts={counts:?}"
     );
+    // LegacyIdentityCollapse (6, re-measured after the CDO fix-wave's
+    // generalization from same-file-only to GLOBAL collision detection):
+    // 1 prepare finding (Calc-Integer's position mismatches, matches its
+    // Calc-Text sibling) + 1 outgoing finding (MyTableExt.OnValidate's
+    // qualified `Alpha.Calc(1)` call) + 3 incoming findings (2 for the
+    // primary `alpha.calc` entry's merged DoWork/OnValidate callers, 1 for
+    // the `alpha.calc#dup0` sibling's own merged DoWork caller) + 1
+    // codeLens finding (Alpha.Calc's inflated ref count). Went from 7 to 6
+    // net: the fix-wave's generalization ALSO surfaced 2 real
+    // `UnqualifiedCallResolved` findings that a pre-existing bug in this
+    // harness had been misclassifying as the overload class (see
+    // `UnqualifiedCallResolved`'s count comment below) — a net -2 there,
+    // +1 here from independently querying `alpha.calc#dup0` for the first
+    // time (previously skipped entirely by construction).
     assert_eq!(
         counts
-            .get("NewBetter::OverloadIdentityCollapsed")
+            .get("NewBetter::LegacyIdentityCollapse")
             .copied()
             .unwrap_or(0),
-        7,
-        "OverloadIdentityCollapsed: Alpha's Calc(Integer)/Calc(Text) overload set, across prepare/incoming/outgoing/codeLens; counts={counts:?}"
+        6,
+        "LegacyIdentityCollapse: Alpha's Calc(Integer)/Calc(Text) overload set, across prepare/incoming/outgoing/codeLens; counts={counts:?}"
     );
+    // UnqualifiedCallResolved (3, up from 1): the fix-wave's
+    // `legacy_local_object`-gated `LegacyIdentityCollapse` check no longer
+    // matches a bareword-placeholder item just because its NAME happens to
+    // be an overloaded routine (`Calc`) — a placeholder (`data: None`) was
+    // never really "resolved to the wrong overload" to begin with, so
+    // `Alpha.DoWork`'s TWO unqualified `Calc(1)`/`Calc('x')` calls now
+    // correctly join the pre-existing `Løbenr()` finding here instead of
+    // being misclassified as `LegacyIdentityCollapse`.
     assert_eq!(
         counts
             .get("NewBetter::UnqualifiedCallResolved")
             .copied()
             .unwrap_or(0),
-        1,
-        "UnqualifiedCallResolved: Alpha.DoWork's bareword Løbenr() call; counts={counts:?}"
+        3,
+        "UnqualifiedCallResolved: Alpha.DoWork's bareword Calc(1)/Calc('x')/Løbenr() calls; counts={counts:?}"
     );
 }
 
@@ -1821,13 +1926,46 @@ fn lsp_diff_deps_fixture_has_zero_regressions_and_zero_unexplained() {
     );
 }
 
+/// `LegacyIdentityCollapse` fixture reproduction (CDO fix-wave, binding —
+/// "fixtures can express both shapes... so the class is pinned always-on
+/// in CI, not CDO-only"): a codeunit and a page sharing the display name
+/// "Shared Name" (`SharedCU.al`/`SharedPage.al`, each with its own
+/// `GetRecipients`, called from `Caller.al`), plus a table with two
+/// different fields' same-named `OnValidate` triggers (`TwoTriggers.al`).
+#[test]
+fn lsp_diff_identity_fixture_has_zero_regressions_and_zero_unexplained() {
+    let ledger = run_differential(&fixture_path("lsp-diff-identity"), false);
+    ledger.assert_gates_clean("lsp-diff-identity");
+    let counts = ledger.class_counts();
+
+    // 8 total: the page+codeunit "Shared Name" collision contributes 1
+    // prepare + 2 outgoing (one per caller) + 2 incoming (one per
+    // declaration's merged-in sibling caller) + 2 codeLens (both
+    // declarations' inflated ref count) = 7; the two-field same-object
+    // OnValidate collision contributes 1 prepare finding (triggers aren't
+    // callable, so incoming/outgoing/codeLens never diverge for them).
+    assert_eq!(
+        counts
+            .get("NewBetter::LegacyIdentityCollapse")
+            .copied()
+            .unwrap_or(0),
+        8,
+        "LegacyIdentityCollapse: page+codeunit name collision (7) + two-field same-trigger collision (1); counts={counts:?}"
+    );
+}
+
 /// `ObjectIdAdditive` is out-of-scope for this harness's own driver (module
 /// doc's scope decision — Step 1 never queries `dependencyDocumentSymbol`).
 /// Pinned at 0 across every always-on fixture, with the reason documented,
 /// rather than silently omitted from the ratchet.
 #[test]
 fn object_id_additive_is_out_of_driver_scope_pinned_zero() {
-    for fixture in ["lsp-incr", "lsp-diff-core", "lsp-diff-deps"] {
+    for fixture in [
+        "lsp-incr",
+        "lsp-diff-core",
+        "lsp-diff-deps",
+        "lsp-diff-identity",
+    ] {
         let with_deps = fixture == "lsp-diff-deps";
         let ledger = run_differential(&fixture_path(fixture), with_deps);
         let counts = ledger.class_counts();
@@ -1853,11 +1991,47 @@ fn cdo_workspace_has_zero_regressions_and_zero_unexplained() {
     };
     let ledger = run_differential(&ws, true);
     ledger.assert_gates_clean("CDO");
+    let counts = ledger.class_counts();
 
-    // Class-count pins (Step 4, binding once measured on a CDO_WS-capable
-    // machine — see the task report for the measured table; this sandbox
-    // has no CDO_WS, so these are NOT re-derived here, only gated).
-    let _counts = ledger.class_counts();
+    // TODO(t3.14 CDO fix-wave, pending controller re-measurement): the
+    // controller's FIRST CDO run (pre-fix-wave) found 23 REGRESSION/
+    // unexplained findings, decomposed into exactly 2 mechanical classes —
+    // `LegacyIdentityCollapse` (16, generalized here from same-file-only
+    // `OverloadIdentityCollapsed` to workspace-GLOBAL detection) and
+    // `DepSourceSpan` (7, its app-name-equality requirement widened to a
+    // routine-name-equality requirement here) — both fixed in this
+    // fix-wave (see the task report's CDO fix-wave section). Those OLD
+    // counts are now STALE (the classification mechanism changed) and are
+    // NOT pre-filled below; each constant stays `None` until the
+    // controller re-runs this suite on a CDO_WS-capable machine and hands
+    // back the exact post-fix count for that class — filling it in is then
+    // a ONE-LINE edit (`None` -> `Some(n)`), no structural change needed.
+    const CDO_PINS: &[(&str, Option<usize>)] = &[
+        ("NewBetter::LegacyIdentityCollapse", None),
+        ("NewBetter::DepSourceSpan", None),
+        ("NewBetter::CaseFoldHit", None),
+        ("NewBetter::CrossAppTarget", None),
+        ("NewBetter::EventDirectionMoved", None),
+        ("NewBetter::AbiSymbolShape", None),
+        ("NewBetter::OutgoingCardinality", None),
+        ("NewBetter::R2Precision", None),
+        ("NewBetter::R6InterfaceExclusion", None),
+        // Always 0 — out of this driver's scope, see the module doc and
+        // `object_id_additive_is_out_of_driver_scope_pinned_zero`.
+        ("NewBetter::ObjectIdAdditive", Some(0)),
+        // Pinned by the dedicated `cdo_h10_edit_scenario_...` test below,
+        // not here.
+        ("NewBetter::UnqualifiedCallResolved", None),
+    ];
+    for (class, expected) in CDO_PINS {
+        if let Some(expected) = expected {
+            assert_eq!(
+                counts.get(*class).copied().unwrap_or(0),
+                *expected,
+                "CDO class-count pin for {class}: counts={counts:?}"
+            );
+        }
+    }
 }
 
 /// Step 3's binding H-10 scenario: legacy `reindex_file` of ONE file loses

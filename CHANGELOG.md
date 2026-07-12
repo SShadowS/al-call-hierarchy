@@ -53,6 +53,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src/server.rs`, structurally unreachable from an integration-test crate,
   and relocating it purely for a scaffolding test that dies with legacy at
   Task 17 was judged not worth the effort.
+  **CDO fix-wave** (the controller's first real CDO run, 23 REGRESSION/
+  unexplained findings, decomposed into exactly 2 mechanical classes):
+  (1) `OverloadIdentityCollapsed` renamed and GENERALIZED to
+  `LegacyIdentityCollapse` — legacy's `object_types`/`definitions`/
+  `incoming_calls`/`outgoing_calls` are keyed by bare `(object NAME text,
+  routine NAME text)` only, no object KIND or enclosing-member component at
+  all, so the collision isn't limited to same-file arg-count overloads (the
+  original, narrower scope) — CDO's `PAGE 6175343 "CDO E-Mail"` and
+  `CODEUNIT 6175280 "CDO E-Mail"` sharing routine names collide too, across
+  entirely different files and object kinds. Detection is now workspace-
+  GLOBAL: every identity is queried against legacy independently (the prior
+  per-file "skip the non-primary overload, never query legacy for it"
+  construction-time shortcut is gone), and the classifier cross-references
+  a mismatched answer against every OTHER declaration sharing the same
+  legacy identity key, anywhere in the workspace. New fixture:
+  `tests/fixtures/lsp-diff-identity/` (a same-named page+codeunit pair, and
+  a table with two different fields' same-named `OnValidate` triggers).
+  (2) `DepSourceSpan`'s predicate widened: it required legacy's and new's
+  reported APP NAMES to agree, which real CDO data (`LogMessage`/
+  `ToBase64`/`FromBase64`, 7 findings) showed doesn't always hold — legacy's
+  and new's independent app-attribution logic can disagree on which
+  declaring app "owns" a transitively-visible symbol even for the identical
+  target; the robust check is the ROUTINE NAME instead (already known to
+  match at that point in the classifier). A genuine double-classification
+  bug surfaced and was fixed along the way: `classify_incoming`'s raw
+  per-caller item-count heuristic (`OutgoingCardinality`'s incoming-axis
+  counterpart) was ALSO firing on a collided identity's inflated legacy
+  count, misreporting an already-`LegacyIdentityCollapse`-explained
+  divergence under the wrong class — it now skips entirely for any
+  identity `is_legacy_identity_collision` reports as collided. CDO class-
+  count pins are TODO named constants in `cdo_workspace_has_zero_regressions_and_zero_unexplained`
+  pending the controller's next CDO re-run (the old 23-finding
+  decomposition is stale — the classification mechanism changed).
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
