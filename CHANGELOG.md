@@ -15,23 +15,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get()` is a cheap `Arc` clone, never blocked) + `ChangeEvent`
   (`FileSaved`/`FileRemoved`/`DepsChanged`/`Overflow`) + `Updater` (owns the
   mutable working `Vec<ParsedUnit>` — every source-bearing app, workspace
-  AND embedded-source deps — that a transient `ResolveIndex`/`BodyMap` pair
-  borrows fresh on every apply, no self-referential struct) +
-  `Updater::apply_batch` (the synchronous, unit-tested core; returns
-  `(LspSnapshot, Rung)` — the brief's "expose the rung taken" test hook,
-  more directly than the originally-suggested `Cell<Rung>`) + `spawn_updater`
-  (the thread wrapper: 100ms debounce, per-path last-wins coalescing, apply,
+  AND embedded-source deps) + `Updater::apply_batch` (the synchronous,
+  unit-tested core the brief asks for; returns `(LspSnapshot, Rung)` — the
+  "expose the rung taken" test hook, more directly than the
+  originally-suggested `Cell<Rung>`) + `spawn_updater` (the REAL hot-path
+  thread wrapper: 100ms debounce, per-path last-wins coalescing, apply,
   swap, `on_swap` notify hook for a future diagnostics consumer). Implements
   the plan's now-MANDATORY contingency from Task 3's CDO measurement
   (`ResolveIndex`+`BodyMap` cost 200-350ms — 2-3.5x rung 1's entire 100ms
-  budget): rung 1 NEVER transiently rebuilds them from a full re-parse:
-  fingerprint-equal saves splice straight into the updater's cached
-  `Vec<ParsedUnit>` and re-resolve only the touched file(s) against a
-  transient index/body_map built over the UNCHANGED cached graph, sharing
-  every untouched file's edge bucket/decl list/parsed entry via `Arc::clone`
-  (proved by an `Arc::ptr_eq` test assertion — the no-re-resolve proof).
-  Rung 2 (a definition-surface change, file add/delete, or a `Recovered`
-  parse — fail-closed, never trusted for rung 1) rebuilds the workspace
+  budget): `spawn_updater`'s loop builds a `ResolveIndex`/`BodyMap`/
+  `obj_node_map` context ONCE right after each swap and REUSES it across
+  every consecutive rung-1 batch, rebuilding only when a rung-2/3 event
+  actually changes the graph. Getting this cache-reuse to compile in safe
+  Rust surfaced a real ownership conflict (a first draft that spliced each
+  rung-1 edit straight into `Updater::parsed` failed to build once caching
+  was wired through `spawn_updater`, because a cached `BodyMap` borrows
+  `parsed` and can't coexist with a later `&mut` splice into it) — the fix
+  is a `pending: HashMap<String, ParsedFile>` overlay field, DISJOINT from
+  `parsed`, that rung 1 (via the new free function `apply_rung1_core`,
+  deliberately NOT a `&mut self` method, so the two fields' borrows stay
+  provably disjoint to the borrow checker) writes into instead;
+  `Updater::flush_pending` folds it into `parsed` whenever a rung-2/3
+  rebuild needs `parsed` to be current, or immediately after every
+  `apply_batch` call (which always builds its OWN fresh, uncached context,
+  since it's the simple/correctness-first path, not the optimized one).
+  Soundness argument (recorded in the module doc): resolving a rung-1
+  touched file against a STALE cached `BodyMap` is sound because the ONLY
+  fields any resolution path reads through it (`RoutineDecl::params`/
+  `by_ref`/`parse_incomplete`, plus a witness span never trusted stale
+  anyway) are EXACTLY what rung 1's own fingerprint-equal gate already
+  guarantees are unchanged. Rung 2 (a definition-surface change, file
+  add/delete, or a `Recovered` parse — fail-closed, never trusted for rung
+  1) flushes any pending rung-1 backlog first, then rebuilds the workspace
   layer via `assemble_program_graph` over the cached, unchanged `DepLayer`
   and re-resolves EVERY workspace file (a signature change anywhere can
   change how any OTHER file's call sites resolve). Rung 3
@@ -55,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the new `recompute_file` helper (used by both the Task-8 batch build
   and this task's rung 1/2 per-file recompute — the ONE place "what a file
   contributes to a snapshot" is defined) factor the Task-8 batch-build loop
-  so it can never drift from the incremental path. 8 unit tests over an
+  so it can never drift from the incremental path. 9 unit tests over an
   in-memory fixture workspace cover the brief's binding Step-1 scenarios
   (a)-(e) (body edit → rung 1 with the `Arc::ptr_eq` sibling-untouched
   proof; signature edit → rung 2 with the caller's route flipping to
@@ -64,9 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   past rung 1; a `.alpackages`-shaped path escalating to rung 3) plus a
   fail-closed build-failure test (prev snapshot AND the updater's working
   state both survive untouched), a mixed-batch test (one rung-2 file forces
-  the whole batch), and the Step-3 debounce/coalesce test (5 rapid saves of
-  one file via `spawn_updater`'s real background thread → exactly 1 apply,
-  proven via a counting `on_swap` wrapper).
+  the whole batch), a dedicated caching-property test (`apply_rung1_core`
+  called TWICE with the SAME `index`/`body_map`, built only once, before
+  either edit — the exact arrangement `spawn_updater`'s hot loop relies on),
+  and the Step-3 debounce/coalesce test (5 rapid saves of one file via
+  `spawn_updater`'s real background thread → exactly 1 apply, proven via a
+  counting `on_swap` wrapper).
 - **`src/lsp/snapshot.rs`: `LspSnapshot`, the immutable batch-built
   program-engine snapshot the migrated LSP server will serve queries from
   (T3 LSP-migration arc, Task 8 — the arc's structural centerpiece).**
