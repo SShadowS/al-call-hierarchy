@@ -114,7 +114,8 @@ or consumed programmatically by `src/engine/l4`/`l5` (effect summaries, detector
 - `src/program/resolve/` - **The fresh call/behaviour-edge resolver** — `full.rs`
   (`resolve_full_program`, the entry point), `resolver.rs`/`receiver.rs`/`arg_dispatch.rs`
   (dispatch), `builtins.rs`/`member_catalog.rs` (platform intrinsic catalogs), `edge.rs`
-  (the `Histogram` taxonomy + `ObligationOutcome`), `abi_ingest.rs` (dependency ABI)
+  (the `Histogram` taxonomy + `ObligationOutcome`)
+- `src/program/abi_ingest.rs` - Dependency ABI ingestion (sibling of `resolve/`, not inside it)
 - `src/engine/l2/` - Structural body-walk + feature projection over the owned IR
 - `src/engine/l3/` - Legacy workspace symbol table + call resolver (the RETIRED al-sem
   port; `--l3-call-graph-stats` and siblings are advisory-only — see Project Direction)
