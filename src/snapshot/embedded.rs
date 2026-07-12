@@ -1,7 +1,7 @@
 //! Extract embedded ShowMyCode `.al` source from a `.app` package.
 
 use anyhow::{Context, Result};
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Seek, SeekFrom};
 use std::path::Path;
 
 /// `.app` files start with a 40-byte NAVX header, then a standard zip.
@@ -57,13 +57,23 @@ pub fn extract_embedded_source(app_path: &Path) -> Result<Vec<SourceFile>> {
     };
     let mut out = Vec::new();
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)?;
+        let entry = archive.by_index(i)?;
         let name = entry.name().to_string();
         if !name.to_ascii_lowercase().ends_with(".al") {
             continue;
         }
-        let mut raw = Vec::new();
-        entry.read_to_end(&mut raw)?;
+        // T2.2: belt-and-suspenders cap — reject a hostile declared size
+        // before decompressing, then bound the read itself (a lying central
+        // directory). Cap-exceeded joins the SAME error path as any other
+        // per-entry read failure on this surface (`?` propagates, matching
+        // the module's engine-never-throws-silently posture).
+        crate::capped_io::check_declared_size(
+            entry.size(),
+            crate::capped_io::EMBEDDED_AL_SOURCE_CAP,
+        )
+        .with_context(|| format!("embedded .al entry too large: {name}"))?;
+        let raw = crate::capped_io::read_capped(entry, crate::capped_io::EMBEDDED_AL_SOURCE_CAP)
+            .with_context(|| format!("failed to read embedded .al entry: {name}"))?;
         let text = String::from_utf8_lossy(strip_bom(&raw)).into_owned();
         let virtual_path = percent_encoding::percent_decode_str(&name)
             .decode_utf8_lossy()
@@ -126,5 +136,47 @@ mod tests {
             app_content_hash(&app).unwrap()
         );
         assert_eq!(app_content_hash(Path::new(&app)).unwrap().len(), 64);
+    }
+
+    /// Task T2.2: an embedded `.al` entry declaring more than
+    /// [`crate::capped_io::EMBEDDED_AL_SOURCE_CAP`] must be rejected via a
+    /// named error, never a panic and never an unbounded allocation.
+    #[test]
+    fn oversized_al_entry_is_rejected_not_panicking() {
+        use std::io::Write as _;
+
+        let mut zip_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut zip_buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("Codeunit1.al", opts).unwrap();
+            const CHUNK: usize = 1024 * 1024;
+            let chunk = vec![0u8; CHUNK];
+            let mut remaining = crate::capped_io::EMBEDDED_AL_SOURCE_CAP as usize + 1024;
+            while remaining > 0 {
+                let n = remaining.min(CHUNK);
+                writer.write_all(&chunk[..n]).unwrap();
+                remaining -= n;
+            }
+            writer.finish().unwrap();
+        }
+        let mut bytes = vec![0u8; NAVX_HEADER_SIZE as usize];
+        bytes.extend_from_slice(&zip_buf.into_inner());
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bomb.app");
+        std::fs::write(&path, &bytes).expect("write crafted .app");
+
+        let result = extract_embedded_source(&path);
+        assert!(
+            result.is_err(),
+            "an oversized embedded .al entry must be rejected, not silently truncated"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Codeunit1.al"),
+            "error should name the offending entry: {msg}"
+        );
     }
 }

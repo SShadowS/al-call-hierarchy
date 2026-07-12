@@ -181,13 +181,14 @@ fn json_to_cbor(v: &serde_json::Value) -> CborValue {
 
 fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
     use flate2::read::GzDecoder;
-    use std::io::Read;
-    let mut decoder = GzDecoder::new(bytes);
-    let mut out = Vec::new();
-    decoder
-        .read_to_end(&mut out)
-        .map_err(|e| format!("snapshot gunzip failed: {e}"))?;
-    Ok(out)
+    // T2.2: this was previously an UNBOUNDED `read_to_end` — the classic
+    // zip-bomb vector (a tiny `.cbor.gz` inflating to an attacker-chosen
+    // number of gigabytes). Bound it via the shared cap helper; a
+    // cap-exceeded stream fails through the SAME `Result<_, String>` a
+    // corrupt/truncated gzip stream already used here.
+    let decoder = GzDecoder::new(bytes);
+    crate::capped_io::read_capped(decoder, crate::capped_io::SNAPSHOT_GZ_CAP)
+        .map_err(|e| format!("snapshot gunzip failed: {e}"))
 }
 
 // ===========================================================================
@@ -556,5 +557,74 @@ mod tests {
     fn wrong_schema_version_errors() {
         let json = r#"{"schemaVersion":2}"#;
         assert!(deserialize_snapshot(json.as_bytes(), None).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task T2.2: the gunzip decompression cap — previously an UNBOUNDED
+    // `read_to_end`, the classic zip-bomb vector for this surface.
+    // -----------------------------------------------------------------------
+
+    /// A genuinely-over-cap gzip stream (real DEFLATE, not a crafted header)
+    /// must be capped mid-read and surfaced through `deserialize_snapshot`'s
+    /// existing `Result<_, String>` — never a panic, never an unbounded
+    /// allocation. Mirrors the brief's "gunzip path equivalent" TDD fixture.
+    #[test]
+    fn oversized_gz_snapshot_is_rejected_not_panicking() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write as _;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        // Compressible zeros well past the cap — a small compressed footprint
+        // hiding a huge inflate, same shape as the zip fixtures elsewhere in
+        // this task.
+        const CHUNK: usize = 1024 * 1024;
+        let chunk = vec![0u8; CHUNK];
+        let mut remaining = crate::capped_io::SNAPSHOT_GZ_CAP as usize + 1024;
+        while remaining > 0 {
+            let n = remaining.min(CHUNK);
+            encoder.write_all(&chunk[..n]).unwrap();
+            remaining -= n;
+        }
+        let gz_bytes = encoder.finish().unwrap();
+
+        let result = deserialize_snapshot(&gz_bytes, Some(SnapshotFormat::CborGz));
+        assert!(
+            result.is_err(),
+            "an over-cap gz snapshot must be rejected, not silently truncated"
+        );
+        assert!(
+            result.unwrap_err().contains("gunzip failed"),
+            "error should name the surface"
+        );
+    }
+
+    /// A normal, well-under-cap gz-encoded snapshot round-trips unaffected by
+    /// the cap — the cap must never perturb legitimate output.
+    #[test]
+    fn normal_gz_snapshot_round_trips_under_cap() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write as _;
+
+        let v = m(&[
+            ("schemaVersion", CborValue::Int(3)),
+            ("name", CborValue::Text("hello".into())),
+        ]);
+        let cbor_bytes = encode(&v);
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&cbor_bytes).unwrap();
+        let gz_bytes = encoder.finish().unwrap();
+
+        // Auto-detect must recognize the gzip magic bytes too.
+        assert_eq!(detect_format(&gz_bytes), SnapshotFormat::CborGz);
+
+        let tree = deserialize_snapshot(&gz_bytes, None).expect("well under cap");
+        let CborValue::Map(map) = tree else {
+            panic!("not a map")
+        };
+        assert!(matches!(map.get("schemaVersion"), Some(CborValue::Int(3))));
+        assert!(matches!(map.get("name"), Some(CborValue::Text(s)) if s == "hello"));
     }
 }

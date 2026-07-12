@@ -44,7 +44,7 @@
 //! never a panic. Mirrors al-sem's per-file error handling.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use crate::engine::deps::app_manifest::parse_app_manifest_xml;
 use crate::engine::deps::app_package_zip::{extract_navx_manifest_xml, strip_app_header};
@@ -76,7 +76,9 @@ pub struct EmbeddedSourceFile {
 /// Extract every embedded `.al` entry from a `.app`'s raw bytes, sorted by entry
 /// name (mirrors al-sem `iterateEmbeddedSourceBytes`: `Object.keys(entries).sort()`
 /// over the `.al`-filtered ZIP). Never panics: an unreadable archive yields `[]`,
-/// an unreadable entry is skipped.
+/// an unreadable entry is skipped, and (Task T2.2) an entry whose
+/// declared/actual size exceeds [`crate::capped_io::EMBEDDED_AL_SOURCE_CAP`]
+/// is skipped the same way — never an unbounded allocation.
 pub fn iterate_embedded_source(app_bytes: &[u8]) -> Vec<EmbeddedSourceFile> {
     let zip = strip_app_header(app_bytes);
     let cursor = Cursor::new(zip.to_vec());
@@ -103,14 +105,28 @@ pub fn iterate_embedded_source(app_bytes: &[u8]) -> Vec<EmbeddedSourceFile> {
 
     let mut out: Vec<EmbeddedSourceFile> = Vec::new();
     for (name, idx) in al_entries {
-        let mut file = match archive.by_index(idx) {
+        let file = match archive.by_index(idx) {
             Ok(f) => f,
             Err(_) => continue,
         };
-        let mut bytes = Vec::new();
-        if file.read_to_end(&mut bytes).is_err() {
+        // T2.2: an entry whose declared/actual size exceeds the cap joins
+        // the SAME per-entry skip this loop already applies to an unreadable
+        // entry (an unreadable archive index / non-UTF-8 content) — the
+        // function's established contract is "skip the one bad entry, keep
+        // ingesting the rest", not "fail the whole `.app`".
+        if crate::capped_io::check_declared_size(
+            file.size(),
+            crate::capped_io::EMBEDDED_AL_SOURCE_CAP,
+        )
+        .is_err()
+        {
             continue;
         }
+        let Ok(bytes) =
+            crate::capped_io::read_capped(file, crate::capped_io::EMBEDDED_AL_SOURCE_CAP)
+        else {
+            continue;
+        };
         // UTF-8 decode (lossy — never panics on bad input). al-sem uses a strict
         // TextDecoder("utf-8"), but embedded AL source is valid UTF-8 in practice;
         // lossy keeps the engine-never-panics posture.
@@ -1066,4 +1082,51 @@ pub fn is_dep_order_index_stamp_fresh(
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod capped_io_tests {
+    use super::*;
+
+    /// Task T2.2: `iterate_embedded_source`'s established contract is
+    /// "skip the one bad entry, keep ingesting the rest" (an unreadable
+    /// archive index is already skipped this way). An entry over
+    /// [`crate::capped_io::EMBEDDED_AL_SOURCE_CAP`] must join that SAME
+    /// per-entry skip — never abort the whole `.app`, never panic — while a
+    /// well-under-cap sibling entry in the same archive still comes through.
+    #[test]
+    fn oversized_al_entry_is_skipped_others_still_ingested() {
+        use std::io::Write as _;
+
+        let mut buf = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+
+            writer.start_file("Small.Codeunit.al", opts).unwrap();
+            writer.write_all(b"codeunit 1 Small { }").unwrap();
+
+            writer.start_file("Bomb.Codeunit.al", opts).unwrap();
+            const CHUNK: usize = 1024 * 1024;
+            let chunk = vec![0u8; CHUNK];
+            let mut remaining = crate::capped_io::EMBEDDED_AL_SOURCE_CAP as usize + 1024;
+            while remaining > 0 {
+                let n = remaining.min(CHUNK);
+                writer.write_all(&chunk[..n]).unwrap();
+                remaining -= n;
+            }
+
+            writer.finish().unwrap();
+        }
+
+        let files = iterate_embedded_source(&buf.into_inner());
+        assert_eq!(
+            files.len(),
+            1,
+            "the oversized entry must be skipped, the small one kept"
+        );
+        assert_eq!(files[0].relative_path, "Small.Codeunit.al");
+        assert_eq!(files[0].content, "codeunit 1 Small { }");
+    }
 }

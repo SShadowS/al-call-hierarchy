@@ -8,6 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Decompression caps on every zip/gzip site — a hostile `.app` (or a hostile
+  `.cbor.gz` snapshot fed to `alsem diff`) could OOM-kill the whole process
+  (Task T2.2, crash/DoS arc).** Every zip entry and gzip stream in the
+  ingestion paths was read via an unbounded `read_to_end`: a few KB of
+  DEFLATE expanding to an attacker-chosen number of gigabytes, and release
+  builds are `panic=abort`, so even the resulting allocation failure aborts
+  the whole LSP/CLI process, not just the one request. There is no zip-slip
+  vector on any of these paths (extraction never writes entry-derived paths).
+  - **New `src/capped_io.rs`**: one shared `read_capped(reader, cap) ->
+    Result<Vec<u8>, CapReadError>` (bounds the allocation via `Read::take(cap
+    + 1)`, so a hostile stream forces at most a `cap + 1`-byte allocation, not
+    its full expanded size) + `check_declared_size(declared, cap)` (a
+    belt-and-suspenders pre-check against a zip entry's central-directory
+    `size()`, rejecting before decompressing when the archive doesn't lie
+    about it). `CapReadError` implements `std::error::Error`, so `?` composes
+    into every call site's existing `anyhow::Result` unchanged.
+  - **Six sites capped**, each ceiling grounded in a real size measured
+    against the CDO reference workspace (10 real BC apps incl. Microsoft
+    BaseApp/System Application) and given generous headroom — see
+    `src/capped_io.rs` for the per-cap justification comments:
+    `SYMBOL_REFERENCE_JSON_CAP` (512 MB; BaseApp measures ~58.3 MB),
+    `NAVX_MANIFEST_XML_CAP` (4 MB; BaseApp measures ~6.3 KB),
+    `EMBEDDED_AL_SOURCE_CAP` (16 MB; the largest real `.al` entry observed is
+    ~789 KB), `SNAPSHOT_GZ_CAP` (1 GB; reasoned, not directly measured — see
+    the module doc). Wired into `app_package::{parse_manifest,parse_symbols}`,
+    `program::abi_ingest::read_symbol_reference_from_app`,
+    `snapshot::embedded::extract_embedded_source`,
+    `engine::deps::app_package_zip::extract_entry_bytes` (now cap-parameterized
+    — shared by the manifest and symbol-reference callers, each passing its
+    own cap), `engine::deps::dep_artifact_l4::iterate_embedded_source`, and
+    `engine::gate::snapshot_deserialize::gunzip`.
+  - **Failure semantics preserved per surface**: sites that already return
+    `Result`/`anyhow::Result` (app_package, abi_ingest, snapshot::embedded,
+    snapshot_deserialize) surface a cap-exceeded overage through the SAME
+    error path as any other read failure — never a panic, never a silent
+    empty result. Sites with an established fail-closed-to-`None`/skip
+    contract (`app_package_zip::extract_entry_bytes`,
+    `dep_artifact_l4::iterate_embedded_source`'s per-entry skip) keep that
+    contract — cap-exceeded joins the SAME `None`/skip path corruption
+    already used, rather than introducing a new failure mode.
+  - CDO byte-identity verified: every real CDO artifact is well under its
+    cap, so resolution output is unchanged; all 1398 lib tests pass
+    (up from 1378 pre-task), including new crafted-oversized-entry fixtures
+    at every site (a small-compressed/huge-declared-size zip entry, a
+    genuinely-over-cap DEFLATE/gzip stream of compressible zeros, and a
+    normal-sized real `.app`/gz payload round-tripping byte-identical).
 - **Stack-overflow hardening everywhere the `al_syntax` lowerer and the L4 CFG
   walker run (Task T2.1, crash/DoS arc).** `src/snapshot/parse.rs` had
   documented an OBSERVED stack overflow lowering real BaseApp source and
