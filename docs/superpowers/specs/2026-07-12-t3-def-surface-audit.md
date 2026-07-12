@@ -107,11 +107,10 @@ for the 3 `BodyMap` sites traced separately in §3.
 | `graph.objects` (linear scan / `graph.obj_index`) | `&ObjectNode` by `ObjectNodeId` | SURFACE | `graph.rs:37, 40` | `resolver.rs:1072-1081` (base+extension tier lookup), `1941, 2446, 3309`; `receiver.rs:690, 1201, 1966, 1979, 2380, 2524` |
 | `graph.routines` (binary search, sorted by id) | `&RoutineNode` by `RoutineNodeId` | SURFACE | `graph.rs:39`; sort invariant documented `index.rs:134` | `resolver.rs:159-166` (`routine_is_collapse_marked`), `241-269` (`routine_is_source_aliased`), `853, 867` (`lookup_routine_access`); `receiver.rs:1904, 1968, 2144, 2153` |
 | `graph.topology.closure(app)` | `HashSet<AppRef>` — the app's full dependency closure | SURFACE (workspace-level, not file-scoped) | `graph.rs:35`, `topology.rs` | `resolver.rs:1065, 1087` (`resolve_in_extendable_scope`'s cross-app visibility gate) |
-| `graph.friends` | `HashMap<AppRef, BTreeSet<AppRef>>` — `InternalsVisibleTo` grants | SURFACE (manifest-level) | `graph.rs:41-51` | `resolver.rs:689, 694, 3252` (`Access::Internal` friend-app check) |
-| `graph.apps` | `AppRegistry` (guid+name+publisher+version identity) | SURFACE (manifest-level) | `graph.rs:34`; `node.rs:14-38` | `resolver.rs:4999, 5035` |
+| `graph.friends` | `HashMap<AppRef, BTreeSet<AppRef>>` — `InternalsVisibleTo` grants | SURFACE (manifest-level) | `graph.rs:41-51` | `resolver.rs:700` (`internal_visible_across`'s `graph.friends.get(&exposing_app)` — the actual read; `resolver.rs:689,694` are doc-comment prose in the same function's own doc, not code, and `resolver.rs:3252` is a test-module doc-comment past the `#[cfg(test)]` boundary — none of the three counted as call sites) |
 | `graph.resolve_object(app, kind, name_lc)` | `Option<&ObjectNode>` | SURFACE | `graph.rs:86-…` | `resolver.rs:1633, 1936, 2249, 2447`; `receiver.rs:289, 1891, 4040` |
-| `index.routines_in_object(obj, name_lc)` | `&[RoutineNodeId]` (overload candidates, identity only) | SURFACE | `index.rs:429` | `resolver.rs:361, 725, 739, 1154, 1169, 1848, 2045, 2062, 2671, 9504, 12500, 12680, 12769, 12905, 13266`; `receiver.rs:891, 2367`; `arg_dispatch.rs` (via `resolve_member`/`resolve_bare` chain) |
-| `index.object_extends(graph, ext, base)` | `bool` — is `ext` a direct kind-compatible extension of `base` | SURFACE | `index.rs:861` | `resolver.rs:655, 783, 806, 913, 8153-8289 (×8), 13473-13474` (`Access::Protected` visibility) |
+| `index.routines_in_object(obj, name_lc)` | `&[RoutineNodeId]` (overload candidates, identity only) | SURFACE | `index.rs:429` | `resolver.rs:361, 725, 739, 1154, 1169, 1848, 2045, 2062, 2671` (all pre-`#[cfg(test)]`, production/doc); `receiver.rs:891, 2367`; `arg_dispatch.rs` (via `resolve_member`/`resolve_bare` chain) |
+| `index.object_extends(graph, ext, base)` | `bool` — is `ext` a direct kind-compatible extension of `base` | SURFACE | `index.rs:861` | `resolver.rs:655, 783, 806, 913` (`Access::Protected` visibility) — all pre-`#[cfg(test)]`; the ×8 hits in the 8153-8289 range and 13473-13474 are inside `resolver.rs`'s test module (past line 3109) and are excluded |
 | `index.resolve_object_ref(graph, from_app, obj_ref)` | resolves a `SourceTable`/`TableNo`/page-control `ObjectRef` to an `ObjectNodeId` | SURFACE | `index.rs:525` | `receiver.rs:684, 1122, 1448, 2422, 2446, 2498, 2766, 2830`; `arg_dispatch.rs:345, 409, 726, 1284` |
 | `index.table_extensions_of` / `page_extensions_of` / `report_extensions_of` | `&[ObjectNodeId]` — sibling extension objects of a base Table/Page/Report | SURFACE (explicitly cross-FILE by design — see §5.3) | `index.rs:594, 608, 623` | threaded as the `extensions_of: fn` parameter of `resolve_in_extendable_scope`, `resolver.rs:1053-1105`; concretely instantiated at `resolver.rs:2055` (tables) and the Page/Report call sites of the same function |
 | `index.table_scope_has_routine` | `bool` — does a routine of this name exist anywhere in the table's extension scope | SURFACE | `index.rs:786` | `receiver.rs:928, 1232, 1237, 1690`; `arg_dispatch.rs:741` |
@@ -128,7 +127,7 @@ for the 3 `BodyMap` sites traced separately in §3.
 `source_table`), `parse_incomplete` (file-level parse-health degrade).
 
 `RoutineNode` (`node_extract.rs:222-366`) fields consulted: `id`, `name`,
-`is_trigger`, `access`, `tier`, `event_subscribers: Vec<ParsedSubscriberArgs>`
+`access`, `tier`, `event_subscribers: Vec<ParsedSubscriberArgs>`
 (`publisher_object_type`, `publisher_name`, `event_name`, `element`,
 `skip_on_missing_license`, `skip_on_missing_permission` — `event.rs:19-31`),
 `subscriber_instance_manual`, `publisher_kind`, `include_sender`, `return_type`,
@@ -339,11 +338,17 @@ sub-fingerprint belongs to, then hashed as one ordered sequence:
   a body-only edit can never change `param_sig_key`, hence can never flip either
   flag. Excluded as redundant, not unsafe.
 - **"Enum values."** Per §2.3, this class does not exist as a real read — dropped.
-- **`is_trigger`.** Fully DERIVABLE from `RoutineKind` at the identity level (part
-  of how `RoutineNodeId` classifies its kind of member) — redundant with #3, not
-  independent information. (Verify at Task 7 implementation time against
-  `node_extract.rs`'s actual construction path before relying on this; flagged
-  here as "very likely redundant," not proven redundant with full rigor — see §6.2.)
+- **`is_trigger`.** NOT derivable from `RoutineNodeId` — that struct
+  (`node.rs:133-147`) carries only `object`, `name_lc`, `enclosing_member_lc`,
+  `params_count`, `sig_fp`; no kind/trigger discriminant exists there at all, so
+  the original "redundant with the identity key" rationale was wrong and is
+  corrected here. The real, verified reason to exclude it: `RoutineNode::
+  is_trigger` has **zero reads anywhere in `resolver.rs`/`receiver.rs`/
+  `arg_dispatch.rs`** (confirmed by grep) — the only production reader in the
+  whole repo is `graphify_export.rs:823`, an unrelated CLI export path with no
+  connection to call-site resolution. A field no resolution-path code ever
+  consults cannot affect a resolution outcome, so it carries no fingerprint
+  value. (See §6.2 — this correction was itself found by independent review.)
 
 ## 5. Explicitly out-of-scope (caller-side) — recap with the "why," including the
    file-boundary vs. object-boundary trap the brief called out
@@ -399,15 +404,15 @@ outgoingCalls/incomingCalls response that targets/originates in F from an
 unrelated caller file G" — recommend adding that scenario explicitly to the gate's
 script (flagged for whoever writes Task 8/the gate, not actioned here).
 
-### 6.2 `is_trigger` redundancy is asserted, not proof-checked
+### 6.2 `is_trigger` exclusion — corrected during review (fix-wave, see below)
 
-§4's exclusion of `is_trigger` as "derivable from `RoutineNodeId`/`RoutineKind`"
-was not traced all the way through `node_extract.rs`'s actual construction call
-site (out of scope for a documentation-only audit budget) — Task 7 should spend
-five minutes confirming this before relying on it, or simply include the field;
-including a genuinely-redundant field costs nothing but a few bytes of hash input,
-while wrongly excluding a non-redundant one is a soundness gap. Low risk, flagged
-for cheap verification rather than left silently assumed.
+The original version of this audit excluded `is_trigger` on the wrong grounds
+("derivable from `RoutineNodeId`/`RoutineKind`" — `RoutineNodeId` has no such
+field, so that claim was false). Independent review caught this; §4 now states
+the corrected, verified reason (zero reads in any resolution-path file). This
+entry is kept as a record that the exclusion's JUSTIFICATION changed, not its
+OUTCOME — `is_trigger` is still correctly excluded from the fingerprint, now for
+a reason actually checked by grep rather than asserted from a false premise.
 
 ### 6.3 Non-source (dependency/ABI) files are out of this audit's scope
 
@@ -438,9 +443,12 @@ does not need to chase determinism harder than the fail-closed direction require
 Independently grep `\b(graph|index)\.[a-zA-Z_]+` and `body_map\.(get|get_with_path)\(`
 over `src/program/resolve/{resolver,receiver,arg_dispatch,extract,builtins,
 member_catalog}.rs`, restricted to each file's own pre-`#[cfg(test)]` boundary
-(`resolver.rs:3109`, `receiver.rs:3150`, `arg_dispatch.rs:1565`; `extract.rs`,
-`builtins.rs`, `member_catalog.rs` have no such split worth excluding — check for
-one before assuming). Diff the resulting accessor-name list against §2.2's table
+(`resolver.rs:3109`, `receiver.rs:3150`, `arg_dispatch.rs:1565`, `extract.rs:981`,
+`builtins.rs:82`, `member_catalog.rs:624` — all six files DO have a `#[cfg(test)]`
+split; the last three simply have ZERO `graph.`/`index.` accessor hits on either
+side of it regardless, which is why §2 does not cite them for accessors — that
+is a fact about their content, not an exemption from the boundary rule). Diff the
+resulting accessor-name list against §2.2's table
 and the BodyMap call-site count against §3's "exactly 3." Any accessor or call site
 found that is NOT in this audit is a finding against this document, not against the
 code — treat it as reopening this task, not as a bug report.
