@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`tests/r3b_incremental_nondeterminism.rs`'s corpus sweep used the exact
+  shipped silent-skip shape this whole remediation program exists to kill
+  (Task T4-B, Tier-4 hygiene arc).** `sweep_fixtures()` read the ~40-fixture
+  discovered slice from `tests/r3a3-goldens` via `if let Ok(rd) =
+  std::fs::read_dir(...)` — if that directory ever moved or was renamed, the
+  discovery step would silently no-op instead of failing, leaving only the 6
+  hardcoded fixtures. The two floors gating on `checked` asserted only `>= 5`,
+  which the 6 hardcoded fixtures satisfy alone — so an evaporated corpus sweep
+  would pass green with 88% less coverage and no signal anything had changed.
+  Replaced the silent `if let Ok` with `.expect("read r3a3 goldens")`
+  (matching siblings `r3b_minimality.rs` and `r3b_incremental_equality.rs`,
+  which already hard-require) and raised both floors from `>= 5` to `>= 30` —
+  well above the 6-fixture evaporation case, below the ~46 the current corpus
+  discovers. Verified both directions: the full suite passes at 46 fixtures
+  swept; temporarily renaming `tests/r3a3-goldens` now hard-panics with a clear
+  message instead of silently passing.
 - **Three CLI flag-honesty defects across `aldump`/`alsem`/the main binary
   (Task T4-B, Tier-4 hygiene arc): a mutual-exclusion array missing three mode
   flags, two dead `alsem prove` flags plus a fingerprint flag that flipped
