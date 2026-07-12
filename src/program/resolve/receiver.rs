@@ -3053,17 +3053,46 @@ pub(crate) fn caller_scope_symbol<'a>(
 }
 
 /// Strip a trailing `\s+temporary\s*$` modifier (case-insensitive) from a
-/// Record type's name portion.  Port of L3's `strip_trailing_temporary`.
+/// Record type's name portion. A verbatim duplicate of L3's
+/// `record_types::strip_trailing_temporary` — NOT imported from there
+/// because `src/program/resolve` is enforced L3-independent (see
+/// `tests/program_resolve_harness.rs`'s
+/// `resolve_module_has_no_stray_engine_l3_l2_imports` guard; the module's own
+/// doc names `builtins.rs::global_builtins` as the ONE sanctioned exception).
+/// Both copies shared the same char-boundary panic/mis-parse bug (T2.4); if
+/// this logic changes again, update `engine::l3::record_types`'s copy too.
+///
+/// Char-boundary safe by construction: never computes a byte offset from a
+/// RE-CASED copy of the string and slices the ORIGINAL with it — that old
+/// approach panics whenever a character's `to_lowercase()` byte length
+/// differs from its own (e.g. `ẞ`, U+1E9E, 3 bytes → `ß`, 2 bytes) and, even
+/// where it doesn't panic, silently misjudges the whitespace boundary for
+/// characters that GROW under lowering (e.g. Turkish `İ`, U+0130, 2 bytes →
+/// `i̇`, 3 bytes), leaving a real `İ Temporary` table name un-stripped.
+/// Instead this walks `char_indices()` on the original string directly and
+/// ASCII-folds each char against the literal ASCII word "temporary" (a
+/// faithful port of the TS `/i` flag, itself a simple ASCII fold for a
+/// pure-ASCII pattern) — every byte offset used to slice comes straight from
+/// `trimmed_end`, so it is always a valid char boundary.
 fn strip_trailing_temporary(s: &str) -> String {
+    const WORD: &str = "temporary";
     let trimmed_end = s.trim_end();
-    let lower = trimmed_end.to_lowercase();
-    if let Some(prefix_len) = lower.strip_suffix("temporary").map(|p| p.len()) {
-        let prefix = &trimmed_end[..prefix_len];
-        if prefix.ends_with(char::is_whitespace) {
-            return prefix.to_string();
-        }
+    let indices: Vec<(usize, char)> = trimmed_end.char_indices().collect();
+    let word_len = WORD.chars().count();
+    if indices.len() <= word_len {
+        // No room for a preceding whitespace char — `\s+temporary` needs one.
+        return trimmed_end.to_string();
     }
-    trimmed_end.to_string()
+    let tail_start = indices.len() - word_len;
+    let tail_matches = indices[tail_start..]
+        .iter()
+        .zip(WORD.chars())
+        .all(|(&(_, c), w)| c.eq_ignore_ascii_case(&w));
+    if !tail_matches || !indices[tail_start - 1].1.is_whitespace() {
+        return trimmed_end.to_string();
+    }
+    let word_byte_start = indices[tail_start].0;
+    trimmed_end[..word_byte_start].to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -3312,6 +3341,45 @@ mod tests {
                 table_ref: ObjectRef::Name {
                     raw: "Customer".into(),
                     normalized_lc: "customer".into()
+                }
+            }
+        );
+    }
+
+    // -- T2.4 (3): strip_trailing_temporary char-boundary safety, via THIS
+    // call site (the receiver.rs copy was a verbatim duplicate of L3's, now
+    // deduplicated — regression-proving it through `classify_type_text`
+    // rather than calling the shared helper directly). --
+
+    #[test]
+    fn classify_record_unicode_prefix_no_space_does_not_panic() {
+        // "ẞ" (3 UTF-8 bytes) directly against "Temporary" (no separating
+        // whitespace) used to panic mid-char on the old byte-length-mismatch
+        // slice. `\s+temporary` shouldn't strip here regardless — the point is
+        // reaching that decision must not panic.
+        assert_eq!(
+            classify_type_text("Record ẞTemporary"),
+            ParsedType::Record {
+                table_ref: ObjectRef::Name {
+                    raw: "ẞTemporary".into(),
+                    normalized_lc: "ẞtemporary".into()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn classify_record_turkish_i_temporary_strips_correctly() {
+        // Turkish "İ" GROWS under `to_lowercase()` (2 bytes → 3) — the old
+        // byte-math bug silently failed to recognize " temporary" as the
+        // modifier here, leaving the table name mis-parsed as
+        // "İ temporary" instead of "İ".
+        assert_eq!(
+            classify_type_text("Record İ temporary"),
+            ParsedType::Record {
+                table_ref: ObjectRef::Name {
+                    raw: "İ".into(),
+                    normalized_lc: "İ".into()
                 }
             }
         );

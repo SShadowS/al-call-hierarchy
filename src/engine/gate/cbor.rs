@@ -79,8 +79,12 @@ fn encode_into(value: &CborValue, out: &mut Vec<u8>) {
             // MUST-FIX 3 — guard the u16 truncation: an object with >65535 keys
             // would silently wrap the count and corrupt the stream. Snapshot maps
             // are bounded (a fixed field set + per-routine frame tables), so this is
-            // an invariant we ENFORCE, not hope for.
-            debug_assert!(
+            // an invariant we ENFORCE, not hope for — `encode`/`encode_into` are
+            // infallible by signature and called from dozens of snapshot-building
+            // sites, so threading a `Result` through isn't the shallow fix; a plain
+            // `assert!` (release-alive, unlike `debug_assert!` which compiles out
+            // under `--release` and lets the wrap through) is the honest minimal fix.
+            assert!(
                 entries.len() <= u16::MAX as usize,
                 "cbor-x map-16 header: >65535 keys unsupported (got {})",
                 entries.len()
@@ -148,9 +152,13 @@ fn encode_int(n: i64, out: &mut Vec<u8>) {
 /// high 3 bits (`0x00` unsigned, `0x20` negative, `0x60` text, `0x80` array). The
 /// caller guarantees `n <= 0xffff_ffff` — cbor-x never uses the 8-byte (`0x1b`)
 /// form (integers beyond 32 bits go through [`encode_f64`]), so there is no
-/// `0x1b` branch here.
+/// `0x1b` branch here. `encode_text`/`encode_array_header` pass a real
+/// string/array length through, so a >4GB string or array would violate this —
+/// a plain `assert!` (release-alive; a `debug_assert!` here would compile out
+/// under `--release` and let `(n as u32).to_be_bytes()` below silently
+/// truncate, corrupting the header/data-length pairing) is the honest guard.
 fn encode_uint_header(major: u8, n: u64, out: &mut Vec<u8>) {
-    debug_assert!(
+    assert!(
         n <= 0xffff_ffff,
         "encode_uint_header: argument {n} exceeds 32 bits — must route through encode_f64"
     );
@@ -357,5 +365,38 @@ mod cbor_oracles {
             hex(&encode(&v)),
             "b9 00 02 61 61 19 01 00 61 62 1a 00 01 00 00"
         );
+    }
+
+    // -- T2.4 (2): MUST-FIX 3's guard must be release-alive, not `debug_assert!` --
+
+    #[test]
+    #[should_panic(expected = "cbor-x map-16 header")]
+    fn map_over_65535_keys_panics_instead_of_wrapping() {
+        // A `debug_assert!` here compiles out under `--release`, letting
+        // `entries.len() as u16` silently wrap to 0 and corrupt the stream. The
+        // guard must be a plain `assert!` — release-alive in EVERY profile, so
+        // this test's pass/fail is identical under `cargo test` and
+        // `cargo test --release` (verified separately; not `cfg`-gated here).
+        let mut map = IndexMap::new();
+        for i in 0..(u16::MAX as usize + 1) {
+            map.insert(i.to_string(), CborValue::Int(0));
+        }
+        let _ = encode(&CborValue::Map(map));
+    }
+
+    // -- T2.4 (4) sweep sibling: `encode_uint_header`'s ">32 bits" guard --
+
+    #[test]
+    #[should_panic(expected = "exceeds 32 bits")]
+    fn uint_header_over_32_bits_panics_instead_of_truncating() {
+        // Same shape as MUST-FIX 3 above: the OLD `debug_assert!` compiled out
+        // under `--release`, letting `(n as u32).to_be_bytes()` silently
+        // truncate a >32-bit length/magnitude to its low 32 bits — a header
+        // that no longer matches the data that follows it (corrupted stream).
+        // Reachable via `encode_text`/`encode_array_header` for a string or
+        // array whose length exceeds `u32::MAX`. Call the boundary check
+        // directly (no need to allocate a 4GB buffer to prove it).
+        let mut out = Vec::new();
+        encode_uint_header(0x60, u32::MAX as u64 + 1, &mut out);
     }
 }

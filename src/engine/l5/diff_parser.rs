@@ -52,7 +52,11 @@ fn strip_ab_prefix(p: &str) -> &str {
 
 fn unquote_path(s: &str) -> String {
     let trimmed = s.trim();
-    if !trimmed.starts_with('"') || !trimmed.ends_with('"') {
+    // A single `"` passes BOTH `starts_with('"')` and `ends_with('"')` (it's the
+    // same character) — `trimmed.len() - 1` then underflows the "inner" slice's
+    // end below 1 (its start), which panics. Anything shorter than a valid empty
+    // quoted string (`""`, len 2) can't be unquoted; degrade to the raw token.
+    if trimmed.len() < 2 || !trimmed.starts_with('"') || !trimmed.ends_with('"') {
         return trimmed.to_string();
     }
     let inner = &trimmed[1..trimmed.len() - 1];
@@ -558,5 +562,51 @@ mod tests {
         let r = parse_unified_diff(diff);
         assert_eq!(r.files[0].kind, DiffFileKind::Deleted);
         assert_eq!(r.files[0].path, "Old.al");
+    }
+
+    // -----------------------------------------------------------------------
+    // T2.4 (1): `unquote_path` lone-quote panic
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn unquote_path_lone_quote_does_not_panic() {
+        // A single `"` (e.g. a diff truncated to `--- "`) passes BOTH
+        // `starts_with('"')` and `ends_with('"')` (same char) — the old code then
+        // computed `trimmed[1..0]`, which panics ("slice index starts at 1 but
+        // ends at 0"). Must degrade to returning the raw token, never panic.
+        assert_eq!(unquote_path("\""), "\"");
+    }
+
+    #[test]
+    fn unquote_path_empty_quoted_string() {
+        // Regression: `""` (len 2, empty inner) must still unquote to empty.
+        assert_eq!(unquote_path("\"\""), "");
+    }
+
+    #[test]
+    fn unquote_path_normal_escaped_regression() {
+        // Regression: a normal quoted path with an escape still round-trips.
+        assert_eq!(unquote_path("\"a\\\"b.al\""), "a\"b.al");
+    }
+
+    #[test]
+    fn diff_header_lone_quote_path_does_not_panic() {
+        // Reachable from user input: `--- "` (diff truncated mid-header). Must
+        // parse to SOME path (or be dropped), never panic the whole digest.
+        let diff = "diff --git a/X b/X\n--- \"\n+++ b/X\n@@ -1 +1 @@\n-a\n+b\n";
+        let r = parse_unified_diff(diff);
+        // No panic reaching here is the assertion; also sanity-check we got a
+        // result back (either a parsed file or a recorded parse issue).
+        assert!(r.files.len() <= 1);
+    }
+
+    #[test]
+    fn rename_from_lone_quote_does_not_panic() {
+        // Reachable via `rename from "` / `rename to "` (~:329-334), same bug.
+        let diff = "diff --git a/Old.al b/New.al\n\
+            similarity index 100%\n\
+            rename from \"\n\
+            rename to \"\n";
+        let _ = parse_unified_diff(diff);
     }
 }

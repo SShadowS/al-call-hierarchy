@@ -295,7 +295,8 @@ fn merged_workspace_view(
     }
 }
 
-/// Run each detector in isolation (panic → diagnostic), collecting findings + stats.
+/// Run each detector in isolation via the `Result` contract (see `run_detectors`'s
+/// doc comment for the full guarantee), collecting findings + stats.
 fn run_each(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
