@@ -8,6 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`src/lsp/handlers.rs`: core call-hierarchy handlers on the program engine
+  (T3 LSP-migration arc, Task 11) — `prepare`/`incoming`/`outgoing`, the
+  engine-backed replacements for `src/handlers.rs`'s legacy graph-backed
+  `prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls` (cut over at
+  Task 15).** `ItemData { node: RoutineNodeId }` is the `item.data` JSON
+  round-trip payload; `incoming` groups `EdgeRef`s by `edge.from` into one
+  `CallHierarchyIncomingCall` per DISTINCT caller (a deliberate improvement
+  over legacy's ungrouped per-call-site shape); `outgoing` walks the
+  routine's own edge bucket (`Call`/`Run`/`ImplicitTrigger`) plus
+  `event_edges` filtered `edge.from == id` (a publisher's subscribers
+  surface as outgoing targets — the design doc's "natural direction"
+  decision), emitting one item per route: `RouteTarget::Routine(id)` → a
+  real item (workspace OR dependency-with-embedded-source — both now get
+  REAL navigable spans, legacy never could); `conditionalResolved`/
+  `ambiguousResolved` candidate sets → one item per candidate;
+  `RouteTarget::AbiSymbol` → a zero-range item at a synthesized
+  `al-preview://` URI (matching legacy's external-def fallback SHAPE —
+  identity-bearing detail + an `external`-flagged `data` blob — but
+  deliberately NOT reusing the caller's own file/range as legacy did);
+  `Builtin`/`Unresolved` → no item. Both non-negotiable live-span rules
+  (resolver-read audit §6.1, and its Task-10 EventFlow extension) are
+  enforced structurally: every position-bearing surface is re-derived from
+  `LspSnapshot::decl_and_text` at query time, never from a stored
+  `Route::Witness`/`SiteId` span — proven by two dedicated rung-1-edit
+  regression tests asserting the returned ranges match an independent fresh
+  batch build, not the pre-edit witness.
+- **`LspSnapshot::dep_decl_by_id`/`dep_texts`/`workspace_root` (T3 Task 11,
+  extending Task 8's `LspSnapshot`)** — closes a real gap the handlers work
+  surfaced: `decl_by_id` was workspace-only, so a `RouteTarget::Routine(id)`
+  pointing into an embedded-source DEPENDENCY had nowhere to resolve a real
+  span, contradicting the migration design doc's explicit §5 promise ("a dep
+  with embedded source gets REAL navigable spans"). `build_dep_indexes`
+  (new, shared by `LspSnapshot::from_context` and `Updater::apply_rung2`)
+  walks `graph.routines` for every non-primary app and records each one
+  `BodyMap` can still resolve, plus its file's text (keyed `(AppRef,
+  virtual_path)`, since a dependency's `virtual_path` is only unique within
+  its own app); rung 1 `Arc::clone`s both forward unchanged (dependency
+  source cannot change on a rung that only touches workspace files).
+  `workspace_root` (normalized like `uri_to_path`) lets `prepare` turn an
+  inbound URI into the same `virtual_path` key `decls_by_file`/`parsed` use,
+  with a case-insensitive fallback scan for `virtual_path`'s case-preserving
+  keys under Windows's case-insensitive filesystem semantics.
+- **Additive `Serialize`/`Deserialize` derives on `RoutineNodeId` and its
+  identity chain (`src/program/node.rs`: `AppRef`, `ObjKey`,
+  `ObjectNodeId`)** — needed for `ItemData`'s JSON round-trip through
+  `CallHierarchyItem.data`. `ObjectNodeId.kind: al_syntax::ir::ObjectKind` is
+  a foreign type in a crate that deliberately carries no serde dependency
+  (`al-syntax` stays minimal by design), so a local `ObjectKindDef` mirror
+  uses serde's standard `#[serde(remote = "...")]` idiom rather than adding
+  serde to `al-syntax` or hand-rolling a shadow enum with manual conversion.
+  Zero behavior change to any resolution path — verified by the full
+  existing test suite staying green.
 - **`tests/lsp_incremental_parity.rs`: the PERMANENT incremental-vs-batch
   differential gate (T3 LSP-migration arc, Task 10 — the arc's H-10
   insurance policy; outlives the arc, runs in CI forever).** 9 scripts, each

@@ -21,7 +21,7 @@
 //! throws it away and recomputes it from `edges_by_file`/`event_edges`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use al_syntax::ir::AlFile;
@@ -54,6 +54,13 @@ pub struct EdgeRef {
 /// `(file, idx)`) without needing a separate enum-tagged variant just for
 /// event-flow edges.
 pub const EVENT_EDGES_KEY: &str = "\u{0}events";
+
+/// [`LspSnapshot::dep_decl_by_id`]'s map type — aliased so
+/// [`build_dep_indexes`]'s signature stays readable (clippy
+/// `type_complexity`).
+pub(crate) type DepDeclById = HashMap<RoutineNodeId, DeclEntry>;
+/// [`LspSnapshot::dep_texts`]'s map type — see [`DepDeclById`]'s doc.
+pub(crate) type DepTexts = HashMap<(AppRef, String), Arc<str>>;
 
 /// One routine declaration's identity + LSP-facing spans, owned (never
 /// borrowing the `AlFile` it was read from — `Origin` is plain data).
@@ -129,6 +136,38 @@ pub struct LspSnapshot {
     /// cloned-then-patched. Never treat this as an independent source of
     /// truth to surgically edit (H-10 law).
     pub decl_by_id: HashMap<RoutineNodeId, DeclEntry>,
+    /// The `RouteTarget::Routine(id)`-target counterpart of [`Self::decl_by_id`]
+    /// for every NON-primary (dependency) app — the design doc's §5 promise
+    /// that "a dep with embedded source gets REAL navigable spans (legacy
+    /// never could)". `make_routine_route` (the resolver) only ever
+    /// constructs `RouteTarget::Routine(id)` when the SAME `BodyMap` this
+    /// entry is built from just answered `Some` for `id` — so any `id` an
+    /// edge carries as a `Routine` target is guaranteed to be found in
+    /// EITHER `decl_by_id` (workspace) or here, never neither. A dependency's
+    /// own source cannot change except on a rung-3 rebuild (rung 1/2 both
+    /// reuse the cached, unchanged `dep_layer` — see `Updater::apply_rung2`'s
+    /// doc), so callers `Arc::clone` this forward across rung 1/2 rather than
+    /// recomputing it. See [`build_dep_indexes`].
+    pub dep_decl_by_id: Arc<DepDeclById>,
+    /// Source text for every file contributing an entry to
+    /// [`Self::dep_decl_by_id`], keyed `(app, virtual_path)` — a
+    /// dependency's `virtual_path` is only unique WITHIN its own app (two
+    /// different deps can each have their own "Codeunit1.al"), unlike
+    /// `Self::parsed`'s workspace-only, plain-`String`-keyed map. This is
+    /// the `LineTable` text source for a dependency-source item's
+    /// position-encoding conversion (mirrors [`ParsedFileEntry::text`]'s
+    /// role for workspace files). Look both maps up together via
+    /// [`Self::decl_and_text`] rather than indexing either directly.
+    pub dep_texts: Arc<DepTexts>,
+    /// The workspace root every `virtual_path` in this snapshot is relative
+    /// to, normalized via [`crate::protocol::normalize_path`] (T3 Task 11) —
+    /// so a handler can turn an inbound `textDocument` URI into the SAME
+    /// `virtual_path` key `decls_by_file`/`parsed` use, via `uri_to_path`
+    /// (which ALSO normalizes) + `strip_prefix`, without either side's
+    /// casing silently mismatching on Windows. `Arc`-wrapped like `snap`/
+    /// `dep_layer`: identical across every rung (the workspace root a
+    /// running server watches never changes mid-session).
+    pub workspace_root: Arc<PathBuf>,
 }
 
 impl LspSnapshot {
@@ -139,7 +178,7 @@ impl LspSnapshot {
     #[must_use]
     pub fn build_full(workspace_root: &Path) -> Option<LspSnapshot> {
         let ctx = build_context(workspace_root)?;
-        Some(Self::from_context(ctx))
+        Some(Self::from_context(ctx, workspace_root))
     }
 
     /// As [`Self::build_full`], but ALSO returns a fresh, fully INDEPENDENT
@@ -171,13 +210,20 @@ impl LspSnapshot {
     pub fn build_full_with_parsed(workspace_root: &Path) -> Option<(LspSnapshot, Vec<ParsedUnit>)> {
         let ctx = build_context(workspace_root)?;
         let parsed_for_updater = parse_snapshot(&ctx.snap);
-        Some((Self::from_context(ctx), parsed_for_updater))
+        Some((Self::from_context(ctx, workspace_root), parsed_for_updater))
     }
 
     /// The composition shared by [`Self::build_full`]/
     /// [`Self::build_full_with_parsed`]: dep layer → assemble → resolve per
     /// file → derive indexes, given an already-built [`ProgramContext`].
-    fn from_context(ctx: ProgramContext) -> LspSnapshot {
+    ///
+    /// `pub(crate)` (T3 Task 11): `handlers.rs`'s own tests construct a
+    /// two-app (workspace + embedded-source dependency) [`ProgramContext`]
+    /// by hand — mirroring `program::build`'s in-memory layer-split fixture
+    /// pattern — and call this directly, the same way `build_full`/
+    /// `build_full_with_parsed` do, rather than re-implementing this
+    /// composition a second time just to exercise it without disk I/O.
+    pub(crate) fn from_context(ctx: ProgramContext, workspace_root: &Path) -> LspSnapshot {
         let ProgramContext {
             snap,
             graph,
@@ -204,6 +250,8 @@ impl LspSnapshot {
         let mut surfaces_by_file: HashMap<String, DefSurface> = HashMap::new();
         let mut decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>> = HashMap::new();
         let event_edges: Arc<Vec<ClassifiedEdge>>;
+        let dep_decl_by_id: HashMap<RoutineNodeId, DeclEntry>;
+        let dep_texts: HashMap<(AppRef, String), Arc<str>>;
 
         {
             let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
@@ -241,6 +289,9 @@ impl LspSnapshot {
                     })
                     .collect(),
             );
+
+            (dep_decl_by_id, dep_texts) =
+                build_dep_indexes(&graph, &body_map, &parsed, primary_app_ref);
             // `index`/`body_map`/`obj_node_map` drop here, at the end of this
             // block — their borrows of `graph`/`parsed` end before the
             // ownership-move phase below needs to consume `parsed` by value.
@@ -286,6 +337,9 @@ impl LspSnapshot {
             incoming,
             decls_by_file,
             decl_by_id,
+            dep_decl_by_id: Arc::new(dep_decl_by_id),
+            dep_texts: Arc::new(dep_texts),
+            workspace_root: Arc::new(crate::protocol::normalize_path(workspace_root)),
         }
     }
 
@@ -316,6 +370,27 @@ impl LspSnapshot {
         } else {
             &self.edges_by_file[&r.file][r.idx as usize]
         }
+    }
+
+    /// Resolve ANY `RoutineNodeId` — workspace OR dependency — to its live
+    /// decl entry plus the source text needed for position-encoding
+    /// conversion (`LineTable::new(text)`). The one lookup handlers.rs uses
+    /// for every position-bearing `RouteTarget::Routine(id)` surface, so a
+    /// caller never needs to know which of [`Self::decl_by_id`]/
+    /// [`Self::dep_decl_by_id`] actually holds `id`. Returns `None` for a
+    /// stale id (not in either map) — the fail-closed "never guess" contract
+    /// every handler built on this must honor.
+    #[must_use]
+    pub fn decl_and_text(&self, id: &RoutineNodeId) -> Option<(&DeclEntry, &str)> {
+        if let Some(d) = self.decl_by_id.get(id) {
+            let text = self.parsed.get(&d.virtual_path)?.text.as_str();
+            return Some((d, text));
+        }
+        let d = self.dep_decl_by_id.get(id)?;
+        let text = self
+            .dep_texts
+            .get(&(id.object.app, d.virtual_path.clone()))?;
+        Some((d, text.as_ref()))
     }
 }
 
@@ -461,6 +536,68 @@ pub(crate) fn build_decl_by_id(
         }
     }
     decl_by_id
+}
+
+/// Build [`LspSnapshot::dep_decl_by_id`]/[`LspSnapshot::dep_texts`] — the
+/// dependency-app counterpart of `decl_by_id`/`parsed`, which stay
+/// workspace-only (see their own docs). Walks `graph.routines` (every app,
+/// pre-sorted at graph-build time) rather than `parsed`'s per-file objects,
+/// since `graph.routines` already carries the exact node identity any edge's
+/// `RouteTarget::Routine(id)` names — skipping the primary (workspace) app
+/// (already covered by `decl_by_id`) and any routine `body_map` can't find a
+/// decl for (a `SymbolOnly` boundary routine with no embedded source — no
+/// position exists to serve, so no entry is produced; see
+/// `resolver::make_routine_route`'s doc for why `Routine(id)` is only ever
+/// constructed when this SAME `body_map` lookup just succeeded).
+///
+/// Called from BOTH [`LspSnapshot::from_context`] and
+/// [`crate::lsp::updater::Updater::apply_rung2`] (the two places that ever
+/// rebuild `graph`/`body_map` from scratch) — rung 1 never calls this,
+/// `Arc::clone`-ing the previous snapshot's values forward instead, since a
+/// body-only workspace edit can never touch dependency source (see
+/// `dep_decl_by_id`'s doc).
+#[must_use]
+pub(crate) fn build_dep_indexes(
+    graph: &ProgramGraph,
+    body_map: &BodyMap<'_>,
+    parsed: &[ParsedUnit],
+    primary_app: AppRef,
+) -> (DepDeclById, DepTexts) {
+    let mut dep_decl_by_id: HashMap<RoutineNodeId, DeclEntry> = HashMap::new();
+    for node in &graph.routines {
+        if node.id.object.app == primary_app {
+            continue;
+        }
+        if let Some((decl, path)) = body_map.get_with_path(&node.id) {
+            dep_decl_by_id.insert(
+                node.id.clone(),
+                DeclEntry {
+                    id: node.id.clone(),
+                    name: decl.name.clone(),
+                    origin: decl.origin.clone(),
+                    name_origin: decl.name_origin.clone(),
+                    virtual_path: path.to_string(),
+                },
+            );
+        }
+    }
+
+    let mut dep_texts: HashMap<(AppRef, String), Arc<str>> = HashMap::new();
+    for unit in parsed {
+        let Some(app_ref) = graph.apps.find(&unit.app) else {
+            continue;
+        };
+        if app_ref == primary_app {
+            continue;
+        }
+        for pf in &unit.files {
+            dep_texts
+                .entry((app_ref, pf.virtual_path.clone()))
+                .or_insert_with(|| Arc::from(pf.text.as_str()));
+        }
+    }
+
+    (dep_decl_by_id, dep_texts)
 }
 
 // ---------------------------------------------------------------------------

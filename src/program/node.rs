@@ -2,10 +2,11 @@
 
 use crate::snapshot::AppId;
 pub use al_syntax::ir::ObjectKind;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Interned handle for an `AppId` (cheap to copy/compare/sort).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct AppRef(pub u32);
 
 /// Interns `AppId`s by their FULL identity (guid+name+publisher+version) — guid
@@ -71,16 +72,51 @@ impl AppRegistry {
 
 /// Object key: prefer the numeric id; fall back to the (lowercased) name for
 /// id-less objects (extension objects, or where the IR has no number).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ObjKey {
     Id(i64),
     Name(String),
 }
 
+/// Serde "remote" mirror of `al_syntax::ir::ObjectKind` (T3 Task 11 — `LspSnapshot`'s
+/// `ItemData { node: RoutineNodeId }` JSON round-trip through `CallHierarchyItem.data`
+/// needs `RoutineNodeId`'s whole identity chain to be `Serialize`/`Deserialize`).
+/// `al-syntax` deliberately carries NO serde dependency (it is "the only crate that
+/// touches tree-sitter," kept minimal on purpose — see its crate doc), so `ObjectKind`
+/// itself cannot be derived on directly (that would require adding serde to al-syntax,
+/// and neither this crate nor serde owns `ObjectKind`, so a local `impl Serialize for
+/// ObjectKind` would violate the orphan rule regardless). Serde's remote-derive idiom
+/// mirrors the type's shape locally instead: every variant name below MUST match
+/// `ObjectKind`'s real variant list exactly (`crates/al-syntax/src/ir/decl.rs`) or this
+/// stops compiling — the derive macro generates the conversion by name.
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ObjectKind")]
+enum ObjectKindDef {
+    Codeunit,
+    Table,
+    TableExtension,
+    Page,
+    PageExtension,
+    Report,
+    ReportExtension,
+    Query,
+    XmlPort,
+    Enum,
+    EnumExtension,
+    Interface,
+    ControlAddIn,
+    Entitlement,
+    PermissionSet,
+    PermissionSetExtension,
+    Profile,
+    Other,
+}
+
 /// Canonical identity of an AL object within one app.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ObjectNodeId {
     pub app: AppRef,
+    #[serde(with = "ObjectKindDef")]
     pub kind: ObjectKind,
     pub key: ObjKey,
 }
@@ -134,7 +170,7 @@ impl ObjectNodeId {
 /// `RoutineNodeId` (a cache keyed on it, an incremental diff, a snapshot) must treat ABI
 /// node identity as NOT durable across a fidelity change to the reconstruction logic,
 /// and add its own version tag rather than assuming `sig_fp` is forward/backward stable.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct RoutineNodeId {
     pub object: ObjectNodeId,
     pub name_lc: String,

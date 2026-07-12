@@ -100,7 +100,8 @@ use log::warn;
 
 use crate::lsp::def_surface::def_surface_fingerprint;
 use crate::lsp::snapshot::{
-    DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_incoming, recompute_file,
+    DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_dep_indexes, build_incoming,
+    recompute_file,
 };
 use crate::program::assemble_program_graph;
 use crate::program::node::ObjectNodeId;
@@ -457,6 +458,14 @@ impl Updater {
 
         let decl_by_id = build_decl_by_id(&decls_by_file);
         let incoming = build_incoming(&edges_by_file, &event_edges);
+        // Dependency source never changes at rung 2 (it reuses the cached,
+        // unchanged `dep_layer` — see this method's own doc), but `new_graph`
+        // is a freshly assembled `ProgramGraph` value, so `dep_decl_by_id`/
+        // `dep_texts` must be recomputed against it (an `Arc::clone` forward
+        // would dangle the moment `cur.graph` is dropped) — see
+        // `build_dep_indexes`'s doc for why only rung 1 can skip this.
+        let (dep_decl_by_id, dep_texts) =
+            build_dep_indexes(&new_graph, &body_map, &self.parsed, primary_app_ref);
 
         LspSnapshot {
             generation: cur.generation + 1,
@@ -469,6 +478,11 @@ impl Updater {
             incoming,
             decls_by_file,
             decl_by_id,
+            dep_decl_by_id: Arc::new(dep_decl_by_id),
+            dep_texts: Arc::new(dep_texts),
+            // The workspace root never changes across a rung 2 rebuild — the
+            // running server watches ONE root for its whole session.
+            workspace_root: Arc::clone(&cur.workspace_root),
         }
     }
 
@@ -650,6 +664,14 @@ fn apply_rung1_core(
         incoming,
         decls_by_file,
         decl_by_id,
+        // Rung 1 touches ONLY workspace files — dependency source is
+        // untouched and `cur.graph` is reused unchanged (see this function's
+        // doc), so `dep_decl_by_id`/`dep_texts` are byte-identical to the
+        // previous snapshot's; `Arc::clone` rather than recompute (see
+        // `build_dep_indexes`'s doc).
+        dep_decl_by_id: Arc::clone(&cur.dep_decl_by_id),
+        dep_texts: Arc::clone(&cur.dep_texts),
+        workspace_root: Arc::clone(&cur.workspace_root),
     }
 }
 
