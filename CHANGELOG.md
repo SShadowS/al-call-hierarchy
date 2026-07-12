@@ -78,6 +78,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was dropped from the derived field list.
 
 ### Changed
+- **`program::build`: layered dep/workspace graph assembly + a single-parse
+  program-engine pipeline (T3 LSP-migration arc, Task 5 — additive,
+  byte-identical output).** `build_program_graph` used to do one monolithic
+  pass over the WHOLE snapshot (every app, dep and workspace alike); it is
+  now a thin wrapper over two new primitives: `build_dep_layer` (everything
+  derived from NON-primary apps — object/routine extraction, ABI ingest,
+  dependency topology, `internalsVisibleTo` friend wiring — into a `DepLayer`)
+  and `assemble_program_graph` (merges a `DepLayer` with a freshly-extracted
+  PRIMARY/workspace `ParsedUnit` into the full `ProgramGraph`, re-running sort
+  + dedup + the synthetic platform-event-publisher injection). This is the
+  primitive a future incremental LSP updater's "rung 2" needs: rebuild only
+  the workspace layer over an UNCHANGED dep layer, without re-parsing or
+  re-extracting a single dependency file. Also kills a real production
+  double-parse T3 Task 3 measured on CDO (~1.19s dependency-parse alone):
+  `resolve::full::build_context` used to call `build_program_graph` (which
+  parses the whole snapshot internally) AND separately run its own
+  standalone `parse_snapshot` for the resolver's body-walk; it now parses
+  ONCE and calls the new `build_program_graph_from_parsed(snap, abi_cache,
+  &parsed)` entry point instead. `AppRegistry` and `DependencyGraph` gained
+  `Clone` (needed so `assemble_program_graph` can clone a borrowed
+  `DepLayer`'s shared fields into each assembled graph). Every existing
+  caller of `build_program_graph` (aldump, `engine/l4`/`l5`/`gate`, tests) is
+  unaffected — the public signature and output are unchanged; verified via a
+  new characterization test (`build.rs`) proving the split composes to the
+  identical graph field-by-field, plus the frozen CDO SHA-256 gate
+  (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`,
+  byte-identical).
 - **L5 detectors now return `Result<DetectorOutput, DetectorError>` instead of
   `DetectorOutput` — the abort-safe detector-isolation contract (Task T2.3, Tier-2
   crash/DoS arc).** `[profile.release] panic = "abort"` makes `catch_unwind`

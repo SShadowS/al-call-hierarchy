@@ -5,42 +5,85 @@ use std::collections::{BTreeSet, HashMap};
 use al_syntax::ir::ObjectKind;
 
 use crate::program::abi_ingest::AbiCache;
-use crate::program::graph::{ObjectIndex, ProgramGraph};
+use crate::program::graph::{AbiIngestError, ObjectIndex, ProgramGraph};
 use crate::program::node::{AppRef, AppRegistry, RoutineNodeId};
 use crate::program::node_extract::{AbiParams, Access, ObjectNode, RoutineNode, extract_nodes};
 use crate::program::resolve::event::{
     PublisherKind, is_platform_page_event, is_platform_table_event, platform_event_display_name,
 };
 use crate::program::topology::DependencyGraph;
-use crate::snapshot::{AppSetSnapshot, TrustTier, parse_snapshot};
+use crate::snapshot::{AppSetSnapshot, ParsedUnit, TrustTier, parse_snapshot};
 
-/// Assemble a `ProgramGraph` from a fully-resolved `AppSetSnapshot`.
+/// Immutable-between-dep-changes layer: everything derived from every
+/// NON-primary (dependency) app in the snapshot — object/routine nodes,
+/// dependency topology, and friend-app wiring. A future incremental LSP
+/// updater's "rung 2" (rebuild only the workspace layer, over an UNCHANGED
+/// dep layer — see [`assemble_program_graph`]) reuses one `DepLayer` across
+/// many workspace edits without re-parsing or re-extracting a single
+/// dependency file (T3 Task 3 measured dep-parse alone at ~1.19s on CDO —
+/// the cost this primitive exists to stop paying on every keystroke).
 ///
-/// Steps:
-/// 1. Intern every app identity from the snapshot into an `AppRegistry`.
-/// 2. Deep-parse all source-bearing units (via `parse_snapshot`) and extract
-///    object + routine nodes; then ingest SymbolOnly dep ABI nodes from
-///    `abi_cache` (step 2b).
-/// 3. Wire the real dependency topology from each unit's `declared_deps`
-///    (GUID-match preferred; name+version fallback; deps absent from the
-///    snapshot are silently skipped — open-world assumption); then (step 3b)
-///    wire `internalsVisibleTo` friend-app authorizations from each unit's
-///    `internals_visible_to` (Task 1.5) the same way — GUID-match preferred,
-///    name+publisher fallback (a `<Module>` friend entry carries no
-///    version), friends absent from the snapshot silently skipped.
-/// 4. Sort `objects` and `routines` by node-id for determinism.
-/// 5. Build the `ObjectIndex` from the sorted `objects`.
-pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> ProgramGraph {
-    // ── Step 1: intern all app identities ────────────────────────────────────
+/// Built by [`build_dep_layer`]; merged with a freshly-extracted primary
+/// [`ParsedUnit`] by [`assemble_program_graph`].
+pub struct DepLayer {
+    /// ALL apps interned (primary included) — `AppRegistry::intern` order
+    /// mirrors `snap.apps` order exactly (Step 1 below), so the `AppRef`
+    /// `assemble_program_graph` later resolves the primary app to is
+    /// IDENTICAL to what a monolithic build would have assigned it.
+    pub apps: AppRegistry,
+    /// Real dependency-topology wiring for EVERY app (including the
+    /// primary's own outbound edges) — pure manifest data
+    /// (`AppUnit::declared_deps`), unaffected by which workspace SOURCE
+    /// files changed.
+    pub topology: DependencyGraph,
+    /// `internalsVisibleTo` friend-app wiring for EVERY app — same
+    /// manifest-data stability as `topology`. See
+    /// [`ProgramGraph::friends`]'s doc for the field's semantics.
+    pub friends: HashMap<AppRef, BTreeSet<AppRef>>,
+    /// Object nodes from every NON-primary app (parsed source + ABI-ingested
+    /// SymbolOnly deps), already sorted + deduped exactly as the original
+    /// monolithic Step 4 — scoped to just this population. Cloned into each
+    /// assembled `ProgramGraph` by `assemble_program_graph`.
+    pub dep_objects: Vec<ObjectNode>,
+    /// Routine nodes, same population/ordering/dedup contract as
+    /// `dep_objects`.
+    pub dep_routines: Vec<RoutineNode>,
+    /// Per-app dependency-ABI ingest diagnostics — see
+    /// [`ProgramGraph::abi_ingest_errors`]'s doc. Always non-primary-scoped:
+    /// Step 2b below only ever ingests SymbolOnly (source-less) apps, and
+    /// the primary/workspace app is always source-bearing.
+    pub abi_ingest_errors: Vec<AbiIngestError>,
+}
+
+/// Build the [`DepLayer`] from every app in `snap` OTHER than
+/// `snap.workspace_app` — the primary/workspace app's own nodes are instead
+/// extracted fresh, per call, by [`assemble_program_graph`] (that's the
+/// whole point: a workspace-file edit never needs to redo this function's
+/// work).
+///
+/// `parsed` must be the FULL parsed snapshot (`parse_snapshot(snap)`,
+/// covering every source-bearing app, workspace included) — this function
+/// itself filters out the workspace unit's contribution. `build_program_graph`
+/// below wires this for a single one-shot build; a future incremental caller
+/// instead reuses one `(parsed dep units, DepLayer)` pair across many
+/// `assemble_program_graph` calls, re-parsing only the workspace app.
+pub fn build_dep_layer(
+    snap: &AppSetSnapshot,
+    abi_cache: &AbiCache,
+    parsed: &[ParsedUnit],
+) -> DepLayer {
+    // ── Step 1: intern all app identities (primary included, for AppRef stability) ──
     let mut apps = AppRegistry::default();
     let app_refs: Vec<AppRef> = snap.apps.iter().map(|u| apps.intern(&u.id)).collect();
 
-    // ── Step 2: deep-parse + extract nodes ───────────────────────────────────
-    let parsed_units = parse_snapshot(snap);
+    // ── Step 2: extract nodes from every NON-primary parsed unit ─────────────
     let mut objects: Vec<ObjectNode> = Vec::new();
     let mut routines: Vec<RoutineNode> = Vec::new();
 
-    for unit in &parsed_units {
+    for unit in parsed {
+        if unit.app == snap.workspace_app {
+            continue; // primary — extracted fresh per call by `assemble_program_graph`.
+        }
         // `intern` is idempotent — returns the same `AppRef` assigned in step 1.
         let app_ref = apps.intern(&unit.app);
         for pf in &unit.files {
@@ -55,7 +98,7 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
     }
 
     // ── Step 2b: ingest SymbolOnly dep ABI nodes ─────────────────────────────
-    let mut abi_ingest_errors: Vec<crate::program::graph::AbiIngestError> = Vec::new();
+    let mut abi_ingest_errors: Vec<AbiIngestError> = Vec::new();
     for unit in &snap.apps {
         if unit.source.is_some() {
             continue;
@@ -67,7 +110,7 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
             // previously silently swallowed into an indistinguishable-from-
             // genuinely-empty ABI. Ingestion still proceeds (fields default
             // empty), but the failure is now observable.
-            abi_ingest_errors.push(crate::program::graph::AbiIngestError {
+            abi_ingest_errors.push(AbiIngestError {
                 app: app_ref,
                 message,
             });
@@ -76,7 +119,155 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
         routines.extend(result.routines);
     }
 
-    // ── Step 3: wire real dependency topology ────────────────────────────────
+    // ── Step 3 / 3b: wire topology + friends for the WHOLE app set ───────────
+    // Both are pure manifest data (declared_deps / internalsVisibleTo), so
+    // they belong on the immutable dep layer even though the wiring loops
+    // below also touch the primary app's OWN outbound edges/grants.
+    let topology = wire_dependency_topology(snap, &app_refs);
+    let friends = wire_friend_authorizations(snap, &app_refs);
+
+    // ── Step 4: sort for determinism, then dedup this (non-primary) population ──
+    // Same non-primary app can appear as both a workspace-multi-app source
+    // AND an embedded dep (e.g. sibling apps in a multi-app workspace whose
+    // compiled .app also lands in .alpackages). extract_nodes would process
+    // the source twice, producing duplicate ObjectNode/RoutineNode entries
+    // with identical ids. Dedup after sort keeps the first occurrence
+    // (arbitrary but stable) — see `dedup_routines_preserving_genuine_overloads`'s
+    // doc for why routines need content-aware, not blanket, dedup.
+    objects.sort_by(|a, b| a.id.cmp(&b.id));
+    objects.dedup_by(|a, b| a.id == b.id);
+    routines.sort_by(|a, b| a.id.cmp(&b.id));
+    dedup_routines_preserving_genuine_overloads(&mut routines);
+
+    DepLayer {
+        apps,
+        topology,
+        friends,
+        dep_objects: objects,
+        dep_routines: routines,
+        abi_ingest_errors,
+    }
+}
+
+/// Merge a [`DepLayer`] with a freshly-extracted PRIMARY (workspace)
+/// [`ParsedUnit`] into a full [`ProgramGraph`] — the assembly half of the
+/// layered split.
+///
+/// Re-sorts + re-dedups the merged population (catches any
+/// workspace-internal duplicate, e.g. a `#if`/`#else` union-read producing
+/// two textually-identical `RoutineDecl`s for the same procedure — see
+/// `dedup_routines_preserving_genuine_overloads`'s doc) rather than trusting
+/// a plain concatenation. This is a correctness NO-OP for the already-sorted-
+/// and-deduped dep-layer entries: `ObjectNodeId`/`RoutineNodeId` are
+/// namespaced by `AppRef`, and the primary app's `AppRef` is disjoint from
+/// every dependency's, so a dep-layer entry can never collide with a
+/// workspace one — the re-dedup only ever does new work on the workspace
+/// side, and its "already marked" collision flags
+/// (`abi_overload_collapsed`/`source_overload_aliased`) survive unchanged
+/// through a second pass (see `dedup_routines_preserving_genuine_overloads`'s
+/// doc: both flags are only ever SET, never cleared, by that function).
+pub fn assemble_program_graph(
+    dep: &DepLayer,
+    ws_unit: &ParsedUnit,
+    snap: &AppSetSnapshot,
+) -> ProgramGraph {
+    let ws_app_ref = dep
+        .apps
+        .find(&snap.workspace_app)
+        .expect("workspace app must already be interned by build_dep_layer's Step 1");
+
+    let mut objects: Vec<ObjectNode> = dep.dep_objects.clone();
+    let mut routines: Vec<RoutineNode> = dep.dep_routines.clone();
+
+    for pf in &ws_unit.files {
+        extract_nodes(
+            ws_app_ref,
+            &pf.file,
+            pf.provenance.tier,
+            &mut objects,
+            &mut routines,
+        );
+    }
+
+    objects.sort_by(|a, b| a.id.cmp(&b.id));
+    objects.dedup_by(|a, b| a.id == b.id);
+    routines.sort_by(|a, b| a.id.cmp(&b.id));
+    dedup_routines_preserving_genuine_overloads(&mut routines);
+
+    let obj_index = ObjectIndex::build(&objects);
+
+    let mut graph = ProgramGraph {
+        apps: dep.apps.clone(),
+        topology: dep.topology.clone(),
+        objects,
+        routines,
+        obj_index,
+        friends: dep.friends.clone(),
+        abi_ingest_errors: dep.abi_ingest_errors.clone(),
+    };
+
+    // ── Inject synthetic platform-event publishers ───────────────────────────
+    // Binds subscribers to the table's implicit DB-trigger / validate events,
+    // which have no publisher routine in source (see below). Must run AFTER
+    // the full dep+workspace merge: a subscriber in one app can target a
+    // publisher object living in another.
+    inject_platform_event_publishers(&mut graph);
+
+    graph
+}
+
+/// As [`build_program_graph`], but takes an ALREADY-parsed snapshot — kills
+/// the production double-parse T3 Task 3 measured (`resolve::full::
+/// build_context` used to call `build_program_graph` [parses internally]
+/// AND run its OWN standalone `parse_snapshot` for the resolver's body-walk).
+/// Locates the primary/workspace [`ParsedUnit`] in `parsed` (or synthesizes
+/// an empty one if the workspace app genuinely has no source — e.g. a
+/// symbol-only "workspace", which never occurs in practice but is handled
+/// rather than panicking), builds the dep layer, and assembles.
+pub fn build_program_graph_from_parsed(
+    snap: &AppSetSnapshot,
+    abi_cache: &AbiCache,
+    parsed: &[ParsedUnit],
+) -> ProgramGraph {
+    let dep = build_dep_layer(snap, abi_cache, parsed);
+
+    // `snap.apps` is GUID-deduped upstream (H-2), so at most one parsed unit
+    // can match the workspace identity.
+    let empty_ws_unit;
+    let ws_unit: &ParsedUnit = match parsed.iter().find(|u| u.app == snap.workspace_app) {
+        Some(u) => u,
+        None => {
+            empty_ws_unit = ParsedUnit {
+                app: snap.workspace_app.clone(),
+                files: vec![],
+            };
+            &empty_ws_unit
+        }
+    };
+
+    assemble_program_graph(&dep, ws_unit, snap)
+}
+
+/// Assemble a `ProgramGraph` from a fully-resolved `AppSetSnapshot` — thin
+/// wrapper: parse once, then delegate to the layered split
+/// (`build_dep_layer` plus `assemble_program_graph`) via
+/// [`build_program_graph_from_parsed`]. Kept as the PUBLIC,
+/// source-compatible entry point every existing caller (aldump,
+/// `engine/l4`/`l5`/`gate`, tests) already uses unchanged;
+/// `resolve::full::build_context` instead calls
+/// `build_program_graph_from_parsed` directly so the whole `ProgramContext`
+/// build parses the snapshot only ONCE (T3 Task 5).
+pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> ProgramGraph {
+    let parsed = parse_snapshot(snap);
+    build_program_graph_from_parsed(snap, abi_cache, &parsed)
+}
+
+/// Wire the real dependency topology from each unit's `declared_deps`
+/// (GUID-match preferred; name+version fallback; deps absent from the
+/// snapshot are silently skipped — open-world assumption). Shared by
+/// [`build_dep_layer`] — pure manifest data, unaffected by which workspace
+/// source files changed.
+fn wire_dependency_topology(snap: &AppSetSnapshot, app_refs: &[AppRef]) -> DependencyGraph {
     let mut topology = DependencyGraph::default();
 
     for (i, unit) in snap.apps.iter().enumerate() {
@@ -129,19 +320,28 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
         }
     }
 
-    // ── Step 3b: wire internalsVisibleTo friend-app authorizations ──────────
-    // AL: a member declared `internal` is visible within its declaring app AND
-    // to any app the declaring app's manifest lists in `<InternalsVisibleTo>`
-    // (a "friend" app) — one-directional per the app EXPOSING the internals,
-    // never the reverse. `friends` is keyed by the exposing app's `AppRef` so
-    // `resolver.rs`'s `Access::Internal` visibility rule can do an O(1)
-    // `friends.get(&declaring_app).is_some_and(|f| f.contains(&caller_app))`
-    // check alongside the existing same-app check (Task 1.5).
+    topology
+}
+
+/// Wire `internalsVisibleTo` friend-app authorizations. AL: a member declared
+/// `internal` is visible within its declaring app AND to any app the
+/// declaring app's manifest lists in `<InternalsVisibleTo>` (a "friend" app)
+/// — one-directional per the app EXPOSING the internals, never the reverse.
+/// The returned map is keyed by the exposing app's `AppRef` so
+/// `resolver.rs`'s `Access::Internal` visibility rule can do an O(1)
+/// `friends.get(&declaring_app).is_some_and(|f| f.contains(&caller_app))`
+/// check alongside the existing same-app check (Task 1.5). Shared by
+/// [`build_dep_layer`] — pure manifest data, unaffected by which workspace
+/// source files changed.
+fn wire_friend_authorizations(
+    snap: &AppSetSnapshot,
+    app_refs: &[AppRef],
+) -> HashMap<AppRef, BTreeSet<AppRef>> {
     let mut friends: HashMap<AppRef, BTreeSet<AppRef>> = HashMap::new();
     for (i, unit) in snap.apps.iter().enumerate() {
         let exposing_ref = app_refs[i];
         for friend in &unit.internals_visible_to {
-            // Same GUID-first, name+publisher-fallback resolution as Step 3's
+            // Same GUID-first, name+publisher-fallback resolution as the
             // dependency wiring above — a `<Module>` friend entry carries no
             // version, so the fallback compares publisher instead.
             let by_guid = (!friend.app_id.is_empty())
@@ -170,60 +370,7 @@ pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> Progr
             // Friends not present in the snapshot are silently skipped (open-world).
         }
     }
-
-    // ── Step 4: sort for determinism, then dedup ─────────────────────────────
-    // Same app can appear as both a workspace source and an embedded dep (e.g.
-    // sibling apps in a multi-app workspace whose compiled .app lands in
-    // .alpackages).  extract_nodes would process the source twice, producing
-    // duplicate ObjectNode/RoutineNode entries with identical ids.  Dedup after
-    // sort keeps the first occurrence (arbitrary but stable).
-    //
-    // Objects dedup unconditionally on id — an `ObjectNode` carries no content
-    // that can distinguish a re-parse duplicate from anything else, and two
-    // objects sharing an id are always the same object.
-    //
-    // Routines need more care: two DISTINCT source procedures sharing
-    // `(object, name_lc, params_count)` also collide onto one `RoutineNodeId`
-    // whenever their `sig_fp` matches too (see node.rs). Post-Task-2
-    // (sigfp-and-ambiguous-reclassification plan) `sig_fp` is a REAL
-    // fingerprint of the parameter-type tuple — a genuine same-arity SOURCE
-    // overload pair with distinguishable parameter types now gets DISTINCT
-    // `sig_fp`s and sorts into separate runs entirely, so an id collision here
-    // means either a true re-parse DUPLICATE (identical param types) or,
-    // rarely, a residual fnv1a fingerprint COLLISION between two genuinely
-    // different overloads — not a duplicate either way. A blanket `dedup_by`
-    // would silently drop one of them with no record, and a later confident
-    // `Source` route to the survivor would be a false-positive (the cardinal
-    // sin this engine exists to avoid).
-    // `dedup_routines_preserving_genuine_overloads` (below) tells the two
-    // apart by parameter-type CONTENT rather than by counting how many times
-    // the enclosing object was duplicated (beyond-1B.3b Task 2 review fix: the
-    // former dup-factor heuristic under-collapsed when both a whole-object
-    // re-parse AND a genuine overload collision applied to the same run).
-    objects.sort_by(|a, b| a.id.cmp(&b.id));
-    objects.dedup_by(|a, b| a.id == b.id);
-    routines.sort_by(|a, b| a.id.cmp(&b.id));
-    dedup_routines_preserving_genuine_overloads(&mut routines);
-
-    // ── Step 5: build index from sorted objects ───────────────────────────────
-    let obj_index = ObjectIndex::build(&objects);
-
-    let mut graph = ProgramGraph {
-        apps,
-        topology,
-        objects,
-        routines,
-        obj_index,
-        friends,
-        abi_ingest_errors,
-    };
-
-    // ── Step 6: inject synthetic platform-event publishers ────────────────────
-    // Binds subscribers to the table's implicit DB-trigger / validate events,
-    // which have no publisher routine in source (see below).
-    inject_platform_event_publishers(&mut graph);
-
-    graph
+    friends
 }
 
 /// Synthetic platform-publisher arity: a generous upper bound so the resolve
@@ -472,6 +619,310 @@ fn dedup_routines_preserving_genuine_overloads(routines: &mut Vec<RoutineNode>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // T3 (LSP-migration arc) Task 5: layered dep/workspace graph split.
+    // -----------------------------------------------------------------------
+
+    use crate::snapshot::compilation::CompilationContext;
+    use crate::snapshot::provider::SourceRoot;
+    use crate::snapshot::{AppId, AppUnit, Provenance, World};
+
+    fn layer_split_app_id(name: &str) -> AppId {
+        AppId {
+            guid: String::new(),
+            name: name.to_string(),
+            publisher: "Test".into(),
+            version: "1.0.0.0".into(),
+        }
+    }
+
+    fn layer_split_source_unit(id: &AppId, tier: TrustTier, files: Vec<(&str, &str)>) -> AppUnit {
+        AppUnit {
+            id: id.clone(),
+            provenance: Provenance {
+                app: id.clone(),
+                tier,
+                content_hash: String::new(),
+            },
+            source: Some(SourceRoot {
+                files: files
+                    .into_iter()
+                    .map(|(path, text)| crate::snapshot::embedded::SourceFile {
+                        virtual_path: path.to_string(),
+                        text: text.to_string(),
+                    })
+                    .collect(),
+                tier,
+                content_hash: String::new(),
+            }),
+            compilation: CompilationContext::default(),
+            declared_deps: vec![],
+            internals_visible_to: vec![],
+            abi: None,
+            app_path: None,
+        }
+    }
+
+    /// Characterization test (T3 Task 5, Step 1): a hand-built two-app
+    /// fixture (a workspace app declaring a dependency on, and granting
+    /// `internalsVisibleTo` friendship to, a source-bearing dep app) proves
+    /// that manually composing `build_dep_layer` + `assemble_program_graph`
+    /// produces the EXACT SAME graph — field by field — as the (now-wrapper)
+    /// `build_program_graph` entry point every existing caller already uses.
+    #[test]
+    fn assemble_program_graph_matches_build_program_graph_field_by_field() {
+        let ws_id = layer_split_app_id("Ws");
+        let dep_id = layer_split_app_id("Dep");
+
+        let ws_src = r#"
+codeunit 50000 "Ws Cu"
+{
+    procedure Foo()
+    begin
+    end;
+}
+"#;
+        let dep_src = r#"
+codeunit 60000 "Dep Cu"
+{
+    procedure Bar()
+    begin
+    end;
+}
+"#;
+
+        let mut ws_unit_snap =
+            layer_split_source_unit(&ws_id, TrustTier::Workspace, vec![("Ws.al", ws_src)]);
+        ws_unit_snap.declared_deps = vec![crate::dependencies::AppDependency {
+            app_id: String::new(),
+            name: dep_id.name.clone(),
+            publisher: dep_id.publisher.clone(),
+            version: dep_id.version.clone(),
+        }];
+        ws_unit_snap.internals_visible_to = vec![crate::app_package::FriendApp {
+            app_id: String::new(),
+            name: dep_id.name.clone(),
+            publisher: dep_id.publisher.clone(),
+        }];
+
+        let dep_unit_snap = layer_split_source_unit(
+            &dep_id,
+            TrustTier::EmbeddedSource,
+            vec![("Dep.al", dep_src)],
+        );
+
+        let snap = AppSetSnapshot {
+            apps: vec![ws_unit_snap, dep_unit_snap],
+            workspace_app: ws_id.clone(),
+            world: World::Closed,
+        };
+
+        let cache = AbiCache::new();
+
+        // Reference: the (now-wrapper) production entry point.
+        let graph_direct = build_program_graph(&snap, &cache);
+
+        // Split path: parse once, build the dep layer, assemble over the
+        // workspace unit — exactly what `build_program_graph_from_parsed`
+        // does internally, done here by hand to prove the pieces compose.
+        let parsed = parse_snapshot(&snap);
+        let dep_layer = build_dep_layer(&snap, &cache, &parsed);
+        let ws_unit = parsed
+            .iter()
+            .find(|u| u.app == snap.workspace_app)
+            .expect("workspace ParsedUnit must exist (Ws.al has source)");
+        let graph_split = assemble_program_graph(&dep_layer, ws_unit, &snap);
+
+        // Objects: same ids, same order.
+        let direct_obj_ids: Vec<_> = graph_direct.objects.iter().map(|o| o.id.clone()).collect();
+        let split_obj_ids: Vec<_> = graph_split.objects.iter().map(|o| o.id.clone()).collect();
+        assert_eq!(
+            direct_obj_ids, split_obj_ids,
+            "objects must match id-for-id, in order"
+        );
+        assert!(
+            !direct_obj_ids.is_empty(),
+            "fixture must produce real objects"
+        );
+
+        // Routines: same ids, same order.
+        let direct_routine_ids: Vec<_> =
+            graph_direct.routines.iter().map(|r| r.id.clone()).collect();
+        let split_routine_ids: Vec<_> = graph_split.routines.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(
+            direct_routine_ids, split_routine_ids,
+            "routines must match id-for-id, in order"
+        );
+        assert!(
+            !direct_routine_ids.is_empty(),
+            "fixture must produce real routines"
+        );
+
+        // obj_index (private field): compared behaviorally via resolve_object.
+        let ws_ref = graph_direct.apps.find(&ws_id).expect("ws app interned");
+        assert_eq!(
+            graph_direct
+                .resolve_object(ws_ref, ObjectKind::Codeunit, "Ws Cu")
+                .map(|o| o.id.clone()),
+            graph_split
+                .resolve_object(ws_ref, ObjectKind::Codeunit, "Ws Cu")
+                .map(|o| o.id.clone())
+        );
+
+        // apps: identical identity-per-AppRef, in the same interning order.
+        for i in 0..snap.apps.len() {
+            let r = AppRef(i as u32);
+            assert_eq!(
+                graph_direct.apps.try_resolve(r),
+                graph_split.apps.try_resolve(r),
+                "AppRef({i}) must resolve to the same identity in both paths"
+            );
+        }
+
+        // topology: identical dependency closure for every app.
+        for i in 0..snap.apps.len() {
+            let r = AppRef(i as u32);
+            assert_eq!(
+                graph_direct.topology.closure(r),
+                graph_split.topology.closure(r),
+                "AppRef({i})'s dependency closure must match"
+            );
+        }
+
+        // friends: identical map (order-independent — sort by key first).
+        let mut fd: Vec<_> = graph_direct
+            .friends
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        let mut fs: Vec<_> = graph_split
+            .friends
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        fd.sort_by_key(|(k, _)| k.0);
+        fs.sort_by_key(|(k, _)| k.0);
+        assert_eq!(fd, fs, "friends wiring must match");
+        assert!(!fd.is_empty(), "fixture must exercise friends wiring");
+
+        assert_eq!(
+            graph_direct.abi_ingest_errors.len(),
+            graph_split.abi_ingest_errors.len(),
+            "abi_ingest_errors count must match"
+        );
+    }
+
+    /// Rung-2 shape (the reason this split exists): build ONE `DepLayer`,
+    /// then assemble TWICE with two DIFFERENT workspace `ParsedUnit`s — the
+    /// dep-derived population must stay byte-identical while only the
+    /// workspace-derived population changes, proving `assemble_program_graph`
+    /// genuinely REUSES the dep layer rather than silently re-deriving it.
+    #[test]
+    fn assemble_program_graph_reuses_dep_layer_across_two_workspace_edits() {
+        let ws_id = layer_split_app_id("Ws2");
+        let dep_id = layer_split_app_id("Dep2");
+
+        let dep_src = r#"
+codeunit 60100 "Dep2 Cu"
+{
+    procedure Baz()
+    begin
+    end;
+}
+"#;
+        let ws_unit_snap = layer_split_source_unit(&ws_id, TrustTier::Workspace, vec![]);
+        let dep_unit_snap = layer_split_source_unit(
+            &dep_id,
+            TrustTier::EmbeddedSource,
+            vec![("Dep2.al", dep_src)],
+        );
+
+        let snap = AppSetSnapshot {
+            apps: vec![ws_unit_snap, dep_unit_snap],
+            workspace_app: ws_id.clone(),
+            world: World::Closed,
+        };
+
+        let cache = AbiCache::new();
+        let parsed = parse_snapshot(&snap);
+        let dep_layer = build_dep_layer(&snap, &cache, &parsed);
+        let ws_ref = dep_layer.apps.find(&ws_id).expect("ws app interned");
+
+        let ws_src_v1 = r#"
+codeunit 50100 "Ws2 Cu"
+{
+    procedure One()
+    begin
+    end;
+}
+"#;
+        let ws_src_v2 = r#"
+codeunit 50100 "Ws2 Cu"
+{
+    procedure One()
+    begin
+    end;
+
+    procedure Two()
+    begin
+    end;
+}
+"#;
+
+        fn ws_parsed_unit(ws_id: &AppId, src: &str) -> ParsedUnit {
+            ParsedUnit {
+                app: ws_id.clone(),
+                files: vec![crate::snapshot::ParsedFile {
+                    virtual_path: "Ws2.al".to_string(),
+                    file: al_syntax::parse(src),
+                    provenance: Provenance {
+                        app: ws_id.clone(),
+                        tier: TrustTier::Workspace,
+                        content_hash: String::new(),
+                    },
+                    text: src.to_string(),
+                }],
+            }
+        }
+
+        let ws_unit_v1 = ws_parsed_unit(&ws_id, ws_src_v1);
+        let ws_unit_v2 = ws_parsed_unit(&ws_id, ws_src_v2);
+
+        let graph_v1 = assemble_program_graph(&dep_layer, &ws_unit_v1, &snap);
+        let graph_v2 = assemble_program_graph(&dep_layer, &ws_unit_v2, &snap);
+
+        // Dep-derived population is byte-identical across both assemblies.
+        let dep_obj_ids = |g: &ProgramGraph| {
+            g.objects
+                .iter()
+                .filter(|o| o.id.app != ws_ref)
+                .map(|o| o.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(dep_obj_ids(&graph_v1), dep_obj_ids(&graph_v2));
+        assert!(
+            !dep_obj_ids(&graph_v1).is_empty(),
+            "fixture must produce a real dep object"
+        );
+
+        // Workspace-derived population reflects the edit: v2 has an extra routine.
+        let ws_routine_names = |g: &ProgramGraph| {
+            let mut names: Vec<String> = g
+                .routines
+                .iter()
+                .filter(|r| r.id.object.app == ws_ref)
+                .map(|r| r.name.clone())
+                .collect();
+            names.sort();
+            names
+        };
+        assert_eq!(ws_routine_names(&graph_v1), vec!["One".to_string()]);
+        assert_eq!(
+            ws_routine_names(&graph_v2),
+            vec!["One".to_string(), "Two".to_string()]
+        );
+    }
 
     #[test]
     fn build_program_graph_over_cdo_workspace() {

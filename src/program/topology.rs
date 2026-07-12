@@ -4,7 +4,10 @@
 use crate::program::node::AppRef;
 use std::collections::{BTreeSet, HashMap};
 
-#[derive(Default)]
+/// `Clone` (T3 Task 5, layered graph split): manifest-derived dependency
+/// topology is part of [`crate::program::build::DepLayer`] — cloned into
+/// each assembled `ProgramGraph` by `assemble_program_graph`.
+#[derive(Default, Clone)]
 pub struct DependencyGraph {
     direct: HashMap<AppRef, Vec<AppRef>>,
 }

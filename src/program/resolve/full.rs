@@ -35,7 +35,7 @@ use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
 
-use crate::program::build::build_program_graph;
+use crate::program::build::build_program_graph_from_parsed;
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
@@ -944,13 +944,20 @@ fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
         .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
         .unwrap_or_default();
 
-    // ── Step 2: Build program graph ───────────────────────────────────────────
-    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
-
-    // ── Step 3: Parse snapshot ────────────────────────────────────────────────
+    // ── Step 2: Parse ONCE, then build the program graph from that SAME parse ──
+    // (T3 Task 5: previously `build_program_graph` parsed the whole snapshot
+    // internally to extract nodes, AND this function separately ran its own
+    // standalone `parse_snapshot` for the resolver's body-walk below — a full
+    // double-parse of every source-bearing app, dependencies included.
+    // `build_program_graph_from_parsed` takes the shared `parsed` instead.)
     let parsed = parse_snapshot(&snap);
+    let graph = build_program_graph_from_parsed(
+        &snap,
+        &crate::program::abi_ingest::AbiCache::new(),
+        &parsed,
+    );
 
-    // ── Step 4: Locate primary (workspace) app ────────────────────────────────
+    // ── Step 3: Locate primary (workspace) app ────────────────────────────────
     let primary_app_ref = graph.apps.find(&snap.workspace_app)?;
 
     Some(ProgramContext {
@@ -1249,7 +1256,13 @@ mod tests {
 
             let cache = crate::program::abi_ingest::AbiCache::new();
             let t1 = std::time::Instant::now();
-            let graph = build_program_graph(&snap, &cache);
+            // Fully-qualified (not top-level imported): this ignored
+            // benchmark is the ONLY caller left using the parse-internally
+            // wrapper directly — everything else (production
+            // `build_context`, T3 Task 5) uses `build_program_graph_from_parsed`
+            // to avoid a top-level import that the plain (non-test) build
+            // would otherwise flag unused.
+            let graph = crate::program::build::build_program_graph(&snap, &cache);
             build_graph_total_times.push(t1.elapsed());
 
             let t2 = std::time::Instant::now();

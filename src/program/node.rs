@@ -10,7 +10,12 @@ pub struct AppRef(pub u32);
 
 /// Interns `AppId`s by their FULL identity (guid+name+publisher+version) — guid
 /// is empty for deps today, so we never key on guid alone.
-#[derive(Default)]
+///
+/// `Clone` (T3 Task 5, layered graph split): a [`crate::program::build::DepLayer`]
+/// carries its own `AppRegistry` (all apps interned, primary included, for
+/// `AppRef` stability) and `assemble_program_graph` clones it into each
+/// assembled `ProgramGraph` — cheap relative to re-interning from scratch.
+#[derive(Default, Clone)]
 pub struct AppRegistry {
     by_key: HashMap<(String, String, String, String), AppRef>,
     apps: Vec<AppId>,
