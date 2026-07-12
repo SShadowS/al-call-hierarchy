@@ -115,6 +115,7 @@ use al_call_hierarchy::lsp::snapshot::LspSnapshot;
 use al_call_hierarchy::lsp::updater::{ChangeEvent, Updater};
 use al_call_hierarchy::program::graph::ProgramGraph;
 use al_call_hierarchy::program::node::ObjectNodeId;
+use al_call_hierarchy::program::resolve::edge::EdgeKind;
 use al_call_hierarchy::protocol::path_to_uri;
 
 use lsp_types::{
@@ -223,6 +224,26 @@ enum NewBetterClass {
     /// `codeLens`) actually matches a SIBLING declaration's own new-side
     /// truth instead of its own.
     LegacyIdentityCollapse,
+    /// CDO layer-2 fix-wave: a database record operation with a
+    /// statically-`true` run-trigger argument (e.g. `Rec.Insert(true)`)
+    /// implicitly fires the target table's own trigger (`OnInsert`/
+    /// `OnModify`/`OnDelete`/`OnRename`/field-`OnValidate`) — the new
+    /// resolver models this as a REAL `EdgeKind::ImplicitTrigger` edge
+    /// (`src/program/resolve/applicability.rs`'s `RecordOpCtx`/
+    /// `RunTrigger::True`), so `incoming(OnInsert)` correctly shows the
+    /// call site as a caller. Legacy's parser has no concept of
+    /// implicit-trigger semantics at all: `Rec.Insert(true)` is just an
+    /// ordinary (unresolvable, since `Insert` is a builtin record method,
+    /// never a user `Definition`) call site to legacy — it is NEVER
+    /// attributed as an incoming caller of `OnInsert`, which legacy cannot
+    /// even connect to the record operation in the first place. Mechanical
+    /// predicate: the new-only incoming/codeLens-ref-count site is backed
+    /// by an edge whose `EdgeKind == ImplicitTrigger` — checked directly
+    /// against `LspSnapshot::incoming`/`edges_by_file`, not inferred from
+    /// the LSP response shape (which carries no edge-kind marker of its
+    /// own for this case, unlike EventFlow's explicit `[EventPublisher]`
+    /// tag).
+    ImplicitTriggerEdge,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -327,6 +348,18 @@ type NormRange = (u32, u32, u32, u32);
 
 fn nr(r: &Range) -> NormRange {
     (r.start.line, r.start.character, r.end.line, r.end.character)
+}
+
+/// A `CanonicalSpan` (engine-native byte-column line/col) into the SAME
+/// `NormRange` space `nr` produces from an LSP `Range` under
+/// `PositionEncoding::Utf8` (a pass-through/clamp, per `LineTable::col_out`'s
+/// own doc) — so a raw engine edge site and an LSP response range compare
+/// directly, with no `LineTable` needed (the span is always in-bounds for
+/// its own file).
+fn canonical_span_to_norm_range(
+    span: &al_call_hierarchy::program::resolve::edge::CanonicalSpan,
+) -> NormRange {
+    (span.start.line, span.start.col, span.end.line, span.end.col)
 }
 
 // ============================================================================
@@ -521,6 +554,13 @@ struct RoutineEntry {
     new_incoming: Vec<CallHierarchyIncomingCall>,
     legacy_outgoing: Vec<CallHierarchyOutgoingCall>,
     new_outgoing: Vec<CallHierarchyOutgoingCall>,
+    /// Incoming call-site ranges (byte-native, same `NormRange` space as
+    /// `from_ranges`) backed by an `EdgeKind::ImplicitTrigger` edge — looked
+    /// up directly against `LspSnapshot::incoming` (see `run_sweep`), since
+    /// the LSP wire shape carries no marker distinguishing this from an
+    /// ordinary call (unlike EventFlow's explicit `[EventPublisher]` tag).
+    /// `ImplicitTriggerEdge`'s mechanical predicate.
+    new_incoming_implicit_trigger_sites: BTreeSet<NormRange>,
 }
 
 struct Sweep {
@@ -611,6 +651,7 @@ fn run_sweep(
                 new_incoming: Vec::new(),
                 legacy_outgoing: Vec::new(),
                 new_outgoing: Vec::new(),
+                new_incoming_implicit_trigger_sites: BTreeSet::new(),
             });
         }
     }
@@ -674,6 +715,7 @@ fn run_sweep(
                     new_incoming: Vec::new(),
                     legacy_outgoing: Vec::new(),
                     new_outgoing: Vec::new(),
+                    new_incoming_implicit_trigger_sites: BTreeSet::new(),
                 });
             }
         }
@@ -746,6 +788,22 @@ fn run_sweep(
                     new_handlers::incoming(new_snap, PositionEncoding::Utf8, &data);
                 entry.new_outgoing =
                     new_handlers::outgoing(new_snap, PositionEncoding::Utf8, &data);
+
+                // ImplicitTriggerEdge's mechanical predicate: look up this
+                // routine's REAL incoming edges directly (bypassing the LSP
+                // wire shape entirely, which carries no edge-kind marker for
+                // this case) and record every site backed by an
+                // `EdgeKind::ImplicitTrigger` edge.
+                if let Some(refs) = new_snap.incoming.get(&data.node) {
+                    for r in refs {
+                        let ce = new_snap.edge(r);
+                        if ce.edge.kind == EdgeKind::ImplicitTrigger {
+                            entry
+                                .new_incoming_implicit_trigger_sites
+                                .insert(canonical_span_to_norm_range(&ce.edge.site.span));
+                        }
+                    }
+                }
             }
             entry.new_prepare = items.and_then(|mut v| v.pop());
         }
@@ -1291,6 +1349,25 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                     }
                 }
                 (None, Some(n_name)) => {
+                    // ImplicitTriggerEdge: a record operation with a
+                    // statically-true run-trigger argument (checked here
+                    // via the pre-recorded, `LspSnapshot`-native set — see
+                    // `run_sweep` — since the LSP response itself carries no
+                    // edge-kind marker for this). Legacy structurally never
+                    // models implicit-trigger dispatch at all, so this is
+                    // unconditional — no legacy cross-reference needed or
+                    // possible.
+                    if entry.new_incoming_implicit_trigger_sites.contains(&site) {
+                        ledger.push(
+                            "incoming",
+                            &routine,
+                            Class::NewBetter(NewBetterClass::ImplicitTriggerEdge),
+                            format!(
+                                "new caller={n_name} at site {site:?}: a record operation's run-trigger fires this routine — legacy never models implicit-trigger dispatch"
+                            ),
+                        );
+                        continue;
+                    }
                     // CaseFoldHit: does legacy's OWN raw outgoing() for this
                     // exact caller (by name, case-insensitively — the only
                     // handle we have on "legacy's view of this caller")
@@ -1491,15 +1568,17 @@ fn classify_code_lens(
                     ledger.push("codeLens", &routine, Class::Match, "ref count + key agree");
                 } else if n_refs.unwrap_or(0) > l_refs.unwrap_or(0) {
                     // A higher new-side ref count on an otherwise-matched
-                    // lens key needs disambiguating between two DIFFERENT
-                    // root causes that both inflate `effective_incoming_count`
+                    // lens key needs disambiguating between THREE DIFFERENT
+                    // root causes that all inflate `effective_incoming_count`
                     // relative to legacy's `get_incoming_call_count`:
+                    // ImplicitTriggerEdge (a record-operation-fired trigger
+                    // counts a caller legacy never models at all) and
                     // EventDirectionMoved (this routine is a SUBSCRIBER —
                     // its publisher now counts as an incoming caller, a
                     // linkage legacy's `event_subscriptions` map, keyed by
                     // PUBLISHER not subscriber, can never show on the
-                    // subscriber's OWN lens) takes priority; otherwise it's
-                    // CaseFoldHit's codeLens footprint (an extra caller
+                    // subscriber's OWN lens) both take priority; otherwise
+                    // it's CaseFoldHit's codeLens footprint (an extra caller
                     // legacy's interner never associated at all).
                     let entry_key = RoutineIdentity {
                         file_rel: file_rel.to_lowercase(),
@@ -1507,7 +1586,10 @@ fn classify_code_lens(
                         routine_lc: key.1.clone(),
                     }
                     .key();
-                    let is_event_linked = sweep.entries.get(&entry_key).is_some_and(|e| {
+                    let sweep_entry = sweep.entries.get(&entry_key);
+                    let is_implicit_trigger_linked = sweep_entry
+                        .is_some_and(|e| !e.new_incoming_implicit_trigger_sites.is_empty());
+                    let is_event_linked = sweep_entry.is_some_and(|e| {
                         e.new_incoming.iter().any(|i| {
                             i.from
                                 .detail
@@ -1515,7 +1597,14 @@ fn classify_code_lens(
                                 .is_some_and(|d| d.contains("[EventPublisher]"))
                         })
                     });
-                    if is_event_linked {
+                    if is_implicit_trigger_linked {
+                        ledger.push(
+                            "codeLens",
+                            &routine,
+                            Class::NewBetter(NewBetterClass::ImplicitTriggerEdge),
+                            format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a record-operation-fired implicit-trigger caller legacy never models)"),
+                        );
+                    } else if is_event_linked {
                         ledger.push(
                             "codeLens",
                             &routine,
@@ -1932,6 +2021,52 @@ fn lsp_diff_deps_fixture_has_zero_regressions_and_zero_unexplained() {
 /// "Shared Name" (`SharedCU.al`/`SharedPage.al`, each with its own
 /// `GetRecipients`, called from `Caller.al`), plus a table with two
 /// different fields' same-named `OnValidate` triggers (`TwoTriggers.al`).
+/// `ImplicitTriggerEdge` fixture reproduction (CDO layer-2 fix-wave). ALSO
+/// serves as the empirical FALSIFICATION record for the layer-2 brief's
+/// `NestedTriggerCaller` hypothesis ("legacy's `ParsedFile` projection never
+/// captured nested [field/action/dataitem-scoped] triggers as caller
+/// definitions"): `NestedTable.al`/`NestedPage.al`/`NestedPageField.al`/
+/// `NestedReport.al` reproduce the table-field, page-action, page-field, and
+/// report-dataitem trigger-as-caller shapes respectively, each with a
+/// bareword call inside — every one of them MATCHES on `incoming` (legacy
+/// DOES correctly capture the nested trigger as a caller-scope `Definition`
+/// and correctly attributes both qualified and unqualified calls inside it —
+/// verified against `src/parser.rs`'s `collect_routines`/`parse_file_ir`,
+/// which walk the object subtree unconditionally regardless of nesting
+/// depth). `ImplicitTrigger.al`/`ImplicitTriggerCaller.al` reproduce the
+/// GENUINE gap: `Rec.Insert(true)` implicitly fires `OnInsert`, which legacy
+/// structurally cannot model at all.
+#[test]
+fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
+    let ledger = run_differential(&fixture_path("lsp-diff-nested"), false);
+    ledger.assert_gates_clean("lsp-diff-nested");
+    let counts = ledger.class_counts();
+
+    // 2 total: Rec.Insert(true)'s ImplicitTrigger edge shows up once on the
+    // incoming axis (OnInsert's caller) and once on codeLens (OnInsert's
+    // inflated ref count) — outgoing's own divergence for the SAME call
+    // site is already explained by UnqualifiedCallResolved (legacy's arm-3
+    // "totally unresolved" placeholder — `Insert` is a builtin record
+    // method, never a user Definition — is the IDENTICAL `data: None` shape
+    // an unqualified call produces, so the existing predicate already
+    // covers it without double-counting).
+    assert_eq!(
+        counts
+            .get("NewBetter::ImplicitTriggerEdge")
+            .copied()
+            .unwrap_or(0),
+        2,
+        "ImplicitTriggerEdge: Rec.Insert(true) firing OnInsert, incoming + codeLens; counts={counts:?}"
+    );
+    // Sanity: the 4 nested-trigger-as-caller shapes (table field, page
+    // action, page field, report dataitem) must ALL match cleanly — this IS
+    // the falsification record for NestedTriggerCaller (see this test's doc).
+    assert!(
+        counts.get("Match").copied().unwrap_or(0) >= 20,
+        "sanity: the 4 nested-trigger-caller shapes plus ImplicitTrigger's own routines must mostly match; counts={counts:?}"
+    );
+}
+
 #[test]
 fn lsp_diff_identity_fixture_has_zero_regressions_and_zero_unexplained() {
     let ledger = run_differential(&fixture_path("lsp-diff-identity"), false);
@@ -1965,6 +2100,7 @@ fn object_id_additive_is_out_of_driver_scope_pinned_zero() {
         "lsp-diff-core",
         "lsp-diff-deps",
         "lsp-diff-identity",
+        "lsp-diff-nested",
     ] {
         let with_deps = fixture == "lsp-diff-deps";
         let ledger = run_differential(&fixture_path(fixture), with_deps);
@@ -2016,6 +2152,7 @@ fn cdo_workspace_has_zero_regressions_and_zero_unexplained() {
         ("NewBetter::OutgoingCardinality", None),
         ("NewBetter::R2Precision", None),
         ("NewBetter::R6InterfaceExclusion", None),
+        ("NewBetter::ImplicitTriggerEdge", None),
         // Always 0 — out of this driver's scope, see the module doc and
         // `object_id_additive_is_out_of_driver_scope_pinned_zero`.
         ("NewBetter::ObjectIdAdditive", Some(0)),

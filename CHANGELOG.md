@@ -86,6 +86,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   count pins are TODO named constants in `cdo_workspace_has_zero_regressions_and_zero_unexplained`
   pending the controller's next CDO re-run (the old 23-finding
   decomposition is stale — the classification mechanism changed).
+  **CDO layer-2 fix-wave** (re-run after the above: the previous 23 stayed
+  correctly classified plus the H-10 scenario, but 31 NEW incoming/codeLens
+  findings surfaced): added `NewBetter::ImplicitTriggerEdge` — a record
+  operation with a statically-`true` run-trigger argument (e.g.
+  `Rec.Insert(true)`) implicitly fires the target table's own trigger; the
+  new resolver models this as a real `EdgeKind::ImplicitTrigger` edge
+  (`RecordOpCtx`/`RunTrigger::True` in `src/program/resolve/applicability.rs`),
+  which legacy structurally never models at all (`Insert`/`Modify`/`Delete`/
+  `Rename` are builtin record methods, never user `Definition`s legacy's
+  call-site resolution can connect to a trigger). Mechanical predicate:
+  the incoming/codeLens site is backed by an `EdgeKind::ImplicitTrigger`
+  edge, checked directly against `LspSnapshot::incoming`/`edges_by_file`
+  (the LSP wire shape itself carries no edge-kind marker for this, unlike
+  EventFlow's `[EventPublisher]` tag). New fixture arm in
+  `tests/fixtures/lsp-diff-nested/` (`ImplicitTrigger.al`/
+  `ImplicitTriggerCaller.al`). The layer-2 brief's OTHER hypothesized class,
+  `NestedTriggerCaller` ("legacy's `ParsedFile` projection never captured
+  nested field/action/dataitem-scoped triggers as caller definitions"), was
+  built and run against 4 reproduction shapes (table field, page action,
+  page field, and report dataitem triggers, each with a bareword call
+  inside — `NestedTable.al`/`NestedPage.al`/`NestedPageField.al`/
+  `NestedReport.al`) and DID NOT REPRODUCE: legacy's `collect_routines`/
+  `parse_file_ir` walk the object subtree unconditionally regardless of
+  nesting depth and correctly attribute calls inside every one of these
+  trigger bodies. Per the project's own "measure the population before
+  building taxonomy for it" doctrine, no predicate/class was added for a
+  hypothesis that didn't reproduce; the fixture is kept as the permanent
+  falsification record (and a regression guard for the 4 shapes it proves
+  correct). Some of the CDO layer-2's 31 findings may be genuinely
+  DIFFERENT, unexplained phenomena (e.g. a plain-procedure caller like
+  `gethtml`/`getplaintext`) not covered by either class here — flagged for
+  the controller's own individual investigation, not stretched into an
+  existing predicate.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
