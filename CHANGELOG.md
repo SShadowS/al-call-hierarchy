@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`fingerprintQuery`'s `SelectorAmbiguous.candidates` reordered run-to-run
+  because the index feeding it was rebuilt from `HashMap` iteration (Task T4-B,
+  Tier-4 hygiene arc).** `fingerprint_query.rs` cloned the shared
+  `routine_display_by_id: HashMap<String, String>` and iterated it directly to
+  build the display→stable-ids selector bucket — both the bucket order and the
+  per-bucket id order were process-random, so an ambiguous-selector diagnostic's
+  printed candidate list (truncated at `MAX_AMBIGUOUS_CANDIDATES=16`) reordered
+  between runs, and past the truncation point the displayed SET could change.
+  `digest_cli.rs::build_selector_indexes` already built the equivalent index
+  correctly, from the identity table's source `Vec` (deterministic by
+  construction) — the two implementations had drifted. Extracted the shared
+  logic (`build_selector_indexes` / `resolve_selector` / `normalize_display_key`
+  / the 5-form `resolveSelector` cascade) into a new `selector_index` module and
+  pointed both call sites at it, so they cannot re-diverge. Added a
+  process-deterministic regression test asserting the KNOWN correct
+  (identity-table insertion) order for a 4-way-ambiguous selector.
 - **The `al-syntax` lowerer silently dropped preproc-split procedures, case
   branches, and statement-position `#if`/guarded constructs, and let comments
   pollute positional argument reads — including silently unregistering a whole

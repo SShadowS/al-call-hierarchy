@@ -167,169 +167,13 @@ pub fn auto_detect_changed(value: &str) -> ChangedAutoDetect {
 // ---------------------------------------------------------------------------
 // Routine selector resolution (port of fingerprint-query.ts resolveSelector +
 // indexes.ts normalizeDisplayKey / displayToStableIds). 5-form cascade. (#6)
+//
+// The index-builder and resolver live in `selector_index` — shared with
+// fingerprint_query so the two CLIs cannot re-diverge on selector semantics
+// or ordering (see that module's docs).
 // ---------------------------------------------------------------------------
 
-const ROUTINE_ID_SEPARATOR: char = '#';
-
-/// `normalizeDisplayKey` (indexes.ts) — lowercase, trim, collapse internal whitespace.
-fn normalize_display_key(s: &str) -> String {
-    let trimmed = s.trim().to_lowercase();
-    // Collapse runs of ASCII/Unicode whitespace into a single space (JS \s+).
-    let mut out = String::with_capacity(trimmed.len());
-    let mut prev_ws = false;
-    for c in trimmed.chars() {
-        if c.is_whitespace() {
-            if !prev_ws {
-                out.push(' ');
-            }
-            prev_ws = true;
-        } else {
-            out.push(c);
-            prev_ws = false;
-        }
-    }
-    out
-}
-
-/// Strip a leading type-word + whitespace prefix (`/^\w+\s+/`), returning None when
-/// the line doesn't match (mirrors `display.replace(typeWordPrefix, "")` checked via
-/// `stripped !== display`).
-fn strip_type_word_prefix(display: &str) -> Option<&str> {
-    let bytes = display.as_bytes();
-    let mut i = 0usize;
-    // \w+ : [A-Za-z0-9_]
-    while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-        i += 1;
-    }
-    if i == 0 {
-        return None;
-    }
-    let word_end = i;
-    // \s+
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-        i += 1;
-    }
-    if i == word_end {
-        return None; // no whitespace after the word → no match
-    }
-    Some(&display[i..])
-}
-
-/// Ordered selector indexes: preserves the identity-table insertion order so the
-/// two-segment / one-segment loops iterate exactly like the TS Map. Built once.
-struct SelectorIndexes {
-    /// stableId → display (routine-only).
-    routine_display_by_id: HashMap<String, String>,
-    /// normalizeDisplayKey(display) → [stableId...], buckets in insertion order;
-    /// keys also in first-insertion order (Vec of (key, ids)).
-    display_to_stable_ids: Vec<(String, Vec<String>)>,
-}
-
-fn build_selector_indexes(snap: &CapabilitySnapshot) -> SelectorIndexes {
-    let mut routine_display_by_id: HashMap<String, String> = HashMap::new();
-    let mut display_to_stable_ids: Vec<(String, Vec<String>)> = Vec::new();
-    let mut key_pos: HashMap<String, usize> = HashMap::new();
-
-    for i in 0..snap.identities.stable_ids.len() {
-        let id = snap
-            .identities
-            .stable_ids
-            .get(i)
-            .cloned()
-            .unwrap_or_default();
-        let display = snap
-            .identities
-            .display_names
-            .get(i)
-            .cloned()
-            .unwrap_or_default();
-        if id.is_empty() {
-            continue;
-        }
-        if id.contains(ROUTINE_ID_SEPARATOR) {
-            routine_display_by_id.insert(id.clone(), display.clone());
-            let key = normalize_display_key(&display);
-            if let Some(&pos) = key_pos.get(&key) {
-                display_to_stable_ids[pos].1.push(id);
-            } else {
-                key_pos.insert(key.clone(), display_to_stable_ids.len());
-                display_to_stable_ids.push((key, vec![id]));
-            }
-        }
-    }
-
-    SelectorIndexes {
-        routine_display_by_id,
-        display_to_stable_ids,
-    }
-}
-
-fn display_to_ids<'a>(idx: &'a SelectorIndexes, key: &str) -> Option<&'a Vec<String>> {
-    idx.display_to_stable_ids
-        .iter()
-        .find(|(k, _)| k == key)
-        .map(|(_, v)| v)
-}
-
-/// `resolveSelector` (fingerprint-query.ts) — the 5-form cascade. Returns the
-/// matched stable IDs in deterministic order.
-fn resolve_selector(selector: &str, idx: &SelectorIndexes) -> Vec<String> {
-    // Form 1: exact StableRoutineId (case-sensitive).
-    if idx.routine_display_by_id.contains_key(selector) {
-        return vec![selector.to_string()];
-    }
-
-    // Form 2: full display name (normalized).
-    let key = normalize_display_key(selector);
-    if let Some(full) = display_to_ids(idx, &key)
-        && !full.is_empty()
-    {
-        return full.clone();
-    }
-
-    // Form 3: two-segment — strip leading type-word from the (already-normalized)
-    // bucket KEY, compare to `key`. Matches TS, which iterates over the map keys.
-    let mut two: Vec<String> = Vec::new();
-    for (bucket_key, ids) in idx.display_to_stable_ids.iter() {
-        if let Some(stripped) = strip_type_word_prefix(bucket_key) {
-            // TS guard `stripped !== display`: strip_type_word_prefix returns None
-            // when nothing was stripped, so reaching here already means stripped != key-holder.
-            if stripped == key {
-                two.extend(ids.iter().cloned());
-            }
-        }
-    }
-    if !two.is_empty() {
-        return two;
-    }
-
-    // Form 4: one-segment — routine name after the last "::" in the bucket KEY.
-    let mut one: Vec<String> = Vec::new();
-    for (bucket_key, ids) in idx.display_to_stable_ids.iter() {
-        let last = match bucket_key.rfind("::") {
-            Some(sep) => &bucket_key[sep + 2..],
-            None => bucket_key.as_str(),
-        };
-        if normalize_display_key(last) == key {
-            one.extend(ids.iter().cloned());
-        }
-    }
-    if !one.is_empty() {
-        return one;
-    }
-
-    // Form 5: object-qualified — routine segment after the LAST "::".
-    if let Some(sep) = selector.rfind("::") {
-        let routine_key = normalize_display_key(&selector[sep + 2..]);
-        if let Some(qualified) = display_to_ids(idx, &routine_key)
-            && !qualified.is_empty()
-        {
-            return qualified.clone();
-        }
-    }
-
-    Vec::new()
-}
+use crate::engine::l5::selector_index::{build_selector_indexes, resolve_selector};
 
 /// Changed-roots diagnostics (mirrors ChangedRootsDiagnostic).
 #[derive(Debug, Clone)]
@@ -438,7 +282,7 @@ pub fn resolve_changed_roots(
 
     // 2. Routine selector matching (port of resolveSelector — 5-form cascade).
     for selector in input.routines.iter().flatten() {
-        let matches = resolve_selector(selector, &selector_idx);
+        let (matches, _matched_form) = resolve_selector(selector, &selector_idx);
         if matches.is_empty() {
             diagnostics.push(ChangedRootsDiagnostic::SelectorUnmatched {
                 selector: selector.clone(),
@@ -1461,124 +1305,9 @@ pub fn run_digest_pipeline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::l5::snapshot::SnapshotIdentityTable;
 
-    fn snap_with_identities(rows: &[(&str, &str)]) -> CapabilitySnapshot {
-        let mut ids = SnapshotIdentityTable {
-            stable_ids: Vec::new(),
-            display_names: Vec::new(),
-        };
-        for (id, display) in rows {
-            ids.stable_ids.push((*id).into());
-            ids.display_names.push((*display).into());
-        }
-        CapabilitySnapshot {
-            identities: ids,
-            capability_facts: Vec::new(),
-            typed_edges: Vec::new(),
-            operation_index: Vec::new(),
-            callsite_index: Vec::new(),
-            callsite_resolutions: Vec::new(),
-            analysis_gaps: Vec::new(),
-            coverage: Vec::new(),
-            event_declarations: Vec::new(),
-            root_classifications: Vec::new(),
-            routine_order_frames: None,
-        }
-    }
-
-    // --- #6 resolveSelector cascade ---------------------------------------
-
-    #[test]
-    fn selector_form1_exact_stable_id() {
-        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
-        let idx = build_selector_indexes(&snap);
-        assert_eq!(
-            resolve_selector("app:Codeunit:1#abc", &idx),
-            vec!["app:Codeunit:1#abc".to_string()]
-        );
-    }
-
-    #[test]
-    fn selector_form2_full_display_case_insensitive() {
-        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
-        let idx = build_selector_indexes(&snap);
-        assert_eq!(
-            resolve_selector("codeunit \"x\"::run", &idx),
-            vec!["app:Codeunit:1#abc".to_string()]
-        );
-    }
-
-    #[test]
-    fn selector_form3_two_segment_strips_typeword() {
-        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
-        let idx = build_selector_indexes(&snap);
-        // Drop the leading "Codeunit " type-word.
-        assert_eq!(
-            resolve_selector("\"X\"::Run", &idx),
-            vec!["app:Codeunit:1#abc".to_string()]
-        );
-    }
-
-    #[test]
-    fn selector_form4_one_segment_routine_name() {
-        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
-        let idx = build_selector_indexes(&snap);
-        assert_eq!(
-            resolve_selector("Run", &idx),
-            vec!["app:Codeunit:1#abc".to_string()]
-        );
-    }
-
-    #[test]
-    fn selector_form5_object_qualified() {
-        // Form 5 fires when the FULL routine index has a bucket keyed by the bare
-        // routine name (e.g. a trigger routine whose display IS just "OnRun"), and the
-        // selector is object-qualified ("Obj::OnRun"): the segment after the last "::"
-        // is looked up directly. Here the identity display is the bare "OnRun".
-        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "OnRun")]);
-        let idx = build_selector_indexes(&snap);
-        assert_eq!(
-            resolve_selector("Codeunit \"X\"::OnRun", &idx),
-            vec!["app:Codeunit:1#abc".to_string()]
-        );
-    }
-
-    #[test]
-    fn selector_ambiguous_is_deterministic_in_identity_order() {
-        // Two routines share the bare name "Run" → one-segment form returns BOTH,
-        // in identity-table insertion order (deterministic, not HashMap order).
-        let snap = snap_with_identities(&[
-            ("app:Codeunit:1#aaa", "Codeunit \"A\"::Run"),
-            ("app:Codeunit:2#bbb", "Codeunit \"B\"::Run"),
-        ]);
-        let idx = build_selector_indexes(&snap);
-        let m = resolve_selector("Run", &idx);
-        assert_eq!(
-            m,
-            vec![
-                "app:Codeunit:1#aaa".to_string(),
-                "app:Codeunit:2#bbb".to_string()
-            ],
-            "ambiguous matches must be in deterministic identity order"
-        );
-    }
-
-    #[test]
-    fn selector_unmatched_returns_empty() {
-        let snap = snap_with_identities(&[("app:Codeunit:1#abc", "Codeunit \"X\"::Run")]);
-        let idx = build_selector_indexes(&snap);
-        assert!(resolve_selector("DoesNotExist", &idx).is_empty());
-    }
-
-    #[test]
-    fn normalize_display_key_collapses_whitespace() {
-        assert_eq!(normalize_display_key("  Foo   Bar  "), "foo bar");
-        assert_eq!(
-            normalize_display_key("Codeunit\t\"X\"::Run"),
-            "codeunit \"x\"::run"
-        );
-    }
+    // The #6 resolveSelector-cascade + normalize_display_key unit tests now live
+    // in `selector_index::tests` (shared implementation, shared tests).
 
     // --- #12 autoDetectChanged --------------------------------------------
 
