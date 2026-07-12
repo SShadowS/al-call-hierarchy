@@ -9,6 +9,16 @@
 //! references `crate::config::TelemetryFileConfig`. Without it, the lib
 //! crate cannot compile.
 
+/// Code-quality metrics (cyclomatic complexity, quality score, findings) over
+/// the owned IR (T3 Task 12 fix-wave): promoted from a binary-only `main.rs`
+/// module to a library module because `src/lsp/lens.rs`/`diagnostics.rs`
+/// (permanent library code — `parser.rs` is a Task-17 deletion target) need
+/// its `routine_complexity_ir`/`is_framework_invocation_attribute` helpers
+/// without depending on the module scheduled for deletion. `main.rs` now
+/// re-exports this alongside `graph`/`handlers`/`indexer`/`parser`/
+/// `protocol` (same pattern, see that comment below) instead of declaring its
+/// own `mod analysis;`.
+pub mod analysis;
 pub mod app_package;
 /// Shared big-stack execution for anywhere the `al_syntax` lowerer runs (T2.1,
 /// stack-overflow hardening) — see the module doc.
@@ -24,8 +34,8 @@ pub mod engine;
 /// in-process (no LSP stdio loop). `main.rs` re-exports these five under
 /// `crate::{graph,handlers,indexer,parser,protocol}` via `pub use
 /// al_call_hierarchy::{...}` (same pattern as `config`/`telemetry` above) so
-/// the binary-only modules (`server.rs`, `watcher.rs`, `analysis.rs`) keep
-/// compiling unchanged.
+/// the binary-only modules (`server.rs`, `watcher.rs`) keep compiling
+/// unchanged.
 pub mod graph;
 pub mod handlers;
 pub mod indexer;

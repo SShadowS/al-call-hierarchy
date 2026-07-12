@@ -7,7 +7,7 @@
 //! showing a reference count plus complexity/line-count/parameter-count
 //! threshold indicators. Complexity and parameter count are read from the
 //! SAME owned-IR walker the `--analyze` CLI path uses
-//! ([`crate::parser::routine_complexity_ir`]) — never re-implemented here.
+//! ([`crate::analysis::routine_complexity_ir`]) — never re-implemented here.
 //!
 //! Reference counts use [`effective_incoming_count`], the ONE place this
 //! arc generalizes legacy's `CallGraph::get_incoming_call_count` (direct
@@ -55,7 +55,7 @@ pub fn code_lenses(
             // fail closed by skipping rather than guessing at metrics.
             continue;
         };
-        let complexity = crate::parser::routine_complexity_ir(&entry.file.ir, routine);
+        let complexity = crate::analysis::routine_complexity_ir(&entry.file.ir, routine);
         let parameter_count = parameter_count_of(routine);
         let line_count = decl.origin.end.row.saturating_sub(decl.origin.start.row) + 1;
         let ref_count = effective_incoming_count(snap, &decl.id);
@@ -385,7 +385,7 @@ mod tests {
             .expect("Branchy decl");
         let routine = find_routine_by_origin(&entry.file, branchy_decl.origin.byte.start)
             .expect("Branchy routine");
-        let expected_complexity = crate::parser::routine_complexity_ir(&entry.file.ir, routine);
+        let expected_complexity = crate::analysis::routine_complexity_ir(&entry.file.ir, routine);
         // Sanity: this fixture's nested-if body must have complexity > 1 so
         // the assertion below is non-trivial (base 1 + 2 nested ifs = 3).
         assert_eq!(expected_complexity, 3, "fixture assumption");

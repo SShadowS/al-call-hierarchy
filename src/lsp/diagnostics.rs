@@ -25,14 +25,16 @@
 //! |---|------|------------------|-------------|-------------------|
 //! | R1 | Only `Procedure`-kind routines are eligible (triggers excluded) | `graph.rs`'s `get_unused_procedures` filters `def.kind == DefinitionKind::Procedure` | (structural; exercised by every other test below, which all use non-trigger fixtures) | `routine.kind == RoutineKind::Procedure` on the `RoutineDecl` correlated via [`crate::lsp::lens::find_routine_by_origin`] |
 //! | R2 | An `[EventSubscriber]` routine is never flagged (invoked implicitly by its publisher) | `indexer.rs` reclassifies its `DefinitionKind` to `EventSubscriber`, excluded by R1's kind filter | `test_event_subscriber_not_flagged_unused` | **SUBSUMED** — no attribute check at all. [`crate::lsp::lens::effective_incoming_count`] already counts an `EventFlow` edge targeting this routine (`LspSnapshot::incoming`), so a genuinely-wired subscriber falls out of the zero-incoming check naturally. See "Semantic difference (a)" below. |
-//! | R3 | Framework-invoked test methods/handlers (`[Test]`, `[ConfirmHandler]`, `[MessageHandler]`, `[PageHandler]`, `[ModalPageHandler]`, `[ReportHandler]`, `[RequestPageHandler]`, `[SendNotificationHandler]`, `[RecallNotificationHandler]`, `[SessionSettingsHandler]`, `[StrMenuHandler]`, `[FilterPageHandler]`, `[HyperlinkHandler]`) marked `implicitly_invoked` | `parser.rs`'s `is_framework_invocation_attribute` + `indexer.rs:187-197` | `test_test_method_not_flagged_unused`, `test_test_handler_not_flagged_unused` | Reuses the SAME (now `pub(crate)`) `crate::parser::is_framework_invocation_attribute` against `RoutineDecl.attributes` (already lowercased) |
+//! | R3 | Framework-invoked test methods/handlers (`[Test]`, `[ConfirmHandler]`, `[MessageHandler]`, `[PageHandler]`, `[ModalPageHandler]`, `[ReportHandler]`, `[RequestPageHandler]`, `[SendNotificationHandler]`, `[RecallNotificationHandler]`, `[SessionSettingsHandler]`, `[StrMenuHandler]`, `[FilterPageHandler]`, `[HyperlinkHandler]`) marked `implicitly_invoked` | `parser.rs`'s `is_framework_invocation_attribute` + `indexer.rs:187-197` | `test_test_method_not_flagged_unused`, `test_test_handler_not_flagged_unused` | Reuses the SAME `crate::analysis::is_framework_invocation_attribute` (relocated from `parser.rs` in the review fix-wave — see that module's doc) against `RoutineDecl.attributes` (already lowercased) |
 //! | R4 | `[IntegrationEvent]`/`[BusinessEvent]` publishers are ALWAYS excluded — their real subscribers typically live in downstream apps this workspace never loads | `indexer.rs:199-218` marks them `implicitly_invoked` unconditionally | `test_public_event_publishers_not_flagged` | Reuses `program::resolve::event::is_event_publisher` — `Some(PublisherKind::Integration)`/`Some(PublisherKind::Business)` excludes unconditionally, regardless of incoming count |
 //! | R5 | `[InternalEvent]` is NOT auto-excluded: flagged unless subscribed OR raised (its subscribers must live in the SAME app, so they're always visible) | `graph.rs`'s `get_incoming_call_count` = direct calls + `event_subscriptions.get(qname).len()` | `test_orphan_internal_event_is_flagged`, `test_subscribed_or_raised_internal_event_not_flagged` | Falls through to the SAME zero-`effective_incoming_count` check every ordinary procedure uses — no special case needed (see that function's doc) |
+//! | R6 | An interface method's own SIGNATURE is never flagged — it can never itself be a call target (dispatch always resolves to an IMPLEMENTING object's own routine, a distinct `RoutineNodeId`), so it structurally always shows zero incoming regardless of real usage | **NONE — legacy shared this exact false positive.** `graph.rs`'s `get_unused_procedures` never special-cased an Interface-kind object either | (none — a review-fix-wave finding, not a legacy-pinned case; NEW_BETTER, adjudicated in the T3 Task-12 review fix-wave, not present in either engine before) | `decl.id.object.kind == ObjectKind::Interface` — no rule applies to the IMPLEMENTING codeunit's own routine, which stays subject to every rule above |
 //!
-//! No PORT-GAP was found: every legacy rule's input data (routine kind,
-//! attribute names, incoming-edge evidence) is available on the engine side,
-//! either directly on `RoutineDecl` (kind, `attributes`) or via
-//! `LspSnapshot`'s edge indexes.
+//! No PORT-GAP was found for R1-R5: every legacy rule's input data (routine
+//! kind, attribute names, incoming-edge evidence) is available on the engine
+//! side, either directly on `RoutineDecl` (kind, `attributes`) or via
+//! `LspSnapshot`'s edge indexes. R6 is a NEW rule neither engine had —
+//! see its table row.
 //!
 //! ## Known semantic differences (deliberate, not bugs)
 //!
@@ -63,7 +65,7 @@
 
 use std::collections::HashMap;
 
-use al_syntax::ir::RoutineKind;
+use al_syntax::ir::{ObjectKind, RoutineKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString};
 
 use crate::config::DiagnosticConfig;
@@ -99,6 +101,7 @@ pub fn compute_all(snap: &LspSnapshot, cfg: &DiagnosticConfig) -> HashMap<String
             };
 
             if cfg.unused_procedures && is_unused_procedure(snap, decl, routine) {
+                // TODO(t3.15): thread the negotiated PositionEncoding through publishDiagnostics
                 out.entry(uri.clone())
                     .or_default()
                     .push(unused_procedure_diagnostic(
@@ -109,7 +112,7 @@ pub fn compute_all(snap: &LspSnapshot, cfg: &DiagnosticConfig) -> HashMap<String
                     ));
             }
 
-            let complexity = crate::parser::routine_complexity_ir(&entry.file.ir, routine);
+            let complexity = crate::analysis::routine_complexity_ir(&entry.file.ir, routine);
             let parameter_count = parameter_count_of(routine);
             let line_count = decl.origin.end.row.saturating_sub(decl.origin.start.row) + 1;
             let incoming_count = effective_incoming_count(snap, &decl.id);
@@ -167,6 +170,19 @@ fn is_unused_procedure(
     if routine.kind != RoutineKind::Procedure {
         return false;
     }
+    // R6: an interface method is a pure signature — never itself callable.
+    // Dispatch through an interface-typed variable always routes to an
+    // IMPLEMENTING object's routine (a distinct RoutineNodeId keyed to that
+    // object, never to the interface's own), so the interface's own
+    // declaration can NEVER receive an incoming edge under this model no
+    // matter how many real call sites exist — a systematic false positive
+    // BOTH engines shared (review fix-wave finding; legacy had the identical
+    // false-positive class since `get_unused_procedures` never special-cased
+    // Interface objects either). The IMPLEMENTING codeunit's own routine is
+    // NOT covered by this rule — it stays subject to every rule below.
+    if decl.id.object.kind == ObjectKind::Interface {
+        return false;
+    }
     // R4: public event publishers (Integration/Business) are ALWAYS excluded,
     // independent of incoming-edge evidence — their real subscribers
     // typically live in a downstream app this workspace never loads.
@@ -180,7 +196,7 @@ fn is_unused_procedure(
     if routine
         .attributes
         .iter()
-        .any(|a| crate::parser::is_framework_invocation_attribute(a))
+        .any(|a| crate::analysis::is_framework_invocation_attribute(a))
     {
         return false;
     }
@@ -229,6 +245,7 @@ fn push_quality_diagnostics(
     incoming_count: usize,
     cfg: &DiagnosticConfig,
 ) {
+    // TODO(t3.15): thread the negotiated PositionEncoding through publishDiagnostics
     let enc = PositionEncoding::Utf16;
     let object_name = object_name_for(&snap.graph, &decl.id.object).unwrap_or("Unknown");
     let range = origin_to_range(&decl.origin, table, enc);
@@ -499,6 +516,61 @@ mod tests {
         );
     }
 
+    // ── R2 negative: a BROKEN/misdirected [EventSubscriber] IS flagged ─────
+    // (review fix-wave hunt-4 gap: the highest-risk semantic claim in this
+    // module — "engine mechanism, not blanket exclusion" — is untested
+    // without this half. A subscriber whose attribute names an event that
+    // does not exist gets NO EventFlow edge at all, so it must fall through
+    // to the ordinary zero-incoming check exactly like any orphaned plain
+    // procedure would.)
+
+    #[test]
+    fn unused_rule_r2_negative_misdirected_event_subscriber_is_flagged() {
+        let dir = tempfile::tempdir().unwrap();
+        write_app(dir.path(), "10000000-0000-0000-0000-00000000000c", "R2neg");
+        std::fs::write(
+            dir.path().join("Publisher.al"),
+            r#"codeunit 50100 "Publisher"
+{
+    [InternalEvent(false)]
+    procedure OnRealEvent()
+    begin
+    end;
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Subscriber.al"),
+            r#"codeunit 50101 "Subscriber"
+{
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::Publisher, 'ThisEventDoesNotExist', '', false, false)]
+    local procedure HandleNonExistentEvent()
+    begin
+    end;
+}
+"#,
+        )
+        .unwrap();
+        let snap = build(dir.path());
+        let cfg = DiagnosticConfig::default();
+        let diags = diagnostics_for(&snap, &cfg, "Subscriber.al");
+        let unused_names: Vec<&str> = diags
+            .iter()
+            .filter(|d| d.code == Some(NumberOrString::String("unused-procedure".to_string())))
+            .map(|d| d.message.as_str())
+            .collect();
+        assert!(
+            unused_names
+                .iter()
+                .any(|m| m.contains("HandleNonExistentEvent")),
+            "a subscriber pointing at a NONEXISTENT event must be flagged \
+             unused — no EventFlow edge can ever resolve for it, unlike \
+             legacy's blanket [EventSubscriber] attribute exclusion which \
+             could never catch this; got {unused_names:?}"
+        );
+    }
+
     // ── R3: [Test]/handler-attributed procedures are never flagged ─────────
 
     #[test]
@@ -676,6 +748,66 @@ mod tests {
         assert!(
             !unused_names.iter().any(|m| m.contains("OnRaised")),
             "a raised InternalEvent must not be flagged; got {unused_names:?}"
+        );
+    }
+
+    // ── R6: an interface method's signature is never flagged; the ─────────
+    // ── implementing codeunit's routine stays subject to normal rules ─────
+
+    #[test]
+    fn unused_rule_r6_interface_signature_never_flagged_but_implementation_still_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        write_app(dir.path(), "10000000-0000-0000-0000-00000000000d", "R6");
+        std::fs::write(
+            dir.path().join("IFoo.al"),
+            r#"interface "IFoo"
+{
+    procedure DoSomething();
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Impl.al"),
+            r#"codeunit 50100 "Impl" implements "IFoo"
+{
+    procedure DoSomething()
+    begin
+    end;
+
+    procedure PlainUnused()
+    begin
+    end;
+}
+"#,
+        )
+        .unwrap();
+        let snap = build(dir.path());
+        let cfg = DiagnosticConfig::default();
+
+        let iface_diags = diagnostics_for(&snap, &cfg, "IFoo.al");
+        assert!(
+            codes_of(&iface_diags)
+                .iter()
+                .all(|c| c != "unused-procedure"),
+            "an interface method signature must never be flagged unused; got {iface_diags:#?}"
+        );
+
+        let impl_diags = diagnostics_for(&snap, &cfg, "Impl.al");
+        let unused_names: Vec<&str> = impl_diags
+            .iter()
+            .filter(|d| d.code == Some(NumberOrString::String("unused-procedure".to_string())))
+            .map(|d| d.message.as_str())
+            .collect();
+        assert!(
+            unused_names.iter().any(|m| m.contains("DoSomething")),
+            "the IMPLEMENTING codeunit's routine is still subject to normal \
+             rules (nothing calls it in this fixture); got {unused_names:?}"
+        );
+        assert!(
+            unused_names.iter().any(|m| m.contains("PlainUnused")),
+            "guard against over-exclusion of the whole implementing object; \
+             got {unused_names:?}"
         );
     }
 

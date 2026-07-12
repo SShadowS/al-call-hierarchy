@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   triggers, everything `decls_by_file` carries — unfiltered by kind, mirroring
   legacy's `get_definitions_in_file`), delegating complexity/parameter-count
   to the SAME owned-IR walker the `--analyze` CLI path uses
-  (`parser::routine_complexity_ir`) rather than re-deriving metrics.
+  (`analysis::routine_complexity_ir`) rather than re-deriving metrics.
   `diagnostics::compute_all` ports the full unused-procedure rule set
   (`src/indexer.rs:159-218` + `src/graph.rs:865-905`) onto engine data — the
   new `effective_incoming_count` helper generalizes legacy's
@@ -26,20 +26,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attribute-blanket exclusion entirely: a subscriber is "used" because a real
   `EventFlow` edge targets it, so a subscription whose publisher/event name
   doesn't resolve to anything real is now correctly flagged (a precision
-  improvement over legacy's unconditional attribute exclusion) — while
-  `[IntegrationEvent]`/`[BusinessEvent]` publishers stay unconditionally
-  excluded (their real subscribers typically live in a downstream app this
-  workspace never loads) and `[InternalEvent]` stays un-excluded, flagged
-  unless subscribed-or-raised, exactly as legacy behaved. Plus
-  `DiagnosticsState::diff`, the recompute-diff-publish-clear engine Task 15
-  wires to `on_swap`: diffs a fresh `compute_all` result against the last
-  published set and emits ONLY what changed, INCLUDING a uri whose findings
-  dropped to zero — the clear behavior legacy's `publish_all_diagnostics`
-  never had (a fixed procedure's stale "unused" hint would otherwise linger
-  until the next unrelated finding in that file happened to overwrite it).
-  Widened three existing helpers to `pub(crate)` for reuse rather than
-  duplication: `lsp::handlers::{resolve_virtual_path, object_name_for,
-  origin_to_range}` and `parser::is_framework_invocation_attribute`.
+  improvement over legacy's unconditional attribute exclusion, proven both
+  directions by tests) — while `[IntegrationEvent]`/`[BusinessEvent]`
+  publishers stay unconditionally excluded (their real subscribers typically
+  live in a downstream app this workspace never loads), `[InternalEvent]`
+  stays un-excluded, flagged unless subscribed-or-raised, exactly as legacy
+  behaved, and a NEW rule (R6, review fix-wave) excludes any routine whose
+  enclosing object is `ObjectKind::Interface` — an interface method's own
+  signature can never itself be a call target (dispatch always resolves to
+  an IMPLEMENTING object's own routine instead), so it structurally always
+  showed zero incoming under EITHER engine; legacy shared this exact
+  false-positive class. Plus `DiagnosticsState::diff`, the
+  recompute-diff-publish-clear engine Task 15 wires to `on_swap`: diffs a
+  fresh `compute_all` result against the last published set and emits ONLY
+  what changed, INCLUDING a uri whose findings dropped to zero — the clear
+  behavior legacy's `publish_all_diagnostics` never had (a fixed procedure's
+  stale "unused" hint would otherwise linger until the next unrelated
+  finding in that file happened to overwrite it). Widened three existing
+  helpers to `pub(crate)` for reuse rather than duplication:
+  `lsp::handlers::{resolve_virtual_path, object_name_for, origin_to_range}`.
+  **Review fix-wave:** `routine_complexity_ir`/`is_framework_invocation_attribute`
+  (+ their private IR-walking helpers) were relocated from `parser.rs` (a
+  Task-17 deletion target) into `src/analysis.rs`, which was itself promoted
+  from a binary-only `main.rs` module to a proper library module (`pub mod
+  analysis;` in `lib.rs`) so these permanent LSP modules never depend on code
+  scheduled for deletion; `parser.rs` re-exports both so its own existing
+  call sites keep compiling unchanged. (`program::resolve::event::is_event_publisher`,
+  separately named in the same review finding, was already correctly placed
+  in the permanent program-engine module and needed no change.)
 - **`src/lsp/handlers.rs`: core call-hierarchy handlers on the program engine
   (T3 LSP-migration arc, Task 11) — `prepare`/`incoming`/`outgoing`, the
   engine-backed replacements for `src/handlers.rs`'s legacy graph-backed

@@ -3,18 +3,19 @@ use clap::{Parser, ValueEnum};
 use log::info;
 use std::path::{Path, PathBuf};
 
-mod analysis;
 mod server;
 mod watcher;
 
 // `config`, `telemetry`, `app_package`, `dependencies`, and (as of T0.5)
 // `graph`, `handlers`, `indexer`, `parser`, `protocol` live in `lib.rs` so
-// library consumers (benches, tests) can use them. Re-export here so binary
-// modules (server, watcher, analysis, etc.) can keep referring to
-// `crate::graph::*` / `crate::handlers::*` / ... without churn.
+// library consumers (benches, tests) can use them. `analysis` joined them at
+// T3 Task 12's fix-wave (see `lib.rs`'s doc on that module) — no more
+// binary-only `mod analysis;` here. Re-export here so binary modules
+// (server, watcher, etc.) can keep referring to `crate::graph::*` /
+// `crate::handlers::*` / ... without churn.
 pub use al_call_hierarchy::{
-    app_package, big_stack, config, dependencies, graph, handlers, indexer, lsp, parser, protocol,
-    telemetry,
+    analysis, app_package, big_stack, config, dependencies, graph, handlers, indexer, lsp, parser,
+    protocol, telemetry,
 };
 
 use indexer::Indexer;
@@ -207,7 +208,7 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
 /// former tree-sitter walk; complexity comes from the canonical IR walker.
 fn extract_metrics_ir(source: &str, path: &Path) -> Vec<analysis::ProcedureMetrics> {
     use al_syntax::ir::RoutineKind;
-    use analysis::calculate_quality_score;
+    use analysis::{calculate_quality_score, routine_complexity_ir};
 
     let f = al_syntax::parse(source);
     let file_str = path
@@ -229,7 +230,7 @@ fn extract_metrics_ir(source: &str, path: &Path) -> Vec<analysis::ProcedureMetri
             } else {
                 r.name.trim_matches('"').to_string()
             };
-            let complexity = parser::routine_complexity_ir(&f.ir, r);
+            let complexity = routine_complexity_ir(&f.ir, r);
             let line_count = r.origin.end.row.saturating_sub(r.origin.start.row) + 1;
             let parameter_count = r.params.len() as u32;
             let quality_score = calculate_quality_score(complexity, line_count, parameter_count);

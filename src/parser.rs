@@ -7,6 +7,14 @@
 use lsp_types::{Position, Range};
 
 use crate::graph::{DefinitionKind, ObjectType};
+// Relocated to `crate::analysis` (T3 Task 12 fix-wave, see that module's
+// doc): pure IR/attribute helpers `src/lsp/lens.rs`/`diagnostics.rs` (which
+// outlive this module — see the Grammar/Architecture notes on `parser.rs`
+// being a Task-17 deletion target) need without depending on a module
+// scheduled for deletion. Re-exported here so this module's OWN call sites
+// below keep compiling unchanged.
+use crate::analysis::for_each_subexpr;
+pub(crate) use crate::analysis::{is_framework_invocation_attribute, routine_complexity_ir};
 
 /// Parsed definitions and calls from a single file
 #[derive(Debug, Default)]
@@ -124,29 +132,6 @@ pub struct ParsedEventSubscriber {
     pub publisher_object: String,
     /// Publisher event name (e.g., "OnBeforePostSalesDoc")
     pub publisher_event: String,
-}
-
-/// True for AL attributes whose procedure is invoked by a framework (the test
-/// runner or test framework) rather than by an explicit call, so the procedure
-/// must not be reported as unused. AL attribute names are case-insensitive.
-/// Event publishers/subscribers are handled separately and are not listed here.
-pub(crate) fn is_framework_invocation_attribute(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "test"
-            | "confirmhandler"
-            | "messagehandler"
-            | "pagehandler"
-            | "modalpagehandler"
-            | "reporthandler"
-            | "requestpagehandler"
-            | "sendnotificationhandler"
-            | "recallnotificationhandler"
-            | "sessionsettingshandler"
-            | "strmenuhandler"
-            | "filterpagehandler"
-            | "hyperlinkhandler"
-    )
 }
 
 /// Find the byte offset (relative to the start of `text`) where a procedure
@@ -332,7 +317,7 @@ fn clean_name(name: &str) -> String {
 // ===========================================================================
 
 use al_syntax::ir::{
-    self, AlFile, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, Origin, RoutineDecl,
+    self, AlFile, BlockId, BlockItem, ExprId, ExprKind, ObjectKind, Origin, RoutineDecl,
     RoutineKind, StmtKind, VarDecl,
 };
 
@@ -445,170 +430,6 @@ fn push_variables_ir(result: &mut ParsedFile, vars: &[VarDecl], containing: Opti
             type_kind,
             containing_procedure: containing.clone(),
         });
-    }
-}
-
-/// Cyclomatic complexity over the IR body. Base 1; +1 per if (+1 more if it has an
-/// else), +1 per loop, +1 per case branch, +1 per `and`/`or`. The canonical
-/// complexity metric (the tree-sitter `analysis::calculate_complexity` is retired).
-///
-/// `pub` not `pub(crate)` (T0.5): this module is now library-owned and
-/// `main.rs`'s `extract_metrics_ir` calls it via the `crate::parser`
-/// re-export, which is a separate crate boundary from the library.
-pub fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
-    let mut c = 1u32;
-    if let Some(body) = r.body {
-        complexity_block(ir, body, &mut c);
-    }
-    c
-}
-
-fn complexity_block(ir: &ir::Ir, bid: BlockId, c: &mut u32) {
-    for item in &ir.block(bid).items {
-        match item {
-            BlockItem::Stmt(sid) => complexity_stmt(ir, *sid, c),
-            BlockItem::Preproc(g) => {
-                for b in &g.branches {
-                    complexity_block(ir, *b, c);
-                }
-            }
-        }
-    }
-}
-
-fn complexity_stmt(ir: &ir::Ir, sid: ir::StmtId, c: &mut u32) {
-    match &ir.stmt(sid).kind {
-        StmtKind::If {
-            cond,
-            then_block,
-            else_block,
-        } => {
-            *c += 1;
-            if else_block.is_some() {
-                *c += 1;
-            }
-            complexity_expr(ir, *cond, c);
-            complexity_block(ir, *then_block, c);
-            if let Some(b) = else_block {
-                complexity_block(ir, *b, c);
-            }
-        }
-        StmtKind::While { cond, body } => {
-            *c += 1;
-            complexity_expr(ir, *cond, c);
-            complexity_block(ir, *body, c);
-        }
-        StmtKind::Repeat { body, until } => {
-            *c += 1;
-            complexity_block(ir, *body, c);
-            complexity_expr(ir, *until, c);
-        }
-        StmtKind::For {
-            var,
-            from,
-            to,
-            body,
-            ..
-        } => {
-            *c += 1;
-            complexity_expr(ir, *var, c);
-            complexity_expr(ir, *from, c);
-            complexity_expr(ir, *to, c);
-            complexity_block(ir, *body, c);
-        }
-        StmtKind::Foreach {
-            var,
-            iterable,
-            body,
-        } => {
-            *c += 1;
-            complexity_expr(ir, *var, c);
-            complexity_expr(ir, *iterable, c);
-            complexity_block(ir, *body, c);
-        }
-        StmtKind::Case {
-            scrutinee,
-            branches,
-            else_block,
-        } => {
-            complexity_expr(ir, *scrutinee, c);
-            for br in branches {
-                *c += 1;
-                for p in &br.patterns {
-                    complexity_expr(ir, *p, c);
-                }
-                complexity_block(ir, br.body, c);
-            }
-            if let Some(b) = else_block {
-                complexity_block(ir, *b, c);
-            }
-        }
-        StmtKind::Assignment { target, value } => {
-            complexity_expr(ir, *target, c);
-            complexity_expr(ir, *value, c);
-        }
-        StmtKind::Call(e) => complexity_expr(ir, *e, c),
-        StmtKind::With { receiver, body } => {
-            complexity_expr(ir, *receiver, c);
-            complexity_block(ir, *body, c);
-        }
-        StmtKind::Try { body, catch_block } => {
-            complexity_block(ir, *body, c);
-            if let Some(b) = catch_block {
-                complexity_block(ir, *b, c);
-            }
-        }
-        StmtKind::AssertError(b) => complexity_block(ir, *b, c),
-        StmtKind::Exit(Some(e)) => complexity_expr(ir, *e, c),
-        StmtKind::Block(b) => complexity_block(ir, *b, c),
-        _ => {}
-    }
-}
-
-fn complexity_expr(ir: &ir::Ir, eid: ExprId, c: &mut u32) {
-    let e = ir.expr(eid);
-    if let ExprKind::Binary {
-        op: BinaryOp::And | BinaryOp::Or,
-        ..
-    } = &e.kind
-    {
-        *c += 1;
-    }
-    for_each_subexpr(ir, eid, &mut |sub| complexity_expr(ir, sub, c));
-}
-
-/// Visit the direct sub-expressions of an expression (one level). The caller
-/// recurses; this just enumerates children so the two walkers (calls, complexity)
-/// share one definition of the expression shape.
-fn for_each_subexpr(ir: &ir::Ir, eid: ExprId, f: &mut dyn FnMut(ExprId)) {
-    match &ir.expr(eid).kind {
-        ExprKind::Member { object, .. } => f(*object),
-        ExprKind::Call { function, args } => {
-            f(*function);
-            for a in args {
-                f(*a);
-            }
-        }
-        ExprKind::Index { base, index } => {
-            f(*base);
-            f(*index);
-        }
-        ExprKind::Unary { operand, .. } => f(*operand),
-        ExprKind::Binary { lhs, rhs, .. } => {
-            f(*lhs);
-            f(*rhs);
-        }
-        ExprKind::Parenthesized(inner) => f(*inner),
-        ExprKind::QualifiedEnum { enum_type, .. } => f(*enum_type),
-        ExprKind::RangeExpr { start, end } => {
-            f(*start);
-            f(*end);
-        }
-        ExprKind::Identifier(_)
-        | ExprKind::QuotedIdentifier(_)
-        | ExprKind::Literal(_)
-        | ExprKind::DatabaseReference(_)
-        | ExprKind::Unknown => {}
     }
 }
 
