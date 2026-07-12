@@ -8,6 +8,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`tests/lsp_differential.rs`: adjudicated legacy-vs-new differential parity
+  harness (T3 LSP-migration arc, Task 14) — the DELETION LICENSE for the
+  legacy LSP pipeline (Task 17): runs BOTH backends in-process over identical
+  request scripts (`prepareCallHierarchy`/`incomingCalls`/`outgoingCalls`/
+  `codeLens`, plus the `unused-procedure` diagnostic) driven by the union of
+  legacy's `CallGraph::iter_definitions()` and new's `decls_by_file`
+  identities, normalized to UTF-8 byte columns on both sides (legacy already
+  serves bytes; new driven with `PositionEncoding::Utf8`). Every divergence
+  is classified: `Match`; `Regression`/`NewUnexplained` (gates, must be 0);
+  or one of 11 mechanically-justified `NewBetter` classes — the brief's 9
+  (`CaseFoldHit`, `CrossAppTarget`, `DepSourceSpan`, `EventDirectionMoved`,
+  `AbiSymbolShape`, `OutgoingCardinality`, `R2Precision`,
+  `R6InterfaceExclusion`, `ObjectIdAdditive` — pinned at 0, out of this
+  driver's scope) plus 2 discovered and adjudicated during implementation:
+  `UnqualifiedCallResolved` (legacy's `outgoing_calls` renders EVERY
+  unqualified call — same-object bare call or a global/builtin bareword
+  call — through an unconditional, self-documented `"(local)"` placeholder,
+  `data: None`, positioned at the call site, never actually attempting
+  resolution; new correctly resolves or correctly omits) and
+  `OverloadIdentityCollapsed` (legacy's `QualifiedName`-keyed
+  `definitions`/`incoming_calls`/`outgoing_calls` have no signature
+  component at all — an overload set collapses to ONE last-write-wins slot,
+  silently merging every overload's callers together and sometimes pointing
+  at the WRONG overload's position entirely; new's `RoutineNodeId`
+  distinguishes every overload via `params_count`/`sig_fp`). CDO run
+  (env-gated, `CDO_WS`/`ENFORCE_CDO_WS`) additionally exercises the H-10
+  edit scenario: legacy `reindex_file` of one file loses cross-file
+  incoming edges to it while new's `apply_batch` of the identical no-op
+  save keeps them (`NewBetter(H10Repair)`, the 11th class,
+  edit-scenario-only). Always-on fixture corpora: the existing
+  `tests/fixtures/lsp-incr/` (Task 10's fixture — overloads, events,
+  Unicode) plus two new ones built for this task —
+  `tests/fixtures/lsp-diff-core/` (an interface, a case-mismatched call, a
+  misdirected event subscriber, a well-formed pub/sub pair, an overload
+  set, a two-call-site caller) and `tests/fixtures/lsp-diff-deps/` (a real,
+  committed `.alpackages/` pair reused from `tests/r2-5a-fixtures/`: a
+  SymbolOnly dependency and a genuine embedded-source dependency, each
+  called from the workspace). `src/handlers.rs`'s private `code_lens`
+  widened to `pub` (same T0.5 precedent as `prepare_call_hierarchy`/
+  `incoming_calls`/`outgoing_calls`) so the harness can drive it directly.
+  Diagnostics comparison is scoped to `unused-procedure` only — legacy's
+  code-quality diagnostics live in a private function in the binary-only
+  `src/server.rs`, structurally unreachable from an integration-test crate,
+  and relocating it purely for a scaffolding test that dies with legacy at
+  Task 17 was judged not worth the effort.
+- **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
+  LSP-migration arc, Task 14 Step 5, plan-amended)** —
+  `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
+  through a rung-1 (body-only) then rung-2 (signature-change) transition on
+  a workspace with a REAL embedded-source dependency, giving
+  `LspSnapshot::dep_decl_by_id`/`dep_texts`/`workspace_root` (widened into
+  this gate's equivalence key in the Task 10/11 review fix-waves, but
+  trivially vacuous on the dep-less `lsp-incr` fixture) non-vacuous
+  coverage for the first time: a real `dep_decl_by_id` entry for `Source
+  Mgt.DoWork`, asserted byte-identical across both rungs (the dep layer is
+  never touched by either). A hand-built `.app` zip was judged infeasible
+  to construct correctly from scratch within scope; reusing the
+  already-committed, already-proven `tests/r2-5a-fixtures/` `.app` fixtures
+  made the disk-based, plan-preferred arm feasible instead of the brief's
+  in-memory `two_app` fallback.
 - **`src/lsp/custom.rs`: engine-backed custom LSP requests (T3 LSP-migration
   arc, Task 13) — `dependency_document_symbol`, `event_publishers_in_file`,
   and `event_reference_at_position`, the program-engine replacements for

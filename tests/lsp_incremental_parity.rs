@@ -1320,3 +1320,148 @@ fn canon_edge_distinguishes_kind_shape_completeness_and_conditions() {
         "two edges differing only in a route's Condition set must NOT canonicalize equal"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Script 10 (T3 Task 14 Step 5, plan-amended): dep-bearing fixture arm.
+//
+// Every script above runs on `tests/fixtures/lsp-incr/`, which declares no
+// dependencies — so the module doc's `dep_decl_by_id`/`dep_texts`/
+// `workspace_root` comparisons in `assert_snapshots_equivalent` (added in
+// the Task 10/11 review fix-waves) are trivially vacuous there (both sides
+// empty/identical for a structural, not a proven, reason). This script uses
+// `tests/fixtures/lsp-diff-deps/` instead — a real, committed, disk-based
+// `.alpackages/` pair (`aaaaaaaa…0001.app` "Core Lib", SymbolOnly; and
+// `bbbbbbbb…0002.app` "Source Lib", a REAL embedded-source dependency
+// shipping `codeunit 60100 "Source Mgt"`'s actual AL source inside the
+// package — see `tests/fixtures/lsp-diff-deps/app.json`'s declared
+// dependencies) — giving these three fields NON-VACUOUS coverage: a real
+// `dep_decl_by_id` entry for `Source Mgt.DoWork`, a real `dep_texts` entry
+// for its embedded source, through both a rung-1 (body-only) and a rung-2
+// (signature-change) transition on the WORKSPACE caller file. Per the
+// design doc's `dep_layer` Arc-sharing rationale (`snapshot.rs`'s own
+// doc), dependency source cannot change on either rung — this script
+// explicitly asserts `dep_decl_by_id` stays byte-identical across both
+// transitions, not merely present.
+//
+// A hand-built `.app` zip was considered infeasible to construct correctly
+// from scratch within this task's scope (the embedded-source format is a
+// real BC "ShowMyCode" package layout `cached_source` parses structurally,
+// not a simple ad-hoc convention) — reusing the ALREADY-COMMITTED,
+// already-proven `tests/r2-5a-fixtures/{core-symbol-only,source-included}`
+// `.app` fixtures (copied verbatim into this new fixture's `.alpackages/`)
+// made the disk-based, plan-preferred arm feasible after all, so the
+// brief's in-memory `two_app` fallback was not needed here.
+
+fn copy_fixture_lsp_diff_deps_to_tempdir() -> tempfile::TempDir {
+    let dst = tempfile::tempdir().expect("tempdir");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lsp-diff-deps");
+    copy_dir_recursive(&src, dst.path());
+    dst
+}
+
+#[test]
+fn dep_bearing_rung1_then_rung2_stay_equivalent_with_nonvacuous_dep_indexes() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+
+    // Non-vacuity precondition (binding — see this script's header comment):
+    // the fixture's dep layer must actually contribute BEFORE any rung
+    // assertion means anything.
+    assert!(
+        !base.dep_decl_by_id.is_empty(),
+        "fixture sanity: dep_decl_by_id must carry Source Lib's embedded DoWork"
+    );
+    assert!(
+        !base.dep_texts.is_empty(),
+        "fixture sanity: dep_texts must carry Source Mgt.al's embedded source text"
+    );
+    let base_dep_decls = canon_dep_decl_by_id(&base);
+
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+    let mut cur = base;
+
+    // Rung 1: a body-only edit to the WORKSPACE caller (an extra call to an
+    // already-existing target, same shape every other rung-1 script uses)
+    // — the dep layer must never be touched (Arc-cloned forward unchanged).
+    let body_only = r#"codeunit 50000 "Caller"
+{
+    procedure CallSymbolOnlyDep()
+    var
+        WidgetMgt: Codeunit "Widget Mgt";
+    begin
+        WidgetMgt.Compute(5);
+        WidgetMgt.Compute(6);
+    end;
+
+    procedure CallEmbeddedSourceDep()
+    var
+        SourceMgt: Codeunit "Source Mgt";
+    begin
+        SourceMgt.DoWork(3);
+    end;
+}
+"#;
+    std::fs::write(dir.path().join("Caller.al"), body_only).expect("rewrite Caller.al (rung 1)");
+    let batch1 = vec![ChangeEvent::FileSaved(dir.path().join("Caller.al"))];
+    let (rung1_snap, rung1) = updater
+        .apply_batch(&cur, &batch1)
+        .expect("apply_batch must succeed (rung-1 step)");
+    assert_eq!(
+        rung1,
+        Rung::One,
+        "an extra call to an already-existing target must stay rung-1-eligible"
+    );
+
+    let fresh1 = LspSnapshot::build_full(dir.path()).expect("fresh build_full (rung 1)");
+    assert_snapshots_equivalent(&rung1_snap, &fresh1, "dep-bearing rung-1 step");
+    assert_eq!(
+        canon_dep_decl_by_id(&rung1_snap),
+        base_dep_decls,
+        "rung 1 must Arc-clone dep_decl_by_id forward unchanged (never touch the dep layer)"
+    );
+    cur = rung1_snap;
+
+    // Rung 2: a SIGNATURE change on the workspace caller (adds a parameter)
+    // — must rebuild the workspace layer while REUSING the cached dep
+    // layer; dep_decl_by_id/dep_texts must stay non-vacuous AND identical.
+    let signature_change = r#"codeunit 50000 "Caller"
+{
+    procedure CallSymbolOnlyDep(Extra: Integer)
+    var
+        WidgetMgt: Codeunit "Widget Mgt";
+    begin
+        WidgetMgt.Compute(Extra);
+    end;
+
+    procedure CallEmbeddedSourceDep()
+    var
+        SourceMgt: Codeunit "Source Mgt";
+    begin
+        SourceMgt.DoWork(3);
+    end;
+}
+"#;
+    std::fs::write(dir.path().join("Caller.al"), signature_change)
+        .expect("rewrite Caller.al (rung 2)");
+    let batch2 = vec![ChangeEvent::FileSaved(dir.path().join("Caller.al"))];
+    let (rung2_snap, rung2) = updater
+        .apply_batch(&cur, &batch2)
+        .expect("apply_batch must succeed (rung-2 step)");
+    assert_eq!(
+        rung2,
+        Rung::Two,
+        "a parameter-count change is a definition-surface change — must take rung 2"
+    );
+
+    let fresh2 = LspSnapshot::build_full(dir.path()).expect("fresh build_full (rung 2)");
+    assert_snapshots_equivalent(&rung2_snap, &fresh2, "dep-bearing rung-2 step");
+    assert!(
+        !rung2_snap.dep_decl_by_id.is_empty(),
+        "rung 2 must still carry a non-vacuous dep_decl_by_id after rebuilding the workspace layer"
+    );
+    assert_eq!(
+        canon_dep_decl_by_id(&rung2_snap),
+        base_dep_decls,
+        "rung 2 must reuse the cached, unchanged dep layer — dep_decl_by_id identical across a workspace-only signature-change rebuild"
+    );
+}

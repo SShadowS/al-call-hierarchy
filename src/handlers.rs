@@ -422,7 +422,13 @@ pub fn outgoing_calls(
 }
 
 /// Get code lens - reference counts and quality metrics for procedures
-fn code_lens(
+///
+/// `pub` (T3 Task 14): the adjudicated legacy-vs-new differential harness
+/// (`tests/lsp_differential.rs`) is an external integration-test crate — it
+/// needs this to drive legacy's `codeLens` surface exactly as `server.rs`
+/// does, mirroring the same T0.5 precedent already applied to
+/// `prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls` above.
+pub fn code_lens(
     indexer: &Arc<RwLock<Indexer>>,
     params: CodeLensParams,
     config: &DiagnosticConfig,
