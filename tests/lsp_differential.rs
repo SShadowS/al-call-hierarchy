@@ -273,11 +273,10 @@ enum NewBetterClass {
     ImplicitRecResolved,
     /// CDO layer-3 fix-wave: an ORDINARY receiver-qualified call
     /// (`Ident.Method(...)` or `"Quoted Ident".Method(...)`) whose receiver
-    /// is a `var` PARAMETER (or some other local/temp shape legacy's
-    /// variable tracking misses) — NOT the caller's implicit `Rec`/`xRec`
-    /// (that's `ImplicitRecResolved`'s territory) and not the object's OWN
-    /// name (an object-name-qualified call legacy CAN resolve via
-    /// `object_types`, so it never lands here at all — those rows are
+    /// is a `var` PARAMETER, a `Rec`/`xRec` implicit binding, or some other
+    /// local/temp shape legacy's variable tracking misses — and NOT the
+    /// object's OWN name (an object-name-qualified call legacy CAN resolve
+    /// via `object_types`, so it never lands here at all — those rows are
     /// already `Match`). Confirmed by the controller against real CDO
     /// source: `Codeunit 6175274 "CDO Continia Online PDF Mgt"`'s
     /// `procedure MergePdf(var DOFile: Record "CDO File"; ...)` calling
@@ -293,12 +292,36 @@ enum NewBetterClass {
     /// correctly and resolves as a genuine `Match` — verified empirically,
     /// not assumed (see `VariableReceiverCaller.al`'s `UseLocalVar`
     /// procedure, kept in the SAME fixture as its parameter-receiver
-    /// sibling for direct contrast). Mechanical predicate: a Call-kind
-    /// new-only incoming/codeLens/diagnostics site whose caller's object
-    /// differs from the callee's, is receiver-qualified (any object kind —
-    /// unlike `ImplicitRecResolved`, not restricted to Page/Report), and
-    /// whose receiver token is NEITHER `Rec`/`xRec` NOR (case-insensitive,
-    /// quote-normalized) the callee's own object display name.
+    /// sibling for direct contrast).
+    ///
+    /// **Generalized in CDO layer 4**: the original predicate additionally
+    /// required `caller object != callee object`, which 3 CONCRETE CDO
+    /// counterexamples proved wrong — a codeunit's `var` parameter of its
+    /// OWN type calling itself, a table's `var` parameter of its OWN record
+    /// type calling itself, and a table's own implicit `Rec.`-qualified
+    /// self-call (`Table 6175330`'s `GetPlainText`/`Rec.GetHTML()` — a
+    /// SAME-object `Rec.`-qualified call that `ImplicitRecResolved` doesn't
+    /// claim, since that class is scoped to Page/PageExtension/Report/
+    /// ReportExtension callers only). The mechanism is the RECEIVER TOKEN
+    /// legacy never modeled, not object identity, so `Rec`/`xRec` are no
+    /// longer excluded here either (a cross-object Page/Report bare-or-
+    /// `Rec.`-qualified call is still claimed by `ImplicitRecResolved`
+    /// FIRST in the classifier chain, so there is no double-classification).
+    /// Also independently confirmed to already cover CDO's
+    /// `.dependencies/cdo/.../cdoqueuemanagement.codeunit.al::cdo queue
+    /// management.onrun: new caller=sendqueue` shape (a `var` Codeunit-typed
+    /// variable's `.Run()` dispatching to `OnRun`) WITHOUT any dedicated
+    /// `EdgeKind::Run` handling: `resolve_member`'s `Run`-on-Codeunit
+    /// special case (`src/program/resolve/resolver.rs`) produces an
+    /// ordinary `EdgeKind::Call`/Member-shape edge, so this class's
+    /// existing Call-kind receiver check already catches it (see
+    /// `RunDispatchTarget.al`/`RunDispatchCaller.al`, which matched
+    /// cleanly on the FIRST run, before this generalization was even
+    /// written — verified, not assumed). Mechanical predicate: a Call-kind
+    /// new-only incoming/codeLens/diagnostics site that is receiver-
+    /// qualified (any object kind, any caller/callee relationship) whose
+    /// receiver token is NOT (case-insensitive, quote-normalized) the
+    /// callee's own object display name.
     VariableReceiverResolved,
 }
 
@@ -707,14 +730,17 @@ struct RoutineEntry {
     /// and structurally cannot model this. `ImplicitRecResolved`'s
     /// mechanical predicate.
     new_incoming_implicit_rec_sites: BTreeSet<NormRange>,
-    /// Incoming call-site ranges resolved CROSS-OBJECT via a receiver-
-    /// qualified call whose receiver is a `var` parameter (or another
-    /// local/temp shape legacy's `variable_bindings` misses) — NOT the
-    /// implicit `Rec`/`xRec` binding (`new_incoming_implicit_rec_sites`
-    /// already claims those) and not the callee's own object name (an
-    /// object-name-qualified call legacy CAN resolve). Looked up directly
-    /// against `LspSnapshot::incoming`/the caller's own source text (see
-    /// `run_sweep`). `VariableReceiverResolved`'s mechanical predicate.
+    /// Incoming call-site ranges resolved via a receiver-qualified call
+    /// (same-object or cross-object — layer 4 dropped the cross-object
+    /// requirement) whose receiver is a `var` parameter, `Rec`/`xRec`, or
+    /// another local/temp shape legacy's `variable_bindings` misses — not
+    /// the callee's own object name (an object-name-qualified call legacy
+    /// CAN resolve). A cross-object Page/Report bare-or-`Rec.`-qualified
+    /// site is claimed by `new_incoming_implicit_rec_sites` FIRST (see
+    /// `run_sweep`'s `else`-chain ordering), so there is no overlap with
+    /// that set. Looked up directly against `LspSnapshot::incoming`/the
+    /// caller's own source text (see `run_sweep`). `VariableReceiverResolved`'s
+    /// mechanical predicate.
     new_incoming_variable_receiver_sites: BTreeSet<NormRange>,
 }
 
@@ -987,26 +1013,43 @@ fn run_sweep(
                             entry
                                 .new_incoming_implicit_rec_sites
                                 .insert(canonical_span_to_norm_range(&ce.edge.site.span));
-                        } else if ce.edge.from.object != data.node.object {
+                        } else {
                             // VariableReceiverResolved's mechanical predicate
-                            // (CDO layer 3): a receiver-qualified call (ANY
-                            // object kind — not restricted to Page/Report,
-                            // unlike ImplicitRecResolved above) whose
-                            // receiver is neither `Rec`/`xRec` (already
-                            // claimed above when applicable) nor the
-                            // callee's own object name (case-insensitive,
-                            // quote-normalized — an object-name-qualified
-                            // call legacy CAN resolve via `object_types`, so
-                            // it never reaches this "new-only" branch at
-                            // all; excluded here anyway, defensively, per
-                            // the predicate's own stated shape).
+                            // (CDO layer 3, GENERALIZED in layer 4): a
+                            // receiver-qualified call (ANY object kind, ANY
+                            // caller/callee object relationship — layer 3's
+                            // `caller object != callee object` restriction
+                            // was proven wrong by 3 CONCRETE same-object CDO
+                            // counterexamples: a codeunit's `var` parameter
+                            // of its OWN type calling itself
+                            // (`Codeunit 6175324 "CDO XML Node"`'s `AddNode`/
+                            // `NewXmlNode.SetXmlNode(...)`), a table's `var`
+                            // parameter of its OWN record type
+                            // (`Table 6175301 "CDO File"`'s `MergeWithPdf`/
+                            // `PDFDocument.IsPdf()`), and a table's own
+                            // implicit `Rec.`-qualified self-call
+                            // (`Table 6175330`'s `GetPlainText`/
+                            // `Rec.GetHTML()`) — the MECHANISM is the
+                            // receiver TOKEN legacy's `variable_bindings`
+                            // never modeled, not object identity, so `Rec`/
+                            // `xRec` are no longer excluded here either:
+                            // for a Page/PageExtension/Report/
+                            // ReportExtension caller, a cross-object bare-or-
+                            // `Rec.`-qualified call is ALREADY claimed by
+                            // `ImplicitRecResolved` above (this `else` only
+                            // runs when that arm didn't match), so a
+                            // same-object `Rec.`-qualified call on a
+                            // Table/Codeunit/other kind reaching HERE is
+                            // never double-classified) whose receiver is NOT
+                            // the callee's own object name (case-
+                            // insensitive, quote-normalized — an
+                            // object-name-qualified call legacy CAN resolve
+                            // via `object_types`, so it's excluded here).
                             let callee_object_name =
                                 object_name(&new_snap.graph, &data.node.object).unwrap_or("");
                             if let Some(caller_entry) = new_snap.parsed.get(&r.file)
                                 && let Some(CallSiteReceiver::Qualified(receiver)) =
                                     call_site_receiver(&caller_entry.text, &ce.edge.site.span)
-                                && !receiver.eq_ignore_ascii_case("rec")
-                                && !receiver.eq_ignore_ascii_case("xrec")
                                 && !receiver.eq_ignore_ascii_case(callee_object_name)
                             {
                                 entry
@@ -1599,18 +1642,21 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                         continue;
                     }
                     // VariableReceiverResolved: a receiver-qualified call
-                    // whose receiver is a `var` parameter (or another
-                    // local/temp shape legacy's `variable_bindings` misses)
-                    // — checked via the pre-recorded set (see `run_sweep`).
-                    // Legacy's `lookup_variable_type` never binds parameter
-                    // receivers at all, so this is unconditional too.
+                    // (same-object or cross-object — layer 4 generalized
+                    // this off the caller/callee object-identity axis)
+                    // whose receiver is a `var` parameter, `Rec`/`xRec`, or
+                    // another local/temp shape legacy's `variable_bindings`
+                    // misses — checked via the pre-recorded set (see
+                    // `run_sweep`). Legacy's `lookup_variable_type` never
+                    // binds parameter receivers at all, so this is
+                    // unconditional too.
                     if entry.new_incoming_variable_receiver_sites.contains(&site) {
                         ledger.push(
                             "incoming",
                             &routine,
                             Class::NewBetter(NewBetterClass::VariableReceiverResolved),
                             format!(
-                                "new caller={n_name} at site {site:?}: resolved cross-object via a receiver legacy's variable tracking never bound (e.g. a `var` parameter)"
+                                "new caller={n_name} at site {site:?}: resolved via a receiver legacy's variable tracking never bound (e.g. a `var` parameter or an implicit Rec/xRec self-reference)"
                             ),
                         );
                         continue;
@@ -1867,7 +1913,7 @@ fn classify_code_lens(
                             "codeLens",
                             &routine,
                             Class::NewBetter(NewBetterClass::VariableReceiverResolved),
-                            format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a cross-object caller resolved via a receiver legacy's variable tracking never bound)"),
+                            format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a caller resolved via a receiver legacy's variable tracking never bound)"),
                         );
                     } else if is_event_linked {
                         ledger.push(
@@ -2401,30 +2447,65 @@ fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
         6,
         "ImplicitRecResolved: page action + page trigger cross-object SourceTable calls, incoming + codeLens + diagnostics; counts={counts:?}"
     );
-    // 3 total: MergePdf's `var DOFile` parameter receiver calling
-    // `DOFile.IsPdf()` shows up once each on incoming, codeLens, and
-    // diagnostics (IsPdf otherwise shows zero incoming to legacy, so it's
-    // ALSO a false-positive unused-procedure). `UseLocalVar`'s LOCAL
-    // variable receiver contributes NOTHING here — it matches cleanly
-    // (see this test's doc) — proving the gap is parameter-specific, not
-    // "any variable receiver."
+    // 11 total (layer 3's 3 + layer 4's 8 generalization findings) — every
+    // individual finding inspected via a temporary probe, not just the
+    // summed count:
+    // - MergePdf's `var DOFile` parameter receiver calling `DOFile.IsPdf()`:
+    //   incoming + codeLens + diagnostics = 3 (layer 3's original pin;
+    //   `UseLocalVar`'s LOCAL variable receiver still contributes NOTHING
+    //   here — it matches cleanly — proving the gap is parameter-specific,
+    //   not "any variable receiver").
+    // - `RunDispatchCaller`'s `QueueMgt.Run()` (a `var` Codeunit-typed LOCAL
+    //   dispatching to `RunDispatchTarget`'s `OnRun`): incoming + codeLens
+    //   = 2 (no diagnostics — `OnRun` is a trigger, and this fixture's
+    //   diagnostics scan only flags unused PLAIN PROCEDURES, never
+    //   triggers). Matched WITHOUT any dedicated `EdgeKind::Run` handling
+    //   (`resolve_member`'s `Run`-on-Codeunit special case in
+    //   `src/program/resolve/resolver.rs` produces an ordinary Call-kind
+    //   edge) — and, verified via a temporary probe BEFORE any layer-4 code
+    //   change, this shape ALREADY matched even under layer 3's
+    //   cross-object-restricted predicate (caller and callee are different
+    //   objects), so it needed no fix, just this regression-guard fixture.
+    // - `AddNode`'s same-object `var` parameter of its OWN codeunit type
+    //   calling `NewNode.SetNode()`: incoming + codeLens + diagnostics = 3
+    //   (`SetNode` has no other caller in this fixture, so legacy ALSO
+    //   flags it unused).
+    // - `MergeWithSelf`'s same-object `var` parameter of its OWN record
+    //   type calling `Other.IsPasswordProtected()`: incoming + codeLens = 2
+    //   — NOT diagnostics, since `IsPasswordProtected` already has a real
+    //   caller via `UseLocalVar` that legacy resolves correctly, so legacy
+    //   never flags it unused in the first place.
+    // - `GetPlainText`'s same-object implicit `Rec.`-qualified call to
+    //   `Rec.IsPdf()`: incoming ONLY = 1 — codeLens and diagnostics for
+    //   `IsPdf` are ALREADY counted once each via MergePdf's original
+    //   divergence (codeLens is a per-ROUTINE ref-count comparison, not
+    //   per-call-site; diagnostics is a per-routine unused-flag), so a
+    //   second unresolved caller adds only a second incoming site.
+    // 3 + 2 + 3 + 2 + 1 = 11, matching the probe exactly.
     assert_eq!(
         counts
             .get("NewBetter::VariableReceiverResolved")
             .copied()
             .unwrap_or(0),
-        3,
-        "VariableReceiverResolved: MergePdf's `var DOFile` parameter receiver, incoming + codeLens + diagnostics; counts={counts:?}"
+        11,
+        "VariableReceiverResolved: layer 3's MergePdf pin (3) + layer 4's RunDispatch (2: incoming+codeLens, OnRun is a trigger so never diagnostics-eligible) + AddNode/SetNode (3) + MergeWithSelf/IsPasswordProtected (2: no new diagnostics, already has a real caller via UseLocalVar) + GetPlainText/IsPdf (1: incoming only, codeLens+diagnostics already counted via MergePdf); counts={counts:?}"
     );
     // The 4 nested-trigger-as-caller shapes (table field, page action, page
     // field, report dataitem) must ALL match cleanly — this IS the
     // falsification record for NestedTriggerCaller (see this test's doc).
     // `UseLocalVar`'s local-variable receiver ALSO matches cleanly — proof
-    // that legacy's variable-binding gap is parameter-specific.
+    // that legacy's variable-binding gap is parameter-specific. Bumped from
+    // 43 to 56 (+13) by the layer-4 fixture additions' own remaining facts
+    // (prepare/outgoing/codeLens/diagnostics Matches for `AddNode`,
+    // `SetNode`, `MergeWithSelf`, `GetPlainText`, `RunDispatchCaller`'s
+    // `SendQueue`, and `RunDispatchTarget`'s `OnRun` — every axis of every
+    // new routine that ISN'T one of the 11 VariableReceiverResolved
+    // divergences above) — inspected via the same probe, not blindly
+    // copied forward.
     assert_eq!(
         counts.get("Match").copied().unwrap_or(0),
-        43,
-        "Match: the 4 nested-trigger-caller falsification shapes + UseLocalVar's local-variable-receiver match + every other routine's remaining facts; counts={counts:?}"
+        56,
+        "Match: the 4 nested-trigger-caller falsification shapes + UseLocalVar's local-variable-receiver match + every other routine's remaining facts (layer 3 + layer 4 fixtures); counts={counts:?}"
     );
 }
 

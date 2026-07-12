@@ -188,6 +188,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `var` parameter receiver (diverges) with a local `var`-section variable
   receiver of the same record type (matches cleanly) to empirically prove
   the gap is parameter-specific, not "any variable receiver."
+  **CDO layer-4 fix-wave** (re-run after layer 3: 41→35 findings; the
+  predicate itself was CORRECT but OVER-RESTRICTED): GENERALIZED
+  `VariableReceiverResolved` by dropping its `caller object != callee
+  object` requirement entirely, per 3 concrete same-object CDO
+  counterexamples the controller verified: `Codeunit 6175324 "CDO XML
+  Node"`'s `AddNode(var NewXmlNode: Codeunit "CDO XML Node" ...)` calling
+  `NewXmlNode.SetXmlNode(...)` (a codeunit's `var` parameter of its OWN
+  type calling itself); `Table 6175301 "CDO File"`'s `MergeWithPdf`
+  calling `PDFDocument.IsPdf()` where `PDFDocument` is `Record "CDO File"`
+  (same shape, record-typed); and `Table 6175330`'s `GetPlainText` calling
+  `Rec.GetHTML()` (a table's OWN implicit `Rec.`-qualified self-call —
+  `Rec`/`xRec` are no longer excluded from this class either, since the
+  mechanism is the receiver TOKEN legacy never modeled, not object
+  identity; a cross-object Page/Report bare-or-`Rec.`-qualified call is
+  still claimed by `ImplicitRecResolved` FIRST in the classifier chain, so
+  there is no double-classification). Also independently confirmed (via a
+  temporary probe, BEFORE writing any layer-4 code) that a `var`
+  Codeunit-typed variable's `.Run()` dispatching to `OnRun` — the
+  controller's 4th flagged row, CDO's `.dependencies/cdo/.../
+  cdoqueuemanagement.codeunit.al::cdo queue management.onrun: new
+  caller=sendqueue` — needed NO dedicated `EdgeKind::Run` handling at all:
+  `resolve_member`'s `Run`-on-Codeunit special case
+  (`src/program/resolve/resolver.rs`) produces an ordinary `EdgeKind::Call`/
+  Member-shape edge, so the existing (even pre-generalization,
+  cross-object) receiver check already caught it. New fixture arms in the
+  SAME `tests/fixtures/lsp-diff-nested/` directory:
+  `SameObjectVariableReceiver.al` (the codeunit self-call),
+  `VariableReceiverTable.al` extended with `MergeWithSelf`/`GetPlainText`
+  (the two same-object table shapes), and `RunDispatchTarget.al`/
+  `RunDispatchCaller.al` (the Run-dispatch regression guard — proven to
+  need no fix, kept as a permanent guard). TDD calibration confirmed the
+  generalization is what fixes the 3 same-object cases: temporarily
+  restoring the old cross-object restriction reproduced exactly those 3 as
+  `NewUnexplained`, nothing more or less.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
