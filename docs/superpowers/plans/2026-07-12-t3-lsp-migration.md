@@ -704,6 +704,14 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
   class, edit-scenario-only.
 - [ ] **Step 4:** Pin the CDO class counts in the test (exact numbers, ratchet-style) once measured;
   record them in the task report + CHANGELOG. Commit `test(lsp): adjudicated legacy-vs-new differential harness (t3.14)`.
+- [ ] **Step 5 (Task-11 review carry):** add a DEP-BEARING fixture arm to the Task-10 incremental
+  gate (a workspace + one embedded-source dependency, exercising `dep_decl_by_id`/`dep_texts`
+  through rung 1/2 transitions) so the three dep-layer snapshot fields — already widened into the
+  gate's canonicalize in the Task-11 fix wave, trivially-equal on the dep-less fixture — get
+  non-vacuous coverage. Also: expected differential classes for T14's taxonomy from Task 11's
+  adjudicated deviations — external/AbiSymbol targets (legacy reused the CALLER's range; new emits
+  an object-level `al-preview` item) and outgoing per-site cardinality are LEGACY-SHAPE-CHANGED
+  classes, not regressions.
 
 ---
 
