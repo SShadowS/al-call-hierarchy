@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`benches/engine_stages.rs`: program-engine stage-split Criterion bench +
+  a CDO-gated stage-split unit test (T3 LSP-migration arc, Task 3 —
+  MEASUREMENT ONLY, no engine behavior changed).** Splits the program
+  engine's pipeline (`aldump --program-call-graph-stats`'s path) into
+  timed stages — snapshot (`SnapshotBuilder::build`), parse
+  (`parse_snapshot`), graph build (`build_program_graph`),
+  `ResolveIndex::build`, `BodyMap::build`, and the obligation-resolution
+  inner loop (derived by subtraction, since `resolve_full_program_from_
+  parts` is a private fn invisible to the external-crate bench) — over the
+  synthetic 100/1000-file perf corpus. `src/program/resolve/full.rs` gained
+  a matching `#[ignore]`d unit test, `stage_split_wall_clock_on_cdo`
+  (`CDO_WS=<path> cargo test --release stage_split -- --ignored
+  --nocapture`), placed as a `#[cfg(test)] mod` inside `full.rs` itself
+  (not under `tests/`) specifically so it can see the private inner-loop
+  fn with zero visibility widening. On the real CDO workspace (median of 3
+  runs, release binary): snapshot 727ms, parse 1.23s (of which ~1.19s is
+  dependency-app source — only ~44ms is the workspace's own files),
+  `build_program_graph` graph-build-only ~926ms, `ResolveIndex::build`
+  153ms, `BodyMap::build` 185ms, resolve inner loop ~582ms. **`ResolveIndex
+  ::build` + `BodyMap::build` together measure ~240-340ms on CDO scale —
+  an order of magnitude over the ~30ms threshold the T3 plan's Task 9
+  documents a contingency for** (an incremental single-file "rung 1" update
+  cannot afford to rebuild both transiently within its 100ms budget; Task 9
+  must take the cached/keyed-by-generation branch, not the transient
+  rebuild). Full numbers, methodology, and the derived rung-1/rung-2 budget
+  pins are in `.superpowers/sdd/t3-stage-split.md` (arc scratch, gitignored,
+  not part of this commit).
 - **`src/lsp/encoding.rs`: LSP `positionEncoding` negotiation (LSP 3.17) + a
   byte<->UTF-16 `LineTable` converter (H-12 infrastructure, Tier-3
   LSP-migration arc, Task 2).** The engine's `Definition`/`CallSite` ranges

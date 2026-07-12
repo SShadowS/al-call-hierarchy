@@ -1177,4 +1177,175 @@ mod tests {
             report.recovered_files
         );
     }
+
+    // -----------------------------------------------------------------------
+    // T3 (LSP-migration arc) Task 3: real (CDO-scale) stage-split wall-clock
+    // measurement, feeding the arc's rung-1/rung-2 incremental-updater
+    // budgets (`docs/superpowers/plans/2026-07-12-t3-lsp-migration.md`).
+    //
+    // Lives HERE — a `#[cfg(test)]` unit test inside `full.rs` itself, not
+    // under `tests/` — on purpose: `resolve_full_program_from_parts` is a
+    // private fn, invisible to any external-crate integration test (every
+    // `tests/*.rs` file compiles as its own crate). A child module of `full`
+    // sees private items of its ancestor for free, so this needs ZERO
+    // visibility widening. `benches/engine_stages.rs` (also an external
+    // crate) instead benches only the PUBLIC stages plus `resolve_full_
+    // program`'s total and derives the same "resolve inner loop" number by
+    // subtraction — see that bench file's module doc.
+    // -----------------------------------------------------------------------
+
+    /// Prints the program-engine's real per-stage wall-clock split — snapshot
+    /// / parse / build(graph) / `ResolveIndex::build` / `BodyMap::build` /
+    /// resolve (inner loop, DERIVED by subtraction) — median of 3 runs, on
+    /// the real CDO workspace.
+    ///
+    /// `build_program_graph` calls `parse_snapshot` INTERNALLY (to extract
+    /// object/routine nodes) and `resolve_full_program_from_parts` is called
+    /// AFTER a second, standalone `parse_snapshot` (mirroring `build_context`,
+    /// which this test intentionally does NOT call so each stage boundary
+    /// stays separately timed) — so two derived numbers are computed rather
+    /// than measured directly: `build(graph) only` = `build_program_graph`
+    /// total minus `parse`, and `resolve inner loop only` =
+    /// `resolve_full_program_from_parts` total minus the standalone
+    /// `ResolveIndex::build`/`BodyMap::build` times (that function rebuilds
+    /// both internally; timing them standalone first gives the subtrahend).
+    ///
+    /// Run: `CDO_WS=<path> cargo test --release stage_split -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn stage_split_wall_clock_on_cdo() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            eprintln!("stage_split_wall_clock_on_cdo: CDO_WS unset or missing, skipping");
+            return;
+        };
+
+        const RUNS: usize = 3;
+
+        fn median(mut xs: Vec<std::time::Duration>) -> std::time::Duration {
+            xs.sort();
+            xs[xs.len() / 2]
+        }
+
+        let mut snapshot_times = Vec::with_capacity(RUNS);
+        let mut parse_times = Vec::with_capacity(RUNS);
+        let mut ws_only_parse_times = Vec::with_capacity(RUNS);
+        let mut build_graph_total_times = Vec::with_capacity(RUNS);
+        let mut resolve_index_times = Vec::with_capacity(RUNS);
+        let mut body_map_times = Vec::with_capacity(RUNS);
+        let mut resolve_from_parts_total_times = Vec::with_capacity(RUNS);
+
+        for run in 0..RUNS {
+            let t0 = std::time::Instant::now();
+            let snap = (SnapshotBuilder {
+                workspace_root: ws.clone(),
+                local_providers: vec![],
+            })
+            .build()
+            .expect("CDO snapshot build");
+            snapshot_times.push(t0.elapsed());
+
+            let cache = crate::program::abi_ingest::AbiCache::new();
+            let t1 = std::time::Instant::now();
+            let graph = build_program_graph(&snap, &cache);
+            build_graph_total_times.push(t1.elapsed());
+
+            let t2 = std::time::Instant::now();
+            let parsed = parse_snapshot(&snap);
+            parse_times.push(t2.elapsed());
+
+            // Workspace-only parse (excludes all dependency apps' source) —
+            // isolates "dep-parse" for the rung-2 budget (a workspace-file
+            // save never needs to re-parse unchanged dependency source; see
+            // this test's results-doc consumer for the rung-2 definition).
+            let ws_only_snap = AppSetSnapshot {
+                apps: vec![snap.apps[0].clone()],
+                workspace_app: snap.workspace_app.clone(),
+                world: snap.world.clone(),
+            };
+            let t2b = std::time::Instant::now();
+            let _ws_only_parsed = parse_snapshot(&ws_only_snap);
+            ws_only_parse_times.push(t2b.elapsed());
+
+            let t3 = std::time::Instant::now();
+            let index = ResolveIndex::build(&graph);
+            resolve_index_times.push(t3.elapsed());
+            drop(index);
+
+            let t4 = std::time::Instant::now();
+            let body_map = BodyMap::build(&graph, &parsed);
+            body_map_times.push(t4.elapsed());
+            drop(body_map);
+
+            let primary_app_ref = graph
+                .apps
+                .find(&snap.workspace_app)
+                .expect("workspace app must be present in the graph");
+            let ws_file_set: HashSet<String> = snap
+                .apps
+                .first()
+                .and_then(|u| u.source.as_ref())
+                .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+                .unwrap_or_default();
+
+            let t5 = std::time::Instant::now();
+            let (edges, coverage, _audit) =
+                resolve_full_program_from_parts(&graph, &parsed, primary_app_ref, &ws_file_set);
+            resolve_from_parts_total_times.push(t5.elapsed());
+
+            assert!(
+                coverage_holds(&coverage),
+                "run {run}: coverage contract must hold on CDO"
+            );
+            assert!(!edges.is_empty(), "run {run}: CDO must produce edges");
+        }
+
+        let snapshot_med = median(snapshot_times);
+        let parse_med = median(parse_times);
+        let ws_only_parse_med = median(ws_only_parse_times);
+        let build_graph_total_med = median(build_graph_total_times);
+        let resolve_index_med = median(resolve_index_times);
+        let body_map_med = median(body_map_times);
+        let resolve_from_parts_total_med = median(resolve_from_parts_total_times);
+
+        let build_graph_only = build_graph_total_med.saturating_sub(parse_med);
+        let dep_parse_only = parse_med.saturating_sub(ws_only_parse_med);
+        let index_plus_body_map = resolve_index_med + body_map_med;
+        let resolve_inner_loop = resolve_from_parts_total_med
+            .saturating_sub(resolve_index_med)
+            .saturating_sub(body_map_med);
+        // rung-2 = everything minus snapshot minus dep-parse (a workspace
+        // save doesn't need to reload .alpackages or re-parse unchanged dep
+        // source) — see the T3 plan's Task 3 brief.
+        let rung2_budget =
+            ws_only_parse_med + build_graph_only + index_plus_body_map + resolve_inner_loop;
+
+        if index_plus_body_map > std::time::Duration::from_millis(30) {
+            eprintln!(
+                "\n*** RED FLAG: ResolveIndex::build + BodyMap::build = {index_plus_body_map:?} \
+                 > 30ms on CDO scale — Task 9's documented contingency applies (transient \
+                 rebuild breaks the rung-1 100ms budget). ***\n"
+            );
+        }
+
+        eprintln!("=== stage_split_wall_clock_on_cdo (median of {RUNS} runs, CDO_WS={ws:?}) ===");
+        eprintln!("snapshot                                          : {snapshot_med:?}");
+        eprintln!("parse (parse_snapshot, standalone, ws+deps)       : {parse_med:?}");
+        eprintln!("  -> parse, workspace-only [derived input]        : {ws_only_parse_med:?}");
+        eprintln!("  -> dep-parse only [derived]                     : {dep_parse_only:?}");
+        eprintln!("build_program_graph (TOTAL, incl. internal parse) : {build_graph_total_med:?}");
+        eprintln!("  -> build(graph) only [derived]                  : {build_graph_only:?}");
+        eprintln!("ResolveIndex::build                               : {resolve_index_med:?}");
+        eprintln!("BodyMap::build                                    : {body_map_med:?}");
+        eprintln!("  -> ResolveIndex + BodyMap combined               : {index_plus_body_map:?}");
+        eprintln!(
+            "resolve_full_program_from_parts (TOTAL, incl. index+bodymap rebuild): {resolve_from_parts_total_med:?}"
+        );
+        eprintln!("  -> resolve inner loop only [derived]             : {resolve_inner_loop:?}");
+        eprintln!(
+            "  -> RUNG-2 BUDGET (ws-parse + build(graph) + index+bodymap + resolve): {rung2_budget:?}"
+        );
+    }
 }
