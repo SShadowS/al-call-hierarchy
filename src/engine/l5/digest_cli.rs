@@ -1213,7 +1213,7 @@ pub fn run_digest_pipeline(
     // Assemble workspace
     let model_id = compute_gate_model_instance_id(workspace)
         .ok_or_else(|| "digest: could not compute modelInstanceId".to_string())?;
-    let resolved = assemble_and_resolve_workspace(workspace, &model_id)
+    let resolved = assemble_and_resolve_workspace(workspace, &model_id, false)
         .ok_or_else(|| "digest: workspace did not resolve".to_string())?;
 
     // Compose snapshot ONCE. The workspace fingerprint is computed directly via the

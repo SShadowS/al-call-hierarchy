@@ -1196,10 +1196,17 @@ pub fn assemble_and_resolve_default(files: &[(String, String)], app_guid: &str) 
 /// `app.json` excl. node_modules/.alpackages). The inline `ws:<relPosix>` unit
 /// ids match `project_workspace`.
 ///
+/// `skip_roots_config`: when true, skip loading/overlaying `roots.config.json`
+/// even if present — AST-only root classification (`--no-roots-config` on the
+/// `alsem fingerprint` CLI; `compute_root_classifications` already supports
+/// this via `workspace_root: None`, so this just threads the caller's choice
+/// through instead of hardcoding `Some(workspace)`).
+///
 /// Returns `None` on an unsound / empty layout (fail-closed) — never throws.
 pub fn assemble_and_resolve_workspace(
     workspace: &std::path::Path,
     model_instance_id: &str,
+    skip_roots_config: bool,
 ) -> Option<L3Resolved> {
     let resolved = {
         let mut ws = assemble_l3_workspace_from_disk(workspace, model_instance_id)?;
@@ -1207,8 +1214,16 @@ pub fn assemble_and_resolve_workspace(
         // R4-F: classify AST roots, then overlay `<workspace>/roots.config.json`.
         // `workspace` is the root where the config lives (mirrors al-sem's
         // index.ts: `loadRootsConfig(workspaceRoot)`).
+        let roots_config_root = if skip_roots_config {
+            None
+        } else {
+            Some(workspace)
+        };
         let (root_classifications, infra_diagnostics) =
-            crate::engine::root_classification::compute_root_classifications(&ws, Some(workspace));
+            crate::engine::root_classification::compute_root_classifications(
+                &ws,
+                roots_config_root,
+            );
         // Disk-backed path: read the primary app's identity from `app.json`.
         // Mirrors al-sem `model.identity.primaryApp`. Never throws — returns None
         // on unreadable / malformed app.json (fail-closed / engine-never-throws).
@@ -1271,7 +1286,7 @@ pub fn assemble_l3_workspace_from_disk(
 
 /// Disk-backed convenience with the default model-instance id (`r0`).
 pub fn assemble_and_resolve_workspace_default(workspace: &std::path::Path) -> Option<L3Resolved> {
-    assemble_and_resolve_workspace(workspace, MODEL_INSTANCE_ID_DEFAULT)
+    assemble_and_resolve_workspace(workspace, MODEL_INSTANCE_ID_DEFAULT, false)
 }
 
 /// Read the primary app's identity from the workspace root `app.json`.

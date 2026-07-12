@@ -238,6 +238,13 @@ fn main() -> ExitCode {
         r4f_scoped_guarantees,
         r4f_ordering_facts,
         program_call_graph_stats,
+        // T4-B: these three each guard their own dedicated `if`-block (like every
+        // flag above) but were missing from this array — a combo like
+        // `--graphify-export --l3-call-graph` silently ran whichever block's `if`
+        // happened to come first in source order and dropped the other flag.
+        graphify_export,
+        graphify_export_fragments,
+        integration_points,
     ]
     .iter()
     .filter(|f| **f)
@@ -249,7 +256,8 @@ fn main() -> ExitCode {
              --l3-call-graph-stats-cross-app / --l3-unknown-breakdown / \
              --l3-event-graph / --l3-coverage / --r2.5a-merged-index / --l3-cross-app / \
              --r3a1-combined-graph / --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / \
-             --r3a4-dep-hooks / --r3a5-cross-app-summary / --r4f-return-summaries are mutually exclusive"
+             --r3a4-dep-hooks / --r3a5-cross-app-summary / --r4f-return-summaries / \
+             --graphify-export / --graphify-export-fragments / --integration-points are mutually exclusive"
         );
         return usage();
     }

@@ -90,7 +90,7 @@ fn load_snapshot_from_workspace(
     let ws = Path::new(dir);
     let model_id = compute_gate_model_instance_id(ws)
         .ok_or_else(|| format!("could not compute modelInstanceId for workspace '{dir}'"))?;
-    let resolved = assemble_and_resolve_workspace(ws, &model_id)
+    let resolved = assemble_and_resolve_workspace(ws, &model_id, false)
         .ok_or_else(|| format!("workspace '{dir}' did not resolve"))?;
     let opts = FullSnapshotOptions {
         workspace_dir: ws,

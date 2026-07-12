@@ -200,7 +200,7 @@ pub fn run_analyze_with_exit(
         // Fail-closed layout → empty output, clean preflight, clean exit.
         None => return empty_output_result(args, &version),
     };
-    let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id) {
+    let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id, false) {
         Some(r) => r,
         // Fail-closed / unreadable workspace → empty output.
         None => return empty_output_result(args, &version),

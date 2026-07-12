@@ -140,7 +140,7 @@ fn compose_full_for(
     );
     let model_id = compute_gate_model_instance_id(&ws)
         .unwrap_or_else(|| panic!("{fixture}: could not compute modelInstanceId"));
-    let resolved = assemble_and_resolve_workspace(&ws, &model_id)
+    let resolved = assemble_and_resolve_workspace(&ws, &model_id, false)
         .unwrap_or_else(|| panic!("{fixture}: workspace did not resolve"));
     let opts = FullSnapshotOptions {
         workspace_dir: &ws,
@@ -221,6 +221,7 @@ fn query_json_matches_goldens() {
             strict: false,
             verbosity: "compact",
             inventory_only: false,
+            no_roots_config: false,
         };
         let result = run_fingerprint_pipeline(&opts)
             .unwrap_or_else(|e| panic!("{fixture}: fingerprint json pipeline error: {e}"));
@@ -264,6 +265,7 @@ fn human_compact_matches_goldens() {
             strict: false,
             verbosity: "compact",
             inventory_only: false,
+            no_roots_config: false,
         };
         let result = run_fingerprint_pipeline(&opts)
             .unwrap_or_else(|e| panic!("{fixture}: fingerprint human pipeline error: {e}"));
@@ -306,6 +308,7 @@ fn witness_all_matches_golden() {
         strict: false,
         verbosity: "compact",
         inventory_only: false,
+        no_roots_config: false,
     };
     let result = run_fingerprint_pipeline(&opts)
         .unwrap_or_else(|e| panic!("{WITNESS_FIXTURE}: witness-all pipeline error: {e}"));
@@ -343,6 +346,7 @@ fn witness_zero_matches_golden() {
         strict: false,
         verbosity: "compact",
         inventory_only: false,
+        no_roots_config: false,
     };
     let result = run_fingerprint_pipeline(&opts)
         .unwrap_or_else(|e| panic!("{WITNESS_FIXTURE}: witness-0 pipeline error: {e}"));
@@ -380,6 +384,7 @@ fn witness_false_matches_golden() {
         strict: false,
         verbosity: "compact",
         inventory_only: false,
+        no_roots_config: false,
     };
     let result = run_fingerprint_pipeline(&opts)
         .unwrap_or_else(|e| panic!("{WITNESS_FIXTURE}: witness-false pipeline error: {e}"));
@@ -421,6 +426,7 @@ fn selector_error_json_matches_golden_and_exits_2() {
         strict: false,
         verbosity: "compact",
         inventory_only: false,
+        no_roots_config: false,
     };
     let result = run_fingerprint_pipeline(&opts)
         .unwrap_or_else(|e| panic!("{ERROR_FIXTURE}: selector-error pipeline error: {e}"));
@@ -463,6 +469,7 @@ fn human_full_matches_golden() {
         strict: false,
         verbosity: "full",
         inventory_only: false,
+        no_roots_config: false,
     };
     let result = run_fingerprint_pipeline(&opts)
         .unwrap_or_else(|e| panic!("{WITNESS_FIXTURE}: human-full pipeline error: {e}"));
@@ -553,6 +560,7 @@ fn opts_for<'a>(
         strict,
         verbosity: "compact",
         inventory_only: false,
+        no_roots_config: false,
     }
 }
 

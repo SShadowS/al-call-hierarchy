@@ -8,6 +8,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Three CLI flag-honesty defects across `aldump`/`alsem`/the main binary
+  (Task T4-B, Tier-4 hygiene arc): a mutual-exclusion array missing three mode
+  flags, two dead `alsem prove` flags plus a fingerprint flag that flipped
+  classification behavior but never updated its own honesty field, and the
+  main binary silently blocking on stdin instead of erroring.**
+  - **`aldump`'s mode mutual-exclusion array omitted `--graphify-export` /
+    `--graphify-export-fragments` / `--integration-points`.** Each guards its
+    own dedicated `if`-block exactly like the other 25 mode flags, but a combo
+    like `aldump --graphify-export --l3-call-graph ws` was silently accepted
+    and ran whichever block's `if` happened to come first in source order,
+    dropping the other flag with no diagnostic. Added all three to the array
+    and the error message.
+  - **`alsem prove --no-roots-config` and `--alpackages` were parsed but never
+    read, and had no possible effect even if wired: `run_prove_pipeline` never
+    consults `resolved.root_classifications` or any cross-app dependency
+    path**, unlike `fingerprint` (whose whole output is a walk over root
+    classifications). Implementing "skip roots.config.json" or "load
+    .alpackages deps" for `prove` would be invisible theater, not a real
+    feature — removed both flags (clap now rejects them as unknown arguments,
+    per the "unknown flag beats silent no-op" policy) instead of faking
+    support.
+  - **`alsem fingerprint --no-roots-config` was parsed but never read, and its
+    own `rootsConfigIgnored` output field was hardcoded `false` — actively
+    contradicting the flag whenever a `roots.config.json` existed.** Unlike
+    `prove`, `fingerprint`'s root-classification pool IS the primary output
+    surface, so this one has a real, obvious, small implementation:
+    `assemble_and_resolve_workspace` gained a `skip_roots_config: bool`
+    parameter (threaded through as `false` from its 7 other call sites,
+    preserving their behavior exactly) that skips the `roots.config.json`
+    overlay when set; `fingerprint_query` gained a `roots_config_ignored: bool`
+    parameter so its caller (which knows both the flag and whether the file
+    existed) can report the truth instead of a hardcoded value. Verified live:
+    with a fixture's `roots.config.json` present, `--no-roots-config` now
+    correctly emits `inputsMetadata.rootsConfigIgnored: true` (previously
+    always absent) and the config-sourced root classification it names
+    disappears from the AST-only pool, as expected.
+  - **The main `al-call-hierarchy` binary's `--lsp` flag was parsed but never
+    consulted**, so `--project X --lsp` silently ran CLI/analyze mode instead
+    of the LSP server it explicitly asked for. **`--analyze` without
+    `--project` fell through to the default branch and silently blocked
+    forever as an LSP server reading stdin**, with no indication anything was
+    wrong. Fixed both in `main.rs`'s dispatch: `--analyze` without `--project`
+    now hard-errors immediately (`--analyze requires --project <path>`,
+    checked before any mode dispatch so it fires even if `--lsp` is also set);
+    `--lsp` now has real, unconditional top precedence — it always starts the
+    LSP server regardless of `--project`/`--analyze`. Verified live: both new
+    behaviors observed end-to-end (hard error; genuine LSP-mode startup with
+    `--project` present).
 - **`fingerprintQuery`'s `SelectorAmbiguous.candidates` reordered run-to-run
   because the index feeding it was rebuilt from `HashMap` iteration (Task T4-B,
   Tier-4 hygiene arc).** `fingerprint_query.rs` cloned the shared

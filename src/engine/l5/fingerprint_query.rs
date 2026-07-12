@@ -632,9 +632,17 @@ fn build_block(
 
 /// Run the fingerprint query over a fully-composed `CapabilitySnapshot`.
 /// Mirrors `fingerprintQuery` in `src/cli/fingerprint-query.ts`.
+///
+/// `roots_config_ignored`: true when a `roots.config.json` existed but the
+/// caller skipped loading it (`--no-roots-config`) — surfaced verbatim into
+/// `FingerprintQueryResult.roots_config_ignored` (`summary.rootsConfigIgnored`
+/// in the JSON envelope). The `CapabilitySnapshot` carries no `inputsMetadata`
+/// of its own, so the caller (which resolved the workspace and knows both the
+/// flag and whether the file existed) computes and passes this in.
 pub fn fingerprint_query(
     snap: &CapabilitySnapshot,
     filters: &FingerprintFilters,
+    roots_config_ignored: bool,
 ) -> FingerprintQueryResult {
     // Build shared indexes (reuse B1's public entry point).
     let idx = build_fingerprint_indexes_pub(snap);
@@ -683,7 +691,6 @@ pub fn fingerprint_query(
     }
 
     let total_classifications = snap.root_classifications.len();
-    let roots_config_ignored = false; // snap has no inputsMetadata in consumed-core
 
     if any_selector_failed {
         return FingerprintQueryResult {
@@ -1676,7 +1683,7 @@ mod tests {
             include_inherited: true,
             witness_limit: WitnessLimit::Disabled,
         };
-        let result = fingerprint_query(&snap, &filters);
+        let result = fingerprint_query(&snap, &filters, false);
         assert_eq!(result.diagnostics.len(), 1);
         match &result.diagnostics[0] {
             FingerprintQueryDiagnostic::SelectorAmbiguous {

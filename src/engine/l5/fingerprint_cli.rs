@@ -263,6 +263,12 @@ pub struct FingerprintOptions<'a> {
     /// the full capability-snapshot. Implies json-only; rejected with any binary
     /// format (cbor / cbor.gz) or shard mode.
     pub inventory_only: bool,
+    /// `--no-roots-config`: skip loading/overlaying `<workspace>/roots.config.json`
+    /// even if present (AST-only root classification). When a config file DID
+    /// exist and was skipped, `summary.rootsConfigIgnored` / `inputsMetadata.
+    /// rootsConfigIgnored` in the output is set to `true` — never a bare `false`
+    /// that would contradict the flag.
+    pub no_roots_config: bool,
 }
 
 /// Result returned from `run_fingerprint_pipeline`.
@@ -348,8 +354,15 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
     // Assemble workspace.
     let model_id = compute_gate_model_instance_id(opts.workspace)
         .ok_or_else(|| "fingerprint: could not compute modelInstanceId".to_string())?;
-    let resolved = assemble_and_resolve_workspace(opts.workspace, &model_id)
+    let resolved = assemble_and_resolve_workspace(opts.workspace, &model_id, opts.no_roots_config)
         .ok_or_else(|| "fingerprint: workspace did not resolve".to_string())?;
+
+    // Honest `rootsConfigIgnored`: true only when a `roots.config.json` actually
+    // existed (and would have loaded+validated) AND --no-roots-config skipped it.
+    // Passing --no-roots-config in a workspace with no such file is a no-op, not
+    // a lie — it must report `false`, same as never having passed the flag.
+    let roots_config_ignored = opts.no_roots_config
+        && crate::engine::root_classification::roots_config_was_loaded(opts.workspace);
 
     // --strict gate (fingerprint.ts:187): BEFORE composeSnapshot. If any analyzer
     // diagnostic is severity "error", print ALL analyzer diagnostics to stderr +
@@ -391,7 +404,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
             workspace_dir: opts.workspace,
             driver_version: opts.driver_version,
             deterministic: opts.deterministic,
-            roots_config_ignored: false,
+            roots_config_ignored,
         };
         let tree = compose_full_snapshot(&resolved, &full_opts);
 
@@ -470,7 +483,7 @@ pub fn run_fingerprint_pipeline(opts: &FingerprintOptions) -> Result<Fingerprint
         witness_limit,
     };
 
-    let result = fingerprint_query(&snap, &filters);
+    let result = fingerprint_query(&snap, &filters, roots_config_ignored);
 
     let selector_errors: Vec<&FingerprintQueryDiagnostic> = result
         .diagnostics
