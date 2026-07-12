@@ -520,7 +520,9 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
   (b) signature edit in A.al (add a param) → rung 2, caller in B.al now resolves differently
   (arity mismatch → Unknown or overload re-pick — assert the ACTUAL taxonomy outcome);
   (c) file delete → rung 2, its edges gone from buckets + incoming;
-  (d) parse-error save → escalates (no partial state; prev snapshot survives if build fails entirely).
+  (d) parse-error save → escalates (no partial state; prev snapshot survives if build fails entirely);
+  (e) `FileSaved` for a path NOT in `prev.parsed` (e.g. a file under `.alpackages/` reaching didSave) →
+  escalates past rung 1, never misapplies it (Task-4 review Hunt-3 scenario — the dep-file boundary).
 - [ ] **Step 2:** Implement; tests pass.
 - [ ] **Step 3:** Debounce/coalesce test on `spawn_updater`: 5 rapid saves of one file → exactly 1
   `apply_changes` call (inject a counting wrapper).
@@ -548,7 +550,10 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
   N scripted disk edits (write file + `apply_changes(FileSaved)`), then `LspSnapshot::build_full` fresh
   on the SAME tempdir state and assert EQUIVALENCE: identical edge multiset per file (compare
   `(SiteId, sorted route (target, evidence-discriminant))`), identical `incoming` maps, identical
-  `decls_by_file`. Scripts: body-edit chain (3 consecutive rung-1s), signature change, rename routine,
+  `decls_by_file`. **Witness spans are EXCLUDED from the equivalence key BY DESIGN** (audit §6.1:
+  rung 1 leaves other files' stored witness byte-spans stale; handlers must re-derive spans live —
+  the live-derivation guarantee is tested at handler level in Task 11, not here — document this
+  exclusion in the test's header comment). Scripts: body-edit chain (3 consecutive rung-1s), signature change, rename routine,
   add file, delete file, edit that flips overload resolution, event-subscriber attribute edit, and one
   MIXED 6-edit script. Every script asserts equivalence AFTER EVERY EDIT, not just at the end.
 - [ ] **Step 2:** Negative control (gate is non-vacuous): assert at least one script actually exercised
@@ -594,7 +599,12 @@ pub fn outgoing(snap: &LspSnapshot, enc: PositionEncoding, data: &ItemData) -> V
   incoming for the fixture's cross-file callee (both callers, correct fromRanges, grouped by caller);
   incoming on a publisher-subscribed routine (subscriber's incoming includes the publisher — event
   direction per Task 8); outgoing with one resolved + one ambiguous (2 candidates → 2 items) + one
-  builtin (absent); stale-ItemData → empty.
+  builtin (absent); stale-ItemData → empty; AND the audit-§6.1 live-span test (NON-NEGOTIABLE,
+  `docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §6.1): apply a rung-1 body edit to the
+  TARGET file via `apply_changes`, then run incoming/outgoing from the un-edited caller — every
+  returned range must match the target's FRESH parse positions (assert against a fresh batch build),
+  proving handlers re-derive spans live from decl_index/BodyMap and never serve stored
+  `Witness::SourceSpan` bytes.
 - [ ] **Step 2:** Implement; pass. Clippy, rustfmt, CHANGELOG. Commit
   `feat(lsp): core call-hierarchy handlers on program engine (t3.11)`.
 
