@@ -222,6 +222,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generalization is what fixes the 3 same-object cases: temporarily
   restoring the old cross-object restriction reproduced exactly those 3 as
   `NewUnexplained`, nothing more or less.
+  **CDO GATE HOLDS (capstone)**: the controller re-ran the full suite on
+  the real 551-file Continia (CDO) workspace at commit `ebad1b9` (the
+  layer-4 generalization above) — **8/8 differential tests green,
+  `REGRESSION=0`, `NEW_UNEXPLAINED=0`, H-10 edit scenario green.** This is
+  the deletion license Task 14 exists to produce: every one of 55,216
+  total findings on a real production BC workspace is either an exact
+  `Match` (12,089) or mechanically justified by a named, fixture-proven
+  class — `UnqualifiedCallResolved` (36,971 — legacy's blanket
+  `"(local)"` placeholder for every unqualified call, i.e. legacy never
+  even attempts resolution for these), `VariableReceiverResolved` (2,169
+  — calls through a variable/parameter receiver legacy's
+  `variable_bindings` never bound), `LegacyIdentityCollapse` (1,625 —
+  legacy's bare name-only keying collides same-named routines across
+  different objects into ONE slot, producing WRONG answers, not just
+  missing ones), `ImplicitTriggerEdge` (989), `ImplicitRecResolved`
+  (778), `OutgoingCardinality` (430), `R2Precision` (68),
+  `EventDirectionMoved` (47), `R6InterfaceExclusion` (14),
+  `CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan` (12 each), with
+  `AbiSymbolShape` and `ObjectIdAdditive` both confirmed at 0. All
+  `CDO_PINS` entries in `cdo_workspace_has_zero_regressions_and_zero_unexplained`
+  are now exact ratchets (`Some(n)`, no `None` left) at these values — a
+  future change moving any of them must be explained, never
+  blind-updated.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate

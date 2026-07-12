@@ -2571,38 +2571,68 @@ fn cdo_workspace_has_zero_regressions_and_zero_unexplained() {
     ledger.assert_gates_clean("CDO");
     let counts = ledger.class_counts();
 
-    // TODO(t3.14 CDO fix-wave, pending controller re-measurement): the
-    // controller's FIRST CDO run (pre-fix-wave) found 23 REGRESSION/
-    // unexplained findings, decomposed into exactly 2 mechanical classes —
-    // `LegacyIdentityCollapse` (16, generalized here from same-file-only
-    // `OverloadIdentityCollapsed` to workspace-GLOBAL detection) and
-    // `DepSourceSpan` (7, its app-name-equality requirement widened to a
-    // routine-name-equality requirement here) — both fixed in this
-    // fix-wave (see the task report's CDO fix-wave section). Those OLD
-    // counts are now STALE (the classification mechanism changed) and are
-    // NOT pre-filled below; each constant stays `None` until the
-    // controller re-runs this suite on a CDO_WS-capable machine and hands
-    // back the exact post-fix count for that class — filling it in is then
-    // a ONE-LINE edit (`None` -> `Some(n)`), no structural change needed.
+    // RATCHET PINS — measured on the real 551-file Continia (CDO)
+    // workspace at commit `ebad1b9` (the layer-4 `VariableReceiverResolved`
+    // generalization), via a temporary count-dump probe the controller ran
+    // and then reverted (this file was clean at HEAD when these numbers
+    // were captured — not self-reported by this test). The gate held:
+    // 8/8 differential tests green, REGRESSION=0, NEW_UNEXPLAINED=0,
+    // H-10 green. Every one of these numbers is a PIN, not a floor or
+    // ceiling: a future change that moves ANY of them must be explained
+    // (either a new fixture-verified mechanical class, or a deliberate,
+    // documented rebaseline) — never blind-updated to make a test pass.
+    // What the numbers MEAN (per the controller, recorded here so the
+    // headline evidence isn't just bare integers):
+    // - `Match` (12,089): identical answers from both engines on this
+    //   real workspace — the bulk of the surface area.
+    // - `UnqualifiedCallResolved` (36,971, by far the largest NewBetter
+    //   class): legacy's blanket `"(local)"` placeholder for EVERY
+    //   unqualified call (same-object bare call, or a global/builtin
+    //   bareword) — legacy never even attempts resolution for these; new
+    //   correctly resolves or correctly omits.
+    // - `LegacyIdentityCollapse` (1,625): legacy's bare
+    //   `(object NAME text, routine NAME text)` keying collides same-named
+    //   routines across different objects/files/kinds into ONE slot —
+    //   these are legacy's WRONG answers, not just missing ones.
+    // - `VariableReceiverResolved` (2,169): calls through a variable or
+    //   parameter receiver legacy's `variable_bindings` never bound
+    //   (parameters, `Rec`/`xRec`, same-object or cross-object — see the
+    //   layer-3/layer-4 fix-waves).
+    // - `ImplicitTriggerEdge` (989): record operations with a statically-
+    //   true run-trigger argument (`Rec.Insert(true)`, etc.) — legacy
+    //   structurally never models trigger dispatch from a builtin record
+    //   method.
+    // - `ImplicitRecResolved` (778): Page/PageExtension/Report/
+    //   ReportExtension bare-or-`Rec.`-qualified calls resolved
+    //   cross-object via the caller's implicit SourceTable binding.
+    // - `OutgoingCardinality`, `R2Precision`, `EventDirectionMoved`,
+    //   `R6InterfaceExclusion`, `CaseFoldHit`, `CrossAppTarget`,
+    //   `DepSourceSpan`: the brief's original 9 mechanical classes,
+    //   each non-zero and real on this workspace at the scale shown.
     const CDO_PINS: &[(&str, Option<usize>)] = &[
-        ("NewBetter::LegacyIdentityCollapse", None),
-        ("NewBetter::DepSourceSpan", None),
-        ("NewBetter::CaseFoldHit", None),
-        ("NewBetter::CrossAppTarget", None),
-        ("NewBetter::EventDirectionMoved", None),
-        ("NewBetter::AbiSymbolShape", None),
-        ("NewBetter::OutgoingCardinality", None),
-        ("NewBetter::R2Precision", None),
-        ("NewBetter::R6InterfaceExclusion", None),
-        ("NewBetter::ImplicitTriggerEdge", None),
-        ("NewBetter::ImplicitRecResolved", None),
-        ("NewBetter::VariableReceiverResolved", None),
+        ("Match", Some(12089)),
+        ("NewBetter::UnqualifiedCallResolved", Some(36971)),
+        ("NewBetter::VariableReceiverResolved", Some(2169)),
+        ("NewBetter::LegacyIdentityCollapse", Some(1625)),
+        ("NewBetter::ImplicitTriggerEdge", Some(989)),
+        ("NewBetter::ImplicitRecResolved", Some(778)),
+        ("NewBetter::OutgoingCardinality", Some(430)),
+        ("NewBetter::R2Precision", Some(68)),
+        ("NewBetter::EventDirectionMoved", Some(47)),
+        ("NewBetter::R6InterfaceExclusion", Some(14)),
+        ("NewBetter::CaseFoldHit", Some(12)),
+        ("NewBetter::CrossAppTarget", Some(12)),
+        ("NewBetter::DepSourceSpan", Some(12)),
+        // Absent from the controller's dump. `class_counts()` builds its
+        // `BTreeMap` by incrementing an entry per finding (see its impl
+        // above) — a class with ZERO findings never gains a key at all,
+        // so absence from an exhaustive dump is structurally equivalent
+        // to a measured 0, not an oversight. Flag for re-verification if
+        // a future CDO re-run ever shows this nonzero.
+        ("NewBetter::AbiSymbolShape", Some(0)),
         // Always 0 — out of this driver's scope, see the module doc and
         // `object_id_additive_is_out_of_driver_scope_pinned_zero`.
         ("NewBetter::ObjectIdAdditive", Some(0)),
-        // Pinned by the dedicated `cdo_h10_edit_scenario_...` test below,
-        // not here.
-        ("NewBetter::UnqualifiedCallResolved", None),
     ];
     for (class, expected) in CDO_PINS {
         if let Some(expected) = expected {
