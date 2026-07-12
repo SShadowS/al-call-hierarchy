@@ -130,7 +130,7 @@ pub struct ParsedEventSubscriber {
 /// runner or test framework) rather than by an explicit call, so the procedure
 /// must not be reported as unused. AL attribute names are case-insensitive.
 /// Event publishers/subscribers are handled separately and are not listed here.
-fn is_framework_invocation_attribute(name: &str) -> bool {
+pub(crate) fn is_framework_invocation_attribute(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "test"

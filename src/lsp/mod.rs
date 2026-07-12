@@ -5,7 +5,9 @@
 //! snapshot/updater/handlers modules later tasks add alongside it.
 
 pub mod def_surface;
+pub mod diagnostics;
 pub mod encoding;
 pub mod handlers;
+pub mod lens;
 pub mod snapshot;
 pub mod updater;

@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`src/lsp/lens.rs` + `src/lsp/diagnostics.rs`: codeLens + a diffing
+  diagnostics engine on the program engine (T3 LSP-migration arc, Task 12) —
+  the engine-backed replacements for `src/handlers.rs`'s legacy graph-backed
+  `code_lens`/`get_unused_procedure_diagnostics` and `src/server.rs`'s
+  publish-once-stale `get_code_quality_diagnostics` (cut over at Task 15).**
+  `code_lenses` emits one lens per declaration in a file (procedures,
+  triggers, everything `decls_by_file` carries — unfiltered by kind, mirroring
+  legacy's `get_definitions_in_file`), delegating complexity/parameter-count
+  to the SAME owned-IR walker the `--analyze` CLI path uses
+  (`parser::routine_complexity_ir`) rather than re-deriving metrics.
+  `diagnostics::compute_all` ports the full unused-procedure rule set
+  (`src/indexer.rs:159-218` + `src/graph.rs:865-905`) onto engine data — the
+  new `effective_incoming_count` helper generalizes legacy's
+  `get_incoming_call_count` (direct calls + event-subscription count) onto
+  the engine's edge model, which SUBSUMES the old `[EventSubscriber]`
+  attribute-blanket exclusion entirely: a subscriber is "used" because a real
+  `EventFlow` edge targets it, so a subscription whose publisher/event name
+  doesn't resolve to anything real is now correctly flagged (a precision
+  improvement over legacy's unconditional attribute exclusion) — while
+  `[IntegrationEvent]`/`[BusinessEvent]` publishers stay unconditionally
+  excluded (their real subscribers typically live in a downstream app this
+  workspace never loads) and `[InternalEvent]` stays un-excluded, flagged
+  unless subscribed-or-raised, exactly as legacy behaved. Plus
+  `DiagnosticsState::diff`, the recompute-diff-publish-clear engine Task 15
+  wires to `on_swap`: diffs a fresh `compute_all` result against the last
+  published set and emits ONLY what changed, INCLUDING a uri whose findings
+  dropped to zero — the clear behavior legacy's `publish_all_diagnostics`
+  never had (a fixed procedure's stale "unused" hint would otherwise linger
+  until the next unrelated finding in that file happened to overwrite it).
+  Widened three existing helpers to `pub(crate)` for reuse rather than
+  duplication: `lsp::handlers::{resolve_virtual_path, object_name_for,
+  origin_to_range}` and `parser::is_framework_invocation_attribute`.
 - **`src/lsp/handlers.rs`: core call-hierarchy handlers on the program engine
   (T3 LSP-migration arc, Task 11) — `prepare`/`incoming`/`outgoing`, the
   engine-backed replacements for `src/handlers.rs`'s legacy graph-backed

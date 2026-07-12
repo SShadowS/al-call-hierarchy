@@ -122,7 +122,7 @@ pub fn prepare(
 ///   candidate). Try the exact (fast, common: Unix, or an all-lowercase
 ///   workspace) key first; fall back to a case-insensitive scan of
 ///   `snap.parsed`'s keys — never silently return the wrong file.
-fn resolve_virtual_path(snap: &LspSnapshot, uri: &str) -> Option<String> {
+pub(crate) fn resolve_virtual_path(snap: &LspSnapshot, uri: &str) -> Option<String> {
     let parsed_uri: Uri = uri.parse().ok()?;
     let path = uri_to_path(&parsed_uri)?;
     let rel = path.strip_prefix(snap.workspace_root.as_path()).ok()?;
@@ -498,7 +498,10 @@ fn abi_symbol_uri(key: &AbiRoutineKey, app_name: &str) -> Uri {
     .unwrap_or_else(|_| "al-preview:///unknown".parse().expect("static URI parses"))
 }
 
-fn object_name_for<'g>(graph: &'g ProgramGraph, obj_id: &ObjectNodeId) -> Option<&'g str> {
+pub(crate) fn object_name_for<'g>(
+    graph: &'g ProgramGraph,
+    obj_id: &ObjectNodeId,
+) -> Option<&'g str> {
     graph
         .objects
         .binary_search_by(|probe| probe.id.cmp(obj_id))
@@ -528,7 +531,7 @@ fn symbol_kind_for(snap: &LspSnapshot, id: &RoutineNodeId) -> SymbolKind {
 // into an LSP `Range` (see this module's own doc).
 // ---------------------------------------------------------------------------
 
-fn origin_to_range(
+pub(crate) fn origin_to_range(
     origin: &al_syntax::ir::Origin,
     table: &LineTable<'_>,
     enc: PositionEncoding,
