@@ -119,6 +119,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gethtml`/`getplaintext`) not covered by either class here — flagged for
   the controller's own individual investigation, not stretched into an
   existing predicate.
+  **CDO layer-2b fix-wave** (the controller confirmed a concrete repro for
+  the residual, reconciling the layer-2 falsification: CDO `Page 6175306
+  "CDO E-Mail Template Lines"`, `SourceTable "CDO E-Mail Templ. Line
+  Report"` — an action's `OnAction`/a page trigger's bareword call whose
+  TARGET lives on the bound SourceTable, not the page itself —
+  CROSS-OBJECT, unlike the layer-2 falsification fixtures' SAME-OBJECT bare
+  calls, which is exactly why those matched and this doesn't): added
+  `NewBetter::ImplicitRecResolved` — a `Page`/`PageExtension`/`Report`/
+  `ReportExtension` trigger's bare (or explicit `Rec.`/`xRec.`-qualified)
+  call resolved cross-object via the caller's IMPLICIT SourceTable binding.
+  Legacy's bare-call resolution (`src/graph.rs`'s `resolve_call`) is
+  structurally same-object-only (`QualifiedName{object: caller_qname.object,
+  ..}`, unconditionally); for the qualified form, `Rec`/`xRec` are a
+  LANGUAGE-level implicit binding `lookup_variable_type` never sees as a
+  declared local variable for a page/report scope — so this is invisible to
+  legacy's incoming-call index regardless of call syntax. Mechanical
+  predicate: a Call-kind (not `ImplicitTrigger`) new-only incoming/codeLens
+  site whose caller's object differs from the callee's, the caller's
+  object KIND is Page/PageExtension/Report/ReportExtension, and the
+  call-site TEXT (read from the caller's own source, since `LspSnapshot`
+  carries no dedicated marker for this) is bare or `Rec.`/`xRec.`-qualified.
+  A companion diagnostics-axis fix: `classify_diagnostics`'s `CaseFoldHit`
+  check now defers to `ImplicitTriggerEdge`/`ImplicitRecResolved` first,
+  closing a misclassification the layer-2 fix-wave's own codeLens fix
+  (same root cause) had already caught for that axis but not yet for
+  `unused-procedure`. New fixture arm `ImplicitRecTable.al`/
+  `ImplicitRecPage.al`, kept in the SAME `tests/fixtures/lsp-diff-nested/`
+  directory as the falsification fixtures for direct contrast (same-object
+  bare calls match; cross-object ones don't).
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate

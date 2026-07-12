@@ -244,6 +244,33 @@ enum NewBetterClass {
     /// own for this case, unlike EventFlow's explicit `[EventPublisher]`
     /// tag).
     ImplicitTriggerEdge,
+    /// CDO layer-2b fix-wave: a `Page`/`PageExtension`/`Report`/
+    /// `ReportExtension` trigger (an action's `OnAction`, a page-level
+    /// `OnAfterGetCurrRecord`, etc.) calls a procedure declared on the
+    /// object's BOUND `SourceTable` — CROSS-OBJECT — using EITHER a bare
+    /// (unqualified) call OR an explicit `Rec.`/`xRec.`-qualified one,
+    /// resolved through the caller's IMPLICIT SourceTable record binding.
+    /// Legacy's bare/qualified-call resolution (`src/graph.rs`'s
+    /// `resolve_call`) is structurally same-object-only for a bare call
+    /// (`QualifiedName{object: caller_qname.object, ..}`, unconditionally —
+    /// it never considers an implicit SourceTable redirection) and, for a
+    /// `Rec.`-qualified call, `Rec`/`xRec` are never real user-declared
+    /// local variables `lookup_variable_type` could resolve for a page/
+    /// report scope (they are a LANGUAGE-level implicit binding, not
+    /// something `parser.rs`'s var-parsing logic ever sees) — so this call
+    /// is structurally invisible to legacy's incoming-call index no matter
+    /// which syntax the source uses. New resolves it via the implicit-Rec/
+    /// SourceTable machinery. Confirmed by the controller against real CDO
+    /// source (`Page 6175306 "CDO E-Mail Template Lines"`, SourceTable
+    /// `"CDO E-Mail Templ. Line Report"`, an action's `OnAction` bareword
+    /// call into the source table). Mechanical predicate: the new-only
+    /// incoming/codeLens site is a Call-kind (not `ImplicitTrigger`) edge
+    /// whose caller's OBJECT differs from the callee's, the caller's object
+    /// KIND is `Page`/`PageExtension`/`Report`/`ReportExtension`, and the
+    /// call-site TEXT (read from the caller's own source — `LspSnapshot`
+    /// carries no dedicated marker for this, unlike `ImplicitTriggerEdge`'s
+    /// `EdgeKind`) is bare or `Rec.`/`xRec.`-qualified.
+    ImplicitRecResolved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -360,6 +387,40 @@ fn canonical_span_to_norm_range(
     span: &al_call_hierarchy::program::resolve::edge::CanonicalSpan,
 ) -> NormRange {
     (span.start.line, span.start.col, span.end.line, span.end.col)
+}
+
+/// `true` iff the call site at `span` (within `text`, the CALLER's own
+/// source) is either a BARE, unqualified call (no receiver at all — the
+/// character immediately before the site's own start column, after trimming
+/// trailing whitespace, is not `.`) or an explicit `Rec.`/`xRec.`-qualified
+/// one (case-insensitive) — `ImplicitRecResolved`'s call-site-shape half of
+/// its predicate. `site.span` starts EXACTLY at the callee identifier's own
+/// first character (confirmed empirically against
+/// `tests/fixtures/lsp-diff-nested/ImplicitRecPage.al`'s bare calls — the
+/// span never includes a receiver prefix), so a preceding `.` unambiguously
+/// marks a qualified call.
+fn is_bare_or_rec_qualified_call(
+    text: &str,
+    span: &al_call_hierarchy::program::resolve::edge::CanonicalSpan,
+) -> bool {
+    let Some(line) = text.split('\n').nth(span.start.line as usize) else {
+        return false;
+    };
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    let start = span.start.col as usize;
+    if start > line.len() {
+        return false;
+    }
+    let before = line[..start].trim_end();
+    let Some(receiver) = before.strip_suffix('.') else {
+        return true; // no receiver at all — bare call
+    };
+    let receiver_tail = receiver
+        .trim_end()
+        .rsplit(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .next()
+        .unwrap_or(receiver);
+    receiver_tail.eq_ignore_ascii_case("rec") || receiver_tail.eq_ignore_ascii_case("xrec")
 }
 
 // ============================================================================
@@ -561,6 +622,15 @@ struct RoutineEntry {
     /// ordinary call (unlike EventFlow's explicit `[EventPublisher]` tag).
     /// `ImplicitTriggerEdge`'s mechanical predicate.
     new_incoming_implicit_trigger_sites: BTreeSet<NormRange>,
+    /// Incoming call-site ranges resolved CROSS-OBJECT from a `Page`/
+    /// `PageExtension`/`Report`/`ReportExtension` caller via its implicit
+    /// `Rec`/`xRec` SourceTable binding (a bare call, or an explicit
+    /// `Rec.`/`xRec.`-qualified one) — looked up directly against
+    /// `LspSnapshot::incoming`/the caller's own source text (see
+    /// `run_sweep`), since legacy's bare-call resolution is same-object-only
+    /// and structurally cannot model this. `ImplicitRecResolved`'s
+    /// mechanical predicate.
+    new_incoming_implicit_rec_sites: BTreeSet<NormRange>,
 }
 
 struct Sweep {
@@ -652,6 +722,7 @@ fn run_sweep(
                 legacy_outgoing: Vec::new(),
                 new_outgoing: Vec::new(),
                 new_incoming_implicit_trigger_sites: BTreeSet::new(),
+                new_incoming_implicit_rec_sites: BTreeSet::new(),
             });
         }
     }
@@ -716,6 +787,7 @@ fn run_sweep(
                     legacy_outgoing: Vec::new(),
                     new_outgoing: Vec::new(),
                     new_incoming_implicit_trigger_sites: BTreeSet::new(),
+                    new_incoming_implicit_rec_sites: BTreeSet::new(),
                 });
             }
         }
@@ -794,12 +866,39 @@ fn run_sweep(
                 // wire shape entirely, which carries no edge-kind marker for
                 // this case) and record every site backed by an
                 // `EdgeKind::ImplicitTrigger` edge.
+                //
+                // ImplicitRecResolved's mechanical predicate (CDO layer-2b):
+                // an ORDINARY (Call-kind) incoming edge whose caller's OBJECT
+                // differs from this routine's own object, where the caller
+                // is a Page/PageExtension/Report/ReportExtension AND the
+                // call-site text is bare or `Rec.`/`xRec.`-qualified — i.e.
+                // resolved through the caller's IMPLICIT SourceTable binding,
+                // never a genuine same-object call legacy's `resolve_call`
+                // could ever produce.
                 if let Some(refs) = new_snap.incoming.get(&data.node) {
                     for r in refs {
                         let ce = new_snap.edge(r);
                         if ce.edge.kind == EdgeKind::ImplicitTrigger {
                             entry
                                 .new_incoming_implicit_trigger_sites
+                                .insert(canonical_span_to_norm_range(&ce.edge.site.span));
+                        } else if ce.edge.from.object != data.node.object
+                            && matches!(
+                                ce.edge.from.object.kind,
+                                al_syntax::ir::ObjectKind::Page
+                                    | al_syntax::ir::ObjectKind::PageExtension
+                                    | al_syntax::ir::ObjectKind::Report
+                                    | al_syntax::ir::ObjectKind::ReportExtension
+                            )
+                            && new_snap.parsed.get(&r.file).is_some_and(|caller_entry| {
+                                is_bare_or_rec_qualified_call(
+                                    &caller_entry.text,
+                                    &ce.edge.site.span,
+                                )
+                            })
+                        {
+                            entry
+                                .new_incoming_implicit_rec_sites
                                 .insert(canonical_span_to_norm_range(&ce.edge.site.span));
                         }
                     }
@@ -1368,6 +1467,24 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                         );
                         continue;
                     }
+                    // ImplicitRecResolved: a Page/PageExtension/Report/
+                    // ReportExtension trigger's bare-or-Rec-qualified call
+                    // resolved cross-object via the implicit SourceTable
+                    // binding (checked via the pre-recorded set — see
+                    // `run_sweep`). Legacy's bare/qualified-call resolution
+                    // is structurally same-object-only, so this is
+                    // unconditional too — no legacy cross-reference possible.
+                    if entry.new_incoming_implicit_rec_sites.contains(&site) {
+                        ledger.push(
+                            "incoming",
+                            &routine,
+                            Class::NewBetter(NewBetterClass::ImplicitRecResolved),
+                            format!(
+                                "new caller={n_name} at site {site:?}: resolved cross-object via the caller's implicit SourceTable (Rec) binding — legacy's bare/qualified-call resolution is same-object-only"
+                            ),
+                        );
+                        continue;
+                    }
                     // CaseFoldHit: does legacy's OWN raw outgoing() for this
                     // exact caller (by name, case-insensitively — the only
                     // handle we have on "legacy's view of this caller")
@@ -1589,6 +1706,8 @@ fn classify_code_lens(
                     let sweep_entry = sweep.entries.get(&entry_key);
                     let is_implicit_trigger_linked = sweep_entry
                         .is_some_and(|e| !e.new_incoming_implicit_trigger_sites.is_empty());
+                    let is_implicit_rec_linked =
+                        sweep_entry.is_some_and(|e| !e.new_incoming_implicit_rec_sites.is_empty());
                     let is_event_linked = sweep_entry.is_some_and(|e| {
                         e.new_incoming.iter().any(|i| {
                             i.from
@@ -1603,6 +1722,13 @@ fn classify_code_lens(
                             &routine,
                             Class::NewBetter(NewBetterClass::ImplicitTriggerEdge),
                             format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a record-operation-fired implicit-trigger caller legacy never models)"),
+                        );
+                    } else if is_implicit_rec_linked {
+                        ledger.push(
+                            "codeLens",
+                            &routine,
+                            Class::NewBetter(NewBetterClass::ImplicitRecResolved),
+                            format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a cross-object caller resolved via the caller's implicit SourceTable binding)"),
                         );
                     } else if is_event_linked {
                         ledger.push(
@@ -1715,6 +1841,13 @@ fn classify_diagnostics(
             // R6: an interface method's own signature — legacy flagged
             // (false positive shared pre-R6), new excludes.
             let is_r6 = looks_like_interface_signature(new_snap, &file_rel, msg);
+            // ImplicitTriggerEdge/ImplicitRecResolved: legacy sees ZERO
+            // incoming calls because the ONLY real caller is a record-
+            // operation-fired trigger dispatch or a cross-object implicit-
+            // SourceTable call — checked BEFORE CaseFoldHit, since either
+            // would ALSO make `routine_name_has_new_incoming` return `true`
+            // for the wrong reason.
+            let implicit_class = routine_implicit_dispatch_class(sweep, &file_rel, msg);
             // CaseFoldHit: legacy's `get_unused_procedures` sees ZERO
             // incoming calls only because the call site's raw text differs
             // in case from the declaration (H-11) — new's `incoming` for
@@ -1728,6 +1861,13 @@ fn classify_diagnostics(
                     &file_rel,
                     Class::NewBetter(NewBetterClass::R6InterfaceExclusion),
                     format!("legacy flags {msg:?}; new excludes (interface method signature)"),
+                );
+            } else if let Some(class) = implicit_class {
+                ledger.push(
+                    "diagnostics",
+                    &file_rel,
+                    Class::NewBetter(class),
+                    format!("legacy flags {msg:?} (zero incoming); new's only real caller is an implicit-dispatch edge legacy structurally cannot model"),
                 );
             } else if is_case_fold {
                 ledger.push(
@@ -1816,6 +1956,33 @@ fn routine_name_has_new_incoming(sweep: &Sweep, file_rel: &str, msg: &str) -> bo
             && e.identity.routine_lc == name_lc
             && !e.new_incoming.is_empty()
     })
+}
+
+/// Same name-extraction as `routine_name_has_new_incoming`, but returns
+/// WHICH implicit-dispatch class (if any) explains legacy's zero-incoming
+/// count for this routine — checked before `CaseFoldHit`, since either
+/// would also make that helper return `true` for the wrong reason.
+fn routine_implicit_dispatch_class(
+    sweep: &Sweep,
+    file_rel: &str,
+    msg: &str,
+) -> Option<NewBetterClass> {
+    let name = msg
+        .split('\'')
+        .nth(1)
+        .and_then(|qualified| qualified.split('.').next_back())?;
+    let name_lc = name.to_lowercase();
+    let entry = sweep
+        .entries
+        .values()
+        .find(|e| e.identity.file_rel == file_rel && e.identity.routine_lc == name_lc)?;
+    if !entry.new_incoming_implicit_trigger_sites.is_empty() {
+        Some(NewBetterClass::ImplicitTriggerEdge)
+    } else if !entry.new_incoming_implicit_rec_sites.is_empty() {
+        Some(NewBetterClass::ImplicitRecResolved)
+    } else {
+        None
+    }
 }
 
 // ============================================================================
@@ -2021,21 +2188,30 @@ fn lsp_diff_deps_fixture_has_zero_regressions_and_zero_unexplained() {
 /// "Shared Name" (`SharedCU.al`/`SharedPage.al`, each with its own
 /// `GetRecipients`, called from `Caller.al`), plus a table with two
 /// different fields' same-named `OnValidate` triggers (`TwoTriggers.al`).
-/// `ImplicitTriggerEdge` fixture reproduction (CDO layer-2 fix-wave). ALSO
-/// serves as the empirical FALSIFICATION record for the layer-2 brief's
-/// `NestedTriggerCaller` hypothesis ("legacy's `ParsedFile` projection never
-/// captured nested [field/action/dataitem-scoped] triggers as caller
-/// definitions"): `NestedTable.al`/`NestedPage.al`/`NestedPageField.al`/
-/// `NestedReport.al` reproduce the table-field, page-action, page-field, and
-/// report-dataitem trigger-as-caller shapes respectively, each with a
-/// bareword call inside — every one of them MATCHES on `incoming` (legacy
-/// DOES correctly capture the nested trigger as a caller-scope `Definition`
-/// and correctly attributes both qualified and unqualified calls inside it —
-/// verified against `src/parser.rs`'s `collect_routines`/`parse_file_ir`,
-/// which walk the object subtree unconditionally regardless of nesting
-/// depth). `ImplicitTrigger.al`/`ImplicitTriggerCaller.al` reproduce the
-/// GENUINE gap: `Rec.Insert(true)` implicitly fires `OnInsert`, which legacy
-/// structurally cannot model at all.
+/// `ImplicitTriggerEdge`/`ImplicitRecResolved` fixture reproduction (CDO
+/// layer-2/2b fix-waves). ALSO serves as the empirical FALSIFICATION record
+/// for the layer-2 brief's `NestedTriggerCaller` hypothesis ("legacy's
+/// `ParsedFile` projection never captured nested [field/action/dataitem-
+/// scoped] triggers as caller definitions"): `NestedTable.al`/`NestedPage.al`/
+/// `NestedPageField.al`/`NestedReport.al` reproduce the table-field,
+/// page-action, page-field, and report-dataitem trigger-as-caller shapes
+/// respectively, each with a SAME-OBJECT bareword call inside — every one of
+/// them MATCHES on `incoming` (legacy DOES correctly capture the nested
+/// trigger as a caller-scope `Definition` and correctly attributes both
+/// qualified and unqualified calls inside it — verified against
+/// `src/parser.rs`'s `collect_routines`/`parse_file_ir`, which walk the
+/// object subtree unconditionally regardless of nesting depth).
+/// `ImplicitTrigger.al`/`ImplicitTriggerCaller.al` reproduce the GENUINE
+/// implicit-TRIGGER gap: `Rec.Insert(true)` implicitly fires `OnInsert`,
+/// which legacy structurally cannot model at all. `ImplicitRecTable.al`/
+/// `ImplicitRecPage.al` reproduce the layer-2b GENUINE implicit-REC gap
+/// (confirmed by the controller against real CDO source, `Page 6175306
+/// "CDO E-Mail Template Lines"`): a page action's `OnAction` and the page's
+/// own `OnAfterGetCurrRecord` each make a bareword call CROSS-OBJECT into
+/// the page's bound `SourceTable`'s own procedure — legacy's bare-call
+/// resolution is same-object-only, so this is structurally invisible to it,
+/// unlike the SAME-OBJECT bareword calls the falsification fixtures above
+/// prove legacy handles correctly.
 #[test]
 fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
     let ledger = run_differential(&fixture_path("lsp-diff-nested"), false);
@@ -2058,12 +2234,28 @@ fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
         2,
         "ImplicitTriggerEdge: Rec.Insert(true) firing OnInsert, incoming + codeLens; counts={counts:?}"
     );
-    // Sanity: the 4 nested-trigger-as-caller shapes (table field, page
-    // action, page field, report dataitem) must ALL match cleanly — this IS
-    // the falsification record for NestedTriggerCaller (see this test's doc).
-    assert!(
-        counts.get("Match").copied().unwrap_or(0) >= 20,
-        "sanity: the 4 nested-trigger-caller shapes plus ImplicitTrigger's own routines must mostly match; counts={counts:?}"
+    // 6 total: the page action's OnAction -> SetBackgroundPDF and the
+    // page's OnAfterGetCurrRecord -> RefreshCache cross-object implicit-Rec
+    // calls each contribute 1 incoming + 1 codeLens + 1 diagnostics finding
+    // (both routines otherwise show zero incoming to legacy, so legacy
+    // ALSO flags them as unused-procedure false positives) = 2 * 3 = 6.
+    // Outgoing's own divergence for both call sites is already covered by
+    // UnqualifiedCallResolved (both are bare/unqualified call syntax).
+    assert_eq!(
+        counts
+            .get("NewBetter::ImplicitRecResolved")
+            .copied()
+            .unwrap_or(0),
+        6,
+        "ImplicitRecResolved: page action + page trigger cross-object SourceTable calls, incoming + codeLens + diagnostics; counts={counts:?}"
+    );
+    // The 4 nested-trigger-as-caller shapes (table field, page action, page
+    // field, report dataitem) must ALL match cleanly — this IS the
+    // falsification record for NestedTriggerCaller (see this test's doc).
+    assert_eq!(
+        counts.get("Match").copied().unwrap_or(0),
+        33,
+        "Match: the 4 nested-trigger-caller falsification shapes plus every other routine's remaining facts; counts={counts:?}"
     );
 }
 
@@ -2153,6 +2345,7 @@ fn cdo_workspace_has_zero_regressions_and_zero_unexplained() {
         ("NewBetter::R2Precision", None),
         ("NewBetter::R6InterfaceExclusion", None),
         ("NewBetter::ImplicitTriggerEdge", None),
+        ("NewBetter::ImplicitRecResolved", None),
         // Always 0 — out of this driver's scope, see the module doc and
         // `object_id_additive_is_out_of_driver_scope_pinned_zero`.
         ("NewBetter::ObjectIdAdditive", Some(0)),
