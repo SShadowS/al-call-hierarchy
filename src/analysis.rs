@@ -382,6 +382,97 @@ pub(crate) fn is_framework_invocation_attribute(name: &str) -> bool {
     )
 }
 
+/// Render a procedure/trigger header as raw source text: everything from
+/// `r.origin`'s start up to (but not including) the body's `var` section or
+/// `begin` keyword, whitespace-collapsed to single spaces. Relocated here
+/// from `parser.rs` (T3 Task 13 review fix-wave — mirrors this module's own
+/// earlier relocation of [`is_framework_invocation_attribute`]/
+/// [`routine_complexity_ir`] above): `src/lsp/custom.rs`'s
+/// `event_publishers_in_file` needs this SAME signature-rendering logic (to
+/// stay byte-identical to what `parser.rs`'s own
+/// `ParsedEventPublisher::signature` produces for the same routine), but
+/// `parser.rs` is a documented Task-17 deletion target — sharing one
+/// definition here means neither module drifts, and Task 17 can delete
+/// `parser.rs` without orphaning anything `custom.rs` depends on.
+pub(crate) fn signature_ir(source: &str, r: &RoutineDecl) -> String {
+    let raw = &source[r.origin.byte.clone()];
+    let end = find_body_start(raw).unwrap_or(raw.len());
+    normalize_signature_ws(&raw[..end])
+}
+
+/// Find the byte offset (relative to the start of `text`) where a procedure
+/// body begins (the `begin` keyword or `var` section). Returns `None` when no
+/// body marker is present in this slice.
+///
+/// Requires the keyword to be alone at the start of a line (preceded only by
+/// whitespace) so a `var` parameter modifier is never mistaken for the `var`
+/// section, and skips scanning inside string literals so a quoted
+/// identifier/comment containing "begin"/"var" text can't false-positive.
+fn find_body_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut string_quote = 0u8;
+    while i < len {
+        let b = bytes[i];
+        if in_string {
+            if b == string_quote {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' {
+            in_string = true;
+            string_quote = b;
+            i += 1;
+            continue;
+        }
+        // Look at line starts only (`\n` followed by optional whitespace).
+        if b == b'\n' {
+            let mut j = i + 1;
+            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1;
+            }
+            if matches_keyword(bytes, j, b"begin") || matches_keyword(bytes, j, b"var") {
+                return Some(j);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
+    if at + kw.len() > bytes.len() {
+        return false;
+    }
+    if &bytes[at..at + kw.len()] != kw {
+        return false;
+    }
+    let next = bytes.get(at + kw.len()).copied().unwrap_or(b' ');
+    !next.is_ascii_alphanumeric() && next != b'_'
+}
+
+/// Collapse runs of whitespace (including newlines) to single spaces, trimmed.
+fn normalize_signature_ws(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_space = false;
+    for ch in raw.chars() {
+        if ch.is_whitespace() {
+            if !prev_space && !out.is_empty() {
+                out.push(' ');
+            }
+            prev_space = true;
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

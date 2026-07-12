@@ -116,10 +116,14 @@
 //!   `DependencyDocumentSymbolParams::object_id` field is parsed but never
 //!   read (`#[allow(dead_code)]`) — `resolve_dependency_object` is
 //!   name-keyed only, so a numbered dependency object could never resolve via
-//!   that field. This implementation DOES consult `object_id` when present
-//!   (preferring an id match over a name match) — a strictly additive
-//!   improvement: it can only find MORE matches than legacy, never fewer or
-//!   different ones, so it cannot regress Task 14's differential.
+//!   that field. This implementation DOES consult `object_id` when present,
+//!   but ONLY as a fallback AFTER a name match is tried first and misses (see
+//!   [`find_external_object`]'s doc — an earlier draft let `object_id`
+//!   shadow a matching name, which a review caught as NOT actually strictly
+//!   additive: a stale/mismatched id could have resolved a different object
+//!   than legacy for the same request). With name-first ordering, the claim
+//!   holds by construction: it can only find MORE matches than legacy, never
+//!   fewer or DIFFERENT ones, so it cannot regress Task 14's differential.
 //! - **No disk I/O.** Legacy's `event_reference_at_position` re-reads the
 //!   file from disk (`std::fs::read_to_string`) on every call. This
 //!   implementation reads `LspSnapshot::parsed`'s already-in-memory text —
@@ -162,7 +166,7 @@ use crate::lsp::snapshot::LspSnapshot;
 use crate::program::resolve::event::{PublisherKind, is_event_publisher};
 use crate::snapshot::{AppSetSnapshot, AppUnit};
 use crate::types::ObjectType;
-use al_syntax::ir::{AlFile, AttributeIr, Ir, Origin};
+use al_syntax::ir::{AlFile, AttributeIr, Ir};
 
 // ---------------------------------------------------------------------------
 // Shared response shapes (dependencyDocumentSymbol + eventPublishersInFile)
@@ -250,7 +254,9 @@ pub struct DependencyDocumentSymbolParams {
     pub object_name: Option<String>,
     /// Unlike legacy (where this field is parsed but never consulted — see
     /// this module's doc), a numeric id here IS used to resolve the target
-    /// object when present, preferring it over a name match.
+    /// object — but only as a FALLBACK when `object_name` is absent or fails
+    /// to match (see [`find_external_object`]'s doc for why name always
+    /// takes priority).
     #[serde(default)]
     pub object_id: Option<i64>,
 }
@@ -333,6 +339,16 @@ fn resolve_external_object<'a>(
         .find_map(|unit| find_external_object(unit, ty, name, object_id))
 }
 
+/// NAME first, exactly as legacy's `get_dependency_object`/
+/// `find_dependency_object_by_type_name` always resolved (name-keyed only —
+/// `object_id` didn't exist as a lookup key at all); `object_id` is consulted
+/// ONLY as a fallback when the name lookup misses (or no name was given).
+/// This ordering (fixed T3 Task 13 review fix-wave; the original draft let a
+/// present `object_id` shadow a matching name, so a stale/mismatched id could
+/// resolve a DIFFERENT object than legacy would for the exact same request —
+/// not actually "strictly additive") makes the additive claim true BY
+/// CONSTRUCTION: an `object_id` can only ever widen a result that name
+/// resolution alone would have missed, never override one it would have hit.
 fn find_external_object<'a>(
     unit: &'a AppUnit,
     ty: ObjectType,
@@ -340,13 +356,20 @@ fn find_external_object<'a>(
     object_id: Option<i64>,
 ) -> Option<&'a ExternalObject> {
     let abi = unit.abi.as_ref()?;
-    abi.objects.iter().find(|o| {
-        o.object_type == ty
-            && match object_id {
-                Some(id) => o.id == id,
-                None => o.name.eq_ignore_ascii_case(name),
-            }
-    })
+
+    if !name.is_empty()
+        && let Some(obj) = abi
+            .objects
+            .iter()
+            .find(|o| o.object_type == ty && o.name.eq_ignore_ascii_case(name))
+    {
+        return Some(obj);
+    }
+
+    let id = object_id?;
+    abi.objects
+        .iter()
+        .find(|o| o.object_type == ty && o.id == id)
 }
 
 fn build_dependency_symbols(obj: &ExternalObject) -> Vec<DependencyDocumentSymbol> {
@@ -421,7 +444,7 @@ pub fn event_publishers_in_file(
                 PublisherKind::Internal => "[InternalEvent]",
                 PublisherKind::Platform => continue,
             };
-            let signature = routine_header_text(&entry.text, &routine.origin);
+            let signature = crate::analysis::signature_ir(&entry.text, routine);
             out.push(DependencyDocumentSymbol {
                 name: routine.name.clone(),
                 detail: format!("{tag} {signature}"),
@@ -437,94 +460,6 @@ pub fn event_publishers_in_file(
         }
     }
     out
-}
-
-/// Render a procedure/trigger header as raw source text — everything from
-/// `origin`'s start up to (but not including) the body's `var` section or
-/// `begin` keyword, whitespace-collapsed to single spaces. A LOCAL
-/// re-implementation of `parser.rs`'s (Task 7-era) private `signature_ir`
-/// helper: duplicated rather than shared because `parser.rs` is a documented
-/// Task-17 deletion target (see its module doc) — sharing would leave this
-/// permanent module with a dangling dependency on a module scheduled for
-/// removal. The algorithm is copied verbatim (same string-literal-aware body
-/// scan, same whitespace collapse) so a workspace file's signature text here
-/// is byte-identical to what `parser.rs`'s `ParsedEventPublisher::signature`
-/// already produces for the SAME routine — the exact parity Task 14's
-/// differential needs.
-fn routine_header_text(source: &str, origin: &Origin) -> String {
-    let raw = &source[origin.byte.clone()];
-    let end = find_body_start(raw).unwrap_or(raw.len());
-    normalize_signature_ws(&raw[..end])
-}
-
-/// Find the byte offset (relative to the start of `text`) where a procedure
-/// body begins (the `begin` keyword or `var` section) — requires the keyword
-/// to be alone at the start of a line (preceded only by whitespace) so a
-/// `var` parameter modifier is never mistaken for the `var` section, and skips
-/// scanning inside string literals so a quoted identifier/comment containing
-/// "begin"/"var" text can't false-positive.
-fn find_body_start(text: &str) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let mut in_string = false;
-    let mut string_quote = 0u8;
-    while i < len {
-        let b = bytes[i];
-        if in_string {
-            if b == string_quote {
-                in_string = false;
-            }
-            i += 1;
-            continue;
-        }
-        if b == b'\'' || b == b'"' {
-            in_string = true;
-            string_quote = b;
-            i += 1;
-            continue;
-        }
-        if b == b'\n' {
-            let mut j = i + 1;
-            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
-                j += 1;
-            }
-            if matches_keyword(bytes, j, b"begin") || matches_keyword(bytes, j, b"var") {
-                return Some(j);
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
-    if at + kw.len() > bytes.len() {
-        return false;
-    }
-    if &bytes[at..at + kw.len()] != kw {
-        return false;
-    }
-    let next = bytes.get(at + kw.len()).copied().unwrap_or(b' ');
-    !next.is_ascii_alphanumeric() && next != b'_'
-}
-
-/// Collapse runs of whitespace (including newlines) to single spaces, trimmed.
-fn normalize_signature_ws(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut prev_space = false;
-    for ch in raw.chars() {
-        if ch.is_whitespace() {
-            if !prev_space && !out.is_empty() {
-                out.push(' ');
-            }
-            prev_space = true;
-        } else {
-            out.push(ch);
-            prev_space = false;
-        }
-    }
-    out.trim().to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -629,16 +564,21 @@ pub fn event_reference_at_position(
 
 /// Scan every routine's `[EventSubscriber(...)]` attribute (any object, in
 /// document order) for one whose argument-list span contains `pos`
-/// (`(line, utf8_byte_col)`, inclusive both ends — mirrors legacy's own
-/// inclusive `cursor_offset >= after_open && cursor_offset <= close_idx`
-/// check, `src/handlers.rs:1972`). The span is approximated as
-/// `[first_arg.origin.start, last_arg.origin.end]` — the IR's IntoIterator
-/// already split the attribute's args correctly (handling nested
-/// parens/quotes/comments the grammar itself understands), so this needs no
-/// hand-rolled comma-splitting; it slightly narrows legacy's looser
-/// textual `[EventSubscriber(` … `)]` window (which also covered the
-/// attribute name and the two brackets themselves) to just the argument
-/// list, which is where a real hover/click always lands in practice.
+/// (`(line, utf8_byte_col)`, inclusive both ends). Legacy's own inclusive
+/// window (`cursor_offset >= after_open && cursor_offset <= close_idx`,
+/// `src/handlers.rs:1969-1974`) is `[after_open, close_idx]` — `after_open`
+/// sits just PAST the attribute's own `(`, `close_idx` is the position of
+/// its matching `)` — i.e. the PARENTHESIZED ARGUMENT LIST ONLY; it does NOT
+/// cover `[EventSubscriber(` or the trailing `)]` at all (an earlier draft of
+/// this doc claimed the opposite — a review fix). This engine version's
+/// span, `[first_arg.origin.start, last_arg.origin.end]`, is a strict SUBSET
+/// of legacy's window (it additionally excludes any leading whitespace
+/// between `(` and the first arg, and any trailing whitespace between the
+/// last arg and `)`) — the IR's args are already split correctly by the
+/// grammar (handling nested parens/quotes/comments legacy's own text scanner
+/// had to hand-roll), so no comma-splitting is needed here; the whitespace-only
+/// narrowing is inconsequential in practice — a real hover/click always lands
+/// ON an argument's own text, never in the surrounding whitespace.
 fn find_event_subscriber_display_at(
     file: &AlFile,
     source: &str,
@@ -676,7 +616,13 @@ fn find_event_subscriber_display_at(
 /// "Other known deltas" note on why the two parsers deliberately diverge
 /// here). Mirrors legacy's `parse_event_subscriber_args`
 /// (`src/handlers.rs:2063-2107`) field-for-field, including its
-/// `ObjectType::Database` → `Table` arg-0 normalization.
+/// `ObjectType::Database` → `Table` arg-0 normalization AND its fail-closed
+/// `None` when arg 0 carries no `::` qualifier at all (`p0.split("::")
+/// .nth(1)` — a `None` there means legacy's own attribute match fails
+/// outright, `src/handlers.rs:2074-2077`; a malformed arg 0 like a bare
+/// `Codeunit` identifier with no `ObjectType::` prefix must NEVER be
+/// misread as a literal object-type NAME "Codeunit" — a review fix: an
+/// earlier draft's `.unwrap_or(a0)` fell open here instead).
 fn extract_subscriber_display(
     source: &str,
     ir: &Ir,
@@ -686,7 +632,9 @@ fn extract_subscriber_display(
     let a1 = &source[ir.expr(attr.args[1]).origin.byte.clone()];
     let a2 = &source[ir.expr(attr.args[2]).origin.byte.clone()];
 
-    let raw_type = a0.split("::").nth(1).unwrap_or(a0).trim();
+    // Fail-closed (mirrors legacy exactly): no `::` in arg 0 means this
+    // isn't a recognizable `ObjectType::X` qualifier at all — never guess.
+    let raw_type = a0.split("::").nth(1)?.trim();
     let object_type = if raw_type.eq_ignore_ascii_case("Database") {
         "Table".to_string()
     } else {
@@ -741,6 +689,11 @@ mod tests {
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"NoSuchDep", 'Whatever', '', false, false)]
     local procedure HandleUnknownDep()
+    begin
+    end;
+
+    [EventSubscriber(Codeunit, Codeunit::"H13DepCu", 'MalformedArg0', '', false, false)]
+    local procedure HandleMalformedArg0()
     begin
     end;
 
@@ -992,6 +945,69 @@ mod tests {
         );
     }
 
+    // ── review fix-wave: object_id must never shadow a matching name ──────
+
+    #[test]
+    fn dependency_document_symbol_name_wins_over_a_conflicting_object_id() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: None,
+                object_type: Some("Codeunit".to_string()),
+                object_name: Some("H13DepCu".to_string()),
+                // Deliberately WRONG id for H13DepCu (whose real id is
+                // 60100) — the NAME match must still win, exactly as legacy
+                // (which never even reads object_id) would resolve.
+                object_id: Some(99999),
+            },
+        );
+        assert_eq!(
+            result.len(),
+            3,
+            "a correct name match must win over a conflicting/stale \
+             object_id, not be shadowed by it — {result:#?}"
+        );
+    }
+
+    #[test]
+    fn dependency_document_symbol_falls_back_to_object_id_when_name_misses() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: None,
+                object_type: Some("Codeunit".to_string()),
+                object_name: Some("Bogus Name".to_string()),
+                object_id: Some(60100),
+            },
+        );
+        assert_eq!(
+            result.len(),
+            3,
+            "a name miss must fall back to a valid object_id — the additive \
+             win, not the default path — {result:#?}"
+        );
+    }
+
+    #[test]
+    fn dependency_document_symbol_empty_when_both_name_and_object_id_miss() {
+        let snap = two_app_snapshot();
+        let result = dependency_document_symbol(
+            &snap,
+            DependencyDocumentSymbolParams {
+                uri: None,
+                app: None,
+                object_type: Some("Codeunit".to_string()),
+                object_name: Some("Does Not Exist".to_string()),
+                object_id: Some(99999),
+            },
+        );
+        assert!(result.is_empty());
+    }
+
     #[test]
     fn dependency_document_symbol_empty_on_no_match() {
         let snap = two_app_snapshot();
@@ -1150,6 +1166,23 @@ mod tests {
         assert!(
             event_reference_at_position(&snap, PositionEncoding::Utf16, uri.as_str(), pos)
                 .is_none()
+        );
+    }
+
+    // ── review fix-wave: a malformed arg 0 (no `::`) must fail closed ──────
+
+    #[test]
+    fn event_reference_at_position_none_on_malformed_arg0_without_double_colon() {
+        let snap = two_app_snapshot();
+        let uri = ws_uri(&snap);
+        let pos = position_at("'MalformedArg0'");
+
+        assert!(
+            event_reference_at_position(&snap, PositionEncoding::Utf16, uri.as_str(), pos)
+                .is_none(),
+            "a bare `Codeunit` arg0 (no ObjectType:: qualifier) must fail \
+             closed to None, mirroring legacy's own parse_event_subscriber_args \
+             None-on-missing-\"::\" behaviour — never guess a nonsense object type"
         );
     }
 

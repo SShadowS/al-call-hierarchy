@@ -15,6 +15,12 @@ use crate::graph::{DefinitionKind, ObjectType};
 // below keep compiling unchanged.
 use crate::analysis::for_each_subexpr;
 pub(crate) use crate::analysis::{is_framework_invocation_attribute, routine_complexity_ir};
+// Relocated to `crate::analysis` (T3 Task 13 review fix-wave, same rationale
+// as above): `src/lsp/custom.rs`'s `event_publishers_in_file` needs this SAME
+// signature-rendering helper to stay byte-identical to this module's own
+// `ParsedEventPublisher::signature`; sharing one definition means the two
+// never drift, and `parser.rs`'s own deletion (Task 17) won't orphan it.
+use crate::analysis::signature_ir;
 
 /// Parsed definitions and calls from a single file
 #[derive(Debug, Default)]
@@ -132,79 +138,6 @@ pub struct ParsedEventSubscriber {
     pub publisher_object: String,
     /// Publisher event name (e.g., "OnBeforePostSalesDoc")
     pub publisher_event: String,
-}
-
-/// Find the byte offset (relative to the start of `text`) where a procedure
-/// body begins (the `begin` keyword or `var` section). Returns None when no
-/// body marker is present in this slice.
-///
-/// We require the keyword to be on its own line (preceded by whitespace
-/// followed by `begin\b` or `var\b`) so we don't confuse `var` parameter
-/// modifiers with the var section.
-fn find_body_start(text: &str) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let mut in_string = false;
-    let mut string_quote = 0u8;
-    while i < len {
-        let b = bytes[i];
-        if in_string {
-            if b == string_quote {
-                in_string = false;
-            }
-            i += 1;
-            continue;
-        }
-        if b == b'\'' || b == b'"' {
-            in_string = true;
-            string_quote = b;
-            i += 1;
-            continue;
-        }
-        // Look at line starts only (`\n` followed by optional whitespace).
-        if b == b'\n' {
-            let mut j = i + 1;
-            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
-                j += 1;
-            }
-            if matches_keyword(bytes, j, b"begin") || matches_keyword(bytes, j, b"var") {
-                return Some(j);
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
-    if at + kw.len() > bytes.len() {
-        return false;
-    }
-    if &bytes[at..at + kw.len()] != kw {
-        return false;
-    }
-    let next = bytes.get(at + kw.len()).copied().unwrap_or(b' ');
-    !next.is_ascii_alphanumeric() && next != b'_'
-}
-
-/// Collapse runs of whitespace to single spaces and trim — the procedure-header
-/// rendering shared by the legacy tree-sitter path and the owned-IR projection.
-fn normalize_signature_ws(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut prev_space = false;
-    for ch in raw.chars() {
-        if ch.is_whitespace() {
-            if !prev_space && !out.is_empty() {
-                out.push(' ');
-            }
-            prev_space = true;
-        } else {
-            out.push(ch);
-            prev_space = false;
-        }
-    }
-    out.trim().to_string()
 }
 
 /// Parse EventSubscriber attribute arguments
@@ -602,17 +535,6 @@ fn publisher_kind_ir(name: &str) -> Option<EventPublisherKind> {
     } else {
         None
     }
-}
-
-/// Render a procedure header from the IR (modifiers + name + params + return),
-/// stopping at the body's `var` section or `begin` — the IR analogue of
-/// `extract_procedure_signature`. Reuses the same textual body-start scan, which
-/// reproduces the legacy AST/textual result (the `var`-section node start and the
-/// `begin` fallback both coincide with the first line-starting `var`/`begin`).
-fn signature_ir(source: &str, r: &RoutineDecl) -> String {
-    let raw = &source[r.origin.byte.clone()];
-    let end = find_body_start(raw).unwrap_or(raw.len());
-    normalize_signature_ws(&raw[..end])
 }
 
 /// Project a routine's attributes into event subscribers / publishers and the
