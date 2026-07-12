@@ -271,6 +271,35 @@ enum NewBetterClass {
     /// carries no dedicated marker for this, unlike `ImplicitTriggerEdge`'s
     /// `EdgeKind`) is bare or `Rec.`/`xRec.`-qualified.
     ImplicitRecResolved,
+    /// CDO layer-3 fix-wave: an ORDINARY receiver-qualified call
+    /// (`Ident.Method(...)` or `"Quoted Ident".Method(...)`) whose receiver
+    /// is a `var` PARAMETER (or some other local/temp shape legacy's
+    /// variable tracking misses) — NOT the caller's implicit `Rec`/`xRec`
+    /// (that's `ImplicitRecResolved`'s territory) and not the object's OWN
+    /// name (an object-name-qualified call legacy CAN resolve via
+    /// `object_types`, so it never lands here at all — those rows are
+    /// already `Match`). Confirmed by the controller against real CDO
+    /// source: `Codeunit 6175274 "CDO Continia Online PDF Mgt"`'s
+    /// `procedure MergePdf(var DOFile: Record "CDO File"; ...)` calling
+    /// `DOFile.IsPdf()` — `DOFile` is a `var` PARAMETER. Root cause
+    /// (confirmed by reading `src/parser.rs`/`src/indexer.rs`):
+    /// `variable_bindings` is populated EXCLUSIVELY from a routine's
+    /// `var`-section LOCALS (`push_variables_ir(&mut result, &r.locals,
+    /// ..)`, `src/parser.rs:293`) — the routine's PARAMETER list
+    /// (`r.params`, a structurally separate IR field, used elsewhere only
+    /// to compute `parameter_count`) never flows into it at all, so
+    /// `lookup_variable_type` can never type a parameter receiver. A LOCAL
+    /// `var`-section variable receiver, by contrast, DOES get bound
+    /// correctly and resolves as a genuine `Match` — verified empirically,
+    /// not assumed (see `VariableReceiverCaller.al`'s `UseLocalVar`
+    /// procedure, kept in the SAME fixture as its parameter-receiver
+    /// sibling for direct contrast). Mechanical predicate: a Call-kind
+    /// new-only incoming/codeLens/diagnostics site whose caller's object
+    /// differs from the callee's, is receiver-qualified (any object kind —
+    /// unlike `ImplicitRecResolved`, not restricted to Page/Report), and
+    /// whose receiver token is NEITHER `Rec`/`xRec` NOR (case-insensitive,
+    /// quote-normalized) the callee's own object display name.
+    VariableReceiverResolved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,38 +418,85 @@ fn canonical_span_to_norm_range(
     (span.start.line, span.start.col, span.end.line, span.end.col)
 }
 
-/// `true` iff the call site at `span` (within `text`, the CALLER's own
-/// source) is either a BARE, unqualified call (no receiver at all — the
-/// character immediately before the site's own start column, after trimming
-/// trailing whitespace, is not `.`) or an explicit `Rec.`/`xRec.`-qualified
-/// one (case-insensitive) — `ImplicitRecResolved`'s call-site-shape half of
-/// its predicate. `site.span` starts EXACTLY at the callee identifier's own
-/// first character (confirmed empirically against
-/// `tests/fixtures/lsp-diff-nested/ImplicitRecPage.al`'s bare calls — the
-/// span never includes a receiver prefix), so a preceding `.` unambiguously
-/// marks a qualified call.
+/// A call site's own receiver, extracted from its `site.span`'s text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CallSiteReceiver {
+    /// No receiver at all: `Method(...)`.
+    Bare,
+    /// An explicit receiver (quote-stripped, case-preserved): `Receiver.Method(...)`
+    /// or `"Quoted Receiver".Method(...)`.
+    Qualified(String),
+}
+
+/// Parse the call site at `span` (within `text`, the CALLER's own source)
+/// into its own receiver shape.
+///
+/// **`site.span`'s shape differs between a bare and a member call — this is
+/// NOT symmetric, confirmed empirically from TWO independent measurements,
+/// not assumed from one:** for a BARE call the span starts exactly at the
+/// callee identifier's own first character (`tests/fixtures/lsp-diff-nested/
+/// ImplicitRecPage.al`'s bare calls); for a MEMBER call the span covers the
+/// WHOLE reference expression INCLUDING the receiver (the CDO layer-3
+/// brief's own measurement: `DOFile.IsPdf()`'s span was `(130,19,130,33)` —
+/// 14 columns, matching `"DOFile.IsPdf()"` in full, not just `"IsPdf()"`).
+/// So this function parses the site's OWN text (`[span.start, span.end)`)
+/// directly rather than inferring shape from what precedes `span.start` —
+/// the one design that's correct for BOTH shapes without needing to know
+/// which one a given site is in advance. Quote-aware: a `.` inside a
+/// `"Quoted Identifier"` is never treated as the receiver/method separator.
+fn call_site_receiver(
+    text: &str,
+    span: &al_call_hierarchy::program::resolve::edge::CanonicalSpan,
+) -> Option<CallSiteReceiver> {
+    let line = text.split('\n').nth(span.start.line as usize)?;
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    let start = span.start.col as usize;
+    let end = (span.end.col as usize).min(line.len());
+    if start > end || start > line.len() {
+        return None;
+    }
+    let site_text = &line[start..end];
+
+    let mut in_quotes = false;
+    let mut dot_idx = None;
+    for (i, c) in site_text.char_indices() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            '.' if !in_quotes => {
+                dot_idx = Some(i);
+                break;
+            }
+            '(' if !in_quotes => break, // reached the arg list — no receiver
+            _ => {}
+        }
+    }
+    match dot_idx {
+        None => Some(CallSiteReceiver::Bare),
+        Some(i) => {
+            let receiver = site_text[..i].trim();
+            let receiver = receiver
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .unwrap_or(receiver);
+            Some(CallSiteReceiver::Qualified(receiver.to_string()))
+        }
+    }
+}
+
+/// `true` iff the call site is a BARE call, or an explicit `Rec.`/`xRec.`-
+/// qualified one (case-insensitive) — `ImplicitRecResolved`'s call-site-shape
+/// half of its predicate.
 fn is_bare_or_rec_qualified_call(
     text: &str,
     span: &al_call_hierarchy::program::resolve::edge::CanonicalSpan,
 ) -> bool {
-    let Some(line) = text.split('\n').nth(span.start.line as usize) else {
-        return false;
-    };
-    let line = line.strip_suffix('\r').unwrap_or(line);
-    let start = span.start.col as usize;
-    if start > line.len() {
-        return false;
+    match call_site_receiver(text, span) {
+        Some(CallSiteReceiver::Bare) => true,
+        Some(CallSiteReceiver::Qualified(r)) => {
+            r.eq_ignore_ascii_case("rec") || r.eq_ignore_ascii_case("xrec")
+        }
+        None => false,
     }
-    let before = line[..start].trim_end();
-    let Some(receiver) = before.strip_suffix('.') else {
-        return true; // no receiver at all — bare call
-    };
-    let receiver_tail = receiver
-        .trim_end()
-        .rsplit(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .next()
-        .unwrap_or(receiver);
-    receiver_tail.eq_ignore_ascii_case("rec") || receiver_tail.eq_ignore_ascii_case("xrec")
 }
 
 // ============================================================================
@@ -631,6 +707,15 @@ struct RoutineEntry {
     /// and structurally cannot model this. `ImplicitRecResolved`'s
     /// mechanical predicate.
     new_incoming_implicit_rec_sites: BTreeSet<NormRange>,
+    /// Incoming call-site ranges resolved CROSS-OBJECT via a receiver-
+    /// qualified call whose receiver is a `var` parameter (or another
+    /// local/temp shape legacy's `variable_bindings` misses) — NOT the
+    /// implicit `Rec`/`xRec` binding (`new_incoming_implicit_rec_sites`
+    /// already claims those) and not the callee's own object name (an
+    /// object-name-qualified call legacy CAN resolve). Looked up directly
+    /// against `LspSnapshot::incoming`/the caller's own source text (see
+    /// `run_sweep`). `VariableReceiverResolved`'s mechanical predicate.
+    new_incoming_variable_receiver_sites: BTreeSet<NormRange>,
 }
 
 struct Sweep {
@@ -723,6 +808,7 @@ fn run_sweep(
                 new_outgoing: Vec::new(),
                 new_incoming_implicit_trigger_sites: BTreeSet::new(),
                 new_incoming_implicit_rec_sites: BTreeSet::new(),
+                new_incoming_variable_receiver_sites: BTreeSet::new(),
             });
         }
     }
@@ -788,6 +874,7 @@ fn run_sweep(
                     new_outgoing: Vec::new(),
                     new_incoming_implicit_trigger_sites: BTreeSet::new(),
                     new_incoming_implicit_rec_sites: BTreeSet::new(),
+                    new_incoming_variable_receiver_sites: BTreeSet::new(),
                 });
             }
         }
@@ -900,6 +987,32 @@ fn run_sweep(
                             entry
                                 .new_incoming_implicit_rec_sites
                                 .insert(canonical_span_to_norm_range(&ce.edge.site.span));
+                        } else if ce.edge.from.object != data.node.object {
+                            // VariableReceiverResolved's mechanical predicate
+                            // (CDO layer 3): a receiver-qualified call (ANY
+                            // object kind — not restricted to Page/Report,
+                            // unlike ImplicitRecResolved above) whose
+                            // receiver is neither `Rec`/`xRec` (already
+                            // claimed above when applicable) nor the
+                            // callee's own object name (case-insensitive,
+                            // quote-normalized — an object-name-qualified
+                            // call legacy CAN resolve via `object_types`, so
+                            // it never reaches this "new-only" branch at
+                            // all; excluded here anyway, defensively, per
+                            // the predicate's own stated shape).
+                            let callee_object_name =
+                                object_name(&new_snap.graph, &data.node.object).unwrap_or("");
+                            if let Some(caller_entry) = new_snap.parsed.get(&r.file)
+                                && let Some(CallSiteReceiver::Qualified(receiver)) =
+                                    call_site_receiver(&caller_entry.text, &ce.edge.site.span)
+                                && !receiver.eq_ignore_ascii_case("rec")
+                                && !receiver.eq_ignore_ascii_case("xrec")
+                                && !receiver.eq_ignore_ascii_case(callee_object_name)
+                            {
+                                entry
+                                    .new_incoming_variable_receiver_sites
+                                    .insert(canonical_span_to_norm_range(&ce.edge.site.span));
+                            }
                         }
                     }
                 }
@@ -1485,6 +1598,23 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                         );
                         continue;
                     }
+                    // VariableReceiverResolved: a receiver-qualified call
+                    // whose receiver is a `var` parameter (or another
+                    // local/temp shape legacy's `variable_bindings` misses)
+                    // — checked via the pre-recorded set (see `run_sweep`).
+                    // Legacy's `lookup_variable_type` never binds parameter
+                    // receivers at all, so this is unconditional too.
+                    if entry.new_incoming_variable_receiver_sites.contains(&site) {
+                        ledger.push(
+                            "incoming",
+                            &routine,
+                            Class::NewBetter(NewBetterClass::VariableReceiverResolved),
+                            format!(
+                                "new caller={n_name} at site {site:?}: resolved cross-object via a receiver legacy's variable tracking never bound (e.g. a `var` parameter)"
+                            ),
+                        );
+                        continue;
+                    }
                     // CaseFoldHit: does legacy's OWN raw outgoing() for this
                     // exact caller (by name, case-insensitively — the only
                     // handle we have on "legacy's view of this caller")
@@ -1708,6 +1838,8 @@ fn classify_code_lens(
                         .is_some_and(|e| !e.new_incoming_implicit_trigger_sites.is_empty());
                     let is_implicit_rec_linked =
                         sweep_entry.is_some_and(|e| !e.new_incoming_implicit_rec_sites.is_empty());
+                    let is_variable_receiver_linked = sweep_entry
+                        .is_some_and(|e| !e.new_incoming_variable_receiver_sites.is_empty());
                     let is_event_linked = sweep_entry.is_some_and(|e| {
                         e.new_incoming.iter().any(|i| {
                             i.from
@@ -1729,6 +1861,13 @@ fn classify_code_lens(
                             &routine,
                             Class::NewBetter(NewBetterClass::ImplicitRecResolved),
                             format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a cross-object caller resolved via the caller's implicit SourceTable binding)"),
+                        );
+                    } else if is_variable_receiver_linked {
+                        ledger.push(
+                            "codeLens",
+                            &routine,
+                            Class::NewBetter(NewBetterClass::VariableReceiverResolved),
+                            format!("ref count legacy={l_refs:?} vs new={n_refs:?} (new counts a cross-object caller resolved via a receiver legacy's variable tracking never bound)"),
                         );
                     } else if is_event_linked {
                         ledger.push(
@@ -1980,6 +2119,8 @@ fn routine_implicit_dispatch_class(
         Some(NewBetterClass::ImplicitTriggerEdge)
     } else if !entry.new_incoming_implicit_rec_sites.is_empty() {
         Some(NewBetterClass::ImplicitRecResolved)
+    } else if !entry.new_incoming_variable_receiver_sites.is_empty() {
+        Some(NewBetterClass::VariableReceiverResolved)
     } else {
         None
     }
@@ -2211,7 +2352,18 @@ fn lsp_diff_deps_fixture_has_zero_regressions_and_zero_unexplained() {
 /// the page's bound `SourceTable`'s own procedure — legacy's bare-call
 /// resolution is same-object-only, so this is structurally invisible to it,
 /// unlike the SAME-OBJECT bareword calls the falsification fixtures above
-/// prove legacy handles correctly.
+/// prove legacy handles correctly. `VariableReceiverTable.al`/
+/// `VariableReceiverCaller.al` reproduce the layer-3 GENUINE parameter-
+/// receiver gap (confirmed by the controller against real CDO source,
+/// `Codeunit 6175274 "CDO Continia Online PDF Mgt"`'s `MergePdf` calling
+/// `DOFile.IsPdf()` where `DOFile` is a `var` PARAMETER): legacy's
+/// `variable_bindings` is populated ONLY from a routine's `var`-section
+/// LOCALS, never its parameter list, so a parameter receiver is invisible
+/// to `lookup_variable_type`. The SAME fixture's `UseLocalVar` procedure
+/// (a LOCAL `var`-section variable receiver) is a deliberate CONTRAST case:
+/// it MATCHES cleanly (verified empirically, not assumed) — legacy's
+/// `push_variables_ir` DOES capture `var`-section locals correctly, so only
+/// the parameter shape is a genuine gap, not "any variable receiver."
 #[test]
 fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
     let ledger = run_differential(&fixture_path("lsp-diff-nested"), false);
@@ -2249,13 +2401,30 @@ fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
         6,
         "ImplicitRecResolved: page action + page trigger cross-object SourceTable calls, incoming + codeLens + diagnostics; counts={counts:?}"
     );
+    // 3 total: MergePdf's `var DOFile` parameter receiver calling
+    // `DOFile.IsPdf()` shows up once each on incoming, codeLens, and
+    // diagnostics (IsPdf otherwise shows zero incoming to legacy, so it's
+    // ALSO a false-positive unused-procedure). `UseLocalVar`'s LOCAL
+    // variable receiver contributes NOTHING here — it matches cleanly
+    // (see this test's doc) — proving the gap is parameter-specific, not
+    // "any variable receiver."
+    assert_eq!(
+        counts
+            .get("NewBetter::VariableReceiverResolved")
+            .copied()
+            .unwrap_or(0),
+        3,
+        "VariableReceiverResolved: MergePdf's `var DOFile` parameter receiver, incoming + codeLens + diagnostics; counts={counts:?}"
+    );
     // The 4 nested-trigger-as-caller shapes (table field, page action, page
     // field, report dataitem) must ALL match cleanly — this IS the
     // falsification record for NestedTriggerCaller (see this test's doc).
+    // `UseLocalVar`'s local-variable receiver ALSO matches cleanly — proof
+    // that legacy's variable-binding gap is parameter-specific.
     assert_eq!(
         counts.get("Match").copied().unwrap_or(0),
-        33,
-        "Match: the 4 nested-trigger-caller falsification shapes plus every other routine's remaining facts; counts={counts:?}"
+        43,
+        "Match: the 4 nested-trigger-caller falsification shapes + UseLocalVar's local-variable-receiver match + every other routine's remaining facts; counts={counts:?}"
     );
 }
 
@@ -2346,6 +2515,7 @@ fn cdo_workspace_has_zero_regressions_and_zero_unexplained() {
         ("NewBetter::R6InterfaceExclusion", None),
         ("NewBetter::ImplicitTriggerEdge", None),
         ("NewBetter::ImplicitRecResolved", None),
+        ("NewBetter::VariableReceiverResolved", None),
         // Always 0 — out of this driver's scope, see the module doc and
         // `object_id_additive_is_out_of_driver_scope_pinned_zero`.
         ("NewBetter::ObjectIdAdditive", Some(0)),

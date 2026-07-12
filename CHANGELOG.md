@@ -148,6 +148,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ImplicitRecPage.al`, kept in the SAME `tests/fixtures/lsp-diff-nested/`
   directory as the falsification fixtures for direct contrast (same-object
   bare calls match; cross-object ones don't).
+  **CDO layer-3 fix-wave** (41 NEW incoming/codeLens/diagnostics findings,
+  all plain-procedure callers with RECEIVER-QUALIFIED calls; concretely
+  confirmed against CDO `Codeunit 6175274 "CDO Continia Online PDF Mgt"`'s
+  `procedure MergePdf(var DOFile: Record "CDO File"; ...)` calling
+  `DOFile.IsPdf()`, where `DOFile` is a `var` PARAMETER): added
+  `NewBetter::VariableReceiverResolved` — an ordinary receiver-qualified
+  call (any object kind, unlike `ImplicitRecResolved` above) whose receiver
+  is a `var` parameter (or another local/temp shape legacy's variable
+  tracking misses), resolved cross-object by the new engine. Root cause
+  confirmed by reading `src/parser.rs`/`src/indexer.rs`: legacy's
+  `variable_bindings` map is populated EXCLUSIVELY from a routine's
+  `var`-section LOCALS (`push_variables_ir(&mut result, &r.locals, ...)`,
+  `src/parser.rs:293`, driven by `src/indexer.rs`'s
+  `add_variable_binding` loop) — the routine's PARAMETER list (`r.params`,
+  a structurally separate IR field used elsewhere only to compute
+  `parameter_count`) never flows into it at all, so `lookup_variable_type`
+  can never type a parameter receiver, while a LOCAL `var`-section variable
+  receiver of the identical record type resolves correctly today (verified
+  empirically, not assumed — see the fixture below). Mechanical predicate:
+  a Call-kind new-only incoming/codeLens/diagnostics site whose caller's
+  object differs from the callee's, is receiver-qualified, and whose
+  receiver token is NEITHER `Rec`/`xRec` (already claimed by
+  `ImplicitRecResolved`) NOR (case-insensitive, quote-normalized) the
+  callee's own object display name (an object-name-qualified call legacy
+  CAN resolve via `object_types`, so it never reaches this class at all).
+  A companion span-shape correctness fix: the call-site text-sniffing
+  helper previously assumed a call's span always starts exactly at the
+  callee identifier (true for bare calls, per layer-2b) — real CDO data
+  showed a member call's span covers the WHOLE reference expression
+  INCLUDING the receiver (`DOFile.IsPdf()`'s span was 14 columns, not
+  just `IsPdf()`'s 5). `call_site_receiver` now parses the site's own
+  text directly rather than inferring shape from what precedes it,
+  correctly handling both shapes without needing to know which one a
+  given site is in advance; `ImplicitRecResolved`'s bare-call check was
+  re-verified against this fix and needed no change. New fixture arm
+  `VariableReceiverTable.al`/`VariableReceiverCaller.al` in the SAME
+  `tests/fixtures/lsp-diff-nested/` directory, deliberately pairing a
+  `var` parameter receiver (diverges) with a local `var`-section variable
+  receiver of the same record type (matches cleanly) to empirically prove
+  the gap is parameter-specific, not "any variable receiver."
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
