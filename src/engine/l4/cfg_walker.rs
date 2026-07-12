@@ -1813,7 +1813,7 @@ mod tests {
         };
         let body_avail_by_id: HashMap<String, bool> = HashMap::new();
 
-        // Scoped thread (not `Builder::spawn`): the 50k-deep `PCFNNode` chain
+        // Scoped thread (not `Builder::spawn`): the deeply-nested `PCFNNode` chain
         // must be BUILT and DROPPED on this (outer) thread's normal stack.
         // `PCFNNode.children: Option<Vec<PCFNNode>>` is a genuinely recursive
         // structure — its auto-generated Drop glue recurses once per nesting
