@@ -62,7 +62,7 @@ use crate::program::resolve::resolver::{
     resolve_member_with_args, resolve_object_run,
 };
 use crate::program::sig_fp::source_routine_node_id;
-use crate::snapshot::{AppSetSnapshot, ParsedUnit, SnapshotBuilder, parse_snapshot};
+use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit, SnapshotBuilder, parse_snapshot};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -87,6 +87,19 @@ pub enum ObligationId {
 pub struct ClassifiedEdge {
     pub obligation_id: ObligationId,
     pub edge: Edge,
+}
+
+/// Result of resolving ALL call-site obligations in ONE workspace file —
+/// [`resolve_file_obligations`]'s return type. `flagged`/`indeterminate` are
+/// this file's contribution to the T0.3 builtin-dispatch audit (see
+/// [`FlaggedBuiltinDispatchSite`]/[`IndeterminateBuiltinDispatchSite`]);
+/// [`resolve_full_program_from_parts`] aggregates every file's triple and
+/// sorts the combined `flagged`/`indeterminate` populations once, after all
+/// files have been processed.
+pub(crate) struct FileResolution {
+    pub edges: Vec<ClassifiedEdge>,
+    pub flagged: Vec<FlaggedBuiltinDispatchSite>,
+    pub indeterminate: Vec<IndeterminateBuiltinDispatchSite>,
 }
 
 // ---------------------------------------------------------------------------
@@ -611,6 +624,134 @@ fn resolve_call_site_obligation(
     }
 }
 
+/// Resolve ALL call-site obligations of ONE workspace file (T3 Task 6, the
+/// LSP-migration arc's rung-1 incremental-updater primitive: re-resolving a
+/// single saved file's obligations is exactly this call). Extracted
+/// VERBATIM from [`resolve_full_program_from_parts`]'s Phase-1 per-file loop
+/// body — same iteration order, same obligation-id construction. The
+/// `ws_file_set` membership check stays in the caller (this function assumes
+/// `pf` already passed it); `obligation_id_set`/`classified_edges`/`flagged`/
+/// `indeterminate` are whole-run accumulators the caller owns — this
+/// function returns its own contribution in a [`FileResolution`] instead of
+/// mutating shared state, so per-file re-resolution (rung 1) never needs the
+/// other files' accumulators in scope.
+pub(crate) fn resolve_file_obligations(
+    pf: &ParsedFile,
+    primary_app_ref: AppRef,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
+) -> FileResolution {
+    let mut edges: Vec<ClassifiedEdge> = Vec::new();
+    let mut flagged: Vec<FlaggedBuiltinDispatchSite> = Vec::new();
+    let mut indeterminate: Vec<IndeterminateBuiltinDispatchSite> = Vec::new();
+
+    for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+        let obj_key = match obj.id {
+            Some(n) => ObjKey::Id(n),
+            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+        };
+        let obj_node_id = ObjectNodeId {
+            app: primary_app_ref,
+            kind: obj.kind,
+            key: obj_key,
+        };
+        let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+
+        // Record-typed global variable names for RecordOp / receiver inference.
+        let globals_rec: HashSet<String> = obj
+            .globals
+            .iter()
+            .filter(|v| {
+                v.ty.as_deref()
+                    .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                    .unwrap_or(false)
+            })
+            .map(|v| v.name.to_ascii_lowercase())
+            .collect();
+
+        for (routine_idx, routine) in obj.routines.iter().enumerate() {
+            let caller = source_routine_node_id(obj_node_id.clone(), routine);
+
+            let sites = extract_sites_for_routine(
+                &pf.file,
+                &pf.text,
+                &pf.virtual_path,
+                &globals_rec,
+                obj_idx,
+                routine_idx,
+            );
+
+            for site in &sites {
+                let fp = callee_fp(&site.callee_text);
+                let obl_id = ObligationId::CallSite {
+                    caller: caller.clone(),
+                    span: site.span.clone(),
+                    callee_fp: fp,
+                };
+
+                let (kind, shape, completeness, routes, finding) = resolve_call_site_obligation(
+                    &site.shape,
+                    site.arity,
+                    &site.callee_text,
+                    obj_node_opt,
+                    routine,
+                    obj,
+                    primary_app_ref,
+                    graph,
+                    index,
+                    body_map,
+                    site.with_state,
+                    &pf.file,
+                    &site.args,
+                );
+
+                match finding {
+                    Some(BuiltinDispatchFinding::Flagged { object, method }) => {
+                        flagged.push(FlaggedBuiltinDispatchSite {
+                            file: pf.virtual_path.clone(),
+                            object,
+                            method,
+                            line: site.span.start.line,
+                        });
+                    }
+                    Some(BuiltinDispatchFinding::Indeterminate { method }) => {
+                        indeterminate.push(IndeterminateBuiltinDispatchSite {
+                            file: pf.virtual_path.clone(),
+                            method,
+                            line: site.span.start.line,
+                        });
+                    }
+                    None => {}
+                }
+
+                edges.push(ClassifiedEdge {
+                    obligation_id: obl_id,
+                    edge: Edge {
+                        from: caller.clone(),
+                        site: SiteId {
+                            caller: caller.clone(),
+                            span: site.span.clone(),
+                            callee_fingerprint: fp,
+                        },
+                        kind,
+                        shape,
+                        completeness,
+                        routes,
+                    },
+                });
+            }
+        }
+    }
+
+    FileResolution {
+        edges,
+        flagged,
+        indeterminate,
+    }
+}
+
 /// Resolve all obligations and compute coverage.
 ///
 /// This is the clean-room inner loop.  It does NOT call any L3 oracle.
@@ -649,105 +790,29 @@ fn resolve_full_program_from_parts(
                 continue;
             }
 
-            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
-                let obj_key = match obj.id {
-                    Some(n) => ObjKey::Id(n),
-                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
-                };
-                let obj_node_id = ObjectNodeId {
-                    app: primary_app_ref,
-                    kind: obj.kind,
-                    key: obj_key,
-                };
-                let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+            let file_res = resolve_file_obligations(
+                pf,
+                primary_app_ref,
+                graph,
+                &index,
+                &body_map,
+                &obj_node_map,
+            );
 
-                // Record-typed global variable names for RecordOp / receiver inference.
-                let globals_rec: HashSet<String> = obj
-                    .globals
-                    .iter()
-                    .filter(|v| {
-                        v.ty.as_deref()
-                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
-                            .unwrap_or(false)
-                    })
-                    .map(|v| v.name.to_ascii_lowercase())
-                    .collect();
-
-                for (routine_idx, routine) in obj.routines.iter().enumerate() {
-                    let caller = source_routine_node_id(obj_node_id.clone(), routine);
-
-                    let sites = extract_sites_for_routine(
-                        &pf.file,
-                        &pf.text,
-                        &pf.virtual_path,
-                        &globals_rec,
-                        obj_idx,
-                        routine_idx,
-                    );
-
-                    for site in &sites {
-                        let fp = callee_fp(&site.callee_text);
-                        let obl_id = ObligationId::CallSite {
-                            caller: caller.clone(),
-                            span: site.span.clone(),
-                            callee_fp: fp,
-                        };
-                        obligation_id_set.insert(obl_id.clone());
-
-                        let (kind, shape, completeness, routes, finding) =
-                            resolve_call_site_obligation(
-                                &site.shape,
-                                site.arity,
-                                &site.callee_text,
-                                obj_node_opt,
-                                routine,
-                                obj,
-                                primary_app_ref,
-                                graph,
-                                &index,
-                                &body_map,
-                                site.with_state,
-                                &pf.file,
-                                &site.args,
-                            );
-
-                        match finding {
-                            Some(BuiltinDispatchFinding::Flagged { object, method }) => {
-                                flagged.push(FlaggedBuiltinDispatchSite {
-                                    file: pf.virtual_path.clone(),
-                                    object,
-                                    method,
-                                    line: site.span.start.line,
-                                });
-                            }
-                            Some(BuiltinDispatchFinding::Indeterminate { method }) => {
-                                indeterminate.push(IndeterminateBuiltinDispatchSite {
-                                    file: pf.virtual_path.clone(),
-                                    method,
-                                    line: site.span.start.line,
-                                });
-                            }
-                            None => {}
-                        }
-
-                        classified_edges.push(ClassifiedEdge {
-                            obligation_id: obl_id,
-                            edge: Edge {
-                                from: caller.clone(),
-                                site: SiteId {
-                                    caller: caller.clone(),
-                                    span: site.span.clone(),
-                                    callee_fingerprint: fp,
-                                },
-                                kind,
-                                shape,
-                                completeness,
-                                routes,
-                            },
-                        });
-                    }
-                }
+            // T3 Task 6: `resolve_file_obligations` no longer inserts into
+            // `obligation_id_set` inline (it has no access to this whole-run
+            // accumulator) — insert from the returned edges' obligation ids
+            // instead. Identical set contents: every call-site obligation
+            // that would have been inserted inline produces EXACTLY one
+            // `ClassifiedEdge` carrying that same id (see the function's own
+            // loop), so deriving the id set from the edges post-hoc is a
+            // no-op change to the set's membership.
+            for ce in &file_res.edges {
+                obligation_id_set.insert(ce.obligation_id.clone());
             }
+            classified_edges.extend(file_res.edges);
+            flagged.extend(file_res.flagged);
+            indeterminate.extend(file_res.indeterminate);
         }
     }
 
@@ -1360,5 +1425,154 @@ mod tests {
         eprintln!(
             "  -> RUNG-2 BUDGET (ws-parse + build(graph) + index+bodymap + resolve): {rung2_budget:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // T3 (LSP-migration arc) Task 6: `resolve_file_obligations` — the
+    // per-file resolve entry point extracted VERBATIM from this function's
+    // own Phase-1 `for pf in &unit.files` loop body. This test IS the
+    // acceptance bar the task brief demands: per-file output must equal the
+    // full run's Phase-1 edges filtered to that file, AND concatenating
+    // every file's output in file order must equal the full run's Phase-1
+    // edge list EXACTLY (order included).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_file_obligations_matches_full_run_per_file_and_in_concatenation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_workspace(dir.path());
+        std::fs::write(
+            dir.path().join("A.al"),
+            r#"codeunit 50000 A
+{
+    procedure Foo()
+    begin
+        Bar();
+        Helper();
+    end;
+
+    procedure Helper()
+    begin
+    end;
+}
+"#,
+        )
+        .expect("write A.al");
+        std::fs::write(
+            dir.path().join("B.al"),
+            r#"codeunit 50001 B
+{
+    procedure Bar()
+    begin
+    end;
+
+    procedure Baz()
+    begin
+        Bar();
+    end;
+}
+"#,
+        )
+        .expect("write B.al");
+
+        let ctx = build_context(dir.path()).expect("build_context");
+        let ProgramContext {
+            graph,
+            parsed,
+            primary_app_ref,
+            ws_file_set,
+            ..
+        } = &ctx;
+        let primary_app_ref = *primary_app_ref;
+
+        // The full-run baseline (production entry point).
+        let (full_edges, coverage, _audit) =
+            resolve_full_program_from_parts(graph, parsed, primary_app_ref, ws_file_set);
+        assert!(coverage_holds(&coverage), "fixture coverage must hold");
+
+        // Phase-1 (call-site) edges only, in the full run's own order —
+        // Phase 2 (Publisher/event-flow) edges are appended after Phase 1
+        // and are out of scope for this per-file comparison.
+        let phase1_full: Vec<&ClassifiedEdge> = full_edges
+            .iter()
+            .filter(|ce| matches!(ce.obligation_id, ObligationId::CallSite { .. }))
+            .collect();
+        assert!(
+            !phase1_full.is_empty(),
+            "fixture must produce at least one call-site edge"
+        );
+
+        // Rebuild the SAME index/body_map/obj_node_map
+        // `resolve_full_program_from_parts` builds internally (it is a
+        // private inner helper with no other seam to observe from) — this
+        // mirrors its own setup exactly.
+        let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
+            graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
+        let index = ResolveIndex::build(graph);
+        let body_map = BodyMap::build(graph, parsed);
+
+        // Walk in the EXACT same order `resolve_full_program_from_parts`
+        // does: parsed units (filtered to the primary app) x unit.files
+        // (filtered to ws_file_set).
+        let mut per_file_concat: Vec<ClassifiedEdge> = Vec::new();
+        let mut checked_files = 0usize;
+        for unit in parsed {
+            let Some(app_ref) = graph.apps.find(&unit.app) else {
+                continue;
+            };
+            if app_ref != primary_app_ref {
+                continue;
+            }
+            for pf in &unit.files {
+                if !ws_file_set.contains(&pf.virtual_path) {
+                    continue;
+                }
+                let file_res = resolve_file_obligations(
+                    pf,
+                    primary_app_ref,
+                    graph,
+                    &index,
+                    &body_map,
+                    &obj_node_map,
+                );
+
+                // Per-file assertion: this file's edges equal the full run's
+                // Phase-1 edges filtered to this file's virtual_path.
+                let expected: Vec<&ClassifiedEdge> = phase1_full
+                    .iter()
+                    .copied()
+                    .filter(|ce| ce.edge.site.span.unit == pf.virtual_path)
+                    .collect();
+                assert_eq!(
+                    file_res.edges.len(),
+                    expected.len(),
+                    "file {} edge count mismatch",
+                    pf.virtual_path
+                );
+                for (got, want) in file_res.edges.iter().zip(expected.iter()) {
+                    assert_eq!(
+                        &got.obligation_id, &want.obligation_id,
+                        "file {}",
+                        pf.virtual_path
+                    );
+                    assert_eq!(&got.edge, &want.edge, "file {}", pf.virtual_path);
+                }
+
+                checked_files += 1;
+                per_file_concat.extend(file_res.edges);
+            }
+        }
+        assert!(
+            checked_files >= 2,
+            "fixture must exercise >=2 workspace files"
+        );
+
+        // Concatenation-in-file-order equals the full run's Phase-1 edge
+        // list EXACTLY (order included).
+        assert_eq!(per_file_concat.len(), phase1_full.len());
+        for (got, want) in per_file_concat.iter().zip(phase1_full.iter()) {
+            assert_eq!(&got.obligation_id, &want.obligation_id);
+            assert_eq!(&got.edge, &want.edge);
+        }
     }
 }

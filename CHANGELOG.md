@@ -76,6 +76,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolver read at all (enum-value dispatch is a static MS-Learn-sourced
   catalog keyed only on the enum TYPE's identity, never per-value data) and
   was dropped from the derived field list.
+- **`program::resolve::full::resolve_file_obligations`: per-file resolve
+  entry point (T3 LSP-migration arc, Task 6 — additive, byte-identical
+  output).** `resolve_full_program_from_parts`'s Phase-1 `for pf in
+  &unit.files` loop body — extract site-obligation resolution for every
+  object/routine/call-site in one workspace file — is now a standalone
+  `pub(crate)` fn returning a new `FileResolution { edges, flagged,
+  indeterminate }`, extracted VERBATIM (identical obligation-id construction,
+  identical iteration order). `resolve_full_program_from_parts` becomes a
+  thin caller: build `obj_node_map`/`index`/`body_map` as before, then for
+  each workspace file call `resolve_file_obligations` and fold its
+  `FileResolution` into the whole-run accumulators (`obligation_id_set` is
+  now populated by reading each returned edge's `obligation_id` rather than
+  inline per-site — an identical-by-construction set, since every obligation
+  that used to insert inline now produces exactly one returned edge carrying
+  the same id). This is the engine primitive a future incremental LSP
+  updater's "rung 1" needs: re-resolving ONE saved file's obligations without
+  re-walking the whole workspace. Proven behavior-preserving by a new test
+  (`full.rs`) asserting per-file output equals the full run's Phase-1 edges
+  filtered to that file, AND that concatenating every file's output in file
+  order equals the full run's Phase-1 edge list exactly (order included).
+  CDO SHA gate re-verified byte-identical
+  (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`).
 
 ### Changed
 - **`program::build`: layered dep/workspace graph assembly + a single-parse
