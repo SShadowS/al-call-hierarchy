@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `panic = "abort"` and must never be relied on as the real guarantee.
 
 ### Fixed
+- **`path_to_uri` now percent-encodes URIs correctly on `percent_encoding` instead of a
+  hand-picked ~5-character subset (H-13, Tier-3 LSP-migration arc, Task 1).**
+  `protocol.rs`'s encoder only escaped space/`(`/`)`/`[`/`]`, so any other byte the
+  `lsp-types` URI parser rejects — non-ASCII text (e.g. a workspace path containing
+  `Løsninger`), `#`, raw `%`, `+`, `@`, emoji — produced an unparseable URI string and
+  silently fell back to the sentinel `file:///unknown`, breaking every LSP response
+  (definitions, call sites, code lens) for any file under such a path. Each path segment
+  is now escaped independently with `utf8_percent_encode` against an RFC 3986
+  `pchar`-complement `AsciiSet` (plus `%` itself and `\`), so arbitrary Unicode and
+  reserved-character filenames round-trip through `path_to_uri`/`uri_to_path` losslessly.
+  The existing Windows drive-letter normalization and forward-slash join are unchanged;
+  only the per-segment escaping changed. Signature unchanged (`&Path -> Uri`).
 - **Decompression caps on every zip/gzip site — a hostile `.app` (or a hostile
   `.cbor.gz` snapshot fed to `alsem diff`) could OOM-kill the whole process
   (Task T2.2, crash/DoS arc).** Every zip entry and gzip stream in the

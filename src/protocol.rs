@@ -1,8 +1,30 @@
 //! LSP protocol utilities for URI/path conversions
 
 use lsp_types::Uri;
-use percent_encoding::percent_decode_str;
+use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, utf8_percent_encode};
 use std::path::{Path, PathBuf};
+
+/// RFC 3986 `pchar`-complement for a URI path segment: everything that is NOT a
+/// `pchar` (unreserved / sub-delim / `:` / `@`) must be percent-encoded, plus `%`
+/// itself (so an already-percent-looking sequence in the raw filename doesn't get
+/// misread as an escape) and `\` (never valid in a path segment; Windows paths are
+/// split on it before encoding, but a filename could still contain a literal one).
+const PATH_SEGMENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}')
+    .add(b'[')
+    .add(b']')
+    .add(b'^')
+    .add(b'|')
+    .add(b'\\');
 
 /// Normalize a path for case-insensitive comparison on Windows.
 /// On Windows, file paths are case-insensitive but PathBuf comparison is case-sensitive,
@@ -56,13 +78,15 @@ pub fn path_to_uri(path: &Path) -> Uri {
     #[cfg(not(windows))]
     let path_normalized = path_str.to_string();
 
-    // URL-encode special characters (spaces, brackets, etc.)
+    // Percent-encode each path segment independently (RFC 3986), rather than the
+    // previous hand-picked handful of characters (space, parens, brackets) — that
+    // subset left non-ASCII text and other reserved bytes (#, %, +, @, ...) raw in
+    // the URI, which lsp-types' URI parser then rejected outright (H-13).
     let path_encoded = path_normalized
-        .replace(' ', "%20")
-        .replace('(', "%28")
-        .replace(')', "%29")
-        .replace('[', "%5B")
-        .replace(']', "%5D");
+        .split('/')
+        .map(|segment| utf8_percent_encode(segment, PATH_SEGMENT).to_string())
+        .collect::<Vec<_>>()
+        .join("/");
 
     #[cfg(windows)]
     let uri_str = format!("file:///{}", path_encoded);
@@ -159,6 +183,29 @@ mod tests {
         assert_eq!(path, Some(PathBuf::from("c:\\dir#name\\file@v2.al")));
         #[cfg(not(windows))]
         assert_eq!(path, Some(PathBuf::from("/C:/dir#name/file@v2.al")));
+    }
+
+    #[test]
+    fn uri_roundtrip_non_ascii_path() {
+        // H-13: Løsninger previously produced file:///unknown via fluent-uri rejection
+        // because the hand-rolled encoder only escaped a ~5-char subset (space, (, ),
+        // [, ]) and left raw non-ASCII / reserved bytes in the URI, which lsp-types'
+        // fluent-uri-backed parser then rejected.
+        for p in [
+            r"C:\Løsninger\App\Fil æøå.al",
+            r"C:\repo\100%\a#b\c+d @e\f.al",
+            r"C:\repo\emoji 🚀\file.al",
+        ] {
+            let uri = path_to_uri(Path::new(p));
+            let uri_str = uri.as_str();
+            assert_ne!(uri_str, "file:///unknown", "must not hit fallback for {p}");
+            // path_to_uri preserves case and leaves the drive-letter colon literal
+            // (see test_path_to_uri above) — it does not lowercase; that's normalize_path's job.
+            #[cfg(windows)]
+            assert!(uri_str.starts_with("file:///C:/"), "{uri_str}");
+            let back = uri_to_path(&uri).expect("must decode");
+            assert_eq!(back, normalize_path(Path::new(p)), "roundtrip {p}");
+        }
     }
 
     #[test]
