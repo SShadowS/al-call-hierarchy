@@ -253,10 +253,12 @@ pub fn build_program_graph_from_parsed(
 /// (`build_dep_layer` plus `assemble_program_graph`) via
 /// [`build_program_graph_from_parsed`]. Kept as the PUBLIC,
 /// source-compatible entry point every existing caller (aldump,
-/// `engine/l4`/`l5`/`gate`, tests) already uses unchanged;
-/// `resolve::full::build_context` instead calls
-/// `build_program_graph_from_parsed` directly so the whole `ProgramContext`
-/// build parses the snapshot only ONCE (T3 Task 5).
+/// `engine/l4`/`l5`/`gate`, tests) already uses unchanged; `resolve::full::
+/// build_context` instead inlines `build_dep_layer` + `assemble_program_graph`
+/// itself (T3 Task 8) so it can keep the `DepLayer` for reuse (previously,
+/// through T3 Task 5, it called `build_program_graph_from_parsed` directly so
+/// the whole `ProgramContext` build parsed the snapshot only ONCE — that part
+/// is unchanged, only the dep-layer's lifetime is).
 pub fn build_program_graph(snap: &AppSetSnapshot, abi_cache: &AbiCache) -> ProgramGraph {
     let parsed = parse_snapshot(snap);
     build_program_graph_from_parsed(snap, abi_cache, &parsed)

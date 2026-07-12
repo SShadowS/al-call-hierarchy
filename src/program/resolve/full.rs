@@ -35,7 +35,7 @@ use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
 
-use crate::program::build::build_program_graph_from_parsed;
+use crate::program::build::{DepLayer, assemble_program_graph, build_dep_layer};
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
@@ -902,6 +902,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         parsed,
         primary_app_ref,
         ws_file_set,
+        ..
     } = &ctx;
     let primary_app_ref = *primary_app_ref;
 
@@ -983,15 +984,26 @@ pub fn resolve_full_program_for_export(
 /// parse → primary app ref + workspace file set. Single source of truth so
 /// [`resolve_full_program`] and [`resolve_full_program_for_export`] cannot drift.
 /// Returns `None` when the snapshot build fails or the workspace app is absent.
-struct ProgramContext {
-    snap: AppSetSnapshot,
-    graph: ProgramGraph,
-    parsed: Vec<ParsedUnit>,
-    primary_app_ref: AppRef,
-    ws_file_set: HashSet<String>,
+///
+/// `pub(crate)` (T3 Task 8): [`crate::lsp::snapshot::LspSnapshot::build_full`]
+/// is a second consumer of this exact composition — it additionally needs the
+/// [`DepLayer`] this function assembles `graph` from (to store as
+/// `Arc<DepLayer>` for a future incremental rung-2 rebuild), so it calls this
+/// function directly rather than re-deriving snapshot → parse → graph itself.
+pub(crate) struct ProgramContext {
+    pub(crate) snap: AppSetSnapshot,
+    pub(crate) graph: ProgramGraph,
+    pub(crate) parsed: Vec<ParsedUnit>,
+    pub(crate) primary_app_ref: AppRef,
+    pub(crate) ws_file_set: HashSet<String>,
+    /// The immutable dep layer `graph` was assembled from. Pre-T3-Task-8 this
+    /// was built and immediately dropped inside `build_program_graph_from_parsed`
+    /// (see [`assemble_program_graph`]'s doc); kept here so a caller that wants
+    /// to REUSE it across rebuilds doesn't have to re-derive it a second time.
+    pub(crate) dep_layer: DepLayer,
 }
 
-fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
+pub(crate) fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
     // ── Step 1: Build snapshot ────────────────────────────────────────────────
     let snap = (SnapshotBuilder {
         workspace_root: workspace_root.to_path_buf(),
@@ -1009,18 +1021,38 @@ fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
         .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
         .unwrap_or_default();
 
-    // ── Step 2: Parse ONCE, then build the program graph from that SAME parse ──
+    // ── Step 2: Parse ONCE, then build the layered graph from that SAME parse ──
     // (T3 Task 5: previously `build_program_graph` parsed the whole snapshot
     // internally to extract nodes, AND this function separately ran its own
     // standalone `parse_snapshot` for the resolver's body-walk below — a full
-    // double-parse of every source-bearing app, dependencies included.
-    // `build_program_graph_from_parsed` takes the shared `parsed` instead.)
+    // double-parse of every source-bearing app, dependencies included.)
+    //
+    // T3 Task 8: inlines `build_program_graph_from_parsed`'s own two steps
+    // (`build_dep_layer` + find-or-synthesize the workspace `ParsedUnit` +
+    // `assemble_program_graph`) rather than calling that wrapper, so the
+    // `DepLayer` it builds internally survives into `ProgramContext` instead
+    // of being dropped the moment `graph` is assembled. Behavior-preserving:
+    // this is exactly what `build_program_graph_from_parsed` does, in the
+    // same order (see that function's own doc, and the
+    // `assemble_program_graph_matches_build_program_graph_field_by_field`
+    // characterization test in `program::build`).
     let parsed = parse_snapshot(&snap);
-    let graph = build_program_graph_from_parsed(
-        &snap,
-        &crate::program::abi_ingest::AbiCache::new(),
-        &parsed,
-    );
+    let dep_layer = build_dep_layer(&snap, &crate::program::abi_ingest::AbiCache::new(), &parsed);
+
+    // `snap.apps` is GUID-deduped upstream (H-2), so at most one parsed unit
+    // can match the workspace identity.
+    let empty_ws_unit;
+    let ws_unit: &ParsedUnit = match parsed.iter().find(|u| u.app == snap.workspace_app) {
+        Some(u) => u,
+        None => {
+            empty_ws_unit = ParsedUnit {
+                app: snap.workspace_app.clone(),
+                files: vec![],
+            };
+            &empty_ws_unit
+        }
+    };
+    let graph = assemble_program_graph(&dep_layer, ws_unit, &snap);
 
     // ── Step 3: Locate primary (workspace) app ────────────────────────────────
     let primary_app_ref = graph.apps.find(&snap.workspace_app)?;
@@ -1031,6 +1063,7 @@ fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
         parsed,
         primary_app_ref,
         ws_file_set,
+        dep_layer,
     })
 }
 

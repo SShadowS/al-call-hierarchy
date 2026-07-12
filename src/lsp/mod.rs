@@ -6,3 +6,4 @@
 
 pub mod def_surface;
 pub mod encoding;
+pub mod snapshot;

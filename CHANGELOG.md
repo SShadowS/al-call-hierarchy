@@ -8,6 +8,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`src/lsp/snapshot.rs`: `LspSnapshot`, the immutable batch-built
+  program-engine snapshot the migrated LSP server will serve queries from
+  (T3 LSP-migration arc, Task 8 — the arc's structural centerpiece).**
+  `LspSnapshot::build_full(workspace_root)` composes every engine primitive
+  landed by earlier T3 tasks into one self-contained, `Arc`-shareable value:
+  `SnapshotBuilder` → `parse_snapshot` → `build_dep_layer`/
+  `assemble_program_graph` (Task 5) → per-file `resolve_file_obligations`
+  (Task 6) → `def_surface_fingerprint` (Task 7) → `emit_event_flow_edges`,
+  then derives `incoming` (an O(E) wholesale rebuild, never incrementally
+  edited — spec §3 / H-10 lesson). New public types: `EdgeRef` (an index-based
+  `(file, idx)` edge handle — never a borrow), `DeclEntry` (owned routine
+  identity + `origin`/`name_origin` spans), `ParsedFileEntry` (owned
+  `AlFile`+text+`DefSurface`), and `EVENT_EDGES_KEY` (the reserved
+  NUL-prefixed `EdgeRef.file` bucket for whole-program `EventFlow` edges, kept
+  separate from the workspace-scoped per-file `Call`/`Run`/`ImplicitTrigger`
+  buckets in `edges_by_file`). `LspSnapshot::decl_at` does position lookup
+  (file + 0-based line + UTF-8 byte col → the routine whose `name_origin`
+  contains it, preferred, else whose whole-decl `origin` contains it, using
+  `Origin`'s own byte-column semantics directly — no encoding conversion
+  needed) and `LspSnapshot::edge` resolves an `EdgeRef` back to its
+  `ClassifiedEdge`. `ResolveIndex`/`BodyMap`/the `ObjectNodeId → &ObjectNode`
+  map are built TRANSIENTLY inside `build_full` and never stored on the
+  struct (they borrow `graph`/`parsed`, which would make `LspSnapshot`
+  self-referential) — `AlFile` has no `Clone` impl, so `build_full` is
+  structured in two phases: a borrow phase (index/body_map alive) that
+  resolves every file and computes each `DefSurface`, then an ownership-move
+  phase (after the borrows drop) that consumes the parsed workspace unit by
+  value to build `parsed: HashMap<String, Arc<ParsedFileEntry>>` without
+  cloning any `AlFile`. Enabling change to `program::resolve::full`: `
+  ProgramContext`/`build_context` widened to `pub(crate)`, and `build_context`
+  now inlines `build_dep_layer` + `assemble_program_graph` directly (rather
+  than calling the `build_program_graph_from_parsed` wrapper) so the
+  `DepLayer` it assembles from survives into `ProgramContext` — behavior-
+  preserving (the wrapper does exactly these two calls, in this order),
+  verified by the pre-existing `assemble_program_graph_matches_build_
+  program_graph_field_by_field` characterization test plus the whole `cargo
+  test --lib` suite staying green. 4 unit tests over an in-memory fixture
+  workspace (a cross-file call via a declared `Codeunit "Beta"` local var, a
+  same-name overload pair, an event publisher/subscriber pair, and a
+  non-ASCII Danish identifier, `Løbenr`, to exercise UTF-8 byte-column
+  handling): `build_full`'s `edges_by_file` + `event_edges` union equals a
+  direct `resolve_full_program` run (order-insensitive, via `Edge`'s derived
+  `Ord`); determinism across two independent builds (`generation` excluded);
+  `decl_at`'s name-hit/whole-decl-fallback/none paths; `build_incoming`
+  finding both the cross-file caller and the event subscriber's publisher.
 - **`src/lsp/def_surface.rs`: the definition-surface fingerprint,
   `DefSurface`/`def_surface_fingerprint` (T3 LSP-migration arc, Task 7).** A
   blake3 hash — canonically encoded, length-prefixed strings/lists, no
