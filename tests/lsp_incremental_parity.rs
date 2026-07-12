@@ -118,6 +118,20 @@
 //! start/end `Point`s, which — unlike `ts_id` — really are stable, since
 //! both sides parse the exact same on-disk bytes.
 //!
+//! **`dep_decl_by_id`/`dep_texts`/`workspace_root` (T3 Task 11 review
+//! fix-wave — the three `LspSnapshot` fields Task 11 added for
+//! dependency-source real-span coverage, after this gate was already
+//! written).** All three are now compared, closing what would otherwise be
+//! an invisible-divergence hole in a PERMANENT gate. On THIS fixture
+//! (`tests/fixtures/lsp-incr/`, workspace-only — no dependency apps) `dep_decl_by_id`/
+//! `dep_texts` are trivially empty on both sides and `workspace_root` is
+//! trivially identical (`copy_fixture_to_tempdir`'s one tempdir), so this
+//! addition exercises the comparison PLUMBING now without yet proving
+//! anything non-vacuous about dependency-bearing rung 1/2 transitions — a
+//! dedicated dep-bearing fixture arm is planned as Task 14's Step 5
+//! (plan-amended, commit `9e4006e`), which will give these same three
+//! comparisons real coverage.
+//!
 //! # Exhaustive accounting (every `Edge`/`Route` field is either compared or
 //! excluded-with-a-reason above; nothing is silently dropped)
 //!
@@ -280,6 +294,16 @@ fn canon_decls(decls: &[DeclEntry]) -> Vec<CanonDecl> {
     v
 }
 
+/// `LspSnapshot::dep_decl_by_id`, canonicalized the same way `canon_decl`
+/// projects a workspace `DeclEntry` (`DeclEntry` itself carries no derived
+/// equality — see the module doc's T3 Task 11 review fix-wave note).
+fn canon_dep_decl_by_id(snap: &LspSnapshot) -> BTreeMap<RoutineNodeId, CanonDecl> {
+    snap.dep_decl_by_id
+        .iter()
+        .map(|(k, v)| (k.clone(), canon_decl(v)))
+        .collect()
+}
+
 /// `incoming`, canonicalized: target `RoutineNodeId` -> the SORTED set of
 /// `ObligationId`s of the edges that call it. Dereferences every `EdgeRef`
 /// through [`LspSnapshot::edge`] to its owning `ClassifiedEdge`'s
@@ -365,6 +389,23 @@ fn assert_snapshots_equivalent(incremental: &LspSnapshot, fresh: &LspSnapshot, c
             "{context}: incoming map diverged for target {target:?}"
         );
     }
+
+    // T3 Task 11 review fix-wave: dep_decl_by_id/dep_texts/workspace_root —
+    // trivially equal on this dep-less fixture (see the module doc's note);
+    // still compared so a future regression can't slip through silently.
+    assert_eq!(
+        canon_dep_decl_by_id(incremental),
+        canon_dep_decl_by_id(fresh),
+        "{context}: dep_decl_by_id diverged (incremental vs fresh build_full)"
+    );
+    assert_eq!(
+        *incremental.dep_texts, *fresh.dep_texts,
+        "{context}: dep_texts diverged (incremental vs fresh build_full)"
+    );
+    assert_eq!(
+        incremental.workspace_root, fresh.workspace_root,
+        "{context}: workspace_root diverged (incremental vs fresh build_full)"
+    );
 }
 
 // ---------------------------------------------------------------------------

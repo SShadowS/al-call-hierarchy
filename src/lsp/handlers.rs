@@ -342,7 +342,7 @@ fn abi_symbol_item(snap: &LspSnapshot, key: &AbiRoutineKey) -> CallHierarchyItem
         format!("{} {}", key.object_type, key.object_name_lc)
     };
     let detail = format!("{object_display}.{} (from {app_name})", key.routine_name_lc);
-    let uri = abi_symbol_uri(app_name, &object_display, &key.routine_name_lc);
+    let uri = abi_symbol_uri(key, app_name);
 
     CallHierarchyItem {
         name: key.routine_name_lc.clone(),
@@ -447,19 +447,52 @@ fn dep_source_uri(snap: &LspSnapshot, app: AppRef, virtual_path: &str) -> Uri {
         })
 }
 
-/// Synthesize an `al-preview://` URI for an ABI-boundary (`SymbolOnly`,
-/// no embedded source) target — reuses the SAME scheme prefix legacy's
-/// `dependency_document_symbol` already established for object-level
-/// virtual documents (`al-preview:///allang/<App>/<Type>/<Id>/<Name>`),
-/// rather than inventing an untested new one. Object-level granularity
-/// only (no per-routine position exists at this trust tier at all).
-fn abi_symbol_uri(app_name: &str, object_display: &str, routine_name_lc: &str) -> Uri {
+/// Synthesize an `al-preview://` URI for an ABI-boundary (`SymbolOnly`, no
+/// embedded source) target — the SAME scheme AND OBJECT-LEVEL LAYOUT
+/// legacy's `dependency_document_symbol`/`parse_al_preview_uri`
+/// (`src/handlers.rs:1452-1499`) already establish: exactly
+/// `al-preview:///allang/<App>/<Type>/<Id>/<Name>.dal`, 5 path segments
+/// after the scheme (App, Type, Id, Name — `parse_al_preview_uri` anchors
+/// on `Type` parsing as a known `crate::types::ObjectType`, so segment
+/// ORDER and COUNT both matter, not merely the scheme prefix; an earlier
+/// version of this function emitted only 3 segments, `allang/App/
+/// ObjectDisplay/Routine`, which legacy's parser structurally rejects —
+/// caught in T3 Task 11 review, fixed here).
+///
+/// Object-level granularity only — no per-routine position exists at this
+/// trust tier at all — so this navigates to the dep OBJECT's synthesized
+/// preview document, the SAME target a `dependencyDocumentSymbol` click on
+/// this object already resolves to; the caller (one specific routine
+/// within that object) still gets a zero-range item, unable to jump
+/// directly to the routine's own line — a known, documented limitation,
+/// not a silently wrong answer.
+///
+/// A NUMBERED dependency object's [`AbiRoutineKey`] carries no raw-cased
+/// display NAME at all (`resolver::make_routine_route` sets
+/// `object_name_lc` to `String::new()` for an `ObjKey::Id`-keyed object —
+/// only the number survives) — the `Name` segment falls back to the
+/// object number's own decimal text in that case, so the URI still
+/// round-trips STRUCTURALLY through `parse_al_preview_uri` (which never
+/// validates `Name` against real data, just splits it out as a bare
+/// string), even though it isn't a real lookupable object name. An
+/// `object_type` value legacy's `ObjectType` enum never modeled (e.g.
+/// `ReportExtension`) fails `parse_al_preview_uri`'s type-anchor scan
+/// entirely — a PRE-EXISTING legacy schema gap, not something this
+/// conformance fix closes.
+fn abi_symbol_uri(key: &AbiRoutineKey, app_name: &str) -> Uri {
     let encode = |s: &str| utf8_percent_encode(s, SYNTH_URI_SEGMENT).to_string();
+    let id_segment = key.object_number.to_string();
+    let name_segment = if key.object_name_lc.is_empty() {
+        key.object_number.to_string()
+    } else {
+        key.object_name_lc.clone()
+    };
     format!(
-        "al-preview:///allang/{}/{}/{}",
+        "al-preview:///allang/{}/{}/{}/{}.dal",
         encode(app_name),
-        encode(object_display),
-        encode(routine_name_lc)
+        encode(&key.object_type),
+        encode(&id_segment),
+        encode(&name_segment)
     )
     .parse()
     .unwrap_or_else(|_| "al-preview:///unknown".parse().expect("static URI parses"))
@@ -1181,6 +1214,58 @@ mod tests {
         // Cross-check against the dep source's OWN known layout: `procedure
         // Bar()` is line 2 (0-based) of `dep_src`.
         assert_eq!(to.selection_range.start.line, 2);
+    }
+
+    // ── T3 Task 11 review fix-wave: abi_symbol_uri must conform to ─────────
+    // ── legacy's OWN `parse_al_preview_uri`, not merely resemble its scheme ─
+
+    #[test]
+    fn abi_symbol_uri_conforms_to_legacys_parse_al_preview_uri() {
+        use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
+        use crate::types::ObjectType;
+
+        // Numbered object: no raw display name is ever carried in
+        // `AbiRoutineKey` for an `ObjKey::Id`-keyed object (see
+        // `resolver::make_routine_route`) — the Name segment must fall back
+        // to the object number's own text so the URI still round-trips.
+        let key_numbered = AbiRoutineKey {
+            app: AppRef(0),
+            object_type: "codeunit".to_string(),
+            object_number: 50100,
+            object_name_lc: String::new(),
+            routine_name_lc: "bar".to_string(),
+            params_count: 0,
+            param_type_fp: 0,
+            routine_kind: AbiRoutineKind::Procedure,
+            event_kind: AbiEventKind::None,
+        };
+        let uri = abi_symbol_uri(&key_numbered, "Some Dep App");
+        let (app, otype, name) = crate::handlers::parse_al_preview_uri(uri.as_str())
+            .unwrap_or_else(|| {
+                panic!(
+                    "emitted URI must parse via legacy's OWN al-preview parser; got {}",
+                    uri.as_str()
+                )
+            });
+        assert_eq!(app, "Some Dep App");
+        assert_eq!(otype, ObjectType::Codeunit);
+        assert_eq!(
+            name, "50100",
+            "no raw display name exists for a numbered ABI object; the id \
+             is used as a placeholder Name segment"
+        );
+
+        // Id-less (name-keyed) object: the real display name IS available
+        // and must survive the round trip.
+        let key_named = AbiRoutineKey {
+            object_number: 0,
+            object_name_lc: "my ext object".to_string(),
+            ..key_numbered.clone()
+        };
+        let uri2 = abi_symbol_uri(&key_named, "Some Dep App");
+        let (_, _, name2) = crate::handlers::parse_al_preview_uri(uri2.as_str())
+            .expect("id-less object URI must also parse");
+        assert_eq!(name2, "my ext object");
     }
 
     // ── URI case-insensitivity (Windows filesystems are case-insensitive) ──

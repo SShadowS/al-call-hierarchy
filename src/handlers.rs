@@ -1452,7 +1452,14 @@ fn resolve_dependency_object<'a>(
 /// Parse an `al-preview:/allang/{App}/{Type}/{Id}/{Name}.dal` URI into its parts.
 /// Returns (app_name, object_type, object_name). Tolerates URL-encoded segments
 /// and unusual scheme separators.
-fn parse_al_preview_uri(uri: &str) -> Option<(String, ObjectType, String)> {
+///
+/// `pub(crate)` (T3 Task 11 review fix-wave): `src/lsp/handlers.rs`'s
+/// `abi_symbol_uri` mints URIs in this SAME `al-preview://` object-level
+/// layout for the fresh engine's `RouteTarget::AbiSymbol` fallback item —
+/// its own conformance test calls this parser directly to prove the emitted
+/// URI actually round-trips through the ONE real consumer this scheme has
+/// today, rather than merely resembling it by eye.
+pub(crate) fn parse_al_preview_uri(uri: &str) -> Option<(String, ObjectType, String)> {
     // Strip scheme and any number of leading slashes.
     let rest = uri.strip_prefix("al-preview:")?;
     let rest = rest.trim_start_matches('/');

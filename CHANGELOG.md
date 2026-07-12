@@ -33,7 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LspSnapshot::decl_and_text` at query time, never from a stored
   `Route::Witness`/`SiteId` span — proven by two dedicated rung-1-edit
   regression tests asserting the returned ranges match an independent fresh
-  batch build, not the pre-edit witness.
+  batch build, not the pre-edit witness. **Review fix-wave:** the
+  `al-preview://` URI `RouteTarget::AbiSymbol` items emit was found to only
+  wear legacy's scheme by eye — legacy's own `parse_al_preview_uri`
+  (`src/handlers.rs:1452-1499`, widened to `pub(crate)` for direct testing)
+  structurally requires the OBJECT-level 5-segment layout
+  `al-preview:///allang/{App}/{Type}/{Id}/{Name}.dal` (it anchors on `Type`
+  parsing as a known `ObjectType`), which the original 3-segment
+  `allang/{App}/{ObjectDisplay}/{Routine}` shape could never satisfy —
+  `abi_symbol_uri` now emits the conformant 5-segment layout (falling back
+  to the object number's own text for the `Name` segment when a numbered
+  ABI object carries no raw display name at all), proven by a dedicated
+  test that calls legacy's parser directly on the emitted URI.
 - **`LspSnapshot::dep_decl_by_id`/`dep_texts`/`workspace_root` (T3 Task 11,
   extending Task 8's `LspSnapshot`)** — closes a real gap the handlers work
   surfaced: `decl_by_id` was workspace-only, so a `RouteTarget::Routine(id)`
@@ -59,7 +70,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses serde's standard `#[serde(remote = "...")]` idiom rather than adding
   serde to `al-syntax` or hand-rolling a shadow enum with manual conversion.
   Zero behavior change to any resolution path — verified by the full
-  existing test suite staying green.
+  existing test suite staying green. **Review fix-wave:** `RoutineNodeId::
+  sig_fp: u64` was found to serialize as a bare JSON NUMBER — an FNV-1a hash
+  spans the FULL `u64` range, but JSON numbers are IEEE-754
+  double-precision (exactly representable only up to 2^53), so a
+  JavaScript-based LSP client's `JSON.parse(item.data)` (the near-universal
+  case) would silently ROUND `sig_fp` for essentially every multi-param
+  routine, corrupting `ItemData` before the follow-up incoming/outgoing
+  request ever reaches this engine — a decode-then-lookup miss that fails
+  closed to an empty result in every real editor, never a loud error. Now
+  serialized through a decimal string (`#[serde(with = "sig_fp_as_string")]`,
+  a small local module) instead, which carries the exact value losslessly
+  regardless of the receiving language's number type; a dedicated test
+  asserts the JSON field is a string AND a value past 2^53 round-trips
+  exactly.
 - **`tests/lsp_incremental_parity.rs`: the PERMANENT incremental-vs-batch
   differential gate (T3 LSP-migration arc, Task 10 — the arc's H-10
   insurance policy; outlives the arc, runs in CI forever).** 9 scripts, each
@@ -144,7 +168,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper names each specific overload's `RoutineNodeId` by source line
   before AND after the edit, asserting the Text-literal call site now names
   `Calc(Text)`'s id (previously the Integer-literal site's id) and
-  vice versa.
+  vice versa. **Review fix-wave (T3 Task 11):** widened the equivalence key
+  a second time to ALSO compare `LspSnapshot::dep_decl_by_id`/`dep_texts`/
+  `workspace_root` — the three fields Task 11 added for dependency-source
+  real-span coverage, after this gate was already written, would otherwise
+  have been an invisible-divergence hole in a PERMANENT gate. Trivially
+  equal on this dep-less fixture today (no dependency apps); a dedicated
+  dependency-bearing fixture arm giving these three comparisons real,
+  non-vacuous coverage is planned as Task 14's Step 5 (plan-amended, commit
+  `9e4006e`).
 - **`src/lsp/updater.rs`: the incremental updater — debounced queue, the
   rung-1/rung-2/(degenerate)rung-3 soundness ladder, and atomic
   `Arc`-swap publication (T3 LSP-migration arc, Task 9 — the arc's CRUX).**

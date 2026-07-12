@@ -184,7 +184,38 @@ pub struct RoutineNodeId {
     /// (`sig_fp::source_param_sig_fp`). Extends `RoutineNodeId` to a total
     /// discriminator. NOT stable across engine versions — see the
     /// struct-level doc note above.
+    ///
+    /// `#[serde(with = "sig_fp_as_string")]` (T3 Task 11 review fix-wave):
+    /// an FNV-1a hash spans the FULL `u64` range, but JSON's number type is
+    /// IEEE-754 double-precision — exactly representable only up to 2^53. A
+    /// JavaScript-based LSP client's `JSON.parse(item.data)` (the near-universal
+    /// case: VS Code extensions) would silently ROUND `sig_fp` for
+    /// essentially every multi-param routine, corrupting the round-tripped
+    /// `ItemData` before the follow-up `incomingCalls`/`outgoingCalls`
+    /// request ever reaches this engine — a decode-then-lookup miss that
+    /// fails closed to an empty result, never a loud error, in every real
+    /// editor. Serializing through a decimal string carries the exact value
+    /// losslessly regardless of the receiving language's number type.
+    #[serde(with = "sig_fp_as_string")]
     pub sig_fp: u64,
+}
+
+/// `u64`-as-JSON-string serde helper — see [`RoutineNodeId::sig_fp`]'s doc
+/// for why this exists. `RoutineNodeId` is currently the only `u64` field
+/// anywhere in this identity chain, so this module is private and narrowly
+/// scoped to it; a future `u64` field needing the same treatment should
+/// reuse this module rather than duplicating it.
+mod sig_fp_as_string {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
+        v.to_string().serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        let s = String::deserialize(d)?;
+        s.parse::<u64>().map_err(serde::de::Error::custom)
+    }
 }
 
 #[cfg(test)]
@@ -231,5 +262,51 @@ mod tests {
             na, nb,
             "same type+name in different apps must be distinct nodes"
         );
+    }
+
+    // ── T3 Task 11 review fix-wave: sig_fp must serialize as a STRING ──────
+
+    #[test]
+    fn sig_fp_serializes_as_a_json_string_and_round_trips_past_2_pow_53() {
+        let id = RoutineNodeId {
+            object: ObjectNodeId {
+                app: AppRef(0),
+                kind: ObjectKind::Codeunit,
+                key: ObjKey::Id(1),
+            },
+            name_lc: "foo".to_string(),
+            enclosing_member_lc: None,
+            params_count: 2,
+            // u64::MAX - 1: comfortably past 2^53 (9_007_199_254_740_992) —
+            // a JSON NUMBER this large would silently round through a
+            // JS-based client's JSON.parse.
+            sig_fp: u64::MAX - 1,
+        };
+        assert!(
+            id.sig_fp > (1u64 << 53),
+            "fixture assumption: sig_fp must exceed 2^53"
+        );
+
+        let json = serde_json::to_value(&id).expect("serialize to Value");
+        let sig_fp_value = &json["sig_fp"];
+        assert!(
+            sig_fp_value.is_string(),
+            "sig_fp must serialize as a JSON STRING, not a number \
+             (JS JSON.parse silently loses precision past 2^53); got {sig_fp_value:?}"
+        );
+        assert_eq!(sig_fp_value.as_str().unwrap(), (u64::MAX - 1).to_string());
+
+        let round_tripped: RoutineNodeId =
+            serde_json::from_value(json).expect("deserialize from Value");
+        assert_eq!(round_tripped, id);
+
+        // Explicit to_string/from_str round trip, per the review's ask.
+        let s = serde_json::to_string(&id).expect("to_string");
+        assert!(
+            s.contains(&format!("\"sig_fp\":\"{}\"", u64::MAX - 1)),
+            "serialized JSON must embed sig_fp as a quoted string; got {s}"
+        );
+        let back: RoutineNodeId = serde_json::from_str(&s).expect("from_str");
+        assert_eq!(back, id);
     }
 }
