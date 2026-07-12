@@ -54,6 +54,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   utf-8-negotiating client behavior becomes correct NOW; utf-16 clients stay
   unchanged-broken until the Task-15 cutover wires conversion into
   `handlers.rs`.
+- **`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md`: resolver-read
+  audit — the definition-surface fingerprint field list (T3 LSP-migration arc,
+  Task 4, DOCUMENTATION ONLY, no code changed).** The soundness spine of rung
+  1's "body-only edit in F can only change F's own edges" claim: enumerates
+  every data read reachable from `resolve_call_site_obligation`/
+  `emit_event_flow_edges`, classifies each CALLER-side vs. SURFACE-side, and
+  answers the load-bearing question — does resolution ever read another
+  file's routine BODY? **No** (verified: exactly 3 non-test
+  `BodyMap::get`/`get_with_path` call sites exist in the whole
+  `src/program/resolve/` tree, reading only `origin`/`name_origin` byte-spans
+  and `params`/`parse_incomplete` — never `.body`/`.locals`/`.return_name`).
+  One real subtlety surfaced along the way (not a rung-1 blocker, but a
+  BINDING constraint on Task 9): `RoutineDecl.origin` spans the whole
+  declaration INCLUDING its body, so a stored edge's `Witness::SourceSpan`
+  for a cross-file target goes byte-stale the instant that target's body is
+  edited — handlers must always re-derive position data live from the
+  current `BodyMap`/`decl_index`, never trust a baked-in span, or rung 1
+  will silently serve stale ranges. Also falsified one expected fingerprint
+  class from the design doc: "enum values" turned out not to be a real
+  resolver read at all (enum-value dispatch is a static MS-Learn-sourced
+  catalog keyed only on the enum TYPE's identity, never per-value data) and
+  was dropped from the derived field list.
 
 ### Changed
 - **L5 detectors now return `Result<DetectorOutput, DetectorError>` instead of
