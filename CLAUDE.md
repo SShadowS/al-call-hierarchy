@@ -36,7 +36,8 @@ cargo run -- --project /path/to/al-project --verbose
 There is no `--no-lsp` flag — `clap` rejects unknown flags outright. LSP server mode is
 the default whenever `--project` is *not* given; passing `--project` alone switches to
 CLI mode (index-and-report, or `--analyze` for the quality-diagnostics report). `--lsp`
-exists as an explicit no-op for symmetry. Other flags: `--no-watcher` (disable the file
+forces LSP server mode at top precedence (it overrides `--project`, always starting the
+server). `--analyze` without `--project` is a hard error. Other flags: `--no-watcher` (disable the file
 watcher; rely on LSP change notifications instead), `--no-telemetry` (see `docs/telemetry.md`).
 See `src/main.rs`'s `Args` (clap derive) for the authoritative flag list.
 

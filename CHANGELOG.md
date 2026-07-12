@@ -484,6 +484,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicted.
 
 ### Changed
+- **`default-run = "al-call-hierarchy"` restores bare `cargo run` (Task T4-A
+  review fix).** The crate grew multiple `[[bin]]` targets, so bare `cargo run`
+  errored on ambiguous binary selection — contradicting the very first command
+  the docs show. `default-run` pins the LSP binary as documented.
 - **CLAUDE.md + README rewritten against the real tree (Task T4-A, Tier-4
   hygiene arc).** Onboarding docs still described a retired system: "Adding New
   AL Constructs" pointed at `language.rs` tree-sitter query consts with zero
