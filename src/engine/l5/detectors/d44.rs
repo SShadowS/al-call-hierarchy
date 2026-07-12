@@ -292,7 +292,7 @@ pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     }
 
     // Apply the per-event output cap across BOTH families.
-    let (kept, _truncated) = group_and_cap(
+    let (kept, truncated) = group_and_cap(
         findings,
         |f| {
             // ^d44(?:-rw)?\/([^|]+)
@@ -311,9 +311,15 @@ pub fn detect_d44(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let mut kept = kept;
     kept.sort_by(|a, b| a.id.cmp(&b.id));
     let emitted = kept.len();
+    let mut stats = DetectorStats::new(DETECTOR, candidates, emitted);
+    // Was computed and silently discarded — surface it so a capped event's
+    // dropped-finding count is visible instead of vanishing. `add_skip` only
+    // inserts when > 0, so this is additive: byte-identical output whenever no
+    // event exceeds `D44_MAX_PER_EVENT`.
+    stats.add_skip("outputCapped", truncated as u64);
     DetectorOutput {
         findings: kept,
-        stats: DetectorStats::new(DETECTOR, candidates, emitted),
+        stats,
         diagnostics: vec![],
     }
 }

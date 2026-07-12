@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **L4 JACOBI fixed-point cap-hit shipped partial summaries as silently
+  definite (Task T4-C, Tier-4 hygiene arc).** `summary_runner::run_one_scc`'s
+  cap-hit branch (`MAX_FIXED_POINT_ITERATIONS = 1000`) only `eprintln!`'d a
+  warning and returned the last, unconverged in-progress summaries with no
+  marker distinguishing them from settled ones — a real risk given the
+  transfer function is non-monotone via `apply_call`. Fixed two ways,
+  additively: (1) every capped SCC member's `RoutineSummary` now gets a
+  `fixpoint-capped` `Uncertainty` (the SAME mechanism detectors already read
+  via `uncertainties_by_node` — no parallel channel), and (2) a new
+  `SummarizeDiagnostic` (severity "warning", stage "summarize") threads from
+  `run_one_scc` through `compute_summaries`/`compute_summaries_with_leaves`
+  (now 3-tuple returns) into `DetectorContext.summarize_diagnostics`, then
+  `RunOutput.summarize_diagnostics`, filling the "summarizeDiagnostics" TS-order
+  slot 3 that `gate/run.rs` had tracked as an explicit gap since the al-sem
+  6-source diagnostic concat was ported. Empty on every SCC that converges
+  (the overwhelming common case), so this is CDO byte-identity-preserving.
+- **d44/d45 computed their per-event/per-publisher output-cap truncation count
+  and threw it away (Task T4-C, Tier-4 hygiene arc).** Both detectors called
+  `group_and_cap` and destructured `(kept, _truncated)`, discarding the second
+  element. Now surfaced via `stats.add_skip("outputCapped", truncated)` — the
+  existing present-iff-nonzero `DetectorStats.skipped` mechanism, so output is
+  unchanged whenever no event/publisher exceeds its cap.
 - **`tests/r3b_incremental_nondeterminism.rs`'s corpus sweep used the exact
   shipped silent-skip shape this whole remediation program exists to kill
   (Task T4-B, Tier-4 hygiene arc).** `sweep_fixtures()` read the ~40-fixture

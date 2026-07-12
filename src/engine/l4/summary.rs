@@ -708,8 +708,11 @@ fn run_and_project(
         }
     }
 
-    // Run the JACOBI fixed-point, optionally collecting the trace.
-    let (final_summaries, raw_traces) = compute_summaries(
+    // Run the JACOBI fixed-point, optionally collecting the trace. This is the
+    // R3a-2 trace-oracle projection (test/golden tooling), not the production
+    // detect/gate envelope — `detector_context::build_detector_context` is the
+    // path that threads cap-hit diagnostics into `DetectorContext`.
+    let (final_summaries, raw_traces, _cap_diagnostics) = compute_summaries(
         &ws.routines,
         &graph,
         &scc,
