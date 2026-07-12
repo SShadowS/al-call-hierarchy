@@ -2965,16 +2965,48 @@ pub(crate) enum CallerScopeSymbol<'a> {
     /// silently resolve via a DIFFERENT, lower-precedence symbol of the same
     /// name).
     Found(Option<&'a str>),
-    /// SAME-SCOPE malformed duplicate (T3 round-2 closer, BINDING): `name`
-    /// matches the routine's named-return binding AND ALSO a param or local
-    /// of the IDENTICAL name in the SAME routine. This can never legally
-    /// happen in valid AL — a named return value can't coexist with a
-    /// param/local of the same name (compile error) — so if malformed source
-    /// somehow reaches here anyway, the caller MUST decline outright for
-    /// this identifier rather than pick a winner. Never fires for a
-    /// same-name GLOBAL — shadowing a global is ordinary, VALID AL
-    /// precedence (the binding wins; see [`CallerScopeSymbol::Found`]).
+    /// A same-tier duplicate this function cannot safely resolve — either:
+    /// (a) SAME-SCOPE BINDING clash (T3 round-2 closer): `name` matches the
+    /// routine's named-return binding AND ALSO a param or local of the
+    /// IDENTICAL name in the SAME routine. This can never legally happen in
+    /// valid AL — a named return value can't coexist with a param/local of
+    /// the same name (compile error) — so if malformed source somehow
+    /// reaches here anyway, the caller MUST decline outright rather than
+    /// pick a winner. Never fires for a same-name GLOBAL — shadowing a
+    /// global is ordinary, VALID AL precedence (the binding wins; see
+    /// [`CallerScopeSymbol::Found`]). Or: (b) a genuinely CONFLICTING
+    /// param-vs-param / local-vs-local duplicate (T4-C medium (e)) — a
+    /// `#if`/`#else` union-read (see `al_syntax::lower`'s doc: preproc
+    /// branches are NOT evaluated, so both arms' declarations survive) that
+    /// declared the SAME name with DIFFERENT type text in each branch.
+    /// IDENTICAL duplicates (same name AND type, harmless re-parse
+    /// duplication) are deduped first and never reach this variant — mirrors
+    /// `ResolveIndex::field_in_table`'s and `resolve_dataitem_source_table`'s
+    /// established "dedupe identical, decline on genuine conflict" pattern,
+    /// closing the ONE caller-scope site that previously used raw
+    /// first-match-wins `Vec::iter().find()` with no duplicate awareness at
+    /// all.
     MalformedDuplicate,
+}
+
+/// Dedupe `hits` (every param/local matching `name`, in declaration order) by
+/// `ty` — an identical-type duplicate (harmless `#if`/`#else` re-parse
+/// duplication) collapses to one; a genuinely different type is a real,
+/// unprovable conflict. Mirrors `ResolveIndex::field_in_table`'s provenance
+/// dedup. Returns `Ok(None)` for no hits, `Ok(Some(ty))` for exactly one
+/// distinct type, `Err(())` for more than one distinct type (decline).
+fn dedupe_type_hits<'a>(hits: &[Option<&'a str>]) -> Result<Option<Option<&'a str>>, ()> {
+    let mut distinct: Vec<Option<&'a str>> = Vec::new();
+    for &ty in hits {
+        if !distinct.contains(&ty) {
+            distinct.push(ty);
+        }
+    }
+    match distinct.as_slice() {
+        [] => Ok(None),
+        [ty] => Ok(Some(*ty)),
+        _ => Err(()),
+    }
 }
 
 /// Caller-scope-EXACT variable-symbol lookup: **param → local → named-return
@@ -3018,14 +3050,34 @@ pub(crate) fn caller_scope_symbol<'a>(
     routine: &'a RoutineDecl,
     object_globals: &'a [VarDecl],
 ) -> CallerScopeSymbol<'a> {
-    let param_hit = routine
+    let param_types: Vec<Option<&'a str>> = routine
         .params
         .iter()
-        .find(|p| p.name.eq_ignore_ascii_case(name));
-    let local_hit = routine
+        .filter(|p| p.name.eq_ignore_ascii_case(name))
+        .map(|p| p.ty.as_deref())
+        .collect();
+    let local_types: Vec<Option<&'a str>> = routine
         .locals
         .iter()
-        .find(|v| v.name.eq_ignore_ascii_case(name));
+        .filter(|v| v.name.eq_ignore_ascii_case(name))
+        .map(|v| v.ty.as_deref())
+        .collect();
+    let global_types: Vec<Option<&'a str>> = object_globals
+        .iter()
+        .filter(|v| v.name.eq_ignore_ascii_case(name))
+        .map(|v| v.ty.as_deref())
+        .collect();
+    let (Ok(param_hit), Ok(local_hit), Ok(global_hit)) = (
+        dedupe_type_hits(&param_types),
+        dedupe_type_hits(&local_types),
+        dedupe_type_hits(&global_types),
+    ) else {
+        // A genuinely conflicting same-tier duplicate (different type text
+        // under the same name) — unprovable, decline outright rather than
+        // pick a winner (see `CallerScopeSymbol::MalformedDuplicate`'s doc,
+        // case (b)).
+        return CallerScopeSymbol::MalformedDuplicate;
+    };
     let return_hit = routine
         .return_name
         .as_deref()
@@ -3034,20 +3086,17 @@ pub(crate) fn caller_scope_symbol<'a>(
     if return_hit && (param_hit.is_some() || local_hit.is_some()) {
         return CallerScopeSymbol::MalformedDuplicate;
     }
-    if let Some(p) = param_hit {
-        return CallerScopeSymbol::Found(p.ty.as_deref());
+    if let Some(ty) = param_hit {
+        return CallerScopeSymbol::Found(ty);
     }
-    if let Some(v) = local_hit {
-        return CallerScopeSymbol::Found(v.ty.as_deref());
+    if let Some(ty) = local_hit {
+        return CallerScopeSymbol::Found(ty);
     }
     if return_hit {
         return CallerScopeSymbol::Found(routine.return_type.as_deref());
     }
-    if let Some(v) = object_globals
-        .iter()
-        .find(|v| v.name.eq_ignore_ascii_case(name))
-    {
-        return CallerScopeSymbol::Found(v.ty.as_deref());
+    if let Some(ty) = global_hit {
+        return CallerScopeSymbol::Found(ty);
     }
     CallerScopeSymbol::NotFound
 }
@@ -9013,6 +9062,68 @@ codeunit 50100 "C"
             result,
             ReceiverType::Unknown,
             "a named-return binding colliding with a same-named param is malformed AL — decline"
+        );
+    }
+
+    /// T4-C medium (e): a `#if`/`#else` union-read (al-syntax does not
+    /// evaluate preproc conditions, so both arms survive — see
+    /// `CallerScopeSymbol::MalformedDuplicate`'s doc) that declared the SAME
+    /// local name with the SAME type in both branches must dedupe to ONE
+    /// resolvable hit, not silently pick whichever the raw `Vec` order
+    /// happened to put first (the pre-fix behavior — order-dependent but
+    /// happened to be right here only by accident).
+    #[test]
+    fn caller_scope_identical_duplicate_local_dedupes_and_resolves() {
+        let routine = routine_with_locals(vec![
+            var_decl("Buf", "Record SalesHeader"),
+            var_decl("Buf", "Record SalesHeader"),
+        ]);
+        assert_eq!(
+            caller_scope_symbol("buf", &routine, &[]),
+            CallerScopeSymbol::Found(Some("Record SalesHeader")),
+            "an identical (name, type) duplicate must dedupe to one resolvable hit"
+        );
+    }
+
+    /// T4-C medium (e): the SAME union-read, but the two branches declared
+    /// the local with DIFFERENT types (a genuinely unprovable conflict) —
+    /// must decline outright, mirroring `ResolveIndex::field_in_table`'s
+    /// established dedupe-then-decline pattern instead of the pre-fix
+    /// first-match-wins `Vec::iter().find()` (which silently returned
+    /// whichever type happened to be declared first).
+    #[test]
+    fn caller_scope_conflicting_duplicate_local_declines() {
+        let routine = routine_with_locals(vec![
+            var_decl("Buf", "Record SalesHeader"),
+            var_decl("Buf", "Record Customer"),
+        ]);
+        assert_eq!(
+            caller_scope_symbol("buf", &routine, &[]),
+            CallerScopeSymbol::MalformedDuplicate,
+            "a conflicting (same name, different type) duplicate must decline, never guess"
+        );
+    }
+
+    /// The SAME conflicting-duplicate decline, for a PARAM instead of a local.
+    #[test]
+    fn caller_scope_conflicting_duplicate_param_declines() {
+        let mut routine = routine_with_locals(vec![]);
+        routine.params.push(Param {
+            name: "X".to_string(),
+            by_ref: false,
+            ty: Some("Integer".to_string()),
+            origin: test_origin(),
+        });
+        routine.params.push(Param {
+            name: "X".to_string(),
+            by_ref: false,
+            ty: Some("Text".to_string()),
+            origin: test_origin(),
+        });
+        assert_eq!(
+            caller_scope_symbol("x", &routine, &[]),
+            CallerScopeSymbol::MalformedDuplicate,
+            "a conflicting param duplicate must decline, never guess"
         );
     }
 

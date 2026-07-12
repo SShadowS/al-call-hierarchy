@@ -1135,8 +1135,17 @@ pub fn parse_symbol_reference(json: &str) -> SymbolReferenceAbi {
     }
 
     // BARE
-    const BARE: [(&str, &str); 6] = [
+    const BARE: [(&str, &str); 7] = [
         ("EnumTypes", "Enum"),
+        // T4-C medium (b): the legacy `app_package.rs` parser has always read
+        // `EnumExtensionTypes` (`enum_extension_types` → `ObjectType::EnumExtension`
+        // at app_package.rs:158/467); this engine path lacked the matching BARE
+        // entry, so a dependency's enum-extension objects never entered `objects`
+        // at all. `program::abi_ingest` already normalizes both "enumextension"
+        // and "enumextensiontype" to `ObjectKind::EnumExtension` (case-insensitive
+        // match on `object_type`), so the consumer side was always ready for this
+        // — only the producer was missing the entry.
+        ("EnumExtensionTypes", "EnumExtension"),
         ("ControlAddIns", "ControlAddIn"),
         ("PermissionSets", "PermissionSet"),
         ("PermissionSetExtensions", "PermissionSetExtension"),
@@ -1264,6 +1273,23 @@ mod tests {
             .expect("the Codeunit must be ingested despite trailing NUL padding");
         assert_eq!(cu.routines.len(), 1);
         assert_eq!(cu.routines[0].name, "DoIt");
+    }
+
+    /// T4-C medium (b): `EnumExtensionTypes` was missing from the BARE table, so a
+    /// dependency's enum-extension objects silently never entered `objects`.
+    #[test]
+    fn bare_table_ingests_enum_extension_types() {
+        let json = r#"{
+            "EnumExtensionTypes":[{"Id":50100,"Name":"MyEnum Ext"}]
+        }"#;
+        let abi = parse_symbol_reference(json);
+        let obj = abi
+            .objects
+            .iter()
+            .find(|o| o.name == "MyEnum Ext")
+            .expect("EnumExtensionTypes entry must be ingested into `objects`");
+        assert_eq!(obj.object_type, "EnumExtension");
+        assert_eq!(obj.object_number, 50100);
     }
 
     // -- Task 1: `IsProtected` parsing + tri-state arity ---------------------

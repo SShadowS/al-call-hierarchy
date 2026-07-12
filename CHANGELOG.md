@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`EnumExtensionTypes` was missing from the engine ABI ingestion's BARE table
+  (Task T4-C medium (b), Tier-4 hygiene arc).** `symbol_reference.rs`'s `BARE`
+  lookup table (`EnumTypes`/`ControlAddIns`/`PermissionSets`/etc.) lacked an
+  `("EnumExtensionTypes", "EnumExtension")` entry, so a dependency `.app`'s
+  enum-extension objects never entered `objects` at all — the legacy
+  `app_package.rs` parser has always read this field. `program::abi_ingest`
+  already normalized both `"enumextension"`/`"enumextensiontype"` strings to
+  `ObjectKind::EnumExtension`, so the consumer side was always ready; only the
+  producer was missing the entry. Added the 7th BARE tuple + a regression test.
+- **A caller-scope param/local lookup used raw first-match-wins `Vec::iter().
+  find()` with no duplicate-name awareness at all (Task T4-C medium (e),
+  Tier-4 hygiene arc).** `program::resolve::receiver::caller_scope_symbol` (the
+  ONE shared param→local→named-return→global lookup `receiver.rs`'s Step 2 and
+  `arg_dispatch.rs`'s `type_one_arg` both use) picked whichever param/local
+  happened to be first in declaration order when a name matched more than
+  once — including a genuine `#if`/`#else` union-read where each branch
+  declared the SAME name with a DIFFERENT type (al-syntax does not evaluate
+  preproc conditions, so both branches' declarations survive into the IR).
+  This silently returned an arbitrary, possibly-wrong type instead of
+  declining, unlike its established siblings (`ResolveIndex::field_in_table`,
+  `resolve_dataitem_source_table`), which already dedupe identical duplicates
+  and decline on a genuine conflict. Added `dedupe_type_hits` (mirrors
+  `field_in_table`'s provenance-dedup pattern) and applied it to params,
+  locals, AND globals; a genuinely conflicting duplicate now returns
+  `CallerScopeSymbol::MalformedDuplicate` (decline) instead of guessing.
+  3 regression tests (identical-dedup resolves; conflicting param/local
+  declines).
 - **L4 JACOBI fixed-point cap-hit shipped partial summaries as silently
   definite (Task T4-C, Tier-4 hygiene arc).** `summary_runner::run_one_scc`'s
   cap-hit branch (`MAX_FIXED_POINT_ITERATIONS = 1000`) only `eprintln!`'d a
