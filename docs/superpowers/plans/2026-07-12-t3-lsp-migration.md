@@ -505,8 +505,10 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
   re-resolve ALL workspace files + `emit_event_flow_edges`, rebuild all derived. `FileRemoved` ⇒ rung 2.
   `DepsChanged`/`Overflow` ⇒ **rung 3**: `LspSnapshot::build_full`. ANY doubt (parse error on F, missing
   prev entry, fingerprint of a file that didn't exist) ⇒ escalate one rung — fail closed, never guess.
-  **Contingency (from Task 3's measurement):** if transient ResolveIndex+BodyMap rebuild breaks the
-  100ms rung-1 budget, keep BOTH as an updater-owned cache keyed by `generation`, rebuilt on rung 2/3
+  **Contingency (from Task 3's measurement — now MANDATORY, not conditional):** Task 3 MEASURED
+  ResolveIndex+BodyMap rebuild at ~240–340ms on CDO scale (8–11x over the 30ms threshold; red-flag
+  rule fired), so the transient-rebuild default is dead: keep BOTH as an updater-owned cache keyed by
+  `generation`, rebuilt on rung 2/3
   only, and rung 1 swaps F's parsed unit into the cached BodyMap's source set BEFORE resolving (the
   audit guarantees signature-only reads of other files; F's own reads see the fresh parse). Document
   which branch was taken in the task report.
@@ -522,6 +524,12 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
 - [ ] **Step 2:** Implement; tests pass.
 - [ ] **Step 3:** Debounce/coalesce test on `spawn_updater`: 5 rapid saves of one file → exactly 1
   `apply_changes` call (inject a counting wrapper).
+- [ ] **Step 3b: RE-MEASURE rung 2 with the REAL workspace-layer path** (Task-3 review escalation):
+  Task 3's 1.9s rung-2 pin includes 926ms of `build_program_graph` over the WHOLE snapshot (deps
+  included) because `assemble_program_graph` didn't exist yet — it is an UPPER BOUND, not the number.
+  Re-run the CDO stage-split ignored test's methodology against the actual rung-2 path
+  (ws-parse + `assemble_program_graph` + index/bodymap + full re-resolve), record the measured number
+  in `.superpowers/sdd/t3-stage-split.md` (append, don't overwrite) — Task 16 pins from THIS number.
 - [ ] **Step 4:** Clippy, rustfmt, CHANGELOG. Commit `feat(lsp): incremental updater — 2-rung ladder + swap (t3.9)`.
 
 ---
@@ -724,7 +732,9 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
   gating/env pattern and keep it): on the 1000-file perf corpus: `build_full` < 6s (3× the 2s target);
   prepare/incoming/outgoing < 3ms each (3× 1ms) — keep the SEMANTIC asserts (999-way fan-in count
   survives as an incoming-length assert against the new backend); rung-1 `apply_changes` (body edit)
-  < 300ms (3× 100ms); rung-2 (signature edit) < 3× the Task-3-pinned target (write the number in).
+  < 300ms (3× 100ms); rung-2 (signature edit) < 3× the Task-9-RE-MEASURED rung-2 number from
+  `.superpowers/sdd/t3-stage-split.md` (Task 3's 1.9s figure is a whole-snapshot-build UPPER BOUND —
+  do NOT bake it; Task-3 review escalation).
 - [ ] **Step 2:** `benches/lsp_pipeline.rs` mirrored onto the same operations (Criterion rows renamed
   to match the new table in CLAUDE.md — Task 17 updates the doc).
 - [ ] **Step 3:** Run release perf test locally; record numbers in the task report. Clippy, CHANGELOG.
