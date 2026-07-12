@@ -110,8 +110,10 @@ NOT a dep — use `RwLock<Arc<LspSnapshot>>`). Engine changes strictly additive.
 - Test: `src/protocol.rs` `#[cfg(test)]` block
 
 **Interfaces:**
-- Produces: `pub fn path_to_uri(path: &Path) -> Option<String>` — SAME signature as today; encoding now
-  RFC-3986-correct for arbitrary paths.
+- Produces: `pub fn path_to_uri(path: &Path) -> Uri` (lsp_types::Uri — the ACTUAL live signature;
+  this plan's original `Option<String>` guess was corrected during Task 1) — SAME signature as
+  today; encoding now RFC-3986-correct for arbitrary paths. Case-preserving, colon-literal drive
+  convention (not lowercase-drive as this plan originally assumed).
 
 - [ ] **Step 1: Failing tests first.** Add round-trip tests (they must FAIL against the current
   hand-encoder):
