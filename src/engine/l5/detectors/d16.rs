@@ -15,13 +15,16 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
 
 const DETECTOR: &str = "d16-obsolete-routine-call";
 
-pub fn detect_d16(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d16(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     // Unified build: maps EVERY routine's internal id (source AND dep) → stable id,
     // so any routine id embedded in the rootCauseKey is replaced with its stable id
@@ -127,9 +130,9 @@ pub fn detect_d16(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("other", skipped_other);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }

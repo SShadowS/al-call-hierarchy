@@ -314,16 +314,23 @@ pub fn extract_app_package(path: &Path) -> Result<ParsedAppPackage> {
 
 /// Parse NavxManifest.xml to extract app metadata
 fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<AppMetadata> {
-    let mut manifest_file = archive
+    let manifest_file = archive
         .by_name("NavxManifest.xml")
         .context("NavxManifest.xml not found in app package")?;
 
-    let mut content = String::new();
-    manifest_file
-        .read_to_string(&mut content)
-        .context("Failed to read NavxManifest.xml")?;
+    // T2.2: belt-and-suspenders cap — reject a hostile declared size before
+    // decompressing, then bound the read itself (a lying central directory).
+    crate::capped_io::check_declared_size(
+        manifest_file.size(),
+        crate::capped_io::NAVX_MANIFEST_XML_CAP,
+    )
+    .context("NavxManifest.xml declared size exceeds cap")?;
+    let bytes =
+        crate::capped_io::read_capped(manifest_file, crate::capped_io::NAVX_MANIFEST_XML_CAP)
+            .context("Failed to read NavxManifest.xml")?;
+    let content = std::str::from_utf8(&bytes).context("Invalid UTF-8 in NavxManifest.xml")?;
 
-    parse_manifest_xml(&content)
+    parse_manifest_xml(content)
 }
 
 /// Parse an already-read NavxManifest.xml document into `AppMetadata`.
@@ -424,14 +431,20 @@ pub(crate) fn parse_first_json_value<T: serde::de::DeserializeOwned>(
 
 /// Parse SymbolReference.json to extract object definitions
 fn parse_symbols<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<Vec<ExternalObject>> {
-    let mut symbols_file = archive
+    let symbols_file = archive
         .by_name("SymbolReference.json")
         .context("SymbolReference.json not found in app package")?;
 
-    let mut content = Vec::new();
-    symbols_file
-        .read_to_end(&mut content)
-        .context("Failed to read SymbolReference.json")?;
+    // T2.2: belt-and-suspenders cap — reject a hostile declared size before
+    // decompressing, then bound the read itself (a lying central directory).
+    crate::capped_io::check_declared_size(
+        symbols_file.size(),
+        crate::capped_io::SYMBOL_REFERENCE_JSON_CAP,
+    )
+    .context("SymbolReference.json declared size exceeds cap")?;
+    let content =
+        crate::capped_io::read_capped(symbols_file, crate::capped_io::SYMBOL_REFERENCE_JSON_CAP)
+            .context("Failed to read SymbolReference.json")?;
 
     // Handle UTF-8 BOM if present
     let json_str = if content.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -795,5 +808,138 @@ mod tests {
             int_events
         );
         eprintln!("Sample event: {}", any_event.signature);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task T2.2: decompression caps — a hostile `.app` must not OOM the
+    // process.
+    // -----------------------------------------------------------------------
+
+    /// Build a syntactically valid `.app` file (40-byte NAVX header + zip)
+    /// containing a real `NavxManifest.xml` and a `SymbolReference.json`
+    /// entry whose UNCOMPRESSED content is `symbol_reference_size` bytes of
+    /// compressible zero-padding after a minimal valid JSON prefix — a small
+    /// compressed footprint, a huge declared/actual size. Mirrors the "small
+    /// compressed / huge declared-size entry" TDD fixture from the task
+    /// brief, at the `extract_app_package` call-site level rather than the
+    /// isolated helper.
+    fn build_app_with_oversized_symbol_reference(symbol_reference_size: usize) -> Vec<u8> {
+        use std::io::Write as _;
+
+        let mut zip_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut zip_buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+
+            writer.start_file("NavxManifest.xml", opts).unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/navx/2015/manifest">
+  <App Id="aaaaaaaa-0000-0000-0000-000000000001" Name="BombApp" Publisher="Test" Version="1.0.0.0" />
+</Package>
+"#,
+                )
+                .unwrap();
+
+            writer.start_file("SymbolReference.json", opts).unwrap();
+            // A minimal valid JSON object, padded with compressible zero
+            // bytes well past any legitimate size — `parse_first_json_value`
+            // already tolerates trailing non-JSON bytes (NUL padding), so
+            // this exercises the SAME shape a hostile oversized entry would
+            // take without needing a fully-formed giant symbol table.
+            writer.write_all(b"{}").unwrap();
+            // Stream the zero-padding in fixed-size chunks rather than
+            // materializing one `symbol_reference_size`-byte buffer — this
+            // test's cap is 512 MB and a single allocation that large is
+            // wasteful (zeros compress to almost nothing via DEFLATE either
+            // way, so chunking changes nothing about what's being tested).
+            const CHUNK: usize = 1024 * 1024;
+            let chunk = vec![0u8; CHUNK];
+            let mut remaining = symbol_reference_size;
+            while remaining > 0 {
+                let n = remaining.min(CHUNK);
+                writer.write_all(&chunk[..n]).unwrap();
+                remaining -= n;
+            }
+
+            writer.finish().unwrap();
+        }
+
+        let mut out = vec![0u8; NAVX_HEADER_SIZE as usize];
+        out.extend_from_slice(&zip_buf.into_inner());
+        out
+    }
+
+    #[test]
+    fn oversized_symbol_reference_json_is_rejected_not_panicking() {
+        let bytes = build_app_with_oversized_symbol_reference(
+            crate::capped_io::SYMBOL_REFERENCE_JSON_CAP as usize + 1024,
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bomb.app");
+        std::fs::write(&path, &bytes).expect("write crafted .app");
+
+        let result = extract_app_package(&path);
+        assert!(
+            result.is_err(),
+            "an oversized SymbolReference.json must be rejected, not silently truncated"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("SymbolReference.json"),
+            "error should name the surface: {msg}"
+        );
+    }
+
+    #[test]
+    fn oversized_navx_manifest_is_rejected_not_panicking() {
+        use std::io::Write as _;
+
+        let mut zip_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut zip_buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("NavxManifest.xml", opts).unwrap();
+            writer.write_all(b"<Package>").unwrap();
+            let padding = vec![0u8; crate::capped_io::NAVX_MANIFEST_XML_CAP as usize + 1024];
+            writer.write_all(&padding).unwrap();
+            writer.write_all(b"</Package>").unwrap();
+            writer.start_file("SymbolReference.json", opts).unwrap();
+            writer.write_all(b"{}").unwrap();
+            writer.finish().unwrap();
+        }
+        let mut bytes = vec![0u8; NAVX_HEADER_SIZE as usize];
+        bytes.extend_from_slice(&zip_buf.into_inner());
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bomb-manifest.app");
+        std::fs::write(&path, &bytes).expect("write crafted .app");
+
+        let result = extract_app_package(&path);
+        assert!(
+            result.is_err(),
+            "an oversized NavxManifest.xml must be rejected, not silently truncated"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("NavxManifest.xml"),
+            "error should name the surface: {msg}"
+        );
+    }
+
+    #[test]
+    fn normal_sized_crafted_app_still_parses_identically() {
+        // A well-under-cap crafted .app must round-trip unaffected by the cap
+        // — proves the cap never perturbs legitimate content.
+        let bytes = build_app_with_oversized_symbol_reference(0);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("normal.app");
+        std::fs::write(&path, &bytes).expect("write crafted .app");
+
+        let pkg = extract_app_package(&path).expect("normal-sized app must parse");
+        assert_eq!(pkg.metadata.name, "BombApp");
     }
 }

@@ -259,6 +259,7 @@ pub fn walk_param(
             &indexes,
             &mut exit_states,
             &mut loop_stack,
+            0,
         );
         state
     } else {
@@ -337,6 +338,27 @@ fn build_indexes(routine: &L3Routine) -> WalkIndexes<'_> {
 
 const LOOP_BOUND: usize = 3;
 
+/// Maximum CFN subtree depth `walk_cfg` will descend into via ordinary recursion
+/// (T2.1, stack-overflow hardening — companion to `al_syntax::lower`'s
+/// `MAX_LOWER_DEPTH`). `walk_cfg` is a single self-recursive function with no
+/// bound of its own; a pathologically deep CFN tree (e.g. a generated deeply
+/// nested `if` chain — CFN nodes are `Deserialize`, so this input can arrive
+/// from a cache/snapshot, not only from fresh lowering) recurses the native
+/// call stack proportionally to input size, and release builds are
+/// `panic=abort`. Past this depth, `walk_cfg` degrades to the SAME
+/// conservative `saturate_unknown` path used for bounded-loop overshoot —
+/// never recurses further.
+///
+/// **Measured empirically** the same way as `MAX_LOWER_DEPTH` (a synthetic
+/// nested-`if` CFN chain walked on a 1 MiB thread — the LSP main thread's
+/// real Windows stack size): `walk_cfg`'s own unoptimized-debug frame is
+/// heavier than the lowerer's (`walk_cfg` is a single large function with a
+/// 12-arm match, each carrying several `PerParamState` clones) — 64 passed,
+/// 96 crashed. 32 gives a healthy ~2x margin under the confirmed-safe value,
+/// well below the confirmed-failing one. Real AL routines nest nowhere near
+/// this deep.
+const MAX_CFG_WALK_DEPTH: usize = 32;
+
 /// Whether a CFN subtree can fall through to whatever follows it in its
 /// enclosing block (`Normal`), or every path through it ends in an
 /// unconditional `break`/`continue` (`Abrupt` — statements after it in the
@@ -383,7 +405,16 @@ fn walk_cfg(
     idx: &WalkIndexes,
     exit_states: &mut Vec<PerParamState>,
     loop_stack: &mut Vec<LoopFrame>,
+    depth: usize,
 ) -> (PerParamState, Reach) {
+    // Depth-budget check (T2.1, stack-overflow hardening): a pathologically deep
+    // CFN subtree (generated or hostile input, never a real AL routine) must fail
+    // closed here rather than keep recursing toward a native stack overflow —
+    // see `MAX_CFG_WALK_DEPTH`'s doc. Degrades exactly like bounded-loop
+    // overshoot: conservative `saturate_unknown`, normal (non-abrupt) reach.
+    if depth > MAX_CFG_WALK_DEPTH {
+        return (saturate_unknown(&pre), Reach::Normal);
+    }
     match node.kind.as_str() {
         "block" => {
             // Interleave field-access events with child CFN nodes by source position.
@@ -435,6 +466,7 @@ fn walk_cfg(
                             idx,
                             exit_states,
                             loop_stack,
+                            depth + 1,
                         );
                         state = post;
                         reach = r;
@@ -465,6 +497,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             let then_branch = node.children.as_ref().and_then(|c| c.first());
             let else_branch = node.else_children.as_ref().and_then(|c| c.first());
@@ -482,6 +515,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 ),
                 None => (pre_branch.clone(), Reach::Normal),
             };
@@ -499,6 +533,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 ),
                 None => (pre_branch, Reach::Normal), // missing else = no-match path = preBranch.
             };
@@ -531,6 +566,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             let empty: Vec<PCFNNode> = Vec::new();
             let branches = node.children.as_ref().unwrap_or(&empty);
@@ -553,6 +589,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 );
                 // Abrupt branches contribute nothing to the case's own
                 // fallthrough join — already recorded via loop_stack.
@@ -606,6 +643,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 );
                 state = post;
                 reach = r;
@@ -628,6 +666,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             let Some(body_node) = body_node else {
                 return (pre_cond, Reach::Normal);
@@ -654,6 +693,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 );
                 let body_post = fold_continue_states(
                     body_reach,
@@ -674,6 +714,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth,
                 );
                 let joined = join_states(&body_pre, &next_iter_pre);
                 if joined == body_pre {
@@ -707,6 +748,7 @@ fn walk_cfg(
                         idx,
                         exit_states,
                         loop_stack,
+                        depth,
                     ),
                     Reach::Normal,
                 );
@@ -754,6 +796,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 );
                 let body_post = fold_continue_states(
                     body_reach,
@@ -774,6 +817,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth,
                 );
                 let joined = join_states(&body_pre, &after_cond);
                 if joined == body_pre {
@@ -824,6 +868,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             exit_states.push(post.clone());
             (post, Reach::Normal)
@@ -842,6 +887,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             let op = node
                 .operation_id
@@ -867,6 +913,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             let cs = node
                 .callsite_id
@@ -908,6 +955,7 @@ fn walk_cfg(
                 idx,
                 exit_states,
                 loop_stack,
+                depth,
             );
             let empty: Vec<PCFNNode> = Vec::new();
             let mut reach = Reach::Normal;
@@ -928,6 +976,7 @@ fn walk_cfg(
                     idx,
                     exit_states,
                     loop_stack,
+                    depth + 1,
                 );
                 state = post;
                 reach = r;
@@ -976,6 +1025,7 @@ fn apply_condition_leaves(
     idx: &WalkIndexes,
     exit_states: &mut Vec<PerParamState>,
     loop_stack: &mut Vec<LoopFrame>,
+    depth: usize,
 ) -> PerParamState {
     let Some(leaves) = leaves else {
         return pre;
@@ -995,6 +1045,7 @@ fn apply_condition_leaves(
             idx,
             exit_states,
             loop_stack,
+            depth + 1,
         );
         state = post;
     }
@@ -1646,4 +1697,150 @@ fn walk_flat(
         }
     }
     state
+}
+
+// ---------------------------------------------------------------------------
+// Tests (T2.1: stack-overflow hardening).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A throwaway anchor (positions are irrelevant to this depth-budget test).
+    fn dummy_anchor() -> PAnchor {
+        PAnchor {
+            source_unit_id: "ws:test".to_string(),
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
+            syntax_kind: "test".to_string(),
+        }
+    }
+
+    /// A minimal `L3Routine` — only `statement_tree` matters for the `walk_cfg`
+    /// depth-budget test; everything else is empty/defaulted (mirrors
+    /// `engine::l5::test_support::routine`, which is private to `l5`).
+    fn minimal_routine(statement_tree: Option<PCFNNode>) -> L3Routine {
+        L3Routine {
+            id: "r".to_string(),
+            stable_routine_id: "stable::r".to_string(),
+            object_id: "app/Codeunit/1".to_string(),
+            object_type: "Codeunit".to_string(),
+            name: "r".to_string(),
+            kind: "procedure".to_string(),
+            attributes_parsed: Vec::new(),
+            app_guid: "app".to_string(),
+            object_number: 1,
+            normalized_signature_hash: String::new(),
+            body_available: true,
+            parse_incomplete: false,
+            record_variables: Vec::new(),
+            record_operations: Vec::new(),
+            field_accesses: Vec::new(),
+            variables: Vec::new(),
+            parameters: Vec::new(),
+            access_modifier: None,
+            return_type: None,
+            call_sites: Vec::new(),
+            operation_sites: Vec::new(),
+            statement_tree,
+            loops: Vec::new(),
+            source_anchor: dummy_anchor(),
+            identifier_references: Vec::new(),
+            unreachable_statements: Vec::new(),
+            has_branching: false,
+            var_assignments: Vec::new(),
+            condition_references: Vec::new(),
+            enclosing_member: None,
+            originating_object: None,
+            enclosing_member_range: None,
+            entry_temp_guard_receiver: None,
+        }
+    }
+
+    /// A synthetic `if` CFN node with no condition/op/callsite content — just
+    /// enough structure to recurse. `child` becomes its (sole) `then` branch.
+    fn if_node(child: Option<PCFNNode>) -> PCFNNode {
+        PCFNNode {
+            kind: "if".to_string(),
+            operation_id: None,
+            callsite_id: None,
+            condition_guard: None,
+            condition_leaves: None,
+            children: child.map(|c| vec![c]),
+            else_children: None,
+            is_case_else: false,
+            source_range: None,
+        }
+    }
+
+    fn deeply_nested_if_chain(depth: usize) -> PCFNNode {
+        let mut node = if_node(None);
+        for _ in 0..depth {
+            node = if_node(Some(node));
+        }
+        node
+    }
+
+    const SMALL_STACK: usize = 1024 * 1024;
+
+    #[test]
+    fn deeply_nested_if_chain_degrades_instead_of_overflowing_small_stack() {
+        // T2.1 red fixture: `walk_cfg` recurses once per nested `if`. Without
+        // MAX_CFG_WALK_DEPTH this overflows ANY finite native stack. Run on a
+        // thread sized to the LSP's real main-thread stack on Windows (~1 MiB
+        // — see `al_call_hierarchy::big_stack`'s doc) so a regression
+        // reproduces the actual crash this hardens against.
+        // 2,000, not 50k: `PCFNNode.children: Option<Vec<PCFNNode>>` has
+        // auto-generated recursive Drop glue, so an extremely deep chain would
+        // overflow on DROP alone (on ANY stack) regardless of `walk_cfg`'s own
+        // budget — 2,000 is still a wide multiple of any plausible depth cap
+        // (proving the budget engages well before the fixture's true depth)
+        // while staying safely within normal Drop recursion limits.
+        let tree = deeply_nested_if_chain(2_000);
+        let routine = minimal_routine(Some(tree));
+        let snapshot: HashMap<String, RoutineSummary> = HashMap::new();
+        let final_map: HashMap<String, RoutineSummary> = HashMap::new();
+        let upgraded_bindings: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
+        let graph = CombinedGraph {
+            nodes: Vec::new(),
+            edges_by_from: HashMap::new(),
+            edges_from_order: Vec::new(),
+            uncertainty_edges: Vec::new(),
+            typed_edges: Vec::new(),
+        };
+        let body_avail_by_id: HashMap<String, bool> = HashMap::new();
+
+        // Scoped thread (not `Builder::spawn`): the deeply-nested `PCFNNode` chain
+        // must be BUILT and DROPPED on this (outer) thread's normal stack.
+        // `PCFNNode.children: Option<Vec<PCFNNode>>` is a genuinely recursive
+        // structure — its auto-generated Drop glue recurses once per nesting
+        // level exactly like `walk_cfg` does, so moving ownership into the
+        // small-stack thread would overflow on DROP even with a correct
+        // depth budget, testing the wrong thing. Borrowing `&routine` instead
+        // keeps ownership (and therefore the eventual drop) on this thread.
+        let _facts = std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(SMALL_STACK)
+                .spawn_scoped(scope, || {
+                    walk_param(
+                        &routine,
+                        "rec",
+                        None,
+                        &snapshot,
+                        &final_map,
+                        &upgraded_bindings,
+                        &graph,
+                        &body_avail_by_id,
+                    )
+                })
+                .expect("spawn small-stack worker")
+                .join()
+                .expect("walk_cfg must not crash the thread")
+        });
+        // No panic/abort is the assertion itself; the facts are uninteresting
+        // for pathological input (everything degrades to Unknown/saturated).
+    }
 }

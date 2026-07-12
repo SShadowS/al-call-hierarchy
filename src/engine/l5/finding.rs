@@ -266,8 +266,14 @@ fn map_object_id(internal: &str) -> String {
 /// - `"unknown"` → `"unknown"` (sentinel pass-through).
 /// - Well-formed `*/ table/*` → stable colon form.
 /// - Any other shape → `panic!` — mirrors `toStableTableId` throwing on malformed
-///   input (stable-identity.ts). `run_detectors` wraps detector runs in
-///   `catch_unwind`; a projection failure is treated as a hard error.
+///   input (stable-identity.ts). This runs in `project_finding`, during the R4
+///   stable-id projection — AFTER `run_detectors` has already returned — so it is
+///   NOT covered by any per-detector isolation (neither the `Result` contract in
+///   `registry::run_each` nor its debug-only `catch_unwind` backstop; both wrap only
+///   the detector call itself, not the projection step). A malformed internal
+///   TableId here is a genuine engine bug (every TableId a detector emits is
+///   constructed by this crate, never external input), so it is left as a hard
+///   panic — an uncaught failure of the whole run — matching al-sem's uncaught throw.
 fn map_table_id(internal: &str) -> String {
     if internal == "unknown" {
         return "unknown".to_string();

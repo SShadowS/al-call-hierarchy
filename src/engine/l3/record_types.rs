@@ -56,18 +56,46 @@ pub fn record_table_name_of(declared_type: &str) -> Option<String> {
 }
 
 /// Strip a trailing `\s+temporary\s*$` (case-insensitive) — mirrors TS
-/// `rest.replace(/\s+temporary\s*$/i, "")`.
+/// `rest.replace(/\s+temporary\s*$/i, "")`. `program::resolve::receiver` has
+/// a VERBATIM DUPLICATE of this function for its identical Record-type-name
+/// parsing — NOT consolidated here via an import because
+/// `src/program/resolve` is enforced L3-independent (see
+/// `tests/program_resolve_harness.rs`'s
+/// `resolve_module_has_no_stray_engine_l3_l2_imports` guard). Both copies
+/// shared the same char-boundary panic/mis-parse bug (T2.4); if this logic
+/// changes again, update `receiver.rs`'s copy too.
+///
+/// Char-boundary safe by construction: never computes a byte offset from a
+/// RE-CASED copy of the string and slices the ORIGINAL with it. That old
+/// approach panics whenever a character's `to_lowercase()` byte length
+/// differs from its own (e.g. `ẞ`, U+1E9E, 3 bytes → `ß`, 2 bytes) and, even
+/// where it doesn't panic, silently misjudges the whitespace boundary for
+/// characters that GROW under lowering (e.g. Turkish `İ`, U+0130, 2 bytes →
+/// `i̇`, 3 bytes), leaving a real `İ Temporary` table name un-stripped.
+/// Instead this walks `char_indices()` on the original string directly and
+/// ASCII-folds each char against the literal ASCII word "temporary" (a
+/// faithful port of the TS `/i` flag, itself a simple ASCII fold for a
+/// pure-ASCII pattern) — every byte offset used to slice comes straight from
+/// `trimmed_end`, so it is always a valid char boundary.
 fn strip_trailing_temporary(s: &str) -> String {
+    const WORD: &str = "temporary";
     let trimmed_end = s.trim_end();
-    let lower = trimmed_end.to_lowercase();
-    if let Some(prefix_len) = lower.strip_suffix("temporary").map(|p| p.len()) {
-        // The char before "temporary" must be whitespace for `\s+temporary`.
-        let prefix = &trimmed_end[..prefix_len];
-        if prefix.ends_with(char::is_whitespace) {
-            return prefix.to_string();
-        }
+    let indices: Vec<(usize, char)> = trimmed_end.char_indices().collect();
+    let word_len = WORD.chars().count();
+    if indices.len() <= word_len {
+        // No room for a preceding whitespace char — `\s+temporary` needs one.
+        return trimmed_end.to_string();
     }
-    trimmed_end.to_string()
+    let tail_start = indices.len() - word_len;
+    let tail_matches = indices[tail_start..]
+        .iter()
+        .zip(WORD.chars())
+        .all(|(&(_, c), w)| c.eq_ignore_ascii_case(&w));
+    if !tail_matches || !indices[tail_start - 1].1.is_whitespace() {
+        return trimmed_end.to_string();
+    }
+    let word_byte_start = indices[tail_start].0;
+    trimmed_end[..word_byte_start].to_string()
 }
 
 /// Resolve a source-table / extends-target reference — which may be a table NAME
@@ -452,5 +480,41 @@ mod tests {
             record_table_name_of("Record  Item   temporary  ").as_deref(),
             Some("Item")
         );
+    }
+
+    // -- T2.4 (3): strip_trailing_temporary char-boundary safety --
+
+    #[test]
+    fn strip_trailing_temporary_unicode_prefix_no_space_does_not_panic() {
+        // "ẞ" (U+1E9E, 3 UTF-8 bytes) lowercases to "ß" (2 bytes). The old
+        // implementation sliced the ORIGINAL string with a byte offset computed
+        // from the LOWERCASED copy — panics mid-char when "ẞ" sits directly
+        // against "temporary" (no separating whitespace, so `\s+temporary`
+        // shouldn't strip anyway; the point is reaching that decision must not
+        // panic).
+        assert_eq!(strip_trailing_temporary("ẞtemporary"), "ẞtemporary");
+    }
+
+    #[test]
+    fn strip_trailing_temporary_turkish_i_strips_correctly() {
+        // "İ" (Turkish dotted capital I, U+0130, 2 bytes) lowercases to "i̇"
+        // (i + combining dot above, 3 bytes) — GROWS. The old byte-math bug
+        // computed a boundary that landed on the wrong byte, so the
+        // "preceded by whitespace" check failed and " temporary" was silently
+        // left unstripped. Must correctly strip "temporary" (trailing
+        // whitespace before the word is kept, same as the other cases below —
+        // callers `.trim()` the result).
+        assert_eq!(strip_trailing_temporary("İ temporary"), "İ ");
+    }
+
+    #[test]
+    fn strip_trailing_temporary_normal_cases_regression() {
+        assert_eq!(
+            strip_trailing_temporary("Sales Header Temporary"),
+            "Sales Header "
+        );
+        assert_eq!(strip_trailing_temporary("Sales Header"), "Sales Header");
+        assert_eq!(strip_trailing_temporary("temporary"), "temporary");
+        assert_eq!(strip_trailing_temporary("X  TEMPORARY"), "X  ");
     }
 }

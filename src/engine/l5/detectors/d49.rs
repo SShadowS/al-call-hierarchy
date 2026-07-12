@@ -18,7 +18,7 @@ use crate::engine::l5::ordering_facts::{
     OrderingFact, OrderingFacts, grade_guarantee, is_reportable_routine,
     stable_routine_id_for_routine, to_severity,
 };
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d49-uncommitted-write-before-ui";
 
@@ -113,7 +113,10 @@ fn build_d49_finding(
     finding
 }
 
-pub fn detect_d49(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d49(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp = FingerprintIndex::build(&ws.routines, &ws.objects);
     let ordering_facts = ctx.get_ordering_facts();
@@ -152,9 +155,9 @@ pub fn detect_d49(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     }
 
     let count = emitted.len();
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: emitted,
         stats: DetectorStats::new(DETECTOR, candidates_considered, count),
         diagnostics: vec![],
-    }
+    })
 }

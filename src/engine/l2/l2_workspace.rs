@@ -530,23 +530,29 @@ pub fn project_workspace(workspace: &Path) -> anyhow::Result<L2Projection> {
 
     let mut projection = empty();
 
-    for file in &files {
-        let source = match read_al_source(&file.abs_path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("warning: skipping {} (read error: {e})", file.rel_posix);
-                continue;
-            }
-        };
-        let source_unit_id = format!("ws:{}", file.rel_posix);
-        project_file(
-            &source,
-            &app_guid,
-            &source_unit_id,
-            &mut projection.objects,
-            &mut projection.routines,
-        );
-    }
+    // Sequential parse loop, run on a big-stack thread (T2.1): this CLI path
+    // (`aldump`/`alsem`) runs on the process main thread, which has no
+    // guaranteed-generous stack — see `big_stack`'s doc. One big-stack thread
+    // for the WHOLE loop, not per-file.
+    crate::big_stack::run_with_big_stack(|| {
+        for file in &files {
+            let source = match read_al_source(&file.abs_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("warning: skipping {} (read error: {e})", file.rel_posix);
+                    continue;
+                }
+            };
+            let source_unit_id = format!("ws:{}", file.rel_posix);
+            project_file(
+                &source,
+                &app_guid,
+                &source_unit_id,
+                &mut projection.objects,
+                &mut projection.routines,
+            );
+        }
+    });
 
     // Top-level: objects sorted by StableObjectId, routines by StableRoutineId.
     projection

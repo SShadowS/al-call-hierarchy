@@ -10,6 +10,12 @@
 //! crate cannot compile.
 
 pub mod app_package;
+/// Shared big-stack execution for anywhere the `al_syntax` lowerer runs (T2.1,
+/// stack-overflow hardening) — see the module doc.
+pub mod big_stack;
+/// Bounded-read helper shared by every zip/gzip decompression site (Task
+/// T2.2, DoS hardening) — see the module doc.
+pub mod capped_io;
 pub mod config;
 pub mod dependencies;
 pub mod engine;

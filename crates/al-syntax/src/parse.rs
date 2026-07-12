@@ -98,4 +98,74 @@ mod tests {
             msgs
         );
     }
+
+    // -------------------------------------------------------------------
+    // T2.1 (stack-overflow hardening): the lowerer's depth budget must fail
+    // closed on pathological nesting instead of overflowing the native
+    // stack. Run on a thread sized to the LSP's real main-thread stack on
+    // Windows (~1 MiB — see `src/snapshot/parse.rs`'s doc) so a regression
+    // here reproduces the actual crash this hardens against, not just a
+    // slow pass on the test harness's own (much larger) default stack.
+    // -------------------------------------------------------------------
+
+    const SMALL_STACK: usize = 1024 * 1024;
+
+    #[test]
+    fn deep_binary_expression_degrades_instead_of_overflowing_small_stack() {
+        // A 50k-deep right-associative binary-expression chain (`1 + 1 + … +
+        // 1`) recurses `lower_expr` once per `+` via `lower_opt_field`.
+        let mut src = String::from(
+            "codeunit 50000 Deep\n{\n    procedure P()\n    var\n        X: Integer;\n    \
+             begin\n        X := 1",
+        );
+        for _ in 0..50_000 {
+            src.push_str(" + 1");
+        }
+        src.push_str(";\n    end;\n}\n");
+
+        let handle = std::thread::Builder::new()
+            .stack_size(SMALL_STACK)
+            .spawn(move || parse(&src))
+            .expect("spawn small-stack worker");
+        let f = handle.join().expect("lowering must not crash the thread");
+
+        assert_eq!(f.objects.len(), 1);
+        assert!(
+            f.issues
+                .iter()
+                .any(|i| i.message.contains("lowering depth budget")),
+            "expected a depth-budget SyntaxIssue, got: {:?}",
+            f.issues.iter().map(|i| &i.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn deep_parenthesized_expression_degrades_instead_of_overflowing_small_stack() {
+        // `((((…1…))))` recurses `lower_expr` directly on itself (no
+        // `lower_opt_field` indirection) — a distinct code path from the
+        // binary-chain case above.
+        let mut src = String::from(
+            "codeunit 50001 DeepParen\n{\n    procedure P()\n    var\n        X: Integer;\n    \
+             begin\n        X := ",
+        );
+        src.push_str(&"(".repeat(5_000));
+        src.push('1');
+        src.push_str(&")".repeat(5_000));
+        src.push_str(";\n    end;\n}\n");
+
+        let handle = std::thread::Builder::new()
+            .stack_size(SMALL_STACK)
+            .spawn(move || parse(&src))
+            .expect("spawn small-stack worker");
+        let f = handle.join().expect("lowering must not crash the thread");
+
+        assert_eq!(f.objects.len(), 1);
+        assert!(
+            f.issues
+                .iter()
+                .any(|i| i.message.contains("lowering depth budget")),
+            "expected a depth-budget SyntaxIssue, got: {:?}",
+            f.issues.iter().map(|i| &i.message).collect::<Vec<_>>()
+        );
+    }
 }

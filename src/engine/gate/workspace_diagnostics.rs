@@ -111,15 +111,20 @@ pub fn compute_workspace_diagnostics(workspace: &Path) -> Vec<Diagnostic> {
     // <rel>" — al-sem `indexer.ts:56-63`. Uses the same `al_syntax::parse` the engine
     // indexes with, so the diagnostic reflects exactly what L3 sees (incl. objects
     // nested under a `namespace`, which the former direct-root-children check missed).
-    for (rel, source) in &units {
-        if al_syntax::parse(source).objects.is_empty() {
-            out.push(Diagnostic {
-                severity: "info".to_string(),
-                stage: "index".to_string(),
-                message: format!("No object declaration found in {rel}"),
-            });
+    // Sequential parse loop, run on a big-stack thread (T2.1): this CLI path
+    // runs on the process main thread, which has no guaranteed-generous stack
+    // — see `big_stack`'s doc. One big-stack thread for the WHOLE loop.
+    crate::big_stack::run_with_big_stack(|| {
+        for (rel, source) in &units {
+            if al_syntax::parse(source).objects.is_empty() {
+                out.push(Diagnostic {
+                    severity: "info".to_string(),
+                    stage: "index".to_string(),
+                    message: format!("No object declaration found in {rel}"),
+                });
+            }
         }
-    }
+    });
 
     out
 }

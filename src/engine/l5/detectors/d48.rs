@@ -38,7 +38,7 @@ use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::path_walker::{
     PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
 };
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d48-io-in-loop";
 
@@ -270,7 +270,10 @@ impl<'a> WalkPolicy for D48Policy<'a> {
     }
 }
 
-pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d48(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
 
@@ -558,11 +561,11 @@ pub fn detect_d48(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("opaqueCallee", skipped_opaque_callee);
     stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: emitted,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
 
 /// Convert accumulated `Uncertainty` to `UncertaintyLite` (callsiteId → operationId

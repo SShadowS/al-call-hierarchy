@@ -239,18 +239,22 @@ impl SerializeMap for MapSer {
     type Ok = CborValue;
     type Error = CborSerError;
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), CborSerError> {
-        // Keys are text strings (the snapshot's maps are all string-keyed). The
-        // non-text fallback is unreachable-by-construction; the debug_assert ENFORCES
-        // that invariant rather than silently stringifying a non-text key.
+        // Keys are text strings (the snapshot's maps are all string-keyed) —
+        // unreachable-by-construction TODAY, but this trait impl is generic over
+        // any `Serialize` type, so a future field with a non-`String`-keyed map
+        // would hit this. `serialize_key`/`serialize_value` are already fallible
+        // (`Result<(), CborSerError>`), so the honest enforcement is a real `Err`
+        // — a bare `debug_assert!(false, ..)` here PANICS in debug (an unwind
+        // `to_cbor_value`'s `unwrap_or` can't catch) and, worse, compiles out in
+        // release and still runs the `format!()` stringify fallback below it —
+        // the exact silent-substitution the old comment claimed was prevented.
         self.next_key = Some(match to_cbor_value(key) {
             CborValue::Text(s) => s,
             other => {
-                debug_assert!(
-                    false,
+                return Err(CborSerError(format!(
                     "to_cbor MapSer: non-text map key encountered ({other:?}); \
                      snapshot maps must be string-keyed"
-                );
-                format!("{other:?}")
+                )));
             }
         });
         Ok(())
@@ -297,5 +301,45 @@ impl SerializeStructVariant for StructSer {
     }
     fn end(self) -> R {
         Ok(CborValue::Map(self.entries))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    // -- T2.4 (4) sweep: MapSer's non-text-key `debug_assert!(false, ...)` --
+
+    #[test]
+    fn non_text_map_key_degrades_to_null_not_silent_stringify() {
+        // The old code's comment claimed the debug_assert "ENFORCES that
+        // invariant rather than silently stringifying a non-text key" — false
+        // in release (the assert compiles out and the `format!()` fallback
+        // still runs), AND in debug it PANICS instead of gracefully degrading
+        // (a bare `debug_assert!(false, ..)` unwinds; `to_cbor_value`'s
+        // `unwrap_or` only catches `Result::Err`, never a panic). An
+        // integer-keyed map — reachable if any future `Serialize` derive on a
+        // snapshot type uses a non-`String` key — must now degrade the SAME
+        // honest way in every profile: the whole value becomes `Null`.
+        let mut m: BTreeMap<i32, &str> = BTreeMap::new();
+        m.insert(1, "a");
+        let v = to_cbor_value(&m);
+        assert!(matches!(v, CborValue::Null), "expected Null, got {v:?}");
+    }
+
+    #[test]
+    fn text_keyed_map_round_trips_normally() {
+        // Regression: the ordinary (and only real) case — a String-keyed map.
+        let mut m: BTreeMap<String, i32> = BTreeMap::new();
+        m.insert("a".to_string(), 1);
+        let v = to_cbor_value(&m);
+        match v {
+            CborValue::Map(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert!(matches!(entries.get("a"), Some(CborValue::Int(1))));
+            }
+            other => panic!("expected Map, got {other:?}"),
+        }
     }
 }

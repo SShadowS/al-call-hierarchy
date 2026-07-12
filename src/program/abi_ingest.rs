@@ -1,7 +1,6 @@
 //! Cached ABI ingestion: parse SymbolOnly dep .app packages into graph nodes.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -229,9 +228,18 @@ impl AbiCache {
 
 pub(crate) fn read_symbol_reference_from_app(path: &Path) -> anyhow::Result<SymbolReferenceAbi> {
     let mut archive = open_app_zip(path)?;
-    let mut sr_file = archive.by_name("SymbolReference.json")?;
-    let mut content = Vec::new();
-    sr_file.read_to_end(&mut content)?;
+    let sr_file = archive.by_name("SymbolReference.json")?;
+    // T2.2: belt-and-suspenders cap — reject a hostile declared size before
+    // decompressing, then bound the read itself (a lying central directory).
+    // Errors here propagate through the SAME `abi.error` channel as a JSON
+    // parse failure (see `get_or_load`'s `unwrap_or_else` above) — no new
+    // wiring needed.
+    crate::capped_io::check_declared_size(
+        sr_file.size(),
+        crate::capped_io::SYMBOL_REFERENCE_JSON_CAP,
+    )?;
+    let content =
+        crate::capped_io::read_capped(sr_file, crate::capped_io::SYMBOL_REFERENCE_JSON_CAP)?;
     let json_str = if content.starts_with(&[0xEF, 0xBB, 0xBF]) {
         std::str::from_utf8(&content[3..])?
     } else {
@@ -1311,6 +1319,81 @@ codeunit 50900 "Subscriber CU"
                 .iter()
                 .all(|o| !o.name.eq_ignore_ascii_case("Broken Dep CU")),
             "an unreadable dep must still fail closed to no objects"
+        );
+    }
+
+    /// Task T2.2: a dep `.app` whose `SymbolReference.json` declares more
+    /// than [`crate::capped_io::SYMBOL_REFERENCE_JSON_CAP`] must surface
+    /// through the SAME `abi_ingest_errors` channel as any other unreadable
+    /// dep (H-3 above) — never a panic, never a silent empty ingest. Proves
+    /// the cap's error flows end-to-end through `get_or_load`'s
+    /// `unwrap_or_else`, not just that the isolated `capped_io` helper works.
+    #[test]
+    fn oversized_symbol_reference_surfaces_as_graph_diagnostic_not_panic() {
+        use std::io::Write as _;
+
+        let mut zip_buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut zip_buf);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("NavxManifest.xml", opts).unwrap();
+            writer
+                .write_all(
+                    br#"<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/navx/2015/manifest">
+  <App Id="bbbbbbbb-0000-0000-0000-000000000002" Name="BombDep" Publisher="Test" Version="1.0.0.0" />
+</Package>
+"#,
+                )
+                .unwrap();
+            writer.start_file("SymbolReference.json", opts).unwrap();
+            writer.write_all(b"{}").unwrap();
+            const CHUNK: usize = 1024 * 1024;
+            let chunk = vec![0u8; CHUNK];
+            let mut remaining = crate::capped_io::SYMBOL_REFERENCE_JSON_CAP as usize + 1024;
+            while remaining > 0 {
+                let n = remaining.min(CHUNK);
+                writer.write_all(&chunk[..n]).unwrap();
+                remaining -= n;
+            }
+            writer.finish().unwrap();
+        }
+        let mut bytes = vec![0u8; 40]; // NAVX_HEADER_SIZE
+        bytes.extend_from_slice(&zip_buf.into_inner());
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let app_path = dir.path().join("bomb-dep.app");
+        std::fs::write(&app_path, &bytes).expect("write crafted .app");
+
+        let dep = dep_id("BombDep");
+        let ws = ws_id();
+        let cache = AbiCache::new(); // not seeded — forces a real disk read.
+
+        let mut dep_unit = make_symbolonly_dep_unit(&dep);
+        dep_unit.app_path = Some(app_path);
+
+        let snap = AppSetSnapshot {
+            apps: vec![make_ws_unit(&ws), dep_unit],
+            workspace_app: ws,
+            world: World::Closed,
+        };
+        let g = build_program_graph(&snap, &cache);
+
+        assert_eq!(
+            g.abi_ingest_errors.len(),
+            1,
+            "an over-cap SymbolReference.json must surface exactly one ingest \
+             diagnostic, not silently ingest as empty; got {:?}",
+            g.abi_ingest_errors
+                .iter()
+                .map(|e| &e.message)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            g.abi_ingest_errors[0].message.contains("failed to read"),
+            "got: {}",
+            g.abi_ingest_errors[0].message
         );
     }
 

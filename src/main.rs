@@ -13,7 +13,8 @@ mod watcher;
 // modules (server, watcher, analysis, etc.) can keep referring to
 // `crate::graph::*` / `crate::handlers::*` / ... without churn.
 pub use al_call_hierarchy::{
-    app_package, config, dependencies, graph, handlers, indexer, parser, protocol, telemetry,
+    app_package, big_stack, config, dependencies, graph, handlers, indexer, parser, protocol,
+    telemetry,
 };
 
 use indexer::Indexer;
@@ -134,14 +135,19 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
 
     info!("Found {} AL files", al_files.len());
 
-    // Parse + collect per-procedure metrics in parallel, from the owned IR.
-    let all_metrics: Vec<ProcedureMetrics> = al_files
-        .par_iter()
-        .flat_map(|path| match fs::read_to_string(path) {
-            Ok(source) => extract_metrics_ir(&source, path),
-            Err(_) => vec![],
-        })
-        .collect();
+    // Parse + collect per-procedure metrics in parallel, from the owned IR, on
+    // a big-stack pool (T2.1: the CLI main thread's default pool has no
+    // guaranteed-generous stack; see `big_stack`'s doc).
+    let pool = big_stack::big_stack_pool();
+    let all_metrics: Vec<ProcedureMetrics> = pool.install(|| {
+        al_files
+            .par_iter()
+            .flat_map(|path| match fs::read_to_string(path) {
+                Ok(source) => extract_metrics_ir(&source, path),
+                Err(_) => vec![],
+            })
+            .collect()
+    });
 
     // Generate findings using config from project root
     let config = config::DiagnosticConfig::load(project);

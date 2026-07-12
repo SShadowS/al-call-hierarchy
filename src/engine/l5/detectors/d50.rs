@@ -23,7 +23,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::transaction_spans::SeedKind;
 
 const DETECTOR: &str = "d50-checked-run-implicit-commit";
@@ -159,7 +159,10 @@ fn routine_anchor(r: &L3Routine) -> SourceAnchor {
     anchor_of(&r.source_anchor, r)
 }
 
-pub fn detect_d50(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d50(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
 
@@ -367,11 +370,11 @@ pub fn detect_d50(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     let count = emitted.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, count);
     stats.add_skip("other", skipped_other);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: emitted,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
 
 // ===========================================================================
@@ -709,7 +712,7 @@ mod tests {
             infra_diagnostics: Vec::new(),
         };
 
-        let output = detect_d50(&resolved, &ctx);
+        let output = detect_d50(&resolved, &ctx).unwrap();
 
         // Must produce exactly one finding with severity MEDIUM.
         assert_eq!(

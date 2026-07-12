@@ -28,13 +28,16 @@ use crate::engine::l5::detectors::{
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d33-unfiltered-bulk-write";
 
 const BULK_OPS: &[&str] = &["DeleteAll", "ModifyAll"];
 
-pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d33(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -195,7 +198,7 @@ pub fn detect_d33(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutpu
     stats.add_skip("parameter", skipped_parameter);
     stats.add_skip("unresolvedTable", skipped_unresolved_table);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
-    DetectorOutput::no_diag(findings, stats)
+    Ok(DetectorOutput::no_diag(findings, stats))
 }
 
 /// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE

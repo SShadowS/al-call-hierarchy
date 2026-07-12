@@ -14,7 +14,7 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d5-set-based-opportunity";
 
@@ -33,7 +33,10 @@ fn anchor_of_loop(l: &PLoop, routine: &L3Routine) -> crate::engine::l5::finding:
     anchor_of(&l.source_anchor, routine)
 }
 
-pub fn detect_d5(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d5(
+    resolved: &L3Resolved,
+    _ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -214,9 +217,9 @@ pub fn detect_d5(resolved: &L3Resolved, _ctx: &DetectorContext) -> DetectorOutpu
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("other", skipped_other);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings,
         stats,
         diagnostics: vec![],
-    }
+    })
 }

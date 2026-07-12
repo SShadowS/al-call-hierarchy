@@ -25,7 +25,7 @@ use crate::engine::l5::detectors::{
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
-use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
+use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d3-missing-setloadfields";
 
@@ -148,7 +148,10 @@ fn derive_load_states(routine: &L3Routine) -> Vec<LoadStateAtRetrieval<'_>> {
     out
 }
 
-pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput {
+pub fn detect_d3(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
     let mut findings: Vec<Finding> = Vec::new();
@@ -581,9 +584,9 @@ pub fn detect_d3(resolved: &L3Resolved, ctx: &DetectorContext) -> DetectorOutput
     stats.add_skip("temporaryRecord", skipped_temporary_record);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     stats.add_skip("unknownReads", skipped_unknown_reads);
-    DetectorOutput {
+    Ok(DetectorOutput {
         findings: deduped,
         stats,
         diagnostics: vec![],
-    }
+    })
 }
