@@ -31,15 +31,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rung-3'd everywhere would pass every check for a trivial, uninteresting
   reason. The equivalence key (one `canon_edges`/`canon_decls`/
   `canon_incoming` helper set every script shares) compares, per file: the
-  edge MULTISET as `(ObligationId, sorted Vec<(RouteTarget, EvidenceKind)>)`
-  pairs; `event_edges`, same rule; `incoming`, dereferenced through each
-  `EdgeRef` to its owning edge's `ObligationId` rather than compared as raw
-  `(file, idx)` pairs; `decls_by_file`, as `(RoutineNodeId, name, origin,
-  name_origin)` tuples (`Origin`'s EPHEMERAL `ts_id`/`kind_text` fields
-  projected away — `al_syntax::ir::Origin`'s own doc: "NEVER compare across
-  parses, tree-sitter recycles ids"). `Route::witness` and `generation` are
-  excluded by design (stale-witness-span / monotonic-counter reasons, both
-  documented in the test file's header). **Building the gate exactly as the
+  edge MULTISET as `(ObligationId, EdgeKind, DispatchShape, SetCompleteness,
+  sorted Vec<(RouteTarget, EvidenceKind, sorted Vec<Condition>)>)` tuples
+  (widened in the review fix-wave below — see that entry); `event_edges`,
+  same rule; `incoming`, dereferenced through each `EdgeRef` to its owning
+  edge's `ObligationId` rather than compared as raw `(file, idx)` pairs;
+  `decls_by_file`, as `(RoutineNodeId, name, origin, name_origin)` tuples
+  (`Origin`'s EPHEMERAL `ts_id`/`kind_text` fields projected away —
+  `al_syntax::ir::Origin`'s own doc: "NEVER compare across parses,
+  tree-sitter recycles ids"). `Route::witness`, `Route::receiver_tier`, and
+  `generation` are excluded by design (stale-witness-span /
+  diagnostic-only-per-its-own-doc / monotonic-counter reasons, all
+  documented in the test file's header, which now gives an exhaustive
+  accounting of every compared-vs-excluded field). **Building the gate
+  exactly as the
   brief's `(SiteId, ...)` key specified surfaced a REAL false-positive on
   the very first script**: an `EventFlow` edge's `SiteId` — per
   `resolver.rs`'s `emit_event_flow_edges`, explicitly "anchored at the
@@ -60,6 +65,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build_full_with_parsed` from `pub(crate)` to `pub` (Task 9 had it
   crate-only; this gate is an external integration-test crate and needs it
   to construct an `Updater` the same way `server.rs` eventually will).
+  **Review fix-wave:** the equivalence key omitted `Route::conditions` and
+  `Edge::kind`/`shape`/`completeness` entirely — an unjustified exclusion
+  for a permanent CI gate (all 4 are real semantics: `conditions` gates
+  `Route::fires_by_default`/`Edge::default_reachable_routes`;
+  `kind`/`shape`/`completeness` are exactly what `classify_obligation`/
+  `real_unknown_rate` read). Widened `CanonEdge`/`canon_edge` to include all
+  4 (a new `CanonRoute` type carries each route's own sorted `Condition`
+  set), and rewrote the module doc's equivalence-key section into an
+  exhaustive accounting — every `Edge`/`Route` field is now either compared
+  or excluded with a stated, engine-doc-grounded reason (`Route::
+  receiver_tier`'s exclusion, previously implicit, is now stated explicitly
+  too: its own doc already marks it diagnostic-only/never-goldens-compared).
+  Added a new permanent meta-test,
+  `canon_edge_distinguishes_kind_shape_completeness_and_conditions`, proving
+  the widened key's discriminating power directly (4 hand-constructed
+  edge pairs, each differing in exactly one of the 4 newly-added
+  dimensions, must canonicalize unequal) — calibrated by temporarily
+  narrowing `canon_edge` back to the pre-fix-wave shape and confirming all 4
+  assertions fail (collapse to equal) before restoring. All 9 original
+  scripts stayed green under the widened key (no active divergence existed
+  on these dimensions; the fix closes an exclusion gap, not an active bug).
+  Also made the overload-flip script (`overload_flip_body_only_edit_
+  stays_rung1_and_equivalent`) prove its own claim directly rather than
+  leaning on the trailing full-equivalence check: a new `calc_target_at_line`
+  helper names each specific overload's `RoutineNodeId` by source line
+  before AND after the edit, asserting the Text-literal call site now names
+  `Calc(Text)`'s id (previously the Integer-literal site's id) and
+  vice versa.
 - **`src/lsp/updater.rs`: the incremental updater — debounced queue, the
   rung-1/rung-2/(degenerate)rung-3 soundness ladder, and atomic
   `Arc`-swap publication (T3 LSP-migration arc, Task 9 — the arc's CRUX).**

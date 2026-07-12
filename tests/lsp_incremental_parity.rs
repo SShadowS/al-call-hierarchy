@@ -14,12 +14,27 @@
 //! # Equivalence key (binding — NOT full structural equality)
 //!
 //! Two snapshots are "equivalent" here iff, for corresponding files:
-//! - `edges_by_file`: the same file KEY SET, and for each file the same
-//!   edge MULTISET, where one edge's identity for comparison is
-//!   `(ObligationId, sorted Vec<(RouteTarget, EvidenceKind)>)` — i.e. the
-//!   obligation it answers, plus which targets/evidence-kinds it routes to.
-//!   Order within a file's bucket is deliberately NOT compared (a multiset)
-//!   — a global index (like a brand-new file's position, or `event_edges`'s
+//! - `edges_by_file`: the same file KEY SET, and for each file the same edge
+//!   MULTISET, where one edge's identity for comparison is `(ObligationId,
+//!   EdgeKind, DispatchShape, SetCompleteness, sorted Vec<(RouteTarget,
+//!   EvidenceKind, sorted Vec<Condition>)>)` — i.e. the obligation it
+//!   answers; the edge's own classification (its kind, dispatch shape, and
+//!   set-completeness — real semantics, not incidental: `shape`/
+//!   `completeness` are exactly what `classify_obligation` and
+//!   `real_unknown_rate` read); and, per route, which target/evidence-kind
+//!   it routes to plus that route's `Condition` set (real semantics too —
+//!   `Route::fires_by_default`/`Edge::default_reachable_routes` gate
+//!   traversal on exactly this field: a route silently losing/gaining
+//!   `ManualBinding`/`AmbiguousDispatch` between incremental and fresh would
+//!   be a genuine reachability-changing divergence, and the pre-review-fix
+//!   key could not have caught it). Review fix-wave (this pass): the
+//!   ORIGINAL key omitted `kind`/`shape`/`completeness`/`conditions`
+//!   entirely — an unjustified exclusion for a permanent CI gate, caught in
+//!   review; every field is now either compared or has a stated reason not
+//!   to be (this doc's job is to make that an exhaustive list, not a
+//!   selective one). Order within a file's bucket, and within one edge's
+//!   route list, is deliberately NOT compared (both are multisets) — a
+//!   global index (like a brand-new file's position, or `event_edges`'s
 //!   traversal order over the whole graph) can legitimately differ in ORDER
 //!   between an incrementally-patched `Vec` (new entries appended) and a
 //!   fresh directory-walk build (natural filesystem order) without either
@@ -103,6 +118,24 @@
 //! start/end `Point`s, which — unlike `ts_id` — really are stable, since
 //! both sides parse the exact same on-disk bytes.
 //!
+//! # Exhaustive accounting (every `Edge`/`Route` field is either compared or
+//! excluded-with-a-reason above; nothing is silently dropped)
+//!
+//! Compared: `ObligationId` (via `ClassifiedEdge`, not `Edge.site` — see
+//! above), `Edge::kind`, `Edge::shape`, `Edge::completeness`,
+//! `Route::target`, `Route::evidence` (via `EvidenceKind`),
+//! `Route::conditions`. Excluded, each with a reason stated above:
+//! `Route::witness` (staleness, audit §6.1), `Evidence::Unknown`'s
+//! `UnknownReason` payload (subsumed by `EvidenceKind`, itself a deliberate
+//! serialization-boundary projection elsewhere in this engine), `LspSnapshot::
+//! generation` (monotonic counter vs. always-`0`, not a correctness signal),
+//! `Origin::kind_text`/`ts_id` (EPHEMERAL by the IR's own doc).
+//! `Route::receiver_tier` is excluded too: its own doc (`edge.rs`) already
+//! states it is diagnostic-only and is never compared against the committed
+//! semantic goldens, for the same serialization-boundary discipline as
+//! `Evidence::Unknown`'s payload — this gate excludes it for that identical,
+//! already-engine-documented reason, not a new carve-out invented here.
+//!
 //! # Non-vacuity (Step 2)
 //!
 //! A gate that always took the slow, always-correct rung 3 (or always rung
@@ -125,8 +158,11 @@ use std::path::Path;
 
 use al_call_hierarchy::lsp::snapshot::{DeclEntry, LspSnapshot};
 use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
-use al_call_hierarchy::program::node::RoutineNodeId;
-use al_call_hierarchy::program::resolve::edge::{EvidenceKind, RouteTarget};
+use al_call_hierarchy::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
+use al_call_hierarchy::program::resolve::edge::{
+    CanonicalSpan, Condition, DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind,
+    OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, SourcePos, Witness,
+};
 use al_call_hierarchy::program::resolve::full::{ClassifiedEdge, ObligationId};
 use al_call_hierarchy::snapshot::ParsedUnit;
 
@@ -166,22 +202,41 @@ fn build_full_with_parsed(dir: &Path) -> (LspSnapshot, Vec<ParsedUnit>) {
 // Canonicalization — the ONE equivalence-key implementation every script uses
 // ---------------------------------------------------------------------------
 
-/// One edge's comparison identity: the obligation it answers, plus the
-/// sorted set of (target, evidence-kind) pairs it routes to. `ObligationId`
-/// (not the brief's originally-suggested raw `SiteId`) — see the module
-/// doc's "Why `ObligationId`" section for the real false-positive this
-/// choice fixes.
-type CanonEdge = (ObligationId, Vec<(RouteTarget, EvidenceKind)>);
+/// One route's comparison identity: its target, evidence-kind, and its
+/// OWN sorted `Condition` set (`fires_by_default`/`default_reachable_routes`
+/// gate traversal on exactly this field — see the module doc).
+type CanonRoute = (RouteTarget, EvidenceKind, Vec<Condition>);
+
+fn canon_route(r: &Route) -> CanonRoute {
+    let mut conditions = r.conditions.clone();
+    conditions.sort();
+    (r.target.clone(), r.evidence.kind(), conditions)
+}
+
+/// One edge's comparison identity: the obligation it answers (`ObligationId`
+/// — not the brief's originally-suggested raw `SiteId`; see the module
+/// doc's "Why `ObligationId`" section), the edge's own classification
+/// (`kind`/`shape`/`completeness` — review fix-wave addition: real
+/// semantics `classify_obligation`/`real_unknown_rate` read, not incidental
+/// data), plus the sorted set of routes it carries.
+type CanonEdge = (
+    ObligationId,
+    EdgeKind,
+    DispatchShape,
+    SetCompleteness,
+    Vec<CanonRoute>,
+);
 
 fn canon_edge(ce: &ClassifiedEdge) -> CanonEdge {
-    let mut routes: Vec<(RouteTarget, EvidenceKind)> = ce
-        .edge
-        .routes
-        .iter()
-        .map(|r| (r.target.clone(), r.evidence.kind()))
-        .collect();
+    let mut routes: Vec<CanonRoute> = ce.edge.routes.iter().map(canon_route).collect();
     routes.sort();
-    (ce.obligation_id.clone(), routes)
+    (
+        ce.obligation_id.clone(),
+        ce.edge.kind,
+        ce.edge.shape,
+        ce.edge.completeness,
+        routes,
+    )
 }
 
 /// A file's (or `event_edges`'s) edge bucket as an order-independent
@@ -627,11 +682,55 @@ fn delete_file_stays_equivalent() {
 // Script 6: edit that flips overload resolution — body-only, stays rung 1
 // ---------------------------------------------------------------------------
 
+/// The Alpha.al call site at line `line` (0-based, matching
+/// `Origin`/`SourcePos` conventions) whose route names an overload of
+/// `Calc` — i.e. one specific `Calc()` call, identified by its FIXED source
+/// position rather than by iteration order (`edges_by_file`'s per-file
+/// order is a multiset for equivalence purposes — see the module doc — so
+/// this test must not rely on it; a line number is a stable, meaningful
+/// identity a real call site actually has).
+fn calc_target_at_line(edges: &[ClassifiedEdge], line: u32) -> RoutineNodeId {
+    let ce = edges
+        .iter()
+        .find(|ce| ce.edge.site.span.start.line == line)
+        .unwrap_or_else(|| panic!("no call site at line {line}"));
+    let route = ce
+        .edge
+        .routes
+        .iter()
+        .find(|r| matches!(&r.target, RouteTarget::Routine(t) if t.name_lc == "calc"))
+        .unwrap_or_else(|| panic!("line {line}'s edge does not route to a Calc overload"));
+    let RouteTarget::Routine(target) = &route.target else {
+        unreachable!("just matched on RouteTarget::Routine above")
+    };
+    target.clone()
+}
+
 #[test]
 fn overload_flip_body_only_edit_stays_rung1_and_equivalent() {
     let dir = copy_fixture_to_tempdir();
     let (base, parsed) = build_full_with_parsed(dir.path());
     let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+    // The fixture's DoWork body (both before and after this test's edit)
+    // calls Calc() twice, on these exact, UNCHANGED source lines (only the
+    // literal TOKEN on each line changes below — no line is added or
+    // removed) — 0-based, matching `Origin`/`SourcePos`.
+    const INTEGER_LITERAL_CALL_LINE: u32 = 8; // `Calc(1)` before -> `Calc('flipped')` after
+    const TEXT_LITERAL_CALL_LINE: u32 = 9; // `Calc('x')` before -> `Calc(2)` after
+
+    // Baseline, from the UNTOUCHED fixture: name each overload's specific
+    // RoutineNodeId by which literal type resolves to it, so the assertions
+    // below can say "Calc(Text)"/"Calc(Integer)" honestly rather than just
+    // "site A"/"site B".
+    let calc_integer_id =
+        calc_target_at_line(&base.edges_by_file["Alpha.al"], INTEGER_LITERAL_CALL_LINE);
+    let calc_text_id = calc_target_at_line(&base.edges_by_file["Alpha.al"], TEXT_LITERAL_CALL_LINE);
+    assert_ne!(
+        calc_integer_id, calc_text_id,
+        "baseline sanity: Calc(Integer) and Calc(Text) must be DISTINCT routines \
+         (otherwise this test cannot prove anything about a flip)"
+    );
 
     // Swap which literal each Calc() call site passes — Alpha.Calc(Integer)/
     // Calc(Text) is the fixture's overload set, and arg-type dispatch picks
@@ -713,6 +812,29 @@ codeunit 50100 "Alpha"
              fresh file rather than a stale cached BodyMap"
         );
     }
+
+    // The self-contained, honest core of this test (review fix-wave — this
+    // must hold WITHOUT leaning on the trailing full-equivalence check
+    // below): the line that now passes the TEXT literal (`Calc('flipped')`,
+    // the line that passed the INTEGER literal before) must route to
+    // `calc_text_id`, and the line that now passes the INTEGER literal
+    // (`Calc(2)`, the line that passed the TEXT literal before) must route
+    // to `calc_integer_id` — i.e. the overload identity assigned to each
+    // FIXED source position genuinely flipped, not merely "stayed resolved
+    // to something."
+    let new_edges = &new_snap.edges_by_file["Alpha.al"];
+    let now_text_literal_site_target = calc_target_at_line(new_edges, INTEGER_LITERAL_CALL_LINE);
+    let now_integer_literal_site_target = calc_target_at_line(new_edges, TEXT_LITERAL_CALL_LINE);
+    assert_eq!(
+        now_text_literal_site_target, calc_text_id,
+        "the line that now passes a Text literal (Calc('flipped')) must name \
+         Calc(Text)'s specific RoutineNodeId"
+    );
+    assert_eq!(
+        now_integer_literal_site_target, calc_integer_id,
+        "the line that now passes an Integer literal (Calc(2)) must name \
+         Calc(Integer)'s specific RoutineNodeId"
+    );
 
     let fresh = LspSnapshot::build_full(dir.path()).expect("fresh build_full");
     assert_snapshots_equivalent(&new_snap, &fresh, "overload-flip");
@@ -1044,5 +1166,116 @@ codeunit 50100 "Alpha"
         r2,
         Rung::Two,
         "non-vacuity probe: a signature (arity) edit must take rung 2"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Meta-test: canon_edge's discriminating power (review fix-wave)
+// ---------------------------------------------------------------------------
+
+/// Proves the widened `CanonEdge` key (review fix-wave: added `EdgeKind`,
+/// `DispatchShape`, `SetCompleteness`, and each route's `Condition` set) is
+/// not vacuous: 4 pairs of hand-constructed `ClassifiedEdge`s, each pair
+/// IDENTICAL in everything the PRE-fix-wave key covered (`ObligationId`/
+/// `RouteTarget`/`EvidenceKind`) but differing in exactly ONE of these 4
+/// newly-added dimensions, must canonicalize UNEQUAL.
+///
+/// Calibration performed for this review fix-wave (temporary, reverted —
+/// described in the task-10 report's fix-wave section): narrowed
+/// `canon_edge`/`CanonEdge` back to the pre-fix-wave shape (dropping
+/// `kind`/`shape`/`completeness` from the edge tuple and `conditions` from
+/// `canon_route`, keeping only `(ObligationId, Vec<(RouteTarget,
+/// EvidenceKind)>)`) and re-ran this exact test — all 4 `assert_ne!`s below
+/// failed (each pair collapsed to the SAME `CanonEdge`), confirming the
+/// widened key is what makes them distinguishable, not an accident of
+/// `ObligationId` already differing between the pairs.
+#[test]
+fn canon_edge_distinguishes_kind_shape_completeness_and_conditions() {
+    fn rid(name: &str) -> RoutineNodeId {
+        RoutineNodeId {
+            object: ObjectNodeId {
+                app: AppRef(0),
+                kind: al_syntax::ir::ObjectKind::Codeunit,
+                key: ObjKey::Id(1),
+            },
+            name_lc: name.to_string(),
+            enclosing_member_lc: None,
+            params_count: 0,
+            sig_fp: 0,
+        }
+    }
+
+    fn base_edge(caller: RoutineNodeId, target: RoutineNodeId) -> Edge {
+        Edge {
+            from: caller.clone(),
+            site: SiteId {
+                caller,
+                span: CanonicalSpan {
+                    unit: "F.al".into(),
+                    start: SourcePos { line: 1, col: 1 },
+                    end: SourcePos { line: 1, col: 2 },
+                },
+                callee_fingerprint: 1,
+            },
+            kind: EdgeKind::Call,
+            shape: DispatchShape::Exact,
+            completeness: SetCompleteness::Complete,
+            routes: vec![Route {
+                target: RouteTarget::Routine(target),
+                evidence: Evidence::Source,
+                conditions: vec![],
+                witness: Witness::None,
+                receiver_tier: None,
+            }],
+        }
+    }
+
+    fn classified(edge: Edge) -> ClassifiedEdge {
+        ClassifiedEdge {
+            obligation_id: ObligationId::CallSite {
+                caller: edge.from.clone(),
+                span: edge.site.span.clone(),
+                callee_fp: edge.site.callee_fingerprint,
+            },
+            edge,
+        }
+    }
+
+    let caller = rid("caller");
+    let target = rid("target");
+    let base_canon = canon_edge(&classified(base_edge(caller.clone(), target.clone())));
+
+    let mut kind_variant = base_edge(caller.clone(), target.clone());
+    kind_variant.kind = EdgeKind::Run;
+    assert_ne!(
+        canon_edge(&classified(kind_variant)),
+        base_canon,
+        "two edges differing only in EdgeKind must NOT canonicalize equal"
+    );
+
+    let mut shape_variant = base_edge(caller.clone(), target.clone());
+    shape_variant.shape = DispatchShape::Multicast;
+    assert_ne!(
+        canon_edge(&classified(shape_variant)),
+        base_canon,
+        "two edges differing only in DispatchShape must NOT canonicalize equal"
+    );
+
+    let mut completeness_variant = base_edge(caller.clone(), target.clone());
+    completeness_variant.completeness = SetCompleteness::Partial {
+        reason: OpenWorldReason::RuntimeTypeUnbounded,
+    };
+    assert_ne!(
+        canon_edge(&classified(completeness_variant)),
+        base_canon,
+        "two edges differing only in SetCompleteness must NOT canonicalize equal"
+    );
+
+    let mut condition_variant = base_edge(caller, target);
+    condition_variant.routes[0].conditions = vec![Condition::ManualBinding];
+    assert_ne!(
+        canon_edge(&classified(condition_variant)),
+        base_canon,
+        "two edges differing only in a route's Condition set must NOT canonicalize equal"
     );
 }
