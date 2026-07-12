@@ -8,6 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`tests/lsp_incremental_parity.rs`: the PERMANENT incremental-vs-batch
+  differential gate (T3 LSP-migration arc, Task 10 — the arc's H-10
+  insurance policy; outlives the arc, runs in CI forever).** 9 scripts, each
+  copying the new fixture workspace (`tests/fixtures/lsp-incr/` — 2
+  codeunits with an overload set and an event pub/sub pair, 1 table, 1
+  tableextension, 1 page, a `Løbenr` identifier and an `æøå` line) into a
+  fresh tempdir, driving `Updater::apply_batch` through one or more scripted
+  disk edits, and asserting AFTER EVERY EDIT that the incrementally-produced
+  `LspSnapshot` is EQUIVALENT to a completely independent `LspSnapshot::
+  build_full` of the same on-disk state: a body-edit chain (3 consecutive
+  rung-1 saves), a signature change, a routine rename, a brand-new file, a
+  file delete, a body-only edit that flips which of two overloads a call
+  site resolves to (stays rung 1 — proves arg-type dispatch re-runs
+  correctly against the touched file's fresh parse, not a stale cached
+  `BodyMap`), an `EventSubscriber` attribute edit, and one mixed 6-edit batch
+  (add + delete + rename + signature change + 2 body-only edits, all
+  coalesced into ONE `apply_batch` call). Plus a dedicated non-vacuity probe
+  (`gate_non_vacuity_rung1_and_rung2_are_both_exercised`) proving, in
+  isolation from every other script's state, that this suite's applies
+  really do take both `Rung::One` and `Rung::Two` — a suite that silently
+  rung-3'd everywhere would pass every check for a trivial, uninteresting
+  reason. The equivalence key (one `canon_edges`/`canon_decls`/
+  `canon_incoming` helper set every script shares) compares, per file: the
+  edge MULTISET as `(ObligationId, sorted Vec<(RouteTarget, EvidenceKind)>)`
+  pairs; `event_edges`, same rule; `incoming`, dereferenced through each
+  `EdgeRef` to its owning edge's `ObligationId` rather than compared as raw
+  `(file, idx)` pairs; `decls_by_file`, as `(RoutineNodeId, name, origin,
+  name_origin)` tuples (`Origin`'s EPHEMERAL `ts_id`/`kind_text` fields
+  projected away — `al_syntax::ir::Origin`'s own doc: "NEVER compare across
+  parses, tree-sitter recycles ids"). `Route::witness` and `generation` are
+  excluded by design (stale-witness-span / monotonic-counter reasons, both
+  documented in the test file's header). **Building the gate exactly as the
+  brief's `(SiteId, ...)` key specified surfaced a REAL false-positive on
+  the very first script**: an `EventFlow` edge's `SiteId` — per
+  `resolver.rs`'s `emit_event_flow_edges`, explicitly "anchored at the
+  publisher routine's name-origin span" (a position stand-in, since an event
+  has no call expression) — goes stale after ANY rung-1 edit that shifts
+  line numbers in a file declaring a publisher, because `apply_rung1_core`
+  never recomputes `event_edges` (unconditional `Arc::clone`). Root-caused
+  (not papered over): switched the equivalence key from raw `Edge.site` to
+  `ClassifiedEdge.obligation_id` — `ObligationId::CallSite` mirrors `SiteId`
+  field-for-field (zero loss for real call sites, whose spans rung 1 always
+  keeps fresh) while `ObligationId::Publisher(RoutineNodeId)` carries no span
+  at all, exactly matching the cosmetic-vs-identity distinction the engine's
+  own coverage-contract type was already designed around. Calibration
+  (binding TDD step): deliberately compared a post-edit snapshot against the
+  WRONG (pre-edit) oracle on the signature-change script — confirmed the
+  gate fails loudly, naming the exact diverging file and edge — before
+  reverting to the correct comparison. Also widens `LspSnapshot::
+  build_full_with_parsed` from `pub(crate)` to `pub` (Task 9 had it
+  crate-only; this gate is an external integration-test crate and needs it
+  to construct an `Updater` the same way `server.rs` eventually will).
 - **`src/lsp/updater.rs`: the incremental updater — debounced queue, the
   rung-1/rung-2/(degenerate)rung-3 soundness ladder, and atomic
   `Arc`-swap publication (T3 LSP-migration arc, Task 9 — the arc's CRUX).**

@@ -160,10 +160,15 @@ impl LspSnapshot {
     /// honest fix, not a workaround: it runs once here (server startup) and
     /// again only on a rung-3 rebuild (rare — `.alpackages` change / watcher
     /// overflow), never on the rung-1/rung-2 hot path.
+    ///
+    /// `pub` (T3 Task 10, widened from `pub(crate)`): the permanent
+    /// incremental-vs-batch differential gate (`tests/lsp_incremental_parity.rs`)
+    /// is an external integration-test crate — it needs this to construct an
+    /// [`Updater`](crate::lsp::updater::Updater) exactly as `main.rs`/
+    /// `server.rs` eventually will, so this is the arc's real future public
+    /// server-construction surface, not test-only scaffolding.
     #[must_use]
-    pub(crate) fn build_full_with_parsed(
-        workspace_root: &Path,
-    ) -> Option<(LspSnapshot, Vec<ParsedUnit>)> {
+    pub fn build_full_with_parsed(workspace_root: &Path) -> Option<(LspSnapshot, Vec<ParsedUnit>)> {
         let ctx = build_context(workspace_root)?;
         let parsed_for_updater = parse_snapshot(&ctx.snap);
         Some((Self::from_context(ctx), parsed_for_updater))
