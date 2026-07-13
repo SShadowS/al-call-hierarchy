@@ -288,57 +288,61 @@ impl Updater {
         for ev in batch {
             match ev {
                 ChangeEvent::DepsChanged | ChangeEvent::Overflow => force_rung3 = true,
-                ChangeEvent::FileRemoved(path) => match classify_path(&self.workspace_root, path) {
-                    PathClass::Workspace(vp) => planned.push(Planned::Remove { vp }),
-                    // Task-4 review Hunt-3 scenario: a path that isn't
-                    // workspace-shaped at all (e.g. under `.alpackages/`) —
-                    // we have no rung-2 primitive for "one dependency file
-                    // changed" (rung 2 only ever touches the WORKSPACE
-                    // ParsedUnit, over an unchanged cached `DepLayer`), so
-                    // the only sound response is the same one `DepsChanged`
-                    // gets.
-                    PathClass::NotWorkspaceSource => force_rung3 = true,
-                },
-                ChangeEvent::FileSaved(path) => match classify_path(&self.workspace_root, path) {
-                    PathClass::NotWorkspaceSource => force_rung3 = true,
-                    PathClass::Workspace(vp) => {
-                        // A rare race (saved-then-deleted between the event
-                        // firing and this batch being processed): skip THIS
-                        // file only — fail-closed does not mean "never make
-                        // progress," it means "never fabricate content";
-                        // leaving the file's last-known-good state untouched
-                        // satisfies that without discarding the rest of a
-                        // legitimate batch.
-                        let Ok(text) = std::fs::read_to_string(path) else {
-                            continue;
-                        };
-                        let provenance = self.file_provenance(cur, &vp);
-                        let file = al_syntax::parse(&text);
-                        // Fail-closed: a `Recovered` parse cannot be trusted
-                        // for rung 1's fingerprint-equality shortcut — the
-                        // IR may have silently dropped content (see
-                        // `crate::snapshot::parse::recovered_file_paths`'s
-                        // doc), so force this file's own "changed" verdict
-                        // regardless of what its computed fingerprint says.
-                        let recovered = file.parse_status != ParseStatus::Clean;
-                        let pf = ParsedFile {
-                            virtual_path: vp.clone(),
-                            file,
-                            provenance,
-                            text,
-                        };
-                        let fingerprint_changed = recovered
-                            || match cur.parsed.get(&vp) {
-                                Some(old) => old.surface != def_surface_fingerprint(&pf),
-                                None => true, // brand-new file: no prior surface to compare
-                            };
-                        planned.push(Planned::Save {
-                            vp,
-                            pf: Box::new(pf),
-                            fingerprint_changed,
-                        });
+                ChangeEvent::FileRemoved(path) => {
+                    match classify_path(&self.workspace_root, path, &cur.parsed) {
+                        PathClass::Workspace(vp) => planned.push(Planned::Remove { vp }),
+                        // Task-4 review Hunt-3 scenario: a path that isn't
+                        // workspace-shaped at all (e.g. under `.alpackages/`) —
+                        // we have no rung-2 primitive for "one dependency file
+                        // changed" (rung 2 only ever touches the WORKSPACE
+                        // ParsedUnit, over an unchanged cached `DepLayer`), so
+                        // the only sound response is the same one `DepsChanged`
+                        // gets.
+                        PathClass::NotWorkspaceSource => force_rung3 = true,
                     }
-                },
+                }
+                ChangeEvent::FileSaved(path) => {
+                    match classify_path(&self.workspace_root, path, &cur.parsed) {
+                        PathClass::NotWorkspaceSource => force_rung3 = true,
+                        PathClass::Workspace(vp) => {
+                            // A rare race (saved-then-deleted between the event
+                            // firing and this batch being processed): skip THIS
+                            // file only — fail-closed does not mean "never make
+                            // progress," it means "never fabricate content";
+                            // leaving the file's last-known-good state untouched
+                            // satisfies that without discarding the rest of a
+                            // legitimate batch.
+                            let Ok(text) = std::fs::read_to_string(path) else {
+                                continue;
+                            };
+                            let provenance = self.file_provenance(cur, &vp);
+                            let file = al_syntax::parse(&text);
+                            // Fail-closed: a `Recovered` parse cannot be trusted
+                            // for rung 1's fingerprint-equality shortcut — the
+                            // IR may have silently dropped content (see
+                            // `crate::snapshot::parse::recovered_file_paths`'s
+                            // doc), so force this file's own "changed" verdict
+                            // regardless of what its computed fingerprint says.
+                            let recovered = file.parse_status != ParseStatus::Clean;
+                            let pf = ParsedFile {
+                                virtual_path: vp.clone(),
+                                file,
+                                provenance,
+                                text,
+                            };
+                            let fingerprint_changed = recovered
+                                || match cur.parsed.get(&vp) {
+                                    Some(old) => old.surface != def_surface_fingerprint(&pf),
+                                    None => true, // brand-new file: no prior surface to compare
+                                };
+                            planned.push(Planned::Save {
+                                vp,
+                                pf: Box::new(pf),
+                                fingerprint_changed,
+                            });
+                        }
+                    }
+                }
             }
         }
 
@@ -723,7 +727,30 @@ enum PathClass {
 /// Classify an absolute path against `workspace_root`, purely lexically (no
 /// filesystem access — see [`ChangeEvent`]'s doc for why: a `FileRemoved`
 /// path may no longer exist).
-fn classify_path(workspace_root: &Path, path: &Path) -> PathClass {
+///
+/// **Case-insensitive fallback against `known_paths` (CDO H-10 no-op-save
+/// review finding, t3.14):** the incoming path's case need not exactly
+/// match the file's already-indexed `virtual_path` (a case-insensitive
+/// filesystem tolerates it; a caller building the path via a DIFFERENT
+/// relativization than `snapshot::provider::walk_al_source`'s own can
+/// legitimately differ in case too — exactly what happened in the
+/// differential harness's CDO H-10 test, which re-derives a legacy-sourced
+/// identity's path independently). Mirrors `resolve_virtual_path`
+/// (`src/lsp/handlers.rs`), which already has this exact fallback for the
+/// identical reason: try the exact key first, then a case-insensitive scan,
+/// and resolve to the EXISTING key when found. Without this, a
+/// case-mismatched `FileSaved` silently creates a SECOND map entry for the
+/// SAME physical file — `apply_rung1_core`'s `edges_by_file.insert(vp, ..)`
+/// (a `HashMap`, which only overwrites on an EXACT key match) or
+/// `apply_rung2`'s `splice_file` (`Vec`, exact-string `find`) both take the
+/// "new file" branch instead of "update this file," and `build_incoming`
+/// then double-counts every edge whose caller lives in that file (inflating
+/// the incoming-edge count for any routine with a SAME-FILE caller).
+fn classify_path(
+    workspace_root: &Path,
+    path: &Path,
+    known_paths: &HashMap<String, Arc<ParsedFileEntry>>,
+) -> PathClass {
     let Ok(rel) = path.strip_prefix(workspace_root) else {
         return PathClass::NotWorkspaceSource;
     };
@@ -737,7 +764,15 @@ fn classify_path(workspace_root: &Path, path: &Path) -> PathClass {
     if !is_al || under_skip_dir {
         return PathClass::NotWorkspaceSource;
     }
-    PathClass::Workspace(rel.to_string_lossy().replace('\\', "/"))
+    let rel_str = rel.to_string_lossy().replace('\\', "/");
+    if !known_paths.contains_key(&rel_str)
+        && let Some(existing) = known_paths
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(&rel_str))
+    {
+        return PathClass::Workspace(existing.clone());
+    }
+    PathClass::Workspace(rel_str)
 }
 
 // ---------------------------------------------------------------------------
@@ -960,6 +995,162 @@ mod tests {
 
     fn build(dir: &Path) -> (LspSnapshot, Vec<ParsedUnit>) {
         LspSnapshot::build_full_with_parsed(dir).expect("build_full_with_parsed")
+    }
+
+    // ── H-10 review finding (t3.14): classify_path case-insensitivity ─────
+
+    /// CDO H-10 no-op-save root cause (t3.14 review fix-wave): a
+    /// `FileSaved`/`FileRemoved` path whose CASE differs from the file's
+    /// already-indexed `virtual_path` must resolve to the SAME existing key,
+    /// never a new, separate one — `resolve_virtual_path` (`src/lsp/
+    /// handlers.rs`) already has exactly this case-insensitive fallback for
+    /// the identical reason; `classify_path` didn't. Without it,
+    /// `apply_rung1_core`'s `edges_by_file.insert(vp, ...)` (a `HashMap`,
+    /// which only overwrites on an EXACT key match) and `apply_rung2`'s
+    /// `splice_file` (`Vec`, exact-string `find`) both silently create a
+    /// SECOND entry for what is really the SAME file — inflating any
+    /// incoming-edge count that includes a caller living in that file.
+    #[test]
+    fn classify_path_resolves_case_mismatched_path_to_the_existing_key() {
+        let dir = fixture_dir();
+        let (base, _parsed) = build(dir.path());
+
+        // Confirm the precondition this test depends on: the real
+        // case-preserving key is "Alpha.al", not "alpha.al" — verified, not
+        // assumed (see `snapshot::provider::walk_al_source`'s own doc: keys
+        // are case-preserving, extracted straight from disk).
+        assert!(
+            base.parsed.contains_key("Alpha.al"),
+            "fixture precondition: Alpha.al must be indexed under its real, \
+             case-preserving name; got keys={:?}",
+            base.parsed.keys().collect::<Vec<_>>()
+        );
+
+        let mismatched_case_path = dir.path().join("alpha.al");
+        match classify_path(dir.path(), &mismatched_case_path, &base.parsed) {
+            PathClass::Workspace(vp) => assert_eq!(
+                vp, "Alpha.al",
+                "a case-mismatched FileSaved/FileRemoved path must resolve to \
+                 the EXISTING case-preserving key, never a new lowercased one \
+                 (that would duplicate the file's edges/decls under a second \
+                 map entry)"
+            ),
+            PathClass::NotWorkspaceSource => {
+                panic!("alpha.al is workspace source; must not be NotWorkspaceSource")
+            }
+        }
+    }
+
+    /// The full-pipeline proof of the same fix, using the exact shape the
+    /// CDO H-10 finding needs: a target routine with BOTH a same-file caller
+    /// AND a cross-file caller, so the "duplicate file entry" failure mode
+    /// would inflate its incoming count specifically (a same-file-only or
+    /// cross-file-only target wouldn't expose it — see the review notes).
+    /// Meaningful on a case-INSENSITIVE filesystem (this dev environment);
+    /// on a case-sensitive one the mismatched-case `read_to_string` below
+    /// fails and the save is skipped entirely (a `Noop`) — safe (never a
+    /// false failure), just not exercising the mechanism there. The
+    /// platform-independent proof is the `classify_path` unit test above.
+    #[test]
+    fn case_mismatched_no_op_save_does_not_duplicate_incoming_edges() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("app.json"),
+            r#"{
+    "id": "55555555-0000-0000-0000-000000000010",
+    "name": "H10 Case Mismatch Fixture",
+    "publisher": "probe",
+    "version": "1.0.0.0"
+}"#,
+        )
+        .expect("write app.json");
+        std::fs::write(
+            dir.path().join("Target.al"),
+            r#"codeunit 50300 "Target"
+{
+    procedure DoIt()
+    begin
+    end;
+
+    procedure SelfCaller()
+    begin
+        DoIt();
+    end;
+}
+"#,
+        )
+        .expect("write Target.al");
+        std::fs::write(
+            dir.path().join("Caller.al"),
+            r#"codeunit 50301 "Caller"
+{
+    procedure CallIt()
+    var
+        T: Codeunit "Target";
+    begin
+        T.DoIt();
+    end;
+}
+"#,
+        )
+        .expect("write Caller.al");
+
+        let (base, parsed) =
+            LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
+        let target_vp = base
+            .decls_by_file
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case("Target.al"))
+            .expect("Target.al indexed");
+        let target_decl = base.decls_by_file[target_vp]
+            .iter()
+            .find(|d| d.name.eq_ignore_ascii_case("DoIt"))
+            .expect("DoIt declared");
+        let pre_count = base
+            .incoming
+            .get(&target_decl.id)
+            .map(Vec::len)
+            .unwrap_or(0);
+        assert_eq!(
+            pre_count, 2,
+            "sanity: DoIt should have exactly 2 incoming callers pre-edit \
+             (SelfCaller, same-file, + Caller.CallIt, cross-file)"
+        );
+
+        let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+        let mismatched_case_path = dir.path().join("target.al");
+        let batch = vec![ChangeEvent::FileSaved(mismatched_case_path)];
+        let Some((after, _rung)) = updater.apply_batch(&base, &batch) else {
+            // Case-sensitive filesystem: the mismatched-case read failed and
+            // the save was skipped entirely (Noop) — safe, nothing to check.
+            return;
+        };
+
+        assert_eq!(
+            after.parsed.len(),
+            base.parsed.len(),
+            "a case-mismatched no-op save must UPDATE the existing file \
+             entry, never add a second one"
+        );
+        let target_vp_after = after
+            .decls_by_file
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case("Target.al"))
+            .expect("Target.al still indexed");
+        let target_decl_after = after.decls_by_file[target_vp_after]
+            .iter()
+            .find(|d| d.name.eq_ignore_ascii_case("DoIt"))
+            .expect("DoIt still declared");
+        let post_count = after
+            .incoming
+            .get(&target_decl_after.id)
+            .map(Vec::len)
+            .unwrap_or(0);
+        assert_eq!(
+            post_count, pre_count,
+            "a case-mismatched no-op save must not duplicate incoming edges \
+             (this is the exact CDO H-10 finding this fix closes)"
+        );
     }
 
     // ── (a) body edit, existing target → rung 1, Arc-identical sibling ────

@@ -314,6 +314,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green with byte-identical pins throughout, confirming zero regression
   against any currently-covered legitimate case. CDO pins deliberately
   left unchanged pending the controller's next re-run.
+  **CDO re-run findings (2 of 7 tests failed; the hardening worked)**:
+  **Finding A** — 8 diagnostics-axis findings were misclassified as
+  `NewUnexplained`/would-be `R2Precision`, when they're actually
+  `LegacyIdentityCollapse` (legacy's collapsed (object, name) identity
+  credits a genuinely-unused declaration with a COLLIDING sibling
+  declaration's real callers, staying silent) — two confirmed CDO
+  sub-shapes: `Page 6175343 "CDO E-Mail"`/`Codeunit 6175280 "CDO E-Mail"`
+  sharing a display name (only the codeunit's procedures are really
+  called), and `Table 6175301 "CDO File"`.`SetBackgroundPDF`'s two
+  overloads (only one really called). Fix: `classify_diagnostics` now
+  consults `Sweep::is_legacy_identity_collision` FIRST, before the
+  `[EventSubscriber]`-gated `R2Precision` check, via a new
+  `routine_legacy_identity_collision` helper. Two new fixture arms
+  (`SharedNameTwo.al`/`SharedPageTwo.al`/`IdentityCallerTwo.al` and
+  `OverloadProbeTable.al`/`OverloadProbeCaller.al`, `tests/fixtures/
+  lsp-diff-identity/`) pin the diagnostics-axis collapse always-on:
+  `LegacyIdentityCollapse` 8→17. **Finding B** — the H-10 test's now-honest
+  `assert_eq!` failed for real: `apply_batch`'s post-edit raw incoming
+  count for a no-op save came back HIGHER than the pre-edit count.
+  Root-caused (NOT reclassified as a test bug) to a genuine engine gap in
+  `classify_path` (`src/lsp/updater.rs`): unlike `resolve_virtual_path`
+  (`src/lsp/handlers.rs`), which already falls back to a case-insensitive
+  scan when an inbound URI's case doesn't match the already-indexed
+  `virtual_path` key, `classify_path` had NO such fallback — a
+  case-mismatched `FileSaved`/`FileRemoved` path silently produced a
+  SECOND, separate map entry for the SAME physical file (`apply_rung1_core`'s
+  `edges_by_file.insert` only overwrites on an exact key match;
+  `apply_rung2`'s `splice_file` only replaces on an exact string match),
+  and `build_incoming` then double-counted every edge whose caller lived
+  in that file. Reproduced LOCALLY (no CDO needed) with a new unit test,
+  `classify_path_resolves_case_mismatched_path_to_the_existing_key`
+  (platform-independent, TDD RED confirmed the bug before the fix) plus a
+  full-pipeline integration test using the exact same-file-caller-plus-
+  cross-file-caller shape the CDO finding needed,
+  `case_mismatched_no_op_save_does_not_duplicate_incoming_edges` (which,
+  before the fix, reproduced the CDO report's exact numeric shape:
+  `parsed.len()` 3 vs. 2). Fixed `classify_path` to match
+  `resolve_virtual_path`'s existing case-insensitive-fallback pattern —
+  an engine fix (Task 9), not a test change. Both new tests added to
+  `src/lsp/updater.rs`'s own test module. CDO pins deliberately left
+  unchanged; the controller re-runs and hands back updated numbers.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate

@@ -2396,7 +2396,21 @@ fn classify_diagnostics(
             // new's edge-based check correctly flags it anyway because no
             // real EventFlow edge resolves. Anything else falls through to
             // `NewUnexplained` below — never silently granted.
-            if routine_has_event_subscriber_attribute(new_snap, &file_rel, msg) {
+            // LegacyIdentityCollapse (CDO re-run finding, Finding A):
+            // checked FIRST — a collided identity's credited-with-a-
+            // sibling's-callers silence has nothing to do with R2's
+            // [EventSubscriber] mechanism, so it must not be shadowed by
+            // (or shadow) that check.
+            if routine_legacy_identity_collision(sweep, &file_rel, msg) {
+                ledger.push(
+                    "diagnostics",
+                    &file_rel,
+                    Class::NewBetter(NewBetterClass::LegacyIdentityCollapse),
+                    format!(
+                        "new flags {msg:?}; legacy's collapsed (object, name) identity credits it with a COLLIDING sibling declaration's real callers, staying silent"
+                    ),
+                );
+            } else if routine_has_event_subscriber_attribute(new_snap, &file_rel, msg) {
                 ledger.push(
                     "diagnostics",
                     &file_rel,
@@ -2511,6 +2525,42 @@ fn routine_has_event_subscriber_attribute(
 /// sweep entry for that name IN THIS FILE has a non-empty `new_incoming` —
 /// i.e. the new engine sees a real caller legacy's zero-incoming count
 /// missed entirely. See `classify_diagnostics`'s `CaseFoldHit` arm.
+/// `LegacyIdentityCollapse`'s DIAGNOSTICS-axis check (CDO re-run finding,
+/// t3.14, Finding A): does the routine named in `msg`'s (object_lc,
+/// routine_lc BASE) pair collide with another distinct declaration
+/// ANYWHERE in the workspace — `Sweep::is_legacy_identity_collision`, the
+/// SAME check the incoming/outgoing/codeLens axes already use? Checked
+/// BEFORE `R2Precision`, since legacy's single collapsed (object, name)
+/// slot can credit ANY colliding sibling's real callers to every routine
+/// sharing that identity — a genuinely-unused routine (which new correctly
+/// flags) can look "used" to legacy for a reason that has NOTHING to do
+/// with R2's `[EventSubscriber]` mechanism. Confirmed by the controller
+/// against real CDO source, two sub-shapes: `Page 6175343 "CDO E-Mail"`/
+/// `Codeunit 6175280 "CDO E-Mail"` sharing a display name (a same-name,
+/// different-KIND collision — the page's own procedures genuinely have
+/// zero callers, but legacy's collapsed slot credits them with the
+/// codeunit's real callers), and `Table 6175301 "CDO File"`.`SetBackgroundPDF`'s
+/// two overloads (one genuinely uncalled — a same-file arg-count collision,
+/// after `strip_dup_suffix` un-suffixes the map-key disambiguator back to
+/// the shared base name).
+fn routine_legacy_identity_collision(sweep: &Sweep, file_rel: &str, msg: &str) -> bool {
+    let Some(name) = msg
+        .split('\'')
+        .nth(1)
+        .and_then(|qualified| qualified.split('.').next_back())
+    else {
+        return false;
+    };
+    let name_lc = name.to_lowercase();
+    let Some(object_lc) = sweep.entries.values().find_map(|e| {
+        (e.identity.file_rel == file_rel && strip_dup_suffix(&e.identity.routine_lc) == name_lc)
+            .then(|| e.identity.object_lc.clone())
+    }) else {
+        return false;
+    };
+    sweep.is_legacy_identity_collision(&object_lc, &name_lc)
+}
+
 fn routine_name_has_new_incoming(sweep: &Sweep, file_rel: &str, msg: &str) -> bool {
     let Some(name) = msg
         .split('\'')
@@ -2899,19 +2949,41 @@ fn lsp_diff_identity_fixture_has_zero_regressions_and_zero_unexplained() {
     ledger.assert_gates_clean("lsp-diff-identity");
     let counts = ledger.class_counts();
 
-    // 8 total: the page+codeunit "Shared Name" collision contributes 1
-    // prepare + 2 outgoing (one per caller) + 2 incoming (one per
-    // declaration's merged-in sibling caller) + 2 codeLens (both
-    // declarations' inflated ref count) = 7; the two-field same-object
-    // OnValidate collision contributes 1 prepare finding (triggers aren't
-    // callable, so incoming/outgoing/codeLens never diverge for them).
+    // 17 total (the original 8 + 9 from the CDO re-run's Finding A
+    // diagnostics-axis fixture arms), every finding inspected individually
+    // via a temporary probe, not just the summed count:
+    // - The page+codeunit "Shared Name" collision (unchanged): 1 prepare +
+    //   2 outgoing (one per caller) + 2 incoming (one per declaration's
+    //   merged-in sibling caller) + 2 codeLens (both declarations' inflated
+    //   ref count) = 7.
+    // - The two-field same-object OnValidate collision (unchanged): 1
+    //   prepare finding (triggers aren't callable, so incoming/outgoing/
+    //   codeLens never diverge for them).
+    // - NEW: `SharedNameTwo`/`SharedPageTwo`/`IdentityCallerTwo` (Finding
+    //   A's page+codeunit sub-shape, only the codeunit's version called):
+    //   1 prepare + 1 outgoing (only ONE real caller here, unlike the
+    //   original's two) + 1 incoming (only the PAGE's side diverges — the
+    //   codeunit's own incoming query already agrees with new, since new
+    //   correctly attributes the one real call to the codeunit) + 1
+    //   codeLens (the page's inflated ref count only) + 1 diagnostics (the
+    //   page's `DoSomething` is genuinely unused; new correctly flags it,
+    //   legacy's collapsed slot credits it with the codeunit's real caller
+    //   and stays silent) = 5.
+    // - NEW: `OverloadProbeTable`/`OverloadProbeCaller` (Finding A's
+    //   overload sub-shape, only the 0-arg overload called): 1 prepare + 1
+    //   incoming + 1 codeLens + 1 diagnostics (the 1-arg overload is
+    //   genuinely unused) = 4. No NEW outgoing here — `OverloadProbeCaller`
+    //   has only ONE call site, already counted structurally like the
+    //   page/codeunit shape's single-caller case, but this shape's own
+    //   caller resolves via a `Record` receiver (arm handled identically).
+    // 7 + 1 + 5 + 4 = 17, matching the probe exactly.
     assert_eq!(
         counts
             .get("NewBetter::LegacyIdentityCollapse")
             .copied()
             .unwrap_or(0),
-        8,
-        "LegacyIdentityCollapse: page+codeunit name collision (7) + two-field same-trigger collision (1); counts={counts:?}"
+        17,
+        "LegacyIdentityCollapse: page+codeunit name collision (7) + two-field same-trigger collision (1) + Finding A's page+codeunit-single-caller sub-shape (5) + Finding A's overload sub-shape (4); counts={counts:?}"
     );
 }
 
