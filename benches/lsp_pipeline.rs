@@ -1,166 +1,250 @@
-//! Criterion benches for the legacy LSP call-hierarchy pipeline (Task T0.5):
-//! `indexer.rs` / `graph.rs` / `handlers.rs` — the surface that ships today
-//! and the one CLAUDE.md's Performance Targets table describes. Measures:
-//! initial index of 100/1000-file synthetic corpora, the 3 call-hierarchy
-//! query handlers (`prepareCallHierarchy` / `incomingCalls` / `outgoingCalls`)
-//! against a 1000-file indexed graph, and a single-file reindex — all
-//! in-process, no LSP stdio loop.
+//! Criterion benches for the ENGINE-BACKED LSP surface (T3 LSP-migration
+//! arc, Task 16): `LspSnapshot` / `lsp::handlers` / `lsp::updater` — the
+//! surface Task 15 cut the server over to. Measures: `build_full` over the
+//! 100/1000-file synthetic corpora, the 3 call-hierarchy query handlers
+//! (`prepare` / `incoming` / `outgoing`) against a 1000-file batch-built
+//! snapshot, and the incremental updater's rung-1 (body edit) / rung-2
+//! (signature edit) `apply_batch` paths — all in-process, no LSP stdio loop.
+//! This file previously benched the LEGACY `indexer.rs`/`graph.rs`/
+//! `handlers.rs` pipeline (T0.5); that pipeline is deleted in Task 17.
 //!
 //! Run: `cargo bench --bench lsp_pipeline` (or `cargo bench` for every bench
-//! target, including `telemetry_hot_path`). See `tests/perf_bounds.rs` for
-//! the release-only CI gate these measurements feed into, and
-//! `tests/perf_support/mod.rs` for the corpus shape/rationale (deterministic,
-//! real cross-file fan-in/fan-out).
+//! target). See `tests/perf_bounds.rs` for the release-only CI gate these
+//! measurements feed into (including its module doc's explanation of why
+//! `tests/perf_support`'s hub call goes through a declared variable, and
+//! why `incoming`'s bound is measured separately from `prepare`/`outgoing`'s)
+//! and `tests/perf_support/mod.rs` for the corpus shape/rationale
+//! (deterministic, real cross-file fan-in/fan-out).
 
+// `PROCS_PER_FILE`/`object_name` (only reached transitively via `file_name`)
+// go legitimately unused by name in THIS crate's compilation — mirrors
+// `benches/engine_stages.rs`'s identical `#[allow(dead_code)]` on the same
+// `#[path]`-included module tree.
 #[path = "../tests/perf_support/mod.rs"]
+#[allow(dead_code)]
 mod perf_support;
 
-use al_call_hierarchy::handlers;
-use al_call_hierarchy::indexer::Indexer;
+use al_call_hierarchy::lsp::encoding::PositionEncoding;
+use al_call_hierarchy::lsp::handlers::{self, ItemData};
+use al_call_hierarchy::lsp::snapshot::LspSnapshot;
+use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
 use al_call_hierarchy::protocol::path_to_uri;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use lsp_types::{
-    CallHierarchyIncomingCallsParams, CallHierarchyItem, CallHierarchyOutgoingCallsParams,
-    CallHierarchyPrepareParams, Position, SymbolKind, TextDocumentIdentifier,
-    TextDocumentPositionParams,
-};
-use std::sync::{Arc, RwLock};
+use std::path::Path;
 use tempfile::TempDir;
 
-/// Initial index of the 100- and 1000-file synthetic corpora (CLAUDE.md
-/// targets: <500ms / <2s). Corpus generation happens once, outside the timed
-/// closure — only `Indexer::index_directory` is measured per iteration.
-fn bench_initial_index(c: &mut Criterion) {
-    let mut group = c.benchmark_group("initial_index");
+/// A minimal `app.json` so `LspSnapshot::build_full`/`build_full_with_parsed`
+/// (which hard-require one at the workspace root, via `SnapshotBuilder`)
+/// accept the perf_support-generated directory as a workspace. No
+/// `.alpackages` is written — the synthetic corpus has zero dependencies by
+/// design.
+fn write_minimal_app_json(dir: &Path) {
+    std::fs::write(
+        dir.join("app.json"),
+        r#"{
+    "id": "00000000-0000-0000-0000-000000000001",
+    "name": "PerfCorpus",
+    "publisher": "bench",
+    "version": "1.0.0.0"
+}"#,
+    )
+    .expect("write perf-corpus app.json");
+}
+
+fn corpus_dir(file_count: usize) -> TempDir {
+    let dir = TempDir::new().unwrap();
+    write_minimal_app_json(dir.path());
+    perf_support::generate_corpus(dir.path(), file_count);
+    dir
+}
+
+/// `LspSnapshot::build_full` over the 100- and 1000-file synthetic corpora
+/// (CLAUDE.md targets: <500ms / <2s). Corpus generation happens once,
+/// outside the timed closure — only the build itself is measured per
+/// iteration.
+fn bench_build_full(c: &mut Criterion) {
+    let mut group = c.benchmark_group("build_full");
 
     for &file_count in &[100usize, 1000] {
-        let dir = TempDir::new().unwrap();
-        perf_support::generate_corpus(dir.path(), file_count);
+        let dir = corpus_dir(file_count);
         group.bench_function(format!("{file_count}_files"), |b| {
             b.iter(|| {
-                let mut indexer = Indexer::new();
-                indexer.index_directory(black_box(dir.path())).unwrap();
-                black_box(indexer.graph().definition_count());
+                let snap = LspSnapshot::build_full(black_box(dir.path())).unwrap();
+                black_box(snap.decls_by_file.len());
             });
         });
     }
     group.finish();
 }
 
-/// The 3 call-hierarchy query handlers against a 1000-file indexed graph
-/// (CLAUDE.md targets: all <1ms). Indexing happens once, outside the timed
-/// closures — each iteration measures only the handler call (symbol lookup +
-/// graph traversal + LSP-shape construction), matching how the real LSP
-/// server serves a steady-state request.
+/// The 3 call-hierarchy query handlers against a 1000-file batch-built
+/// snapshot. Building the snapshot happens once, outside the timed closures —
+/// each iteration measures only the handler call, matching how a running LSP
+/// server serves a steady-state request. See `tests/perf_bounds.rs`'s module
+/// doc for why `incoming`'s CI bound differs from `prepare`/`outgoing`'s
+/// (this corpus's hub deliberately has 999-way real fan-in, and every
+/// distinct caller's position is re-derived live from its own current file
+/// text rather than served from a precomputed span).
 fn bench_queries(c: &mut Criterion) {
-    let dir = TempDir::new().unwrap();
-    perf_support::generate_corpus(dir.path(), 1000);
-    let mut indexer = Indexer::new();
-    indexer.index_directory(dir.path()).unwrap();
-    let indexer = Arc::new(RwLock::new(indexer));
+    let dir = corpus_dir(1000);
+    let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
 
     let mut group = c.benchmark_group("query_handlers_1000_files");
 
-    // prepareCallHierarchy: resolve a source position to a definition. Line 2
-    // is `    procedure Proc0()` in generated file content (see
+    // prepare: resolve a source position to a definition. Line 2 is
+    // `    procedure Proc0()` in generated file content (see
     // perf_support::codeunit_source); character 15 lands inside its range.
-    let prepare_uri = path_to_uri(&dir.path().join(perf_support::file_name(1)));
-    group.bench_function("prepareCallHierarchy", |b| {
+    let prepare_uri = path_to_uri(&dir.path().join(perf_support::file_name(1)))
+        .as_str()
+        .to_string();
+    group.bench_function("prepare", |b| {
         b.iter(|| {
-            let params = CallHierarchyPrepareParams {
-                text_document_position_params: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: prepare_uri.clone(),
-                    },
-                    position: Position {
-                        line: 2,
-                        character: 15,
-                    },
-                },
-                work_done_progress_params: Default::default(),
-            };
-            black_box(handlers::prepare_call_hierarchy(&indexer, params).unwrap());
+            black_box(handlers::prepare(
+                &snap,
+                PositionEncoding::Utf8,
+                black_box(&prepare_uri),
+                2,
+                15,
+            ));
         });
     });
 
-    // incomingCalls: the hub's Proc0 has real fan-in (999 callers, one per
-    // other generated file) — see perf_support module doc.
-    group.bench_function("incomingCalls", |b| {
+    // incoming: the hub's Proc0 has real fan-in (999 distinct callers, one
+    // per other generated file, each via its own declared `Hub` variable —
+    // see perf_support module doc).
+    let hub_file = perf_support::file_name(perf_support::HUB_INDEX);
+    let hub_proc0 = ItemData {
+        node: snap.decls_by_file[&hub_file]
+            .iter()
+            .find(|d| d.name == "Proc0")
+            .expect("hub Proc0 decl")
+            .id
+            .clone(),
+    };
+    group.bench_function("incoming", |b| {
         b.iter(|| {
-            let params = CallHierarchyIncomingCallsParams {
-                item: CallHierarchyItem {
-                    name: "Proc0".to_string(),
-                    kind: SymbolKind::FUNCTION,
-                    tags: None,
-                    detail: None,
-                    uri: path_to_uri(std::path::Path::new("unused.al")),
-                    range: Default::default(),
-                    selection_range: Default::default(),
-                    data: Some(serde_json::json!({
-                        "object": perf_support::object_name(perf_support::HUB_INDEX),
-                        "procedure": "Proc0",
-                    })),
-                },
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
-            };
-            black_box(handlers::incoming_calls(&indexer, params).unwrap());
+            black_box(handlers::incoming(
+                &snap,
+                PositionEncoding::Utf8,
+                black_box(&hub_proc0),
+            ));
         });
     });
 
-    // outgoingCalls: any non-hub file's Proc0 has real fan-out (3 callees).
-    group.bench_function("outgoingCalls", |b| {
+    // outgoing: any non-hub file's Proc0 has real fan-out (3 callees).
+    let file1 = perf_support::file_name(1);
+    let file1_proc0 = ItemData {
+        node: snap.decls_by_file[&file1]
+            .iter()
+            .find(|d| d.name == "Proc0")
+            .expect("file-1 Proc0 decl")
+            .id
+            .clone(),
+    };
+    group.bench_function("outgoing", |b| {
         b.iter(|| {
-            let params = CallHierarchyOutgoingCallsParams {
-                item: CallHierarchyItem {
-                    name: "Proc0".to_string(),
-                    kind: SymbolKind::FUNCTION,
-                    tags: None,
-                    detail: None,
-                    uri: path_to_uri(std::path::Path::new("unused.al")),
-                    range: Default::default(),
-                    selection_range: Default::default(),
-                    data: Some(serde_json::json!({
-                        "object": perf_support::object_name(1),
-                        "procedure": "Proc0",
-                    })),
-                },
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
-            };
-            black_box(handlers::outgoing_calls(&indexer, params).unwrap());
+            black_box(handlers::outgoing(
+                &snap,
+                PositionEncoding::Utf8,
+                black_box(&file1_proc0),
+            ));
         });
     });
 
     group.finish();
 }
 
-/// Single-file reindex against a 1000-file graph (CLAUDE.md target: <50ms).
-/// The target file's on-disk content is fixed before timing starts; each
-/// iteration re-runs the exact `remove_file` + reparse + `add_to_graph` path
-/// the real file-watcher/didSave flow triggers on every save. The on-disk
-/// content is changed once, before timing starts (see
-/// `perf_support::rewrite_with_extra_procedure`) — the disk write itself
-/// isn't part of what the LSP measures, only the reindex that follows it.
-fn bench_single_file_reindex(c: &mut Criterion) {
-    let dir = TempDir::new().unwrap();
-    perf_support::generate_corpus(dir.path(), 1000);
-    let mut indexer = Indexer::new();
-    indexer.index_directory(dir.path()).unwrap();
+/// The incremental updater's rung-1 (body-only edit) path against a
+/// 1000-file snapshot (T3 Task 9 Step-3b CDO re-measurement: ~10.5ms
+/// warm-context; CLAUDE.md target: <100ms). Every iteration re-saves the
+/// SAME already-applied content (unchanged fingerprint relative to whatever
+/// was just published), which is exactly rung 1's own gate condition — see
+/// `tests/perf_bounds.rs`'s equivalent test for the full rationale.
+fn bench_rung1_body_edit(c: &mut Criterion) {
+    let dir = corpus_dir(1000);
+    let (base, parsed) =
+        LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
     let target = dir.path().join(perf_support::file_name(1));
-    perf_support::rewrite_with_extra_procedure(dir.path(), 1000, 1);
+    perf_support::body_only_comment_edit(dir.path(), 1000, 1);
+    let batch = vec![ChangeEvent::FileSaved(target)];
 
-    c.bench_function("single_file_reindex_1000_files", |b| {
+    let (warm_snap, warm_rung) = updater
+        .apply_batch(&base, &batch)
+        .expect("apply_batch (warm-up)");
+    assert_eq!(
+        warm_rung,
+        Rung::One,
+        "a comment-only body edit must stay rung 1"
+    );
+    let mut cur = warm_snap;
+
+    c.bench_function("rung1_body_edit_1000_files", |b| {
         b.iter(|| {
-            indexer.reindex_file(black_box(&target)).unwrap();
+            let (next, rung) = updater
+                .apply_batch(&cur, black_box(&batch))
+                .expect("apply_batch must succeed");
+            debug_assert_eq!(rung, Rung::One);
+            cur = next;
+            black_box(&cur);
         });
     });
 }
 
+/// The incremental updater's rung-2 (definition-surface-change) path against
+/// a 1000-file snapshot (T3 Task 9 Step-3b CDO re-measurement: ~1.464s;
+/// REPLACES Task 3's superseded ~1.9s algebraic upper-bound estimate — see
+/// `.superpowers/sdd/t3-stage-split.md`). Each iteration needs its OWN fresh
+/// baseline: rung 2's gate compares against the CURRENTLY PUBLISHED
+/// fingerprint, so re-using one already-escalated snapshot across iterations
+/// would silently degrade to rung 1 on the 2nd+ iteration — see
+/// `tests/perf_bounds.rs`'s equivalent test for the full rationale.
+/// `iter_batched` is used (not plain `iter`) so that fresh-baseline SETUP
+/// (corpus generation + `build_full_with_parsed` + the signature edit) runs
+/// OUTSIDE the timed region for every iteration — measuring only
+/// `apply_batch` itself, matching `tests/perf_bounds.rs`'s methodology
+/// (a plain `iter` closure would time the setup too, inflating this number
+/// far past the CI gate's own measurement of the identical operation).
+/// `sample_size` is lowered (like `engine_stages.rs`'s heaviest group) since
+/// setup rebuilds the whole snapshot+updater from scratch every iteration.
+fn bench_rung2_signature_edit(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rung2_signature_edit");
+    group.sample_size(20);
+    group.bench_function("1000_files", |b| {
+        b.iter_batched(
+            || {
+                let dir = corpus_dir(1000);
+                let (base, parsed) = LspSnapshot::build_full_with_parsed(dir.path())
+                    .expect("build_full_with_parsed");
+                let updater = Updater::new(dir.path().to_path_buf(), parsed);
+                perf_support::rewrite_with_extra_procedure(dir.path(), 1000, 1);
+                let batch = vec![ChangeEvent::FileSaved(
+                    dir.path().join(perf_support::file_name(1)),
+                )];
+                (dir, base, updater, batch)
+            },
+            |(dir, base, mut updater, batch)| {
+                let (new_snap, rung) = updater
+                    .apply_batch(&base, black_box(&batch))
+                    .expect("apply_batch must succeed");
+                debug_assert_eq!(rung, Rung::Two);
+                // `dir` (the TempDir) must outlive the call above (the
+                // batch's FileSaved path reads from it) — returned here so
+                // Criterion drops it (and `new_snap`) AFTER timing ends,
+                // never as part of the measured region.
+                (dir, new_snap)
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
-    bench_initial_index,
+    bench_build_full,
     bench_queries,
-    bench_single_file_reindex
+    bench_rung1_body_edit,
+    bench_rung2_signature_edit
 );
 criterion_main!(benches);

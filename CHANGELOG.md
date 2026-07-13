@@ -970,6 +970,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`).
 
 ### Changed
+- **`tests/perf_bounds.rs`/`benches/lsp_pipeline.rs` rewritten onto the
+  ENGINE-BACKED LSP surface (T3 LSP-migration arc, Task 16) — the last thing
+  standing before Task 17 deletes the legacy `Indexer`/`graph`/`handlers`
+  pipeline these two files used to pin.** Both now build `LspSnapshot`
+  (`build_full`/`build_full_with_parsed`) and drive `lsp::handlers::{prepare,
+  incoming,outgoing}` + `lsp::updater::Updater::apply_batch` instead of
+  `Indexer::index_directory`/`Arc<RwLock<Indexer>>`/`handlers::{prepare_call_hierarchy,
+  incoming_calls,outgoing_calls}`. New rows: `build_full` (100/1000 files, same
+  <500ms/<2s CLAUDE.md targets as the old `initial_index` rows), and TWO NEW
+  incremental-update rows — rung-1 body-edit `apply_batch` (<100ms target, 3x
+  CI bound 300ms) and rung-2 signature-edit `apply_batch` (~1.5s target, 3x CI
+  bound 4.5s; both targets are the T3 Task 9 Step-3b RE-MEASUREMENT against the
+  real `Updater` on the real CDO workspace — `.superpowers/sdd/t3-stage-split.md`'s
+  addendum — which REPLACES Task 3's earlier ~1.9s algebraic upper-bound
+  estimate for rung 2, since that estimate predated `Updater`/
+  `assemble_program_graph` entirely). `incomingCalls` under this corpus's
+  deliberate 999-way real fan-in gets its OWN, separately-reasoned CI bound
+  (25ms target / 75ms bound) rather than inheriting the shared 1ms/3ms query
+  bound `prepare`/`outgoing` keep: every distinct caller's position is now
+  re-derived LIVE from that caller's own current file text (the live-span
+  audit's correctness rule — never serve a stale stored witness span), so a
+  999-way-fan-in query is genuinely O(distinct callers) in a way legacy's
+  precomputed-byte-range design never was; measured 20.3ms on this machine,
+  comfortably inside the new bound.
+  **A root-cause fix to the shared corpus generator was required to keep the
+  999-way fan-in assertion meaningful**: `tests/perf_support`'s cross-file
+  "hub" call previously read `HubObjectName.Proc0()` — a bare object-display-name
+  call with no declared receiver, which is not valid AL and only "worked"
+  because the legacy pipeline's naive text-matching call resolution
+  (`callee_object` is whatever raw text sits left of the dot, matched directly
+  against object display names when no variable binding exists) tolerated it.
+  Confirmed empirically against the fresh resolver (a 2-file probe workspace
+  via `aldump --program-call-graph-stats`): the bare form classifies as
+  `Unknown`/`UntrackedReceiver`, 0% resolved, which would have made the
+  999-way fan-in assertion vacuous (0, not 999) under the new backend. Fixed
+  by declaring a local `Hub: Codeunit "..."` variable and calling through it —
+  valid AL both engines resolve correctly (confirmed 0 unknown / 7-of-7
+  resolved on the probe workspace; `tests/perf_support_smoke.rs`'s existing
+  legacy-correctness assertions are unaffected, still exactly 999/3).
+  perf_support also gained `body_only_comment_edit` (a new pub helper: inserts
+  one comment line as `Proc0`'s first statement — no routine identity/
+  signature change, so the file's `DefSurface` fingerprint stays byte-identical,
+  which is exactly rung 1's own gate condition) plus a new smoke test pinning
+  that contract (`body_only_comment_edit_adds_no_definitions`).
 - **The LSP surface now SERVES the program-engine backend (T3 LSP-migration
   arc, Task 15 — the cutover).** `src/server.rs` no longer holds
   `Arc<RwLock<Indexer>>`; its state is `Arc<lsp::updater::SharedSnapshot>` (the

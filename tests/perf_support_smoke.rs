@@ -94,3 +94,37 @@ fn rewrite_with_extra_procedure_adds_one_definition() {
         "rewritten file must contribute one extra definition (ProcExtra)"
     );
 }
+
+/// `body_only_comment_edit` (T3 Task 16, for the incremental updater's
+/// rung-1 perf bound) must add NO new definition — its whole contract is a
+/// pure body-only edit (a comment, no new routine identity), the opposite of
+/// `rewrite_with_extra_procedure` above. An assertion is worth having here:
+/// if a future edit to the generator ever made this helper accidentally
+/// insert something the legacy engine (or the fresh resolver) DOES treat as
+/// a new/changed definition, the rung-1 perf-bounds test that depends on
+/// staying rung-1-eligible would silently start exercising rung 2 instead —
+/// this test is the regression guard for that contract.
+#[test]
+fn body_only_comment_edit_adds_no_definitions() {
+    let dir = TempDir::new().unwrap();
+    let file_count = 5;
+    generate_corpus(dir.path(), file_count);
+
+    let mut indexer = Indexer::new();
+    indexer.index_directory(dir.path()).unwrap();
+    assert_eq!(
+        indexer.graph().definition_count(),
+        file_count * PROCS_PER_FILE
+    );
+
+    perf_support::body_only_comment_edit(dir.path(), file_count, 1);
+    indexer
+        .reindex_file(&dir.path().join(file_name(1)))
+        .unwrap();
+
+    assert_eq!(
+        indexer.graph().definition_count(),
+        file_count * PROCS_PER_FILE,
+        "a body-only comment edit must add ZERO definitions"
+    );
+}
