@@ -16,7 +16,12 @@ use crate::snapshot::snapshot::AppSetSnapshot;
 /// One parsed AL source file within a snapshot unit.
 pub struct ParsedFile {
     pub virtual_path: String,
-    pub file: al_syntax::ir::AlFile,
+    /// `Arc`-shared (perf safe-wins Task 2): the published `LspSnapshot`'s
+    /// `ParsedFileEntry.file` and the updater's working state hold the SAME
+    /// parse. Sound because no consumer mutates an `AlFile` after
+    /// `al_syntax::parse` — updates always REPLACE whole `ParsedFile`s
+    /// (rung-1 `pending` splice / rung-2 `splice_file` / rung-3 wholesale).
+    pub file: std::sync::Arc<al_syntax::ir::AlFile>,
     pub provenance: Provenance,
     /// The original AL source text — the SAME `Arc<str>` allocation as the
     /// snapshot's `SourceFile.text` (perf safe-wins Task 1), never a copy.
@@ -89,7 +94,7 @@ pub fn parse_snapshot(snap: &AppSetSnapshot) -> Vec<ParsedUnit> {
                     .par_iter()
                     .map(|f| ParsedFile {
                         virtual_path: f.virtual_path.clone(),
-                        file: al_syntax::parse(&f.text),
+                        file: Arc::new(al_syntax::parse(&f.text)),
                         provenance: unit.provenance.clone(),
                         text: Arc::clone(&f.text),
                     })

@@ -288,7 +288,7 @@ fn make_teeth_unit(guid: &str, name: &str, src: &str) -> (AppId, ParsedUnit) {
         app: app_id.clone(),
         files: vec![ParsedFile {
             virtual_path: "Sub.al".to_string(),
-            file: al_syntax::parse(src),
+            file: std::sync::Arc::new(al_syntax::parse(src)),
             provenance,
             text: src.into(),
         }],

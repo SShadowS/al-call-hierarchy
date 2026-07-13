@@ -119,7 +119,7 @@ mod tests {
     }
 
     fn make_unit(app_id: AppId, src: &'static str) -> ParsedUnit {
-        let file = al_syntax::parse(src);
+        let file = std::sync::Arc::new(al_syntax::parse(src));
         let provenance = Provenance {
             app: app_id.clone(),
             tier: TrustTier::Workspace,

@@ -1026,7 +1026,7 @@ mod tests {
             ws_file_set,
             dep_layer,
         };
-        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace"))
+        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace")).0
     }
 
     // ── dependencyDocumentSymbol ───────────────────────────────────────────

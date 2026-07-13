@@ -3151,7 +3151,7 @@ mod tests {
             app: app_id,
             files: vec![ParsedFile {
                 virtual_path: virtual_path.to_string(),
-                file: al_syntax::parse(src),
+                file: std::sync::Arc::new(al_syntax::parse(src)),
                 provenance,
                 text: src.into(),
             }],
@@ -9767,7 +9767,7 @@ codeunit 51801 "DepImpl" implements IFoo
             app: app_b_id.clone(),
             files: vec![ParsedFile {
                 virtual_path: "DepImpl.al".to_string(),
-                file: al_syntax::parse(src_dep),
+                file: std::sync::Arc::new(al_syntax::parse(src_dep)),
                 provenance: Provenance {
                     app: app_b_id,
                     tier: TrustTier::SymbolOnly,

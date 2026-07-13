@@ -316,7 +316,7 @@ impl Updater {
                                 continue;
                             };
                             let provenance = self.file_provenance(cur, &vp);
-                            let file = al_syntax::parse(&text);
+                            let file = Arc::new(al_syntax::parse(&text));
                             let text: Arc<str> = text.into();
                             // Fail-closed: a `Recovered` parse cannot be trusted
                             // for rung 1's fingerprint-equality shortcut — the
@@ -438,12 +438,15 @@ impl Updater {
             edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
             decls_by_file.insert(pf.virtual_path.clone(), Arc::new(decls));
 
-            let file2 = al_syntax::parse(&pf.text);
+            // One parse, Arc-shared with `self.parsed`'s working copy (perf
+            // safe-wins Task 2) — see `ParsedFile::file`'s sharing soundness
+            // doc. Rung 2 used to re-parse EVERY workspace file here; now it
+            // re-parses none.
             parsed_files.insert(
                 pf.virtual_path.clone(),
                 Arc::new(ParsedFileEntry {
-                    file: file2,
-                    text: pf.text.clone(),
+                    file: Arc::clone(&pf.file),
+                    text: Arc::clone(&pf.text),
                     virtual_path: pf.virtual_path.clone(),
                     surface,
                 }),
@@ -636,17 +639,15 @@ fn apply_rung1_core(
         edges_by_file.insert(vp.clone(), Arc::new(edges));
         decls_by_file.insert(vp.clone(), Arc::new(decls));
 
-        // A SECOND, independent parse for the snapshot's own owned copy —
-        // see `LspSnapshot::build_full_with_parsed`'s doc for why `AlFile`'s
-        // lack of a `Clone` impl makes this the honest choice, not a
-        // workaround (one file, microseconds, negligible against the 100ms
-        // budget).
-        let file2 = al_syntax::parse(&pf.text);
+        // One parse, Arc-shared with the pending working copy (perf
+        // safe-wins Task 2) — see `ParsedFile::file`'s sharing soundness
+        // doc. `pf`'s `Arc`s are cloned here, before `pf` moves into
+        // `pending` below.
         parsed_files.insert(
             vp.clone(),
             Arc::new(ParsedFileEntry {
-                file: file2,
-                text: pf.text.clone(),
+                file: Arc::clone(&pf.file),
+                text: Arc::clone(&pf.text),
                 virtual_path: vp.clone(),
                 surface,
             }),
@@ -1623,7 +1624,7 @@ mod tests {
         let text1 = std::fs::read_to_string(dir.path().join("Alpha.al")).unwrap();
         let pf1 = ParsedFile {
             virtual_path: "Alpha.al".to_string(),
-            file: al_syntax::parse(&text1),
+            file: Arc::new(al_syntax::parse(&text1)),
             provenance: updater.file_provenance(&base, "Alpha.al"),
             text: text1.into(),
         };
@@ -1662,7 +1663,7 @@ mod tests {
         let text2 = std::fs::read_to_string(dir.path().join("Alpha.al")).unwrap();
         let pf2 = ParsedFile {
             virtual_path: "Alpha.al".to_string(),
-            file: al_syntax::parse(&text2),
+            file: Arc::new(al_syntax::parse(&text2)),
             provenance: updater.file_provenance(&base, "Alpha.al"),
             text: text2.into(),
         };
@@ -1952,7 +1953,7 @@ mod tests {
             for _ in 0..RUNS {
                 let t0 = Instant::now();
                 let provenance = updater.file_provenance(&base, &target_vp);
-                let file = al_syntax::parse(&target_text);
+                let file = Arc::new(al_syntax::parse(&target_text));
                 let pf = ParsedFile {
                     virtual_path: target_vp.clone(),
                     file,
@@ -1982,7 +1983,7 @@ mod tests {
             let provenance = updater.file_provenance(&base, &target_vp);
             let pf = ParsedFile {
                 virtual_path: target_vp.clone(),
-                file: al_syntax::parse(&target_text),
+                file: Arc::new(al_syntax::parse(&target_text)),
                 provenance,
                 text: target_text.clone(),
             };

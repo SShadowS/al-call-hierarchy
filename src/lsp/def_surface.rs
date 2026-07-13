@@ -462,7 +462,7 @@ mod tests {
     fn parsed_file(src: &str) -> ParsedFile {
         ParsedFile {
             virtual_path: "Test.al".to_string(),
-            file: al_syntax::parse(src),
+            file: std::sync::Arc::new(al_syntax::parse(src)),
             provenance: Provenance {
                 app: AppId {
                     guid: String::new(),

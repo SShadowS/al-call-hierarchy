@@ -1121,7 +1121,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matching CLAUDE.md's documented bar; re-running that exact command against
   the WHOLE repo surfaced zero new findings (confirmed via a genuine forced
   recompile, not a stale cache hit).
-- **The LSP surface now SERVES the program-engine backend (T3 LSP-migration
+- **One `Arc<al_syntax::ir::AlFile>` per parse — the duplicate whole-program
+  parse at LSP startup, and every rung-1/rung-2 per-file re-parse, are gone
+  (perf safe-wins plan, Task 2).** `ParsedFile.file`/`ParsedFileEntry.file`
+  are now `Arc<AlFile>` (mirroring Task 1's `Arc<str>` text sharing) —
+  sound because nothing in the engine mutates an `AlFile` after
+  `al_syntax::parse` returns; every update REPLACES a whole `ParsedFile`/
+  `ParsedUnit` value (rung-1's `pending` splice, rung-2's `splice_file`,
+  rung-3's wholesale `Vec` replacement), so two owners of the same
+  `Arc<AlFile>` can never observe a torn or stale-relative-to-each-other
+  view. `LspSnapshot::from_context` no longer CONSUMES the one parse it's
+  handed — it clones `Arc`s into the published snapshot's
+  `ParsedFileEntry`s and returns the intact `Vec<ParsedUnit>` alongside it,
+  so `build_full_with_parsed` no longer needs (and no longer runs) a SECOND,
+  fully independent `parse_snapshot` pass over the whole workspace + every
+  embedded-source dependency at server startup. `Updater::apply_rung1_core`
+  and `Updater::apply_rung2` (`src/lsp/updater.rs`) previously re-parsed
+  each touched/every workspace file a SECOND time just to populate the
+  snapshot's own `ParsedFileEntry` copy; both now `Arc::clone` the already-
+  parsed file instead — rung 2 used to re-parse EVERY workspace file on
+  every signature-change edit and now re-parses none. Per
+  `docs/perf-regression-t3-vs-0.9.3.md` §2.3/§3.2, this eliminates roughly
+  1s of duplicate cold-start parsing plus one whole extra dependency
+  text+IR-arena set held in memory on the reference workspace. Zero LSP-served
+  data changed: `tests/lsp_incremental_parity.rs` (the permanent
+  incremental-vs-batch differential gate) passes unmodified plus a new
+  sharing-proof test
+  (`build_full_with_parsed_shares_one_parse_between_snapshot_and_updater`)
+  asserting `Arc::ptr_eq` between the published snapshot's and the
+  updater's `AlFile`/text allocations; `cargo test --release --test
+  perf_bounds` (the CI rung-budget gate) stays green.
+
   arc, Task 15 — the cutover).** `src/server.rs` no longer holds
   `Arc<RwLock<Indexer>>`; its state is `Arc<lsp::updater::SharedSnapshot>` (the
   published, immutable `LspSnapshot`) plus an `mpsc::Sender<ChangeEvent>`

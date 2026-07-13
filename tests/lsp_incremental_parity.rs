@@ -1513,3 +1513,44 @@ fn dep_texts_share_the_snapshot_source_text_allocation() {
         );
     }
 }
+
+/// Perf safe-wins Task 2: `build_full_with_parsed` must NOT run a second
+/// whole-program parse — the published snapshot's workspace `AlFile`s and
+/// the updater's working-state `AlFile`s must be the SAME `Arc` allocations.
+#[test]
+fn build_full_with_parsed_shares_one_parse_between_snapshot_and_updater() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+
+    let ws_unit = parsed
+        .iter()
+        .find(|u| u.app == base.snap.workspace_app)
+        .expect("updater parse must include the workspace unit");
+    assert!(
+        !base.parsed.is_empty(),
+        "fixture sanity: snapshot must hold workspace ParsedFileEntry values"
+    );
+    for (vp, entry) in base.parsed.iter() {
+        let pf = ws_unit
+            .files
+            .iter()
+            .find(|f| &f.virtual_path == vp)
+            .expect("every snapshot workspace file must be in the updater unit");
+        assert!(
+            std::sync::Arc::ptr_eq(&entry.file, &pf.file),
+            "{vp}: snapshot and updater must share ONE parsed AlFile, \
+             not two independent parses"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(&entry.text, &pf.text),
+            "{vp}: snapshot and updater must share ONE text allocation"
+        );
+    }
+    // The updater also holds the dependency units (rung 2 needs them for
+    // BodyMap/build_dep_indexes) — exactly one source-bearing unit per
+    // source-bearing app, same as parse_snapshot produced.
+    assert!(
+        parsed.len() >= 2,
+        "lsp-diff-deps has an embedded-source dep: updater must hold its unit too"
+    );
+}

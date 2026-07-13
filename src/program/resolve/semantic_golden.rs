@@ -3178,7 +3178,7 @@ mod tests {
             app: app_id.clone(),
             files: vec![ParsedFile {
                 virtual_path: "Ev.al".into(),
-                file: al_syntax::parse(src),
+                file: std::sync::Arc::new(al_syntax::parse(src)),
                 provenance,
                 text: src.into(),
             }],

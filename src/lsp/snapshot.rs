@@ -36,7 +36,7 @@ use crate::program::resolve::full::{ClassifiedEdge, ObligationId, ProgramContext
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::sig_fp::source_routine_node_id;
 use crate::program::{DepLayer, ProgramGraph};
-use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit, parse_snapshot};
+use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit};
 
 /// Reference to one edge: (virtual_path, index into `edges_by_file[path]`).
 /// Index-based — never a borrow — so [`LspSnapshot`] stays self-contained and
@@ -80,7 +80,9 @@ pub struct DeclEntry {
 /// definition-surface fingerprint (Task 7) — everything a query needs
 /// without re-reading disk or re-parsing.
 pub struct ParsedFileEntry {
-    pub file: AlFile,
+    /// `Arc`-shared with the updater's working-state `ParsedFile.file` (perf
+    /// safe-wins Task 2) — see that field's sharing soundness doc.
+    pub file: Arc<AlFile>,
     /// Shares the workspace `SourceFile.text` allocation (perf safe-wins Task 1).
     pub text: Arc<str>,
     pub virtual_path: String,
@@ -195,27 +197,24 @@ impl LspSnapshot {
     #[must_use]
     pub fn build_full(workspace_root: &Path) -> Option<LspSnapshot> {
         let ctx = build_context(workspace_root)?;
-        Some(Self::from_context(ctx, workspace_root))
+        Some(Self::from_context(ctx, workspace_root).0)
     }
 
-    /// As [`Self::build_full`], but ALSO returns a fresh, fully INDEPENDENT
-    /// full parse (`parse_snapshot` over the same snapshot — every
-    /// source-bearing app, workspace + embedded-source deps) for T3 Task 9's
-    /// incremental updater (`src/lsp/updater.rs`) to own as its mutable
-    /// working state.
+    /// As [`Self::build_full`], but ALSO returns the ONE full parse
+    /// (`ctx.parsed` — every source-bearing app, workspace + embedded-source
+    /// deps) for T3 Task 9's incremental updater (`src/lsp/updater.rs`) to
+    /// own as its mutable working state.
     ///
-    /// This can't just hand back `ctx.parsed` (the parse [`Self::from_context`]
-    /// itself consumes below) because `AlFile` carries no `Clone` impl — one
-    /// parsed `AlFile`/text can only ever have ONE owner. `LspSnapshot::
-    /// parsed`'s per-file `ParsedFileEntry` needs independent ownership for
-    /// the immutable PUBLISHED snapshot; the updater's `Vec<ParsedUnit>`
-    /// needs independent ownership for its own MUTABLE working copy (rung 1
-    /// splices one file's fresh parse into it; rung 2 replaces the primary
-    /// unit's file list; rung 3 replaces the whole `Vec` wholesale — see
-    /// updater.rs). A second, fully independent `parse_snapshot` pass is the
-    /// honest fix, not a workaround: it runs once here (server startup) and
-    /// again only on a rung-3 rebuild (rare — `.alpackages` change / watcher
-    /// overflow), never on the rung-1/rung-2 hot path.
+    /// [`Self::from_context`] no longer CONSUMES the parse (perf safe-wins
+    /// Task 2): `ParsedFile.file`/`.text` are `Arc`-shared, so the published
+    /// snapshot's `ParsedFileEntry`s hold `Arc::clone`s of the same
+    /// allocations this returns intact. One parse serves both the published
+    /// snapshot and the updater's working copy — sound because nothing
+    /// mutates an `AlFile` after `al_syntax::parse` returns; every update
+    /// REPLACES whole `ParsedFile`/`ParsedUnit` values (rung-1 `pending`
+    /// splice / rung-2 `splice_file` / rung-3 wholesale — see updater.rs),
+    /// so two owners of the same `Arc<AlFile>` can never observe a torn or
+    /// stale-relative-to-each-other view.
     ///
     /// `pub` (T3 Task 10, widened from `pub(crate)`): the permanent
     /// incremental-vs-batch differential gate (`tests/lsp_incremental_parity.rs`)
@@ -226,8 +225,7 @@ impl LspSnapshot {
     #[must_use]
     pub fn build_full_with_parsed(workspace_root: &Path) -> Option<(LspSnapshot, Vec<ParsedUnit>)> {
         let ctx = build_context(workspace_root)?;
-        let parsed_for_updater = parse_snapshot(&ctx.snap);
-        Some((Self::from_context(ctx, workspace_root), parsed_for_updater))
+        Some(Self::from_context(ctx, workspace_root))
     }
 
     /// The composition shared by [`Self::build_full`]/
@@ -240,7 +238,19 @@ impl LspSnapshot {
     /// pattern — and call this directly, the same way `build_full`/
     /// `build_full_with_parsed` do, rather than re-implementing this
     /// composition a second time just to exercise it without disk I/O.
-    pub(crate) fn from_context(ctx: ProgramContext, workspace_root: &Path) -> LspSnapshot {
+    ///
+    /// Returns the `LspSnapshot` alongside the ONE parse (`ctx.parsed`)
+    /// intact (perf safe-wins Task 2): `ParsedFile.file`/`.text` are
+    /// `Arc`-shared, so the published snapshot's `ParsedFileEntry`s hold
+    /// `Arc::clone`s rather than consuming `parsed` by value — the caller
+    /// (`build_full_with_parsed`) hands the returned `Vec<ParsedUnit>` to the
+    /// updater as its working state; `build_full` just drops it (the dep IR
+    /// arenas free at that drop, exactly as they did under the old
+    /// consume-and-drop scheme).
+    pub(crate) fn from_context(
+        ctx: ProgramContext,
+        workspace_root: &Path,
+    ) -> (LspSnapshot, Vec<ParsedUnit>) {
         let ProgramContext {
             snap,
             graph,
@@ -260,9 +270,9 @@ impl LspSnapshot {
         // ── Transient borrow phase: index/body_map borrow `graph`/`parsed`,
         // and per the module's ownership law must never survive into
         // `LspSnapshot` — everything they produce is copied into owned data
-        // (or, for `pf.file`/`pf.text`, deferred to the ownership-move phase
-        // below, since `AlFile` is not `Clone` and `body_map` borrows `parsed`
-        // for as long as it's alive).
+        // (or, for `pf.file`/`pf.text`, `Arc::clone`d in the sharing phase
+        // below — perf safe-wins Task 2 — rather than moved, since `parsed`
+        // must survive intact for the caller).
         let mut edges_by_file: HashMap<String, Arc<Vec<ClassifiedEdge>>> = HashMap::new();
         let mut surfaces_by_file: HashMap<String, DefSurface> = HashMap::new();
         let mut decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>> = HashMap::new();
@@ -311,20 +321,21 @@ impl LspSnapshot {
                 build_dep_indexes(&graph, &body_map, &parsed, primary_app_ref);
             // `index`/`body_map`/`obj_node_map` drop here, at the end of this
             // block — their borrows of `graph`/`parsed` end before the
-            // ownership-move phase below needs to consume `parsed` by value.
+            // sharing phase below needs to (immutably) re-borrow `parsed`.
         }
 
         let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
         let decl_by_id = build_decl_by_id(&decls_by_file);
 
-        // ── Ownership-move phase: consume `parsed` by value, pairing each
-        // workspace file's already-computed `DefSurface` with its owned
-        // `AlFile`/text (never cloned — `AlFile` carries no `Clone` impl, by
-        // design: the IR arena is exactly as large as the source file and
-        // cloning it on every snapshot build would be wasteful).
+        // ── Sharing phase (perf safe-wins Task 2): `AlFile`/text are
+        // `Arc`-shared, so the published snapshot CLONES the `Arc`s and
+        // leaves `parsed` intact for the caller (`build_full_with_parsed`
+        // hands it to the updater; `build_full` just drops it — the dep IR
+        // arenas free at that drop, exactly as they did under the old
+        // consume-and-drop scheme).
         let mut parsed_files: HashMap<String, Arc<ParsedFileEntry>> = HashMap::new();
         if let Some(idx) = primary_unit_idx {
-            for pf in parsed.into_iter().nth(idx).expect("idx is in bounds").files {
+            for pf in &parsed[idx].files {
                 if !ws_file_set.contains(&pf.virtual_path) {
                     continue;
                 }
@@ -334,16 +345,16 @@ impl LspSnapshot {
                 parsed_files.insert(
                     pf.virtual_path.clone(),
                     Arc::new(ParsedFileEntry {
-                        file: pf.file,
-                        text: pf.text,
-                        virtual_path: pf.virtual_path,
+                        file: Arc::clone(&pf.file),
+                        text: Arc::clone(&pf.text),
+                        virtual_path: pf.virtual_path.clone(),
                         surface,
                     }),
                 );
             }
         }
 
-        LspSnapshot {
+        let snapshot = LspSnapshot {
             generation: 0,
             graph: Arc::new(graph),
             dep_layer: Arc::new(dep_layer),
@@ -358,7 +369,8 @@ impl LspSnapshot {
             dep_decl_by_id: Arc::new(dep_decl_by_id),
             dep_texts: Arc::new(dep_texts),
             workspace_root: Arc::new(crate::protocol::normalize_path(workspace_root)),
-        }
+        };
+        (snapshot, parsed)
     }
 
     /// Position lookup: file + 0-based line + UTF-8 byte col → routine whose
