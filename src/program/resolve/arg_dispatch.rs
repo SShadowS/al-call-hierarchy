@@ -81,15 +81,15 @@
 //!
 //! # SOURCE tier only
 //!
-//! Candidate parameter metadata comes exclusively from [`BodyMap`]
+//! Candidate parameter metadata comes exclusively from [`DeclSurface`]
 //! (source-parsed `RoutineDecl`s) — a SymbolOnly (ABI) candidate has no entry
 //! there at all, so [`candidate_param_infos`] can never supply metadata for
 //! one; callers additionally gate EXPLICITLY on `obj_tier !=
 //! TrustTier::SymbolOnly` before attempting a pick (clean skip, not partial —
-//! defense-in-depth on top of the BodyMap-miss behavior, not a substitute
+//! defense-in-depth on top of the DeclSurface-miss behavior, not a substitute
 //! for it).
 //!
-//! [`BodyMap`]: crate::program::resolve::body_map::BodyMap
+//! [`DeclSurface`]: crate::program::resolve::decl_surface::DeclSurface
 //! [`resolver::resolve_in_object`]: crate::program::resolve::resolver
 
 use al_syntax::ir::{
@@ -99,7 +99,7 @@ use al_syntax::ir::{
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{AbiParamRetained, AbiParams, ObjectRef, RoutineNode};
-use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::edge::{BuiltinId, RouteTarget};
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::index::{ObjectRefResolution, ResolveIndex};
@@ -552,12 +552,12 @@ pub(crate) struct ParamDispatchInfo {
 /// against). `with_state` is the call site's [`WithState`] (Task 2 review
 /// fix) — a bare-identifier arg is typed from caller scope ONLY when this is
 /// `NoWithProven`; see the module doc's "`with`-scope gate for
-/// bare-identifier args" entry. `body_map` (T3, pageext-merge-and-final-
+/// bare-identifier args" entry. `surface` (T3, pageext-merge-and-final-
 /// residual plan) is threaded ONLY so the new `Call` arm can re-run
 /// `resolve_bare`/`resolve_member` on an INNER call-result expression — the
-/// SAME `BodyMap` `resolve_call_site_obligation` already has in scope for
+/// SAME `DeclSurface` `resolve_call_site_obligation` already has in scope for
 /// the OUTER obligation.
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `body_map` (T3, pageext-merge-and-final-residual plan).
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `surface` (T3, pageext-merge-and-final-residual plan).
 pub(crate) fn type_call_args(
     args: &[ExprId],
     file: &AlFile,
@@ -566,7 +566,7 @@ pub(crate) fn type_call_args(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
 ) -> Vec<ArgDispatchInfo> {
     args.iter()
@@ -579,14 +579,14 @@ pub(crate) fn type_call_args(
                 from,
                 graph,
                 index,
-                body_map,
+                surface,
                 with_state,
             )
         })
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `body_map` (T3, pageext-merge-and-final-residual plan — the new `Call` arm's inner resolve_bare/resolve_member query).
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `surface` (T3, pageext-merge-and-final-residual plan — the new `Call` arm's inner resolve_bare/resolve_member query).
 fn type_one_arg(
     file: &AlFile,
     expr: &Expr,
@@ -595,7 +595,7 @@ fn type_one_arg(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
 ) -> ArgDispatchInfo {
     match &expr.kind {
@@ -778,7 +778,7 @@ fn type_one_arg(
                     from,
                     graph,
                     index,
-                    body_map,
+                    surface,
                     with_state,
                 )
             }
@@ -796,7 +796,7 @@ fn type_one_arg(
                 from,
                 graph,
                 index,
-                body_map,
+                surface,
                 with_state,
             ),
             _ => ArgDispatchInfo::untyped(),
@@ -849,7 +849,7 @@ fn type_one_arg(
             from,
             graph,
             index,
-            body_map,
+            surface,
             with_state,
         ),
         // Deferred (increment-1 scope, module doc): `Enum::Value` / any
@@ -894,7 +894,7 @@ fn type_call_result_arg_bare(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
 ) -> ArgDispatchInfo {
     let fname_lc = fname.to_ascii_lowercase();
@@ -921,7 +921,7 @@ fn type_call_result_arg_bare(
         inner_arity,
         graph,
         index,
-        body_map,
+        surface,
         with_state,
     );
     let [route] = routes.as_slice() else {
@@ -978,7 +978,7 @@ fn type_call_result_arg_member(
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
 ) -> ArgDispatchInfo {
     if with_state != WithState::NoWithProven {
@@ -1008,7 +1008,7 @@ fn type_call_result_arg_member(
         from_object,
         graph,
         index,
-        body_map,
+        surface,
     );
     let [route] = routes.as_slice() else {
         return ArgDispatchInfo::untyped();
@@ -1137,16 +1137,16 @@ fn builtin_return_base_keyword(name_lc: &str) -> Option<&'static str> {
 /// missing candidate metadata, degrading the WHOLE call, never a partial or
 /// best-effort read of the recovered params.
 pub(crate) fn candidate_param_infos(
-    decl: &RoutineDecl,
+    meta: &crate::program::resolve::decl_surface::RoutineMeta,
     from: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
 ) -> Option<Vec<ParamDispatchInfo>> {
-    if decl.parse_incomplete {
+    if meta.parse_incomplete {
         return None;
     }
-    let mut out = Vec::with_capacity(decl.params.len());
-    for p in &decl.params {
+    let mut out = Vec::with_capacity(meta.params.len());
+    for p in &meta.params {
         let ty = p.ty.as_deref()?;
         let canonical = dispatch_canonical_type_text(ty, from, graph, index)?;
         out.push(ParamDispatchInfo {
@@ -1312,7 +1312,7 @@ fn abi_param_canonical(
 /// SymbolOnly`) candidate's parameters, as seen from `from` (the
 /// CANDIDATE's OWN declaring object identity — mirrors
 /// [`candidate_param_infos`]'s contract exactly, just sourced from
-/// [`RoutineNode::abi_params`] instead of a `BodyMap` `RoutineDecl`).
+/// [`RoutineNode::abi_params`] instead of a `DeclSurface` `RoutineDecl`).
 ///
 /// # The structural guard (Task 2 round-1 addendum, BINDING)
 ///
@@ -2269,7 +2269,7 @@ mod tests {
         let globals = vec![var("X", "Text")];
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("X");
@@ -2281,7 +2281,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2301,7 +2301,7 @@ mod tests {
         let globals = vec![var("X", "Text")];
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("X");
@@ -2313,7 +2313,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2329,7 +2329,7 @@ mod tests {
         let routine = empty_routine();
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = Expr {
@@ -2344,7 +2344,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2370,7 +2370,7 @@ mod tests {
         routine.locals.push(var("SomeField", "Integer"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("SomeField");
@@ -2382,7 +2382,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::InsideWith,
         );
         assert_eq!(
@@ -2401,7 +2401,7 @@ mod tests {
         routine.locals.push(var("SomeField", "Integer"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("SomeField");
@@ -2413,7 +2413,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::Unknown,
         );
         assert_eq!(
@@ -2431,7 +2431,7 @@ mod tests {
         let routine = empty_routine();
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = Expr {
@@ -2446,7 +2446,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::InsideWith,
         );
         assert_eq!(
@@ -2472,7 +2472,13 @@ mod tests {
         let from = test_object_id();
 
         assert!(
-            candidate_param_infos(&decl, &from, &graph, &index).is_none(),
+            candidate_param_infos(
+                &crate::program::resolve::decl_surface::RoutineMeta::from_decl(&decl, "test.al"),
+                &from,
+                &graph,
+                &index
+            )
+            .is_none(),
             "a parse_incomplete candidate must yield no param metadata at all"
         );
     }
@@ -2488,8 +2494,13 @@ mod tests {
         let index = ResolveIndex::build(&graph);
         let from = test_object_id();
 
-        let infos = candidate_param_infos(&decl, &from, &graph, &index)
-            .expect("a parse-complete candidate must yield param metadata");
+        let infos = candidate_param_infos(
+            &crate::program::resolve::decl_surface::RoutineMeta::from_decl(&decl, "test.al"),
+            &from,
+            &graph,
+            &index,
+        )
+        .expect("a parse-complete candidate must yield param metadata");
         assert_eq!(infos.len(), 1);
         assert_eq!(infos[0].canonical, CanonicalArgType::Base("integer".into()));
     }
@@ -2508,7 +2519,7 @@ mod tests {
         routine.return_type = Some("JsonValue".to_string());
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("ReturnValue");
@@ -2520,7 +2531,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2544,7 +2555,7 @@ mod tests {
         routine.return_type = Some("Text".to_string());
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = Expr {
@@ -2559,7 +2570,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2580,7 +2591,7 @@ mod tests {
         let globals = vec![var("Ret", "Text")];
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("Ret");
@@ -2592,7 +2603,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2613,7 +2624,7 @@ mod tests {
         routine.locals.push(var("Ret", "Text"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let e = ident_expr("Ret");
@@ -2625,7 +2636,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2649,7 +2660,7 @@ mod tests {
         routine.return_type = Some("JsonValue".to_string());
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         // Position 0 ("AttrName"): identical across both candidates — never
@@ -2663,7 +2674,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         let args = vec![attr_arg, return_value_arg];
@@ -2691,7 +2702,7 @@ mod tests {
         let routine = empty_routine(); // no return_name at all
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
 
         let attr_arg = base_arg("text");
@@ -2703,7 +2714,7 @@ mod tests {
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(
@@ -2844,7 +2855,7 @@ codeunit 50100 "C"
 
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -2856,7 +2867,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -2889,7 +2900,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("quoted field", "Text[50]");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("X", "Record Customer"));
 
@@ -2901,7 +2912,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -2932,7 +2943,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let routine = empty_routine(); // no `Rec` declared at all
 
         let info = type_one_arg(
@@ -2943,7 +2954,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -2970,7 +2981,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -2982,7 +2993,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -3009,7 +3020,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("SomeText", "Text"));
 
@@ -3021,7 +3032,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -3049,7 +3060,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -3061,7 +3072,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -3172,7 +3183,7 @@ codeunit 50100 "C"
             let routine = empty_routine();
             let graph = ProgramGraph::default();
             let index = ResolveIndex::build(&graph);
-            let body_map = BodyMap::build(&graph, &[]);
+            let surface = DeclSurface::build(&graph, &[]);
             let from = test_object_id();
             let info = type_one_arg(
                 &file,
@@ -3182,7 +3193,7 @@ codeunit 50100 "C"
                 &from,
                 &graph,
                 &index,
-                &body_map,
+                &surface,
                 with_state,
             );
             if *expect_boolean {
@@ -3226,7 +3237,7 @@ codeunit 50100 "C"
         let routine = empty_routine();
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
         let info = type_one_arg(
             &file,
@@ -3236,7 +3247,7 @@ codeunit 50100 "C"
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -3269,7 +3280,7 @@ codeunit 50100 "C"
         routine.locals.push(var("GetCount", "Integer"));
         let graph = ProgramGraph::default();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let from = test_object_id();
         let info = type_one_arg(
             &file,
@@ -3279,7 +3290,7 @@ codeunit 50100 "C"
             &from,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -3312,7 +3323,7 @@ codeunit 50100 "C"
         let (file, args, _with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -3324,7 +3335,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::InsideWith,
         );
         assert_eq!(
@@ -3354,7 +3365,7 @@ codeunit 50100 "C"
         let (file, args, with_state) = parse_call_args(src, "Foo");
         let (graph, from_id) = build_member_arg_graph("blob", "Blob");
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine.locals.push(var("Rec", "Record Customer"));
 
@@ -3366,7 +3377,7 @@ codeunit 50100 "C"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(
@@ -3510,7 +3521,7 @@ codeunit 50700 "Caller"
         assert_eq!(with_state, WithState::NoWithProven);
         let (graph, from_id) = build_symbol_only_member_call_graph();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let mut routine = empty_routine();
         routine
             .locals
@@ -3524,7 +3535,7 @@ codeunit 50700 "Caller"
             &from_id,
             &graph,
             &index,
-            &body_map,
+            &surface,
             with_state,
         );
         assert_eq!(

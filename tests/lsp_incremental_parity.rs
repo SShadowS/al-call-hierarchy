@@ -790,7 +790,7 @@ fn overload_flip_body_only_edit_stays_rung1_and_equivalent() {
     // definition surface: no object/routine identity, arity, or param type
     // moved, so this must still take rung 1 — and the incremental path must
     // re-run arg-type dispatch against the file's FRESH content rather than
-    // a stale cached BodyMap (the module doc's soundness argument for why
+    // a stale cached DeclSurface (the module doc's soundness argument for why
     // rung 1 resolves the touched file directly from its fresh parse).
     std::fs::write(
         dir.path().join("Alpha.al"),
@@ -861,7 +861,7 @@ codeunit 50100 "Alpha"
                 .any(|r| r.evidence.kind() == EvidenceKind::Source),
             "each flipped call site must still cleanly resolve (Evidence::Source), \
              proving the incremental path re-ran arg-type dispatch against the \
-             fresh file rather than a stale cached BodyMap"
+             fresh file rather than a stale cached DeclSurface"
         );
     }
 
@@ -1547,7 +1547,7 @@ fn build_full_with_parsed_shares_one_parse_between_snapshot_and_updater() {
         );
     }
     // The updater also holds the dependency units (rung 2 needs them for
-    // BodyMap/build_dep_indexes) — exactly one source-bearing unit per
+    // DeclSurface/build_dep_indexes) — exactly one source-bearing unit per
     // source-bearing app, same as parse_snapshot produced.
     assert!(
         parsed.len() >= 2,

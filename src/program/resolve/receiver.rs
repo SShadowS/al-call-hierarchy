@@ -112,7 +112,7 @@
 //!    like Step 2's declared-variable path (via [`parsed_type_to_receiver`]),
 //!    inheriting its fail-closed cross-app-ambiguous-object decline. Only
 //!    engaged when the caller passes a `bare_ctx` (full end-to-end resolution
-//!    via `resolve_full_program`); callers with no `BodyMap`/`WithState` in
+//!    via `resolve_full_program`); callers with no `DeclSurface`/`WithState` in
 //!    scope (tests, `semantic_golden.rs`) pass `None` and this step is a no-op
 //!    — resolution-neutral for them, exactly like `receiver_expr` itself.
 //! 6. **Compound framework property/method + `this.<rest>` receiver**
@@ -160,7 +160,7 @@ use crate::program::node::{ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::{
     FieldNode, ObjectNode, ObjectRef, PageControlKind, PageControlNode, RoutineNode,
 };
-use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::edge::RouteTarget;
 use crate::program::resolve::extract::WithState;
 use crate::program::resolve::framework_returns::{enum_chain_return_kind, framework_return_kind};
@@ -639,7 +639,7 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
 ///
 /// # `bare_ctx` (Task 3 enabling primitive)
 ///
-/// `Some((body_map, with_state))` when the caller can supply the two extra
+/// `Some((surface, with_state))` when the caller can supply the two extra
 /// inputs Step 5 needs to run [`crate::program::resolve::resolver::resolve_bare`]
 /// as a type query (`resolve_full_program`'s real `CalleeShape::Member`
 /// resolution path); `None` for callers with no such context in scope (unit
@@ -656,7 +656,7 @@ pub fn infer_receiver_type(
     graph: &ProgramGraph,
     index: &ResolveIndex,
     receiver_expr: Option<(&AlFile, ExprId)>,
-    bare_ctx: Option<(&BodyMap<'_>, WithState)>,
+    bare_ctx: Option<(&DeclSurface, WithState)>,
 ) -> ReceiverType {
     // -----------------------------------------------------------------------
     // Step 0 — `CurrPage.<part>.Page` subpage-instance receivers (Task 7).
@@ -1131,14 +1131,14 @@ pub fn infer_receiver_type(
     // Step 5 — compound call-result receiver (`Func().Method()`, Task 3).
     //
     // Only engages when BOTH `receiver_expr` (the parsed receiver node, Task
-    // 2) and `bare_ctx` (the `BodyMap`/`WithState` Step 5 needs to run
+    // 2) and `bare_ctx` (the `DeclSurface`/`WithState` Step 5 needs to run
     // `resolve_bare` as a type query, Task 3) are populated — a no-op
     // otherwise, so callers that don't supply them (unit tests,
     // `semantic_golden.rs`, the `RecordOp` shape) are unaffected.
     // -----------------------------------------------------------------------
 
     if let Some((file, expr_id)) = receiver_expr
-        && let Some((body_map, with_state)) = bare_ctx
+        && let Some((surface, with_state)) = bare_ctx
         && let Some(recv) = infer_call_result_receiver(
             file,
             expr_id,
@@ -1147,7 +1147,7 @@ pub fn infer_receiver_type(
             from_object,
             graph,
             index,
-            body_map,
+            surface,
             with_state,
         )
     {
@@ -1163,8 +1163,8 @@ pub fn infer_receiver_type(
     // The framework/`this.<rest>` sub-cases only need `receiver_expr` (Task
     // 2) — unlike Step 5, they never call `resolve_bare`, so they do NOT
     // gate on `bare_ctx`. The NEW cross-object-chain sub-case DOES need a
-    // `BodyMap` (it calls `resolve_member` as a type-query, which needs one
-    // to build routes) — threaded here as `Option<&BodyMap<'_>>` extracted
+    // `DeclSurface` (it calls `resolve_member` as a type-query, which needs one
+    // to build routes) — threaded here as `Option<&DeclSurface>` extracted
     // from `bare_ctx`, so it is a no-op for callers with no `bare_ctx` in
     // scope (unit tests that pass `None`, `semantic_golden.rs`, the
     // `RecordOp` shape), exactly like Step 5, while the framework/`this.`
@@ -1180,7 +1180,7 @@ pub fn infer_receiver_type(
             from_object,
             graph,
             index,
-            bare_ctx.map(|(body_map, _)| body_map),
+            bare_ctx.map(|(surface, _)| surface),
         );
         if !matches!(recv, ReceiverType::Unknown) {
             return recv;
@@ -1305,17 +1305,17 @@ fn object_scope_has_bare_routine_shadow(
 ///   construction: every arm either delegates to more fail-closed logic or
 ///   returns `Unknown` directly.
 ///
-/// `body_map` (plan v2.1 Task 3 enabling primitive): `Some` when the caller
-/// can supply the `BodyMap` [`infer_compound_member_receiver`]'s new
+/// `surface` (plan v2.1 Task 3 enabling primitive): `Some` when the caller
+/// can supply the `DeclSurface` [`infer_compound_member_receiver`]'s new
 /// cross-object call-result chain arm needs to run `resolve_member` as a
 /// type-query; `None` for callers with no such context in scope — that arm
 /// is then a no-op there, exactly like [`infer_receiver_type`]'s `bare_ctx`.
 /// Threaded unchanged through every recursive call so a multi-hop chain's
 /// BASE typing (itself possibly another compound receiver) can reach the new
 /// arm too — a 3-level chain whose middle hop cannot be typed (no
-/// `body_map`, or the middle hop itself declines) correctly propagates
+/// `surface`, or the middle hop itself declines) correctly propagates
 /// `Unknown` rather than partially guessing.
-#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `body_map` (plan v2.1 Task 3); each is a distinct identity/lookup input, grouping would obscure the recursive call sites.
+#[allow(clippy::too_many_arguments)] // 7 pre-existing params + `surface` (plan v2.1 Task 3); each is a distinct identity/lookup input, grouping would obscure the recursive call sites.
 fn infer_receiver_type_for_expr(
     file: &AlFile,
     expr_id: ExprId,
@@ -1324,7 +1324,7 @@ fn infer_receiver_type_for_expr(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: Option<&BodyMap<'_>>,
+    surface: Option<&DeclSurface>,
 ) -> ReceiverType {
     match &file.ir.expr(expr_id).kind {
         ExprKind::Identifier(name) => {
@@ -1369,7 +1369,7 @@ fn infer_receiver_type_for_expr(
             from_object,
             graph,
             index,
-            body_map,
+            surface,
         ),
         ExprKind::Call { function, args } => {
             if let ExprKind::Member { object, member, .. } = &file.ir.expr(*function).kind {
@@ -1384,7 +1384,7 @@ fn infer_receiver_type_for_expr(
                     from_object,
                     graph,
                     index,
-                    body_map,
+                    surface,
                 )
             } else {
                 // A bare-identifier call (`Func(...)`) reaching HERE (i.e. as
@@ -1471,7 +1471,7 @@ fn infer_receiver_type_for_expr(
                 from_object,
                 graph,
                 index,
-                body_map,
+                surface,
             ) {
                 ReceiverType::EnumType { .. } | ReceiverType::EnumTypeStatic { .. } => {
                     ReceiverType::EnumType {
@@ -1522,7 +1522,7 @@ fn infer_receiver_type_for_expr(
 ///   procedure-CALL form (`is_method`; a bare `Member` — a field/property
 ///   access — is never this arm, round-1 I7). When `base_ty` is `Object`/
 ///   `Record`/`SelfObject`/`Interface` (proven by the SAME recursive typing
-///   above) and a `body_map` is available, types the base call's RETURN
+///   above) and a `surface` is available, types the base call's RETURN
 ///   TYPE via a PURE [`resolve_member`] type-query — see
 ///   [`infer_cross_object_chain_receiver`] for the full guard. Untyped/
 ///   `Unknown`/`Primitive`/`Dynamic`/`*Ref` bases, or any decline along the
@@ -1556,7 +1556,7 @@ fn infer_compound_member_receiver(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: Option<&BodyMap<'_>>,
+    surface: Option<&DeclSurface>,
 ) -> ReceiverType {
     // `member` (from `ExprKind::Member`/`Call{function: Member{..}}`) may
     // itself be RAW WITH QUOTES (mirrors `extract.rs::classify_call`'s own
@@ -1582,7 +1582,7 @@ fn infer_compound_member_receiver(
         from_object,
         graph,
         index,
-        body_map,
+        surface,
     );
 
     if let ReceiverType::Framework(kind) = &base_ty {
@@ -1697,10 +1697,10 @@ fn infer_compound_member_receiver(
 
     // Cross-object call-result chain (plan v2.1 Task 3) — see this
     // function's doc. `is_method` gates the shape (procedure-CALL form
-    // only); `body_map` gates on the caller having supplied one
+    // only); `surface` gates on the caller having supplied one
     // (resolution-neutral otherwise, mirrors Step 5's `bare_ctx` gate).
     if is_method
-        && let Some(bm) = body_map
+        && let Some(bm) = surface
         && matches!(
             base_ty,
             ReceiverType::Object { .. }
@@ -1839,7 +1839,7 @@ fn infer_cross_object_chain_receiver(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> Option<ReceiverType> {
     let (_shape, routes) = resolve_member(
         base_ty,
@@ -1848,7 +1848,7 @@ fn infer_cross_object_chain_receiver(
         from_object,
         graph,
         index,
-        body_map,
+        surface,
     );
     let [route] = routes.as_slice() else {
         return None;
@@ -2085,7 +2085,7 @@ fn infer_call_result_receiver(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
 ) -> Option<ReceiverType> {
     // 0. Must be a structured Call whose function is a BARE identifier — a
@@ -2129,7 +2129,7 @@ fn infer_call_result_receiver(
         args.len(),
         graph,
         index,
-        body_map,
+        surface,
         with_state,
     );
     let [route] = routes.as_slice() else {
@@ -4449,7 +4449,7 @@ mod tests {
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "session",
@@ -4459,7 +4459,7 @@ mod tests {
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -4823,7 +4823,7 @@ mod tests {
         // `resolve_member_record_table_none_emits_unknown` invariant in
         // `resolver.rs`, now driven by a genuine Phase-A ambiguity decline
         // rather than a hand-constructed `Record{table: None}`).
-        let body_map = crate::program::resolve::body_map::BodyMap::build(&graph, &[]);
+        let surface = crate::program::resolve::decl_surface::DeclSurface::build(&graph, &[]);
         let (shape, routes) = crate::program::resolve::resolver::resolve_member(
             &receiver,
             "nonbuiltinproc",
@@ -4831,7 +4831,7 @@ mod tests {
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape, crate::program::resolve::edge::DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -6558,13 +6558,13 @@ mod tests {
         let (graph, _w) = build_control_addin_fixture();
         let index = ResolveIndex::build(&graph);
         let host = control_addin_host(&graph);
-        let body_map = crate::program::resolve::body_map::BodyMap::build(&graph, &[]);
+        let surface = crate::program::resolve::decl_surface::DeclSurface::build(&graph, &[]);
 
         let parsed = classify_type_text("ControlAddIn \"CDO.Editor\"");
         let receiver = parsed_type_to_receiver(parsed, &host, &graph, &index);
 
         let (_, routes) =
-            resolve_member(&receiver, "inteditor", 2, &host, &graph, &index, &body_map);
+            resolve_member(&receiver, "inteditor", 2, &host, &graph, &index, &surface);
         assert_eq!(routes.len(), 1);
         assert_eq!(
             routes[0].evidence,
@@ -7881,7 +7881,7 @@ codeunit 50100 "C"
         // context is required for the positive path (see
         // `step4b_declines_when_with_unproven`/`step4b_resolves_when_no_with_proven`
         // for the guard's own dedicated coverage).
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"cdo send on posting\"",
@@ -7891,7 +7891,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -7917,7 +7917,7 @@ codeunit 50100 "C"
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
         // Task 3 (roadmap-closure plan): see the sibling quoted-name test
         // above for why `bare_ctx` is now `Some(.., NoWithProven)` here.
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "sendstatus",
@@ -7927,7 +7927,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8075,7 +8075,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         for ws in [WithState::InsideWith, WithState::Unknown] {
             let result = infer_receiver_type(
@@ -8086,7 +8086,7 @@ codeunit 50100 "C"
                 &graph,
                 &index,
                 None,
-                Some((&body_map, ws)),
+                Some((&surface, ws)),
             );
             assert_eq!(
                 result,
@@ -8112,7 +8112,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = build_test_routine();
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"cdo send on posting\"",
@@ -8122,7 +8122,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8258,7 +8258,7 @@ codeunit 50100 "C"
         // UNQUOTED.
         let routine = routine_with_locals(vec![var_decl("File Blob", "Record Customer")]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"file blob\"",
@@ -8268,7 +8268,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8301,7 +8301,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let _ = app;
 
         let result = infer_receiver_type(
@@ -8312,7 +8312,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
     }
@@ -8347,7 +8347,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let _ = app;
 
         let result = infer_receiver_type(
@@ -8358,7 +8358,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8405,7 +8405,7 @@ codeunit 50100 "C"
             .find(|o| o.name == "CustomerExt")
             .unwrap()
             .clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         // The extension's OWN field.
         let result_own = infer_receiver_type(
@@ -8416,7 +8416,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result_own, ReceiverType::Framework(FrameworkKind::Text));
 
@@ -8429,7 +8429,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result_base, ReceiverType::Framework(FrameworkKind::Blob));
     }
@@ -8461,7 +8461,7 @@ codeunit 50100 "C"
         });
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let mut page = make_object_node(
             w,
@@ -8483,7 +8483,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
     }
@@ -8506,7 +8506,7 @@ codeunit 50100 "C"
         });
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         // `build_page_rec_fixture` already declares Page "CustomerPage" (id
         // 50200, `SourceTable = Customer`) in `graph.objects` — the base
@@ -8528,7 +8528,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
     }
@@ -8541,7 +8541,7 @@ codeunit 50100 "C"
         let (graph, w) = build_page_rec_fixture();
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let page = make_object_node(w, ObjectKind::Page, "NoSourcePage", Some(50299), None);
 
@@ -8553,7 +8553,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Unknown);
     }
@@ -8575,7 +8575,7 @@ codeunit 50100 "C"
         });
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let mut page = make_object_node(
             w,
@@ -8598,7 +8598,7 @@ codeunit 50100 "C"
                 &graph,
                 &index,
                 None,
-                Some((&body_map, ws)),
+                Some((&surface, ws)),
             );
             assert_eq!(
                 result,
@@ -8631,7 +8631,7 @@ codeunit 50100 "C"
         graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let mut page = make_object_node(
             w,
@@ -8653,7 +8653,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8698,7 +8698,7 @@ codeunit 50100 "C"
         graph.routines.sort_by(|x, y| x.id.cmp(&y.id));
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"view (blob)\"",
@@ -8708,7 +8708,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8729,7 +8729,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"file blob\"",
@@ -8739,7 +8739,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Unknown);
     }
@@ -8757,7 +8757,7 @@ codeunit 50100 "C"
             .clone();
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
         let _ = app;
 
         let result = infer_receiver_type(
@@ -8768,7 +8768,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Unknown);
     }
@@ -8791,7 +8791,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         for ws in [WithState::InsideWith, WithState::Unknown] {
             let result = infer_receiver_type(
@@ -8802,7 +8802,7 @@ codeunit 50100 "C"
                 &graph,
                 &index,
                 None,
-                Some((&body_map, ws)),
+                Some((&surface, ws)),
             );
             assert_eq!(
                 result,
@@ -8878,7 +8878,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"file blob\"",
@@ -8888,7 +8888,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -8967,7 +8967,7 @@ codeunit 50100 "C"
     // `tests/program_resolve_harness.rs`, built via the real
     // `resolve_full_program` pipeline that populates and sorts `graph.routines`
     // exactly as production code does), which all continue to pass unchanged.
-    // A hand-built unit `RoutineNode`/`BodyMap`/`WithState` fixture here would
+    // A hand-built unit `RoutineNode`/`DeclSurface`/`WithState` fixture here would
     // duplicate that coverage while risking drift from the real (much larger)
     // `RoutineNode` struct shape, so this is deliberately NOT re-tested with a
     // bespoke unit test.
@@ -9343,7 +9343,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "attachment",
@@ -9353,7 +9353,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
     }
@@ -9393,7 +9393,7 @@ codeunit 50100 "C"
             .find(|o| o.name == "CustomerExt2")
             .unwrap()
             .clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result_own = infer_receiver_type(
             "extnote",
@@ -9403,7 +9403,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result_own, ReceiverType::Framework(FrameworkKind::Text));
 
@@ -9415,7 +9415,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result_base, ReceiverType::Framework(FrameworkKind::Blob));
     }
@@ -9444,7 +9444,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "attachment",
@@ -9454,7 +9454,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -9471,7 +9471,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = make_object_node(app, ObjectKind::Codeunit, "CallerCu", Some(999), None);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "attachment",
@@ -9481,7 +9481,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Unknown);
     }
@@ -9505,7 +9505,7 @@ codeunit 50100 "C"
         let routine = routine_with_locals(vec![]);
         let globals = vec![var_decl("Attachment", "Text[100]")];
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "attachment",
@@ -9515,7 +9515,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -9545,7 +9545,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "rec",
@@ -9555,7 +9555,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(
             result,
@@ -9584,7 +9584,7 @@ codeunit 50100 "C"
         let index = ResolveIndex::build(&graph);
         let routine = routine_with_locals(vec![]);
         let from_obj = graph.objects[customer_idx].clone();
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let result = infer_receiver_type(
             "\"view (blob)\"",
@@ -9594,7 +9594,7 @@ codeunit 50100 "C"
             &graph,
             &index,
             None,
-            Some((&body_map, WithState::NoWithProven)),
+            Some((&surface, WithState::NoWithProven)),
         );
         assert_eq!(result, ReceiverType::Framework(FrameworkKind::Blob));
     }

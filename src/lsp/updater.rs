@@ -20,28 +20,28 @@
 //!
 //! `docs/superpowers/specs/2026-07-12-t3-lsp-migration-design.md` plus
 //! `.superpowers/sdd/t3-stage-split.md` measured `ResolveIndex::build` +
-//! `BodyMap::build` at ~200-350ms on CDO scale — 2-3.5x rung 1's ENTIRE
+//! `DeclSurface::build` at ~200-350ms on CDO scale — 2-3.5x rung 1's ENTIRE
 //! 100ms budget — so rung 1 must NEVER transiently rebuild them (the
 //! brief's "documented contingency," now mandatory). The fix is to cache
-//! `ResolveIndex`/`BodyMap` and REUSE them across many consecutive rung-1
+//! `ResolveIndex`/`DeclSurface` and REUSE them across many consecutive rung-1
 //! saves, only rebuilding when a rung-2/3 event actually changes the graph
 //! ([`spawn_updater`]'s hot loop does exactly this — see its doc).
 //!
-//! This collides with a real Rust ownership fact: `BodyMap<'a>` BORROWS
+//! This collides with a real Rust ownership fact: `DeclSurface` BORROWS
 //! `Updater::parsed` for as long as it's alive. If rung 1 spliced a file's
 //! fresh parse directly into `self.parsed` (as an earlier draft of this
-//! module did), the SECOND rung-1 call reusing the SAME cached `BodyMap`
+//! module did), the SECOND rung-1 call reusing the SAME cached `DeclSurface`
 //! would need `&mut self.parsed` to splice again — which the borrow checker
-//! correctly rejects, because `body_map` (built from `&self.parsed`) is
+//! correctly rejects, because `surface` (built from `&self.parsed`) is
 //! still alive and would be invalidated by that mutation.
 //!
 //! The fix: rung 1 NEVER touches `self.parsed` directly. It records each
 //! touched file into `self.pending: HashMap<String, ParsedFile>` instead — a
-//! DISJOINT field from `parsed`, so a cached `BodyMap` borrowing `parsed`
+//! DISJOINT field from `parsed`, so a cached `DeclSurface` borrowing `parsed`
 //! and a fresh `&mut self.pending` write coexist without conflict (Rust DOES
 //! reason about disjoint-field borrows within one function body — this is
 //! what lets [`spawn_updater`]'s loop pass `&mut updater.pending` into
-//! [`apply_rung1_core`] on every rung-1 call while `index`/`body_map`,
+//! [`apply_rung1_core`] on every rung-1 call while `index`/`surface`,
 //! built once from `&updater.parsed`, stay alive and cached across many
 //! such calls). [`Updater::flush_pending`] folds the overlay into `parsed`
 //! whenever a rung-2/3 rebuild is about to consult it (or eagerly, in
@@ -50,14 +50,14 @@
 //! immediately every time).
 //!
 //! **Soundness of resolving rung 1's touched file(s) against a STALE
-//! (pre-edit) cached `BodyMap`:** per the def-surface audit
+//! (pre-edit) cached `DeclSurface`:** per the def-surface audit
 //! (`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §3), the
-//! ONLY fields any resolution path reads through `BodyMap` are a witness
+//! ONLY fields any resolution path reads through `DeclSurface` are a witness
 //! SPAN (never trusted stale by a handler anyway, per that audit's §6.1) and
 //! `RoutineDecl::params`/`by_ref`/`parse_incomplete` — pure SIGNATURE data.
 //! Rung 1's own gate (`DefSurface` fingerprint unchanged) is EXACTLY the
 //! guarantee that this signature data is byte-identical between the OLD and
-//! NEW parse of every touched file — so a body_map entry for a touched file
+//! NEW parse of every touched file — so a surface entry for a touched file
 //! that's technically "stale" (pre-this-specific-edit) is field-for-field
 //! IDENTICAL to a freshly rebuilt one, for every field any consumer actually
 //! reads. This holds transitively across many consecutive rung-1 edits
@@ -65,7 +65,7 @@
 //! what makes the whole cached-context arrangement sound, not just fast.
 //! The touched file's OWN obligations are resolved directly against its
 //! fresh [`ParsedFile`] (passed as a plain argument, never looked up through
-//! `BodyMap`) — see [`crate::lsp::snapshot::recompute_file`]'s callers.
+//! `DeclSurface`) — see [`crate::lsp::snapshot::recompute_file`]'s callers.
 //!
 //! # Rung summary (binding; see the task brief + the def-surface audit for
 //! the full justification)
@@ -106,7 +106,7 @@ use crate::lsp::snapshot::{
 use crate::program::assemble_program_graph;
 use crate::program::node::ObjectNodeId;
 use crate::program::node_extract::ObjectNode;
-use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::emit_event_flow_edges;
 use crate::program::resolve::full::{ClassifiedEdge, ObligationId};
 use crate::program::resolve::index::ResolveIndex;
@@ -181,14 +181,14 @@ pub enum Rung {
 /// calls (simple, self-contained, always-correct — used directly by tests
 /// and any caller that doesn't need cross-call caching) or by
 /// [`spawn_updater`]'s optimized hot loop (which reuses a cached
-/// `ResolveIndex`/`BodyMap` pair across many consecutive rung-1 calls — see
+/// `ResolveIndex`/`DeclSurface` pair across many consecutive rung-1 calls — see
 /// the module doc's "why a `pending` overlay" section for why that requires
 /// going through [`apply_rung1_core`] directly instead of `apply_batch`).
 pub struct Updater {
     workspace_root: PathBuf,
     /// Every source-bearing app's parse AS OF THE LAST rung-2/3 rebuild —
     /// workspace AND embedded-source deps. A transient `ResolveIndex`/
-    /// `BodyMap` pair borrows this; rung 1 never mutates it directly (see
+    /// `DeclSurface` pair borrows this; rung 1 never mutates it directly (see
     /// `pending` below).
     parsed: Vec<ParsedUnit>,
     /// Rung-1 edits recorded since `parsed` was last fully rebuilt — see the
@@ -232,7 +232,7 @@ impl Updater {
     /// returns, so repeated stand-alone calls stay self-consistent without
     /// requiring the caller to manage `pending` at all).
     ///
-    /// Builds a FRESH `ResolveIndex`/`BodyMap` for whichever rung it takes —
+    /// Builds a FRESH `ResolveIndex`/`DeclSurface` for whichever rung it takes —
     /// simple and always correct, at the cost of not reusing them across
     /// SEPARATE `apply_batch` calls. [`spawn_updater`]'s hot loop is the
     /// OPTIMIZED path that DOES cache them across many consecutive rung-1
@@ -249,7 +249,7 @@ impl Updater {
             Decision::Noop => None,
             Decision::Rung1(saves) => {
                 let index = ResolveIndex::build(&cur.graph);
-                let body_map = BodyMap::build(&cur.graph, &self.parsed);
+                let surface = DeclSurface::build(&cur.graph, &self.parsed);
                 let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = cur
                     .graph
                     .objects
@@ -260,11 +260,11 @@ impl Updater {
                     cur,
                     saves,
                     &index,
-                    &body_map,
+                    &surface,
                     &obj_node_map,
                     &mut self.pending,
                 );
-                drop(body_map);
+                drop(surface);
                 self.flush_pending(&cur.snap);
                 Some((snapshot, Rung::One))
             }
@@ -276,7 +276,7 @@ impl Updater {
     /// Classify one batch against `cur` (the currently-published snapshot),
     /// per file/event, escalating per the module doc's rung summary.
     /// Read-only (`&self`) — never mutates `self`, so it composes freely
-    /// with an outstanding `BodyMap` borrow of `self.parsed`.
+    /// with an outstanding `DeclSurface` borrow of `self.parsed`.
     fn classify(&self, cur: &LspSnapshot, batch: &[ChangeEvent]) -> Decision {
         if batch.is_empty() {
             return Decision::Noop;
@@ -411,7 +411,7 @@ impl Updater {
         let new_graph =
             assemble_program_graph(&cur.dep_layer, &self.parsed[primary_idx], &cur.snap);
         let index = ResolveIndex::build(&new_graph);
-        let body_map = BodyMap::build(&new_graph, &self.parsed);
+        let surface = DeclSurface::build(&new_graph, &self.parsed);
         let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = new_graph
             .objects
             .iter()
@@ -432,7 +432,7 @@ impl Updater {
                 primary_app_ref,
                 &new_graph,
                 &index,
-                &body_map,
+                &surface,
                 &obj_node_map,
             );
             edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
@@ -453,7 +453,7 @@ impl Updater {
             );
         }
 
-        let raw_event_edges = emit_event_flow_edges(&new_graph, &index, &body_map);
+        let raw_event_edges = emit_event_flow_edges(&new_graph, &index, &surface);
         let event_edges = Arc::new(
             raw_event_edges
                 .into_iter()
@@ -473,7 +473,7 @@ impl Updater {
         // would dangle the moment `cur.graph` is dropped) — see
         // `build_dep_indexes`'s doc for why only rung 1 can skip this.
         let (dep_decl_by_id, dep_texts) =
-            build_dep_indexes(&new_graph, &body_map, &self.parsed, primary_app_ref);
+            build_dep_indexes(&new_graph, &surface, &self.parsed, primary_app_ref);
 
         LspSnapshot {
             generation: cur.generation + 1,
@@ -597,13 +597,13 @@ impl Updater {
 /// Given an already-built context (POSSIBLY cached and reused across many
 /// calls by [`spawn_updater`]'s hot loop), resolves each touched file
 /// directly from its FRESH [`ParsedFile`] (passed in `saves`, never
-/// re-derived through `body_map`, which may be stale for these exact files
+/// re-derived through `surface`, which may be stale for these exact files
 /// — sound per the module doc's soundness argument). Records each touched
 /// file into `pending` — NOT into any `ParsedUnit` directly — so a cached
-/// `body_map`'s borrow of the updater's `parsed` field is never invalidated
+/// `surface`'s borrow of the updater's `parsed` field is never invalidated
 /// by this call.
 ///
-/// A free function (not a method): `body_map: &BodyMap<'_>` borrows
+/// A free function (not a method): `surface: &DeclSurface` borrows
 /// `Updater::parsed`, and `pending: &mut HashMap<..>` borrows the DISJOINT
 /// `Updater::pending` field — a method taking `&mut self` would erase that
 /// field-level distinction and make the two borrows conflict at the call
@@ -613,7 +613,7 @@ fn apply_rung1_core(
     cur: &LspSnapshot,
     saves: Vec<(String, ParsedFile)>,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
     pending: &mut HashMap<String, ParsedFile>,
 ) -> LspSnapshot {
@@ -633,7 +633,7 @@ fn apply_rung1_core(
             primary_app_ref,
             &cur.graph,
             index,
-            body_map,
+            surface,
             obj_node_map,
         );
         edges_by_file.insert(vp.clone(), Arc::new(edges));
@@ -839,7 +839,7 @@ fn gather_batch(rx: &Receiver<ChangeEvent>) -> Option<Vec<ChangeEvent>> {
 
 /// Spawn the updater thread implementing the module doc's "scoped-context
 /// loop": right after every swap (or at startup), a `ResolveIndex`/
-/// `BodyMap`/`obj_node_map` context is built ONCE from the just-published
+/// `DeclSurface`/`obj_node_map` context is built ONCE from the just-published
 /// snapshot's graph + the updater's current `parsed`, then REUSED for every
 /// consecutive rung-1 batch (via [`apply_rung1_core`], which never mutates
 /// `parsed` — see the module doc) until a rung-2/3 event arrives, at which
@@ -861,7 +861,7 @@ pub fn spawn_updater(
         let mut cur = shared.get();
 
         loop {
-            // `index`/`body_map`/`obj_node_map` all borrow from `cur`/
+            // `index`/`surface`/`obj_node_map` all borrow from `cur`/
             // `updater.parsed` as they stand RIGHT NOW; they are built once
             // per iteration of this OUTER loop and reused for every
             // consecutive rung-1 batch the INNER loop processes. `inner_cur`
@@ -872,7 +872,7 @@ pub fn spawn_updater(
             // (`apply_rung1_core` never rebuilds `graph`).
             let (new_cur, decision) = {
                 let index = ResolveIndex::build(&cur.graph);
-                let body_map = BodyMap::build(&cur.graph, &updater.parsed);
+                let surface = DeclSurface::build(&cur.graph, &updater.parsed);
                 let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = cur
                     .graph
                     .objects
@@ -892,7 +892,7 @@ pub fn spawn_updater(
                                 &inner_cur,
                                 saves,
                                 &index,
-                                &body_map,
+                                &surface,
                                 &obj_node_map,
                                 &mut updater.pending,
                             );
@@ -905,7 +905,7 @@ pub fn spawn_updater(
                     }
                 };
                 (inner_cur, escalated)
-            }; // `index`/`body_map`/`obj_node_map` dropped here.
+            }; // `index`/`surface`/`obj_node_map` dropped here.
             cur = new_cur;
 
             match decision {
@@ -1585,7 +1585,7 @@ mod tests {
     }
 
     // ── the cached-context property: 2 consecutive rung-1 edits reusing ────
-    // ── the SAME index/body_map, never rebuilt between them ───────────────
+    // ── the SAME index/surface, never rebuilt between them ───────────────
 
     #[test]
     fn apply_rung1_core_reuses_the_same_context_across_two_consecutive_edits() {
@@ -1597,7 +1597,7 @@ mod tests {
         // proving the exact caching property `spawn_updater`'s hot loop
         // relies on for the rung-1 budget.
         let index = ResolveIndex::build(&base.graph);
-        let body_map = BodyMap::build(&base.graph, &updater.parsed);
+        let surface = DeclSurface::build(&base.graph, &updater.parsed);
         let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
             .graph
             .objects
@@ -1632,7 +1632,7 @@ mod tests {
             &base,
             vec![("Alpha.al".to_string(), pf1)],
             &index,
-            &body_map,
+            &surface,
             &obj_node_map,
             &mut updater.pending,
         );
@@ -1643,7 +1643,7 @@ mod tests {
         ));
 
         // Edit 2: Alpha gets a THIRD call — reusing the SAME `index`/
-        // `body_map` built above (never rebuilt between edit 1 and edit 2).
+        // `surface` built above (never rebuilt between edit 1 and edit 2).
         std::fs::write(
             dir.path().join("Alpha.al"),
             r#"codeunit 50100 "Alpha"
@@ -1671,7 +1671,7 @@ mod tests {
             &snap1,
             vec![("Alpha.al".to_string(), pf2)],
             &index,
-            &body_map,
+            &surface,
             &obj_node_map,
             &mut updater.pending,
         );
@@ -1731,7 +1731,7 @@ mod tests {
 
     // ── e2e: rung 1 → rung 2 → rung 1 through the REAL background thread ──
     // (review fix-wave item 3): proves `spawn_updater`'s scoped-context loop
-    // actually rebuilds `index`/`body_map`/`obj_node_map` after a rung-2
+    // actually rebuilds `index`/`surface`/`obj_node_map` after a rung-2
     // escalation, rather than the next rung-1 batch silently resolving
     // against a stale pre-rung-2 context — the exact guarantee the
     // `{ ... }` block-scoping in `spawn_updater` exists to provide.
@@ -1897,7 +1897,7 @@ mod tests {
     // dominated by re-resolving EVERY workspace file regardless of which one
     // "changed," so feeding it the SAME (unchanged) content for one file
     // exercises the identical splice + assemble_program_graph + fresh
-    // index/body_map + re-resolve-ALL + event-edges + derived-index cost a
+    // index/surface + re-resolve-ALL + event-edges + derived-index cost a
     // real signature edit would pay.
     // -----------------------------------------------------------------------
 
@@ -1941,7 +1941,7 @@ mod tests {
         let mut rung1_times = Vec::with_capacity(RUNS);
         {
             let index = ResolveIndex::build(&base.graph);
-            let body_map = BodyMap::build(&base.graph, &updater.parsed);
+            let surface = DeclSurface::build(&base.graph, &updater.parsed);
             let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
                 .graph
                 .objects
@@ -1964,7 +1964,7 @@ mod tests {
                     &base,
                     vec![(target_vp.clone(), pf)],
                     &index,
-                    &body_map,
+                    &surface,
                     &obj_node_map,
                     &mut pending,
                 );
@@ -1972,7 +1972,7 @@ mod tests {
             }
         }
 
-        // ── Rung 2: splice + assemble_program_graph + fresh index/body_map
+        // ── Rung 2: splice + assemble_program_graph + fresh index/surface
         // + re-resolve ALL workspace files + event edges + derived indexes.
         // Reuses the SAME `updater` across all RUNS (each run re-splices the
         // identical, unchanged content — idempotent, so repeating this 3x
@@ -2007,7 +2007,7 @@ mod tests {
              an Arc write, negligible) : {rung1_med:?}"
         );
         eprintln!(
-            "rung 2 (splice + assemble_program_graph + fresh index/bodymap + re-resolve-ALL \
+            "rung 2 (splice + assemble_program_graph + fresh index/DeclSurface + re-resolve-ALL \
              + event edges + derived indexes) : {rung2_med:?}"
         );
         if rung1_med > Duration::from_millis(100) {

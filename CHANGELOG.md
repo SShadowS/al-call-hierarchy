@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Resolution decl lookups migrated from the borrowed BodyMap<'a> to the owned DeclSurface; BodyMap deleted. No behavioral change (goldens unchanged).
+
 ### Added
 - DeclSurface: owned two-tier routine-decl metadata surface (workspace tier +
   Arc-frozen dependency tier), groundwork for dropping dependency parse

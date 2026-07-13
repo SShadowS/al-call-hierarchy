@@ -14,7 +14,7 @@
 
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjKey, ObjectNodeId};
-use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::edge::{
     DispatchShape, Edge, EdgeKind, Evidence, Route, RouteTarget, SetCompleteness, SiteId,
     UnknownReason, Witness, callee_fp,
@@ -87,11 +87,11 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
     }
 
     // Phase 4b Task 3: append publisher-anchored EventFlow Multicast edges.
-    // Build ResolveIndex + BodyMap from the same inputs; both are used only
-    // within this call so the BodyMap lifetime is contained here.
+    // Build ResolveIndex + DeclSurface from the same inputs; both are used only
+    // within this call so the DeclSurface lifetime is contained here.
     let index = ResolveIndex::build(graph);
-    let body_map = BodyMap::build(graph, parsed);
-    edges.extend(emit_event_flow_edges(graph, &index, &body_map));
+    let surface = DeclSurface::build(graph, parsed);
+    edges.extend(emit_event_flow_edges(graph, &index, &surface));
 
     edges
 }

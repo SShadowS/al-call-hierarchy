@@ -12,7 +12,7 @@
 //!
 //! # Ownership law (spec §3 / H-10 lesson)
 //!
-//! `ResolveIndex`/`BodyMap`/the `ObjectNodeId → &ObjectNode` map all BORROW
+//! `ResolveIndex`/`DeclSurface`/the `ObjectNodeId → &ObjectNode` map all BORROW
 //! `graph`/`parsed` and are built TRANSIENTLY inside [`LspSnapshot::build_full`]
 //! — they never appear as fields on `LspSnapshot` itself (that would make the
 //! struct self-referential). [`build_incoming`] is the one INDEX that IS
@@ -29,7 +29,7 @@ use al_syntax::ir::AlFile;
 use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
-use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::edge::{Edge, RouteTarget};
 use crate::program::resolve::emit_event_flow_edges;
 use crate::program::resolve::full::{ClassifiedEdge, ObligationId, ProgramContext, build_context};
@@ -159,7 +159,7 @@ pub struct LspSnapshot {
     /// for every NON-primary (dependency) app — the design doc's §5 promise
     /// that "a dep with embedded source gets REAL navigable spans (legacy
     /// never could)". `make_routine_route` (the resolver) only ever
-    /// constructs `RouteTarget::Routine(id)` when the SAME `BodyMap` this
+    /// constructs `RouteTarget::Routine(id)` when the SAME `DeclSurface` this
     /// entry is built from just answered `Some` for `id` — so any `id` an
     /// edge carries as a `Routine` target is guaranteed to be found in
     /// EITHER `decl_by_id` (workspace) or here, never neither. A dependency's
@@ -267,7 +267,7 @@ impl LspSnapshot {
         // empty and every loop below is a no-op).
         let primary_unit_idx = parsed.iter().position(|u| u.app == snap.workspace_app);
 
-        // ── Transient borrow phase: index/body_map borrow `graph`/`parsed`,
+        // ── Transient borrow phase: index/surface borrow `graph`/`parsed`,
         // and per the module's ownership law must never survive into
         // `LspSnapshot` — everything they produce is copied into owned data
         // (or, for `pf.file`/`pf.text`, `Arc::clone`d in the sharing phase
@@ -284,7 +284,7 @@ impl LspSnapshot {
             let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
                 graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
             let index = ResolveIndex::build(&graph);
-            let body_map = BodyMap::build(&graph, &parsed);
+            let surface = DeclSurface::build(&graph, &parsed);
 
             if let Some(idx) = primary_unit_idx {
                 for pf in &parsed[idx].files {
@@ -297,7 +297,7 @@ impl LspSnapshot {
                         primary_app_ref,
                         &graph,
                         &index,
-                        &body_map,
+                        &surface,
                         &obj_node_map,
                     );
                     edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
@@ -306,7 +306,7 @@ impl LspSnapshot {
                 }
             }
 
-            let raw_event_edges = emit_event_flow_edges(&graph, &index, &body_map);
+            let raw_event_edges = emit_event_flow_edges(&graph, &index, &surface);
             event_edges = Arc::new(
                 raw_event_edges
                     .into_iter()
@@ -318,8 +318,8 @@ impl LspSnapshot {
             );
 
             (dep_decl_by_id, dep_texts) =
-                build_dep_indexes(&graph, &body_map, &parsed, primary_app_ref);
-            // `index`/`body_map`/`obj_node_map` drop here, at the end of this
+                build_dep_indexes(&graph, &surface, &parsed, primary_app_ref);
+            // `index`/`surface`/`obj_node_map` drop here, at the end of this
             // block — their borrows of `graph`/`parsed` end before the
             // sharing phase below needs to (immutably) re-borrow `parsed`.
         }
@@ -528,7 +528,7 @@ pub(crate) fn recompute_file(
     primary_app_ref: AppRef,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
 ) -> (Vec<ClassifiedEdge>, DefSurface, Vec<DeclEntry>) {
     let file_res = crate::program::resolve::full::resolve_file_obligations(
@@ -536,10 +536,10 @@ pub(crate) fn recompute_file(
         primary_app_ref,
         graph,
         index,
-        body_map,
+        surface,
         obj_node_map,
     );
-    let surface = def_surface_fingerprint(pf);
+    let def_surface = def_surface_fingerprint(pf);
 
     let mut decls: Vec<DeclEntry> = Vec::new();
     for obj in &pf.file.objects {
@@ -565,7 +565,7 @@ pub(crate) fn recompute_file(
     }
     decls.sort_by_key(|d| d.origin.byte.start);
 
-    (file_res.edges, surface, decls)
+    (file_res.edges, def_surface, decls)
 }
 
 /// DERIVED index (see [`LspSnapshot::decl_by_id`]'s doc): every `DeclEntry`
@@ -591,22 +591,22 @@ pub(crate) fn build_decl_by_id(
 /// pre-sorted at graph-build time) rather than `parsed`'s per-file objects,
 /// since `graph.routines` already carries the exact node identity any edge's
 /// `RouteTarget::Routine(id)` names — skipping the primary (workspace) app
-/// (already covered by `decl_by_id`) and any routine `body_map` can't find a
+/// (already covered by `decl_by_id`) and any routine `surface` can't find a
 /// decl for (a `SymbolOnly` boundary routine with no embedded source — no
 /// position exists to serve, so no entry is produced; see
 /// `resolver::make_routine_route`'s doc for why `Routine(id)` is only ever
-/// constructed when this SAME `body_map` lookup just succeeded).
+/// constructed when this SAME `surface` lookup just succeeded).
 ///
 /// Called from BOTH [`LspSnapshot::from_context`] and
 /// [`crate::lsp::updater::Updater::apply_rung2`] (the two places that ever
-/// rebuild `graph`/`body_map` from scratch) — rung 1 never calls this,
+/// rebuild `graph`/`surface` from scratch) — rung 1 never calls this,
 /// `Arc::clone`-ing the previous snapshot's values forward instead, since a
 /// body-only workspace edit can never touch dependency source (see
 /// `dep_decl_by_id`'s doc).
 #[must_use]
 pub(crate) fn build_dep_indexes(
     graph: &ProgramGraph,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     parsed: &[ParsedUnit],
     primary_app: AppRef,
 ) -> (DepDeclById, DepTexts) {
@@ -615,7 +615,7 @@ pub(crate) fn build_dep_indexes(
         if node.id.object.app == primary_app {
             continue;
         }
-        if let Some((decl, path)) = body_map.get_with_path(&node.id) {
+        if let Some((decl, path)) = surface.get_with_path(&node.id) {
             dep_decl_by_id.insert(
                 node.id.clone(),
                 DeclEntry {

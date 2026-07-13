@@ -157,7 +157,7 @@ struct RoutineEntry {
 /// Compute the definition-surface fingerprint of one parsed file.
 ///
 /// See the module doc for the exact field list and order. Nothing here
-/// consults a `ProgramGraph`/`ResolveIndex`/`BodyMap` — the fingerprint is
+/// consults a `ProgramGraph`/`ResolveIndex`/`DeclSurface` — the fingerprint is
 /// computed from `pf`'s own freshly re-parsed IR only, so comparing an old
 /// vs. new fingerprint never needs a rebuild of anything beyond the one file
 /// being re-parsed.

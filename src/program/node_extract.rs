@@ -198,7 +198,7 @@ pub enum AbiParams {
     /// `arg_dispatch::candidate_param_infos_abi` reads.
     Complete(Vec<AbiParamRetained>),
     /// No parameter metadata is available — either this is a SOURCE routine
-    /// (parameter metadata lives in `BodyMap` instead — see
+    /// (parameter metadata lives in `DeclSurface` instead — see
     /// [`RoutineNode::abi_params`]'s doc; `Missing` here is not a fidelity
     /// gap, it is simply inapplicable), or it is an ABI routine whose
     /// `Parameters` JSON array was absent/unparseable (tri-state arity — see
@@ -336,8 +336,8 @@ pub struct RoutineNode {
     /// ordinary distinct-type overload pair. Any downstream consumer that
     /// looks a routine up by ROLE rather than through arity-filtered
     /// dispatch (e.g. `resolver::emit_event_flow_edges`'s publisher
-    /// fan-out, which cannot tell which sibling's span `BodyMap`'s
-    /// last-write-wins lookup answers for — `body_map.rs`'s `insert` doc)
+    /// fan-out, which cannot tell which sibling's span `DeclSurface`'s
+    /// last-write-wins lookup answers for — `decl_surface.rs`'s `insert` doc)
     /// must fail closed (skip) rather than trust a single answer for a
     /// shared id. Always `false` for a TRUE re-parse duplicate (same
     /// `param_sig_key` collapses to one unmarked survivor) and always
@@ -350,7 +350,7 @@ pub struct RoutineNode {
     /// [`AbiParams`]'s doc for the full structural-guard rationale. Always
     /// [`AbiParams::Missing`] for a SOURCE (non-`TrustTier::SymbolOnly`)
     /// routine: source-tier arg-type dispatch reads parameter metadata from
-    /// `BodyMap`/`RoutineDecl` directly (`arg_dispatch::
+    /// `DeclSurface`/`RoutineMeta` directly (`arg_dispatch::
     /// candidate_param_infos`), never this field. For an ABI
     /// (`TrustTier::SymbolOnly`) routine, populated at ingestion
     /// (`abi_ingest::ingest_abi`) from the parsed `AbiRoutine::parameters` —
@@ -666,7 +666,7 @@ pub fn extract_nodes(
                 abi_overload_collapsed: false,
                 source_overload_aliased: false,
                 // SOURCE routine: parameter metadata for arg-type dispatch
-                // lives in `BodyMap`/`RoutineDecl`, never here — see
+                // lives in `DeclSurface`/`RoutineMeta`, never here — see
                 // `RoutineNode::abi_params`'s doc.
                 abi_params: AbiParams::Missing,
             });
