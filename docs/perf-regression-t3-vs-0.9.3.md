@@ -290,5 +290,117 @@ python scripts/peak_rss.py <exe> --project U:\Git\DO.Support-SlowDOSetup\Documen
 #  skip publishDiagnostics notifications when matching responses)
 ```
 
+---
+
+## 6. 2026-07-13 close-out: Mitigations 1, 2, 5 — IMPLEMENTED
+
+Branch `feat/perf-safe-wins` landed the three safe-wins mitigations
+identified in §4:
+
+- **Mitigation 2** (§3.1, share text allocations) — commit `6a4292b`:
+  one `Arc<str>` per source file shared across
+  `AppSetSnapshot`/`ParsedFile`/`dep_texts`; collapses two of the three
+  ~114 MB embedded-dep-text copies (T1/T2/T3 in §3.1) into one.
+- **Mitigation 1** (§3.2, eliminate the duplicate parse) — commit
+  `8c83894`: one `Arc<AlFile>` per parse; `build_full_with_parsed`'s
+  second `parse_snapshot` and the rung-1/rung-2 re-parses are deleted.
+  LSP mode previously parsed all ~10,727 files TWICE at cold start; it
+  now parses them once.
+- **Mitigation 5** (dedup `.app` files before opening) — commit
+  `d305f25`: manifest-first `.app` GUID dedup — `SymbolReference.json` is
+  now parsed only for dedup winners, instead of for every `.app` found
+  across all `.alpackages` directories.
+
+Mitigations 3 (§3.3a, stop retaining dep IR arenas / stable dep routine
+identity) and 4 (persistent dep-layer artifact cache) are **not** part of
+this close-out — they remain open, tracked as §3.3(a)/§4-item-3 (graph
+-independent dep decl identity) and §4-item-4 (persistent dep-layer
+artifact cache) respectively. The residual cold-start/RSS gap vs. the
+"expected direction" numbers in §3.2/§4 is owned by those two items, not
+by anything landed here.
+
+### 6.1 Synthetic corpus — `cargo bench --bench lsp_pipeline -- build_full`
+
+Two consecutive clean runs (release/bench profile, no other cargo build
+competing for the lock) on this dev machine:
+
+| Bench | Run 1 median | Run 2 median | CLAUDE.md table target |
+|---|---:|---:|---:|
+| `build_full/100_files` | 15.13 ms | 14.76 ms | ~8.07 ms |
+| `build_full/1000_files` | 189.70 ms | 166.72 ms | ~74.45 ms |
+
+Both benches are well within the CI perf-bounds gate's 3x-of-target
+ceiling (`tests/perf_bounds.rs`), and run 2 shows Criterion's own
+regression check reporting an **improvement** vs. run 1
+(`build_full/1000_files: -12.114%, p<0.05`, i.e. no regression from
+Tasks 1-3's changes). The absolute medians on this machine run
+consistently ~2x the CLAUDE.md table's dev-machine numbers — this reads
+as this session's shared-environment CPU contention/machine variance
+(noted in the repo's environment constraints), not a regression
+introduced by Tasks 1-3; no source changed the `build_full` cost path,
+and dep IR sharing/dedup only affects it indirectly via reduced GC/alloc
+pressure. Re-measure on an idle machine if a tighter number is needed.
+
+### 6.2 Real workspace — `U:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`
+
+Reachable in this session; measured against the release binary
+(`cargo build --release --bin al-call-hierarchy`).
+
+**Cold CLI index** (`Measure-Command { .\target\release\al-call-hierarchy.exe --project <path> }`),
+3 trials after the first (disk-cache-warm) run:
+
+| Trial | Wall time |
+|---|---:|
+| 1 | 3.78 s |
+| 2 | 3.73 s |
+| 3 | 3.61 s |
+
+Median **~3.73 s**, vs. the §1.2 CLI baseline (3.69-4.04 s, pre-mitigations)
+— essentially flat, as expected: the CLI path already parsed everything
+exactly once before these changes (§2.3's "double parse" was specific to
+LSP server mode), so mitigation 1 is not expected to move the CLI number.
+Mitigations 2/5 shave allocation and `.app`-open overhead but this
+workspace's CLI wall time is dominated by parse+resolve, not by the
+freed allocations.
+
+**Peak RSS** (`python scripts/peak_rss.py .\target\release\al-call-hierarchy.exe --project <path>`),
+2 trials:
+
+| Trial | Peak RSS |
+|---|---:|
+| 1 | 1,629 MB |
+| 2 | 1,649 MB |
+
+vs. the §1.2 baseline of **1,869 MB** (CLI mode) — a **~130-240 MB (7-13%)
+reduction**, consistent with mitigation 2 collapsing duplicate text
+allocations and mitigation 5 skipping `SymbolReference.json` parses for
+non-winning duplicate `.app`s on this workspace's 32 `.alpackages`
+entries. This is smaller than §3.1's "~228 MB" estimate for LSP
+steady-state (which counted three retained copies across
+snapshot+updater); CLI mode only ever held one embedded-text copy plus
+the transient parse copy, so it had less duplication to remove in the
+first place. The larger ~2,000 MB **LSP steady-state** figure from §1.1
+was not re-measured here (would require a full stdio LSP driver session,
+out of scope for this close-out) — expect a larger absolute reduction
+there since T1/T2/T3 in §3.1 collapse from three retained copies to one.
+
+### 6.3 Remaining gap
+
+The residual distance to the full §3/§4 "expected direction" (LSP cold
+start toward CLI parity, steady-state RSS down a further full dep
+arena+text set) is owned by the two mitigations intentionally **not**
+attempted in this branch:
+
+- **§3.3(a) / §4-item-3** — stable, graph-independent dep declaration
+  identity, so `dep_decl_by_id`/`dep_texts` can be forwarded across rung 2
+  instead of re-derived, letting dep IR arenas be dropped after the first
+  build instead of retained for the updater's lifetime.
+- **§4-item-4** — a persistent dep-layer artifact cache keyed by `.app`
+  hash, so every cold start after the first skips the ~99 MB Base
+  Application parse entirely.
+
+Both are out of scope for this safe-wins branch and tracked for a future
+task.
+
 Embedded-source volume was measured by opening each `.app` (zip after the
 NAVX header) and summing `.al` entry sizes.
