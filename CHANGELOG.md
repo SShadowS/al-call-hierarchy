@@ -245,6 +245,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are now exact ratchets (`Some(n)`, no `None` left) at these values — a
   future change moving any of them must be explained, never
   blind-updated.
+  **Review fix-wave (Opus adversarial audit, 6 required fixes + 3 LOW +
+  a DOC gap)**: the audit judged the license SOUND but conditional.
+  **HIGH-1, arc-critical**: `run_sweep` queried legacy with the
+  LOWERCASED cross-engine matching key (`relativize`), but legacy's own
+  `path_cache` (`graph.rs`'s `get_shared_path`) indexes
+  `Definition.file` under its REAL case on any platform where
+  `protocol::normalize_path` isn't itself lowercasing (Linux, CI's
+  `ubuntu-latest`) — every fixture file here is capitalized, so a
+  lowercased query path missed the exact-match `path_cache` lookup
+  entirely, `get_definitions_in_file` silently returned `&[]` for EVERY
+  identity, and the whole differential run panicked on CI, meaning the
+  "always-on CI arm" backing this deletion license never actually ran
+  there. Invisible on Windows: `normalize_path` already lowercases the
+  whole path at legacy's OWN index time there, erasing the case
+  difference before either code path could observe it — which is
+  exactly why this slipped past every fixture run in this dev
+  environment across the whole task. Fix: added `relativize_case_preserving`
+  (a `relativize_raw` shared core, minus the final lowercase step) and
+  a new `RoutineIdentity.file_rel_case` field carrying the real
+  case-preserving path (identity KEYING still uses lowercased
+  `file_rel` only); `run_sweep`'s per-identity query loop and the CDO
+  H-10 test (which had the identical bug independently) now build their
+  legacy-query path from it. **HIGH-2**: `R2Precision` was an
+  unconditional blanket over EVERY new-only diagnostics finding — now
+  gated on positive evidence (`routine_has_event_subscriber_attribute`,
+  reading the owned IR's `RoutineDecl.attributes` directly) that the
+  flagged routine actually carries a real `[EventSubscriber(...)]`
+  attribute. **MED-1**: `EventDirectionMoved`'s sibling cross-reference
+  matched by BARE NAME workspace-wide (endemic same-named BC handlers
+  could launder a genuinely lost subscription) — now also requires the
+  sibling's own object to match the object legacy's own detail string
+  names. **MED-2**: `classify_outgoing_pair`'s `LegacyIdentityCollapse`
+  never constrained NEW's own resolved target object, so an unrelated
+  new answer could be laundered by an unrelated same-named collision
+  elsewhere in the workspace — now requires new's target object to
+  equal legacy's own claimed object. **MED-3**: outgoing
+  `OutgoingCardinality` fired on a raw item-COUNT mismatch with no
+  content check, pairing same-count items by blind positional zip
+  regardless of target identity — rewritten to group by target name and
+  compare per-target sets (an honest coverage gap noted: no existing
+  fixture exercises this rewritten branch directly — `Zeta.CallTwice`'s
+  pinned finding turned out to come from the already-correctly-scoped
+  INCOMING-axis counterpart instead). **MED-4**: the CDO H-10 test's
+  "new keeps them" assertion was near-vacuous (`x == max(y, x)`, always
+  true unless new got STRICTLY worse) and compared different UNITS (raw
+  `EdgeRef` count vs. grouped LSP item count) — replaced with a
+  same-unit equality assertion against a captured pre-edit raw count;
+  target selection now also requires a genuinely CROSS-FILE caller,
+  matching the test's own name. **3 LOW fixes**: `is_new_event_derived_outgoing`
+  no longer treats an item with EMPTY `from_ranges` as vacuously
+  event-derived (`Iterator::all` on an empty iterator is `true`);
+  `classify_incoming`'s per-site maps are now `Vec`-valued multimaps
+  instead of silently dropping same-site duplicates via `.insert()`;
+  `lens_key` uses `args.first()` instead of an unguarded `args[0]`
+  (panicked on `Some(vec![])`). **DOC**: added the license's actual
+  load-bearing argument (module doc + task report) — legacy's OUTGOING
+  handler never attempts resolution for an unqualified call, but its
+  INCOMING index (`add_call_site`/`resolve_call`, index time) resolves
+  it EAGERLY and independently, so a genuine new-side resolution bug
+  among the 36,971 `UnqualifiedCallResolved` calls cannot hide behind
+  that class's size — it surfaces as a real `Regression` on the
+  INCOMING axis instead. Verified via a structural invariant test
+  (`relativize_is_lowercased_relativize_case_preserving`) plus temporary
+  TDD-calibration probes for HIGH-1/HIGH-2/MED-1/MED-2 (each forced
+  wrong, confirmed to fail loudly for the right reason, reverted); all
+  9 differential tests (8 pre-existing + the new invariant test) stayed
+  green with byte-identical pins throughout, confirming zero regression
+  against any currently-covered legitimate case. CDO pins deliberately
+  left unchanged pending the controller's next re-run.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate

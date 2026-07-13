@@ -91,6 +91,55 @@
 //! triggered by AL's parens-optional same-object calls and bareword
 //! builtins rather than by a dependency boundary).
 //!
+//! ## Why `UnqualifiedCallResolved`'s 36,971 CDO findings are safe to
+//! blanket-classify (the license's actual load-bearing argument)
+//!
+//! `UnqualifiedCallResolved` is, by a wide margin, the single largest class
+//! this harness produces (36,971 of 55,216 total CDO findings — see the
+//! task report's capstone table). A blanket class this large is only a
+//! safe thing to grant WITHOUT per-finding adjudication if a genuinely
+//! WRONG new-side resolution for one of these calls is STRUCTURALLY
+//! GUARANTEED to surface elsewhere as a `Regression`, not silently
+//! disappear into this class too. It is, and the reviewer's own audit
+//! found this report never actually stated why — so, verified directly
+//! against the source (not asserted):
+//!
+//! Legacy's OUTGOING and INCOMING axes are **not the same code path**, and
+//! they disagree in laziness for exactly the unqualified-call shape this
+//! class covers:
+//! - **OUTGOING** (`handlers.rs`'s `outgoing_calls`): for an unqualified
+//!   call (`call.callee_object.is_none()`), the `else` arm at the bottom of
+//!   its match unconditionally renders `detail: Some("(local)"), data:
+//!   None` — it NEVER calls `graph.get_definition()` for this shape at all,
+//!   regardless of whether a real local definition actually exists. This is
+//!   the `is_legacy_placeholder`/`UnqualifiedCallResolved` shape this
+//!   harness already classifies.
+//! - **INCOMING** (`graph.rs`'s `add_call_site`, called at INDEX time, not
+//!   query time): every call site's callee is resolved EAGERLY via
+//!   `resolve_call` — and `resolve_call`'s own unqualified branch (lines
+//!   ~648-684) ALWAYS returns `Some(QualifiedName{object: caller_qname.object,
+//!   procedure: call.callee_method})`, syntactically, whether or not a real
+//!   `Definition` exists for that pair. `add_call_site` then unconditionally
+//!   files this call site's index into `self.incoming_calls.entry(callee_qname)`
+//!   (line ~584-589) — so if a real `Definition` DOES exist matching that
+//!   qname, `get_incoming_calls`/the `incoming_calls` handler correctly,
+//!   independently, returns this call site as a genuine incoming caller for
+//!   that routine, REGARDLESS of what the (lazy, always-placeholder)
+//!   OUTGOING handler renders for the SAME call site.
+//!
+//! **The consequence:** if new's resolver ever got one of these 36,971
+//! calls WRONG — dropped it, or misdirected it to the wrong target — that
+//! wrongness is NOT explainable by `UnqualifiedCallResolved` at all; it
+//! surfaces as a genuine `Regression` on the INCOMING axis of whichever
+//! routine legacy's index-time `resolve_call` already, eagerly, correctly
+//! attributed it to (a completely independent data path from the lazy
+//! OUTGOING placeholder). This harness's `assert_gates_clean` — REGRESSION
+//! must be 0 — is therefore not merely trusting the blanket
+//! `UnqualifiedCallResolved` grant; it is actively CROSS-CHECKED, on every
+//! single one of those 36,971 calls, by legacy's own independently-computed
+//! incoming index. A silent resolution bug cannot hide behind this class's
+//! size.
+//!
 //! # CDO
 //!
 //! Env-gated (`CDO_WS`/`ENFORCE_CDO_WS`, `tests/common/cdo.rs`). On CDO,
@@ -620,7 +669,19 @@ impl LegacySide {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct RoutineIdentity {
+    /// LOWERCASED — the cross-engine MATCHING key only (`.key()` uses this).
+    /// Never join this onto `root` to build a path for querying legacy (see
+    /// `relativize_case_preserving`'s doc, review fix-wave HIGH-1) — use
+    /// `file_rel_case` for that.
     file_rel: String,
+    /// CASE-PRESERVING form of the same path, carried alongside `file_rel`
+    /// purely so `run_sweep`'s per-identity query loop can build a path that
+    /// round-trips through legacy's OWN case-sensitive `path_cache`
+    /// correctly on every platform, not just Windows (see
+    /// `relativize_case_preserving`'s doc). Never part of the identity
+    /// KEY — two identities differing only in this field's case are the
+    /// same identity (`.key()` deliberately excludes it).
+    file_rel_case: String,
     object_lc: String,
     routine_lc: String,
 }
@@ -629,6 +690,20 @@ impl RoutineIdentity {
     fn key(&self) -> String {
         format!("{}::{}.{}", self.file_rel, self.object_lc, self.routine_lc)
     }
+}
+
+/// The `strip_prefix`+slash-normalize core of `relativize`/
+/// `relativize_case_preserving`, WITHOUT the final lowercase step — factored
+/// out so the two callers can never drift apart on anything except that one
+/// step (see the invariant test `relativize_is_lowercased_relativize_case_preserving`).
+fn relativize_raw(root: &Path, file: &Path) -> String {
+    let norm_root = al_call_hierarchy::protocol::normalize_path(root);
+    let norm_file = al_call_hierarchy::protocol::normalize_path(file);
+    norm_file
+        .strip_prefix(&norm_root)
+        .unwrap_or(&norm_file)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// Relative, LOWERCASED virtual path, used as the identity-key component
@@ -644,15 +719,90 @@ impl RoutineIdentity {
 /// (and Windows paths) are case-insensitive throughout, so lowercasing the
 /// final relative string too (not just normalizing `root`/`file` first)
 /// gives both sides one, non-platform-dependent identity key.
+///
+/// **This is the cross-engine MATCHING key only — never use it to build a
+/// path for QUERYING legacy back.** See `relativize_case_preserving`'s doc
+/// (review fix-wave HIGH-1) for why: on a case-sensitive filesystem (Linux,
+/// CI's `ubuntu-latest`), lowercasing throws away information legacy's own
+/// `CallGraph::path_cache` never lowercased at index time, so a lowercased
+/// query path silently misses every entry.
 fn relativize(root: &Path, file: &Path) -> String {
-    let norm_root = al_call_hierarchy::protocol::normalize_path(root);
-    let norm_file = al_call_hierarchy::protocol::normalize_path(file);
-    norm_file
-        .strip_prefix(&norm_root)
-        .unwrap_or(&norm_file)
-        .to_string_lossy()
-        .replace('\\', "/")
-        .to_lowercase()
+    relativize_raw(root, file).to_lowercase()
+}
+
+/// Relative, CASE-PRESERVING virtual path — the form to use when re-querying
+/// legacy's OWN handlers for an identity discovered via `relativize`'s
+/// lowercased key (review fix-wave HIGH-1, arc-critical: the always-on CI
+/// arm did not actually run on CI before this fix).
+///
+/// **The bug this closes:** `graph.rs`'s `get_shared_path`/`path_cache`
+/// (backing `get_definitions_in_file` and everything else legacy queries by
+/// path) store `Definition.file` as `protocol::normalize_path(file)` — the
+/// NORMALIZED path itself, not the raw one — and every lookup does an EXACT
+/// `HashMap::get(&normalize_path(query_path))`, never a case-insensitive
+/// fallback (unlike new's `resolve_virtual_path`, `src/lsp/handlers.rs`,
+/// which explicitly falls back to a case-insensitive scan for exactly this
+/// reason). `normalize_path` itself is a no-op on Linux/macOS (only Windows
+/// lowercases the whole path), so on a case-sensitive filesystem,
+/// `Definition.file` is indexed under the file's REAL case (e.g.
+/// `Alpha.al`, since every fixture file in this harness is capitalized).
+/// Querying legacy with `relativize`'s LOWERCASED path (`alpha.al`) then
+/// normalizes to the SAME lowercased string on Linux (normalize_path is
+/// identity there) — an exact-match miss against a path_cache keyed by
+/// `Alpha.al` — so `get_definitions_in_file` silently returns `&[]` for
+/// EVERY identity, every legacy `prepare`/`incoming`/`outgoing` call in
+/// `run_sweep`'s per-identity loop comes back empty, and every routine in
+/// the whole differential run becomes a `NewUnexplained` finding, panicking
+/// the gate on CI (`cargo test --workspace` on `ubuntu-latest`). On Windows
+/// this bug is invisible: `normalize_path` ALREADY lowercases the whole
+/// path at INDEX time (`get_shared_path`), so `Definition.file` itself has
+/// no case information left to lose — `relativize`/`relativize_case_preserving`
+/// coincide on Windows, by construction, which is exactly why this slipped
+/// past every fixture run in this dev environment.
+///
+/// New's own `prepare`/`incoming`/`outgoing` handlers are UNAFFECTED by
+/// which form is used to build the query URI either way — `resolve_virtual_path`
+/// tries an exact match first, then a case-insensitive fallback scan over
+/// `snap.parsed`'s keys — so this fix is purely additive there (the exact
+/// match just becomes reachable instead of always falling through to the
+/// scan).
+fn relativize_case_preserving(root: &Path, file: &Path) -> String {
+    relativize_raw(root, file)
+}
+
+/// Platform-independent structural invariant (review fix-wave HIGH-1): for
+/// ANY `(root, file)` pair, `relativize`'s output must be EXACTLY
+/// `relativize_case_preserving`'s output lowercased — never anything else.
+/// This is what guarantees `file_rel`/`file_rel_case` can only ever differ
+/// in CASE, never in content, so every place that matches on `file_rel`
+/// (the identity key) stays correct regardless of which of the two fields
+/// `run_sweep`'s query loop happens to build a path from.
+///
+/// This test CANNOT observe the actual Linux-only bug this fix closes
+/// (`protocol::normalize_path` already destroys case at the `normalize_path`
+/// step on Windows, before either function gets a chance to differ — see
+/// `relativize_case_preserving`'s own doc) — that half of the fix rests on
+/// the code-reading argument in this doc plus `relativize_case_preserving`'s,
+/// not on a locally-observable red/green cycle. What IS fully verifiable on
+/// any platform, including this dev box, is the MECHANICAL relationship
+/// between the two functions, which this test pins down.
+#[test]
+fn relativize_is_lowercased_relativize_case_preserving() {
+    let cases: &[(&str, &str)] = &[
+        ("/workspace", "/workspace/Alpha.al"),
+        ("/workspace", "/workspace/sub/Gamma.al"),
+        ("/workspace", "/Outside/Other.al"),
+        ("C:/Workspace", "C:/Workspace/Beta.al"),
+    ];
+    for (root, file) in cases {
+        let root = Path::new(root);
+        let file = Path::new(file);
+        assert_eq!(
+            relativize_case_preserving(root, file).to_lowercase(),
+            relativize(root, file),
+            "relativize/relativize_case_preserving diverged on more than case for root={root:?} file={file:?}"
+        );
+    }
 }
 
 /// Local re-implementation of `lsp::handlers::object_name_for` (that one is
@@ -818,8 +968,10 @@ fn run_sweep(
             let object_lc = graph.resolve(def.object_name).unwrap_or("").to_lowercase();
             let routine_lc = graph.resolve(def.name).unwrap_or("").to_lowercase();
             let file_rel = relativize(root, &def.file);
+            let file_rel_case = relativize_case_preserving(root, &def.file);
             let identity = RoutineIdentity {
                 file_rel,
+                file_rel_case,
                 object_lc,
                 routine_lc,
             };
@@ -874,17 +1026,24 @@ fn run_sweep(
 
         for ((object_lc, routine_lc), group) in groups {
             let file_rel = virtual_path.to_lowercase();
+            // `virtual_path` itself IS the case-preserving form
+            // (`snapshot::provider::walk_al_source`'s own doc, cited above) —
+            // no separate derivation needed, unlike the legacy-identities
+            // loop above.
+            let file_rel_case = virtual_path.clone();
             let last_idx = group.len() - 1;
             for (i, _decl) in group.iter().enumerate() {
                 let identity = if i == last_idx {
                     RoutineIdentity {
                         file_rel: file_rel.clone(),
+                        file_rel_case: file_rel_case.clone(),
                         object_lc: object_lc.clone(),
                         routine_lc: routine_lc.clone(),
                     }
                 } else {
                     RoutineIdentity {
                         file_rel: file_rel.clone(),
+                        file_rel_case: file_rel_case.clone(),
                         object_lc: object_lc.clone(),
                         routine_lc: format!("{routine_lc}#dup{i}"),
                     }
@@ -908,7 +1067,13 @@ fn run_sweep(
 
     // ---- drive prepare/incoming/outgoing per identity ----
     for entry in entries.values_mut() {
-        let abs_path = root.join(&entry.identity.file_rel);
+        // CASE-PRESERVING path (review fix-wave HIGH-1) — legacy's own
+        // `path_cache` is keyed on the real, case-sensitive path on any
+        // platform where `normalize_path` isn't itself lowercasing (Linux/
+        // CI); `file_rel` (the lowercased cross-engine matching key) would
+        // silently miss every lookup there. See `relativize_case_preserving`'s
+        // doc for the full mechanism.
+        let abs_path = root.join(&entry.identity.file_rel_case);
         let uri = path_to_uri(&abs_path);
 
         // Legacy: find this identity's own position via a fresh
@@ -1212,6 +1377,22 @@ fn legacy_local_object(item: &CallHierarchyOutgoingCall) -> Option<String> {
         .map(|s| s.to_lowercase())
 }
 
+/// NEW's own resolved target object (lowercased), via `item.to.data`
+/// deserialized as `ItemData` and looked up in `new_snap.graph` — the
+/// `LegacyIdentityCollapse` predicate's MED-2 review fix: without this, a
+/// same-named target legacy claims is collided would launder ANY new
+/// answer, even one that resolves to a completely UNRELATED object never
+/// part of that collision group at all (`Foo.Bar()` "explained" by a
+/// collision when new actually, correctly, resolved to some unrelated
+/// `Baz.Bar`).
+fn new_target_object_lc(
+    new_snap: &LspSnapshot,
+    item: &CallHierarchyOutgoingCall,
+) -> Option<String> {
+    let data: ItemData = serde_json::from_value(item.to.data.clone()?).ok()?;
+    object_name(&new_snap.graph, &data.node.object).map(|s| s.to_lowercase())
+}
+
 fn new_abi_symbol_app(item: &CallHierarchyOutgoingCall) -> Option<String> {
     item.to
         .data
@@ -1250,8 +1431,17 @@ fn is_new_event_derived_outgoing(
     item: &CallHierarchyOutgoingCall,
     self_prepare_range: Option<NormRange>,
 ) -> bool {
-    self_prepare_range
-        .is_some_and(|self_range| item.from_ranges.iter().all(|r| nr(r) == self_range))
+    // REVIEW FIX (LOW): `Iterator::all` on an EMPTY `from_ranges` is
+    // vacuously `true`, which used to make an item with no from_ranges at
+    // all silently count as "event-derived" regardless of `self_range` —
+    // dropping it from `new_ordinary` (and thus from the whole outgoing
+    // diff) with no finding at all. An item genuinely event-derived always
+    // HAS a from_range (re-derived from the publisher's own name_origin,
+    // per this function's own doc) — require at least one before trusting
+    // the `all` check.
+    self_prepare_range.is_some_and(|self_range| {
+        !item.from_ranges.is_empty() && item.from_ranges.iter().all(|r| nr(r) == self_range)
+    })
 }
 
 fn classify_outgoing(ledger: &mut Ledger, sweep: &Sweep, new_snap: &LspSnapshot) {
@@ -1311,20 +1501,81 @@ fn classify_outgoing(ledger: &mut Ledger, sweep: &Sweep, new_snap: &LspSnapshot)
                     }
                 }
                 _ => {
-                    if l_items.len() != n_items.len() {
-                        ledger.push(
-                            "outgoing",
-                            &routine,
-                            Class::NewBetter(NewBetterClass::OutgoingCardinality),
-                            format!(
-                                "site {site:?}: legacy {} item(s) vs new {} item(s)",
-                                l_items.len(),
-                                n_items.len()
-                            ),
-                        );
-                    } else {
-                        for (l, n) in l_items.iter().zip(n_items.iter()) {
-                            classify_outgoing_pair(ledger, sweep, new_snap, &routine, l, n);
+                    // REVIEW FIX (MED-3): the ORIGINAL check fired
+                    // `OutgoingCardinality` on a raw COUNT mismatch across
+                    // the WHOLE site with no content check, and (when
+                    // counts happened to match) paired items up by
+                    // POSITIONAL zip regardless of target identity —
+                    // silently laundering a real divergence (legacy targets
+                    // {Foo, Bar}, new targets {Foo, Baz} — same COUNT,
+                    // totally different Bar-vs-Baz reality) as a harmless
+                    // grouping artifact. Group each side's items by TARGET
+                    // NAME (case-insensitive — the same identity
+                    // `classify_outgoing_pair` itself keys on) and compare
+                    // per-target SETS, not raw lengths: a name present on
+                    // BOTH sides with EQUAL counts pairs up normally (still
+                    // deep-adjudicated via `classify_outgoing_pair`); equal
+                    // name but UNEQUAL counts is a genuine
+                    // `OutgoingCardinality` — a grouping-count difference
+                    // for that SPECIFIC target, not the whole site; a name
+                    // present on only ONE side is never grouping noise —
+                    // it's routed through the same legacy-only/new-only
+                    // handling the empty-side match arms above use.
+                    let mut l_by_name: BTreeMap<String, Vec<&CallHierarchyOutgoingCall>> =
+                        BTreeMap::new();
+                    for item in &l_items {
+                        l_by_name
+                            .entry(item.to.name.to_lowercase())
+                            .or_default()
+                            .push(*item);
+                    }
+                    let mut n_by_name: BTreeMap<String, Vec<&CallHierarchyOutgoingCall>> =
+                        BTreeMap::new();
+                    for item in &n_items {
+                        n_by_name
+                            .entry(item.to.name.to_lowercase())
+                            .or_default()
+                            .push(*item);
+                    }
+                    let mut all_names: BTreeSet<String> = l_by_name.keys().cloned().collect();
+                    all_names.extend(n_by_name.keys().cloned());
+                    for name in all_names {
+                        let l_group = l_by_name.get(&name).cloned().unwrap_or_default();
+                        let n_group = n_by_name.get(&name).cloned().unwrap_or_default();
+                        match (l_group.len(), n_group.len()) {
+                            (0, _) => {
+                                for n in &n_group {
+                                    ledger.push(
+                                        "outgoing",
+                                        &routine,
+                                        Class::NewUnexplained,
+                                        format!(
+                                            "new-only outgoing item at site {site:?}: target={:?}",
+                                            n.to.name
+                                        ),
+                                    );
+                                }
+                            }
+                            (_, 0) => {
+                                for l in &l_group {
+                                    classify_outgoing_legacy_only(ledger, &routine, l);
+                                }
+                            }
+                            (lc, nc) if lc == nc => {
+                                for (l, n) in l_group.iter().zip(n_group.iter()) {
+                                    classify_outgoing_pair(ledger, sweep, new_snap, &routine, l, n);
+                                }
+                            }
+                            (lc, nc) => {
+                                ledger.push(
+                                    "outgoing",
+                                    &routine,
+                                    Class::NewBetter(NewBetterClass::OutgoingCardinality),
+                                    format!(
+                                        "site {site:?}, target={name:?}: legacy {lc} item(s) vs new {nc} item(s)"
+                                    ),
+                                );
+                            }
                         }
                     }
                 }
@@ -1350,9 +1601,21 @@ fn classify_outgoing_pair(
     // identity (`data.object`, arm 1's "local definition found") names a
     // GLOBALLY collided `(object, routine)` pair, is this class, not an
     // unexplained divergence.
+    //
+    // REVIEW FIX (MED-2): the ORIGINAL check stopped at "is (object, name)
+    // EVER collided somewhere" — it never verified new's OWN resolved
+    // target actually belongs to that collision at all, so a genuinely
+    // UNRELATED new answer (some other object entirely) would be laundered
+    // as "explained" merely because the NAME happened to collide elsewhere
+    // in the workspace. Require new's resolved target's own object to
+    // equal `l_object_lc` (legacy's claimed object) too — the two same-name
+    // colliding declarations are, by definition, both named `l_object_lc`
+    // (that's what makes them collide), so a genuine explanation always
+    // satisfies this; an unrelated new answer never does.
     if l.to.name.eq_ignore_ascii_case(&n.to.name)
         && let Some(l_object_lc) = legacy_local_object(l)
         && sweep.is_legacy_identity_collision(&l_object_lc, &n.to.name.to_lowercase())
+        && new_target_object_lc(new_snap, n).as_deref() == Some(l_object_lc.as_str())
     {
         ledger.push(
             "outgoing",
@@ -1525,16 +1788,28 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
             })
             .collect();
 
-        let mut legacy_by_site: BTreeMap<NormRange, String> = BTreeMap::new();
+        // REVIEW FIX (LOW): a plain `BTreeMap<NormRange, String>` with
+        // `.insert()` silently drops every item after the first when TWO
+        // items share a site (a multimap situation, however rare) — use a
+        // `Vec<String>` per site instead, and pair up positionally below
+        // (padding the shorter side with `None`, matching the SAME
+        // one-item-per-side match arms this used to run directly).
+        let mut legacy_by_site: BTreeMap<NormRange, Vec<String>> = BTreeMap::new();
         for item in &legacy_ordinary {
             for r in &item.from_ranges {
-                legacy_by_site.insert(nr(r), item.from.name.to_lowercase());
+                legacy_by_site
+                    .entry(nr(r))
+                    .or_default()
+                    .push(item.from.name.to_lowercase());
             }
         }
-        let mut new_by_site: BTreeMap<NormRange, String> = BTreeMap::new();
+        let mut new_by_site: BTreeMap<NormRange, Vec<String>> = BTreeMap::new();
         for item in &new_ordinary {
             for r in &item.from_ranges {
-                new_by_site.insert(nr(r), item.from.name.to_lowercase());
+                new_by_site
+                    .entry(nr(r))
+                    .or_default()
+                    .push(item.from.name.to_lowercase());
             }
         }
 
@@ -1542,17 +1817,21 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
         all_sites.extend(new_by_site.keys().copied());
 
         for site in all_sites {
-            match (legacy_by_site.get(&site), new_by_site.get(&site)) {
-                (Some(l_name), Some(n_name)) => {
-                    if l_name.eq_ignore_ascii_case(n_name) {
-                        ledger.push(
-                            "incoming",
-                            &routine,
-                            Class::Match,
-                            format!("caller={l_name}"),
-                        );
-                    } else {
-                        ledger.push(
+            let l_names = legacy_by_site.get(&site).cloned().unwrap_or_default();
+            let n_names = new_by_site.get(&site).cloned().unwrap_or_default();
+            let max_len = l_names.len().max(n_names.len());
+            for i in 0..max_len {
+                match (l_names.get(i), n_names.get(i)) {
+                    (Some(l_name), Some(n_name)) => {
+                        if l_name.eq_ignore_ascii_case(n_name) {
+                            ledger.push(
+                                "incoming",
+                                &routine,
+                                Class::Match,
+                                format!("caller={l_name}"),
+                            );
+                        } else {
+                            ledger.push(
                             "incoming",
                             &routine,
                             Class::Regression,
@@ -1560,32 +1839,32 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                                 "same site {site:?}: legacy caller={l_name} vs new caller={n_name}"
                             ),
                         );
+                        }
                     }
-                }
-                (Some(l_name), None) => {
-                    // LegacyIdentityCollapse: legacy merges every colliding
-                    // declaration's callers into ONE incoming bucket (no
-                    // object-kind/enclosing-member/arg-type discriminator
-                    // at all — see the class's doc). If THIS exact site
-                    // resolves, on the new side, into a GLOBAL collision
-                    // SIBLING's own incoming set instead (same `(object_lc,
-                    // routine_lc)` pair, any file), that's the explanation
-                    // — the caller genuinely targets a different, distinct
-                    // declaration new correctly attributes it to.
-                    let base_name = strip_dup_suffix(&entry.identity.routine_lc);
-                    let found_in_sibling = legacy_answer_matches_a_sibling(
-                        sweep,
-                        &entry.identity.object_lc,
-                        base_name,
-                        &entry.identity.key(),
-                        |sib| {
-                            sib.new_incoming
-                                .iter()
-                                .any(|i| i.from_ranges.iter().any(|r| nr(r) == site))
-                        },
-                    );
-                    if found_in_sibling {
-                        ledger.push(
+                    (Some(l_name), None) => {
+                        // LegacyIdentityCollapse: legacy merges every colliding
+                        // declaration's callers into ONE incoming bucket (no
+                        // object-kind/enclosing-member/arg-type discriminator
+                        // at all — see the class's doc). If THIS exact site
+                        // resolves, on the new side, into a GLOBAL collision
+                        // SIBLING's own incoming set instead (same `(object_lc,
+                        // routine_lc)` pair, any file), that's the explanation
+                        // — the caller genuinely targets a different, distinct
+                        // declaration new correctly attributes it to.
+                        let base_name = strip_dup_suffix(&entry.identity.routine_lc);
+                        let found_in_sibling = legacy_answer_matches_a_sibling(
+                            sweep,
+                            &entry.identity.object_lc,
+                            base_name,
+                            &entry.identity.key(),
+                            |sib| {
+                                sib.new_incoming
+                                    .iter()
+                                    .any(|i| i.from_ranges.iter().any(|r| nr(r) == site))
+                            },
+                        );
+                        if found_in_sibling {
+                            ledger.push(
                             "incoming",
                             &routine,
                             Class::NewBetter(NewBetterClass::LegacyIdentityCollapse),
@@ -1594,26 +1873,26 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                                 entry.identity.object_lc
                             ),
                         );
-                    } else {
-                        ledger.push(
-                            "incoming",
-                            &routine,
-                            Class::Regression,
-                            format!("legacy caller={l_name} at site {site:?}, new has nothing"),
-                        );
+                        } else {
+                            ledger.push(
+                                "incoming",
+                                &routine,
+                                Class::Regression,
+                                format!("legacy caller={l_name} at site {site:?}, new has nothing"),
+                            );
+                        }
                     }
-                }
-                (None, Some(n_name)) => {
-                    // ImplicitTriggerEdge: a record operation with a
-                    // statically-true run-trigger argument (checked here
-                    // via the pre-recorded, `LspSnapshot`-native set — see
-                    // `run_sweep` — since the LSP response itself carries no
-                    // edge-kind marker for this). Legacy structurally never
-                    // models implicit-trigger dispatch at all, so this is
-                    // unconditional — no legacy cross-reference needed or
-                    // possible.
-                    if entry.new_incoming_implicit_trigger_sites.contains(&site) {
-                        ledger.push(
+                    (None, Some(n_name)) => {
+                        // ImplicitTriggerEdge: a record operation with a
+                        // statically-true run-trigger argument (checked here
+                        // via the pre-recorded, `LspSnapshot`-native set — see
+                        // `run_sweep` — since the LSP response itself carries no
+                        // edge-kind marker for this). Legacy structurally never
+                        // models implicit-trigger dispatch at all, so this is
+                        // unconditional — no legacy cross-reference needed or
+                        // possible.
+                        if entry.new_incoming_implicit_trigger_sites.contains(&site) {
+                            ledger.push(
                             "incoming",
                             &routine,
                             Class::NewBetter(NewBetterClass::ImplicitTriggerEdge),
@@ -1621,17 +1900,17 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                                 "new caller={n_name} at site {site:?}: a record operation's run-trigger fires this routine — legacy never models implicit-trigger dispatch"
                             ),
                         );
-                        continue;
-                    }
-                    // ImplicitRecResolved: a Page/PageExtension/Report/
-                    // ReportExtension trigger's bare-or-Rec-qualified call
-                    // resolved cross-object via the implicit SourceTable
-                    // binding (checked via the pre-recorded set — see
-                    // `run_sweep`). Legacy's bare/qualified-call resolution
-                    // is structurally same-object-only, so this is
-                    // unconditional too — no legacy cross-reference possible.
-                    if entry.new_incoming_implicit_rec_sites.contains(&site) {
-                        ledger.push(
+                            continue;
+                        }
+                        // ImplicitRecResolved: a Page/PageExtension/Report/
+                        // ReportExtension trigger's bare-or-Rec-qualified call
+                        // resolved cross-object via the implicit SourceTable
+                        // binding (checked via the pre-recorded set — see
+                        // `run_sweep`). Legacy's bare/qualified-call resolution
+                        // is structurally same-object-only, so this is
+                        // unconditional too — no legacy cross-reference possible.
+                        if entry.new_incoming_implicit_rec_sites.contains(&site) {
+                            ledger.push(
                             "incoming",
                             &routine,
                             Class::NewBetter(NewBetterClass::ImplicitRecResolved),
@@ -1639,19 +1918,19 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                                 "new caller={n_name} at site {site:?}: resolved cross-object via the caller's implicit SourceTable (Rec) binding — legacy's bare/qualified-call resolution is same-object-only"
                             ),
                         );
-                        continue;
-                    }
-                    // VariableReceiverResolved: a receiver-qualified call
-                    // (same-object or cross-object — layer 4 generalized
-                    // this off the caller/callee object-identity axis)
-                    // whose receiver is a `var` parameter, `Rec`/`xRec`, or
-                    // another local/temp shape legacy's `variable_bindings`
-                    // misses — checked via the pre-recorded set (see
-                    // `run_sweep`). Legacy's `lookup_variable_type` never
-                    // binds parameter receivers at all, so this is
-                    // unconditional too.
-                    if entry.new_incoming_variable_receiver_sites.contains(&site) {
-                        ledger.push(
+                            continue;
+                        }
+                        // VariableReceiverResolved: a receiver-qualified call
+                        // (same-object or cross-object — layer 4 generalized
+                        // this off the caller/callee object-identity axis)
+                        // whose receiver is a `var` parameter, `Rec`/`xRec`, or
+                        // another local/temp shape legacy's `variable_bindings`
+                        // misses — checked via the pre-recorded set (see
+                        // `run_sweep`). Legacy's `lookup_variable_type` never
+                        // binds parameter receivers at all, so this is
+                        // unconditional too.
+                        if entry.new_incoming_variable_receiver_sites.contains(&site) {
+                            ledger.push(
                             "incoming",
                             &routine,
                             Class::NewBetter(NewBetterClass::VariableReceiverResolved),
@@ -1659,48 +1938,49 @@ fn classify_incoming(ledger: &mut Ledger, sweep: &Sweep) {
                                 "new caller={n_name} at site {site:?}: resolved via a receiver legacy's variable tracking never bound (e.g. a `var` parameter or an implicit Rec/xRec self-reference)"
                             ),
                         );
-                        continue;
-                    }
-                    // CaseFoldHit: does legacy's OWN raw outgoing() for this
-                    // exact caller (by name, case-insensitively — the only
-                    // handle we have on "legacy's view of this caller")
-                    // show a placeholder targeting this routine's REAL
-                    // (case-preserved) declared name, with the CALL SITE's
-                    // OWN raw text differing only in case? Cross-references
-                    // the SAME caller identity's already-collected
-                    // legacy_outgoing. `entry.identity.routine_lc` is
-                    // already lowercased (useless for a case-DIFFERENCE
-                    // check), so the real declared name comes from this
-                    // routine's own `new_prepare` item instead.
-                    let declared_name = entry
-                        .new_prepare
-                        .as_ref()
-                        .map(|i| i.name.as_str())
-                        .unwrap_or(&entry.identity.routine_lc);
-                    let case_fold = sweep.by_name(n_name).iter().any(|caller_entry| {
-                        caller_entry.legacy_outgoing.iter().any(|o| {
-                            is_legacy_placeholder(o)
-                                && o.to.name.eq_ignore_ascii_case(declared_name)
-                                && o.to.name != declared_name
-                        })
-                    });
-                    if case_fold {
-                        ledger.push(
+                            continue;
+                        }
+                        // CaseFoldHit: does legacy's OWN raw outgoing() for this
+                        // exact caller (by name, case-insensitively — the only
+                        // handle we have on "legacy's view of this caller")
+                        // show a placeholder targeting this routine's REAL
+                        // (case-preserved) declared name, with the CALL SITE's
+                        // OWN raw text differing only in case? Cross-references
+                        // the SAME caller identity's already-collected
+                        // legacy_outgoing. `entry.identity.routine_lc` is
+                        // already lowercased (useless for a case-DIFFERENCE
+                        // check), so the real declared name comes from this
+                        // routine's own `new_prepare` item instead.
+                        let declared_name = entry
+                            .new_prepare
+                            .as_ref()
+                            .map(|i| i.name.as_str())
+                            .unwrap_or(&entry.identity.routine_lc);
+                        let case_fold = sweep.by_name(n_name).iter().any(|caller_entry| {
+                            caller_entry.legacy_outgoing.iter().any(|o| {
+                                is_legacy_placeholder(o)
+                                    && o.to.name.eq_ignore_ascii_case(declared_name)
+                                    && o.to.name != declared_name
+                            })
+                        });
+                        if case_fold {
+                            ledger.push(
                             "incoming",
                             &routine,
                             Class::NewBetter(NewBetterClass::CaseFoldHit),
                             format!("new caller={n_name} at site {site:?}; legacy's interner never associated the differently-cased call site"),
                         );
-                    } else {
-                        ledger.push(
-                            "incoming",
-                            &routine,
-                            Class::NewUnexplained,
-                            format!("new caller={n_name} at site {site:?}, legacy has nothing"),
-                        );
+                        } else {
+                            ledger.push(
+                                "incoming",
+                                &routine,
+                                Class::NewUnexplained,
+                                format!("new caller={n_name} at site {site:?}, legacy has nothing"),
+                            );
+                        }
                     }
+                    (None, None) => unreachable!(),
                 }
-                (None, None) => unreachable!(),
             }
         }
 
@@ -1775,18 +2055,40 @@ fn classify_event_direction(ledger: &mut Ledger, sweep: &Sweep) {
             // not itself a finding.
             let publisher_routine = entry.identity.key();
 
+            // REVIEW FIX (MED-1): `sweep.by_name` cross-references by BARE
+            // NAME workspace-wide — endemic in BC, a genuinely LOST
+            // subscription can be "explained" by some entirely unrelated
+            // same-named routine on a different object. Legacy's own
+            // detail string carries the subscriber's OBJECT too
+            // (`"{obj}.{proc} [EventSubscriber]"`, `src/handlers.rs`'s
+            // `incoming_calls`, lines ~230-237) — parse it out (anchored on
+            // the KNOWN `.{proc} [EventSubscriber]` suffix so a quoted
+            // object name with an embedded dot is never mis-split) and
+            // require the sibling's OWN `object_lc` to match before
+            // trusting its `new_incoming`/`new_outgoing` as the real
+            // explanation.
+            let expected_suffix = format!(".{} [EventSubscriber]", item.from.name);
+            let subscriber_object_lc = detail
+                .strip_suffix(expected_suffix.as_str())
+                .unwrap_or("")
+                .to_lowercase();
+
             // New: subscriber should appear under the publisher's OUTGOING.
             let found_in_new_outgoing = entry
                 .new_outgoing
                 .iter()
                 .any(|o| o.to.name.eq_ignore_ascii_case(&subscriber_lc));
-            // New: publisher should appear under the subscriber's INCOMING.
+            // New: publisher should appear under the subscriber's INCOMING —
+            // scoped to the sibling entry whose OWN object matches the
+            // subscriber's object legacy itself named, not just any
+            // same-named routine anywhere in the workspace.
             let found_in_new_incoming_of_subscriber =
                 sweep.by_name(&subscriber_lc).iter().any(|sub_entry| {
-                    sub_entry
-                        .new_incoming
-                        .iter()
-                        .any(|i| i.from.name.eq_ignore_ascii_case(publisher_lc))
+                    sub_entry.identity.object_lc == subscriber_object_lc
+                        && sub_entry
+                            .new_incoming
+                            .iter()
+                            .any(|i| i.from.name.eq_ignore_ascii_case(publisher_lc))
                 });
 
             if found_in_new_outgoing || found_in_new_incoming_of_subscriber {
@@ -1817,8 +2119,11 @@ fn classify_event_direction(ledger: &mut Ledger, sweep: &Sweep) {
 
 fn lens_key(l: &CodeLens) -> Option<(String, String)> {
     let args = l.command.as_ref()?.arguments.as_ref()?;
-    let obj = args[0].get("object")?.as_str()?.to_lowercase();
-    let proc = args[0].get("procedure")?.as_str()?.to_lowercase();
+    // REVIEW FIX (LOW): `args[0]` panics on `Some(vec![])` (an empty but
+    // present arguments array) — `.first()` degrades to `None` instead.
+    let arg0 = args.first()?;
+    let obj = arg0.get("object")?.as_str()?.to_lowercase();
+    let proc = arg0.get("procedure")?.as_str()?.to_lowercase();
     Some((obj, proc))
 }
 
@@ -1873,8 +2178,13 @@ fn classify_code_lens(
                     // subscriber's OWN lens) both take priority; otherwise
                     // it's CaseFoldHit's codeLens footprint (an extra caller
                     // legacy's interner never associated at all).
+                    // `file_rel_case` is irrelevant here — this identity is
+                    // only ever used for `.key()` (a `file_rel`/object/
+                    // routine-only computation, see `RoutineIdentity::key`),
+                    // never to query legacy, so any value satisfies the type.
                     let entry_key = RoutineIdentity {
                         file_rel: file_rel.to_lowercase(),
+                        file_rel_case: file_rel.to_string(),
                         object_lc: key.0.clone(),
                         routine_lc: key.1.clone(),
                     }
@@ -2073,12 +2383,38 @@ fn classify_diagnostics(
         for msg in n.difference(l) {
             // R2Precision: a subscriber with no resolvable EventFlow edge —
             // legacy's blanket attribute exclusion hides it; new flags it.
-            ledger.push(
-                "diagnostics",
-                &file_rel,
-                Class::NewBetter(NewBetterClass::R2Precision),
-                format!("new flags {msg:?}, legacy's blanket [EventSubscriber] exclusion hides it"),
-            );
+            // REVIEW FIX (HIGH-2): the ORIGINAL check was an unconditional
+            // blanket over this WHOLE direction — any new-only unused-
+            // procedure message, regardless of cause, was auto-granted this
+            // class, which would silently launder a narrowed-exclusion-rule
+            // regression (a hypothetical R3/R4 attribute-set drift) as if it
+            // were R2Precision. Require POSITIVE evidence of the actual R2
+            // mechanism instead: the flagged routine must itself carry a
+            // real `[EventSubscriber(...)]` attribute (read from the owned
+            // IR's `RoutineDecl.attributes`, not text-sniffed) — i.e. legacy
+            // really would have excluded it via R2's blanket check, and
+            // new's edge-based check correctly flags it anyway because no
+            // real EventFlow edge resolves. Anything else falls through to
+            // `NewUnexplained` below — never silently granted.
+            if routine_has_event_subscriber_attribute(new_snap, &file_rel, msg) {
+                ledger.push(
+                    "diagnostics",
+                    &file_rel,
+                    Class::NewBetter(NewBetterClass::R2Precision),
+                    format!(
+                        "new flags {msg:?}, legacy's blanket [EventSubscriber] exclusion hides it"
+                    ),
+                );
+            } else {
+                ledger.push(
+                    "diagnostics",
+                    &file_rel,
+                    Class::NewUnexplained,
+                    format!(
+                        "new flags {msg:?}, legacy does not, and the routine carries no [EventSubscriber] attribute to explain it via R2Precision"
+                    ),
+                );
+            }
         }
         for msg in l.intersection(n) {
             ledger.push("diagnostics", &file_rel, Class::Match, msg.clone());
@@ -2119,6 +2455,54 @@ fn looks_like_interface_signature(new_snap: &LspSnapshot, file_rel: &str, msg: &
     new_snap.decls_by_file[virtual_path].iter().any(|d| {
         d.name.eq_ignore_ascii_case(name)
             && d.id.object.kind == al_syntax::ir::ObjectKind::Interface
+    })
+}
+
+/// R2Precision's positive-evidence gate (review fix-wave HIGH-2): does the
+/// routine named in `msg` (legacy's `unused-procedure` message format:
+/// "Procedure '{object}.{name}' is never called") actually carry a
+/// source-level `[EventSubscriber(...)]` attribute? Reads the OWNED IR's
+/// `RoutineDecl.attributes` (already-lowercased attribute names, `crates/
+/// al-syntax/src/ir/decl.rs`'s own doc) directly — never text-sniffed —
+/// scoped to the SAME object the flagged routine belongs to (via
+/// `decl.id.object`'s display name), matching by routine name.
+fn routine_has_event_subscriber_attribute(
+    new_snap: &LspSnapshot,
+    file_rel: &str,
+    msg: &str,
+) -> bool {
+    let Some(name) = msg
+        .split('\'')
+        .nth(1)
+        .and_then(|qualified| qualified.split('.').next_back())
+    else {
+        return false;
+    };
+    let Some(virtual_path) = new_snap
+        .decls_by_file
+        .keys()
+        .find(|k| k.to_lowercase() == file_rel)
+    else {
+        return false;
+    };
+    let Some(decl) = new_snap.decls_by_file[virtual_path]
+        .iter()
+        .find(|d| d.name.eq_ignore_ascii_case(name))
+    else {
+        return false;
+    };
+    let Some(object_display_name) = object_name(&new_snap.graph, &decl.id.object) else {
+        return false;
+    };
+    let Some(parsed) = new_snap.parsed.get(virtual_path) else {
+        return false;
+    };
+    parsed.file.objects.iter().any(|obj| {
+        obj.name.eq_ignore_ascii_case(object_display_name)
+            && obj.routines.iter().any(|r| {
+                r.name.eq_ignore_ascii_case(&decl.name)
+                    && r.attributes.iter().any(|a| a == "eventsubscriber")
+            })
     })
 }
 
@@ -2661,18 +3045,52 @@ fn cdo_h10_edit_scenario_legacy_loses_cross_file_incoming_new_keeps_them() {
 
     // Pick a routine with real cross-file incoming edges on BOTH sides
     // BEFORE the edit, so the "loses it" observation below is meaningful.
+    // REVIEW FIX (MED-4): the ORIGINAL selection only required an ordinary
+    // (non-event) legacy incoming entry — never checking the caller was
+    // actually in a DIFFERENT file, so a same-file caller could satisfy it
+    // despite the test's own name promising "cross-file". Require at least
+    // one ordinary caller whose OWN file (`i.from.uri`, which legacy's
+    // `incoming_calls` sets to the real call-site file — see
+    // `src/handlers.rs`'s `path_to_uri(&call.file)`) differs from the
+    // target's own file.
     let cfg = DiagnosticConfig::default();
     let (sweep, _lenses) = run_sweep(&ws, &legacy, &base_new, &cfg);
     let Some(target) = sweep.entries.values().find(|e| {
-        // an ORDINARY (non-event) legacy incoming entry (non-empty by
-        // construction — `.any` requires at least one match).
-        e.legacy_incoming.iter().any(|i| i.from.detail.is_none()) && e.legacy_prepare.is_some()
+        e.legacy_prepare.is_some()
+            && e.legacy_incoming.iter().any(|i| {
+                i.from.detail.is_none()
+                    && uri_to_rel(&ws, i.from.uri.as_str()) != e.identity.file_rel
+            })
     }) else {
-        panic!("CDO workspace sanity: expected at least one routine with a real cross-file caller");
+        panic!("CDO workspace sanity: expected at least one routine with a real CROSS-FILE caller");
     };
-    let target_file = ws.join(&target.identity.file_rel);
+    // CASE-PRESERVING path (review fix-wave HIGH-1, same fix as `run_sweep`'s
+    // per-identity query loop) — querying legacy with the lowercased
+    // `file_rel` would miss `path_cache` on a case-sensitive filesystem.
+    let target_file = ws.join(&target.identity.file_rel_case);
     let target_uri = path_to_uri(&target_file);
     let pre_edit_legacy_incoming_count = target.legacy_incoming.len();
+    // REVIEW FIX (MED-4): capture the PRE-edit RAW `EdgeRef` count (the SAME
+    // unit `post_edit_new_incoming` below measures — `new_snap.incoming`'s
+    // raw per-edge Vec, NOT the grouped-by-caller LSP `incoming()` item
+    // count `target.new_incoming.len()` used to be compared against) so the
+    // post-edit assertion is a genuine same-unit equality check, not a
+    // `.max()` construction that silently accepted any count `>=` a
+    // DIFFERENT-unit baseline.
+    let pre_target_vp = base_new
+        .decls_by_file
+        .keys()
+        .find(|k| k.to_lowercase() == target.identity.file_rel)
+        .expect("target file present in the pre-edit snapshot (it's where target was found)");
+    let pre_target_decl = base_new.decls_by_file[pre_target_vp]
+        .iter()
+        .find(|d| d.name.eq_ignore_ascii_case(&target.identity.routine_lc))
+        .expect("target decl present in the pre-edit snapshot");
+    let pre_edit_new_incoming_raw = base_new
+        .incoming
+        .get(&pre_target_decl.id)
+        .map(Vec::len)
+        .unwrap_or(0);
 
     // legacy: reindex_file of the TARGET's own file (a no-op content
     // rewrite — H-10 doesn't need a real change, just a reindex pass).
@@ -2728,9 +3146,8 @@ fn cdo_h10_edit_scenario_legacy_loses_cross_file_incoming_new_keeps_them() {
         post_reindex_incoming.len()
     );
     assert_eq!(
-        post_edit_new_incoming,
-        target.new_incoming.len().max(post_edit_new_incoming),
-        "new engine must KEEP its incoming edges across the same no-op save"
+        post_edit_new_incoming, pre_edit_new_incoming_raw,
+        "new engine must KEEP its incoming edges (same raw EdgeRef count) across the same no-op save"
     );
 
     let mut ledger = Ledger::default();
