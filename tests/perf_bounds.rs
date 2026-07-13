@@ -30,11 +30,26 @@
 //! workspace (`.superpowers/sdd/t3-stage-split.md`'s addendum), which
 //! REPLACES Task 3's earlier ~1.9s algebraic upper-bound estimate for rung 2
 //! (that estimate predated `Updater`/`assemble_program_graph` entirely —
-//! see the addendum for why the real number came in lower). Applied here
-//! against the much smaller SYNTHETIC 1000-file corpus (no dependencies),
-//! these CDO-scale absolute bounds carry generous headroom by construction —
-//! exactly the same "loose bound, real regression still trips it" design as
-//! every other row in this file.
+//! see the addendum for why the real number came in lower).
+//!
+//! # Rung rows carry TWO bounds each (t3.16 review fix-wave)
+//!
+//! Applied against the much smaller SYNTHETIC 1000-file corpus (no
+//! dependencies), the CDO-scale absolute bounds above carry 15-30x headroom
+//! by construction (measured ~20ms/~150ms on this corpus vs. 300ms/4.5s
+//! bounds) — generous for CDO-scale behavior, but loose enough that a
+//! genuine 10x regression ON THIS CORPUS ALONE would sail through
+//! unnoticed, silently breaking this file's own "3x margin, but a real
+//! order-of-magnitude regression still trips it" promise for these two rows
+//! specifically (every OTHER row's bound is already sized relative to what
+//! actually runs on this corpus). `RUNG1_SYNTHETIC_BOUND`/
+//! `RUNG2_SYNTHETIC_BOUND` close that gap: 5x today's measured
+//! synthetic-corpus baseline, asserted IN ADDITION TO (never instead of) the
+//! CDO-anchored bound. Two independent regression classes are guarded: the
+//! absolute bound catches CDO-scale behavior regressing below what was
+//! measured there; the synthetic bound catches THIS corpus's own
+//! performance regressing an order of magnitude, which the absolute bound's
+//! necessary headroom cannot see.
 //!
 //! # The corpus's hub-call must go through a declared variable
 //!
@@ -109,6 +124,25 @@ mod release_checks {
     // T3 Task 9 Step-3b CDO re-measurement (~1.464s) vs. Task 3's superseded
     // ~1.9s algebraic upper-bound estimate — see module doc.
     const RUNG2_BOUND: Duration = Duration::from_millis(4500); // target: ~1.5s
+
+    // CORPUS-RELATIVE bounds (t3.16 review fix-wave), asserted IN ADDITION TO
+    // the CDO-anchored absolute bounds above, not instead of them. The
+    // absolute bounds carry 15-30x headroom against THIS SYNTHETIC corpus's
+    // own measured cost (~20ms/~150ms vs. 300ms/4.5s — see the task report's
+    // measured-numbers table), because their targets come from the real CDO
+    // workspace, a much larger scale. That headroom means a genuine 10x
+    // regression on THIS corpus alone (e.g. ~20ms -> ~200ms) would sail
+    // through the absolute bound unnoticed, silently breaking this file's
+    // own "3x margin, but a real order-of-magnitude regression still trips
+    // it" promise for the two rung rows specifically (every other row's
+    // bound is already sized relative to what runs ON this corpus). These
+    // two constants close that gap: 5x today's measured synthetic-corpus
+    // baseline. The absolute bound guards CDO-scale behavior from
+    // regressing below what was measured there; this one guards THIS
+    // corpus's OWN performance from regressing an order of magnitude, which
+    // the absolute bound alone cannot catch at synthetic-corpus scale.
+    const RUNG1_SYNTHETIC_BOUND: Duration = Duration::from_millis(100); // 5x ~20ms measured baseline
+    const RUNG2_SYNTHETIC_BOUND: Duration = Duration::from_millis(750); // 5x ~150ms measured baseline
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
@@ -347,11 +381,22 @@ mod release_checks {
         }
         let m = median(samples.clone());
         println!(
-            "[perf_bounds] rung1_body_edit: median={m:?} bound={RUNG1_BOUND:?} samples={samples:?}"
+            "[perf_bounds] rung1_body_edit: median={m:?} absolute_bound={RUNG1_BOUND:?} \
+             synthetic_bound={RUNG1_SYNTHETIC_BOUND:?} samples={samples:?}"
         );
+        // Both bounds are asserted: the absolute (CDO-anchored) bound guards
+        // CDO-scale behavior; the synthetic (corpus-relative) bound catches
+        // an order-of-magnitude regression ON THIS CORPUS that the absolute
+        // bound's headroom would otherwise miss — see both constants' doc.
         assert!(
             m <= RUNG1_BOUND,
-            "rung-1 body-edit median {m:?} exceeds bound {RUNG1_BOUND:?} (samples: {samples:?})"
+            "rung-1 body-edit median {m:?} exceeds CDO-anchored bound {RUNG1_BOUND:?} (samples: {samples:?})"
+        );
+        assert!(
+            m <= RUNG1_SYNTHETIC_BOUND,
+            "rung-1 body-edit median {m:?} exceeds corpus-relative bound {RUNG1_SYNTHETIC_BOUND:?} \
+             (samples: {samples:?}) — this is a real regression on THIS corpus even though it \
+             may still be under the looser CDO-anchored bound"
         );
     }
 
@@ -401,11 +446,19 @@ mod release_checks {
         }
         let m = median(samples.clone());
         println!(
-            "[perf_bounds] rung2_signature_edit: median={m:?} bound={RUNG2_BOUND:?} samples={samples:?}"
+            "[perf_bounds] rung2_signature_edit: median={m:?} absolute_bound={RUNG2_BOUND:?} \
+             synthetic_bound={RUNG2_SYNTHETIC_BOUND:?} samples={samples:?}"
         );
+        // Both bounds are asserted — see `RUNG2_SYNTHETIC_BOUND`'s doc.
         assert!(
             m <= RUNG2_BOUND,
-            "rung-2 signature-edit median {m:?} exceeds bound {RUNG2_BOUND:?} (samples: {samples:?})"
+            "rung-2 signature-edit median {m:?} exceeds CDO-anchored bound {RUNG2_BOUND:?} (samples: {samples:?})"
+        );
+        assert!(
+            m <= RUNG2_SYNTHETIC_BOUND,
+            "rung-2 signature-edit median {m:?} exceeds corpus-relative bound {RUNG2_SYNTHETIC_BOUND:?} \
+             (samples: {samples:?}) — this is a real regression on THIS corpus even though it \
+             may still be under the looser CDO-anchored bound"
         );
     }
 }

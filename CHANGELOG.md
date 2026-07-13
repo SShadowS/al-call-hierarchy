@@ -1014,6 +1014,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signature change, so the file's `DefSurface` fingerprint stays byte-identical,
   which is exactly rung 1's own gate condition) plus a new smoke test pinning
   that contract (`body_only_comment_edit_adds_no_definitions`).
+  **Review fix-wave (t3.16):** the rung-1/rung-2 rows above now assert TWO
+  bounds each, not one — the CDO-anchored absolute bound (300ms/4.5s) carries
+  15-30x headroom against what actually runs on this SYNTHETIC corpus
+  (~20ms/~150ms), which meant a genuine 10x regression on the corpus alone
+  could sail through unnoticed; `RUNG1_SYNTHETIC_BOUND`/`RUNG2_SYNTHETIC_BOUND`
+  (100ms/750ms — 5x today's measured synthetic-corpus baseline) close that
+  gap, asserted alongside (never instead of) the absolute bound. Separately,
+  `.github/workflows/ci.yml`'s Lint step was missing `--all-targets` (it
+  already had `--release`, since `f323d6d` — the earlier framing in this
+  task's own report that blamed the `#[cfg(not(debug_assertions))]` gate was
+  WRONG and is corrected here): without `--all-targets`, `cargo clippy` never
+  compiles ANY test or bench crate in ANY profile, so `tests/perf_bounds.rs`
+  and `benches/lsp_pipeline.rs` (and every other `tests/*.rs`/`benches/*.rs`
+  file) had NEVER been linted by CI at all, regardless of profile. Fixed to
+  `cargo clippy --release --all-targets --all-features -- -D warnings`,
+  matching CLAUDE.md's documented bar; re-running that exact command against
+  the WHOLE repo surfaced zero new findings (confirmed via a genuine forced
+  recompile, not a stale cache hit).
 - **The LSP surface now SERVES the program-engine backend (T3 LSP-migration
   arc, Task 15 — the cutover).** `src/server.rs` no longer holds
   `Arc<RwLock<Indexer>>`; its state is `Arc<lsp::updater::SharedSnapshot>` (the
