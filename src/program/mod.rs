@@ -13,7 +13,10 @@ pub mod resolve;
 pub mod sig_fp;
 pub mod topology;
 
-pub use build::build_program_graph;
+pub use build::{
+    DepLayer, assemble_program_graph, build_dep_layer, build_program_graph,
+    build_program_graph_from_parsed,
+};
 pub use graph::{ObjectIndex, ProgramGraph};
 pub use node::{AppRef, AppRegistry, ObjKey, ObjectNodeId, RoutineNodeId};
 pub use node_extract::{Access, ObjectNode, RoutineNode, extract_nodes};

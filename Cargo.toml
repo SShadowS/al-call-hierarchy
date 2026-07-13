@@ -177,6 +177,13 @@ harness = false
 name = "lsp_pipeline"
 harness = false
 
+# T3 (LSP-migration arc) Task 3: program-engine stage split (snapshot / parse
+# / build(graph) / ResolveIndex::build / BodyMap::build) over the perf
+# corpus — pins the rung-1/rung-2 incremental-updater budgets.
+[[bench]]
+name = "engine_stages"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1

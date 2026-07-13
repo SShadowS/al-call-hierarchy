@@ -35,7 +35,7 @@ use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
 
-use crate::program::build::build_program_graph;
+use crate::program::build::{DepLayer, assemble_program_graph, build_dep_layer};
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
@@ -62,7 +62,7 @@ use crate::program::resolve::resolver::{
     resolve_member_with_args, resolve_object_run,
 };
 use crate::program::sig_fp::source_routine_node_id;
-use crate::snapshot::{AppSetSnapshot, ParsedUnit, SnapshotBuilder, parse_snapshot};
+use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit, SnapshotBuilder, parse_snapshot};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -87,6 +87,19 @@ pub enum ObligationId {
 pub struct ClassifiedEdge {
     pub obligation_id: ObligationId,
     pub edge: Edge,
+}
+
+/// Result of resolving ALL call-site obligations in ONE workspace file —
+/// [`resolve_file_obligations`]'s return type. `flagged`/`indeterminate` are
+/// this file's contribution to the T0.3 builtin-dispatch audit (see
+/// [`FlaggedBuiltinDispatchSite`]/[`IndeterminateBuiltinDispatchSite`]);
+/// [`resolve_full_program_from_parts`] aggregates every file's triple and
+/// sorts the combined `flagged`/`indeterminate` populations once, after all
+/// files have been processed.
+pub(crate) struct FileResolution {
+    pub edges: Vec<ClassifiedEdge>,
+    pub flagged: Vec<FlaggedBuiltinDispatchSite>,
+    pub indeterminate: Vec<IndeterminateBuiltinDispatchSite>,
 }
 
 // ---------------------------------------------------------------------------
@@ -611,6 +624,134 @@ fn resolve_call_site_obligation(
     }
 }
 
+/// Resolve ALL call-site obligations of ONE workspace file (T3 Task 6, the
+/// LSP-migration arc's rung-1 incremental-updater primitive: re-resolving a
+/// single saved file's obligations is exactly this call). Extracted
+/// VERBATIM from [`resolve_full_program_from_parts`]'s Phase-1 per-file loop
+/// body — same iteration order, same obligation-id construction. The
+/// `ws_file_set` membership check stays in the caller (this function assumes
+/// `pf` already passed it); `obligation_id_set`/`classified_edges`/`flagged`/
+/// `indeterminate` are whole-run accumulators the caller owns — this
+/// function returns its own contribution in a [`FileResolution`] instead of
+/// mutating shared state, so per-file re-resolution (rung 1) never needs the
+/// other files' accumulators in scope.
+pub(crate) fn resolve_file_obligations(
+    pf: &ParsedFile,
+    primary_app_ref: AppRef,
+    graph: &ProgramGraph,
+    index: &ResolveIndex,
+    body_map: &BodyMap<'_>,
+    obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
+) -> FileResolution {
+    let mut edges: Vec<ClassifiedEdge> = Vec::new();
+    let mut flagged: Vec<FlaggedBuiltinDispatchSite> = Vec::new();
+    let mut indeterminate: Vec<IndeterminateBuiltinDispatchSite> = Vec::new();
+
+    for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
+        let obj_key = match obj.id {
+            Some(n) => ObjKey::Id(n),
+            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+        };
+        let obj_node_id = ObjectNodeId {
+            app: primary_app_ref,
+            kind: obj.kind,
+            key: obj_key,
+        };
+        let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+
+        // Record-typed global variable names for RecordOp / receiver inference.
+        let globals_rec: HashSet<String> = obj
+            .globals
+            .iter()
+            .filter(|v| {
+                v.ty.as_deref()
+                    .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
+                    .unwrap_or(false)
+            })
+            .map(|v| v.name.to_ascii_lowercase())
+            .collect();
+
+        for (routine_idx, routine) in obj.routines.iter().enumerate() {
+            let caller = source_routine_node_id(obj_node_id.clone(), routine);
+
+            let sites = extract_sites_for_routine(
+                &pf.file,
+                &pf.text,
+                &pf.virtual_path,
+                &globals_rec,
+                obj_idx,
+                routine_idx,
+            );
+
+            for site in &sites {
+                let fp = callee_fp(&site.callee_text);
+                let obl_id = ObligationId::CallSite {
+                    caller: caller.clone(),
+                    span: site.span.clone(),
+                    callee_fp: fp,
+                };
+
+                let (kind, shape, completeness, routes, finding) = resolve_call_site_obligation(
+                    &site.shape,
+                    site.arity,
+                    &site.callee_text,
+                    obj_node_opt,
+                    routine,
+                    obj,
+                    primary_app_ref,
+                    graph,
+                    index,
+                    body_map,
+                    site.with_state,
+                    &pf.file,
+                    &site.args,
+                );
+
+                match finding {
+                    Some(BuiltinDispatchFinding::Flagged { object, method }) => {
+                        flagged.push(FlaggedBuiltinDispatchSite {
+                            file: pf.virtual_path.clone(),
+                            object,
+                            method,
+                            line: site.span.start.line,
+                        });
+                    }
+                    Some(BuiltinDispatchFinding::Indeterminate { method }) => {
+                        indeterminate.push(IndeterminateBuiltinDispatchSite {
+                            file: pf.virtual_path.clone(),
+                            method,
+                            line: site.span.start.line,
+                        });
+                    }
+                    None => {}
+                }
+
+                edges.push(ClassifiedEdge {
+                    obligation_id: obl_id,
+                    edge: Edge {
+                        from: caller.clone(),
+                        site: SiteId {
+                            caller: caller.clone(),
+                            span: site.span.clone(),
+                            callee_fingerprint: fp,
+                        },
+                        kind,
+                        shape,
+                        completeness,
+                        routes,
+                    },
+                });
+            }
+        }
+    }
+
+    FileResolution {
+        edges,
+        flagged,
+        indeterminate,
+    }
+}
+
 /// Resolve all obligations and compute coverage.
 ///
 /// This is the clean-room inner loop.  It does NOT call any L3 oracle.
@@ -649,105 +790,29 @@ fn resolve_full_program_from_parts(
                 continue;
             }
 
-            for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
-                let obj_key = match obj.id {
-                    Some(n) => ObjKey::Id(n),
-                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
-                };
-                let obj_node_id = ObjectNodeId {
-                    app: primary_app_ref,
-                    kind: obj.kind,
-                    key: obj_key,
-                };
-                let obj_node_opt: Option<&ObjectNode> = obj_node_map.get(&obj_node_id).copied();
+            let file_res = resolve_file_obligations(
+                pf,
+                primary_app_ref,
+                graph,
+                &index,
+                &body_map,
+                &obj_node_map,
+            );
 
-                // Record-typed global variable names for RecordOp / receiver inference.
-                let globals_rec: HashSet<String> = obj
-                    .globals
-                    .iter()
-                    .filter(|v| {
-                        v.ty.as_deref()
-                            .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
-                            .unwrap_or(false)
-                    })
-                    .map(|v| v.name.to_ascii_lowercase())
-                    .collect();
-
-                for (routine_idx, routine) in obj.routines.iter().enumerate() {
-                    let caller = source_routine_node_id(obj_node_id.clone(), routine);
-
-                    let sites = extract_sites_for_routine(
-                        &pf.file,
-                        &pf.text,
-                        &pf.virtual_path,
-                        &globals_rec,
-                        obj_idx,
-                        routine_idx,
-                    );
-
-                    for site in &sites {
-                        let fp = callee_fp(&site.callee_text);
-                        let obl_id = ObligationId::CallSite {
-                            caller: caller.clone(),
-                            span: site.span.clone(),
-                            callee_fp: fp,
-                        };
-                        obligation_id_set.insert(obl_id.clone());
-
-                        let (kind, shape, completeness, routes, finding) =
-                            resolve_call_site_obligation(
-                                &site.shape,
-                                site.arity,
-                                &site.callee_text,
-                                obj_node_opt,
-                                routine,
-                                obj,
-                                primary_app_ref,
-                                graph,
-                                &index,
-                                &body_map,
-                                site.with_state,
-                                &pf.file,
-                                &site.args,
-                            );
-
-                        match finding {
-                            Some(BuiltinDispatchFinding::Flagged { object, method }) => {
-                                flagged.push(FlaggedBuiltinDispatchSite {
-                                    file: pf.virtual_path.clone(),
-                                    object,
-                                    method,
-                                    line: site.span.start.line,
-                                });
-                            }
-                            Some(BuiltinDispatchFinding::Indeterminate { method }) => {
-                                indeterminate.push(IndeterminateBuiltinDispatchSite {
-                                    file: pf.virtual_path.clone(),
-                                    method,
-                                    line: site.span.start.line,
-                                });
-                            }
-                            None => {}
-                        }
-
-                        classified_edges.push(ClassifiedEdge {
-                            obligation_id: obl_id,
-                            edge: Edge {
-                                from: caller.clone(),
-                                site: SiteId {
-                                    caller: caller.clone(),
-                                    span: site.span.clone(),
-                                    callee_fingerprint: fp,
-                                },
-                                kind,
-                                shape,
-                                completeness,
-                                routes,
-                            },
-                        });
-                    }
-                }
+            // T3 Task 6: `resolve_file_obligations` no longer inserts into
+            // `obligation_id_set` inline (it has no access to this whole-run
+            // accumulator) — insert from the returned edges' obligation ids
+            // instead. Identical set contents: every call-site obligation
+            // that would have been inserted inline produces EXACTLY one
+            // `ClassifiedEdge` carrying that same id (see the function's own
+            // loop), so deriving the id set from the edges post-hoc is a
+            // no-op change to the set's membership.
+            for ce in &file_res.edges {
+                obligation_id_set.insert(ce.obligation_id.clone());
             }
+            classified_edges.extend(file_res.edges);
+            flagged.extend(file_res.flagged);
+            indeterminate.extend(file_res.indeterminate);
         }
     }
 
@@ -837,6 +902,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         parsed,
         primary_app_ref,
         ws_file_set,
+        ..
     } = &ctx;
     let primary_app_ref = *primary_app_ref;
 
@@ -918,15 +984,26 @@ pub fn resolve_full_program_for_export(
 /// parse → primary app ref + workspace file set. Single source of truth so
 /// [`resolve_full_program`] and [`resolve_full_program_for_export`] cannot drift.
 /// Returns `None` when the snapshot build fails or the workspace app is absent.
-struct ProgramContext {
-    snap: AppSetSnapshot,
-    graph: ProgramGraph,
-    parsed: Vec<ParsedUnit>,
-    primary_app_ref: AppRef,
-    ws_file_set: HashSet<String>,
+///
+/// `pub(crate)` (T3 Task 8): [`crate::lsp::snapshot::LspSnapshot::build_full`]
+/// is a second consumer of this exact composition — it additionally needs the
+/// [`DepLayer`] this function assembles `graph` from (to store as
+/// `Arc<DepLayer>` for a future incremental rung-2 rebuild), so it calls this
+/// function directly rather than re-deriving snapshot → parse → graph itself.
+pub(crate) struct ProgramContext {
+    pub(crate) snap: AppSetSnapshot,
+    pub(crate) graph: ProgramGraph,
+    pub(crate) parsed: Vec<ParsedUnit>,
+    pub(crate) primary_app_ref: AppRef,
+    pub(crate) ws_file_set: HashSet<String>,
+    /// The immutable dep layer `graph` was assembled from. Pre-T3-Task-8 this
+    /// was built and immediately dropped inside `build_program_graph_from_parsed`
+    /// (see [`assemble_program_graph`]'s doc); kept here so a caller that wants
+    /// to REUSE it across rebuilds doesn't have to re-derive it a second time.
+    pub(crate) dep_layer: DepLayer,
 }
 
-fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
+pub(crate) fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
     // ── Step 1: Build snapshot ────────────────────────────────────────────────
     let snap = (SnapshotBuilder {
         workspace_root: workspace_root.to_path_buf(),
@@ -944,13 +1021,40 @@ fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
         .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
         .unwrap_or_default();
 
-    // ── Step 2: Build program graph ───────────────────────────────────────────
-    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
-
-    // ── Step 3: Parse snapshot ────────────────────────────────────────────────
+    // ── Step 2: Parse ONCE, then build the layered graph from that SAME parse ──
+    // (T3 Task 5: previously `build_program_graph` parsed the whole snapshot
+    // internally to extract nodes, AND this function separately ran its own
+    // standalone `parse_snapshot` for the resolver's body-walk below — a full
+    // double-parse of every source-bearing app, dependencies included.)
+    //
+    // T3 Task 8: inlines `build_program_graph_from_parsed`'s own two steps
+    // (`build_dep_layer` + find-or-synthesize the workspace `ParsedUnit` +
+    // `assemble_program_graph`) rather than calling that wrapper, so the
+    // `DepLayer` it builds internally survives into `ProgramContext` instead
+    // of being dropped the moment `graph` is assembled. Behavior-preserving:
+    // this is exactly what `build_program_graph_from_parsed` does, in the
+    // same order (see that function's own doc, and the
+    // `assemble_program_graph_matches_build_program_graph_field_by_field`
+    // characterization test in `program::build`).
     let parsed = parse_snapshot(&snap);
+    let dep_layer = build_dep_layer(&snap, &crate::program::abi_ingest::AbiCache::new(), &parsed);
 
-    // ── Step 4: Locate primary (workspace) app ────────────────────────────────
+    // `snap.apps` is GUID-deduped upstream (H-2), so at most one parsed unit
+    // can match the workspace identity.
+    let empty_ws_unit;
+    let ws_unit: &ParsedUnit = match parsed.iter().find(|u| u.app == snap.workspace_app) {
+        Some(u) => u,
+        None => {
+            empty_ws_unit = ParsedUnit {
+                app: snap.workspace_app.clone(),
+                files: vec![],
+            };
+            &empty_ws_unit
+        }
+    };
+    let graph = assemble_program_graph(&dep_layer, ws_unit, &snap);
+
+    // ── Step 3: Locate primary (workspace) app ────────────────────────────────
     let primary_app_ref = graph.apps.find(&snap.workspace_app)?;
 
     Some(ProgramContext {
@@ -959,6 +1063,7 @@ fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
         parsed,
         primary_app_ref,
         ws_file_set,
+        dep_layer,
     })
 }
 
@@ -1176,5 +1281,331 @@ mod tests {
             "a whole-clean workspace must report zero recovered files; got {:?}",
             report.recovered_files
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // T3 (LSP-migration arc) Task 3: real (CDO-scale) stage-split wall-clock
+    // measurement, feeding the arc's rung-1/rung-2 incremental-updater
+    // budgets (`docs/superpowers/plans/2026-07-12-t3-lsp-migration.md`).
+    //
+    // Lives HERE — a `#[cfg(test)]` unit test inside `full.rs` itself, not
+    // under `tests/` — on purpose: `resolve_full_program_from_parts` is a
+    // private fn, invisible to any external-crate integration test (every
+    // `tests/*.rs` file compiles as its own crate). A child module of `full`
+    // sees private items of its ancestor for free, so this needs ZERO
+    // visibility widening. `benches/engine_stages.rs` (also an external
+    // crate) instead benches only the PUBLIC stages plus `resolve_full_
+    // program`'s total and derives the same "resolve inner loop" number by
+    // subtraction — see that bench file's module doc.
+    // -----------------------------------------------------------------------
+
+    /// Prints the program-engine's real per-stage wall-clock split — snapshot
+    /// / parse / build(graph) / `ResolveIndex::build` / `BodyMap::build` /
+    /// resolve (inner loop, DERIVED by subtraction) — median of 3 runs, on
+    /// the real CDO workspace.
+    ///
+    /// `build_program_graph` calls `parse_snapshot` INTERNALLY (to extract
+    /// object/routine nodes) and `resolve_full_program_from_parts` is called
+    /// AFTER a second, standalone `parse_snapshot` (mirroring `build_context`,
+    /// which this test intentionally does NOT call so each stage boundary
+    /// stays separately timed) — so two derived numbers are computed rather
+    /// than measured directly: `build(graph) only` = `build_program_graph`
+    /// total minus `parse`, and `resolve inner loop only` =
+    /// `resolve_full_program_from_parts` total minus the standalone
+    /// `ResolveIndex::build`/`BodyMap::build` times (that function rebuilds
+    /// both internally; timing them standalone first gives the subtrahend).
+    ///
+    /// Run: `CDO_WS=<path> cargo test --release stage_split -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn stage_split_wall_clock_on_cdo() {
+        let Some(ws) = std::env::var_os("CDO_WS")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+        else {
+            eprintln!("stage_split_wall_clock_on_cdo: CDO_WS unset or missing, skipping");
+            return;
+        };
+
+        const RUNS: usize = 3;
+
+        fn median(mut xs: Vec<std::time::Duration>) -> std::time::Duration {
+            xs.sort();
+            xs[xs.len() / 2]
+        }
+
+        let mut snapshot_times = Vec::with_capacity(RUNS);
+        let mut parse_times = Vec::with_capacity(RUNS);
+        let mut ws_only_parse_times = Vec::with_capacity(RUNS);
+        let mut build_graph_total_times = Vec::with_capacity(RUNS);
+        let mut resolve_index_times = Vec::with_capacity(RUNS);
+        let mut body_map_times = Vec::with_capacity(RUNS);
+        let mut resolve_from_parts_total_times = Vec::with_capacity(RUNS);
+
+        for run in 0..RUNS {
+            let t0 = std::time::Instant::now();
+            let snap = (SnapshotBuilder {
+                workspace_root: ws.clone(),
+                local_providers: vec![],
+            })
+            .build()
+            .expect("CDO snapshot build");
+            snapshot_times.push(t0.elapsed());
+
+            let cache = crate::program::abi_ingest::AbiCache::new();
+            let t1 = std::time::Instant::now();
+            // Fully-qualified (not top-level imported): this ignored
+            // benchmark is the ONLY caller left using the parse-internally
+            // wrapper directly — everything else (production
+            // `build_context`, T3 Task 5) uses `build_program_graph_from_parsed`
+            // to avoid a top-level import that the plain (non-test) build
+            // would otherwise flag unused.
+            let graph = crate::program::build::build_program_graph(&snap, &cache);
+            build_graph_total_times.push(t1.elapsed());
+
+            let t2 = std::time::Instant::now();
+            let parsed = parse_snapshot(&snap);
+            parse_times.push(t2.elapsed());
+
+            // Workspace-only parse (excludes all dependency apps' source) —
+            // isolates "dep-parse" for the rung-2 budget (a workspace-file
+            // save never needs to re-parse unchanged dependency source; see
+            // this test's results-doc consumer for the rung-2 definition).
+            let ws_only_snap = AppSetSnapshot {
+                apps: vec![snap.apps[0].clone()],
+                workspace_app: snap.workspace_app.clone(),
+                world: snap.world.clone(),
+            };
+            let t2b = std::time::Instant::now();
+            let _ws_only_parsed = parse_snapshot(&ws_only_snap);
+            ws_only_parse_times.push(t2b.elapsed());
+
+            let t3 = std::time::Instant::now();
+            let index = ResolveIndex::build(&graph);
+            resolve_index_times.push(t3.elapsed());
+            drop(index);
+
+            let t4 = std::time::Instant::now();
+            let body_map = BodyMap::build(&graph, &parsed);
+            body_map_times.push(t4.elapsed());
+            drop(body_map);
+
+            let primary_app_ref = graph
+                .apps
+                .find(&snap.workspace_app)
+                .expect("workspace app must be present in the graph");
+            let ws_file_set: HashSet<String> = snap
+                .apps
+                .first()
+                .and_then(|u| u.source.as_ref())
+                .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
+                .unwrap_or_default();
+
+            let t5 = std::time::Instant::now();
+            let (edges, coverage, _audit) =
+                resolve_full_program_from_parts(&graph, &parsed, primary_app_ref, &ws_file_set);
+            resolve_from_parts_total_times.push(t5.elapsed());
+
+            assert!(
+                coverage_holds(&coverage),
+                "run {run}: coverage contract must hold on CDO"
+            );
+            assert!(!edges.is_empty(), "run {run}: CDO must produce edges");
+        }
+
+        let snapshot_med = median(snapshot_times);
+        let parse_med = median(parse_times);
+        let ws_only_parse_med = median(ws_only_parse_times);
+        let build_graph_total_med = median(build_graph_total_times);
+        let resolve_index_med = median(resolve_index_times);
+        let body_map_med = median(body_map_times);
+        let resolve_from_parts_total_med = median(resolve_from_parts_total_times);
+
+        let build_graph_only = build_graph_total_med.saturating_sub(parse_med);
+        let dep_parse_only = parse_med.saturating_sub(ws_only_parse_med);
+        let index_plus_body_map = resolve_index_med + body_map_med;
+        let resolve_inner_loop = resolve_from_parts_total_med
+            .saturating_sub(resolve_index_med)
+            .saturating_sub(body_map_med);
+        // rung-2 = everything minus snapshot minus dep-parse (a workspace
+        // save doesn't need to reload .alpackages or re-parse unchanged dep
+        // source) — see the T3 plan's Task 3 brief.
+        let rung2_budget =
+            ws_only_parse_med + build_graph_only + index_plus_body_map + resolve_inner_loop;
+
+        if index_plus_body_map > std::time::Duration::from_millis(30) {
+            eprintln!(
+                "\n*** RED FLAG: ResolveIndex::build + BodyMap::build = {index_plus_body_map:?} \
+                 > 30ms on CDO scale — Task 9's documented contingency applies (transient \
+                 rebuild breaks the rung-1 100ms budget). ***\n"
+            );
+        }
+
+        eprintln!("=== stage_split_wall_clock_on_cdo (median of {RUNS} runs, CDO_WS={ws:?}) ===");
+        eprintln!("snapshot                                          : {snapshot_med:?}");
+        eprintln!("parse (parse_snapshot, standalone, ws+deps)       : {parse_med:?}");
+        eprintln!("  -> parse, workspace-only [derived input]        : {ws_only_parse_med:?}");
+        eprintln!("  -> dep-parse only [derived]                     : {dep_parse_only:?}");
+        eprintln!("build_program_graph (TOTAL, incl. internal parse) : {build_graph_total_med:?}");
+        eprintln!("  -> build(graph) only [derived]                  : {build_graph_only:?}");
+        eprintln!("ResolveIndex::build                               : {resolve_index_med:?}");
+        eprintln!("BodyMap::build                                    : {body_map_med:?}");
+        eprintln!("  -> ResolveIndex + BodyMap combined               : {index_plus_body_map:?}");
+        eprintln!(
+            "resolve_full_program_from_parts (TOTAL, incl. index+bodymap rebuild): {resolve_from_parts_total_med:?}"
+        );
+        eprintln!("  -> resolve inner loop only [derived]             : {resolve_inner_loop:?}");
+        eprintln!(
+            "  -> RUNG-2 BUDGET (ws-parse + build(graph) + index+bodymap + resolve): {rung2_budget:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // T3 (LSP-migration arc) Task 6: `resolve_file_obligations` — the
+    // per-file resolve entry point extracted VERBATIM from this function's
+    // own Phase-1 `for pf in &unit.files` loop body. This test IS the
+    // acceptance bar the task brief demands: per-file output must equal the
+    // full run's Phase-1 edges filtered to that file, AND concatenating
+    // every file's output in file order must equal the full run's Phase-1
+    // edge list EXACTLY (order included).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_file_obligations_matches_full_run_per_file_and_in_concatenation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_minimal_workspace(dir.path());
+        std::fs::write(
+            dir.path().join("A.al"),
+            r#"codeunit 50000 A
+{
+    procedure Foo()
+    begin
+        Bar();
+        Helper();
+    end;
+
+    procedure Helper()
+    begin
+    end;
+}
+"#,
+        )
+        .expect("write A.al");
+        std::fs::write(
+            dir.path().join("B.al"),
+            r#"codeunit 50001 B
+{
+    procedure Bar()
+    begin
+    end;
+
+    procedure Baz()
+    begin
+        Bar();
+    end;
+}
+"#,
+        )
+        .expect("write B.al");
+
+        let ctx = build_context(dir.path()).expect("build_context");
+        let ProgramContext {
+            graph,
+            parsed,
+            primary_app_ref,
+            ws_file_set,
+            ..
+        } = &ctx;
+        let primary_app_ref = *primary_app_ref;
+
+        // The full-run baseline (production entry point).
+        let (full_edges, coverage, _audit) =
+            resolve_full_program_from_parts(graph, parsed, primary_app_ref, ws_file_set);
+        assert!(coverage_holds(&coverage), "fixture coverage must hold");
+
+        // Phase-1 (call-site) edges only, in the full run's own order —
+        // Phase 2 (Publisher/event-flow) edges are appended after Phase 1
+        // and are out of scope for this per-file comparison.
+        let phase1_full: Vec<&ClassifiedEdge> = full_edges
+            .iter()
+            .filter(|ce| matches!(ce.obligation_id, ObligationId::CallSite { .. }))
+            .collect();
+        assert!(
+            !phase1_full.is_empty(),
+            "fixture must produce at least one call-site edge"
+        );
+
+        // Rebuild the SAME index/body_map/obj_node_map
+        // `resolve_full_program_from_parts` builds internally (it is a
+        // private inner helper with no other seam to observe from) — this
+        // mirrors its own setup exactly.
+        let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
+            graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
+        let index = ResolveIndex::build(graph);
+        let body_map = BodyMap::build(graph, parsed);
+
+        // Walk in the EXACT same order `resolve_full_program_from_parts`
+        // does: parsed units (filtered to the primary app) x unit.files
+        // (filtered to ws_file_set).
+        let mut per_file_concat: Vec<ClassifiedEdge> = Vec::new();
+        let mut checked_files = 0usize;
+        for unit in parsed {
+            let Some(app_ref) = graph.apps.find(&unit.app) else {
+                continue;
+            };
+            if app_ref != primary_app_ref {
+                continue;
+            }
+            for pf in &unit.files {
+                if !ws_file_set.contains(&pf.virtual_path) {
+                    continue;
+                }
+                let file_res = resolve_file_obligations(
+                    pf,
+                    primary_app_ref,
+                    graph,
+                    &index,
+                    &body_map,
+                    &obj_node_map,
+                );
+
+                // Per-file assertion: this file's edges equal the full run's
+                // Phase-1 edges filtered to this file's virtual_path.
+                let expected: Vec<&ClassifiedEdge> = phase1_full
+                    .iter()
+                    .copied()
+                    .filter(|ce| ce.edge.site.span.unit == pf.virtual_path)
+                    .collect();
+                assert_eq!(
+                    file_res.edges.len(),
+                    expected.len(),
+                    "file {} edge count mismatch",
+                    pf.virtual_path
+                );
+                for (got, want) in file_res.edges.iter().zip(expected.iter()) {
+                    assert_eq!(
+                        &got.obligation_id, &want.obligation_id,
+                        "file {}",
+                        pf.virtual_path
+                    );
+                    assert_eq!(&got.edge, &want.edge, "file {}", pf.virtual_path);
+                }
+
+                checked_files += 1;
+                per_file_concat.extend(file_res.edges);
+            }
+        }
+        assert!(
+            checked_files >= 2,
+            "fixture must exercise >=2 workspace files"
+        );
+
+        // Concatenation-in-file-order equals the full run's Phase-1 edge
+        // list EXACTLY (order included).
+        assert_eq!(per_file_concat.len(), phase1_full.len());
+        for (got, want) in per_file_concat.iter().zip(phase1_full.iter()) {
+            assert_eq!(&got.obligation_id, &want.obligation_id);
+            assert_eq!(&got.edge, &want.edge);
+        }
     }
 }

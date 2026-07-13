@@ -14,6 +14,34 @@ pub enum FileChange {
     Modified(PathBuf),
     /// File was deleted
     Deleted(PathBuf),
+    /// The backend detected a lapse in event delivery (`notify`'s
+    /// `Flag::Rescan` — an inotify queue overflow, or an equivalent signal on
+    /// another backend): any file may have changed since the last event this
+    /// watcher actually delivered. Carries no path — the caller (T3 Task 15's
+    /// server cutover) must treat this as "assume everything changed" (mapped
+    /// onto `ChangeEvent::Overflow`, which forces a full rebuild) rather than
+    /// silently trusting its last-known state, which is exactly the
+    /// silent-drop failure mode this variant exists to surface instead of
+    /// hiding.
+    Overflow,
+}
+
+/// `true` for a path this watcher forwards: a `.al` source file, OR any path
+/// under a `.alpackages` directory (dependency `.app` files — legacy never
+/// watched these at all, so a dependency add/update/remove never reached the
+/// index until the next server restart; see `src/server.rs`'s
+/// `ChangeEvent::DepsChanged` mapping, which this filter feeds).
+fn is_relevant_path(path: &Path) -> bool {
+    let is_al = path
+        .extension()
+        .map(|ext| ext.eq_ignore_ascii_case("al"))
+        .unwrap_or(false);
+    let under_alpackages = path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| s.eq_ignore_ascii_case(".alpackages"))
+    });
+    is_al || under_alpackages
 }
 
 /// File system watcher for AL files
@@ -31,23 +59,27 @@ impl AlFileWatcher {
             move |result: Result<Event, notify::Error>| {
                 match result {
                     Ok(event) => {
-                        // Filter for AL files
-                        let al_paths: Vec<_> = event
-                            .paths
-                            .iter()
-                            .filter(|p| {
-                                p.extension()
-                                    .map(|ext| ext.eq_ignore_ascii_case("al"))
-                                    .unwrap_or(false)
-                            })
-                            .cloned()
-                            .collect();
-
-                        if al_paths.is_empty() {
+                        if event.need_rescan() {
+                            debug!("Watcher reported a rescan/overflow condition");
+                            if tx.send(FileChange::Overflow).is_err() {
+                                error!("Failed to send overflow event");
+                            }
                             return;
                         }
 
-                        for path in al_paths {
+                        // Filter for AL files + dependency (`.alpackages`) files.
+                        let relevant_paths: Vec<_> = event
+                            .paths
+                            .iter()
+                            .filter(|p| is_relevant_path(p))
+                            .cloned()
+                            .collect();
+
+                        if relevant_paths.is_empty() {
+                            return;
+                        }
+
+                        for path in relevant_paths {
                             let change = match event.kind {
                                 EventKind::Create(_) | EventKind::Modify(_) => {
                                     debug!("File modified: {}", path.display());
@@ -105,6 +137,20 @@ mod tests {
         let dir = tempdir().unwrap();
         let watcher = AlFileWatcher::new(dir.path());
         assert!(watcher.is_ok());
+    }
+
+    #[test]
+    fn is_relevant_path_accepts_al_files_and_alpackages_contents_rejects_everything_else() {
+        assert!(is_relevant_path(Path::new("Codeunit1.al")));
+        assert!(is_relevant_path(Path::new("sub/dir/Codeunit1.AL")));
+        assert!(is_relevant_path(Path::new(
+            ".alpackages/Microsoft_Base Application_1.0.0.0.app"
+        )));
+        assert!(is_relevant_path(Path::new(
+            "workspace/.alpackages/nested/anything.json"
+        )));
+        assert!(!is_relevant_path(Path::new("README.md")));
+        assert!(!is_relevant_path(Path::new(".git/HEAD")));
     }
 
     #[test]

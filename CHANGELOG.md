@@ -7,7 +7,1203 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`tests/lsp_differential.rs`: adjudicated legacy-vs-new differential parity
+  harness (T3 LSP-migration arc, Task 14) — the DELETION LICENSE for the
+  legacy LSP pipeline (Task 17): runs BOTH backends in-process over identical
+  request scripts (`prepareCallHierarchy`/`incomingCalls`/`outgoingCalls`/
+  `codeLens`, plus the `unused-procedure` diagnostic) driven by the union of
+  legacy's `CallGraph::iter_definitions()` and new's `decls_by_file`
+  identities, normalized to UTF-8 byte columns on both sides (legacy already
+  serves bytes; new driven with `PositionEncoding::Utf8`). Every divergence
+  is classified: `Match`; `Regression`/`NewUnexplained` (gates, must be 0);
+  or one of 11 mechanically-justified `NewBetter` classes — the brief's 9
+  (`CaseFoldHit`, `CrossAppTarget`, `DepSourceSpan`, `EventDirectionMoved`,
+  `AbiSymbolShape`, `OutgoingCardinality`, `R2Precision`,
+  `R6InterfaceExclusion`, `ObjectIdAdditive` — pinned at 0, out of this
+  driver's scope) plus 2 discovered and adjudicated during implementation:
+  `UnqualifiedCallResolved` (legacy's `outgoing_calls` renders EVERY
+  unqualified call — same-object bare call or a global/builtin bareword
+  call — through an unconditional, self-documented `"(local)"` placeholder,
+  `data: None`, positioned at the call site, never actually attempting
+  resolution; new correctly resolves or correctly omits) and
+  `OverloadIdentityCollapsed` (legacy's `QualifiedName`-keyed
+  `definitions`/`incoming_calls`/`outgoing_calls` have no signature
+  component at all — an overload set collapses to ONE last-write-wins slot,
+  silently merging every overload's callers together and sometimes pointing
+  at the WRONG overload's position entirely; new's `RoutineNodeId`
+  distinguishes every overload via `params_count`/`sig_fp`). CDO run
+  (env-gated, `CDO_WS`/`ENFORCE_CDO_WS`) additionally exercises the H-10
+  edit scenario: legacy `reindex_file` of one file loses cross-file
+  incoming edges to it while new's `apply_batch` of the identical no-op
+  save keeps them (`NewBetter(H10Repair)`, the 11th class,
+  edit-scenario-only). Always-on fixture corpora: the existing
+  `tests/fixtures/lsp-incr/` (Task 10's fixture — overloads, events,
+  Unicode) plus two new ones built for this task —
+  `tests/fixtures/lsp-diff-core/` (an interface, a case-mismatched call, a
+  misdirected event subscriber, a well-formed pub/sub pair, an overload
+  set, a two-call-site caller) and `tests/fixtures/lsp-diff-deps/` (a real,
+  committed `.alpackages/` pair reused from `tests/r2-5a-fixtures/`: a
+  SymbolOnly dependency and a genuine embedded-source dependency, each
+  called from the workspace). `src/handlers.rs`'s private `code_lens`
+  widened to `pub` (same T0.5 precedent as `prepare_call_hierarchy`/
+  `incoming_calls`/`outgoing_calls`) so the harness can drive it directly.
+  Diagnostics comparison is scoped to `unused-procedure` only — legacy's
+  code-quality diagnostics live in a private function in the binary-only
+  `src/server.rs`, structurally unreachable from an integration-test crate,
+  and relocating it purely for a scaffolding test that dies with legacy at
+  Task 17 was judged not worth the effort.
+  **CDO fix-wave** (the controller's first real CDO run, 23 REGRESSION/
+  unexplained findings, decomposed into exactly 2 mechanical classes):
+  (1) `OverloadIdentityCollapsed` renamed and GENERALIZED to
+  `LegacyIdentityCollapse` — legacy's `object_types`/`definitions`/
+  `incoming_calls`/`outgoing_calls` are keyed by bare `(object NAME text,
+  routine NAME text)` only, no object KIND or enclosing-member component at
+  all, so the collision isn't limited to same-file arg-count overloads (the
+  original, narrower scope) — CDO's `PAGE 6175343 "CDO E-Mail"` and
+  `CODEUNIT 6175280 "CDO E-Mail"` sharing routine names collide too, across
+  entirely different files and object kinds. Detection is now workspace-
+  GLOBAL: every identity is queried against legacy independently (the prior
+  per-file "skip the non-primary overload, never query legacy for it"
+  construction-time shortcut is gone), and the classifier cross-references
+  a mismatched answer against every OTHER declaration sharing the same
+  legacy identity key, anywhere in the workspace. New fixture:
+  `tests/fixtures/lsp-diff-identity/` (a same-named page+codeunit pair, and
+  a table with two different fields' same-named `OnValidate` triggers).
+  (2) `DepSourceSpan`'s predicate widened: it required legacy's and new's
+  reported APP NAMES to agree, which real CDO data (`LogMessage`/
+  `ToBase64`/`FromBase64`, 7 findings) showed doesn't always hold — legacy's
+  and new's independent app-attribution logic can disagree on which
+  declaring app "owns" a transitively-visible symbol even for the identical
+  target; the robust check is the ROUTINE NAME instead (already known to
+  match at that point in the classifier). A genuine double-classification
+  bug surfaced and was fixed along the way: `classify_incoming`'s raw
+  per-caller item-count heuristic (`OutgoingCardinality`'s incoming-axis
+  counterpart) was ALSO firing on a collided identity's inflated legacy
+  count, misreporting an already-`LegacyIdentityCollapse`-explained
+  divergence under the wrong class — it now skips entirely for any
+  identity `is_legacy_identity_collision` reports as collided. CDO class-
+  count pins are TODO named constants in `cdo_workspace_has_zero_regressions_and_zero_unexplained`
+  pending the controller's next CDO re-run (the old 23-finding
+  decomposition is stale — the classification mechanism changed).
+  **CDO layer-2 fix-wave** (re-run after the above: the previous 23 stayed
+  correctly classified plus the H-10 scenario, but 31 NEW incoming/codeLens
+  findings surfaced): added `NewBetter::ImplicitTriggerEdge` — a record
+  operation with a statically-`true` run-trigger argument (e.g.
+  `Rec.Insert(true)`) implicitly fires the target table's own trigger; the
+  new resolver models this as a real `EdgeKind::ImplicitTrigger` edge
+  (`RecordOpCtx`/`RunTrigger::True` in `src/program/resolve/applicability.rs`),
+  which legacy structurally never models at all (`Insert`/`Modify`/`Delete`/
+  `Rename` are builtin record methods, never user `Definition`s legacy's
+  call-site resolution can connect to a trigger). Mechanical predicate:
+  the incoming/codeLens site is backed by an `EdgeKind::ImplicitTrigger`
+  edge, checked directly against `LspSnapshot::incoming`/`edges_by_file`
+  (the LSP wire shape itself carries no edge-kind marker for this, unlike
+  EventFlow's `[EventPublisher]` tag). New fixture arm in
+  `tests/fixtures/lsp-diff-nested/` (`ImplicitTrigger.al`/
+  `ImplicitTriggerCaller.al`). The layer-2 brief's OTHER hypothesized class,
+  `NestedTriggerCaller` ("legacy's `ParsedFile` projection never captured
+  nested field/action/dataitem-scoped triggers as caller definitions"), was
+  built and run against 4 reproduction shapes (table field, page action,
+  page field, and report dataitem triggers, each with a bareword call
+  inside — `NestedTable.al`/`NestedPage.al`/`NestedPageField.al`/
+  `NestedReport.al`) and DID NOT REPRODUCE: legacy's `collect_routines`/
+  `parse_file_ir` walk the object subtree unconditionally regardless of
+  nesting depth and correctly attribute calls inside every one of these
+  trigger bodies. Per the project's own "measure the population before
+  building taxonomy for it" doctrine, no predicate/class was added for a
+  hypothesis that didn't reproduce; the fixture is kept as the permanent
+  falsification record (and a regression guard for the 4 shapes it proves
+  correct). Some of the CDO layer-2's 31 findings may be genuinely
+  DIFFERENT, unexplained phenomena (e.g. a plain-procedure caller like
+  `gethtml`/`getplaintext`) not covered by either class here — flagged for
+  the controller's own individual investigation, not stretched into an
+  existing predicate.
+  **CDO layer-2b fix-wave** (the controller confirmed a concrete repro for
+  the residual, reconciling the layer-2 falsification: CDO `Page 6175306
+  "CDO E-Mail Template Lines"`, `SourceTable "CDO E-Mail Templ. Line
+  Report"` — an action's `OnAction`/a page trigger's bareword call whose
+  TARGET lives on the bound SourceTable, not the page itself —
+  CROSS-OBJECT, unlike the layer-2 falsification fixtures' SAME-OBJECT bare
+  calls, which is exactly why those matched and this doesn't): added
+  `NewBetter::ImplicitRecResolved` — a `Page`/`PageExtension`/`Report`/
+  `ReportExtension` trigger's bare (or explicit `Rec.`/`xRec.`-qualified)
+  call resolved cross-object via the caller's IMPLICIT SourceTable binding.
+  Legacy's bare-call resolution (`src/graph.rs`'s `resolve_call`) is
+  structurally same-object-only (`QualifiedName{object: caller_qname.object,
+  ..}`, unconditionally); for the qualified form, `Rec`/`xRec` are a
+  LANGUAGE-level implicit binding `lookup_variable_type` never sees as a
+  declared local variable for a page/report scope — so this is invisible to
+  legacy's incoming-call index regardless of call syntax. Mechanical
+  predicate: a Call-kind (not `ImplicitTrigger`) new-only incoming/codeLens
+  site whose caller's object differs from the callee's, the caller's
+  object KIND is Page/PageExtension/Report/ReportExtension, and the
+  call-site TEXT (read from the caller's own source, since `LspSnapshot`
+  carries no dedicated marker for this) is bare or `Rec.`/`xRec.`-qualified.
+  A companion diagnostics-axis fix: `classify_diagnostics`'s `CaseFoldHit`
+  check now defers to `ImplicitTriggerEdge`/`ImplicitRecResolved` first,
+  closing a misclassification the layer-2 fix-wave's own codeLens fix
+  (same root cause) had already caught for that axis but not yet for
+  `unused-procedure`. New fixture arm `ImplicitRecTable.al`/
+  `ImplicitRecPage.al`, kept in the SAME `tests/fixtures/lsp-diff-nested/`
+  directory as the falsification fixtures for direct contrast (same-object
+  bare calls match; cross-object ones don't).
+  **CDO layer-3 fix-wave** (41 NEW incoming/codeLens/diagnostics findings,
+  all plain-procedure callers with RECEIVER-QUALIFIED calls; concretely
+  confirmed against CDO `Codeunit 6175274 "CDO Continia Online PDF Mgt"`'s
+  `procedure MergePdf(var DOFile: Record "CDO File"; ...)` calling
+  `DOFile.IsPdf()`, where `DOFile` is a `var` PARAMETER): added
+  `NewBetter::VariableReceiverResolved` — an ordinary receiver-qualified
+  call (any object kind, unlike `ImplicitRecResolved` above) whose receiver
+  is a `var` parameter (or another local/temp shape legacy's variable
+  tracking misses), resolved cross-object by the new engine. Root cause
+  confirmed by reading `src/parser.rs`/`src/indexer.rs`: legacy's
+  `variable_bindings` map is populated EXCLUSIVELY from a routine's
+  `var`-section LOCALS (`push_variables_ir(&mut result, &r.locals, ...)`,
+  `src/parser.rs:293`, driven by `src/indexer.rs`'s
+  `add_variable_binding` loop) — the routine's PARAMETER list (`r.params`,
+  a structurally separate IR field used elsewhere only to compute
+  `parameter_count`) never flows into it at all, so `lookup_variable_type`
+  can never type a parameter receiver, while a LOCAL `var`-section variable
+  receiver of the identical record type resolves correctly today (verified
+  empirically, not assumed — see the fixture below). Mechanical predicate:
+  a Call-kind new-only incoming/codeLens/diagnostics site whose caller's
+  object differs from the callee's, is receiver-qualified, and whose
+  receiver token is NEITHER `Rec`/`xRec` (already claimed by
+  `ImplicitRecResolved`) NOR (case-insensitive, quote-normalized) the
+  callee's own object display name (an object-name-qualified call legacy
+  CAN resolve via `object_types`, so it never reaches this class at all).
+  A companion span-shape correctness fix: the call-site text-sniffing
+  helper previously assumed a call's span always starts exactly at the
+  callee identifier (true for bare calls, per layer-2b) — real CDO data
+  showed a member call's span covers the WHOLE reference expression
+  INCLUDING the receiver (`DOFile.IsPdf()`'s span was 14 columns, not
+  just `IsPdf()`'s 5). `call_site_receiver` now parses the site's own
+  text directly rather than inferring shape from what precedes it,
+  correctly handling both shapes without needing to know which one a
+  given site is in advance; `ImplicitRecResolved`'s bare-call check was
+  re-verified against this fix and needed no change. New fixture arm
+  `VariableReceiverTable.al`/`VariableReceiverCaller.al` in the SAME
+  `tests/fixtures/lsp-diff-nested/` directory, deliberately pairing a
+  `var` parameter receiver (diverges) with a local `var`-section variable
+  receiver of the same record type (matches cleanly) to empirically prove
+  the gap is parameter-specific, not "any variable receiver."
+  **CDO layer-4 fix-wave** (re-run after layer 3: 41→35 findings; the
+  predicate itself was CORRECT but OVER-RESTRICTED): GENERALIZED
+  `VariableReceiverResolved` by dropping its `caller object != callee
+  object` requirement entirely, per 3 concrete same-object CDO
+  counterexamples the controller verified: `Codeunit 6175324 "CDO XML
+  Node"`'s `AddNode(var NewXmlNode: Codeunit "CDO XML Node" ...)` calling
+  `NewXmlNode.SetXmlNode(...)` (a codeunit's `var` parameter of its OWN
+  type calling itself); `Table 6175301 "CDO File"`'s `MergeWithPdf`
+  calling `PDFDocument.IsPdf()` where `PDFDocument` is `Record "CDO File"`
+  (same shape, record-typed); and `Table 6175330`'s `GetPlainText` calling
+  `Rec.GetHTML()` (a table's OWN implicit `Rec.`-qualified self-call —
+  `Rec`/`xRec` are no longer excluded from this class either, since the
+  mechanism is the receiver TOKEN legacy never modeled, not object
+  identity; a cross-object Page/Report bare-or-`Rec.`-qualified call is
+  still claimed by `ImplicitRecResolved` FIRST in the classifier chain, so
+  there is no double-classification). Also independently confirmed (via a
+  temporary probe, BEFORE writing any layer-4 code) that a `var`
+  Codeunit-typed variable's `.Run()` dispatching to `OnRun` — the
+  controller's 4th flagged row, CDO's `.dependencies/cdo/.../
+  cdoqueuemanagement.codeunit.al::cdo queue management.onrun: new
+  caller=sendqueue` — needed NO dedicated `EdgeKind::Run` handling at all:
+  `resolve_member`'s `Run`-on-Codeunit special case
+  (`src/program/resolve/resolver.rs`) produces an ordinary `EdgeKind::Call`/
+  Member-shape edge, so the existing (even pre-generalization,
+  cross-object) receiver check already caught it. New fixture arms in the
+  SAME `tests/fixtures/lsp-diff-nested/` directory:
+  `SameObjectVariableReceiver.al` (the codeunit self-call),
+  `VariableReceiverTable.al` extended with `MergeWithSelf`/`GetPlainText`
+  (the two same-object table shapes), and `RunDispatchTarget.al`/
+  `RunDispatchCaller.al` (the Run-dispatch regression guard — proven to
+  need no fix, kept as a permanent guard). TDD calibration confirmed the
+  generalization is what fixes the 3 same-object cases: temporarily
+  restoring the old cross-object restriction reproduced exactly those 3 as
+  `NewUnexplained`, nothing more or less.
+  **CDO GATE HOLDS (capstone)**: the controller re-ran the full suite on
+  the real 551-file Continia (CDO) workspace at commit `ebad1b9` (the
+  layer-4 generalization above) — **8/8 differential tests green,
+  `REGRESSION=0`, `NEW_UNEXPLAINED=0`, H-10 edit scenario green.** This is
+  the deletion license Task 14 exists to produce: every one of 55,216
+  total findings on a real production BC workspace is either an exact
+  `Match` (12,089) or mechanically justified by a named, fixture-proven
+  class — `UnqualifiedCallResolved` (36,971 — legacy's blanket
+  `"(local)"` placeholder for every unqualified call, i.e. legacy never
+  even attempts resolution for these), `VariableReceiverResolved` (2,169
+  — calls through a variable/parameter receiver legacy's
+  `variable_bindings` never bound), `LegacyIdentityCollapse` (1,625 —
+  legacy's bare name-only keying collides same-named routines across
+  different objects into ONE slot, producing WRONG answers, not just
+  missing ones), `ImplicitTriggerEdge` (989), `ImplicitRecResolved`
+  (778), `OutgoingCardinality` (430), `R2Precision` (68),
+  `EventDirectionMoved` (47), `R6InterfaceExclusion` (14),
+  `CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan` (12 each), with
+  `AbiSymbolShape` and `ObjectIdAdditive` both confirmed at 0. All
+  `CDO_PINS` entries in `cdo_workspace_has_zero_regressions_and_zero_unexplained`
+  are now exact ratchets (`Some(n)`, no `None` left) at these values — a
+  future change moving any of them must be explained, never
+  blind-updated.
+  **Review fix-wave (Opus adversarial audit, 6 required fixes + 3 LOW +
+  a DOC gap)**: the audit judged the license SOUND but conditional.
+  **HIGH-1, arc-critical**: `run_sweep` queried legacy with the
+  LOWERCASED cross-engine matching key (`relativize`), but legacy's own
+  `path_cache` (`graph.rs`'s `get_shared_path`) indexes
+  `Definition.file` under its REAL case on any platform where
+  `protocol::normalize_path` isn't itself lowercasing (Linux, CI's
+  `ubuntu-latest`) — every fixture file here is capitalized, so a
+  lowercased query path missed the exact-match `path_cache` lookup
+  entirely, `get_definitions_in_file` silently returned `&[]` for EVERY
+  identity, and the whole differential run panicked on CI, meaning the
+  "always-on CI arm" backing this deletion license never actually ran
+  there. Invisible on Windows: `normalize_path` already lowercases the
+  whole path at legacy's OWN index time there, erasing the case
+  difference before either code path could observe it — which is
+  exactly why this slipped past every fixture run in this dev
+  environment across the whole task. Fix: added `relativize_case_preserving`
+  (a `relativize_raw` shared core, minus the final lowercase step) and
+  a new `RoutineIdentity.file_rel_case` field carrying the real
+  case-preserving path (identity KEYING still uses lowercased
+  `file_rel` only); `run_sweep`'s per-identity query loop and the CDO
+  H-10 test (which had the identical bug independently) now build their
+  legacy-query path from it. **HIGH-2**: `R2Precision` was an
+  unconditional blanket over EVERY new-only diagnostics finding — now
+  gated on positive evidence (`routine_has_event_subscriber_attribute`,
+  reading the owned IR's `RoutineDecl.attributes` directly) that the
+  flagged routine actually carries a real `[EventSubscriber(...)]`
+  attribute. **MED-1**: `EventDirectionMoved`'s sibling cross-reference
+  matched by BARE NAME workspace-wide (endemic same-named BC handlers
+  could launder a genuinely lost subscription) — now also requires the
+  sibling's own object to match the object legacy's own detail string
+  names. **MED-2**: `classify_outgoing_pair`'s `LegacyIdentityCollapse`
+  never constrained NEW's own resolved target object, so an unrelated
+  new answer could be laundered by an unrelated same-named collision
+  elsewhere in the workspace — now requires new's target object to
+  equal legacy's own claimed object. **MED-3**: outgoing
+  `OutgoingCardinality` fired on a raw item-COUNT mismatch with no
+  content check, pairing same-count items by blind positional zip
+  regardless of target identity — rewritten to group by target name and
+  compare per-target sets (an honest coverage gap noted: no existing
+  fixture exercises this rewritten branch directly — `Zeta.CallTwice`'s
+  pinned finding turned out to come from the already-correctly-scoped
+  INCOMING-axis counterpart instead). **MED-4**: the CDO H-10 test's
+  "new keeps them" assertion was near-vacuous (`x == max(y, x)`, always
+  true unless new got STRICTLY worse) and compared different UNITS (raw
+  `EdgeRef` count vs. grouped LSP item count) — replaced with a
+  same-unit equality assertion against a captured pre-edit raw count;
+  target selection now also requires a genuinely CROSS-FILE caller,
+  matching the test's own name. **3 LOW fixes**: `is_new_event_derived_outgoing`
+  no longer treats an item with EMPTY `from_ranges` as vacuously
+  event-derived (`Iterator::all` on an empty iterator is `true`);
+  `classify_incoming`'s per-site maps are now `Vec`-valued multimaps
+  instead of silently dropping same-site duplicates via `.insert()`;
+  `lens_key` uses `args.first()` instead of an unguarded `args[0]`
+  (panicked on `Some(vec![])`). **DOC**: added the license's actual
+  load-bearing argument (module doc + task report) — legacy's OUTGOING
+  handler never attempts resolution for an unqualified call, but its
+  INCOMING index (`add_call_site`/`resolve_call`, index time) resolves
+  it EAGERLY and independently, so a genuine new-side resolution bug
+  among the 36,971 `UnqualifiedCallResolved` calls cannot hide behind
+  that class's size — it surfaces as a real `Regression` on the
+  INCOMING axis instead. Verified via a structural invariant test
+  (`relativize_is_lowercased_relativize_case_preserving`) plus temporary
+  TDD-calibration probes for HIGH-1/HIGH-2/MED-1/MED-2 (each forced
+  wrong, confirmed to fail loudly for the right reason, reverted); all
+  9 differential tests (8 pre-existing + the new invariant test) stayed
+  green with byte-identical pins throughout, confirming zero regression
+  against any currently-covered legitimate case. CDO pins deliberately
+  left unchanged pending the controller's next re-run.
+  **CDO re-run findings (2 of 7 tests failed; the hardening worked)**:
+  **Finding A** — 8 diagnostics-axis findings were misclassified as
+  `NewUnexplained`/would-be `R2Precision`, when they're actually
+  `LegacyIdentityCollapse` (legacy's collapsed (object, name) identity
+  credits a genuinely-unused declaration with a COLLIDING sibling
+  declaration's real callers, staying silent) — two confirmed CDO
+  sub-shapes: `Page 6175343 "CDO E-Mail"`/`Codeunit 6175280 "CDO E-Mail"`
+  sharing a display name (only the codeunit's procedures are really
+  called), and `Table 6175301 "CDO File"`.`SetBackgroundPDF`'s two
+  overloads (only one really called). Fix: `classify_diagnostics` now
+  consults `Sweep::is_legacy_identity_collision` FIRST, before the
+  `[EventSubscriber]`-gated `R2Precision` check, via a new
+  `routine_legacy_identity_collision` helper. Two new fixture arms
+  (`SharedNameTwo.al`/`SharedPageTwo.al`/`IdentityCallerTwo.al` and
+  `OverloadProbeTable.al`/`OverloadProbeCaller.al`, `tests/fixtures/
+  lsp-diff-identity/`) pin the diagnostics-axis collapse always-on:
+  `LegacyIdentityCollapse` 8→17. **Finding B** — the H-10 test's now-honest
+  `assert_eq!` failed for real: `apply_batch`'s post-edit raw incoming
+  count for a no-op save came back HIGHER than the pre-edit count.
+  Root-caused (NOT reclassified as a test bug) to a genuine engine gap in
+  `classify_path` (`src/lsp/updater.rs`): unlike `resolve_virtual_path`
+  (`src/lsp/handlers.rs`), which already falls back to a case-insensitive
+  scan when an inbound URI's case doesn't match the already-indexed
+  `virtual_path` key, `classify_path` had NO such fallback — a
+  case-mismatched `FileSaved`/`FileRemoved` path silently produced a
+  SECOND, separate map entry for the SAME physical file (`apply_rung1_core`'s
+  `edges_by_file.insert` only overwrites on an exact key match;
+  `apply_rung2`'s `splice_file` only replaces on an exact string match),
+  and `build_incoming` then double-counted every edge whose caller lived
+  in that file. Reproduced LOCALLY (no CDO needed) with a new unit test,
+  `classify_path_resolves_case_mismatched_path_to_the_existing_key`
+  (platform-independent, TDD RED confirmed the bug before the fix) plus a
+  full-pipeline integration test using the exact same-file-caller-plus-
+  cross-file-caller shape the CDO finding needed,
+  `case_mismatched_no_op_save_does_not_duplicate_incoming_edges` (which,
+  before the fix, reproduced the CDO report's exact numeric shape:
+  `parsed.len()` 3 vs. 2). Fixed `classify_path` to match
+  `resolve_virtual_path`'s existing case-insensitive-fallback pattern —
+  an engine fix (Task 9), not a test change. Both new tests added to
+  `src/lsp/updater.rs`'s own test module. CDO pins deliberately left
+  unchanged; the controller re-runs and hands back updated numbers.
+  **CDO re-run: final residual (8/9 green)** — after Findings A/B landed,
+  the controller's H-10 test PASSED for real on CDO (confirming the
+  `classify_path` engine fix) and the diagnostics-axis collapse closed;
+  ONE residual remained: 7 new-only OUTGOING items at a single site
+  (`Table 6175283 "CDO E-Mail Template Header"`.`UpdateTemplateLines`'s
+  `EMailTemplateLine.Validate("Dimension Code", "Dimension Code")`) — the
+  engine's implicit-trigger machinery fans a same-field `Validate` call
+  out to a MULTICAST candidate set (7 distinct field-scoped `OnValidate`
+  routines across the base table and its extensions, all legitimately
+  firing — real AL semantics, not a duplicate-emission bug), which
+  legacy never models (`Validate` is just a builtin record method to
+  it). This is `ImplicitTriggerEdge` — already wired into
+  `classify_incoming`/`classify_code_lens` — but never into the
+  OUTGOING axis's new-only arms. Fix: `run_sweep` now ALSO records this
+  routine's own file's `edges_by_file` entries backed by
+  `EdgeKind::ImplicitTrigger` where `edge.from` matches this exact
+  routine (no reverse "outgoing" index exists on `LspSnapshot`, unlike
+  `incoming`), into a new `new_outgoing_implicit_trigger_sites` set;
+  `classify_outgoing`'s two new-only arms (`([], _)` and the MED-3
+  per-target-name `(0, _)`) both route through a new shared
+  `push_new_only_outgoing` helper that checks this set before defaulting
+  to `NewUnexplained`. New fixture arm in `tests/fixtures/lsp-diff-nested/`:
+  `ImplicitTriggerTableExt.al` extends `ImplicitTrigger.al`'s table with
+  a SECOND `"Amount".OnValidate` via `modify("Amount")`, and
+  `ImplicitTriggerCaller.al`'s new `DoValidate` calls
+  `Rec.Validate(Amount, ...)` — reproducing a genuine 2-candidate
+  multicast locally (mirroring CDO's 7-candidate shape exactly).
+  `ImplicitTriggerEdge` 2→8 on `lsp-diff-nested` (every finding
+  individually probed before pinning — 2 outgoing + 2 incoming + 2
+  codeLens for the new multicast pair, on top of the unchanged
+  `Rec.Insert(true)` pair). TDD-calibrated: forced the new outgoing
+  check off, confirmed the exact 2 multicast findings correctly fail as
+  `NewUnexplained`, reverted. This is expected to be the LAST layer —
+  the controller re-runs CDO and, if green, hands back the FINAL pin
+  numbers for every class.
+  **CDO GATE HOLDS — FINAL (t3.14 closes)**: the controller's final
+  re-run, at commit `f5e441e`, held `REGRESSION=0`/`NEW_UNEXPLAINED=0`
+  under the FULLY HARDENED predicates (positive-evidence gates, not
+  blanket fallbacks — the whole point of the Opus adversarial review).
+  **12,284 identical answers; 44,422 mechanically-justified divergences
+  (every one a documented legacy defect); ZERO regressions; ZERO
+  unexplained** (56,706 total findings) — final counts: `Match` 12,284,
+  `UnqualifiedCallResolved` 37,066, `VariableReceiverResolved` 2,326,
+  `ImplicitTriggerEdge` 2,034, `LegacyIdentityCollapse` 1,700,
+  `ImplicitRecResolved` 825, `OutgoingCardinality` 335,
+  `EventDirectionMoved` 47, `R2Precision` 39, `R6InterfaceExclusion` 14,
+  `CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan` 12 each,
+  `AbiSymbolShape`/`ObjectIdAdditive` both 0. Deltas vs. the
+  pre-hardening capstone (`ebad1b9`), with cause — this audit trail
+  proves the hardening changed REAL classifications, not just prose:
+  `Match` 12,089→12,284 (+195: the `classify_path` engine fix restoring
+  correctly-attributed edges + the `classify_incoming` multimap fix
+  restoring comparisons the old `.insert()` had silently dropped);
+  `R2Precision` 68→39 (−29: the `[EventSubscriber]`-positive gate plus
+  the new diagnostics-axis `LegacyIdentityCollapse` check moved these —
+  29 findings had been LAUNDERED by the blanket fallback the review
+  flagged); `LegacyIdentityCollapse` 1,625→1,700 (+75: the diagnostics
+  axis, new); `ImplicitTriggerEdge` 989→2,034 (+1,045: the outgoing
+  axis, new); `OutgoingCardinality` 430→335 (−95: target-SET comparison
+  replaced the raw-count-plus-positional-zip check); `ImplicitRecResolved`
+  778→825, `VariableReceiverResolved` 2,169→2,326, `UnqualifiedCallResolved`
+  36,971→37,066 (real workspace re-attribution from the same review
+  fix-wave's other tightenings, MED-1/MED-2); `EventDirectionMoved`/
+  `R6InterfaceExclusion`/`CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan`
+  unchanged (untouched by this fix-wave). **Two REAL bugs this harness
+  caught in the process of hardening itself**: (1) the `classify_path`
+  duplicate-file-entry engine bug (`src/lsp/updater.rs`, Finding B) — a
+  genuine Task-9 production defect that would have shipped; (2) the
+  `R2Precision` blanket-fallback laundering gap (HIGH-2/Finding A) — a
+  genuine hole in THIS harness's own deletion-license evidence, closed
+  before it could hide a real divergence. All `CDO_PINS` entries in
+  `cdo_workspace_has_zero_regressions_and_zero_unexplained` are exact
+  ratchets at these FINAL values. Task 14 is DONE.
+- **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
+  LSP-migration arc, Task 14 Step 5, plan-amended)** —
+  `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
+  through a rung-1 (body-only) then rung-2 (signature-change) transition on
+  a workspace with a REAL embedded-source dependency, giving
+  `LspSnapshot::dep_decl_by_id`/`dep_texts`/`workspace_root` (widened into
+  this gate's equivalence key in the Task 10/11 review fix-waves, but
+  trivially vacuous on the dep-less `lsp-incr` fixture) non-vacuous
+  coverage for the first time: a real `dep_decl_by_id` entry for `Source
+  Mgt.DoWork`, asserted byte-identical across both rungs (the dep layer is
+  never touched by either). A hand-built `.app` zip was judged infeasible
+  to construct correctly from scratch within scope; reusing the
+  already-committed, already-proven `tests/r2-5a-fixtures/` `.app` fixtures
+  made the disk-based, plan-preferred arm feasible instead of the brief's
+  in-memory `two_app` fallback.
+- **`src/lsp/custom.rs`: engine-backed custom LSP requests (T3 LSP-migration
+  arc, Task 13) — `dependency_document_symbol`, `event_publishers_in_file`,
+  and `event_reference_at_position`, the program-engine replacements for
+  `src/handlers.rs`'s `dependency_document_symbol`/`event_publishers_in_file`/
+  `event_reference_at_position` (cut over at Task 15). `fieldProperties`/
+  `actionProperties`/`telemetryStatus` are already graph-independent and were
+  not touched. `dependency_document_symbol`/`event_reference_at_position`
+  read `LspSnapshot::snap.apps[].abi: Option<ParsedAppPackage>` — the SAME
+  `.app`-derived data (`crate::app_package`/`crate::dependencies::
+  load_all_apps`) legacy's `graph.dependency_objects` was built from —
+  rather than `ProgramGraph`'s `RoutineNode`/`ObjectNode` nodes, giving
+  byte-identical, full-parameter-name signatures for every dependency
+  regardless of trust tier (a `RoutineNode`'s ABI-tier parameter metadata
+  deliberately drops parameter names — `AbiParamRetained`'s "MINUS
+  name/is_temporary" — and carries none at all for an embedded-source
+  dependency, so building from graph nodes would have meant a reduced-fidelity
+  synthesized signature). `event_publishers_in_file` reads a workspace file's
+  retained `AlFile` IR directly (`ParsedFileEntry.file`, no re-parsing, no
+  disk I/O) and renders each publisher's signature via a local
+  string-literal-aware raw-text header scan (byte-identical output to
+  `parser.rs`'s `signature_ir`, duplicated rather than shared since
+  `parser.rs` is a documented Task-17 deletion target). Two additive,
+  parity-safe deltas from legacy: numbered-object lookup via `object_id` now
+  actually resolves (legacy parses but never reads that field), and no disk
+  I/O (reads the in-memory snapshot text instead of re-reading the file from
+  disk, so it can't race a live unsaved editor buffer).
+- **`src/lsp/lens.rs` + `src/lsp/diagnostics.rs`: codeLens + a diffing
+  diagnostics engine on the program engine (T3 LSP-migration arc, Task 12) —
+  the engine-backed replacements for `src/handlers.rs`'s legacy graph-backed
+  `code_lens`/`get_unused_procedure_diagnostics` and `src/server.rs`'s
+  publish-once-stale `get_code_quality_diagnostics` (cut over at Task 15).**
+  `code_lenses` emits one lens per declaration in a file (procedures,
+  triggers, everything `decls_by_file` carries — unfiltered by kind, mirroring
+  legacy's `get_definitions_in_file`), delegating complexity/parameter-count
+  to the SAME owned-IR walker the `--analyze` CLI path uses
+  (`analysis::routine_complexity_ir`) rather than re-deriving metrics.
+  `diagnostics::compute_all` ports the full unused-procedure rule set
+  (`src/indexer.rs:159-218` + `src/graph.rs:865-905`) onto engine data — the
+  new `effective_incoming_count` helper generalizes legacy's
+  `get_incoming_call_count` (direct calls + event-subscription count) onto
+  the engine's edge model, which SUBSUMES the old `[EventSubscriber]`
+  attribute-blanket exclusion entirely: a subscriber is "used" because a real
+  `EventFlow` edge targets it, so a subscription whose publisher/event name
+  doesn't resolve to anything real is now correctly flagged (a precision
+  improvement over legacy's unconditional attribute exclusion, proven both
+  directions by tests) — while `[IntegrationEvent]`/`[BusinessEvent]`
+  publishers stay unconditionally excluded (their real subscribers typically
+  live in a downstream app this workspace never loads), `[InternalEvent]`
+  stays un-excluded, flagged unless subscribed-or-raised, exactly as legacy
+  behaved, and a NEW rule (R6, review fix-wave) excludes any routine whose
+  enclosing object is `ObjectKind::Interface` — an interface method's own
+  signature can never itself be a call target (dispatch always resolves to
+  an IMPLEMENTING object's own routine instead), so it structurally always
+  showed zero incoming under EITHER engine; legacy shared this exact
+  false-positive class. Plus `DiagnosticsState::diff`, the
+  recompute-diff-publish-clear engine Task 15 wires to `on_swap`: diffs a
+  fresh `compute_all` result against the last published set and emits ONLY
+  what changed, INCLUDING a uri whose findings dropped to zero — the clear
+  behavior legacy's `publish_all_diagnostics` never had (a fixed procedure's
+  stale "unused" hint would otherwise linger until the next unrelated
+  finding in that file happened to overwrite it). Widened three existing
+  helpers to `pub(crate)` for reuse rather than duplication:
+  `lsp::handlers::{resolve_virtual_path, object_name_for, origin_to_range}`.
+  **Review fix-wave:** `routine_complexity_ir`/`is_framework_invocation_attribute`
+  (+ their private IR-walking helpers) were relocated from `parser.rs` (a
+  Task-17 deletion target) into `src/analysis.rs`, which was itself promoted
+  from a binary-only `main.rs` module to a proper library module (`pub mod
+  analysis;` in `lib.rs`) so these permanent LSP modules never depend on code
+  scheduled for deletion; `parser.rs` re-exports both so its own existing
+  call sites keep compiling unchanged. (`program::resolve::event::is_event_publisher`,
+  separately named in the same review finding, was already correctly placed
+  in the permanent program-engine module and needed no change.)
+- **`src/lsp/handlers.rs`: core call-hierarchy handlers on the program engine
+  (T3 LSP-migration arc, Task 11) — `prepare`/`incoming`/`outgoing`, the
+  engine-backed replacements for `src/handlers.rs`'s legacy graph-backed
+  `prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls` (cut over at
+  Task 15).** `ItemData { node: RoutineNodeId }` is the `item.data` JSON
+  round-trip payload; `incoming` groups `EdgeRef`s by `edge.from` into one
+  `CallHierarchyIncomingCall` per DISTINCT caller (a deliberate improvement
+  over legacy's ungrouped per-call-site shape); `outgoing` walks the
+  routine's own edge bucket (`Call`/`Run`/`ImplicitTrigger`) plus
+  `event_edges` filtered `edge.from == id` (a publisher's subscribers
+  surface as outgoing targets — the design doc's "natural direction"
+  decision), emitting one item per route: `RouteTarget::Routine(id)` → a
+  real item (workspace OR dependency-with-embedded-source — both now get
+  REAL navigable spans, legacy never could); `conditionalResolved`/
+  `ambiguousResolved` candidate sets → one item per candidate;
+  `RouteTarget::AbiSymbol` → a zero-range item at a synthesized
+  `al-preview://` URI (matching legacy's external-def fallback SHAPE —
+  identity-bearing detail + an `external`-flagged `data` blob — but
+  deliberately NOT reusing the caller's own file/range as legacy did);
+  `Builtin`/`Unresolved` → no item. Both non-negotiable live-span rules
+  (resolver-read audit §6.1, and its Task-10 EventFlow extension) are
+  enforced structurally: every position-bearing surface is re-derived from
+  `LspSnapshot::decl_and_text` at query time, never from a stored
+  `Route::Witness`/`SiteId` span — proven by two dedicated rung-1-edit
+  regression tests asserting the returned ranges match an independent fresh
+  batch build, not the pre-edit witness. **Review fix-wave:** the
+  `al-preview://` URI `RouteTarget::AbiSymbol` items emit was found to only
+  wear legacy's scheme by eye — legacy's own `parse_al_preview_uri`
+  (`src/handlers.rs:1452-1499`, widened to `pub(crate)` for direct testing)
+  structurally requires the OBJECT-level 5-segment layout
+  `al-preview:///allang/{App}/{Type}/{Id}/{Name}.dal` (it anchors on `Type`
+  parsing as a known `ObjectType`), which the original 3-segment
+  `allang/{App}/{ObjectDisplay}/{Routine}` shape could never satisfy —
+  `abi_symbol_uri` now emits the conformant 5-segment layout (falling back
+  to the object number's own text for the `Name` segment when a numbered
+  ABI object carries no raw display name at all), proven by a dedicated
+  test that calls legacy's parser directly on the emitted URI.
+- **`LspSnapshot::dep_decl_by_id`/`dep_texts`/`workspace_root` (T3 Task 11,
+  extending Task 8's `LspSnapshot`)** — closes a real gap the handlers work
+  surfaced: `decl_by_id` was workspace-only, so a `RouteTarget::Routine(id)`
+  pointing into an embedded-source DEPENDENCY had nowhere to resolve a real
+  span, contradicting the migration design doc's explicit §5 promise ("a dep
+  with embedded source gets REAL navigable spans"). `build_dep_indexes`
+  (new, shared by `LspSnapshot::from_context` and `Updater::apply_rung2`)
+  walks `graph.routines` for every non-primary app and records each one
+  `BodyMap` can still resolve, plus its file's text (keyed `(AppRef,
+  virtual_path)`, since a dependency's `virtual_path` is only unique within
+  its own app); rung 1 `Arc::clone`s both forward unchanged (dependency
+  source cannot change on a rung that only touches workspace files).
+  `workspace_root` (normalized like `uri_to_path`) lets `prepare` turn an
+  inbound URI into the same `virtual_path` key `decls_by_file`/`parsed` use,
+  with a case-insensitive fallback scan for `virtual_path`'s case-preserving
+  keys under Windows's case-insensitive filesystem semantics.
+- **Additive `Serialize`/`Deserialize` derives on `RoutineNodeId` and its
+  identity chain (`src/program/node.rs`: `AppRef`, `ObjKey`,
+  `ObjectNodeId`)** — needed for `ItemData`'s JSON round-trip through
+  `CallHierarchyItem.data`. `ObjectNodeId.kind: al_syntax::ir::ObjectKind` is
+  a foreign type in a crate that deliberately carries no serde dependency
+  (`al-syntax` stays minimal by design), so a local `ObjectKindDef` mirror
+  uses serde's standard `#[serde(remote = "...")]` idiom rather than adding
+  serde to `al-syntax` or hand-rolling a shadow enum with manual conversion.
+  Zero behavior change to any resolution path — verified by the full
+  existing test suite staying green. **Review fix-wave:** `RoutineNodeId::
+  sig_fp: u64` was found to serialize as a bare JSON NUMBER — an FNV-1a hash
+  spans the FULL `u64` range, but JSON numbers are IEEE-754
+  double-precision (exactly representable only up to 2^53), so a
+  JavaScript-based LSP client's `JSON.parse(item.data)` (the near-universal
+  case) would silently ROUND `sig_fp` for essentially every multi-param
+  routine, corrupting `ItemData` before the follow-up incoming/outgoing
+  request ever reaches this engine — a decode-then-lookup miss that fails
+  closed to an empty result in every real editor, never a loud error. Now
+  serialized through a decimal string (`#[serde(with = "sig_fp_as_string")]`,
+  a small local module) instead, which carries the exact value losslessly
+  regardless of the receiving language's number type; a dedicated test
+  asserts the JSON field is a string AND a value past 2^53 round-trips
+  exactly.
+- **`tests/lsp_incremental_parity.rs`: the PERMANENT incremental-vs-batch
+  differential gate (T3 LSP-migration arc, Task 10 — the arc's H-10
+  insurance policy; outlives the arc, runs in CI forever).** 9 scripts, each
+  copying the new fixture workspace (`tests/fixtures/lsp-incr/` — 2
+  codeunits with an overload set and an event pub/sub pair, 1 table, 1
+  tableextension, 1 page, a `Løbenr` identifier and an `æøå` line) into a
+  fresh tempdir, driving `Updater::apply_batch` through one or more scripted
+  disk edits, and asserting AFTER EVERY EDIT that the incrementally-produced
+  `LspSnapshot` is EQUIVALENT to a completely independent `LspSnapshot::
+  build_full` of the same on-disk state: a body-edit chain (3 consecutive
+  rung-1 saves), a signature change, a routine rename, a brand-new file, a
+  file delete, a body-only edit that flips which of two overloads a call
+  site resolves to (stays rung 1 — proves arg-type dispatch re-runs
+  correctly against the touched file's fresh parse, not a stale cached
+  `BodyMap`), an `EventSubscriber` attribute edit, and one mixed 6-edit batch
+  (add + delete + rename + signature change + 2 body-only edits, all
+  coalesced into ONE `apply_batch` call). Plus a dedicated non-vacuity probe
+  (`gate_non_vacuity_rung1_and_rung2_are_both_exercised`) proving, in
+  isolation from every other script's state, that this suite's applies
+  really do take both `Rung::One` and `Rung::Two` — a suite that silently
+  rung-3'd everywhere would pass every check for a trivial, uninteresting
+  reason. The equivalence key (one `canon_edges`/`canon_decls`/
+  `canon_incoming` helper set every script shares) compares, per file: the
+  edge MULTISET as `(ObligationId, EdgeKind, DispatchShape, SetCompleteness,
+  sorted Vec<(RouteTarget, EvidenceKind, sorted Vec<Condition>)>)` tuples
+  (widened in the review fix-wave below — see that entry); `event_edges`,
+  same rule; `incoming`, dereferenced through each `EdgeRef` to its owning
+  edge's `ObligationId` rather than compared as raw `(file, idx)` pairs;
+  `decls_by_file`, as `(RoutineNodeId, name, origin, name_origin)` tuples
+  (`Origin`'s EPHEMERAL `ts_id`/`kind_text` fields projected away —
+  `al_syntax::ir::Origin`'s own doc: "NEVER compare across parses,
+  tree-sitter recycles ids"). `Route::witness`, `Route::receiver_tier`, and
+  `generation` are excluded by design (stale-witness-span /
+  diagnostic-only-per-its-own-doc / monotonic-counter reasons, all
+  documented in the test file's header, which now gives an exhaustive
+  accounting of every compared-vs-excluded field). **Building the gate
+  exactly as the
+  brief's `(SiteId, ...)` key specified surfaced a REAL false-positive on
+  the very first script**: an `EventFlow` edge's `SiteId` — per
+  `resolver.rs`'s `emit_event_flow_edges`, explicitly "anchored at the
+  publisher routine's name-origin span" (a position stand-in, since an event
+  has no call expression) — goes stale after ANY rung-1 edit that shifts
+  line numbers in a file declaring a publisher, because `apply_rung1_core`
+  never recomputes `event_edges` (unconditional `Arc::clone`). Root-caused
+  (not papered over): switched the equivalence key from raw `Edge.site` to
+  `ClassifiedEdge.obligation_id` — `ObligationId::CallSite` mirrors `SiteId`
+  field-for-field (zero loss for real call sites, whose spans rung 1 always
+  keeps fresh) while `ObligationId::Publisher(RoutineNodeId)` carries no span
+  at all, exactly matching the cosmetic-vs-identity distinction the engine's
+  own coverage-contract type was already designed around. Calibration
+  (binding TDD step): deliberately compared a post-edit snapshot against the
+  WRONG (pre-edit) oracle on the signature-change script — confirmed the
+  gate fails loudly, naming the exact diverging file and edge — before
+  reverting to the correct comparison. Also widens `LspSnapshot::
+  build_full_with_parsed` from `pub(crate)` to `pub` (Task 9 had it
+  crate-only; this gate is an external integration-test crate and needs it
+  to construct an `Updater` the same way `server.rs` eventually will).
+  **Review fix-wave:** the equivalence key omitted `Route::conditions` and
+  `Edge::kind`/`shape`/`completeness` entirely — an unjustified exclusion
+  for a permanent CI gate (all 4 are real semantics: `conditions` gates
+  `Route::fires_by_default`/`Edge::default_reachable_routes`;
+  `kind`/`shape`/`completeness` are exactly what `classify_obligation`/
+  `real_unknown_rate` read). Widened `CanonEdge`/`canon_edge` to include all
+  4 (a new `CanonRoute` type carries each route's own sorted `Condition`
+  set), and rewrote the module doc's equivalence-key section into an
+  exhaustive accounting — every `Edge`/`Route` field is now either compared
+  or excluded with a stated, engine-doc-grounded reason (`Route::
+  receiver_tier`'s exclusion, previously implicit, is now stated explicitly
+  too: its own doc already marks it diagnostic-only/never-goldens-compared).
+  Added a new permanent meta-test,
+  `canon_edge_distinguishes_kind_shape_completeness_and_conditions`, proving
+  the widened key's discriminating power directly (4 hand-constructed
+  edge pairs, each differing in exactly one of the 4 newly-added
+  dimensions, must canonicalize unequal) — calibrated by temporarily
+  narrowing `canon_edge` back to the pre-fix-wave shape and confirming all 4
+  assertions fail (collapse to equal) before restoring. All 9 original
+  scripts stayed green under the widened key (no active divergence existed
+  on these dimensions; the fix closes an exclusion gap, not an active bug).
+  Also made the overload-flip script (`overload_flip_body_only_edit_
+  stays_rung1_and_equivalent`) prove its own claim directly rather than
+  leaning on the trailing full-equivalence check: a new `calc_target_at_line`
+  helper names each specific overload's `RoutineNodeId` by source line
+  before AND after the edit, asserting the Text-literal call site now names
+  `Calc(Text)`'s id (previously the Integer-literal site's id) and
+  vice versa. **Review fix-wave (T3 Task 11):** widened the equivalence key
+  a second time to ALSO compare `LspSnapshot::dep_decl_by_id`/`dep_texts`/
+  `workspace_root` — the three fields Task 11 added for dependency-source
+  real-span coverage, after this gate was already written, would otherwise
+  have been an invisible-divergence hole in a PERMANENT gate. Trivially
+  equal on this dep-less fixture today (no dependency apps); a dedicated
+  dependency-bearing fixture arm giving these three comparisons real,
+  non-vacuous coverage is planned as Task 14's Step 5 (plan-amended, commit
+  `9e4006e`).
+- **`src/lsp/updater.rs`: the incremental updater — debounced queue, the
+  rung-1/rung-2/(degenerate)rung-3 soundness ladder, and atomic
+  `Arc`-swap publication (T3 LSP-migration arc, Task 9 — the arc's CRUX).**
+  `SharedSnapshot` (`RwLock<Arc<LspSnapshot>>`, swap-only — a query thread's
+  `get()` is a cheap `Arc` clone, never blocked) + `ChangeEvent`
+  (`FileSaved`/`FileRemoved`/`DepsChanged`/`Overflow`) + `Updater` (owns the
+  mutable working `Vec<ParsedUnit>` — every source-bearing app, workspace
+  AND embedded-source deps) + `Updater::apply_batch` (the synchronous,
+  unit-tested core the brief asks for; returns `(LspSnapshot, Rung)` — the
+  "expose the rung taken" test hook, more directly than the
+  originally-suggested `Cell<Rung>`) + `spawn_updater` (the REAL hot-path
+  thread wrapper: 100ms debounce, per-path last-wins coalescing, apply,
+  swap, `on_swap` notify hook for a future diagnostics consumer). Implements
+  the plan's now-MANDATORY contingency from Task 3's CDO measurement
+  (`ResolveIndex`+`BodyMap` cost 200-350ms — 2-3.5x rung 1's entire 100ms
+  budget): `spawn_updater`'s loop builds a `ResolveIndex`/`BodyMap`/
+  `obj_node_map` context ONCE right after each swap and REUSES it across
+  every consecutive rung-1 batch, rebuilding only when a rung-2/3 event
+  actually changes the graph. Getting this cache-reuse to compile in safe
+  Rust surfaced a real ownership conflict (a first draft that spliced each
+  rung-1 edit straight into `Updater::parsed` failed to build once caching
+  was wired through `spawn_updater`, because a cached `BodyMap` borrows
+  `parsed` and can't coexist with a later `&mut` splice into it) — the fix
+  is a `pending: HashMap<String, ParsedFile>` overlay field, DISJOINT from
+  `parsed`, that rung 1 (via the new free function `apply_rung1_core`,
+  deliberately NOT a `&mut self` method, so the two fields' borrows stay
+  provably disjoint to the borrow checker) writes into instead;
+  `Updater::flush_pending` folds it into `parsed` whenever a rung-2/3
+  rebuild needs `parsed` to be current, or immediately after every
+  `apply_batch` call (which always builds its OWN fresh, uncached context,
+  since it's the simple/correctness-first path, not the optimized one).
+  Soundness argument (recorded in the module doc): resolving a rung-1
+  touched file against a STALE cached `BodyMap` is sound because the ONLY
+  fields any resolution path reads through it (`RoutineDecl::params`/
+  `by_ref`/`parse_incomplete`, plus a witness span never trusted stale
+  anyway) are EXACTLY what rung 1's own fingerprint-equal gate already
+  guarantees are unchanged. Rung 2 (a definition-surface change, file
+  add/delete, or a `Recovered` parse — fail-closed, never trusted for rung
+  1) flushes any pending rung-1 backlog first, then rebuilds the workspace
+  layer via `assemble_program_graph` over the cached, unchanged `DepLayer`
+  and re-resolves EVERY workspace file (a signature change anywhere can
+  change how any OTHER file's call sites resolve). Rung 3
+  (`DepsChanged`/`Overflow`, or a path outside the workspace source set
+  entirely — e.g. under `.alpackages/`, the Task-4-review dep-file-boundary
+  scenario) is a full rebuild via the new `LspSnapshot::build_full_with_parsed`
+  (returns a SECOND, fully independent `parse_snapshot` pass alongside the
+  snapshot — `AlFile` has no `Clone` impl, so the snapshot's own owned parse
+  and the updater's mutable working parse can never share one `AlFile`
+  instance; this second pass runs only at startup and on the rare rung-3
+  path, never on the rung-1/rung-2 hot path). Batch semantics: any rung-2 (or
+  rung-3) event in a coalesced batch escalates the WHOLE batch — one rebuild
+  serves every file named in it. `LspSnapshot` gained `Arc`-shared `graph`
+  and `snap` fields (were plain owned `ProgramGraph`/`AppSetSnapshot` —
+  neither is cheaply cloneable at CDO scale) and `decls_by_file`'s per-file
+  values became `Arc<Vec<DeclEntry>>` (was a plain `Vec`) so an incremental
+  rebuild can share every untouched file's decl list instead of deep-cloning
+  the whole map; `decl_by_id` is now explicitly documented as a DERIVED
+  index (like `incoming`) always rebuilt wholesale via the new
+  `build_decl_by_id`, never cloned-then-patched. `LspSnapshot::from_context`
+  and the new `recompute_file` helper (used by both the Task-8 batch build
+  and this task's rung 1/2 per-file recompute — the ONE place "what a file
+  contributes to a snapshot" is defined) factor the Task-8 batch-build loop
+  so it can never drift from the incremental path. 9 unit tests over an
+  in-memory fixture workspace cover the brief's binding Step-1 scenarios
+  (a)-(e) (body edit → rung 1 with the `Arc::ptr_eq` sibling-untouched
+  proof; signature edit → rung 2 with the caller's route flipping to
+  `Evidence::Unknown(UnknownReason::ArityMismatch)`; file delete → rung 2
+  with its bucket/incoming entries gone; a `Recovered`-parse save escalating
+  past rung 1; a `.alpackages`-shaped path escalating to rung 3) plus a
+  fail-closed build-failure test (prev snapshot AND the updater's working
+  state both survive untouched), a mixed-batch test (one rung-2 file forces
+  the whole batch), a dedicated caching-property test (`apply_rung1_core`
+  called TWICE with the SAME `index`/`body_map`, built only once, before
+  either edit — the exact arrangement `spawn_updater`'s hot loop relies on),
+  and the Step-3 debounce/coalesce test (5 rapid saves of one file via
+  `spawn_updater`'s real background thread → exactly 1 apply, proven via a
+  counting `on_swap` wrapper). Step 3b re-measured rung 1/rung 2 against this
+  REAL code path on CDO (`.superpowers/sdd/t3-stage-split.md` addendum,
+  `apply_rung1_core`/`Updater::apply_rung2` exercised directly with
+  in-memory-only `ParsedFile`s — zero disk mutation to the real workspace):
+  rung 1 measures ~10.5ms (10x under the 100ms budget, holding the
+  cached-context design's whole point) and rung 2 measures ~1.46s — FASTER
+  than Task 3's ~1.9s pre-implementation upper-bound estimate, because the
+  real rung 2 only re-parses the changed file(s), never the whole workspace.
+  Also fixes a Task 8 review carry-over: `build_incoming` could push a
+  duplicate `EdgeRef` when one edge's `routes` named the same target more
+  than once (a pathological ambiguous-overload shape) — the new
+  `push_edge_targets` helper dedups per-edge (routes from a DIFFERENT edge
+  naming the same target are untouched — those are genuinely distinct
+  callers), pinned by a hand-constructed-`Edge` unit test (plus a mirror
+  test proving 2 DIFFERENT edges to the same target stay 2 `EdgeRef`s, from
+  the review fix-wave below). **Review fix-wave:** `apply_rung3` now
+  `log::warn!`s (matching `server.rs`'s existing `log` idiom) when a rung-3
+  rebuild fails, so a broken `app.json` isn't a silently-dropped event;
+  added `spawn_updater_rebuilds_context_after_rung2_escalation`, an e2e test
+  driving the real background thread through rung 1 → rung 2 → rung 1 and
+  proving the final snapshot resolves correctly against the POST-rung-2
+  graph; corrected a narrative overclaim in the Step 3b write-up (`Updater::
+  apply_rung2`'s snapshot-copy construction redundantly re-parses every
+  workspace file, not just the touched one — included in the measured
+  ~1.46s, flagged as a deferred `Arc<AlFile>`-sharing optimization rather
+  than fixed now).
+- **`src/lsp/snapshot.rs`: `LspSnapshot`, the immutable batch-built
+  program-engine snapshot the migrated LSP server will serve queries from
+  (T3 LSP-migration arc, Task 8 — the arc's structural centerpiece).**
+  `LspSnapshot::build_full(workspace_root)` composes every engine primitive
+  landed by earlier T3 tasks into one self-contained, `Arc`-shareable value:
+  `SnapshotBuilder` → `parse_snapshot` → `build_dep_layer`/
+  `assemble_program_graph` (Task 5) → per-file `resolve_file_obligations`
+  (Task 6) → `def_surface_fingerprint` (Task 7) → `emit_event_flow_edges`,
+  then derives `incoming` (an O(E) wholesale rebuild, never incrementally
+  edited — spec §3 / H-10 lesson). New public types: `EdgeRef` (an index-based
+  `(file, idx)` edge handle — never a borrow), `DeclEntry` (owned routine
+  identity + `origin`/`name_origin` spans), `ParsedFileEntry` (owned
+  `AlFile`+text+`DefSurface`), and `EVENT_EDGES_KEY` (the reserved
+  NUL-prefixed `EdgeRef.file` bucket for whole-program `EventFlow` edges, kept
+  separate from the workspace-scoped per-file `Call`/`Run`/`ImplicitTrigger`
+  buckets in `edges_by_file`). `LspSnapshot::decl_at` does position lookup
+  (file + 0-based line + UTF-8 byte col → the routine whose `name_origin`
+  contains it, preferred, else whose whole-decl `origin` contains it, using
+  `Origin`'s own byte-column semantics directly — no encoding conversion
+  needed) and `LspSnapshot::edge` resolves an `EdgeRef` back to its
+  `ClassifiedEdge`. `ResolveIndex`/`BodyMap`/the `ObjectNodeId → &ObjectNode`
+  map are built TRANSIENTLY inside `build_full` and never stored on the
+  struct (they borrow `graph`/`parsed`, which would make `LspSnapshot`
+  self-referential) — `AlFile` has no `Clone` impl, so `build_full` is
+  structured in two phases: a borrow phase (index/body_map alive) that
+  resolves every file and computes each `DefSurface`, then an ownership-move
+  phase (after the borrows drop) that consumes the parsed workspace unit by
+  value to build `parsed: HashMap<String, Arc<ParsedFileEntry>>` without
+  cloning any `AlFile`. Enabling change to `program::resolve::full`: `
+  ProgramContext`/`build_context` widened to `pub(crate)`, and `build_context`
+  now inlines `build_dep_layer` + `assemble_program_graph` directly (rather
+  than calling the `build_program_graph_from_parsed` wrapper) so the
+  `DepLayer` it assembles from survives into `ProgramContext` — behavior-
+  preserving (the wrapper does exactly these two calls, in this order),
+  verified by the pre-existing `assemble_program_graph_matches_build_
+  program_graph_field_by_field` characterization test plus the whole `cargo
+  test --lib` suite staying green. 4 unit tests over an in-memory fixture
+  workspace (a cross-file call via a declared `Codeunit "Beta"` local var, a
+  same-name overload pair, an event publisher/subscriber pair, and a
+  non-ASCII Danish identifier, `Løbenr`, to exercise UTF-8 byte-column
+  handling): `build_full`'s `edges_by_file` + `event_edges` union equals a
+  direct `resolve_full_program` run (order-insensitive, via `Edge`'s derived
+  `Ord`); determinism across two independent builds (`generation` excluded);
+  `decl_at`'s name-hit/whole-decl-fallback/none paths; `build_incoming`
+  finding both the cross-file caller and the event subscriber's publisher.
+- **`src/lsp/def_surface.rs`: the definition-surface fingerprint,
+  `DefSurface`/`def_surface_fingerprint` (T3 LSP-migration arc, Task 7).** A
+  blake3 hash — canonically encoded, length-prefixed strings/lists, no
+  `format!`-glue — of every field Task 4's resolver-read audit
+  (`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §4) found
+  reachable from another file's call-graph resolution: per-object identity/
+  `extends_target`/`implements`/`SourceTable`+`temporary`/`TableNo`/
+  `page_controls`/`fields`/`dataitems`/file-level `parse_incomplete`, and
+  per-routine identity/`access`/`event_subscribers`/
+  `subscriber_instance_manual`/`publisher_kind`/`include_sender`/
+  `return_type`/`param_sig_key`/per-parameter `(ty, by_ref)`/routine-level
+  `parse_incomplete`. Reuses `program::extract_nodes` (the SAME extractor
+  `program::build` calls) rather than a second hand-rolled IR walk, so the
+  fingerprint's notion of "the surface" can never drift from the graph's
+  own. One deliberate ADDITION beyond the audit's literal §4 text: an
+  object's `name` (lowercased) is also hashed per object, even for a
+  NUMBERED object whose §4 identity key is `ObjKey::Id` — the audit's own
+  §2.2 read-table already lists `ObjectNode::name` as consulted
+  (`graph.rs`'s `ObjectIndex::build` keys `graph.resolve_object`'s by-name
+  lookup on it for every object kind), so omitting it from §4's derived list
+  would have been a false-negative gap (a numbered-object rename resolving
+  differently elsewhere without moving the fingerprint) — flagged back for
+  the audit doc, and CONFIRMED by an independent review (which verified
+  `graph.rs`'s `ObjectIndex::build` keys by-name unconditionally and
+  `resolve_object` never consults `declared_id`); the audit doc itself
+  (`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §4) was
+  patched in the same review fix-wave to record object `name` in its
+  per-object field list, with the confirmed evidence. 33 unit tests: 1
+  parse-twice determinism check, 24 NOT-EQUAL pairs (one per audited
+  field-change class: object add/re-id/rename, `extends_target`,
+  `implements`, `SourceTable`+`temporary`, `TableNo`, `page_controls`, table
+  `fields` add/type-change, report `dataitems`, file-level
+  `parse_incomplete`, routine add/rename/re-arity/param-type-change,
+  `by_ref` flip, `access`, `return_type`, `event_subscribers`,
+  `subscriber_instance_manual`, `publisher_kind`, `include_sender`), 5
+  EXCLUSION pairs proving an out-of-scope field never moves the fingerprint
+  (body-only statement, local variable, comment/whitespace-only span shift,
+  an added enum value, a parameter's NAME), and 3 review fix-wave additions
+  deliberately constructed to isolate a field the review found NO existing
+  test actually exercised (verified by a temporary deletion-probe on each:
+  neutering the write made ONLY the new test fail, confirmed then
+  restored) — a case-only param type-text change (isolates the raw
+  per-parameter `ty` read from `sig_fp`/`param_sig_key`, both of which
+  normalize case away), a routine-level `parse_incomplete` flip held
+  against a permanently-`Recovered` file (isolates the per-routine flag
+  from the file-level one), and an id-less object rename (exercises
+  `ObjKey::Name`, previously only `ObjKey::Id` was covered).
+- **`benches/engine_stages.rs`: program-engine stage-split Criterion bench +
+  a CDO-gated stage-split unit test (T3 LSP-migration arc, Task 3 —
+  MEASUREMENT ONLY, no engine behavior changed).** Splits the program
+  engine's pipeline (`aldump --program-call-graph-stats`'s path) into
+  timed stages — snapshot (`SnapshotBuilder::build`), parse
+  (`parse_snapshot`), graph build (`build_program_graph`),
+  `ResolveIndex::build`, `BodyMap::build`, and the obligation-resolution
+  inner loop (derived by subtraction, since `resolve_full_program_from_
+  parts` is a private fn invisible to the external-crate bench) — over the
+  synthetic 100/1000-file perf corpus. `src/program/resolve/full.rs` gained
+  a matching `#[ignore]`d unit test, `stage_split_wall_clock_on_cdo`
+  (`CDO_WS=<path> cargo test --release stage_split -- --ignored
+  --nocapture`), placed as a `#[cfg(test)] mod` inside `full.rs` itself
+  (not under `tests/`) specifically so it can see the private inner-loop
+  fn with zero visibility widening. On the real CDO workspace (median of 3
+  runs, release binary): snapshot 727ms, parse 1.23s (of which ~1.19s is
+  dependency-app source — only ~44ms is the workspace's own files),
+  `build_program_graph` graph-build-only ~926ms, `ResolveIndex::build`
+  153ms, `BodyMap::build` 185ms, resolve inner loop ~582ms. **`ResolveIndex
+  ::build` + `BodyMap::build` together measure ~240-340ms on CDO scale —
+  an order of magnitude over the ~30ms threshold the T3 plan's Task 9
+  documents a contingency for** (an incremental single-file "rung 1" update
+  cannot afford to rebuild both transiently within its 100ms budget; Task 9
+  must take the cached/keyed-by-generation branch, not the transient
+  rebuild). Full numbers, methodology, and the derived rung-1/rung-2 budget
+  pins are in `.superpowers/sdd/t3-stage-split.md` (arc scratch, gitignored,
+  not part of this commit).
+- **`src/lsp/encoding.rs`: LSP `positionEncoding` negotiation (LSP 3.17) + a
+  byte<->UTF-16 `LineTable` converter (H-12 infrastructure, Tier-3
+  LSP-migration arc, Task 2).** The engine's `Definition`/`CallSite` ranges
+  are UTF-8 byte columns throughout, but LSP's mandatory fallback encoding is
+  UTF-16 code units — every response has been silently miscolumned for any
+  client that doesn't negotiate `"utf-8"`, on any line containing non-ASCII
+  text or an astral character (e.g. emoji) before the reported column.
+  `negotiate()` reads the client's `general.positionEncodings` capability and
+  picks `"utf-8"` iff the client offers it, else the LSP-mandatory `"utf-16"`
+  fallback; `server.rs`'s `initialize` now negotiates this and advertises the
+  result in `ServerCapabilities.position_encoding`. `LineTable` performs the
+  actual per-line byte<->UTF-16 column conversion on demand (AL lines are
+  short, so a `char_indices()`/`len_utf16()` walk per call is plenty fast —
+  no fancier memoization); both `col_out`/`col_in` clamp out-of-range
+  columns/lines to the line's end rather than panicking (fail-closed).
+  **Legacy handlers keep serving byte columns THIS task** — for a
+  utf-8-negotiating client behavior becomes correct NOW; utf-16 clients stay
+  unchanged-broken until the Task-15 cutover wires conversion into
+  `handlers.rs`.
+- **`docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md`: resolver-read
+  audit — the definition-surface fingerprint field list (T3 LSP-migration arc,
+  Task 4, DOCUMENTATION ONLY, no code changed).** The soundness spine of rung
+  1's "body-only edit in F can only change F's own edges" claim: enumerates
+  every data read reachable from `resolve_call_site_obligation`/
+  `emit_event_flow_edges`, classifies each CALLER-side vs. SURFACE-side, and
+  answers the load-bearing question — does resolution ever read another
+  file's routine BODY? **No** (verified: exactly 3 non-test
+  `BodyMap::get`/`get_with_path` call sites exist in the whole
+  `src/program/resolve/` tree, reading only `origin`/`name_origin` byte-spans
+  and `params`/`parse_incomplete` — never `.body`/`.locals`/`.return_name`).
+  One real subtlety surfaced along the way (not a rung-1 blocker, but a
+  BINDING constraint on Task 9): `RoutineDecl.origin` spans the whole
+  declaration INCLUDING its body, so a stored edge's `Witness::SourceSpan`
+  for a cross-file target goes byte-stale the instant that target's body is
+  edited — handlers must always re-derive position data live from the
+  current `BodyMap`/`decl_index`, never trust a baked-in span, or rung 1
+  will silently serve stale ranges. Also falsified one expected fingerprint
+  class from the design doc: "enum values" turned out not to be a real
+  resolver read at all (enum-value dispatch is a static MS-Learn-sourced
+  catalog keyed only on the enum TYPE's identity, never per-value data) and
+  was dropped from the derived field list.
+- **`program::resolve::full::resolve_file_obligations`: per-file resolve
+  entry point (T3 LSP-migration arc, Task 6 — additive, byte-identical
+  output).** `resolve_full_program_from_parts`'s Phase-1 `for pf in
+  &unit.files` loop body — extract site-obligation resolution for every
+  object/routine/call-site in one workspace file — is now a standalone
+  `pub(crate)` fn returning a new `FileResolution { edges, flagged,
+  indeterminate }`, extracted VERBATIM (identical obligation-id construction,
+  identical iteration order). `resolve_full_program_from_parts` becomes a
+  thin caller: build `obj_node_map`/`index`/`body_map` as before, then for
+  each workspace file call `resolve_file_obligations` and fold its
+  `FileResolution` into the whole-run accumulators (`obligation_id_set` is
+  now populated by reading each returned edge's `obligation_id` rather than
+  inline per-site — an identical-by-construction set, since every obligation
+  that used to insert inline now produces exactly one returned edge carrying
+  the same id). This is the engine primitive a future incremental LSP
+  updater's "rung 1" needs: re-resolving ONE saved file's obligations without
+  re-walking the whole workspace. Proven behavior-preserving by a new test
+  (`full.rs`) asserting per-file output equals the full run's Phase-1 edges
+  filtered to that file, AND that concatenating every file's output in file
+  order equals the full run's Phase-1 edge list exactly (order included).
+  CDO SHA gate re-verified byte-identical
+  (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`).
+
+### Removed
+- **The legacy tree-sitter-only LSP pipeline — `src/graph.rs` (2477 lines),
+  `src/indexer.rs` (1247), `src/parser.rs` (1202), `src/handlers.rs` (2383)
+  — is DELETED (T3 LSP-migration arc, Task 17, the capstone).** This is the
+  pipeline the program-engine-backed LSP surface (Tasks 8-16, above and in
+  `### Changed`/`### Added`) fully replaced: `CallGraph`'s `QualifiedName`-
+  keyed (name-only, no signature/kind/enclosing-member discriminator)
+  `Definition`/`CallSite` model, the naive text-matching call resolver in
+  `indexer.rs`, and every handler in `handlers.rs` that read them
+  (`prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls`/`code_lens`/
+  `get_unused_procedure_diagnostics`/`dependency_document_symbol`/
+  `event_publishers_in_file`/`event_reference_at_position`) — all now dead
+  code, unreachable since Task 15's server cutover pointed `server.rs`'s
+  dispatcher entirely at `lsp::handlers`/`lsp::lens`/`lsp::diagnostics`/
+  `lsp::custom`.
+  **Deletion license:** `tests/lsp_differential.rs` (the adjudicated
+  legacy-vs-new differential parity harness, Task 14 — also deleted here,
+  a scaffolding test that structurally cannot compile once one of the two
+  engines it drove is gone) proved, on real CDO source: 12,284 identical
+  answers across `prepare`/`incoming`/`outgoing`/`codeLens`/
+  `unused-procedure` diagnostics, ~44,000 additional divergences every one
+  mechanically classified into a named, justified `NewBetter` class (never
+  a bare "different, who knows why"), `Regression = 0` and
+  `NewUnexplained = 0` held across five escalating CDO fix-wave layers
+  (`LegacyIdentityCollapse`, `ImplicitTriggerEdge`, `ImplicitRecResolved`,
+  `VariableReceiverResolved` generalized off object identity, and a widened
+  `DepSourceSpan` predicate), plus a real H-10 edit-scenario regression
+  legacy carried (losing cross-file incoming edges after a same-file
+  no-op reindex) that the new engine provably does not. Its differential-
+  only fixtures (`tests/fixtures/lsp-diff-core/`, `lsp-diff-identity/`,
+  `lsp-diff-nested/`) are deleted alongside it; `tests/fixtures/lsp-diff-deps/`
+  is KEPT — `tests/lsp_incremental_parity.rs`'s (the PERMANENT incremental
+  gate) `dep_bearing_rung1_then_rung2_stay_equivalent_with_nonvacuous_dep_indexes`
+  script reuses it for real dependency-index coverage — and
+  `tests/fixtures/lsp-incr/` is likewise KEPT (the incremental gate's
+  primary fixture).
+  **`tests/parser-ir-goldens/`** (the r0-corpus `parser.rs` projection
+  golden) retires together with `parser.rs` — nothing else in the repo
+  reads it.
+  **Relocated, not deleted:** the three handlers legacy `handlers.rs` still
+  owned that never touched `graph`/`indexer` at all — `fieldProperties`/
+  `actionProperties` (+ their `SymbolProperties*` types and
+  `read_source_from_uri`/`to_symbol_properties_result` helpers) and the
+  `al-preview://` URI parser `parse_al_preview_uri` (+ its `urldecode`
+  helper) — move verbatim into `src/lsp/custom.rs`; Task 15's cutover had
+  already pointed `server.rs`'s dispatcher at their legacy implementations
+  unchanged, so this is a pure relocation, not a behavior change.
+  `telemetryStatus` has no handler function to relocate (`server.rs` calls
+  `crate::telemetry::status()` directly).
+  **Coverage-completeness fix found during deletion verification:**
+  `src/types.rs`'s `ObjectType` (a surviving, actively-used type) had its
+  only direct unit tests (`TryFrom<&str>`'s valid/case-insensitive/invalid
+  cases, `Display`'s exact-capitalization output) living in `graph.rs`,
+  which only ever re-exported the type — deleting `graph.rs` outright
+  would have left `ObjectType` with zero direct unit test coverage of its
+  own. Ported the 4 tests verbatim into `src/types.rs` itself.
+  **`tests/perf_support_smoke.rs`** — its `Indexer`-dependent correctness
+  checks (the corpus's 999-way fan-in / 3-way fan-out contract, and the
+  rung-1/rung-2 body-edit/signature-edit definition-count deltas) are
+  rewritten onto `LspSnapshot`/`lsp::handlers`/`lsp::updater` rather than
+  deleted outright: `tests/perf_bounds.rs`'s equivalent assertions only
+  compile under `#[cfg(not(debug_assertions))]` (a release-only gate), so
+  this file remains the only place the corpus's contract is pinned under a
+  plain `cargo test` (every debug-profile run, not just
+  `cargo test --release --test perf_bounds`).
+  `src/lib.rs`/`src/main.rs` dropped the `graph`/`handlers`/`indexer`/
+  `parser` module declarations and re-exports. CLAUDE.md's Architecture
+  section is rewritten from "two pipelines" to "one engine, two consumers"
+  (the LSP surface and the CLI/`aldump`), its Key Modules list and
+  Performance Targets table updated to the surviving `src/lsp/*` modules
+  and Task 16's measured numbers, and its stale `QualifiedName`/
+  `Definition`/`CallSite` "Key Data Structures" block replaced with the
+  current `RoutineNodeId`/`DeclEntry`/`EdgeRef` shapes.
+
 ### Changed
+- **`tests/perf_bounds.rs`/`benches/lsp_pipeline.rs` rewritten onto the
+  ENGINE-BACKED LSP surface (T3 LSP-migration arc, Task 16) — the last thing
+  standing before Task 17 deletes the legacy `Indexer`/`graph`/`handlers`
+  pipeline these two files used to pin.** Both now build `LspSnapshot`
+  (`build_full`/`build_full_with_parsed`) and drive `lsp::handlers::{prepare,
+  incoming,outgoing}` + `lsp::updater::Updater::apply_batch` instead of
+  `Indexer::index_directory`/`Arc<RwLock<Indexer>>`/`handlers::{prepare_call_hierarchy,
+  incoming_calls,outgoing_calls}`. New rows: `build_full` (100/1000 files, same
+  <500ms/<2s CLAUDE.md targets as the old `initial_index` rows), and TWO NEW
+  incremental-update rows — rung-1 body-edit `apply_batch` (<100ms target, 3x
+  CI bound 300ms) and rung-2 signature-edit `apply_batch` (~1.5s target, 3x CI
+  bound 4.5s; both targets are the T3 Task 9 Step-3b RE-MEASUREMENT against the
+  real `Updater` on the real CDO workspace — `.superpowers/sdd/t3-stage-split.md`'s
+  addendum — which REPLACES Task 3's earlier ~1.9s algebraic upper-bound
+  estimate for rung 2, since that estimate predated `Updater`/
+  `assemble_program_graph` entirely). `incomingCalls` under this corpus's
+  deliberate 999-way real fan-in gets its OWN, separately-reasoned CI bound
+  (25ms target / 75ms bound) rather than inheriting the shared 1ms/3ms query
+  bound `prepare`/`outgoing` keep: every distinct caller's position is now
+  re-derived LIVE from that caller's own current file text (the live-span
+  audit's correctness rule — never serve a stale stored witness span), so a
+  999-way-fan-in query is genuinely O(distinct callers) in a way legacy's
+  precomputed-byte-range design never was; measured 20.3ms on this machine,
+  comfortably inside the new bound.
+  **A root-cause fix to the shared corpus generator was required to keep the
+  999-way fan-in assertion meaningful**: `tests/perf_support`'s cross-file
+  "hub" call previously read `HubObjectName.Proc0()` — a bare object-display-name
+  call with no declared receiver, which is not valid AL and only "worked"
+  because the legacy pipeline's naive text-matching call resolution
+  (`callee_object` is whatever raw text sits left of the dot, matched directly
+  against object display names when no variable binding exists) tolerated it.
+  Confirmed empirically against the fresh resolver (a 2-file probe workspace
+  via `aldump --program-call-graph-stats`): the bare form classifies as
+  `Unknown`/`UntrackedReceiver`, 0% resolved, which would have made the
+  999-way fan-in assertion vacuous (0, not 999) under the new backend. Fixed
+  by declaring a local `Hub: Codeunit "..."` variable and calling through it —
+  valid AL both engines resolve correctly (confirmed 0 unknown / 7-of-7
+  resolved on the probe workspace; `tests/perf_support_smoke.rs`'s existing
+  legacy-correctness assertions are unaffected, still exactly 999/3).
+  perf_support also gained `body_only_comment_edit` (a new pub helper: inserts
+  one comment line as `Proc0`'s first statement — no routine identity/
+  signature change, so the file's `DefSurface` fingerprint stays byte-identical,
+  which is exactly rung 1's own gate condition) plus a new smoke test pinning
+  that contract (`body_only_comment_edit_adds_no_definitions`).
+  **Review fix-wave (t3.16):** the rung-1/rung-2 rows above now assert TWO
+  bounds each, not one — the CDO-anchored absolute bound (300ms/4.5s) carries
+  15-30x headroom against what actually runs on this SYNTHETIC corpus
+  (~20ms/~150ms), which meant a genuine 10x regression on the corpus alone
+  could sail through unnoticed; `RUNG1_SYNTHETIC_BOUND`/`RUNG2_SYNTHETIC_BOUND`
+  (100ms/750ms — 5x today's measured synthetic-corpus baseline) close that
+  gap, asserted alongside (never instead of) the absolute bound. Separately,
+  `.github/workflows/ci.yml`'s Lint step was missing `--all-targets` (it
+  already had `--release`, since `f323d6d` — the earlier framing in this
+  task's own report that blamed the `#[cfg(not(debug_assertions))]` gate was
+  WRONG and is corrected here): without `--all-targets`, `cargo clippy` never
+  compiles ANY test or bench crate in ANY profile, so `tests/perf_bounds.rs`
+  and `benches/lsp_pipeline.rs` (and every other `tests/*.rs`/`benches/*.rs`
+  file) had NEVER been linted by CI at all, regardless of profile. Fixed to
+  `cargo clippy --release --all-targets --all-features -- -D warnings`,
+  matching CLAUDE.md's documented bar; re-running that exact command against
+  the WHOLE repo surfaced zero new findings (confirmed via a genuine forced
+  recompile, not a stale cache hit).
+- **The LSP surface now SERVES the program-engine backend (T3 LSP-migration
+  arc, Task 15 — the cutover).** `src/server.rs` no longer holds
+  `Arc<RwLock<Indexer>>`; its state is `Arc<lsp::updater::SharedSnapshot>` (the
+  published, immutable `LspSnapshot`) plus an `mpsc::Sender<ChangeEvent>`
+  feeding a background `spawn_updater` thread. Every request handler only
+  ever `Arc`-clones the current snapshot — no parsing or graph rebuild ever
+  happens under a request-facing lock; the updater thread owns all rebuild
+  work and publishes a fresh snapshot by atomic swap.
+  `textDocument/prepareCallHierarchy` / `callHierarchy/{incoming,outgoing}Calls`
+  / `textDocument/codeLens` / the three engine-backed custom requests
+  (`dependencyDocumentSymbol`/`eventPublishersInFile`/`eventReferenceAtPosition`)
+  now dispatch straight to the Tasks 11-13 functions
+  (`lsp::handlers`/`lsp::lens`/`lsp::custom`) with the NEGOTIATED position
+  encoding threaded through every call (H-12 is now fully wired end to end —
+  `lsp::diagnostics::compute_all` no longer hardcodes `PositionEncoding::Utf16`
+  internally, closing the two `TODO(t3.15)`s Task 12 left). `al-call-hierarchy/
+  {fieldProperties,actionProperties,telemetryStatus}` are graph-independent
+  and stay on their existing `crate::handlers` implementations (widened from
+  private to `pub` so the new dispatcher can call them directly) — they
+  survive Task 17's legacy deletion untouched.
+  **Multi-root workspaces: a deliberate, documented capability narrowing.**
+  A client offering more than one `workspace_folders` entry now gets exactly
+  ONE app served (the first, with a clear warning) instead of legacy's
+  silent multi-folder accumulation into one `Indexer` graph — see
+  `server.rs`'s `primary_workspace_root` doc comment for the full decision
+  record (legacy's multi-root was a `LegacyIdentityCollapse`-shaped
+  collision hazard, not a working feature, and the tracked follow-up design
+  for real multi-root support lives there too). Diagnostics now follow
+  "recompute-diff-publish-clear" on EVERY snapshot swap (including the very
+  first, batch-built one), via one shared `lsp::diagnostics::DiagnosticsState`:
+  publishing only what changed and CLEARING a uri whose findings dropped to
+  zero — the legacy publish-once-at-startup path never cleared a fixed
+  finding until an unrelated one happened to overwrite the same file's
+  bucket. The file watcher (`src/watcher.rs`) is widened to also forward
+  `.alpackages` dependency-file changes (previously filtered out entirely by
+  its `.al`-only extension check — dependency add/update/remove never
+  reached the index until a server restart) and a backend-reported
+  event-buffer overflow/rescan (`notify`'s `Flag::Rescan`, via a new
+  `FileChange::Overflow` variant) — both map onto `ChangeEvent::DepsChanged`/
+  `ChangeEvent::Overflow` in `server.rs`, forcing a full rebuild rather than
+  silently trusting stale state. `didSave` notifications and watcher events
+  now feed ONE coalesced channel (previously each independently reindexed the
+  same save). The program engine's snapshot model requires a single AL-app
+  workspace root with a readable `app.json` (unlike the legacy `Indexer`,
+  which tolerated zero indexed files) — a missing/invalid workspace degrades
+  to every request returning an empty result rather than the server
+  refusing to start. `main.rs`'s `--project` CLI
+  index-and-report mode is re-pointed at `LspSnapshot::build_full`:
+  `definitions` is now the workspace `decls_by_file` entry count and
+  `call sites` is the sum of `edges_by_file` bucket lengths — NEITHER number
+  is directly comparable to the legacy `CallGraph::definition_count`/
+  `call_site_count` this replaces (different identity/dedup rules); the
+  legacy "external definitions" line is replaced by a count of dependency
+  routines with embedded source (`dep_decl_by_id`). `--analyze` is untouched
+  (`analysis.rs` reads the owned IR directly, no snapshot involved). Smoke-
+  tested via a new in-binary unit test (`server::tests`, `cargo test` runs
+  binary-target unit tests too — no existing `tests/` crate could reach these
+  binary-private symbols) driving `dispatch_request`/`handle_notification`
+  over a real `Connection::memory()` pair: prepare + outgoingCalls resolve
+  through the new handlers, and a `didSave` round-trips into a published
+  generation bump plus a diagnostics republish that clears a since-fixed
+  unused-procedure hint, and (T3 Task 15 review fix-wave) a named unit test
+  pinning `ChangeEvent::Overflow`'s own escalation to rung 3
+  (`overflow_event_escalates_to_rung3` in `lsp/updater.rs` — it shared
+  `DepsChanged`'s match arm from Task 9 onward, structurally covered but
+  never pinned on its own until now). Full test suite green (2679 passed, 0
+  failed, legacy unit tests unaffected — legacy code is unwired, not
+  deleted); `tests/lsp_differential.rs` and `tests/lsp_incremental_parity.rs`
+  (the Task 14 deletion-license gates) stay green, unaffected by the
+  cutover. A real shutdown-hang bug was found and fixed along the way, via a
+  manual end-to-end stdio smoke test — see **Fixed**, below.
+- **`program::build`: layered dep/workspace graph assembly + a single-parse
+  program-engine pipeline (T3 LSP-migration arc, Task 5 — additive,
+  byte-identical output).** `build_program_graph` used to do one monolithic
+  pass over the WHOLE snapshot (every app, dep and workspace alike); it is
+  now a thin wrapper over two new primitives: `build_dep_layer` (everything
+  derived from NON-primary apps — object/routine extraction, ABI ingest,
+  dependency topology, `internalsVisibleTo` friend wiring — into a `DepLayer`)
+  and `assemble_program_graph` (merges a `DepLayer` with a freshly-extracted
+  PRIMARY/workspace `ParsedUnit` into the full `ProgramGraph`, re-running sort
+  + dedup + the synthetic platform-event-publisher injection). This is the
+  primitive a future incremental LSP updater's "rung 2" needs: rebuild only
+  the workspace layer over an UNCHANGED dep layer, without re-parsing or
+  re-extracting a single dependency file. Also kills a real production
+  double-parse T3 Task 3 measured on CDO (~1.19s dependency-parse alone):
+  `resolve::full::build_context` used to call `build_program_graph` (which
+  parses the whole snapshot internally) AND separately run its own
+  standalone `parse_snapshot` for the resolver's body-walk; it now parses
+  ONCE and calls the new `build_program_graph_from_parsed(snap, abi_cache,
+  &parsed)` entry point instead. `AppRegistry` and `DependencyGraph` gained
+  `Clone` (needed so `assemble_program_graph` can clone a borrowed
+  `DepLayer`'s shared fields into each assembled graph). Every existing
+  caller of `build_program_graph` (aldump, `engine/l4`/`l5`/`gate`, tests) is
+  unaffected — the public signature and output are unchanged; verified via a
+  new characterization test (`build.rs`) proving the split composes to the
+  identical graph field-by-field, plus the frozen CDO SHA-256 gate
+  (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`,
+  byte-identical).
 - **L5 detectors now return `Result<DetectorOutput, DetectorError>` instead of
   `DetectorOutput` — the abort-safe detector-isolation contract (Task T2.3, Tier-2
   crash/DoS arc).** `[profile.release] panic = "abort"` makes `catch_unwind`
@@ -25,6 +1221,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `panic = "abort"` and must never be relied on as the real guarantee.
 
 ### Fixed
+- **The LSP server never actually exited after a clean `shutdown`/`exit`
+  exchange (T3 LSP-migration arc, Task 15 review fix-wave) — found via a
+  manual end-to-end stdio smoke test (a Python LSP client driving the real
+  compiled binary through `initialize`→`prepareCallHierarchy`→
+  `outgoingCalls`→`shutdown`→`exit`) that neither the in-binary unit test
+  nor any prior differential/parity harness could have caught (all of them
+  call handler functions in-process, never through a real `Connection::
+  stdio()` round trip).** Two independent layers, both root-caused against
+  `lsp_server` 0.7.9's own source:
+  1. `main_loop` took `connection: &Connection` (a borrow). `IoThreads::
+     join()` (called right after) blocks until `lsp_server`'s writer thread
+     sees every `Sender<Message>` clone dropped — but a BORROWED
+     `connection` is never dropped before that call, since it's still a
+     live local in `run_server`'s own scope. **This exact shape already
+     existed in the pre-cutover legacy `server.rs`** — an identical bug,
+     just never exercised end to end before this task's own verification
+     step. Fixed by moving `connection` into `main_loop` by value, matching
+     `lsp_server`'s own `examples/minimal_lsp.rs` pattern exactly (drops
+     `connection` — and its `sender` — at `main_loop`'s own closing brace,
+     before `io_threads.join()` runs).
+  2. A SECOND, cutover-introduced layer surfaced once (1) was fixed: the
+     updater thread's diagnostics `on_swap` hook holds its own
+     `connection.sender` clone for its entire (deliberately unbounded)
+     lifetime, and the file watcher thread separately holds its own clone
+     of the updater's INPUT channel forever too (no stop signal — matching
+     legacy's watcher thread, which also never exits early). So the
+     updater never naturally terminates, its `sender` clone never drops,
+     and unconditionally joining it (or waiting unconditionally on
+     `io_threads.join()`) would still hang forever. Fixed with a bounded
+     wait + detach at both points — the SAME idiom `telemetry::shutdown`
+     already used elsewhere in this same file for the identical class of
+     problem (a background thread that legitimately never stops on its own
+     must never be joined unconditionally at shutdown): everything
+     meaningful is already flushed to stdout by the time `main_loop`
+     returns (verified — the `shutdown` response itself is received by the
+     client before the hang), so giving up on a background thread after a
+     short grace period loses nothing. Verified via 4+ consecutive clean
+     `PROCESS EXIT CODE: 0` runs of the manual stdio smoke test after the
+     fix, plus the full `cargo test` suite re-run green.
+- **`path_to_uri` now percent-encodes URIs correctly on `percent_encoding` instead of a
+  hand-picked ~5-character subset (H-13, Tier-3 LSP-migration arc, Task 1).**
+  `protocol.rs`'s encoder only escaped space/`(`/`)`/`[`/`]`, so any other byte the
+  `lsp-types` URI parser rejects — non-ASCII text (e.g. a workspace path containing
+  `Løsninger`), `#`, raw `%`, `+`, `@`, emoji — produced an unparseable URI string and
+  silently fell back to the sentinel `file:///unknown`, breaking every LSP response
+  (definitions, call sites, code lens) for any file under such a path. Each path segment
+  is now escaped independently with `utf8_percent_encode` against an RFC 3986
+  `pchar`-complement `AsciiSet` (plus `%` itself and `\`), so arbitrary Unicode and
+  reserved-character filenames round-trip through `path_to_uri`/`uri_to_path` losslessly.
+  The existing Windows drive-letter normalization and forward-slash join are unchanged;
+  only the per-segment escaping changed. Signature unchanged (`&Path -> Uri`). **Wire-format
+  note:** `(` and `)` are no longer percent-encoded (the old encoder escaped them as
+  `%28`/`%29`); RFC 3986 allows literal parens unescaped in a path segment (they're
+  `sub-delims`), and the round trip still holds byte-for-byte — this is a deliberate,
+  intentional narrowing of what gets escaped, not an oversight.
 - **Decompression caps on every zip/gzip site — a hostile `.app` (or a hostile
   `.cbor.gz` snapshot fed to `alsem diff`) could OOM-kill the whole process
   (Task T2.2, crash/DoS arc).** Every zip entry and gzip stream in the

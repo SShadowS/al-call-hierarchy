@@ -185,6 +185,294 @@ pub fn build_summary(metrics: &[ProcedureMetrics], findings: &[Finding]) -> Anal
     }
 }
 
+// ---------------------------------------------------------------------------
+// IR-direct routine metrics (T3 Task 12 fix-wave: relocated from `parser.rs`,
+// a Task-17 deletion target, so the permanent `src/lsp/lens.rs`/
+// `diagnostics.rs` library modules can depend on them without depending on a
+// module scheduled for deletion — `parser.rs` re-exports these two so its own
+// existing call sites, and `main.rs`'s legacy `--analyze` path, keep working
+// unchanged.
+// ---------------------------------------------------------------------------
+
+use al_syntax::ir::{self, BinaryOp, BlockId, BlockItem, ExprId, ExprKind, RoutineDecl, StmtKind};
+
+/// Cyclomatic complexity over the IR body. Base 1; +1 per if (+1 more if it has an
+/// else), +1 per loop, +1 per case branch, +1 per `and`/`or`. The canonical
+/// complexity metric (the tree-sitter `analysis::calculate_complexity` is retired).
+pub fn routine_complexity_ir(ir: &ir::Ir, r: &RoutineDecl) -> u32 {
+    let mut c = 1u32;
+    if let Some(body) = r.body {
+        complexity_block(ir, body, &mut c);
+    }
+    c
+}
+
+fn complexity_block(ir: &ir::Ir, bid: BlockId, c: &mut u32) {
+    for item in &ir.block(bid).items {
+        match item {
+            BlockItem::Stmt(sid) => complexity_stmt(ir, *sid, c),
+            BlockItem::Preproc(g) => {
+                for b in &g.branches {
+                    complexity_block(ir, *b, c);
+                }
+            }
+        }
+    }
+}
+
+fn complexity_stmt(ir: &ir::Ir, sid: ir::StmtId, c: &mut u32) {
+    match &ir.stmt(sid).kind {
+        StmtKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            *c += 1;
+            if else_block.is_some() {
+                *c += 1;
+            }
+            complexity_expr(ir, *cond, c);
+            complexity_block(ir, *then_block, c);
+            if let Some(b) = else_block {
+                complexity_block(ir, *b, c);
+            }
+        }
+        StmtKind::While { cond, body } => {
+            *c += 1;
+            complexity_expr(ir, *cond, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Repeat { body, until } => {
+            *c += 1;
+            complexity_block(ir, *body, c);
+            complexity_expr(ir, *until, c);
+        }
+        StmtKind::For {
+            var,
+            from,
+            to,
+            body,
+            ..
+        } => {
+            *c += 1;
+            complexity_expr(ir, *var, c);
+            complexity_expr(ir, *from, c);
+            complexity_expr(ir, *to, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Foreach {
+            var,
+            iterable,
+            body,
+        } => {
+            *c += 1;
+            complexity_expr(ir, *var, c);
+            complexity_expr(ir, *iterable, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Case {
+            scrutinee,
+            branches,
+            else_block,
+        } => {
+            complexity_expr(ir, *scrutinee, c);
+            for br in branches {
+                *c += 1;
+                for p in &br.patterns {
+                    complexity_expr(ir, *p, c);
+                }
+                complexity_block(ir, br.body, c);
+            }
+            if let Some(b) = else_block {
+                complexity_block(ir, *b, c);
+            }
+        }
+        StmtKind::Assignment { target, value } => {
+            complexity_expr(ir, *target, c);
+            complexity_expr(ir, *value, c);
+        }
+        StmtKind::Call(e) => complexity_expr(ir, *e, c),
+        StmtKind::With { receiver, body } => {
+            complexity_expr(ir, *receiver, c);
+            complexity_block(ir, *body, c);
+        }
+        StmtKind::Try { body, catch_block } => {
+            complexity_block(ir, *body, c);
+            if let Some(b) = catch_block {
+                complexity_block(ir, *b, c);
+            }
+        }
+        StmtKind::AssertError(b) => complexity_block(ir, *b, c),
+        StmtKind::Exit(Some(e)) => complexity_expr(ir, *e, c),
+        StmtKind::Block(b) => complexity_block(ir, *b, c),
+        _ => {}
+    }
+}
+
+fn complexity_expr(ir: &ir::Ir, eid: ExprId, c: &mut u32) {
+    let e = ir.expr(eid);
+    if let ExprKind::Binary {
+        op: BinaryOp::And | BinaryOp::Or,
+        ..
+    } = &e.kind
+    {
+        *c += 1;
+    }
+    for_each_subexpr(ir, eid, &mut |sub| complexity_expr(ir, sub, c));
+}
+
+/// Visit the direct sub-expressions of an expression (one level). The caller
+/// recurses; this just enumerates children so the two walkers (`parser.rs`'s
+/// call-site walker, and this module's complexity walker) share one
+/// definition of the expression shape. `pub(crate)` — `parser.rs`'s
+/// `calls_in_expr` imports this directly (dying module depends on the
+/// surviving one, never the reverse).
+pub(crate) fn for_each_subexpr(ir: &ir::Ir, eid: ExprId, f: &mut dyn FnMut(ExprId)) {
+    match &ir.expr(eid).kind {
+        ExprKind::Member { object, .. } => f(*object),
+        ExprKind::Call { function, args } => {
+            f(*function);
+            for a in args {
+                f(*a);
+            }
+        }
+        ExprKind::Index { base, index } => {
+            f(*base);
+            f(*index);
+        }
+        ExprKind::Unary { operand, .. } => f(*operand),
+        ExprKind::Binary { lhs, rhs, .. } => {
+            f(*lhs);
+            f(*rhs);
+        }
+        ExprKind::Parenthesized(inner) => f(*inner),
+        ExprKind::QualifiedEnum { enum_type, .. } => f(*enum_type),
+        ExprKind::RangeExpr { start, end } => {
+            f(*start);
+            f(*end);
+        }
+        ExprKind::Identifier(_)
+        | ExprKind::QuotedIdentifier(_)
+        | ExprKind::Literal(_)
+        | ExprKind::DatabaseReference(_)
+        | ExprKind::Unknown => {}
+    }
+}
+
+/// True for AL attributes whose procedure is invoked by a framework (the test
+/// runner or test framework) rather than by an explicit call, so the procedure
+/// must not be reported as unused. AL attribute names are case-insensitive.
+/// Event publishers/subscribers are handled separately and are not listed here.
+pub(crate) fn is_framework_invocation_attribute(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "test"
+            | "confirmhandler"
+            | "messagehandler"
+            | "pagehandler"
+            | "modalpagehandler"
+            | "reporthandler"
+            | "requestpagehandler"
+            | "sendnotificationhandler"
+            | "recallnotificationhandler"
+            | "sessionsettingshandler"
+            | "strmenuhandler"
+            | "filterpagehandler"
+            | "hyperlinkhandler"
+    )
+}
+
+/// Render a procedure/trigger header as raw source text: everything from
+/// `r.origin`'s start up to (but not including) the body's `var` section or
+/// `begin` keyword, whitespace-collapsed to single spaces. Relocated here
+/// from `parser.rs` (T3 Task 13 review fix-wave — mirrors this module's own
+/// earlier relocation of [`is_framework_invocation_attribute`]/
+/// [`routine_complexity_ir`] above): `src/lsp/custom.rs`'s
+/// `event_publishers_in_file` needs this SAME signature-rendering logic (to
+/// stay byte-identical to what `parser.rs`'s own
+/// `ParsedEventPublisher::signature` produces for the same routine), but
+/// `parser.rs` is a documented Task-17 deletion target — sharing one
+/// definition here means neither module drifts, and Task 17 can delete
+/// `parser.rs` without orphaning anything `custom.rs` depends on.
+pub(crate) fn signature_ir(source: &str, r: &RoutineDecl) -> String {
+    let raw = &source[r.origin.byte.clone()];
+    let end = find_body_start(raw).unwrap_or(raw.len());
+    normalize_signature_ws(&raw[..end])
+}
+
+/// Find the byte offset (relative to the start of `text`) where a procedure
+/// body begins (the `begin` keyword or `var` section). Returns `None` when no
+/// body marker is present in this slice.
+///
+/// Requires the keyword to be alone at the start of a line (preceded only by
+/// whitespace) so a `var` parameter modifier is never mistaken for the `var`
+/// section, and skips scanning inside string literals so a quoted
+/// identifier/comment containing "begin"/"var" text can't false-positive.
+fn find_body_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut string_quote = 0u8;
+    while i < len {
+        let b = bytes[i];
+        if in_string {
+            if b == string_quote {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' {
+            in_string = true;
+            string_quote = b;
+            i += 1;
+            continue;
+        }
+        // Look at line starts only (`\n` followed by optional whitespace).
+        if b == b'\n' {
+            let mut j = i + 1;
+            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1;
+            }
+            if matches_keyword(bytes, j, b"begin") || matches_keyword(bytes, j, b"var") {
+                return Some(j);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn matches_keyword(bytes: &[u8], at: usize, kw: &[u8]) -> bool {
+    if at + kw.len() > bytes.len() {
+        return false;
+    }
+    if &bytes[at..at + kw.len()] != kw {
+        return false;
+    }
+    let next = bytes.get(at + kw.len()).copied().unwrap_or(b' ');
+    !next.is_ascii_alphanumeric() && next != b'_'
+}
+
+/// Collapse runs of whitespace (including newlines) to single spaces, trimmed.
+fn normalize_signature_ws(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_space = false;
+    for ch in raw.chars() {
+        if ch.is_whitespace() {
+            if !prev_space && !out.is_empty() {
+                out.push(' ');
+            }
+            prev_space = true;
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,7 +484,7 @@ mod tests {
         for obj in &f.objects {
             for r in &obj.routines {
                 if r.name == proc_name {
-                    return crate::parser::routine_complexity_ir(&f.ir, r);
+                    return routine_complexity_ir(&f.ir, r);
                 }
             }
         }

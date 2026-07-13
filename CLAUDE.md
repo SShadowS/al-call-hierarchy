@@ -57,25 +57,36 @@ See `src/main.rs`'s `Args` (clap derive) for the authoritative flag list.
 
 ## Architecture
 
-There are honestly **two pipelines** in this repo, sharing one parser front-end
-(`crates/al-syntax`) but otherwise independent. Neither is legacy — the LSP surface
-ships the editor feature; the program engine is the moat (see Project Direction below).
+This repo is **one engine, two consumers** — not two independent pipelines. The
+whole-program semantic graph (`src/snapshot/`, `src/program/`) is the ONLY
+resolution engine; the LSP surface below is a direct CONSUMER of its resolved
+output, not a second, tree-sitter-only pipeline running in parallel. (It used to
+be two: a legacy `graph.rs`/`indexer.rs`/`parser.rs`/`handlers.rs` pipeline built
+its own naive call graph independently of the program engine. That pipeline was
+deleted at the T3 LSP-migration arc's capstone task, licensed by a differential
+harness that proved parity-or-improvement against real BC source — see
+CHANGELOG's `Removed` entry for the deletion evidence and the harness's CDO
+results.)
 
-**Pipeline 1 — the LSP surface** (call hierarchy / code lens / diagnostics the editor sees):
+**Consumer 1 — the LSP surface** (call hierarchy / code lens / diagnostics the editor sees):
 ```
-AL Source Files → al_syntax::parse (crates/al-syntax) → owned AL syntax IR
-    → ParsedFile projection (parser.rs, parse_file_ir)
-    → Call Graph Builder (indexer.rs, parallel via rayon)
-    → Call Graph (graph.rs, O(1) lookups)
-    → LSP Server (server.rs) ← File Watcher (watcher.rs) for incremental updates
-    → Request Handlers (handlers.rs: prepareCallHierarchy / incomingCalls / outgoingCalls
-      / codeLens / diagnostics) → LSP Responses
+AL Source Files + .alpackages → snapshot::snapshot_workspace (AppSetSnapshot)
+    → al_syntax::parse per file → program::build + program::resolve::full::
+    resolve_full_program → lsp::snapshot::LspSnapshot (decls_by_file / edges_by_file /
+    event_edges — the O(1) query surface, built directly from the resolved graph)
+    → LSP Server (server.rs) ← lsp::updater::spawn_updater (background incremental
+      rebuild, fed by the File Watcher (watcher.rs) + didSave)
+    → Request Handlers (lsp::handlers: prepare/incoming/outgoing; lsp::lens: codeLens;
+      lsp::diagnostics: compute_all; lsp::custom: dependencyDocumentSymbol /
+      eventPublishersInFile / eventReferenceAtPosition / fieldProperties / actionProperties)
+    → LSP Responses
 ```
-`graph.rs` / `handlers.rs` / `indexer.rs` / `parser.rs` / `protocol.rs` live in `lib.rs`
-(so benches/tests can index+query in-process); `main.rs` re-exports them for the binary
-modules (`server.rs`, `watcher.rs`, `analysis.rs`) to keep using unchanged.
+Every module above lives in `src/lsp/` (a library module, see Key Modules below) so
+benches/tests can build a snapshot and query it in-process; `main.rs` re-exports `lsp`
+(alongside `config`/`telemetry`/`analysis`) so the binary-only modules (`server.rs`,
+`watcher.rs`) keep using it unchanged.
 
-**Pipeline 2 — the program engine** (whole-program call-graph resolution, the moat):
+**Consumer 2 — the CLI / `aldump`** (whole-program call-graph resolution, the moat):
 ```
 Workspace + .alpackages → snapshot::snapshot_workspace (AppSetSnapshot, identity-verified
     source roots per app) → al_syntax::parse per file → program::build (ProgramGraph:
@@ -87,15 +98,30 @@ Driven via `aldump --program-call-graph-stats <workspace>` (the north-star metri
 or consumed programmatically by `src/engine/l4`/`l5` (effect summaries, detectors) and
 `src/engine/gate` (the `analyze` CLI's SARIF/JSON/HTML report path).
 
-**Key Modules — LSP surface:**
+**Key Modules — LSP surface (`src/lsp/`, `server.rs`, `watcher.rs`):**
 - `main.rs` - CLI entry point (clap), dispatches to LSP server / CLI index / `--analyze`
-- `server.rs` - LSP server initialization and main loop
-- `handlers.rs` - LSP request handlers (prepareCallHierarchy, incomingCalls, outgoingCalls, codeLens)
-- `graph.rs` - Call graph data structures with O(1) lookups (`Definition`, `CallSite`, `QualifiedName`)
-- `parser.rs` - Projects the owned al-syntax IR into `ParsedFile` (definitions/calls/vars/events)
-- `indexer.rs` - Parallel file indexing using rayon; also indexes `.app` dependencies
+- `server.rs` - LSP server initialization, dispatch, and the diagnostics-publish/watcher wiring
+- `src/lsp/snapshot.rs` - `LspSnapshot`: the immutable, `Arc`-shareable query surface
+  (`decls_by_file`/`edges_by_file`/`event_edges`/`dep_decl_by_id`), built by
+  [`LspSnapshot::build_full`] directly from the program engine's resolved graph
+- `src/lsp/updater.rs` - The incremental updater: `ChangeEvent` batching, the two-rung
+  (plus degenerate rung-3) soundness ladder, atomic `SharedSnapshot` swap
+- `src/lsp/def_surface.rs` - Per-file definition-surface fingerprinting (the rung-1/rung-2 gate)
+- `src/lsp/encoding.rs` - UTF-8/UTF-16 `PositionEncoding` negotiation + `LineTable` conversion
+- `src/lsp/handlers.rs` - `prepare`/`incoming`/`outgoing` (prepareCallHierarchy / incomingCalls
+  / outgoingCalls)
+- `src/lsp/lens.rs` - `code_lenses` (reference counts + quality-metric thresholds)
+- `src/lsp/diagnostics.rs` - `compute_all`/`DiagnosticsState` (unused-procedure + code-quality
+  diagnostics, diffed and republished on every snapshot swap)
+- `src/lsp/custom.rs` - `dependencyDocumentSymbol` / `eventPublishersInFile` /
+  `eventReferenceAtPosition` (engine-backed custom requests, reading dependency ABI/workspace
+  IR directly) plus `fieldProperties`/`actionProperties` (graph-independent, pure
+  source-read + `al-syntax` facade lookup) and the `al-preview://` URI parser
+  (`parse_al_preview_uri`, also used by `lsp::handlers`'s ABI-symbol URI minting)
 - `watcher.rs` - File system watcher for incremental updates
-- `analysis.rs` - Code quality metrics (cyclomatic complexity, params, line count) for `--analyze`
+- `analysis.rs` - Code quality metrics (cyclomatic complexity, params, line count) for
+  `--analyze` — a library module (shares `routine_complexity_ir`/
+  `is_framework_invocation_attribute` with `src/lsp/lens.rs`/`diagnostics.rs`)
 - `config.rs` - Diagnostic threshold config (global `~/.al-call-hierarchy/config.json` + per-workspace)
 - `app_package.rs` - Parser for .app files (extracts SymbolReference.json)
 - `dependencies.rs` - Dependency resolution from app.json and .alpackages
@@ -148,28 +174,59 @@ Testing Philosophy & Goldens below).
 
 ## Performance Targets
 
-Measured by `cargo bench --bench lsp_pipeline` (Criterion; `benches/lsp_pipeline.rs`)
-against a deterministic synthetic corpus (`tests/perf_support/`) — 1000 codeunits with
-real cross-file call fan-in/fan-out for the query/reindex rows. A release-only CI gate
-(`tests/perf_bounds.rs`, wired into `.github/workflows/ci.yml`) asserts every operation
-stays within 3x its target on every PR, so an order-of-magnitude regression fails loudly
-even though the day-to-day numbers below have wide headroom.
+Measured by `cargo bench --bench lsp_pipeline` (Criterion; `benches/lsp_pipeline.rs`,
+rewritten for the engine-backed LSP surface at T3 Task 16) against a deterministic
+synthetic corpus (`tests/perf_support/`) — 1000 codeunits with real cross-file call
+fan-in/fan-out for the query rows, exercising `LspSnapshot`/`lsp::handlers`/
+`lsp::updater` (no legacy `Indexer` involved — that pipeline is deleted, see
+Architecture above). A release-only CI gate (`tests/perf_bounds.rs`) asserts every
+operation stays within 3x its target on every PR (rung 1/rung 2 additionally carry a
+corpus-relative bound — see that file's own doc), so an order-of-magnitude regression
+fails loudly even though the day-to-day numbers below have wide headroom.
 
-| Operation | Target | Measured (2026-07-10, dev machine) |
-|-----------|--------|-------------------------------------|
-| Initial index (100 files) | < 500ms | ~1.97ms |
-| Initial index (1000 files) | < 2s | ~15.9ms |
-| prepareCallHierarchy | < 1ms | ~893ns |
-| incomingCalls (1000-file graph, 999-way fan-in) | < 1ms | ~399µs |
-| outgoingCalls (1000-file graph) | < 1ms | ~1.9µs |
-| File change update (single-file reindex, 1000-file graph) | < 50ms | ~197µs |
+| Operation | Target | Measured (2026-07-13, dev machine, Criterion median) |
+|-----------|--------|-------------------------------------------------------|
+| `build_full` (100 files) | < 500ms | ~8.07ms |
+| `build_full` (1000 files) | < 2s | ~74.45ms |
+| `prepare` (prepareCallHierarchy) | < 1ms | ~7.88µs |
+| `incoming` (1000-file graph, 999-way real fan-in) | ~25ms — see note below | ~16.34ms |
+| `outgoing` (1000-file graph) | < 1ms | ~6.60µs |
+| `compute_all` (diagnostics recompute, 1000-file event-bearing graph) | 50ms (architectural — see footnote below) | ~7.9ms |
+| Incremental update, rung 1 (body-only edit, 1000-file graph) | 100ms (real-CDO-workspace re-measurement) | ~13.28ms |
+| Incremental update, rung 2 (signature-change edit, 1000-file graph) | ~1.5s (real-CDO-workspace re-measurement) | ~149.93ms |
+
+**Every rung-1/rung-2 save additionally pays `compute_all`'s own cost** — `server.rs`'s
+`on_swap` runs the full diagnostics recompute after EVERY snapshot swap, including a
+single-file rung-1 body edit, so the real per-save latency a user experiences is
+rung-N's own number PLUS `compute_all`'s row above (~13.28ms + ~7.9ms ≈ 21ms for a
+rung-1 save on this corpus). `compute_all` used to carry a real O(decls × event_edges)
+quadratic cost (found and fixed in a t3 whole-branch review pass — see
+`src/lsp/snapshot.rs`'s `LspSnapshot::publisher_fanout` doc); the row above already
+reflects the fix, measured on an event-bearing corpus (`tests/perf_support/`'s
+generator now declares 2 publisher/2 subscriber routines per file specifically so this
+cost is never accidentally measured against an all-zero `event_edges` population).
+
+**`incoming`'s target moved from the legacy pipeline's sub-microsecond number to
+~25ms — this is architectural, not a regression.** The legacy `graph.rs` stored a
+byte range per call site at index time and served it directly (O(1) per caller).
+`lsp::handlers::incoming` deliberately re-derives every distinct caller's position
+LIVE from that caller's OWN current file text (a fresh `LineTable` per caller) —
+never serving a stale stored witness span, a correctness rule the live engine holds
+that the legacy pipeline did not. For a 999-way fan-in that's 999 real per-file text
+scans: genuinely O(distinct callers), a different complexity class than
+`prepare`/`outgoing` (whose cost doesn't scale with fan-in). 20ms is still
+editor-imperceptible for a "who calls this" panel.
 
 ## Key Data Structures
 
 ```rust
-QualifiedName { object: Symbol, procedure: Symbol }  // Unique procedure identifier
-Definition { file, range, object_type, object_name, name, kind }  // Procedure/trigger location
-CallSite { file, range, caller, callee_object, callee_method }  // Call location with context
+// src/program/node.rs — overload-aware routine identity (object + name + enclosing
+// member + arity + a param-type-sequence fingerprint; total, not name-only)
+RoutineNodeId { object: ObjectNodeId, name_lc, enclosing_member_lc, params_count, sig_fp }
+
+// src/lsp/snapshot.rs — LspSnapshot's owned, Arc-shareable query surface
+DeclEntry { id: RoutineNodeId, name, origin, name_origin, virtual_path }  // a declaration
+EdgeRef { file: String, idx: u32 }  // index into edges_by_file[file] — never a borrow
 ```
 
 ## Grammar (tree-sitter-al v3.2.0)
@@ -179,7 +236,7 @@ CallSite { file, range, caller, callee_object, callee_method }  // Call location
 commit (reproducible local/dev builds); CI instead checks out `SShadowS/tree-sitter-al`
 `main` **unpinned** (`.github/workflows/ci.yml`) so a breaking grammar change surfaces
 on the next PR rather than silently drifting. `crates/al-syntax` is the **only** crate
-that links tree-sitter or walks its raw CST — every other consumer (`parser.rs`,
+that links tree-sitter or walks its raw CST — every other consumer (`src/lsp/snapshot.rs`,
 `src/engine/l2` and everything layered on it, `src/program/resolve`) reads the owned
 AL syntax IR that `al-syntax`'s lowerer (`crates/al-syntax/src/lower/mod.rs`) produces.
 Practical effect: the "flat vs. recursive walk" hazard that mattered under the old
@@ -240,7 +297,10 @@ written against V2's flat shape; the fix at the time was recursive walks or expl
    `ExprKind` etc. as needed. This is the ONLY place that reads raw tree-sitter nodes for
    the new construct; get it right here and every consumer below sees a clean IR node.
 3. **Wire the IR consumers that need it**, as applicable:
-   - LSP surface: `parser.rs`'s `parse_file_ir` (definitions/calls/vars/events projection)
+   - LSP surface: nothing to wire separately — `src/lsp/snapshot.rs`'s `LspSnapshot`
+     projects directly off the program engine's resolved graph (below), so a new
+     construct that resolves correctly there is automatically visible to
+     prepare/incoming/outgoing/codeLens/diagnostics with no LSP-specific step.
    - Program engine (the moat): `src/program/resolve/extract.rs` (obligation extraction)
      and/or `src/program/resolve/resolver.rs` (dispatch) if it's a new call/edge shape
    - Legacy L3 engine (advisory-only; rarely needs touching for new work):

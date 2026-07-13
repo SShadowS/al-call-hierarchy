@@ -32,7 +32,15 @@ jobs:
       - name: Lint
         env:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
-        run: cargo clippy --release -- -D warnings
+        # `--all-targets` is load-bearing, not decorative (t3.16 review
+        # fix-wave finding): without it, clippy never compiles ANY test or
+        # bench crate at all — every `tests/*.rs`/`benches/*.rs` file (this
+        # includes the `#[cfg(not(debug_assertions))]`-gated release_checks
+        # module in `tests/perf_bounds.rs`, but is NOT specific to it — the
+        # gap applied to every test/bench target regardless of cfg) went
+        # completely unlinted by CI before this fix, `--release` alone was
+        # never the missing piece. Matches CLAUDE.md's documented lint bar.
+        run: cargo clippy --release --all-targets --all-features -- -D warnings
 
       - name: Generated vocab is fresh
         env:

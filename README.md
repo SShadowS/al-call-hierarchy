@@ -93,9 +93,9 @@ case "textDocument/prepareCallHierarchy",
 | Initial index (100 files) | < 500ms |
 | Initial index (1000 files) | < 2s |
 | prepareCallHierarchy | < 1ms |
-| incomingCalls | < 1ms |
+| incomingCalls | ~25ms for a 999-way fan-in (architectural — see CLAUDE.md) |
 | outgoingCalls | < 1ms |
-| File change update | < 50ms |
+| Incremental update (rung 1 / rung 2) | 100ms / ~1.5s |
 
 Enforced on every PR by a release-mode CI gate (3x tolerance); see CLAUDE.md for
 currently-measured numbers and the bench command.

@@ -3,21 +3,22 @@ use clap::{Parser, ValueEnum};
 use log::info;
 use std::path::{Path, PathBuf};
 
-mod analysis;
 mod server;
 mod watcher;
 
-// `config`, `telemetry`, `app_package`, `dependencies`, and (as of T0.5)
-// `graph`, `handlers`, `indexer`, `parser`, `protocol` live in `lib.rs` so
-// library consumers (benches, tests) can use them. Re-export here so binary
-// modules (server, watcher, analysis, etc.) can keep referring to
-// `crate::graph::*` / `crate::handlers::*` / ... without churn.
+// `config`, `telemetry`, `app_package`, `dependencies`, `protocol` live in
+// `lib.rs` so library consumers (benches, tests) can use them. `analysis`
+// joined them at T3 Task 12's fix-wave (see `lib.rs`'s doc on that module) —
+// no more binary-only `mod analysis;` here. The legacy `graph`/`handlers`/
+// `indexer`/`parser` modules that used to live here too were deleted at T3
+// Task 17 (the LSP surface now runs entirely on `lsp::*`, see `lib.rs`'s doc
+// on that module). Re-export here so binary modules (server, watcher, etc.)
+// can keep referring to `crate::lsp::*` / ... without churn.
 pub use al_call_hierarchy::{
-    app_package, big_stack, config, dependencies, graph, handlers, indexer, parser, protocol,
-    telemetry,
+    analysis, app_package, big_stack, config, dependencies, lsp, protocol, telemetry,
 };
 
-use indexer::Indexer;
+use lsp::snapshot::LspSnapshot;
 use server::run_server;
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -95,25 +96,10 @@ fn main() -> Result<()> {
             // Analysis mode
             run_analysis(&project, &args.format)?;
         } else {
-            // CLI mode for testing/indexing
+            // CLI mode for testing/indexing (T3 Task 15: re-pointed at the
+            // program-engine snapshot — see this block's own doc below).
             info!("Indexing project: {}", project.display());
-            let mut indexer = Indexer::new();
-            indexer.index_directory(&project)?;
-
-            // Index external dependencies from .app packages
-            if project.join("app.json").exists()
-                && let Err(e) = indexer.index_dependencies(&project)
-            {
-                log::warn!("Failed to index dependencies: {}", e);
-            }
-
-            let graph = indexer.into_graph();
-            info!("Indexed {} definitions", graph.definition_count());
-            info!(
-                "Indexed {} external definitions",
-                graph.external_definition_count()
-            );
-            info!("Found {} call sites", graph.call_site_count());
+            report_index_stats(&project)?;
         }
     } else {
         // LSP server mode (default)
@@ -121,6 +107,44 @@ fn main() -> Result<()> {
         run_server(args.no_watcher, args.no_telemetry)?;
     }
 
+    Ok(())
+}
+
+/// CLI index-and-report mode: build the program-engine snapshot for
+/// `project` and log summary counts (T3 Task 15 cutover — replaces the
+/// legacy `Indexer::index_directory`/`into_graph` path).
+///
+/// **Count-definition change (CHANGELOG-documented):** `definitions` is now
+/// the workspace [`LspSnapshot::decls_by_file`] entry count (every routine
+/// declaration the snapshot indexed) and `call sites` is the sum of every
+/// [`LspSnapshot::edges_by_file`] bucket's length (workspace `Call`/`Run`/
+/// `ImplicitTrigger` edges — NOT including `event_edges`, mirroring the
+/// brief's literal "Σ bucket lens"). Neither number is directly comparable to
+/// the legacy `CallGraph::definition_count`/`call_site_count` this replaces:
+/// the program engine's identity/dedup rules differ from the legacy
+/// `QualifiedName`-keyed graph. The legacy "external definitions" line is
+/// replaced by a count of dependency routines with EMBEDDED source
+/// (`dep_decl_by_id` — real per-routine identities, unlike a `.app`'s
+/// symbol-only ABI catalog, which has no equivalent "definition" to count).
+fn report_index_stats(project: &Path) -> Result<()> {
+    let Some(snap) = LspSnapshot::build_full(project) else {
+        anyhow::bail!(
+            "Failed to build the program snapshot for {} — is this a valid AL app \
+             workspace (a readable app.json at its root)?",
+            project.display()
+        );
+    };
+
+    let definitions: usize = snap.decls_by_file.values().map(|v| v.len()).sum();
+    let call_sites: usize = snap.edges_by_file.values().map(|v| v.len()).sum();
+    let dep_definitions = snap.dep_decl_by_id.len();
+
+    info!("Indexed {} definitions", definitions);
+    info!(
+        "Indexed {} dependency definitions (embedded source)",
+        dep_definitions
+    );
+    info!("Found {} call sites", call_sites);
     Ok(())
 }
 
@@ -207,7 +231,7 @@ fn run_analysis(project: &PathBuf, format: &OutputFormat) -> Result<()> {
 /// former tree-sitter walk; complexity comes from the canonical IR walker.
 fn extract_metrics_ir(source: &str, path: &Path) -> Vec<analysis::ProcedureMetrics> {
     use al_syntax::ir::RoutineKind;
-    use analysis::calculate_quality_score;
+    use analysis::{calculate_quality_score, routine_complexity_ir};
 
     let f = al_syntax::parse(source);
     let file_str = path
@@ -229,7 +253,7 @@ fn extract_metrics_ir(source: &str, path: &Path) -> Vec<analysis::ProcedureMetri
             } else {
                 r.name.trim_matches('"').to_string()
             };
-            let complexity = parser::routine_complexity_ir(&f.ir, r);
+            let complexity = routine_complexity_ir(&f.ir, r);
             let line_count = r.origin.end.row.saturating_sub(r.origin.start.row) + 1;
             let parameter_count = r.params.len() as u32;
             let quality_score = calculate_quality_score(complexity, line_count, parameter_count);

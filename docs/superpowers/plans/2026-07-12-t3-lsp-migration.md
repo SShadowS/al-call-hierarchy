@@ -110,8 +110,10 @@ NOT a dep — use `RwLock<Arc<LspSnapshot>>`). Engine changes strictly additive.
 - Test: `src/protocol.rs` `#[cfg(test)]` block
 
 **Interfaces:**
-- Produces: `pub fn path_to_uri(path: &Path) -> Option<String>` — SAME signature as today; encoding now
-  RFC-3986-correct for arbitrary paths.
+- Produces: `pub fn path_to_uri(path: &Path) -> Uri` (lsp_types::Uri — the ACTUAL live signature;
+  this plan's original `Option<String>` guess was corrected during Task 1) — SAME signature as
+  today; encoding now RFC-3986-correct for arbitrary paths. Case-preserving, colon-literal drive
+  convention (not lowercase-drive as this plan originally assumed).
 
 - [ ] **Step 1: Failing tests first.** Add round-trip tests (they must FAIL against the current
   hand-encoder):
@@ -503,8 +505,10 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
   re-resolve ALL workspace files + `emit_event_flow_edges`, rebuild all derived. `FileRemoved` ⇒ rung 2.
   `DepsChanged`/`Overflow` ⇒ **rung 3**: `LspSnapshot::build_full`. ANY doubt (parse error on F, missing
   prev entry, fingerprint of a file that didn't exist) ⇒ escalate one rung — fail closed, never guess.
-  **Contingency (from Task 3's measurement):** if transient ResolveIndex+BodyMap rebuild breaks the
-  100ms rung-1 budget, keep BOTH as an updater-owned cache keyed by `generation`, rebuilt on rung 2/3
+  **Contingency (from Task 3's measurement — now MANDATORY, not conditional):** Task 3 MEASURED
+  ResolveIndex+BodyMap rebuild at ~240–340ms on CDO scale (8–11x over the 30ms threshold; red-flag
+  rule fired), so the transient-rebuild default is dead: keep BOTH as an updater-owned cache keyed by
+  `generation`, rebuilt on rung 2/3
   only, and rung 1 swaps F's parsed unit into the cached BodyMap's source set BEFORE resolving (the
   audit guarantees signature-only reads of other files; F's own reads see the fresh parse). Document
   which branch was taken in the task report.
@@ -516,10 +520,18 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
   (b) signature edit in A.al (add a param) → rung 2, caller in B.al now resolves differently
   (arity mismatch → Unknown or overload re-pick — assert the ACTUAL taxonomy outcome);
   (c) file delete → rung 2, its edges gone from buckets + incoming;
-  (d) parse-error save → escalates (no partial state; prev snapshot survives if build fails entirely).
+  (d) parse-error save → escalates (no partial state; prev snapshot survives if build fails entirely);
+  (e) `FileSaved` for a path NOT in `prev.parsed` (e.g. a file under `.alpackages/` reaching didSave) →
+  escalates past rung 1, never misapplies it (Task-4 review Hunt-3 scenario — the dep-file boundary).
 - [ ] **Step 2:** Implement; tests pass.
 - [ ] **Step 3:** Debounce/coalesce test on `spawn_updater`: 5 rapid saves of one file → exactly 1
   `apply_changes` call (inject a counting wrapper).
+- [ ] **Step 3b: RE-MEASURE rung 2 with the REAL workspace-layer path** (Task-3 review escalation):
+  Task 3's 1.9s rung-2 pin includes 926ms of `build_program_graph` over the WHOLE snapshot (deps
+  included) because `assemble_program_graph` didn't exist yet — it is an UPPER BOUND, not the number.
+  Re-run the CDO stage-split ignored test's methodology against the actual rung-2 path
+  (ws-parse + `assemble_program_graph` + index/bodymap + full re-resolve), record the measured number
+  in `.superpowers/sdd/t3-stage-split.md` (append, don't overwrite) — Task 16 pins from THIS number.
 - [ ] **Step 4:** Clippy, rustfmt, CHANGELOG. Commit `feat(lsp): incremental updater — 2-rung ladder + swap (t3.9)`.
 
 ---
@@ -538,7 +550,10 @@ pub fn spawn_updater(shared: Arc<SharedSnapshot>, rx: Receiver<ChangeEvent>,
   N scripted disk edits (write file + `apply_changes(FileSaved)`), then `LspSnapshot::build_full` fresh
   on the SAME tempdir state and assert EQUIVALENCE: identical edge multiset per file (compare
   `(SiteId, sorted route (target, evidence-discriminant))`), identical `incoming` maps, identical
-  `decls_by_file`. Scripts: body-edit chain (3 consecutive rung-1s), signature change, rename routine,
+  `decls_by_file`. **Witness spans are EXCLUDED from the equivalence key BY DESIGN** (audit §6.1:
+  rung 1 leaves other files' stored witness byte-spans stale; handlers must re-derive spans live —
+  the live-derivation guarantee is tested at handler level in Task 11, not here — document this
+  exclusion in the test's header comment). Scripts: body-edit chain (3 consecutive rung-1s), signature change, rename routine,
   add file, delete file, edit that flips overload resolution, event-subscriber attribute edit, and one
   MIXED 6-edit script. Every script asserts equivalence AFTER EVERY EDIT, not just at the end.
 - [ ] **Step 2:** Negative control (gate is non-vacuous): assert at least one script actually exercised
@@ -584,7 +599,17 @@ pub fn outgoing(snap: &LspSnapshot, enc: PositionEncoding, data: &ItemData) -> V
   incoming for the fixture's cross-file callee (both callers, correct fromRanges, grouped by caller);
   incoming on a publisher-subscribed routine (subscriber's incoming includes the publisher — event
   direction per Task 8); outgoing with one resolved + one ambiguous (2 candidates → 2 items) + one
-  builtin (absent); stale-ItemData → empty.
+  builtin (absent); stale-ItemData → empty; AND the audit-§6.1 live-span test (NON-NEGOTIABLE,
+  `docs/superpowers/specs/2026-07-12-t3-def-surface-audit.md` §6.1): apply a rung-1 body edit to the
+  TARGET file via `apply_changes`, then run incoming/outgoing from the un-edited caller — every
+  returned range must match the target's FRESH parse positions (assert against a fresh batch build),
+  proving handlers re-derive spans live from decl_index/BodyMap and never serve stored
+  `Witness::SourceSpan` bytes. **This rule EXTENDS to EventFlow edges' `SiteId` spans** (Task-10
+  finding): an EventFlow edge's SiteId is anchored at the publisher's name-origin and goes stale
+  under rung-1 edits (rung 1 Arc-clones event_edges by design) — event-derived `fromRanges` and
+  publisher/subscriber item positions must come from `decl_by_id` lookups, NEVER from
+  `edge.site.span` on an EventFlow edge. Add a test: rung-1 body edit above a publisher decl →
+  incoming-on-subscriber's fromRanges match the FRESH publisher position.
 - [ ] **Step 2:** Implement; pass. Clippy, rustfmt, CHANGELOG. Commit
   `feat(lsp): core call-hierarchy handlers on program engine (t3.11)`.
 
@@ -679,6 +704,17 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
   class, edit-scenario-only.
 - [ ] **Step 4:** Pin the CDO class counts in the test (exact numbers, ratchet-style) once measured;
   record them in the task report + CHANGELOG. Commit `test(lsp): adjudicated legacy-vs-new differential harness (t3.14)`.
+- [ ] **Step 5 (Task-11 review carry):** add a DEP-BEARING fixture arm to the Task-10 incremental
+  gate (a workspace + one embedded-source dependency, exercising `dep_decl_by_id`/`dep_texts`
+  through rung 1/2 transitions) so the three dep-layer snapshot fields — already widened into the
+  gate's canonicalize in the Task-11 fix wave, trivially-equal on the dep-less fixture — get
+  non-vacuous coverage. Also: expected differential classes for T14's taxonomy from Task 11's
+  adjudicated deviations — external/AbiSymbol targets (legacy reused the CALLER's range; new emits
+  an object-level `al-preview` item) and outgoing per-site cardinality are LEGACY-SHAPE-CHANGED
+  classes, not regressions. From Task 12 (adjudicated): unused-proc R2 requires a REAL resolved
+  EventFlow edge (broken subscription: legacy excluded, new flags — NEW_BETTER precision);
+  publisher-as-edge-source is not usage; interface-member exclusion R6 (legacy false-positively
+  flagged interface method signatures as unused, new excludes them — NEW_BETTER(InterfaceExclusion)).
 
 ---
 
@@ -722,7 +758,9 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
   gating/env pattern and keep it): on the 1000-file perf corpus: `build_full` < 6s (3× the 2s target);
   prepare/incoming/outgoing < 3ms each (3× 1ms) — keep the SEMANTIC asserts (999-way fan-in count
   survives as an incoming-length assert against the new backend); rung-1 `apply_changes` (body edit)
-  < 300ms (3× 100ms); rung-2 (signature edit) < 3× the Task-3-pinned target (write the number in).
+  < 300ms (3× 100ms); rung-2 (signature edit) < 3× the Task-9-RE-MEASURED rung-2 number from
+  `.superpowers/sdd/t3-stage-split.md` (Task 3's 1.9s figure is a whole-snapshot-build UPPER BOUND —
+  do NOT bake it; Task-3 review escalation).
 - [ ] **Step 2:** `benches/lsp_pipeline.rs` mirrored onto the same operations (Criterion rows renamed
   to match the new table in CLAUDE.md — Task 17 updates the doc).
 - [ ] **Step 3:** Run release perf test locally; record numbers in the task report. Clippy, CHANGELOG.
@@ -747,6 +785,9 @@ impl DiagnosticsState { pub fn diff(&mut self, new: HashMap<String, Vec<Diagnost
 - [ ] **Step 2:** Fix every compile fallout by DELETION (tests of deleted modules go too — list each
   deleted test in the report with the replacement that covers it: graph.rs unit tests → Task 8/10/11
   coverage; indexer issue-#20 tests → Task 12's per-rule ports; parser golden → retired).
+  NOTE (Task-12 review): `routine_complexity_ir`/`is_framework_invocation_attribute`/`is_event_publisher`
+  were RELOCATED out of parser.rs in the t3.12 fix wave (surviving module; parser.rs re-exports them
+  until deletion) — verify no surviving module imports from parser.rs before deleting it.
   `cargo test` full suite green; clippy bar green.
 - [ ] **Step 3:** Docs: CLAUDE.md Pipeline-1 rewritten (the two-pipeline framing becomes one engine,
   two consumers: LSP surface + CLI/aldump); perf table replaced with Task 16's rows + measured numbers;
