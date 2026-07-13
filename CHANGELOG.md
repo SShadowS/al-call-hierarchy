@@ -969,6 +969,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CDO SHA gate re-verified byte-identical
   (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`).
 
+### Removed
+- **The legacy tree-sitter-only LSP pipeline — `src/graph.rs` (2477 lines),
+  `src/indexer.rs` (1247), `src/parser.rs` (1202), `src/handlers.rs` (2383)
+  — is DELETED (T3 LSP-migration arc, Task 17, the capstone).** This is the
+  pipeline the program-engine-backed LSP surface (Tasks 8-16, above and in
+  `### Changed`/`### Added`) fully replaced: `CallGraph`'s `QualifiedName`-
+  keyed (name-only, no signature/kind/enclosing-member discriminator)
+  `Definition`/`CallSite` model, the naive text-matching call resolver in
+  `indexer.rs`, and every handler in `handlers.rs` that read them
+  (`prepare_call_hierarchy`/`incoming_calls`/`outgoing_calls`/`code_lens`/
+  `get_unused_procedure_diagnostics`/`dependency_document_symbol`/
+  `event_publishers_in_file`/`event_reference_at_position`) — all now dead
+  code, unreachable since Task 15's server cutover pointed `server.rs`'s
+  dispatcher entirely at `lsp::handlers`/`lsp::lens`/`lsp::diagnostics`/
+  `lsp::custom`.
+  **Deletion license:** `tests/lsp_differential.rs` (the adjudicated
+  legacy-vs-new differential parity harness, Task 14 — also deleted here,
+  a scaffolding test that structurally cannot compile once one of the two
+  engines it drove is gone) proved, on real CDO source: 12,284 identical
+  answers across `prepare`/`incoming`/`outgoing`/`codeLens`/
+  `unused-procedure` diagnostics, ~44,000 additional divergences every one
+  mechanically classified into a named, justified `NewBetter` class (never
+  a bare "different, who knows why"), `Regression = 0` and
+  `NewUnexplained = 0` held across five escalating CDO fix-wave layers
+  (`LegacyIdentityCollapse`, `ImplicitTriggerEdge`, `ImplicitRecResolved`,
+  `VariableReceiverResolved` generalized off object identity, and a widened
+  `DepSourceSpan` predicate), plus a real H-10 edit-scenario regression
+  legacy carried (losing cross-file incoming edges after a same-file
+  no-op reindex) that the new engine provably does not. Its differential-
+  only fixtures (`tests/fixtures/lsp-diff-core/`, `lsp-diff-identity/`,
+  `lsp-diff-nested/`) are deleted alongside it; `tests/fixtures/lsp-diff-deps/`
+  is KEPT — `tests/lsp_incremental_parity.rs`'s (the PERMANENT incremental
+  gate) `dep_bearing_rung1_then_rung2_stay_equivalent_with_nonvacuous_dep_indexes`
+  script reuses it for real dependency-index coverage — and
+  `tests/fixtures/lsp-incr/` is likewise KEPT (the incremental gate's
+  primary fixture).
+  **`tests/parser-ir-goldens/`** (the r0-corpus `parser.rs` projection
+  golden) retires together with `parser.rs` — nothing else in the repo
+  reads it.
+  **Relocated, not deleted:** the three handlers legacy `handlers.rs` still
+  owned that never touched `graph`/`indexer` at all — `fieldProperties`/
+  `actionProperties` (+ their `SymbolProperties*` types and
+  `read_source_from_uri`/`to_symbol_properties_result` helpers) and the
+  `al-preview://` URI parser `parse_al_preview_uri` (+ its `urldecode`
+  helper) — move verbatim into `src/lsp/custom.rs`; Task 15's cutover had
+  already pointed `server.rs`'s dispatcher at their legacy implementations
+  unchanged, so this is a pure relocation, not a behavior change.
+  `telemetryStatus` has no handler function to relocate (`server.rs` calls
+  `crate::telemetry::status()` directly).
+  **`tests/perf_support_smoke.rs`** — its `Indexer`-dependent correctness
+  checks (the corpus's 999-way fan-in / 3-way fan-out contract, and the
+  rung-1/rung-2 body-edit/signature-edit definition-count deltas) are
+  rewritten onto `LspSnapshot`/`lsp::handlers`/`lsp::updater` rather than
+  deleted outright: `tests/perf_bounds.rs`'s equivalent assertions only
+  compile under `#[cfg(not(debug_assertions))]` (a release-only gate), so
+  this file remains the only place the corpus's contract is pinned under a
+  plain `cargo test` (every debug-profile run, not just
+  `cargo test --release --test perf_bounds`).
+  `src/lib.rs`/`src/main.rs` dropped the `graph`/`handlers`/`indexer`/
+  `parser` module declarations and re-exports. CLAUDE.md's Architecture
+  section is rewritten from "two pipelines" to "one engine, two consumers"
+  (the LSP surface and the CLI/`aldump`), its Key Modules list and
+  Performance Targets table updated to the surviving `src/lsp/*` modules
+  and Task 16's measured numbers, and its stale `QualifiedName`/
+  `Definition`/`CallSite` "Key Data Structures" block replaced with the
+  current `RoutineNodeId`/`DeclEntry`/`EdgeRef` shapes.
+
 ### Changed
 - **`tests/perf_bounds.rs`/`benches/lsp_pipeline.rs` rewritten onto the
   ENGINE-BACKED LSP surface (T3 LSP-migration arc, Task 16) — the last thing
