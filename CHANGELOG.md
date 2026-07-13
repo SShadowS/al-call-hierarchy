@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- DeclSurface: owned two-tier routine-decl metadata surface (workspace tier +
+  Arc-frozen dependency tier), groundwork for dropping dependency parse
+  arenas from LSP steady state.
 - **`tests/lsp_differential.rs`: adjudicated legacy-vs-new differential parity
   harness (T3 LSP-migration arc, Task 14) — the DELETION LICENSE for the
   legacy LSP pipeline (Task 17): runs BOTH backends in-process over identical

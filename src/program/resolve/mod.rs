@@ -8,6 +8,7 @@ pub mod applicability;
 pub mod arg_dispatch;
 pub mod body_map;
 pub mod builtins;
+pub mod decl_surface;
 pub mod differential;
 pub mod edge;
 pub mod event;
