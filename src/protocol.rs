@@ -128,6 +128,10 @@ mod tests {
         let path = uri_to_path(&uri);
         #[cfg(windows)]
         assert_eq!(path, Some(PathBuf::from("c:\\my project\\file.al")));
+        // On non-Windows the path keeps its case and its leading slash; the
+        // percent-decoding of `%20` is the platform-independent contract here.
+        #[cfg(not(windows))]
+        assert_eq!(path, Some(PathBuf::from("/C:/My Project/file.al")));
     }
 
     #[test]
@@ -248,5 +252,12 @@ mod tests {
         let path2 = uri_to_path(&uri2);
         #[cfg(windows)]
         assert_eq!(path1, path2);
+        // On a case-SENSITIVE filesystem these are genuinely different paths —
+        // pinning that here is what makes the Windows arm above a statement
+        // about normalization rather than an accident. The LSP surface's own
+        // case-insensitive fallbacks (`resolve_virtual_path`, `classify_path`)
+        // exist precisely because this divergence is real.
+        #[cfg(not(windows))]
+        assert_ne!(path1, path2);
     }
 }
