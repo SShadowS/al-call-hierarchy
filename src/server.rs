@@ -16,8 +16,9 @@
 //! functions (`lsp::handlers`/`lsp::lens`/`lsp::custom`) with the negotiated
 //! [`PositionEncoding`]. `al-call-hierarchy/{fieldProperties,actionProperties,
 //! telemetryStatus}` are graph-independent (pure source-read / process
-//! status) and stay on their existing `crate::handlers` implementations —
-//! they survive Task 17's legacy deletion untouched.
+//! status) and dispatch to `lsp::custom`'s implementations (relocated
+//! verbatim from legacy `src/handlers.rs` at Task 17's legacy deletion —
+//! Task 15's cutover already pointed here unchanged before the move).
 //!
 //! Diagnostics follow "recompute-diff-publish-clear": every snapshot swap
 //! (including the very first, batch-built one) runs `lsp::diagnostics::
@@ -55,10 +56,10 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::config::DiagnosticConfig;
-use crate::handlers::{SymbolPropertiesParams, action_properties, field_properties};
 use crate::lsp::custom::{
     DependencyDocumentSymbolParams, EventPublishersInFileParams, EventReferenceAtPositionParams,
-    dependency_document_symbol, event_publishers_in_file, event_reference_at_position,
+    SymbolPropertiesParams, action_properties, dependency_document_symbol,
+    event_publishers_in_file, event_reference_at_position, field_properties,
 };
 use crate::lsp::diagnostics::{DiagnosticsState, compute_all};
 use crate::lsp::encoding::{PositionEncoding, negotiate};

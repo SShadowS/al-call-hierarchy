@@ -12,12 +12,10 @@
 /// Code-quality metrics (cyclomatic complexity, quality score, findings) over
 /// the owned IR (T3 Task 12 fix-wave): promoted from a binary-only `main.rs`
 /// module to a library module because `src/lsp/lens.rs`/`diagnostics.rs`
-/// (permanent library code — `parser.rs` is a Task-17 deletion target) need
-/// its `routine_complexity_ir`/`is_framework_invocation_attribute` helpers
-/// without depending on the module scheduled for deletion. `main.rs` now
-/// re-exports this alongside `graph`/`handlers`/`indexer`/`parser`/
-/// `protocol` (same pattern, see that comment below) instead of declaring its
-/// own `mod analysis;`.
+/// need its `routine_complexity_ir`/`is_framework_invocation_attribute`
+/// helpers. `main.rs` re-exports this alongside `config`/`telemetry`/`lsp`
+/// (same pattern, see that comment below) instead of declaring its own
+/// `mod analysis;`.
 pub mod analysis;
 pub mod app_package;
 /// Shared big-stack execution for anywhere the `al_syntax` lowerer runs (T2.1,
@@ -29,25 +27,19 @@ pub mod capped_io;
 pub mod config;
 pub mod dependencies;
 pub mod engine;
-/// The legacy LSP call-hierarchy pipeline (T0.5): moved here — not duplicated
-/// — so `benches/` and `tests/` can index a project and query the graph
-/// in-process (no LSP stdio loop). `main.rs` re-exports these five under
-/// `crate::{graph,handlers,indexer,parser,protocol}` via `pub use
-/// al_call_hierarchy::{...}` (same pattern as `config`/`telemetry` above) so
-/// the binary-only modules (`server.rs`, `watcher.rs`) keep compiling
-/// unchanged.
-pub mod graph;
-pub mod handlers;
-pub mod indexer;
 /// Tree-sitter AL language bindings. Exposed from the library so additive
 /// binaries (e.g. the R0 `aldump`) can parse without duplicating the `extern`
 /// declaration. `main.rs` keeps its own `mod language;` for the LSP binary;
 /// the duplicate compilation is benign and pre-existing in this repo.
 pub mod language;
-/// LSP-surface infrastructure for the T3 program-engine migration (H-12
-/// position-encoding negotiation today; snapshot/updater/handlers later).
+/// LSP-surface infrastructure for the program-engine-backed LSP server (the
+/// T3 migration arc): position encoding, the def-surface/fingerprint model,
+/// the `LspSnapshot`/`Updater`, and the request handlers/lens/diagnostics/
+/// custom-request modules `server.rs` dispatches to. This IS the LSP
+/// surface today — the legacy `graph`/`handlers`/`indexer`/`parser` pipeline
+/// it replaced was deleted at T3 Task 17 (the differential harness that
+/// licensed the deletion, and its CDO evidence, are recorded in CHANGELOG).
 pub mod lsp;
-pub mod parser;
 pub mod program;
 pub mod protocol;
 pub mod snapshot;

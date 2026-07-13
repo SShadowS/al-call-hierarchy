@@ -1,12 +1,17 @@
 //! Engine-backed custom LSP requests (T3 Task 13): `dependencyDocumentSymbol`,
 //! `eventPublishersInFile`, `eventReferenceAtPosition` — the program-engine
-//! replacements for `src/handlers.rs`'s `dependency_document_symbol` (line
-//! 1552), `event_publishers_in_file` (line 1711), and
-//! `event_reference_at_position` (line 1799).
+//! replacements for legacy `src/handlers.rs`'s (deleted, T3 Task 17)
+//! `dependency_document_symbol`, `event_publishers_in_file`, and
+//! `event_reference_at_position`.
 //!
-//! `fieldProperties`/`actionProperties`/`telemetryStatus` (`src/handlers.rs:554,566`)
-//! are ALREADY graph-independent and are NOT touched here — they survive as-is
-//! until Task 15's cutover just re-points the dispatcher at them unchanged.
+//! `fieldProperties`/`actionProperties`/`parse_al_preview_uri` (below, in
+//! their own sections) were ALREADY graph-independent in legacy — Task 15's
+//! cutover pointed the dispatcher at their legacy implementations unchanged,
+//! and Task 17 relocated them here verbatim (source-read/al-syntax-facade
+//! logic only, never touched `graph`/`indexer`) as the last step of retiring
+//! `src/handlers.rs` entirely. `telemetryStatus` has no handler function at
+//! all (`server.rs` calls `crate::telemetry::status()` directly), so nothing
+//! to relocate for it.
 //!
 //! # Wire shapes (binding — read before changing anything below)
 //!
@@ -155,15 +160,16 @@
 //!   follow-up — flagged, not fixed, here (a north-star-metric-affecting
 //!   change needs its own measurement).
 
+use anyhow::{Context, Result};
 use lsp_types::Position;
 use serde::{Deserialize, Serialize};
 
 use crate::app_package::{ExternalMethodKind, ExternalObject};
-use crate::handlers::parse_al_preview_uri;
 use crate::lsp::encoding::{LineTable, PositionEncoding};
 use crate::lsp::handlers::{origin_to_range, resolve_virtual_path};
 use crate::lsp::snapshot::LspSnapshot;
 use crate::program::resolve::event::{PublisherKind, is_event_publisher};
+use crate::protocol::uri_to_path;
 use crate::snapshot::{AppSetSnapshot, AppUnit};
 use crate::types::ObjectType;
 use al_syntax::ir::{AlFile, AttributeIr, Ir};
@@ -651,6 +657,189 @@ fn extract_subscriber_display(
     }
 
     Some((object_type, object_name, event_name))
+}
+
+// ---------------------------------------------------------------------------
+// fieldProperties / actionProperties (T3 Task 17: relocated verbatim from
+// legacy src/handlers.rs, which is deleted this task — graph-independent,
+// pure source-read + al-syntax facade lookup, never touched graph/indexer;
+// Task 15's cutover already dispatched the server here unchanged, so this is
+// a pure move, no behavior change).
+// ---------------------------------------------------------------------------
+
+/// Parameters for al-call-hierarchy/fieldProperties and al-call-hierarchy/actionProperties.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolPropertiesParams {
+    uri: String,
+    /// For fieldProperties
+    #[serde(default)]
+    field_name: String,
+    /// For actionProperties
+    #[serde(default)]
+    action_name: String,
+}
+
+/// Generic response: all declared properties as key-value pairs.
+/// Keys are human-readable property names (e.g., "Caption", "CalcFormula").
+/// Only properties explicitly declared in source are included.
+#[derive(Debug, Serialize, Default)]
+pub struct SymbolPropertiesResult {
+    /// For fields: the field ID number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field_id: Option<u32>,
+    /// All declared properties from source (key = property name, value = property value)
+    properties: Vec<PropertyEntry>,
+}
+
+/// A single property entry preserving declaration order
+#[derive(Debug, Serialize)]
+pub struct PropertyEntry {
+    name: String,
+    value: String,
+}
+
+/// Extract all properties for a table field, via the owned `al-syntax` facade.
+pub fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
+    let source = read_source_from_uri(&params.uri)?;
+    Ok(al_syntax::lookup_symbol_properties(
+        &source,
+        al_syntax::SymbolDeclKind::Field,
+        &params.field_name,
+    )
+    .map(to_symbol_properties_result)
+    .unwrap_or_default())
+}
+
+/// Extract all properties for a page action, via the owned `al-syntax` facade.
+pub fn action_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
+    let source = read_source_from_uri(&params.uri)?;
+    Ok(al_syntax::lookup_symbol_properties(
+        &source,
+        al_syntax::SymbolDeclKind::Action,
+        &params.action_name,
+    )
+    .map(to_symbol_properties_result)
+    .unwrap_or_default())
+}
+
+/// Read an AL file's source from a `file:` URI (no parsing — al-syntax owns that).
+fn read_source_from_uri(uri_str: &str) -> Result<String> {
+    let uri: lsp_types::Uri = uri_str.parse().context("Invalid URI")?;
+    let path = uri_to_path(&uri).ok_or_else(|| anyhow::anyhow!("Invalid file URI"))?;
+    std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))
+}
+
+/// Map the al-syntax facade result into the LSP response shape.
+fn to_symbol_properties_result(p: al_syntax::SymbolProperties) -> SymbolPropertiesResult {
+    SymbolPropertiesResult {
+        field_id: p.field_id,
+        properties: p
+            .properties
+            .into_iter()
+            .map(|e| PropertyEntry {
+                name: e.name,
+                value: e.value,
+            })
+            .collect(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// al-preview:// URI parsing (T3 Task 17: relocated verbatim from legacy
+// src/handlers.rs, which is deleted this task). Used by THIS module's own
+// `dependency_document_symbol` above (the `from_uri` branch) and by
+// `src/lsp/handlers.rs`'s `abi_symbol_uri` conformance test, which mints
+// URIs in this same scheme for `RouteTarget::AbiSymbol`.
+// ---------------------------------------------------------------------------
+
+/// Parse an `al-preview:/allang/{App}/{Type}/{Id}/{Name}.dal` URI into its parts.
+/// Returns (app_name, object_type, object_name). Tolerates URL-encoded segments
+/// and unusual scheme separators.
+///
+/// `pub(crate)`: `src/lsp/handlers.rs`'s `abi_symbol_uri` mints URIs in this
+/// SAME `al-preview://` object-level layout for the fresh engine's
+/// `RouteTarget::AbiSymbol` fallback item — its own conformance test calls
+/// this parser directly to prove the emitted URI actually round-trips
+/// through the ONE real consumer this scheme has today, rather than merely
+/// resembling it by eye.
+pub(crate) fn parse_al_preview_uri(uri: &str) -> Option<(String, ObjectType, String)> {
+    // Strip scheme and any number of leading slashes.
+    let rest = uri.strip_prefix("al-preview:")?;
+    let rest = rest.trim_start_matches('/');
+
+    // Expect "allang/<App>/<Type>/<Id>/<Name>.dal" — but the App name and the
+    // object Name can themselves contain '/', so a naive split is wrong.
+    // Heuristic: locate the ".dal" suffix and walk segments from there.
+    let trimmed = rest.strip_suffix(".dal").unwrap_or(rest);
+    let segments: Vec<&str> = trimmed.split('/').collect();
+    if segments.len() < 5 {
+        return None;
+    }
+
+    // Layout: ["allang", <App pieces...>, <Type>, <Id>, <Name pieces...>]
+    // Walk from the right: last segment(s) = Name, segment before Id = Type,
+    // before that = Id, everything between "allang" and Type = App.
+    //
+    // The simplest robust approach: the *type* segment must match a known
+    // ObjectType (case-insensitive). Scan segments from index 1 onward and
+    // pick the first that parses as ObjectType — that anchors the layout.
+    let mut type_idx = None;
+    for (i, seg) in segments.iter().enumerate().skip(1) {
+        let decoded = urldecode(seg);
+        if ObjectType::try_from(decoded.as_str()).is_ok() {
+            type_idx = Some(i);
+            break;
+        }
+    }
+    let type_idx = type_idx?;
+    if type_idx + 2 > segments.len() - 1 {
+        // need Id and at least one name segment after Type
+        return None;
+    }
+
+    let object_type: ObjectType =
+        ObjectType::try_from(urldecode(segments[type_idx]).as_str()).ok()?;
+    let app_parts: Vec<String> = segments[1..type_idx].iter().map(|s| urldecode(s)).collect();
+    let app = app_parts.join("/");
+
+    // Skip Id segment, take rest as Name (may contain slashes if Microsoft ever does that).
+    let name_parts: Vec<String> = segments[type_idx + 2..]
+        .iter()
+        .map(|s| urldecode(s))
+        .collect();
+    let mut name = name_parts.join("/");
+    // The original Name segment may also have included the trailing ".dal";
+    // we already stripped it once from the whole URI, but if it landed inside
+    // the name segment due to splitting, strip again.
+    if let Some(stripped) = name.strip_suffix(".dal") {
+        name = stripped.to_string();
+    }
+
+    Some((app, object_type, name))
+}
+
+/// Minimal URL-decoder for the percent-encoded segments AL LSP may emit.
+/// Avoids pulling in another crate.
+fn urldecode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push(((h << 4) | l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,5 +1398,223 @@ mod tests {
     /// fixture above (byte-identical to what was fed to `al_syntax::parse`).
     fn file_source(attr_src: &str) -> String {
         format!("codeunit 1 \"X\" {{ {attr_src}\n    procedure P()\n    begin\n    end; }}")
+    }
+}
+
+// ── fieldProperties / actionProperties (T3 Task 17: relocated from legacy) ──
+
+#[cfg(test)]
+mod symbol_properties_tests {
+    use super::*;
+
+    #[test]
+    fn test_field_properties_extraction() {
+        let source = r#"
+table 50000 "TEST Customer"
+{
+    fields
+    {
+        field(1; "No."; Code[20])
+        {
+            Caption = 'No.';
+            DataClassification = CustomerContent;
+        }
+
+        field(11; Balance; Decimal)
+        {
+            Caption = 'Balance';
+            Editable = false;
+            FieldClass = FlowField;
+            CalcFormula = sum("Cust. Ledger Entry".Amount where("Customer No." = field("No.")));
+        }
+
+        field(20; "Payment Terms Code"; Code[10])
+        {
+            Caption = 'Payment Terms Code';
+            DataClassification = CustomerContent;
+            TableRelation = "Payment Terms";
+        }
+    }
+}
+"#;
+
+        // Helper to find a property by name in the result
+        fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
+            result
+                .properties
+                .iter()
+                .find(|p| p.name == name)
+                .map(|p| p.value.clone())
+        }
+        let lookup = |target: &str| {
+            to_symbol_properties_result(
+                al_syntax::lookup_symbol_properties(
+                    source,
+                    al_syntax::SymbolDeclKind::Field,
+                    target,
+                )
+                .unwrap(),
+            )
+        };
+
+        // Test Balance field (FlowField with CalcFormula)
+        let result = lookup("balance");
+        assert_eq!(result.field_id, Some(11));
+        assert_eq!(prop(&result, "Caption").as_deref(), Some("'Balance'"));
+        assert_eq!(prop(&result, "Editable").as_deref(), Some("false"));
+        assert_eq!(prop(&result, "FieldClass").as_deref(), Some("FlowField"));
+        assert!(prop(&result, "CalcFormula").is_some());
+        assert!(
+            prop(&result, "CalcFormula")
+                .unwrap()
+                .contains("Cust. Ledger Entry")
+        );
+
+        // Test Payment Terms Code field (with TableRelation)
+        let result = lookup("payment terms code");
+        assert_eq!(result.field_id, Some(20));
+        assert!(prop(&result, "TableRelation").is_some());
+        assert!(
+            prop(&result, "TableRelation")
+                .unwrap()
+                .contains("Payment Terms")
+        );
+
+        // Test No. field (basic field)
+        let result = lookup("no.");
+        assert_eq!(result.field_id, Some(1));
+        assert_eq!(prop(&result, "Caption").as_deref(), Some("'No.'"));
+        assert_eq!(
+            prop(&result, "DataClassification").as_deref(),
+            Some("CustomerContent")
+        );
+        assert!(prop(&result, "FieldClass").is_none());
+        assert!(prop(&result, "CalcFormula").is_none());
+    }
+
+    #[test]
+    fn test_action_properties_extraction() {
+        let source = r#"
+page 50001 "TEST Customer Card"
+{
+    PageType = Card;
+    SourceTable = "TEST Customer";
+
+    actions
+    {
+        area(Navigation)
+        {
+            action(LedgerEntries)
+            {
+                ApplicationArea = All;
+                Caption = 'Ledger E&ntries';
+                Image = CustomerLedger;
+                RunObject = page "Customer Ledger Entries";
+                RunPageLink = "Customer No." = field("No.");
+                RunPageView = sorting("Customer No.");
+                ShortcutKey = 'Ctrl+F7';
+                ToolTip = 'View the history of transactions for the customer.';
+            }
+
+            action(CheckCreditLimit)
+            {
+                ApplicationArea = All;
+                Caption = 'Check Credit Limit';
+                Image = Check;
+                ToolTip = 'Check if the customer has exceeded their credit limit.';
+
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#;
+
+        // Helper to find a property by name
+        fn prop(result: &SymbolPropertiesResult, name: &str) -> Option<String> {
+            result
+                .properties
+                .iter()
+                .find(|p| p.name == name)
+                .map(|p| p.value.clone())
+        }
+        let lookup = |target: &str| {
+            to_symbol_properties_result(
+                al_syntax::lookup_symbol_properties(
+                    source,
+                    al_syntax::SymbolDeclKind::Action,
+                    target,
+                )
+                .unwrap(),
+            )
+        };
+
+        // Test LedgerEntries action (with RunObject)
+        let result = lookup("ledgerentries");
+        assert_eq!(
+            prop(&result, "Caption").as_deref(),
+            Some("'Ledger E&ntries'")
+        );
+        assert_eq!(prop(&result, "Image").as_deref(), Some("CustomerLedger"));
+        assert!(prop(&result, "RunObject").is_some());
+        assert!(
+            prop(&result, "RunObject")
+                .unwrap()
+                .contains("Customer Ledger Entries")
+        );
+        assert!(prop(&result, "RunPageLink").is_some());
+        assert!(prop(&result, "RunPageView").is_some());
+        assert_eq!(prop(&result, "ShortcutKey").as_deref(), Some("'Ctrl+F7'"));
+        assert!(prop(&result, "ToolTip").is_some());
+        assert!(
+            prop(&result, "ToolTip")
+                .unwrap()
+                .contains("history of transactions")
+        );
+
+        // Test CheckCreditLimit action (no RunObject, has trigger)
+        let result = lookup("checkcreditlimit");
+        assert_eq!(
+            prop(&result, "Caption").as_deref(),
+            Some("'Check Credit Limit'")
+        );
+        assert_eq!(prop(&result, "Image").as_deref(), Some("Check"));
+        assert!(prop(&result, "RunObject").is_none());
+        assert!(prop(&result, "ToolTip").is_some());
+    }
+}
+
+// ── al-preview:// URI parsing (T3 Task 17: relocated from legacy) ──────────
+
+#[cfg(test)]
+mod parse_al_preview_uri_tests {
+    use super::*;
+
+    #[test]
+    fn parse_uri_basic() {
+        let uri = "al-preview:/allang/Base Application/Codeunit/1535/Approvals Mgmt..dal";
+        let (app, ty, name) = parse_al_preview_uri(uri).expect("parse");
+        assert_eq!(app, "Base Application");
+        assert_eq!(ty, ObjectType::Codeunit);
+        assert_eq!(name, "Approvals Mgmt.");
+    }
+
+    #[test]
+    fn parse_uri_with_percent_encoding() {
+        let uri = "al-preview:/allang/Base%20Application/Codeunit/1535/Approvals%20Mgmt..dal";
+        let (app, ty, name) = parse_al_preview_uri(uri).expect("parse");
+        assert_eq!(app, "Base Application");
+        assert_eq!(ty, ObjectType::Codeunit);
+        assert_eq!(name, "Approvals Mgmt.");
+    }
+
+    #[test]
+    fn parse_uri_multi_slash() {
+        let uri = "al-preview:///allang/Base Application/Codeunit/1535/Approvals Mgmt..dal";
+        let (_, ty, name) = parse_al_preview_uri(uri).expect("parse");
+        assert_eq!(ty, ObjectType::Codeunit);
+        assert_eq!(name, "Approvals Mgmt.");
     }
 }

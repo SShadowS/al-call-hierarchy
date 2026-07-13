@@ -449,14 +449,15 @@ fn dep_source_uri(snap: &LspSnapshot, app: AppRef, virtual_path: &str) -> Uri {
 
 /// Synthesize an `al-preview://` URI for an ABI-boundary (`SymbolOnly`, no
 /// embedded source) target — the SAME scheme AND OBJECT-LEVEL LAYOUT
-/// legacy's `dependency_document_symbol`/`parse_al_preview_uri`
-/// (`src/handlers.rs:1452-1499`) already establish: exactly
+/// `crate::lsp::custom::{dependency_document_symbol, parse_al_preview_uri}`
+/// already establish (originally legacy `src/handlers.rs`'s scheme; relocated
+/// verbatim to `lsp::custom` at T3 Task 17's legacy deletion): exactly
 /// `al-preview:///allang/<App>/<Type>/<Id>/<Name>.dal`, 5 path segments
 /// after the scheme (App, Type, Id, Name — `parse_al_preview_uri` anchors
 /// on `Type` parsing as a known `crate::types::ObjectType`, so segment
 /// ORDER and COUNT both matter, not merely the scheme prefix; an earlier
 /// version of this function emitted only 3 segments, `allang/App/
-/// ObjectDisplay/Routine`, which legacy's parser structurally rejects —
+/// ObjectDisplay/Routine`, which the parser structurally rejects —
 /// caught in T3 Task 11 review, fixed here).
 ///
 /// Object-level granularity only — no per-routine position exists at this
@@ -475,10 +476,10 @@ fn dep_source_uri(snap: &LspSnapshot, app: AppRef, virtual_path: &str) -> Uri {
 /// round-trips STRUCTURALLY through `parse_al_preview_uri` (which never
 /// validates `Name` against real data, just splits it out as a bare
 /// string), even though it isn't a real lookupable object name. An
-/// `object_type` value legacy's `ObjectType` enum never modeled (e.g.
-/// `ReportExtension`) fails `parse_al_preview_uri`'s type-anchor scan
-/// entirely — a PRE-EXISTING legacy schema gap, not something this
-/// conformance fix closes.
+/// `object_type` value the legacy-derived `ObjectType` enum never modeled
+/// (e.g. `ReportExtension`) fails `parse_al_preview_uri`'s type-anchor scan
+/// entirely — a PRE-EXISTING schema gap inherited from legacy, not something
+/// this conformance fix closes.
 fn abi_symbol_uri(key: &AbiRoutineKey, app_name: &str) -> Uri {
     let encode = |s: &str| utf8_percent_encode(s, SYNTH_URI_SEGMENT).to_string();
     let id_segment = key.object_number.to_string();
@@ -1243,7 +1244,7 @@ mod tests {
             event_kind: AbiEventKind::None,
         };
         let uri = abi_symbol_uri(&key_numbered, "Some Dep App");
-        let (app, otype, name) = crate::handlers::parse_al_preview_uri(uri.as_str())
+        let (app, otype, name) = crate::lsp::custom::parse_al_preview_uri(uri.as_str())
             .unwrap_or_else(|| {
                 panic!(
                     "emitted URI must parse via legacy's OWN al-preview parser; got {}",
@@ -1266,7 +1267,7 @@ mod tests {
             ..key_numbered.clone()
         };
         let uri2 = abi_symbol_uri(&key_named, "Some Dep App");
-        let (_, _, name2) = crate::handlers::parse_al_preview_uri(uri2.as_str())
+        let (_, _, name2) = crate::lsp::custom::parse_al_preview_uri(uri2.as_str())
             .expect("id-less object URI must also parse");
         assert_eq!(name2, "my ext object");
     }

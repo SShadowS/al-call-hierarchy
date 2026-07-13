@@ -6,16 +6,16 @@ use std::path::{Path, PathBuf};
 mod server;
 mod watcher;
 
-// `config`, `telemetry`, `app_package`, `dependencies`, and (as of T0.5)
-// `graph`, `handlers`, `indexer`, `parser`, `protocol` live in `lib.rs` so
-// library consumers (benches, tests) can use them. `analysis` joined them at
-// T3 Task 12's fix-wave (see `lib.rs`'s doc on that module) — no more
-// binary-only `mod analysis;` here. Re-export here so binary modules
-// (server, watcher, etc.) can keep referring to `crate::graph::*` /
-// `crate::handlers::*` / ... without churn.
+// `config`, `telemetry`, `app_package`, `dependencies`, `protocol` live in
+// `lib.rs` so library consumers (benches, tests) can use them. `analysis`
+// joined them at T3 Task 12's fix-wave (see `lib.rs`'s doc on that module) —
+// no more binary-only `mod analysis;` here. The legacy `graph`/`handlers`/
+// `indexer`/`parser` modules that used to live here too were deleted at T3
+// Task 17 (the LSP surface now runs entirely on `lsp::*`, see `lib.rs`'s doc
+// on that module). Re-export here so binary modules (server, watcher, etc.)
+// can keep referring to `crate::lsp::*` / ... without churn.
 pub use al_call_hierarchy::{
-    analysis, app_package, big_stack, config, dependencies, graph, handlers, indexer, lsp, parser,
-    protocol, telemetry,
+    analysis, app_package, big_stack, config, dependencies, lsp, protocol, telemetry,
 };
 
 use lsp::snapshot::LspSnapshot;
