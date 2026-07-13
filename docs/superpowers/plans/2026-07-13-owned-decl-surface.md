@@ -244,7 +244,7 @@ git commit -m "feat: add owned two-tier DeclSurface (RoutineMeta projection)"
 
 **Files:**
 - Delete: `src/program/resolve/body_map.rs` (and its `pub mod body_map;` line in `src/program/resolve/mod.rs`)
-- Modify: `src/program/resolve/resolver.rs`, `src/program/resolve/arg_dispatch.rs`, `src/program/resolve/receiver.rs`, `src/program/resolve/full.rs`, `src/program/resolve/stub.rs`, `src/program/resolve/differential.rs`, `src/lsp/snapshot.rs`, `src/lsp/updater.rs`, `src/program/sig_fp.rs` + `src/program/node_extract.rs` + `src/lsp/custom.rs` + `src/lsp/def_surface.rs` (doc-comment references only)
+- Modify: `src/program/resolve/resolver.rs`, `src/program/resolve/arg_dispatch.rs`, `src/program/resolve/receiver.rs`, `src/program/resolve/full.rs`, `src/program/resolve/stub.rs`, `src/program/resolve/differential.rs`, `src/lsp/snapshot.rs`, `src/lsp/updater.rs`, `benches/engine_stages.rs` (imports + benches `BodyMap::build` at ~line 45/170 — swap to `DeclSurface::build` and update the stage-5 doc/label; the "borrowed `RoutineDecl`" description becomes false), `tests/program_resolve_harness.rs` (two tests build `BodyMap` directly at ~lines 7110/7226 — same mechanical swap, plus its BodyMap doc-comment mentions), `src/program/sig_fp.rs` + `src/program/node_extract.rs` + `src/lsp/custom.rs` + `src/lsp/def_surface.rs` (doc-comment references only)
 - Modify: `CHANGELOG.md`
 
 **Interfaces:**
@@ -258,7 +258,7 @@ This task is deliberately one atomic commit: deleting `body_map.rs` makes the co
 - [ ] **Step 2: Mechanical migration, guided by the compiler.** Apply these transformations everywhere the build breaks (production AND test code):
   1. `use crate::program::resolve::body_map::BodyMap;` → `use crate::program::resolve::decl_surface::DeclSurface;`
   2. Type `&BodyMap<'_>` (parameter) → `&DeclSurface`; `BodyMap<'static>` (test fixture returns in resolver.rs ~4342, ~4531) → `DeclSurface`.
-  3. `BodyMap::build(` → `DeclSurface::build(` (identical arguments — this covers the ~150 test call sites in resolver.rs / receiver.rs / arg_dispatch.rs / full.rs and the production sites in full.rs:771, stub.rs:93, differential.rs:507, lsp/snapshot.rs:287, lsp/updater.rs:252/414/875 and the test blocks at updater.rs ~1600/1944).
+  3. `BodyMap::build(` → `DeclSurface::build(` (identical arguments — this covers the ~150 test call sites in resolver.rs / receiver.rs / arg_dispatch.rs / full.rs and the production sites in full.rs:771, stub.rs:93, differential.rs:507, lsp/snapshot.rs:287, lsp/updater.rs:252/414/875, the test blocks at updater.rs ~1600/1944, the bench at benches/engine_stages.rs ~170, and the two integration tests in tests/program_resolve_harness.rs ~7122/7279). Note `benches/engine_stages.rs` and `tests/program_resolve_harness.rs` only compile under `--all-targets` — clippy's `--all-targets` run is what catches them, not a plain `cargo build`.
   4. Variable naming: keep `body_map` variable names where churn would be large in test code, but rename the ~10 PRODUCTION bindings and parameters to `surface` (resolver.rs `make_routine_route`/`candidate_param_infos_either`/`emit_event_flow_edges` and every fn that threads it; full.rs; stub.rs; lsp/snapshot.rs `recompute_file`/`build_dep_indexes`; updater.rs `apply_rung1_core`). Update the doc comments that explain the borrow ("BodyMap borrows self.parsed") ONLY where they become false — Task 3 rewrites the updater's ownership story; here just fix compile errors and blatant lies introduced by this task.
   5. `body_map.get(rid)` / `body_map.get_with_path(rid)` → same calls on the new type. Field reads compile unchanged (`meta.origin.byte.start`, `meta.name_origin.start.row`, `meta.name.clone()`, etc.).
 
@@ -301,7 +301,7 @@ Expected: all parity tests PASS.
 - [ ] **Step 5: Clippy + rustfmt touched files + CHANGELOG + commit.** CHANGELOG under `### Changed`: `- Resolution decl lookups migrated from the borrowed BodyMap<'a> to the owned DeclSurface; BodyMap deleted. No behavioral change (goldens unchanged).`
 
 ```bash
-git add -u src/ CHANGELOG.md   # -u stages tracked modifications/deletions only; verify with git status first
+git add -u src/ benches/engine_stages.rs tests/program_resolve_harness.rs CHANGELOG.md   # -u stages tracked modifications/deletions only; verify with git status first
 git commit -m "refactor: migrate resolution decl lookups from BodyMap<'a> to owned DeclSurface"
 ```
 
@@ -312,7 +312,10 @@ git commit -m "refactor: migrate resolution decl lookups from BodyMap<'a> to own
 **Files:**
 - Modify: `src/lsp/snapshot.rs` (`LspSnapshot` struct, `from_context`, `build_full`, `build_full_with_parsed`, `build_dep_indexes`)
 - Modify: `src/lsp/updater.rs` (`Updater` struct + all rungs + hot loop + module doc)
-- Modify: `tests/lsp_incremental_parity.rs` (helper retype + new drop-proof/forwarding tests)
+- Modify: `src/server.rs` (~line 365: `let (initial, parsed) = LspSnapshot::build_full_with_parsed(...)` destructures the OLD tuple — `parsed` becomes the single workspace `ParsedUnit`, and it feeds `Updater::new`; also the generation-0 doc/assert mentions at ~356/838)
+- Modify: `src/lsp/handlers.rs` (`#[cfg(test)]` call sites at ~lines 930/1004 destructure the tuple — retype to the new return)
+- Modify: `tests/lsp_incremental_parity.rs` (helper retype + new drop-proof/forwarding/content tests)
+- Modify: `tests/perf_bounds.rs` (doc-comment mention of `build_full_with_parsed` at ~line 279 — update only if it becomes false; likely doc-only)
 - Modify: `CHANGELOG.md`
 
 **Interfaces:**
@@ -345,6 +348,25 @@ fn rung1_and_rung2_forward_dep_meta_dep_decls_and_dep_texts_by_arc_identity() {
     // same for dep_decl_by_id and dep_texts; then apply a signature-changing
     // edit (rung 2) and assert the same three identities again.
     // (Model the edit mechanics on this file's existing rung-1/rung-2 parity tests.)
+    // IMPORTANT: cover BOTH rung-1 code paths — apply_batch's Rung1 arm AND the
+    // spawn_updater hot loop (~updater.rs:875) are separate paths; the hot loop's
+    // cached-surface variant must also forward by Arc identity. If the hot loop
+    // isn't directly drivable from this test file, add/extend an in-file
+    // #[cfg(test)] test in updater.rs for it and note that here.
+}
+
+/// CONTENT-level proof (Arc identity proves forwarding, not correctness):
+/// a workspace routine whose call overload-dispatches into a DEP routine must
+/// still resolve AFTER the dep parse arenas are dropped — i.e. dispatched
+/// through the frozen tier's RoutineMeta (params ty/by_ref), not through any
+/// surviving RoutineDecl. Use/extend the lsp_diff_deps fixture: assert the
+/// outgoing edge from the workspace caller targets the dep routine with the
+/// expected RoutineNodeId (arity + sig_fp disambiguated) on the freshly built
+/// snapshot AND again on the post-rung-1 snapshot.
+#[test]
+fn dep_overload_dispatch_resolves_through_frozen_tier_after_arena_drop() {
+    // build; find the workspace->dep edge; assert target id; apply a rung-1
+    // body edit; assert the same edge still resolves identically.
 }
 ```
 
@@ -384,6 +406,7 @@ let workspace_unit = parsed
   7. Rung 3 (`apply_rung3`): `let Some((mut snapshot, workspace)) = LspSnapshot::build_full_with_parsed(...)`; `self.workspace = workspace;`.
   8. Rewrite the module doc's ownership story (~lines 23–68): the "BodyMap borrows self.parsed" constraint is gone; the surviving reason the hot loop caches `index`/`surface` across rung-1 calls is COST, and the `pending` overlay still exists so a cached surface stays consistent with the published snapshot between flushes. Also update `Updater.parsed`'s old field doc and `build_dep_indexes`'s doc in snapshot.rs ("called from BOTH from_context and apply_rung2" — now from_context only).
   9. Fix the in-file `#[cfg(test)]` blocks (~lines 1588–1975) that construct `Updater`/`BodyMap` directly — same mechanical patterns.
+  10. Retype the OTHER `build_full_with_parsed` callers: `src/server.rs` ~365 (production — the returned workspace unit goes straight into `Updater::new`), the updater's own tests at ~1008/1110/1923, and `src/lsp/handlers.rs` tests at ~930/1004.
 
 - [ ] **Step 5: Run the new tests + full verification.**
 
@@ -396,7 +419,7 @@ Expected: all green, zero golden diffs.
 - [ ] **Step 6: Clippy + rustfmt touched files + CHANGELOG + commit.** CHANGELOG under `### Changed`: `- LSP steady state no longer retains dependency parse arenas: the updater keeps only the workspace ParsedUnit; the frozen dep DeclSurface tier, dep_decl_by_id and dep_texts are Arc-forwarded across rungs 1/2 and rebuilt only at rung 3.`
 
 ```bash
-git add src/lsp/snapshot.rs src/lsp/updater.rs tests/lsp_incremental_parity.rs CHANGELOG.md
+git add src/lsp/snapshot.rs src/lsp/updater.rs src/server.rs src/lsp/handlers.rs tests/lsp_incremental_parity.rs tests/perf_bounds.rs CHANGELOG.md
 git commit -m "perf: drop dependency parse arenas after first build (owned DeclSurface lifecycle)"
 ```
 
@@ -420,9 +443,9 @@ Expected: perf_bounds 9/9 PASS.
 Run: `scripts/cdo-gate U:\Git\<cdo-workspace-path-if-known>` or with `CDO_WS` set per its header.
 Expected: exit 0 — zero-unknown ratchet, `ambiguousResolved` pin, coverage contract all hold. Any failure = a missing `RoutineMeta` field or lifecycle bug: STOP, report BLOCKED with the failing gate's output.
 
-- [ ] **Step 3: LSP steady-state RSS, before/after.** Workspace: `U:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud` (skip gracefully with a doc note if unreachable). Use the perf doc §5's repro: a raw stdio LSP session (spawn release binary with no args from the workspace root as cwd is NOT how it works — the client sends `initialize` with `rootUri` pointing at the workspace; percent-encode spaces in URIs; skip `publishDiagnostics` notifications when matching responses). Drive: `initialize` → `initialized` → `textDocument/didOpen` on one workspace file → wait for first successful `textDocument/prepareCallHierarchy` response → then sample RSS (`scripts/peak_rss.py` polls peak; for steady state, read the process's working set after the first response, e.g. `Get-Process -Id <pid> | Select WorkingSet64`, several samples 10s apart). BEFORE number: check out `feat/perf-safe-wins` (pre-Task-1 of this plan), build release, measure. AFTER: this branch's HEAD. Record both.
+- [ ] **Step 3: LSP steady-state RSS, before/after.** Workspace: `U:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud` (skip gracefully with a doc note if unreachable). Use the perf doc §5's repro: a raw stdio LSP session (spawn release binary with no args from the workspace root as cwd is NOT how it works — the client sends `initialize` with `rootUri` pointing at the workspace; percent-encode spaces in URIs; skip `publishDiagnostics` notifications when matching responses). Drive: `initialize` → `initialized` → `textDocument/didOpen` on one workspace file → wait for first successful `textDocument/prepareCallHierarchy` response → then sample RSS (`scripts/peak_rss.py` polls peak; for steady state, read the process's working set after the first response, e.g. `Get-Process -Id <pid> | Select WorkingSet64`, several samples 10s apart). BEFORE number: already measured — §7.1's AFTER column (1,584 MB steady state, 2.87 s cold start at `58df646`, same harness/workspace) is this task's baseline; do NOT re-measure it. AFTER: this branch's HEAD. Also record cold-start → first-usable-hover for comparison.
 
-- [ ] **Step 4: Append §7 to `docs/perf-regression-t3-vs-0.9.3.md`:** dated heading `## 7. <date> close-out: Mitigation 3 (owned DeclSurface) — IMPLEMENTED`; commit hashes of Tasks 1–3; bench medians table (rung 1/rung 2 before/after); CDO gate result; the LSP steady-state RSS before/after (the headline number — expectation was ~2,000 MB → ~150–300 MB); honest notes for anything skipped or anomalous.
+- [ ] **Step 4: Append §8 to `docs/perf-regression-t3-vs-0.9.3.md`** (§7 is the independent re-measurement of the safe-wins branch — its 1,584 MB LSP steady-state figure is this task's BEFORE baseline): dated heading `## 8. <date> close-out: Mitigation 3 (owned DeclSurface) — IMPLEMENTED`; commit hashes of Tasks 1–3; bench medians table (rung 1/rung 2 before/after); CDO gate result; the LSP steady-state RSS before/after. **The ~150–300 MB figure is a HYPOTHESIS, not an acceptance bar** — report whatever is measured. In particular `dep_texts` (snapshot.rs `build_dep_indexes`, ~line 636) still retains every dependency file's full source text and may dominate the residual at BaseApp scale; if the measured number lands well above the hypothesis, decompose the residual (dep_texts vs dep_meta vs graph) in the doc rather than treating the task as failed. Honest notes for anything skipped or anomalous.
 
 - [ ] **Step 5: Commit (docs only).**
 

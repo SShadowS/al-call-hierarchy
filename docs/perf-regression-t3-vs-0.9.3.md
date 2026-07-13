@@ -406,3 +406,55 @@ task.
 
 Embedded-source volume was measured by opening each `.app` (zip after the
 NAVX header) and summing `.al` entry sizes.
+
+---
+
+## 7. 2026-07-13 independent re-measurement (real workspace, LSP stdio driver)
+
+Same harness and workspace as §1 (DO.Support-SlowDOSetup Cloud, 551 ws
+files, raw stdio LSP client, 3 fresh-process cold trials + warm session),
+run against `58df646` (post safe-wins branch merge). "BEFORE" = master
+`b09f9b1` measured in §1; v0.9.3 shown for reference.
+
+### 7.1 LSP server mode (the §6.2 gap — now measured)
+
+| Metric | v0.9.3 | BEFORE (b09f9b1) | AFTER (58df646) | After vs Before |
+|---|---:|---:|---:|---|
+| initialize response | 0.011 s | 0.013 s | 0.012 s | — |
+| Cold start -> first usable hover | 0.86 s | 5.10 s | **2.87 s** | **-44 %** |
+| RSS after index (steady state) | 82 MB | ~2,000 MB | **1,584 MB** | **-21 % (~-420 MB)** |
+| Warm request latency (all ops) | sub-ms | sub-ms | sub-ms | unchanged |
+
+Cold trials (AFTER): 2.943 / 2.846 / 2.858 s; RSS 1581 / 1587 / 1584 MB —
+tight spread, systematic.
+
+### 7.2 CLI `--project` mode
+
+| Metric | v0.9.3 | BEFORE | AFTER | After vs Before |
+|---|---:|---:|---:|---|
+| Wall time (median of 3) | 0.93 s | 3.95 s | **3.50 s** | -11 % |
+| Peak RSS (20 ms sampler) | 222 MB | 1,869 MB | **1,645 MB** | -12 % |
+
+### 7.3 Output quality: unchanged
+
+Warm-session payloads are identical before/after the safe-wins branch on
+all four probe targets: prepareCallHierarchy items 1/1/1/1, incomingCalls
+1/1/0/4, outgoingCalls 6/0/2/13, hover/references/workspace-symbol
+behavior unchanged. No served data was lost.
+
+### 7.4 Reading
+
+- The **cold-start** win (-2.2 s) exceeds the duplicate-parse estimate in
+  §3.2 (~1 s) — deleting the rung re-parses and manifest-first `.app`
+  dedup (32 zips no longer all fully read) contribute the rest.
+- The **steady-state RSS** win (~420 MB) matches §3.1's arithmetic: two
+  of three ~114 MB text copies collapsed (~228 MB) plus the second parse's
+  transient/retained overhead. The remaining ~1.5 GB is §3.3(a)'s dep IR
+  arenas (`Arc<AlFile>` for 10,727 dep files, retained for rung 2) — the
+  single dominant item, unchanged by design in this branch.
+- LSP steady state (1,584 MB) is now BELOW the CLI peak (1,645 MB) —
+  before the fix it was above it, which was the §2.3 double-parse smell.
+- Remaining gap to the ~150-300 MB target in §3.3 is owned by the two
+  open items: §3.3(a) stable dep decl identity (drop dep arenas) and
+  §4-item-4 persistent dep-layer artifact cache (skip Base App parse on
+  warm cold-starts).
