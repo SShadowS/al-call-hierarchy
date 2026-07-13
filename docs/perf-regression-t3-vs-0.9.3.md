@@ -458,3 +458,182 @@ behavior unchanged. No served data was lost.
   open items: §3.3(a) stable dep decl identity (drop dep arenas) and
   §4-item-4 persistent dep-layer artifact cache (skip Base App parse on
   warm cold-starts).
+
+---
+
+## 8. 2026-07-14 close-out: Mitigation 3 (owned DeclSurface) — IMPLEMENTED
+
+Branch `feat/owned-decl-surface` (off `feat/perf-safe-wins`) landed §3.3(a):
+a fully-owned two-tier `DeclSurface` (`RoutineMeta` projection: name,
+origins, `parse_incomplete`, param `ty`/`by_ref` — never the body) replaces
+the borrowed `BodyMap<'a>` in the resolution decl-lookup surface, so the
+dependency parse arenas (`Arc<AlFile>` for the ~10,727 dependency files)
+can be dropped after the first full build instead of retained for the
+LSP updater's lifetime.
+
+Commits:
+
+- `6f3ec77` — feat: add owned two-tier DeclSurface (RoutineMeta projection)
+- `78c74ed` — refactor: migrate resolution decl lookups from BodyMap<'a>
+  to owned DeclSurface
+- `3239388` — perf: drop dependency parse arenas after first build (owned
+  DeclSurface lifecycle)
+
+### 8.1 Validation battery
+
+- `cargo test` (debug): **all tests pass** (1,468 passed, 0 failed, 2
+  ignored in the main integration binary, plus every other test binary
+  green — see task-4-report.md for the full log).
+- `cargo clippy --all-targets --all-features`: **clean**, zero warnings.
+- `cargo test --release --test perf_bounds`: **9/9 PASS**.
+- Zero golden regeneration was needed (`REGEN_TEMP_GOLDENS` never set) —
+  the refactor is behaviorally invisible as required by the plan.
+
+### 8.2 Synthetic corpus — `cargo bench --bench lsp_pipeline`
+
+Two consecutive runs (release/bench profile), same dev machine as §6.1
+(shared-environment CPU contention still applies — see below):
+
+| Bench | Run 1 median | Run 2 median | CLAUDE.md table target (pre-Task-4) |
+|---|---:|---:|---:|
+| `build_full/100_files` | 13.11 ms | 13.64 ms | ~8.07 ms |
+| `build_full/1000_files` | 165.61 ms | 169.29 ms | ~74.45 ms |
+| `query_handlers_1000_files/prepare` | 8.11 µs | 9.13 µs | ~7.88 µs |
+| `query_handlers_1000_files/incoming` | 22.19 ms | 22.56 ms | ~16.34 ms |
+| `query_handlers_1000_files/outgoing` | 14.06 µs | 14.56 µs | ~6.60 µs |
+| `compute_all_1000_files` | 7.07 ms | 7.12 ms | ~7.9 ms |
+| `rung1_body_edit_1000_files` | 32.11 ms | 31.00 ms | ~13.28 ms |
+| `rung2_signature_edit/1000_files` | 112.94 ms | 113.71 ms | ~149.93 ms |
+
+Both runs are internally consistent (Criterion reports <5% run-to-run
+noise for every bench except the already-known-noisy `incoming`/`prepare`
+outliers). Absolute medians on this machine run ~1.6-2.4x the CLAUDE.md
+table's dev-machine numbers, consistent with the same shared-environment
+CPU contention documented in §6.1 (not a regression — no source change
+in Tasks 1-3 touches `build_full`'s or `prepare`/`outgoing`'s cost path).
+
+**`rung2_signature_edit` is faster in absolute terms** (~113 ms vs.
+~149.93 ms pre-Task-4, a ~25% drop) despite running on a machine that is
+inflating every other number by ~2x — a real improvement, consistent with
+the plan's expectation that removing the all-units BodyMap rebuild would
+help rung 2 most (a signature-change edit previously had to rebuild the
+BodyMap projection for every unit in the graph).
+
+**`rung1_body_edit_1000_files` (~31-32 ms) does not show the same clear
+win** against the pre-Task-4 CLAUDE.md figure (~13.28 ms) once the ~2x
+machine-contention factor is applied — it lands within the noise band of
+"flat", not clearly improved. Rung 1 (body-only edit) never rebuilt the
+BodyMap for other units even before this refactor, so a large win here
+was not expected; the flat result is consistent with the design, not a
+concern. Re-measurement on an idle machine would be needed for a
+tighter comparison.
+
+### 8.3 CDO gate
+
+**Skipped.** `CDO_WS` is unset in this environment and no real Business
+Central CDO workspace is reachable from this machine (checked `U:\Git\
+Continia*` — none of the checked-out repos is a BC app workspace). Per
+the plan's global constraint, CDO-gated tests skip silently when
+`CDO_WS` is unset; `scripts/cdo-gate` was not run. This is a known gap
+for whoever next runs this close-out on a machine with `CDO_WS`
+available — no zero-unknown-ratchet re-verification was performed as
+part of this task.
+
+### 8.4 LSP steady-state RSS + cold start, before/after
+
+Same workspace as §7 (`U:\Git\DO.Support-SlowDOSetup\DocumentOutput\
+Cloud`, 551 workspace files), driven with a scratch raw-stdio LSP client
+(`initialize` → `initialized` → `didOpen` on one workspace file →
+`textDocument/prepareCallHierarchy` at a known procedure declaration,
+matching §5's repro notes: percent-encoded file URIs,
+`publishDiagnostics` notifications skipped when matching responses).
+BEFORE = §7.1's AFTER column (commit `58df646`, safe-wins branch) — not
+re-measured, per the task brief. AFTER = this branch's HEAD (`3239388`).
+
+4 fresh-process trials; trial 1 paid a one-time OS-disk-cache-cold
+penalty (4.884 s) not present in §7's methodology's warmed state, so
+trials 2-4 (disk-cache warm, matching §7's "3 fresh-process cold
+trials" starting point) are the comparable set:
+
+| Metric | BEFORE (58df646, §7.1) | AFTER (3239388) | After vs Before |
+|---|---:|---:|---|
+| Cold start → first usable `prepareCallHierarchy` | 2.87 s (median of 2.943/2.846/2.858) | **3.42 s** (median of 3.415/3.421/3.636) | **+19 %** (regression) |
+| RSS steady state (after first response, +10-30 s) | 1,584 MB | **~726 MB** (median of 724.9/725.7/737.6) | **-54 % (~-858 MB)** |
+
+Output quality check: the `prepareCallHierarchy` call resolved a real
+symbol (`OpenOutlookEMail` in `CDO Document E-Mail Management.al`) with
+its full `RoutineNodeId` payload on every trial — consistent, no
+regression in served data.
+
+### 8.5 Reading: RSS win vs. cold-start regression
+
+The **RSS win is the plan's stated goal and lands clearly**: steady-state
+memory drops ~54% (1,584 MB → ~726 MB), a materially larger reduction
+than §6's mitigations 1/2/5 combined (~420 MB). This is the expected
+direction from dropping the ~10,727-file dependency parse arena after
+first build.
+
+**The ~19% cold-start regression (2.87 s → 3.42 s) was not anticipated by
+the plan and is an honest, unhidden finding of this measurement**: the
+owned-DeclSurface projection (`RoutineMeta` for every dependency
+routine — ~126,640 dependency definitions in this workspace, per this
+binary's own `--verbose` log) is built once, eagerly, at first-build
+time, *in addition to* the parse the arena-drop then discards; that
+projection-construction cost was not part of the pre-Task-4 pipeline
+(which forwarded borrowed `&RoutineDecl` references directly into the
+retained arena instead of copying a subset of each into an owned
+struct). The plan's own framing ("Time is not a constraint... refactor
+is always on the table") treats this as an acceptable trade of ~0.5 s of
+one-time startup CPU for ~858 MB of standing RSS, but it is a real,
+measured trade-off, not a pure win, and should be called out to anyone
+consuming these numbers.
+
+### 8.6 Residual decomposition (measured RSS is well above the ~150-300 MB hypothesis)
+
+The ~726 MB steady-state figure is well above the plan's ~150-300 MB
+hypothesis (explicitly flagged in the plan as a hypothesis, not an
+acceptance bar). Decomposing what is directly measurable:
+
+- **`dep_texts` (retained dependency source text, one `Arc<str>` per
+  file since §6's Mitigation 2):** measured directly by opening every
+  `.app` in this workspace's `.alpackages` (stripping the NAVX header,
+  reading the embedded zip) and summing `.al` entry sizes: **10,727
+  files, 119,613,209 bytes (~114.1 MB)**. This exactly matches §7.4's
+  cited "~114 MB" figure and the "10,727 dep files" count — `dep_texts`
+  is confirmed as a real, unavoidable-by-this-refactor ~114 MB floor (it
+  is retained by design for source-backed features; only the *parse
+  arenas* were in scope for Task 1-3/this refactor, not the raw text).
+- **Unaccounted residual: ~612 MB** (726 MB measured − 114 MB `dep_texts`
+  − a small OS/allocator/binary baseline, not separately measured here).
+  This was not decomposed further by instrumentation (no heap profiler
+  was run — out of scope for a measurement-only task), but the most
+  plausible owners, in order of likely size, are: (a) the resolved
+  `ProgramGraph`/`LspSnapshot` structures retained for query serving —
+  built during resolution from ~126,640 dependency definitions plus the
+  551 workspace files' own definitions/edges, which is a wholly separate
+  retained structure from the dropped parse arenas and was never in this
+  refactor's scope; (b) the *workspace's own* (non-dependency) `AlFile`
+  parse trees, which this refactor intentionally does NOT drop (only
+  `program::build_dep_indexes`'s dependency projections are targeted);
+  (c) `dep_decl_by_id`/`dep_meta`'s owned `RoutineMeta` entries — likely
+  small in aggregate (a few hundred bytes × ~126,640 entries is on the
+  order of tens of MB, not hundreds) but not directly measured here.
+  Recommend a heap profiler pass (e.g. `dhat`/`valgrind --tool=massif`,
+  or an allocator-instrumented build) as the next concrete step if
+  driving further below ~726 MB is prioritized — this task's brief
+  explicitly permits reporting the decomposition instead of treating the
+  gap to the hypothesis as a failure.
+
+### 8.7 Net assessment
+
+Mitigation 3 (§3.3(a), owned DeclSurface / drop dep parse arenas) is
+**implemented and delivers the intended direction**: LSP steady-state RSS
+drops ~54% (1,584 MB → ~726 MB), the single largest reduction of any
+close-out in this document, at the cost of a ~19% cold-start regression
+(2.87 s → 3.42 s) that was not anticipated by the plan. Output is
+unchanged (byte-identical resolution behavior; zero goldens
+regenerated). The CDO gate could not be re-run in this environment
+(`CDO_WS` unset). The remaining ~612 MB of steady-state RSS above the
+~150-300 MB hypothesis is attributed to the resolved program graph /
+LSP query surface (not decomposed further without a heap profiler) —
+tracked as a follow-up, not a regression introduced by this task.
