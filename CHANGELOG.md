@@ -390,6 +390,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NewUnexplained`, reverted. This is expected to be the LAST layer —
   the controller re-runs CDO and, if green, hands back the FINAL pin
   numbers for every class.
+  **CDO GATE HOLDS — FINAL (t3.14 closes)**: the controller's final
+  re-run, at commit `f5e441e`, held `REGRESSION=0`/`NEW_UNEXPLAINED=0`
+  under the FULLY HARDENED predicates (positive-evidence gates, not
+  blanket fallbacks — the whole point of the Opus adversarial review).
+  **12,284 identical answers; 44,422 mechanically-justified divergences
+  (every one a documented legacy defect); ZERO regressions; ZERO
+  unexplained** (56,706 total findings) — final counts: `Match` 12,284,
+  `UnqualifiedCallResolved` 37,066, `VariableReceiverResolved` 2,326,
+  `ImplicitTriggerEdge` 2,034, `LegacyIdentityCollapse` 1,700,
+  `ImplicitRecResolved` 825, `OutgoingCardinality` 335,
+  `EventDirectionMoved` 47, `R2Precision` 39, `R6InterfaceExclusion` 14,
+  `CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan` 12 each,
+  `AbiSymbolShape`/`ObjectIdAdditive` both 0. Deltas vs. the
+  pre-hardening capstone (`ebad1b9`), with cause — this audit trail
+  proves the hardening changed REAL classifications, not just prose:
+  `Match` 12,089→12,284 (+195: the `classify_path` engine fix restoring
+  correctly-attributed edges + the `classify_incoming` multimap fix
+  restoring comparisons the old `.insert()` had silently dropped);
+  `R2Precision` 68→39 (−29: the `[EventSubscriber]`-positive gate plus
+  the new diagnostics-axis `LegacyIdentityCollapse` check moved these —
+  29 findings had been LAUNDERED by the blanket fallback the review
+  flagged); `LegacyIdentityCollapse` 1,625→1,700 (+75: the diagnostics
+  axis, new); `ImplicitTriggerEdge` 989→2,034 (+1,045: the outgoing
+  axis, new); `OutgoingCardinality` 430→335 (−95: target-SET comparison
+  replaced the raw-count-plus-positional-zip check); `ImplicitRecResolved`
+  778→825, `VariableReceiverResolved` 2,169→2,326, `UnqualifiedCallResolved`
+  36,971→37,066 (real workspace re-attribution from the same review
+  fix-wave's other tightenings, MED-1/MED-2); `EventDirectionMoved`/
+  `R6InterfaceExclusion`/`CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan`
+  unchanged (untouched by this fix-wave). **Two REAL bugs this harness
+  caught in the process of hardening itself**: (1) the `classify_path`
+  duplicate-file-entry engine bug (`src/lsp/updater.rs`, Finding B) — a
+  genuine Task-9 production defect that would have shipped; (2) the
+  `R2Precision` blanket-fallback laundering gap (HIGH-2/Finding A) — a
+  genuine hole in THIS harness's own deletion-license evidence, closed
+  before it could hide a real divergence. All `CDO_PINS` entries in
+  `cdo_workspace_has_zero_regressions_and_zero_unexplained` are exact
+  ratchets at these FINAL values. Task 14 is DONE.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate

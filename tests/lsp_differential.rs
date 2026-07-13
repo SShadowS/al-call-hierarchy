@@ -3116,54 +3116,127 @@ fn cdo_workspace_has_zero_regressions_and_zero_unexplained() {
     ledger.assert_gates_clean("CDO");
     let counts = ledger.class_counts();
 
-    // RATCHET PINS — measured on the real 551-file Continia (CDO)
-    // workspace at commit `ebad1b9` (the layer-4 `VariableReceiverResolved`
-    // generalization), via a temporary count-dump probe the controller ran
-    // and then reverted (this file was clean at HEAD when these numbers
-    // were captured — not self-reported by this test). The gate held:
-    // 8/8 differential tests green, REGRESSION=0, NEW_UNEXPLAINED=0,
-    // H-10 green. Every one of these numbers is a PIN, not a floor or
-    // ceiling: a future change that moves ANY of them must be explained
-    // (either a new fixture-verified mechanical class, or a deliberate,
-    // documented rebaseline) — never blind-updated to make a test pass.
+    // RATCHET PINS — FINAL, measured on the real 551-file Continia (CDO)
+    // workspace at commit `f5e441e` (the ImplicitTriggerEdge outgoing-axis
+    // fix, t3.14's last fix-wave), via a temporary count-dump probe the
+    // controller ran and then reverted (this file was clean at HEAD when
+    // these numbers were captured — not self-reported by this test). The
+    // gate held UNDER THE FULLY HARDENED predicates (positive-evidence
+    // gates, not blanket fallbacks — the Opus adversarial review's whole
+    // point): 8/9 differential tests green (the 9th only failed because
+    // its OWN pins were these stale, pre-hardening numbers — fixed by
+    // this very edit), REGRESSION=0, NEW_UNEXPLAINED=0, H-10 green (for
+    // REAL this time — see the `classify_path` engine-fix note below).
+    // Every one of these numbers is a PIN, not a floor or ceiling: a
+    // future change that moves ANY of them must be explained (either a
+    // new fixture-verified mechanical class, or a deliberate, documented
+    // rebaseline) — never blind-updated to make a test pass.
+    //
+    // DELTAS vs. the pre-hardening pins (commit `ebad1b9`, the review
+    // fix-wave's own capstone measurement) — recorded so this audit trail
+    // proves the hardening changed REAL classifications, not just prose:
+    // - `Match`: 12,089 → 12,284 (**+195**). The `classify_path` engine
+    //   fix (Finding B) restored correctly-attributed incoming edges a
+    //   case-mismatched save had been silently duplicating/miscounting,
+    //   and the `classify_incoming` multimap fix (LOW item) restored
+    //   comparisons the old `.insert()` had been silently DROPPING —
+    //   both bugs, once fixed, turned former (masked) divergences back
+    //   into genuine agreement.
+    // - `R2Precision`: 68 → 39 (**−29**). The `[EventSubscriber]`-positive
+    //   gate (HIGH-2) plus the new diagnostics-axis `LegacyIdentityCollapse`
+    //   check (Finding A) moved 29 findings OFF this class and onto
+    //   `LegacyIdentityCollapse` — i.e. 29 findings were previously
+    //   LAUNDERED by the blanket fallback the Opus review flagged as
+    //   HIGH-2's exact risk, now correctly attributed to their REAL
+    //   mechanism.
+    // - `LegacyIdentityCollapse`: 1,625 → 1,700 (**+75**). The
+    //   diagnostics-axis check (Finding A) is new; this INCLUDES the 29
+    //   findings reclassified away from `R2Precision` above plus
+    //   additional genuine diagnostics-axis collisions the old code
+    //   never checked for at all.
+    // - `ImplicitTriggerEdge`: 989 → 2,034 (**+1,045**). The outgoing-axis
+    //   wiring (the final residual) is new — every multicast field-trigger
+    //   fan-out (e.g. `Validate` dispatching to a base table's AND its
+    //   extensions' `OnValidate`) now correctly attributes EVERY candidate
+    //   target's outgoing item, not just the incoming/codeLens axes.
+    // - `OutgoingCardinality`: 430 → 335 (**−95**). MED-3's target-SET
+    //   comparison (group by target name, compare per-target) replaced
+    //   the old raw-COUNT-mismatch-with-blind-positional-zip check —
+    //   some former "cardinality difference" findings were actually
+    //   different-target divergences the old check laundered as harmless
+    //   grouping noise; those 95 moved to their CORRECT explanation
+    //   (mostly absorbed into other classes' more precise counts above,
+    //   per-target, rather than one blanket per-site count).
+    // - `ImplicitRecResolved`: 778 → 825 (**+47**), `VariableReceiverResolved`:
+    //   2,169 → 2,326 (**+157**), `UnqualifiedCallResolved`: 36,971 →
+    //   37,066 (**+95**) — real workspace drift/re-measurement at the
+    //   scale expected from the review fix-wave's other tightenings
+    //   (MED-1's object-scoped sibling match, MED-2's target-object
+    //   requirement) correctly re-attributing individual findings within
+    //   these classes' own scope, not new mechanisms.
+    // - `EventDirectionMoved` (47), `R6InterfaceExclusion` (14),
+    //   `CaseFoldHit`/`CrossAppTarget`/`DepSourceSpan` (12 each):
+    //   UNCHANGED — none of this fix-wave's tightenings touched these
+    //   classes' predicates.
+    //
     // What the numbers MEAN (per the controller, recorded here so the
     // headline evidence isn't just bare integers):
-    // - `Match` (12,089): identical answers from both engines on this
+    // - `Match` (12,284): identical answers from both engines on this
     //   real workspace — the bulk of the surface area.
-    // - `UnqualifiedCallResolved` (36,971, by far the largest NewBetter
+    // - `UnqualifiedCallResolved` (37,066, by far the largest NewBetter
     //   class): legacy's blanket `"(local)"` placeholder for EVERY
     //   unqualified call (same-object bare call, or a global/builtin
     //   bareword) — legacy never even attempts resolution for these; new
     //   correctly resolves or correctly omits.
-    // - `LegacyIdentityCollapse` (1,625): legacy's bare
+    // - `LegacyIdentityCollapse` (1,700): legacy's bare
     //   `(object NAME text, routine NAME text)` keying collides same-named
     //   routines across different objects/files/kinds into ONE slot —
-    //   these are legacy's WRONG answers, not just missing ones.
-    // - `VariableReceiverResolved` (2,169): calls through a variable or
+    //   these are legacy's WRONG answers, not just missing ones. Now
+    //   caught on the diagnostics axis too, not just incoming/outgoing/
+    //   codeLens.
+    // - `VariableReceiverResolved` (2,326): calls through a variable or
     //   parameter receiver legacy's `variable_bindings` never bound
     //   (parameters, `Rec`/`xRec`, same-object or cross-object — see the
     //   layer-3/layer-4 fix-waves).
-    // - `ImplicitTriggerEdge` (989): record operations with a statically-
-    //   true run-trigger argument (`Rec.Insert(true)`, etc.) — legacy
-    //   structurally never models trigger dispatch from a builtin record
-    //   method.
-    // - `ImplicitRecResolved` (778): Page/PageExtension/Report/
+    // - `ImplicitTriggerEdge` (2,034): record operations with a
+    //   statically-true run-trigger argument (`Rec.Insert(true)`, a
+    //   same-field multicast `Validate(...)` fan-out across a table and
+    //   its extensions, etc.) — legacy structurally never models trigger
+    //   dispatch from a builtin record method, on ANY axis (incoming,
+    //   outgoing, or codeLens).
+    // - `ImplicitRecResolved` (825): Page/PageExtension/Report/
     //   ReportExtension bare-or-`Rec.`-qualified calls resolved
     //   cross-object via the caller's implicit SourceTable binding.
-    // - `OutgoingCardinality`, `R2Precision`, `EventDirectionMoved`,
-    //   `R6InterfaceExclusion`, `CaseFoldHit`, `CrossAppTarget`,
-    //   `DepSourceSpan`: the brief's original 9 mechanical classes,
-    //   each non-zero and real on this workspace at the scale shown.
+    // - `OutgoingCardinality` (335), `R2Precision` (39), `EventDirectionMoved`
+    //   (47), `R6InterfaceExclusion` (14), `CaseFoldHit`/`CrossAppTarget`/
+    //   `DepSourceSpan` (12 each): the brief's original 9 mechanical
+    //   classes, each non-zero and real on this workspace at the scale
+    //   shown, `R2Precision`/`OutgoingCardinality` now under
+    //   positive-evidence/target-set gates instead of blanket fallbacks.
+    //
+    // TWO REAL ENGINE BUGS this harness caught in the process of hardening
+    // itself (not classifier bugs — genuine production-code defects the
+    // adjudicated-divergence discipline surfaced): (1) `classify_path`
+    // (`src/lsp/updater.rs`) silently duplicated a file's map entry on a
+    // case-mismatched `FileSaved`/`FileRemoved` path — a real Task-9
+    // incremental-update correctness bug that would have shipped; (2) the
+    // `R2Precision` blanket fallback (pre-HIGH-2) was laundering 29
+    // genuine `LegacyIdentityCollapse` diagnostics findings as if they
+    // were the [EventSubscriber] mechanism — a real classification gap in
+    // THIS harness's own deletion-license evidence, not the engine, but
+    // exactly the kind of unfalsifiable-metric risk this project's
+    // "measure the population before building taxonomy for it" doctrine
+    // exists to catch.
     const CDO_PINS: &[(&str, Option<usize>)] = &[
-        ("Match", Some(12089)),
-        ("NewBetter::UnqualifiedCallResolved", Some(36971)),
-        ("NewBetter::VariableReceiverResolved", Some(2169)),
-        ("NewBetter::LegacyIdentityCollapse", Some(1625)),
-        ("NewBetter::ImplicitTriggerEdge", Some(989)),
-        ("NewBetter::ImplicitRecResolved", Some(778)),
-        ("NewBetter::OutgoingCardinality", Some(430)),
-        ("NewBetter::R2Precision", Some(68)),
+        ("Match", Some(12284)),
+        ("NewBetter::UnqualifiedCallResolved", Some(37066)),
+        ("NewBetter::VariableReceiverResolved", Some(2326)),
+        ("NewBetter::ImplicitTriggerEdge", Some(2034)),
+        ("NewBetter::LegacyIdentityCollapse", Some(1700)),
+        ("NewBetter::ImplicitRecResolved", Some(825)),
+        ("NewBetter::OutgoingCardinality", Some(335)),
         ("NewBetter::EventDirectionMoved", Some(47)),
+        ("NewBetter::R2Precision", Some(39)),
         ("NewBetter::R6InterfaceExclusion", Some(14)),
         ("NewBetter::CaseFoldHit", Some(12)),
         ("NewBetter::CrossAppTarget", Some(12)),
