@@ -970,6 +970,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`).
 
 ### Changed
+- **The LSP surface now SERVES the program-engine backend (T3 LSP-migration
+  arc, Task 15 — the cutover).** `src/server.rs` no longer holds
+  `Arc<RwLock<Indexer>>`; its state is `Arc<lsp::updater::SharedSnapshot>` (the
+  published, immutable `LspSnapshot`) plus an `mpsc::Sender<ChangeEvent>`
+  feeding a background `spawn_updater` thread. Every request handler only
+  ever `Arc`-clones the current snapshot — no parsing or graph rebuild ever
+  happens under a request-facing lock; the updater thread owns all rebuild
+  work and publishes a fresh snapshot by atomic swap.
+  `textDocument/prepareCallHierarchy` / `callHierarchy/{incoming,outgoing}Calls`
+  / `textDocument/codeLens` / the three engine-backed custom requests
+  (`dependencyDocumentSymbol`/`eventPublishersInFile`/`eventReferenceAtPosition`)
+  now dispatch straight to the Tasks 11-13 functions
+  (`lsp::handlers`/`lsp::lens`/`lsp::custom`) with the NEGOTIATED position
+  encoding threaded through every call (H-12 is now fully wired end to end —
+  `lsp::diagnostics::compute_all` no longer hardcodes `PositionEncoding::Utf16`
+  internally, closing the two `TODO(t3.15)`s Task 12 left). `al-call-hierarchy/
+  {fieldProperties,actionProperties,telemetryStatus}` are graph-independent
+  and stay on their existing `crate::handlers` implementations (widened from
+  private to `pub` so the new dispatcher can call them directly) — they
+  survive Task 17's legacy deletion untouched. Diagnostics now follow
+  "recompute-diff-publish-clear" on EVERY snapshot swap (including the very
+  first, batch-built one), via one shared `lsp::diagnostics::DiagnosticsState`:
+  publishing only what changed and CLEARING a uri whose findings dropped to
+  zero — the legacy publish-once-at-startup path never cleared a fixed
+  finding until an unrelated one happened to overwrite the same file's
+  bucket. The file watcher (`src/watcher.rs`) is widened to also forward
+  `.alpackages` dependency-file changes (previously filtered out entirely by
+  its `.al`-only extension check — dependency add/update/remove never
+  reached the index until a server restart) and a backend-reported
+  event-buffer overflow/rescan (`notify`'s `Flag::Rescan`, via a new
+  `FileChange::Overflow` variant) — both map onto `ChangeEvent::DepsChanged`/
+  `ChangeEvent::Overflow` in `server.rs`, forcing a full rebuild rather than
+  silently trusting stale state. `didSave` notifications and watcher events
+  now feed ONE coalesced channel (previously each independently reindexed the
+  same save). The program engine's snapshot model requires a single AL-app
+  workspace root with a readable `app.json` (unlike the legacy `Indexer`,
+  which tolerated zero indexed files) — a client offering more than one
+  `workspace_folders` entry now gets a clear warning and only the first is
+  served (a real capability narrowing, not a silent one), and a missing/
+  invalid workspace degrades to every request returning an empty result
+  rather than the server refusing to start. `main.rs`'s `--project` CLI
+  index-and-report mode is re-pointed at `LspSnapshot::build_full`:
+  `definitions` is now the workspace `decls_by_file` entry count and
+  `call sites` is the sum of `edges_by_file` bucket lengths — NEITHER number
+  is directly comparable to the legacy `CallGraph::definition_count`/
+  `call_site_count` this replaces (different identity/dedup rules); the
+  legacy "external definitions" line is replaced by a count of dependency
+  routines with embedded source (`dep_decl_by_id`). `--analyze` is untouched
+  (`analysis.rs` reads the owned IR directly, no snapshot involved). Smoke-
+  tested via a new in-binary unit test (`server::tests`, `cargo test` runs
+  binary-target unit tests too — no existing `tests/` crate could reach these
+  binary-private symbols) driving `dispatch_request`/`handle_notification`
+  over a real `Connection::memory()` pair: prepare + outgoingCalls resolve
+  through the new handlers, and a `didSave` round-trips into a published
+  generation bump plus a diagnostics republish that clears a since-fixed
+  unused-procedure hint. Full test suite green (2679 passed, 0 failed,
+  legacy unit tests unaffected — legacy code is unwired, not deleted);
+  `tests/lsp_differential.rs` and `tests/lsp_incremental_parity.rs` (the
+  Task 14 deletion-license gates) stay green, unaffected by the cutover.
+  **A real shutdown-hang bug was found and fixed along the way, via a manual
+  end-to-end stdio smoke test (a Python LSP client driving the actual
+  compiled binary through `initialize`→`prepareCallHierarchy`→
+  `outgoingCalls`→`shutdown`→`exit`) that the in-binary unit test alone
+  could not have caught.** `main_loop` used to take `connection: &Connection`
+  (a borrow); `IoThreads::join()` (called right after) blocks until
+  `lsp_server`'s writer thread sees every `Sender<Message>` clone dropped,
+  but a borrowed `connection` is never dropped before that call — the
+  process hung forever after a clean `shutdown`/`exit` exchange (present in
+  the pre-cutover legacy `server.rs` too, identical shape, just never
+  exercised end to end before now). Fixed by moving `connection` into
+  `main_loop` by value (matching `lsp_server`'s own
+  `examples/minimal_lsp.rs` pattern exactly). A SECOND, cutover-introduced
+  layer of the same problem also surfaced: the updater thread's diagnostics
+  `on_swap` hook holds its own `connection.sender` clone for its entire
+  (deliberately unbounded) lifetime, and — because the file watcher thread
+  also holds a clone of the updater's own input channel forever (no stop
+  signal, matching legacy's watcher thread) — the updater never naturally
+  terminates either, so unconditionally joining it (or waiting
+  unconditionally on `io_threads.join()`) would still hang. Fixed with a
+  bounded wait + detach at both points (the SAME idiom `telemetry::shutdown`
+  already used elsewhere in this file for the identical reason): everything
+  meaningful is already flushed to stdout by the time `main_loop` returns
+  (verified — the `shutdown` response itself is received by the client
+  before the hang), so giving up on a background thread after a short grace
+  period loses nothing.
 - **`program::build`: layered dep/workspace graph assembly + a single-parse
   program-engine pipeline (T3 LSP-migration arc, Task 5 — additive,
   byte-identical output).** `build_program_graph` used to do one monolithic

@@ -80,8 +80,16 @@ use crate::protocol::path_to_uri;
 /// (possibly an empty `Vec` — "including now-empty URIs", the task brief's
 /// binding requirement so [`DiagnosticsState::diff`] can detect a file whose
 /// findings all disappeared), keyed by its `file://` URI string.
+///
+/// `enc` (T3 Task 15 cutover): every position this module emits crosses the
+/// LSP boundary through it — the negotiated encoding, never a hardcoded
+/// `Utf16` guess (see the two now-removed TODOs this replaced).
 #[must_use]
-pub fn compute_all(snap: &LspSnapshot, cfg: &DiagnosticConfig) -> HashMap<String, Vec<Diagnostic>> {
+pub fn compute_all(
+    snap: &LspSnapshot,
+    enc: PositionEncoding,
+    cfg: &DiagnosticConfig,
+) -> HashMap<String, Vec<Diagnostic>> {
     let mut out: HashMap<String, Vec<Diagnostic>> = HashMap::new();
 
     for virtual_path in snap.parsed.keys() {
@@ -101,15 +109,9 @@ pub fn compute_all(snap: &LspSnapshot, cfg: &DiagnosticConfig) -> HashMap<String
             };
 
             if cfg.unused_procedures && is_unused_procedure(snap, decl, routine) {
-                // TODO(t3.15): thread the negotiated PositionEncoding through publishDiagnostics
                 out.entry(uri.clone())
                     .or_default()
-                    .push(unused_procedure_diagnostic(
-                        snap,
-                        decl,
-                        &table,
-                        PositionEncoding::Utf16,
-                    ));
+                    .push(unused_procedure_diagnostic(snap, decl, &table, enc));
             }
 
             let complexity = crate::analysis::routine_complexity_ir(&entry.file.ir, routine);
@@ -122,6 +124,7 @@ pub fn compute_all(snap: &LspSnapshot, cfg: &DiagnosticConfig) -> HashMap<String
                 snap,
                 decl,
                 &table,
+                enc,
                 complexity,
                 parameter_count,
                 line_count,
@@ -239,14 +242,13 @@ fn push_quality_diagnostics(
     snap: &LspSnapshot,
     decl: &DeclEntry,
     table: &LineTable<'_>,
+    enc: PositionEncoding,
     complexity: u32,
     parameter_count: u32,
     line_count: u32,
     incoming_count: usize,
     cfg: &DiagnosticConfig,
 ) {
-    // TODO(t3.15): thread the negotiated PositionEncoding through publishDiagnostics
-    let enc = PositionEncoding::Utf16;
     let object_name = object_name_for(&snap.graph, &decl.id.object).unwrap_or("Unknown");
     let range = origin_to_range(&decl.origin, table, enc);
     let proc = decl.name.as_str();
@@ -414,7 +416,7 @@ mod tests {
     }
 
     fn diagnostics_for(snap: &LspSnapshot, cfg: &DiagnosticConfig, file: &str) -> Vec<Diagnostic> {
-        let all = compute_all(snap, cfg);
+        let all = compute_all(snap, PositionEncoding::Utf16, cfg);
         let uri = workspace_uri(snap, file);
         all.get(&uri).cloned().unwrap_or_default()
     }
@@ -930,7 +932,7 @@ mod tests {
             ..DiagnosticConfig::default()
         };
 
-        let all = compute_all(&snap, &cfg);
+        let all = compute_all(&snap, PositionEncoding::Utf16, &cfg);
         let uri = workspace_uri(&snap, "Clean.al");
         assert!(
             all.contains_key(&uri),

@@ -18,7 +18,7 @@ pub use al_call_hierarchy::{
     protocol, telemetry,
 };
 
-use indexer::Indexer;
+use lsp::snapshot::LspSnapshot;
 use server::run_server;
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -96,25 +96,10 @@ fn main() -> Result<()> {
             // Analysis mode
             run_analysis(&project, &args.format)?;
         } else {
-            // CLI mode for testing/indexing
+            // CLI mode for testing/indexing (T3 Task 15: re-pointed at the
+            // program-engine snapshot — see this block's own doc below).
             info!("Indexing project: {}", project.display());
-            let mut indexer = Indexer::new();
-            indexer.index_directory(&project)?;
-
-            // Index external dependencies from .app packages
-            if project.join("app.json").exists()
-                && let Err(e) = indexer.index_dependencies(&project)
-            {
-                log::warn!("Failed to index dependencies: {}", e);
-            }
-
-            let graph = indexer.into_graph();
-            info!("Indexed {} definitions", graph.definition_count());
-            info!(
-                "Indexed {} external definitions",
-                graph.external_definition_count()
-            );
-            info!("Found {} call sites", graph.call_site_count());
+            report_index_stats(&project)?;
         }
     } else {
         // LSP server mode (default)
@@ -122,6 +107,44 @@ fn main() -> Result<()> {
         run_server(args.no_watcher, args.no_telemetry)?;
     }
 
+    Ok(())
+}
+
+/// CLI index-and-report mode: build the program-engine snapshot for
+/// `project` and log summary counts (T3 Task 15 cutover — replaces the
+/// legacy `Indexer::index_directory`/`into_graph` path).
+///
+/// **Count-definition change (CHANGELOG-documented):** `definitions` is now
+/// the workspace [`LspSnapshot::decls_by_file`] entry count (every routine
+/// declaration the snapshot indexed) and `call sites` is the sum of every
+/// [`LspSnapshot::edges_by_file`] bucket's length (workspace `Call`/`Run`/
+/// `ImplicitTrigger` edges — NOT including `event_edges`, mirroring the
+/// brief's literal "Σ bucket lens"). Neither number is directly comparable to
+/// the legacy `CallGraph::definition_count`/`call_site_count` this replaces:
+/// the program engine's identity/dedup rules differ from the legacy
+/// `QualifiedName`-keyed graph. The legacy "external definitions" line is
+/// replaced by a count of dependency routines with EMBEDDED source
+/// (`dep_decl_by_id` — real per-routine identities, unlike a `.app`'s
+/// symbol-only ABI catalog, which has no equivalent "definition" to count).
+fn report_index_stats(project: &Path) -> Result<()> {
+    let Some(snap) = LspSnapshot::build_full(project) else {
+        anyhow::bail!(
+            "Failed to build the program snapshot for {} — is this a valid AL app \
+             workspace (a readable app.json at its root)?",
+            project.display()
+        );
+    };
+
+    let definitions: usize = snap.decls_by_file.values().map(|v| v.len()).sum();
+    let call_sites: usize = snap.edges_by_file.values().map(|v| v.len()).sum();
+    let dep_definitions = snap.dep_decl_by_id.len();
+
+    info!("Indexed {} definitions", definitions);
+    info!(
+        "Indexed {} dependency definitions (embedded source)",
+        dep_definitions
+    );
+    info!("Found {} call sites", call_sites);
     Ok(())
 }
 

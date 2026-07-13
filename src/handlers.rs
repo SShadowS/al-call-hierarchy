@@ -525,9 +525,14 @@ pub fn code_lens(
 // --- Symbol Properties (generic for fields, actions, and any AL declaration) ---
 
 /// Parameters for al-call-hierarchy/fieldProperties and al-call-hierarchy/actionProperties
+///
+/// `pub` (T3 Task 15 cutover): these two request handlers touch no graph/
+/// indexer state at all (pure source-read + al-syntax facade lookup), so the
+/// cutover re-points the dispatcher straight at them rather than routing
+/// through the now-unwired legacy `Indexer` — see `src/server.rs`'s dispatch.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SymbolPropertiesParams {
+pub struct SymbolPropertiesParams {
     uri: String,
     /// For fieldProperties
     #[serde(default)]
@@ -541,7 +546,7 @@ struct SymbolPropertiesParams {
 /// Keys are human-readable property names (e.g., "Caption", "CalcFormula").
 /// Only properties explicitly declared in source are included.
 #[derive(Debug, Serialize, Default)]
-struct SymbolPropertiesResult {
+pub struct SymbolPropertiesResult {
     /// For fields: the field ID number
     #[serde(skip_serializing_if = "Option::is_none")]
     field_id: Option<u32>,
@@ -551,13 +556,13 @@ struct SymbolPropertiesResult {
 
 /// A single property entry preserving declaration order
 #[derive(Debug, Serialize)]
-struct PropertyEntry {
+pub struct PropertyEntry {
     name: String,
     value: String,
 }
 
 /// Extract all properties for a table field, via the owned `al-syntax` facade.
-fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
+pub fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
     let source = read_source_from_uri(&params.uri)?;
     Ok(al_syntax::lookup_symbol_properties(
         &source,
@@ -569,7 +574,7 @@ fn field_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesRe
 }
 
 /// Extract all properties for a page action, via the owned `al-syntax` facade.
-fn action_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
+pub fn action_properties(params: SymbolPropertiesParams) -> Result<SymbolPropertiesResult> {
     let source = read_source_from_uri(&params.uri)?;
     Ok(al_syntax::lookup_symbol_properties(
         &source,

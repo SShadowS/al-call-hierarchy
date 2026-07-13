@@ -2366,7 +2366,7 @@ fn classify_diagnostics(
         legacy_by_file.entry(file_rel).or_default().extend(messages);
     }
 
-    let new_all = new_diagnostics::compute_all(new_snap, cfg);
+    let new_all = new_diagnostics::compute_all(new_snap, PositionEncoding::Utf8, cfg);
     let mut new_by_file: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (uri, diags) in new_all {
         let file_rel = uri_to_rel(root, &uri);
