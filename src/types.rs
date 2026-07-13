@@ -1,7 +1,8 @@
 //! Core AL object-type enum, shared between the library and binary crate.
 //!
-//! Kept in the library so both `app_package` (lib) and `graph` (binary,
-//! re-exports this) can reference the same type without a crate-boundary clash.
+//! Kept in the library so both `app_package` and `src/lsp/*` (the LSP surface,
+//! e.g. `lsp::custom`'s `al-preview://` URI parsing) can reference the same
+//! type without a crate-boundary clash.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -67,5 +68,83 @@ impl fmt::Display for ObjectType {
             Self::PermissionSet => write!(f, "PermissionSet"),
             Self::PermissionSetExtension => write!(f, "PermissionSetExtension"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // T3 Task 17: ported verbatim from legacy `src/graph.rs` (deleted this
+    // task, which only ever re-exported this type — see the module doc). Without
+    // this port, `ObjectType`'s `TryFrom<&str>`/`Display` impls — a surviving,
+    // actively-used type — would have had no direct unit test at all.
+
+    #[test]
+    fn test_object_type_try_from_valid() {
+        assert_eq!(ObjectType::try_from("codeunit"), Ok(ObjectType::Codeunit));
+        assert_eq!(ObjectType::try_from("table"), Ok(ObjectType::Table));
+        assert_eq!(ObjectType::try_from("page"), Ok(ObjectType::Page));
+        assert_eq!(ObjectType::try_from("report"), Ok(ObjectType::Report));
+        assert_eq!(ObjectType::try_from("query"), Ok(ObjectType::Query));
+        assert_eq!(ObjectType::try_from("xmlport"), Ok(ObjectType::XmlPort));
+        assert_eq!(ObjectType::try_from("enum"), Ok(ObjectType::Enum));
+        assert_eq!(ObjectType::try_from("interface"), Ok(ObjectType::Interface));
+        assert_eq!(
+            ObjectType::try_from("controladdin"),
+            Ok(ObjectType::ControlAddIn)
+        );
+        assert_eq!(
+            ObjectType::try_from("pageextension"),
+            Ok(ObjectType::PageExtension)
+        );
+        assert_eq!(
+            ObjectType::try_from("tableextension"),
+            Ok(ObjectType::TableExtension)
+        );
+        assert_eq!(
+            ObjectType::try_from("enumextension"),
+            Ok(ObjectType::EnumExtension)
+        );
+        assert_eq!(
+            ObjectType::try_from("permissionset"),
+            Ok(ObjectType::PermissionSet)
+        );
+        assert_eq!(
+            ObjectType::try_from("permissionsetextension"),
+            Ok(ObjectType::PermissionSetExtension)
+        );
+    }
+
+    #[test]
+    fn test_object_type_try_from_case_insensitive() {
+        assert_eq!(ObjectType::try_from("Codeunit"), Ok(ObjectType::Codeunit));
+        assert_eq!(ObjectType::try_from("TABLE"), Ok(ObjectType::Table));
+    }
+
+    #[test]
+    fn test_object_type_try_from_invalid() {
+        assert_eq!(ObjectType::try_from("notaobject"), Err(()));
+    }
+
+    #[test]
+    fn test_object_type_display() {
+        assert_eq!(format!("{}", ObjectType::Codeunit), "Codeunit");
+        assert_eq!(format!("{}", ObjectType::Table), "Table");
+        assert_eq!(format!("{}", ObjectType::Page), "Page");
+        assert_eq!(format!("{}", ObjectType::Report), "Report");
+        assert_eq!(format!("{}", ObjectType::Query), "Query");
+        assert_eq!(format!("{}", ObjectType::XmlPort), "XmlPort");
+        assert_eq!(format!("{}", ObjectType::Enum), "Enum");
+        assert_eq!(format!("{}", ObjectType::Interface), "Interface");
+        assert_eq!(format!("{}", ObjectType::ControlAddIn), "ControlAddIn");
+        assert_eq!(format!("{}", ObjectType::PageExtension), "PageExtension");
+        assert_eq!(format!("{}", ObjectType::TableExtension), "TableExtension");
+        assert_eq!(format!("{}", ObjectType::EnumExtension), "EnumExtension");
+        assert_eq!(format!("{}", ObjectType::PermissionSet), "PermissionSet");
+        assert_eq!(
+            format!("{}", ObjectType::PermissionSetExtension),
+            "PermissionSetExtension"
+        );
     }
 }

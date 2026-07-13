@@ -1018,6 +1018,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged, so this is a pure relocation, not a behavior change.
   `telemetryStatus` has no handler function to relocate (`server.rs` calls
   `crate::telemetry::status()` directly).
+  **Coverage-completeness fix found during deletion verification:**
+  `src/types.rs`'s `ObjectType` (a surviving, actively-used type) had its
+  only direct unit tests (`TryFrom<&str>`'s valid/case-insensitive/invalid
+  cases, `Display`'s exact-capitalization output) living in `graph.rs`,
+  which only ever re-exported the type — deleting `graph.rs` outright
+  would have left `ObjectType` with zero direct unit test coverage of its
+  own. Ported the 4 tests verbatim into `src/types.rs` itself.
   **`tests/perf_support_smoke.rs`** — its `Indexer`-dependent correctness
   checks (the corpus's 999-way fan-in / 3-way fan-out contract, and the
   rung-1/rung-2 body-edit/signature-edit definition-count deltas) are
