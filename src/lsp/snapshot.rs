@@ -29,7 +29,7 @@ use al_syntax::ir::AlFile;
 use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
-use crate::program::resolve::decl_surface::DeclSurface;
+use crate::program::resolve::decl_surface::{DeclSurface, DepMetaMap};
 use crate::program::resolve::edge::{Edge, RouteTarget};
 use crate::program::resolve::emit_event_flow_edges;
 use crate::program::resolve::full::{ClassifiedEdge, ObligationId, ProgramContext, build_context};
@@ -178,6 +178,18 @@ pub struct LspSnapshot {
     /// role for workspace files). Look both maps up together via
     /// [`Self::decl_and_text`] rather than indexing either directly.
     pub dep_texts: Arc<DepTexts>,
+    /// The frozen dependency tier of the owned `DeclSurface` (T3 Task 12):
+    /// every non-primary routine's `RoutineMeta` projection (name, origins,
+    /// `parse_incomplete`, param `ty`/`by_ref` — never the body), built once
+    /// at startup/rung-3 via [`DeclSurface::freeze_dep_tier`] and forwarded
+    /// by `Arc::clone` across rungs 1/2 (sound for the same reason
+    /// `dep_decl_by_id`/`dep_texts` are: dependency source cannot change on
+    /// those rungs — see their docs). Rung 1/2 rebuild a workspace-only
+    /// `DeclSurface` via [`DeclSurface::with_frozen`], composing it with
+    /// this tier rather than re-deriving it, which is what lets the LSP
+    /// steady state drop dependency parse arenas after the first full
+    /// build (see [`Self::from_context`]).
+    pub dep_meta: Arc<DepMetaMap>,
     /// The workspace root every `virtual_path` in this snapshot is relative
     /// to, normalized via [`crate::protocol::normalize_path`] (T3 Task 11) —
     /// so a handler can turn an inbound `textDocument` URI into the SAME
@@ -200,16 +212,22 @@ impl LspSnapshot {
         Some(Self::from_context(ctx, workspace_root).0)
     }
 
-    /// As [`Self::build_full`], but ALSO returns the ONE full parse
-    /// (`ctx.parsed` — every source-bearing app, workspace + embedded-source
-    /// deps) for T3 Task 9's incremental updater (`src/lsp/updater.rs`) to
-    /// own as its mutable working state.
+    /// As [`Self::build_full`], but ALSO returns the ONE workspace
+    /// [`ParsedUnit`] for T3 Task 9's incremental updater
+    /// (`src/lsp/updater.rs`) to own as its mutable working state.
     ///
-    /// [`Self::from_context`] no longer CONSUMES the parse (perf safe-wins
-    /// Task 2): `ParsedFile.file`/`.text` are `Arc`-shared, so the published
-    /// snapshot's `ParsedFileEntry`s hold `Arc::clone`s of the same
-    /// allocations this returns intact. One parse serves both the published
-    /// snapshot and the updater's working copy — sound because nothing
+    /// T3 Task 12 (owned DeclSurface lifecycle): dependency `ParsedUnit`s —
+    /// `ctx.parsed`'s non-workspace entries — are DROPPED inside
+    /// [`Self::from_context`] once the frozen dep-tier `DeclSurface` and the
+    /// `dep_decl_by_id`/`dep_texts` indexes have been derived from them;
+    /// only the workspace unit survives to be returned here. This is the
+    /// whole point of the owned-DeclSurface design: the updater's steady
+    /// state never again retains dependency parse arenas (~1.5GB on a
+    /// CDO-scale workspace) — see the design spec
+    /// (`docs/superpowers/specs/2026-07-13-owned-decl-surface-design.md`).
+    /// `ParsedFile.file`/`.text` are `Arc`-shared (perf safe-wins Task 2),
+    /// so the published snapshot's `ParsedFileEntry`s hold `Arc::clone`s of
+    /// the SAME workspace allocations this returns — sound because nothing
     /// mutates an `AlFile` after `al_syntax::parse` returns; every update
     /// REPLACES whole `ParsedFile`/`ParsedUnit` values (rung-1 `pending`
     /// splice / rung-2 `splice_file` / rung-3 wholesale — see updater.rs),
@@ -223,7 +241,7 @@ impl LspSnapshot {
     /// `server.rs` eventually will, so this is the arc's real future public
     /// server-construction surface, not test-only scaffolding.
     #[must_use]
-    pub fn build_full_with_parsed(workspace_root: &Path) -> Option<(LspSnapshot, Vec<ParsedUnit>)> {
+    pub fn build_full_with_parsed(workspace_root: &Path) -> Option<(LspSnapshot, ParsedUnit)> {
         let ctx = build_context(workspace_root)?;
         Some(Self::from_context(ctx, workspace_root))
     }
@@ -239,18 +257,20 @@ impl LspSnapshot {
     /// `build_full_with_parsed` do, rather than re-implementing this
     /// composition a second time just to exercise it without disk I/O.
     ///
-    /// Returns the `LspSnapshot` alongside the ONE parse (`ctx.parsed`)
-    /// intact (perf safe-wins Task 2): `ParsedFile.file`/`.text` are
-    /// `Arc`-shared, so the published snapshot's `ParsedFileEntry`s hold
-    /// `Arc::clone`s rather than consuming `parsed` by value — the caller
-    /// (`build_full_with_parsed`) hands the returned `Vec<ParsedUnit>` to the
-    /// updater as its working state; `build_full` just drops it (the dep IR
-    /// arenas free at that drop, exactly as they did under the old
-    /// consume-and-drop scheme).
+    /// Returns the `LspSnapshot` alongside the ONE workspace [`ParsedUnit`]
+    /// (T3 Task 12): dependency `ParsedUnit`s in `ctx.parsed` are consumed
+    /// and dropped here, at the end of the transient borrow phase below —
+    /// the exact point the memory win takes effect — after the frozen
+    /// dep-tier `DeclSurface`/`dep_decl_by_id`/`dep_texts` have all been
+    /// derived from them. `ParsedFile.file`/`.text` are `Arc`-shared (perf
+    /// safe-wins Task 2), so the published snapshot's workspace
+    /// `ParsedFileEntry`s hold `Arc::clone`s rather than consuming the
+    /// workspace unit by value; `build_full` just drops the returned
+    /// workspace unit too (it never needed it).
     pub(crate) fn from_context(
         ctx: ProgramContext,
         workspace_root: &Path,
-    ) -> (LspSnapshot, Vec<ParsedUnit>) {
+    ) -> (LspSnapshot, ParsedUnit) {
         let ProgramContext {
             snap,
             graph,
@@ -279,12 +299,22 @@ impl LspSnapshot {
         let event_edges: Arc<Vec<ClassifiedEdge>>;
         let dep_decl_by_id: HashMap<RoutineNodeId, DeclEntry>;
         let dep_texts: HashMap<(AppRef, String), Arc<str>>;
+        let dep_meta: Arc<DepMetaMap>;
 
         {
             let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
                 graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
             let index = ResolveIndex::build(&graph);
-            let surface = DeclSurface::build(&graph, &parsed);
+            // Build the two-tier surface, then IMMEDIATELY freeze the
+            // dependency tier (T3 Task 12) — this is the very first build,
+            // so exercising the frozen two-tier lookup here (rather than
+            // only from rung 1/2 onward) proves the composed surface
+            // resolves identically to the old always-local `BodyMap`-style
+            // build for every consumer below (`recompute_file`/
+            // `emit_event_flow_edges`/`build_dep_indexes`).
+            let mut surface = DeclSurface::build(&graph, &parsed);
+            dep_meta = surface.freeze_dep_tier(primary_app_ref);
+            let surface = surface; // immutable from here
 
             if let Some(idx) = primary_unit_idx {
                 for pf in &parsed[idx].files {
@@ -329,10 +359,12 @@ impl LspSnapshot {
 
         // ── Sharing phase (perf safe-wins Task 2): `AlFile`/text are
         // `Arc`-shared, so the published snapshot CLONES the `Arc`s and
-        // leaves `parsed` intact for the caller (`build_full_with_parsed`
-        // hands it to the updater; `build_full` just drops it — the dep IR
-        // arenas free at that drop, exactly as they did under the old
-        // consume-and-drop scheme).
+        // leaves `parsed`'s workspace entries intact for the extraction
+        // below — dependency `ParsedUnit`s are consumed and dropped a few
+        // lines down, inside `parsed.into_iter().find(...)`, once every
+        // consumer that needs them (the frozen dep-tier `DeclSurface`,
+        // `dep_decl_by_id`, `dep_texts` — all derived above) has already
+        // run.
         let mut parsed_files: HashMap<String, Arc<ParsedFileEntry>> = HashMap::new();
         if let Some(idx) = primary_unit_idx {
             for pf in &parsed[idx].files {
@@ -368,9 +400,24 @@ impl LspSnapshot {
             decl_by_id,
             dep_decl_by_id: Arc::new(dep_decl_by_id),
             dep_texts: Arc::new(dep_texts),
+            dep_meta,
             workspace_root: Arc::new(crate::protocol::normalize_path(workspace_root)),
         };
-        (snapshot, parsed)
+
+        // Extract ONLY the workspace `ParsedUnit` to return — every
+        // dependency `ParsedUnit` in `parsed` is dropped right here, at the
+        // end of `parsed.into_iter()` below (T3 Task 12): the frozen
+        // dep-tier `DeclSurface`/`dep_decl_by_id`/`dep_texts` above are the
+        // LAST consumers of dependency parse arenas for this build: this is
+        // the memory win's exact release point.
+        let workspace_unit = parsed
+            .into_iter()
+            .find(|u| u.app == snapshot.snap.workspace_app)
+            .unwrap_or_else(|| ParsedUnit {
+                app: snapshot.snap.workspace_app.clone(),
+                files: vec![],
+            });
+        (snapshot, workspace_unit)
     }
 
     /// Position lookup: file + 0-based line + UTF-8 byte col → routine whose
@@ -597,12 +644,13 @@ pub(crate) fn build_decl_by_id(
 /// `resolver::make_routine_route`'s doc for why `Routine(id)` is only ever
 /// constructed when this SAME `surface` lookup just succeeded).
 ///
-/// Called from BOTH [`LspSnapshot::from_context`] and
-/// [`crate::lsp::updater::Updater::apply_rung2`] (the two places that ever
-/// rebuild `graph`/`surface` from scratch) — rung 1 never calls this,
-/// `Arc::clone`-ing the previous snapshot's values forward instead, since a
-/// body-only workspace edit can never touch dependency source (see
-/// `dep_decl_by_id`'s doc).
+/// Called ONLY from [`LspSnapshot::from_context`] (T3 Task 12 — previously
+/// also from [`crate::lsp::updater::Updater::apply_rung2`], but rung 2 now
+/// Arc-forwards `dep_decl_by_id`/`dep_texts` from the current snapshot
+/// instead of recomputing them, since dependency source cannot change on
+/// rung 2 either — see `apply_rung2`'s doc). Rung 1 never called this
+/// either, for the same underlying reason (see `dep_decl_by_id`'s doc) —
+/// this function now runs exactly once per rung-3 (full) rebuild.
 #[must_use]
 pub(crate) fn build_dep_indexes(
     graph: &ProgramGraph,

@@ -16,7 +16,7 @@
 //! MORE directly than its suggested `Cell<Rung>` field: `apply_batch` simply
 //! returns the [`Rung`] it took as part of its `Option` tuple.
 //!
-//! # Why a `pending` overlay field, not a straight splice into `parsed`
+//! # Why a `pending` overlay field, not a straight splice into `workspace`
 //!
 //! `docs/superpowers/specs/2026-07-12-t3-lsp-migration-design.md` plus
 //! `.superpowers/sdd/t3-stage-split.md` measured `ResolveIndex::build` +
@@ -28,26 +28,49 @@
 //! ([`spawn_updater`]'s hot loop does exactly this — see its doc).
 //!
 //! This collides with a real Rust ownership fact: `DeclSurface` BORROWS
-//! `Updater::parsed` for as long as it's alive. If rung 1 spliced a file's
-//! fresh parse directly into `self.parsed` (as an earlier draft of this
-//! module did), the SECOND rung-1 call reusing the SAME cached `DeclSurface`
-//! would need `&mut self.parsed` to splice again — which the borrow checker
-//! correctly rejects, because `surface` (built from `&self.parsed`) is
-//! still alive and would be invalidated by that mutation.
+//! `Updater::workspace` for as long as it's alive. If rung 1 spliced a
+//! file's fresh parse directly into `self.workspace` (as an earlier draft of
+//! this module did), the SECOND rung-1 call reusing the SAME cached
+//! `DeclSurface` would need `&mut self.workspace` to splice again — which
+//! the borrow checker correctly rejects, because `surface` (built from
+//! `&self.workspace`) is still alive and would be invalidated by that
+//! mutation.
 //!
-//! The fix: rung 1 NEVER touches `self.parsed` directly. It records each
+//! The fix: rung 1 NEVER touches `self.workspace` directly. It records each
 //! touched file into `self.pending: HashMap<String, ParsedFile>` instead — a
-//! DISJOINT field from `parsed`, so a cached `DeclSurface` borrowing `parsed`
-//! and a fresh `&mut self.pending` write coexist without conflict (Rust DOES
-//! reason about disjoint-field borrows within one function body — this is
-//! what lets [`spawn_updater`]'s loop pass `&mut updater.pending` into
-//! [`apply_rung1_core`] on every rung-1 call while `index`/`surface`,
-//! built once from `&updater.parsed`, stay alive and cached across many
-//! such calls). [`Updater::flush_pending`] folds the overlay into `parsed`
-//! whenever a rung-2/3 rebuild is about to consult it (or eagerly, in
-//! [`Updater::apply_batch`]'s simple/always-correct path, which doesn't
-//! bother caching anything across separate calls and so can flush
-//! immediately every time).
+//! DISJOINT field from `workspace`, so a cached `DeclSurface` borrowing
+//! `workspace` and a fresh `&mut self.pending` write coexist without
+//! conflict (Rust DOES reason about disjoint-field borrows within one
+//! function body — this is what lets [`spawn_updater`]'s loop pass
+//! `&mut updater.pending` into [`apply_rung1_core`] on every rung-1 call
+//! while `index`/`surface`, built once from `&updater.workspace`, stay alive
+//! and cached across many such calls). [`Updater::flush_pending`] folds the
+//! overlay into `workspace` whenever a rung-2/3 rebuild is about to consult
+//! it (or eagerly, in [`Updater::apply_batch`]'s simple/always-correct
+//! path, which doesn't bother caching anything across separate calls and so
+//! can flush immediately every time).
+//!
+//! **T3 Task 12 (owned-DeclSurface lifecycle): `Updater` retains ONLY the
+//! workspace `ParsedUnit` — `parsed: Vec<ParsedUnit>` (every source-bearing
+//! app, workspace + embedded-source deps) is gone, replaced by
+//! `workspace: ParsedUnit`.** Under the OLD `BodyMap<'a>`-based design, the
+//! borrow above had to reach across every dependency's parse too, so the
+//! updater had no choice but to keep every dependency `ParsedUnit` alive for
+//! its entire lifetime (~1.5GB of `AlFile` IR on a CDO-scale workspace).
+//! `DeclSurface` replaces that borrow with an OWNED, two-tier projection
+//! (`local` rebuilt per rung from `workspace` alone; `frozen` — dependency
+//! `RoutineMeta` metadata, never the body — built ONCE at startup/rung-3 and
+//! `Arc`-forwarded across rungs 1/2 via `LspSnapshot::dep_meta`), so a
+//! rung-1/rung-2 surface is now `DeclSurface::build(&graph,
+//! slice::from_ref(&self.workspace)).with_frozen(Arc::clone(&cur.dep_meta))`
+//! — sound because `AppRef` indices are stable across rungs 1/2 (the
+//! `DepLayer`'s `AppRegistry` is cloned into every assembled graph, never
+//! re-interned). The surviving reason the hot loop still caches
+//! `index`/`surface` across many consecutive rung-1 calls is COST (the
+//! ~200-350ms rebuild budget above), not a borrow-lifetime constraint — and
+//! the `pending` overlay still exists so a cached surface (built from a
+//! specific `workspace` snapshot) stays consistent with the published
+//! snapshot between flushes, exactly as before.
 //!
 //! **Soundness of resolving rung 1's touched file(s) against a STALE
 //! (pre-edit) cached `DeclSurface`:** per the def-surface audit
@@ -100,8 +123,7 @@ use log::warn;
 
 use crate::lsp::def_surface::def_surface_fingerprint;
 use crate::lsp::snapshot::{
-    DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_dep_indexes, build_incoming,
-    recompute_file,
+    DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_incoming, recompute_file,
 };
 use crate::program::assemble_program_graph;
 use crate::program::node::ObjectNodeId;
@@ -110,7 +132,7 @@ use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::emit_event_flow_edges;
 use crate::program::resolve::full::{ClassifiedEdge, ObligationId};
 use crate::program::resolve::index::ResolveIndex;
-use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit, Provenance, TrustTier};
+use crate::snapshot::{ParsedFile, ParsedUnit, Provenance, TrustTier};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -186,17 +208,18 @@ pub enum Rung {
 /// going through [`apply_rung1_core`] directly instead of `apply_batch`).
 pub struct Updater {
     workspace_root: PathBuf,
-    /// Every source-bearing app's parse AS OF THE LAST rung-2/3 rebuild —
-    /// workspace AND embedded-source deps. A transient `ResolveIndex`/
-    /// `DeclSurface` pair borrows this; rung 1 never mutates it directly (see
-    /// `pending` below).
-    parsed: Vec<ParsedUnit>,
-    /// Rung-1 edits recorded since `parsed` was last fully rebuilt — see the
-    /// module doc. [`Updater::flush_pending`] folds this into `parsed`
-    /// (always empty immediately after any `apply_batch` call returns;
-    /// `spawn_updater`'s hot loop instead leaves it un-flushed across many
-    /// consecutive rung-1 applies, flushing only right before a rung-2/3
-    /// rebuild needs `parsed` to be current).
+    /// The workspace `ParsedUnit` AS OF THE LAST rung-2/3 rebuild (T3 Task
+    /// 12: dependency `ParsedUnit`s are no longer retained here at all —
+    /// see the module doc). A transient `ResolveIndex`/`DeclSurface` pair
+    /// borrows this; rung 1 never mutates it directly (see `pending`
+    /// below).
+    workspace: ParsedUnit,
+    /// Rung-1 edits recorded since `workspace` was last fully rebuilt — see
+    /// the module doc. [`Updater::flush_pending`] folds this into
+    /// `workspace` (always empty immediately after any `apply_batch` call
+    /// returns; `spawn_updater`'s hot loop instead leaves it un-flushed
+    /// across many consecutive rung-1 applies, flushing only right before a
+    /// rung-2/3 rebuild needs `workspace` to be current).
     pending: HashMap<String, ParsedFile>,
 }
 
@@ -216,19 +239,19 @@ enum Decision {
 
 impl Updater {
     #[must_use]
-    pub fn new(workspace_root: PathBuf, parsed: Vec<ParsedUnit>) -> Self {
+    pub fn new(workspace_root: PathBuf, workspace: ParsedUnit) -> Self {
         Updater {
             workspace_root,
-            parsed,
+            workspace,
             pending: HashMap::new(),
         }
     }
 
     /// The brief's pure/testable synchronous core. Flushes any accumulated
-    /// `pending` overlay into `self.parsed` first (a no-op unless this
+    /// `pending` overlay into `self.workspace` first (a no-op unless this
     /// `Updater` was ALSO driven by the optimized hot loop in between calls,
     /// which is not the expected usage — this method always leaves
-    /// `self.parsed` fully up to date and `self.pending` empty when it
+    /// `self.workspace` fully up to date and `self.pending` empty when it
     /// returns, so repeated stand-alone calls stay self-consistent without
     /// requiring the caller to manage `pending` at all).
     ///
@@ -243,13 +266,20 @@ impl Updater {
         cur: &LspSnapshot,
         batch: &[ChangeEvent],
     ) -> Option<(LspSnapshot, Rung)> {
-        self.flush_pending(&cur.snap);
+        self.flush_pending();
 
         match self.classify(cur, batch) {
             Decision::Noop => None,
             Decision::Rung1(saves) => {
                 let index = ResolveIndex::build(&cur.graph);
-                let surface = DeclSurface::build(&cur.graph, &self.parsed);
+                // T3 Task 12: rebuild ONLY the local (workspace) tier and
+                // compose it with the ALREADY-FROZEN dependency tier
+                // forwarded from `cur` — dependency source cannot change on
+                // rung 1 (see `dep_meta`'s own doc), so this never touches
+                // any dependency `ParsedUnit` (there is none to touch: the
+                // updater doesn't retain any).
+                let surface = DeclSurface::build(&cur.graph, std::slice::from_ref(&self.workspace))
+                    .with_frozen(Arc::clone(&cur.dep_meta));
                 let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = cur
                     .graph
                     .objects
@@ -265,7 +295,7 @@ impl Updater {
                     &mut self.pending,
                 );
                 drop(surface);
-                self.flush_pending(&cur.snap);
+                self.flush_pending();
                 Some((snapshot, Rung::One))
             }
             Decision::Rung2(planned) => Some((self.apply_rung2(cur, planned), Rung::Two)),
@@ -276,7 +306,7 @@ impl Updater {
     /// Classify one batch against `cur` (the currently-published snapshot),
     /// per file/event, escalating per the module doc's rung summary.
     /// Read-only (`&self`) — never mutates `self`, so it composes freely
-    /// with an outstanding `DeclSurface` borrow of `self.parsed`.
+    /// with an outstanding `DeclSurface` borrow of `self.workspace`.
     fn classify(&self, cur: &LspSnapshot, batch: &[ChangeEvent]) -> Decision {
         if batch.is_empty() {
             return Decision::Noop;
@@ -387,31 +417,33 @@ impl Updater {
     /// Rung 2: flushes any accumulated `pending` overlay first (so a rung-2
     /// event that follows a run of optimized-hot-loop rung-1 saves never
     /// silently drops them), applies every save/remove to the working
-    /// primary (workspace) `ParsedUnit`, rebuilds the workspace layer of the
+    /// `workspace` `ParsedUnit`, rebuilds the workspace layer of the
     /// graph over the UNCHANGED cached `dep_layer`, then re-resolves EVERY
     /// workspace file (never just the touched ones — a signature change in
     /// one file can change how ANY other file's call sites resolve, which
     /// is exactly why rung 2 exists) and rebuilds every derived index
     /// wholesale.
     fn apply_rung2(&mut self, cur: &LspSnapshot, planned: Vec<Planned>) -> LspSnapshot {
-        self.flush_pending(&cur.snap);
-        let primary_idx = self.ensure_primary_unit_idx(&cur.snap);
+        self.flush_pending();
 
         for p in planned {
             match p {
-                Planned::Save { pf, .. } => splice_file(&mut self.parsed[primary_idx], *pf),
+                Planned::Save { pf, .. } => splice_file(&mut self.workspace, *pf),
                 Planned::Remove { vp } => {
-                    self.parsed[primary_idx]
-                        .files
-                        .retain(|f| f.virtual_path != vp);
+                    self.workspace.files.retain(|f| f.virtual_path != vp);
                 }
             }
         }
 
-        let new_graph =
-            assemble_program_graph(&cur.dep_layer, &self.parsed[primary_idx], &cur.snap);
+        let new_graph = assemble_program_graph(&cur.dep_layer, &self.workspace, &cur.snap);
         let index = ResolveIndex::build(&new_graph);
-        let surface = DeclSurface::build(&new_graph, &self.parsed);
+        // T3 Task 12: rebuild ONLY the local (workspace) tier and compose it
+        // with the ALREADY-FROZEN dependency tier forwarded from `cur` —
+        // dependency source cannot change at rung 2 either (it reuses the
+        // cached, unchanged `dep_layer` above), so there is no dependency
+        // `ParsedUnit` to rebuild it from in the first place.
+        let surface = DeclSurface::build(&new_graph, std::slice::from_ref(&self.workspace))
+            .with_frozen(Arc::clone(&cur.dep_meta));
         let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = new_graph
             .objects
             .iter()
@@ -426,7 +458,7 @@ impl Updater {
         let mut decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>> = HashMap::new();
         let mut parsed_files: HashMap<String, Arc<ParsedFileEntry>> = HashMap::new();
 
-        for pf in &self.parsed[primary_idx].files {
+        for pf in &self.workspace.files {
             let (edges, surface, decls) = recompute_file(
                 pf,
                 primary_app_ref,
@@ -438,10 +470,10 @@ impl Updater {
             edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
             decls_by_file.insert(pf.virtual_path.clone(), Arc::new(decls));
 
-            // One parse, Arc-shared with `self.parsed`'s working copy (perf
-            // safe-wins Task 2) — see `ParsedFile::file`'s sharing soundness
-            // doc. Rung 2 used to re-parse EVERY workspace file here; now it
-            // re-parses none.
+            // One parse, Arc-shared with `self.workspace`'s working copy
+            // (perf safe-wins Task 2) — see `ParsedFile::file`'s sharing
+            // soundness doc. Rung 2 used to re-parse EVERY workspace file
+            // here; now it re-parses none.
             parsed_files.insert(
                 pf.virtual_path.clone(),
                 Arc::new(ParsedFileEntry {
@@ -466,14 +498,6 @@ impl Updater {
 
         let decl_by_id = build_decl_by_id(&decls_by_file);
         let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
-        // Dependency source never changes at rung 2 (it reuses the cached,
-        // unchanged `dep_layer` — see this method's own doc), but `new_graph`
-        // is a freshly assembled `ProgramGraph` value, so `dep_decl_by_id`/
-        // `dep_texts` must be recomputed against it (an `Arc::clone` forward
-        // would dangle the moment `cur.graph` is dropped) — see
-        // `build_dep_indexes`'s doc for why only rung 1 can skip this.
-        let (dep_decl_by_id, dep_texts) =
-            build_dep_indexes(&new_graph, &surface, &self.parsed, primary_app_ref);
 
         LspSnapshot {
             generation: cur.generation + 1,
@@ -487,8 +511,18 @@ impl Updater {
             publisher_fanout,
             decls_by_file,
             decl_by_id,
-            dep_decl_by_id: Arc::new(dep_decl_by_id),
-            dep_texts: Arc::new(dep_texts),
+            // Dependency source cannot change at rung 2 (it reuses the
+            // cached, unchanged `dep_layer` above), and all three of these
+            // maps are fully OWNED data keyed by `RoutineNodeId` — whose
+            // `AppRef`s are stable across rungs 1/2 (the graph reuses the
+            // cached `dep_layer`'s cloned `AppRegistry`, never re-interning
+            // it) — so forwarding by `Arc::clone` is sound: rung 3 is the
+            // only rung that ever rebuilds them (T3 Task 12 — previously
+            // rebuilt here too, before the dep tier was frozen once and
+            // forwarded).
+            dep_decl_by_id: Arc::clone(&cur.dep_decl_by_id),
+            dep_texts: Arc::clone(&cur.dep_texts),
+            dep_meta: Arc::clone(&cur.dep_meta),
             // The workspace root never changes across a rung 2 rebuild — the
             // running server watches ONE root for its whole session.
             workspace_root: Arc::clone(&cur.workspace_root),
@@ -500,19 +534,19 @@ impl Updater {
     // -----------------------------------------------------------------------
 
     /// Rung 3: full rebuild from disk, including a fresh dep layer. Only
-    /// commits `self.parsed`'s replacement AFTER
+    /// commits `self.workspace`'s replacement AFTER
     /// [`LspSnapshot::build_full_with_parsed`] succeeds — on failure,
-    /// `self.parsed`/`self.pending` are left untouched and `None` is
+    /// `self.workspace`/`self.pending` are left untouched and `None` is
     /// returned so `cur` (already published) survives (fail-closed). On
     /// success, `self.pending` is simply DISCARDED (not flushed): the fresh
     /// rebuild re-reads every workspace file from disk, which already
     /// reflects whatever content generated any pending rung-1 edits, so
     /// there is nothing in `pending` a disk re-read wouldn't already pick up.
     fn apply_rung3(&mut self, cur: &LspSnapshot) -> Option<(LspSnapshot, Rung)> {
-        let Some((mut snapshot, parsed)) =
+        let Some((mut snapshot, workspace)) =
             LspSnapshot::build_full_with_parsed(&self.workspace_root)
         else {
-            // Fail-closed (unchanged): `cur` stays published, `self.parsed`
+            // Fail-closed (unchanged): `cur` stays published, `self.workspace`
             // stays untouched. But a silently-dropped rung-3 rebuild (e.g. a
             // deleted/malformed `app.json`, or an unreadable workspace root)
             // is otherwise INVISIBLE — nothing else observes this path. Log
@@ -532,7 +566,7 @@ impl Updater {
         // stays monotonic across every rung, including rung 3, rather than
         // going backwards.
         snapshot.generation = cur.generation + 1;
-        self.parsed = parsed;
+        self.workspace = workspace;
         self.pending.clear();
         Some((snapshot, Rung::Three))
     }
@@ -541,29 +575,17 @@ impl Updater {
     // Small helpers
     // -----------------------------------------------------------------------
 
-    /// Fold `self.pending` into `self.parsed`'s primary (workspace) unit.
-    /// No-op when `pending` is empty (the common case for `apply_batch`'s
-    /// simple path, which flushes after every single call).
-    fn flush_pending(&mut self, snap: &AppSetSnapshot) {
+    /// Fold `self.pending` into `self.workspace`. No-op when `pending` is
+    /// empty (the common case for `apply_batch`'s simple path, which
+    /// flushes after every single call).
+    fn flush_pending(&mut self) {
         if self.pending.is_empty() {
             return;
         }
-        let idx = self.ensure_primary_unit_idx(snap);
         let pending = std::mem::take(&mut self.pending);
         for (_, pf) in pending {
-            splice_file(&mut self.parsed[idx], pf);
+            splice_file(&mut self.workspace, pf);
         }
-    }
-
-    fn ensure_primary_unit_idx(&mut self, snap: &AppSetSnapshot) -> usize {
-        if let Some(idx) = self.parsed.iter().position(|u| u.app == snap.workspace_app) {
-            return idx;
-        }
-        self.parsed.push(ParsedUnit {
-            app: snap.workspace_app.clone(),
-            files: vec![],
-        });
-        self.parsed.len() - 1
     }
 
     /// `Provenance` is uniform across every file of one app (`parse_snapshot`
@@ -573,17 +595,11 @@ impl Updater {
     /// workspace-tier `Provenance` only for the bootstrap case of a
     /// workspace whose primary unit has zero files so far.
     fn file_provenance(&self, cur: &LspSnapshot, vp: &str) -> Provenance {
-        if let Some(idx) = self
-            .parsed
-            .iter()
-            .position(|u| u.app == cur.snap.workspace_app)
-        {
-            if let Some(existing) = self.parsed[idx].files.iter().find(|f| f.virtual_path == vp) {
-                return existing.provenance.clone();
-            }
-            if let Some(any) = self.parsed[idx].files.first() {
-                return any.provenance.clone();
-            }
+        if let Some(existing) = self.workspace.files.iter().find(|f| f.virtual_path == vp) {
+            return existing.provenance.clone();
+        }
+        if let Some(any) = self.workspace.files.first() {
+            return any.provenance.clone();
         }
         Provenance {
             app: cur.snap.workspace_app.clone(),
@@ -681,11 +697,12 @@ fn apply_rung1_core(
         decl_by_id,
         // Rung 1 touches ONLY workspace files — dependency source is
         // untouched and `cur.graph` is reused unchanged (see this function's
-        // doc), so `dep_decl_by_id`/`dep_texts` are byte-identical to the
-        // previous snapshot's; `Arc::clone` rather than recompute (see
-        // `build_dep_indexes`'s doc).
+        // doc), so `dep_decl_by_id`/`dep_texts`/`dep_meta` are byte-identical
+        // to the previous snapshot's; `Arc::clone` rather than recompute
+        // (see `build_dep_indexes`'s doc / `LspSnapshot::dep_meta`'s doc).
         dep_decl_by_id: Arc::clone(&cur.dep_decl_by_id),
         dep_texts: Arc::clone(&cur.dep_texts),
+        dep_meta: Arc::clone(&cur.dep_meta),
         workspace_root: Arc::clone(&cur.workspace_root),
     }
 }
@@ -840,30 +857,31 @@ fn gather_batch(rx: &Receiver<ChangeEvent>) -> Option<Vec<ChangeEvent>> {
 /// Spawn the updater thread implementing the module doc's "scoped-context
 /// loop": right after every swap (or at startup), a `ResolveIndex`/
 /// `DeclSurface`/`obj_node_map` context is built ONCE from the just-published
-/// snapshot's graph + the updater's current `parsed`, then REUSED for every
-/// consecutive rung-1 batch (via [`apply_rung1_core`], which never mutates
-/// `parsed` — see the module doc) until a rung-2/3 event arrives, at which
-/// point the context is dropped (its borrows end at the `{ ... }` block
-/// boundary below — no `unsafe`, no self-referential struct: the borrow
-/// simply never needs to outlive the block it's confined to) and rebuilt
-/// fresh after the rung-2/3 rebuild swaps in a new graph.
+/// snapshot's graph + the updater's current `workspace` (composed with the
+/// frozen dependency tier forwarded from `cur.dep_meta`), then REUSED for
+/// every consecutive rung-1 batch (via [`apply_rung1_core`], which never
+/// mutates `workspace` — see the module doc) until a rung-2/3 event arrives,
+/// at which point the context is dropped (its borrows end at the `{ ... }`
+/// block boundary below — no `unsafe`, no self-referential struct: the
+/// borrow simply never needs to outlive the block it's confined to) and
+/// rebuilt fresh after the rung-2/3 rebuild swaps in a new graph.
 ///
 /// Exits cleanly when the sending side of `rx` is dropped.
 pub fn spawn_updater(
     shared: Arc<SharedSnapshot>,
     rx: Receiver<ChangeEvent>,
     workspace_root: PathBuf,
-    initial_parsed: Vec<ParsedUnit>,
+    initial_workspace: ParsedUnit,
     on_swap: impl Fn(&LspSnapshot, &LspSnapshot) + Send + 'static,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        let mut updater = Updater::new(workspace_root, initial_parsed);
+        let mut updater = Updater::new(workspace_root, initial_workspace);
         let mut cur = shared.get();
 
         loop {
             // `index`/`surface`/`obj_node_map` all borrow from `cur`/
-            // `updater.parsed` as they stand RIGHT NOW; they are built once
-            // per iteration of this OUTER loop and reused for every
+            // `updater.workspace` as they stand RIGHT NOW; they are built
+            // once per iteration of this OUTER loop and reused for every
             // consecutive rung-1 batch the INNER loop processes. `inner_cur`
             // is a SEPARATE cloned `Arc` (not a move of `cur`) so `cur`
             // itself stays unborrowed-from-a-moved-value — `obj_node_map`'s
@@ -872,7 +890,9 @@ pub fn spawn_updater(
             // (`apply_rung1_core` never rebuilds `graph`).
             let (new_cur, decision) = {
                 let index = ResolveIndex::build(&cur.graph);
-                let surface = DeclSurface::build(&cur.graph, &updater.parsed);
+                let surface =
+                    DeclSurface::build(&cur.graph, std::slice::from_ref(&updater.workspace))
+                        .with_frozen(Arc::clone(&cur.dep_meta));
                 let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = cur
                     .graph
                     .objects
@@ -1004,7 +1024,7 @@ mod tests {
         dir
     }
 
-    fn build(dir: &Path) -> (LspSnapshot, Vec<ParsedUnit>) {
+    fn build(dir: &Path) -> (LspSnapshot, ParsedUnit) {
         LspSnapshot::build_full_with_parsed(dir).expect("build_full_with_parsed")
     }
 
@@ -1425,14 +1445,15 @@ mod tests {
     /// The parenthetical half of scenario (d): "prev snapshot survives if
     /// build fails entirely." Simulated via a rung-3 event against a
     /// workspace whose `app.json` has since been deleted — `apply_batch`
-    /// must return `None` and must NOT mutate `self.parsed`.
+    /// must return `None` and must NOT mutate `self.workspace`.
     #[test]
     fn build_failure_leaves_prev_snapshot_and_working_state_untouched() {
         let dir = fixture_dir();
         let (base, parsed) = build(dir.path());
         let parsed_files_before: Vec<String> = parsed
+            .files
             .iter()
-            .flat_map(|u| u.files.iter().map(|f| f.virtual_path.clone()))
+            .map(|f| f.virtual_path.clone())
             .collect();
         let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
 
@@ -1446,9 +1467,10 @@ mod tests {
         );
 
         let parsed_files_after: Vec<String> = updater
-            .parsed
+            .workspace
+            .files
             .iter()
-            .flat_map(|u| u.files.iter().map(|f| f.virtual_path.clone()))
+            .map(|f| f.virtual_path.clone())
             .collect();
         assert_eq!(
             parsed_files_before, parsed_files_after,
@@ -1597,7 +1619,8 @@ mod tests {
         // proving the exact caching property `spawn_updater`'s hot loop
         // relies on for the rung-1 budget.
         let index = ResolveIndex::build(&base.graph);
-        let surface = DeclSurface::build(&base.graph, &updater.parsed);
+        let surface = DeclSurface::build(&base.graph, std::slice::from_ref(&updater.workspace))
+            .with_frozen(Arc::clone(&base.dep_meta));
         let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
             .graph
             .objects
@@ -1933,7 +1956,7 @@ mod tests {
         let target_text = base.parsed[&target_vp].text.clone();
 
         // ── Rung 1: warm context (built ONCE, reused for all RUNS) —
-        // resolve-one-file + incoming rebuild. `updater.parsed` is NEVER
+        // resolve-one-file + incoming rebuild. `updater.workspace` is NEVER
         // mutated here (the touched file goes into a throwaway local
         // `pending` map, exactly as `apply_rung1_core`'s real contract
         // promises), so this block cannot perturb the rung-2 measurement
@@ -1941,7 +1964,8 @@ mod tests {
         let mut rung1_times = Vec::with_capacity(RUNS);
         {
             let index = ResolveIndex::build(&base.graph);
-            let surface = DeclSurface::build(&base.graph, &updater.parsed);
+            let surface = DeclSurface::build(&base.graph, std::slice::from_ref(&updater.workspace))
+                .with_frozen(Arc::clone(&base.dep_meta));
             let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
                 .graph
                 .objects

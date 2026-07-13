@@ -362,7 +362,7 @@ fn build_server_state(
     config: DiagnosticConfig,
     connection: &Connection,
 ) -> Option<ServerState> {
-    let (initial, parsed) = LspSnapshot::build_full_with_parsed(workspace_root)?;
+    let (initial, workspace) = LspSnapshot::build_full_with_parsed(workspace_root)?;
     let initial = Arc::new(initial);
     let shared = Arc::new(SharedSnapshot::new(Arc::clone(&initial)));
 
@@ -390,7 +390,7 @@ fn build_server_state(
         Arc::clone(&shared),
         rx,
         workspace_root.to_path_buf(),
-        parsed,
+        workspace,
         move |_old, new| {
             let sender = sender_bg.clone();
             publish_diagnostics_diff(
