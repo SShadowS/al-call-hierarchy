@@ -298,13 +298,41 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     Ok(())
 }
 
-/// The one workspace root this session serves. The program engine's
-/// `SnapshotBuilder` models a workspace as exactly one AL app (see its own
-/// doc) — a real structural departure from legacy's `Indexer`, which could
-/// silently accumulate several `workspace_folders` into one graph. A client
-/// offering more than one folder gets the FIRST, with a clear warning
-/// (fail-loud, never silently drop work without saying so) rather than an
-/// attempt to merge multiple app.json-rooted trees into one snapshot.
+/// The one workspace root this session serves.
+///
+/// # Decision (T3 Task 15, confirmed in review): single-root is the
+/// supported model, not a stopgap
+///
+/// The program engine's `SnapshotBuilder` models a workspace as exactly one
+/// AL app (see its own doc). Legacy's `Indexer` could accept several
+/// `workspace_folders` and silently accumulate ALL of them into ONE graph
+/// (`index_workspaces`'s per-folder loop, each folder's files merged into
+/// the SAME `CallGraph`) — but that was never a real multi-root FEATURE, it
+/// was a collision hazard: `graph::QualifiedName { object: Symbol, procedure:
+/// Symbol }` has no app/folder discriminator at all (the exact same
+/// unscoped-identity shape already named and fixed for the single-workspace
+/// case as `LegacyIdentityCollapse` — see `tests/lsp_differential.rs`). Two
+/// DIFFERENT apps opened as sibling folders, each declaring their own
+/// `Codeunit "Helper"` with its own `DoWork` procedure, would silently
+/// collide into ONE last-write-wins slot — `incomingCalls`/`outgoingCalls`
+/// could point a caller at the WRONG app's routine entirely, with no
+/// diagnostic ever raised. Given that, narrowing to one root is a
+/// CORRECTNESS improvement, not a regression, even though it does mean a
+/// genuinely multi-folder AL workspace only gets ONE app served per session
+/// today. A client offering more than one folder gets the FIRST, with a
+/// clear warning (fail-loud, never silently drop work without saying so)
+/// rather than an attempt to merge multiple app.json-rooted trees into one
+/// snapshot the way legacy did.
+///
+/// **Tracked follow-up (not this arc's scope):** real multi-root support
+/// needs a per-root `ServerState` map (each root gets its OWN `LspSnapshot`/
+/// updater/watcher/`DiagnosticsState` — never one shared snapshot merging
+/// distinct apps) plus URI→root routing in `dispatch_request`/
+/// `handle_notification` (map an inbound `textDocument` URI to whichever
+/// root's `workspace_root` it falls under, mirroring how `resolve_virtual_path`
+/// already does the single-root version of this lookup). Out of scope here;
+/// this doc comment is the permanent record of the decision and the design
+/// a future task should follow, not a TODO to silently forget.
 #[allow(deprecated)] // root_uri is deprecated but kept for older LSP clients
 fn primary_workspace_root(params: &InitializeParams) -> Option<PathBuf> {
     if let Some(folders) = &params.workspace_folders {

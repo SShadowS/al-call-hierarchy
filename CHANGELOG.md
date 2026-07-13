@@ -989,7 +989,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   {fieldProperties,actionProperties,telemetryStatus}` are graph-independent
   and stay on their existing `crate::handlers` implementations (widened from
   private to `pub` so the new dispatcher can call them directly) — they
-  survive Task 17's legacy deletion untouched. Diagnostics now follow
+  survive Task 17's legacy deletion untouched.
+  **Multi-root workspaces: a deliberate, documented capability narrowing.**
+  A client offering more than one `workspace_folders` entry now gets exactly
+  ONE app served (the first, with a clear warning) instead of legacy's
+  silent multi-folder accumulation into one `Indexer` graph — see
+  `server.rs`'s `primary_workspace_root` doc comment for the full decision
+  record (legacy's multi-root was a `LegacyIdentityCollapse`-shaped
+  collision hazard, not a working feature, and the tracked follow-up design
+  for real multi-root support lives there too). Diagnostics now follow
   "recompute-diff-publish-clear" on EVERY snapshot swap (including the very
   first, batch-built one), via one shared `lsp::diagnostics::DiagnosticsState`:
   publishing only what changed and CLEARING a uri whose findings dropped to
@@ -1006,11 +1014,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now feed ONE coalesced channel (previously each independently reindexed the
   same save). The program engine's snapshot model requires a single AL-app
   workspace root with a readable `app.json` (unlike the legacy `Indexer`,
-  which tolerated zero indexed files) — a client offering more than one
-  `workspace_folders` entry now gets a clear warning and only the first is
-  served (a real capability narrowing, not a silent one), and a missing/
-  invalid workspace degrades to every request returning an empty result
-  rather than the server refusing to start. `main.rs`'s `--project` CLI
+  which tolerated zero indexed files) — a missing/invalid workspace degrades
+  to every request returning an empty result rather than the server
+  refusing to start. `main.rs`'s `--project` CLI
   index-and-report mode is re-pointed at `LspSnapshot::build_full`:
   `definitions` is now the workspace `decls_by_file` entry count and
   `call sites` is the sum of `edges_by_file` bucket lengths — NEITHER number
@@ -1025,36 +1031,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over a real `Connection::memory()` pair: prepare + outgoingCalls resolve
   through the new handlers, and a `didSave` round-trips into a published
   generation bump plus a diagnostics republish that clears a since-fixed
-  unused-procedure hint. Full test suite green (2679 passed, 0 failed,
-  legacy unit tests unaffected — legacy code is unwired, not deleted);
-  `tests/lsp_differential.rs` and `tests/lsp_incremental_parity.rs` (the
-  Task 14 deletion-license gates) stay green, unaffected by the cutover.
-  **A real shutdown-hang bug was found and fixed along the way, via a manual
-  end-to-end stdio smoke test (a Python LSP client driving the actual
-  compiled binary through `initialize`→`prepareCallHierarchy`→
-  `outgoingCalls`→`shutdown`→`exit`) that the in-binary unit test alone
-  could not have caught.** `main_loop` used to take `connection: &Connection`
-  (a borrow); `IoThreads::join()` (called right after) blocks until
-  `lsp_server`'s writer thread sees every `Sender<Message>` clone dropped,
-  but a borrowed `connection` is never dropped before that call — the
-  process hung forever after a clean `shutdown`/`exit` exchange (present in
-  the pre-cutover legacy `server.rs` too, identical shape, just never
-  exercised end to end before now). Fixed by moving `connection` into
-  `main_loop` by value (matching `lsp_server`'s own
-  `examples/minimal_lsp.rs` pattern exactly). A SECOND, cutover-introduced
-  layer of the same problem also surfaced: the updater thread's diagnostics
-  `on_swap` hook holds its own `connection.sender` clone for its entire
-  (deliberately unbounded) lifetime, and — because the file watcher thread
-  also holds a clone of the updater's own input channel forever (no stop
-  signal, matching legacy's watcher thread) — the updater never naturally
-  terminates either, so unconditionally joining it (or waiting
-  unconditionally on `io_threads.join()`) would still hang. Fixed with a
-  bounded wait + detach at both points (the SAME idiom `telemetry::shutdown`
-  already used elsewhere in this file for the identical reason): everything
-  meaningful is already flushed to stdout by the time `main_loop` returns
-  (verified — the `shutdown` response itself is received by the client
-  before the hang), so giving up on a background thread after a short grace
-  period loses nothing.
+  unused-procedure hint, and (T3 Task 15 review fix-wave) a named unit test
+  pinning `ChangeEvent::Overflow`'s own escalation to rung 3
+  (`overflow_event_escalates_to_rung3` in `lsp/updater.rs` — it shared
+  `DepsChanged`'s match arm from Task 9 onward, structurally covered but
+  never pinned on its own until now). Full test suite green (2679 passed, 0
+  failed, legacy unit tests unaffected — legacy code is unwired, not
+  deleted); `tests/lsp_differential.rs` and `tests/lsp_incremental_parity.rs`
+  (the Task 14 deletion-license gates) stay green, unaffected by the
+  cutover. A real shutdown-hang bug was found and fixed along the way, via a
+  manual end-to-end stdio smoke test — see **Fixed**, below.
 - **`program::build`: layered dep/workspace graph assembly + a single-parse
   program-engine pipeline (T3 LSP-migration arc, Task 5 — additive,
   byte-identical output).** `build_program_graph` used to do one monolithic
@@ -1099,6 +1085,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `panic = "abort"` and must never be relied on as the real guarantee.
 
 ### Fixed
+- **The LSP server never actually exited after a clean `shutdown`/`exit`
+  exchange (T3 LSP-migration arc, Task 15 review fix-wave) — found via a
+  manual end-to-end stdio smoke test (a Python LSP client driving the real
+  compiled binary through `initialize`→`prepareCallHierarchy`→
+  `outgoingCalls`→`shutdown`→`exit`) that neither the in-binary unit test
+  nor any prior differential/parity harness could have caught (all of them
+  call handler functions in-process, never through a real `Connection::
+  stdio()` round trip).** Two independent layers, both root-caused against
+  `lsp_server` 0.7.9's own source:
+  1. `main_loop` took `connection: &Connection` (a borrow). `IoThreads::
+     join()` (called right after) blocks until `lsp_server`'s writer thread
+     sees every `Sender<Message>` clone dropped — but a BORROWED
+     `connection` is never dropped before that call, since it's still a
+     live local in `run_server`'s own scope. **This exact shape already
+     existed in the pre-cutover legacy `server.rs`** — an identical bug,
+     just never exercised end to end before this task's own verification
+     step. Fixed by moving `connection` into `main_loop` by value, matching
+     `lsp_server`'s own `examples/minimal_lsp.rs` pattern exactly (drops
+     `connection` — and its `sender` — at `main_loop`'s own closing brace,
+     before `io_threads.join()` runs).
+  2. A SECOND, cutover-introduced layer surfaced once (1) was fixed: the
+     updater thread's diagnostics `on_swap` hook holds its own
+     `connection.sender` clone for its entire (deliberately unbounded)
+     lifetime, and the file watcher thread separately holds its own clone
+     of the updater's INPUT channel forever too (no stop signal — matching
+     legacy's watcher thread, which also never exits early). So the
+     updater never naturally terminates, its `sender` clone never drops,
+     and unconditionally joining it (or waiting unconditionally on
+     `io_threads.join()`) would still hang forever. Fixed with a bounded
+     wait + detach at both points — the SAME idiom `telemetry::shutdown`
+     already used elsewhere in this same file for the identical class of
+     problem (a background thread that legitimately never stops on its own
+     must never be joined unconditionally at shutdown): everything
+     meaningful is already flushed to stdout by the time `main_loop`
+     returns (verified — the `shutdown` response itself is received by the
+     client before the hang), so giving up on a background thread after a
+     short grace period loses nothing. Verified via 4+ consecutive clean
+     `PROCESS EXIT CODE: 0` runs of the manual stdio smoke test after the
+     fix, plus the full `cargo test` suite re-run green.
 - **`path_to_uri` now percent-encodes URIs correctly on `percent_encoding` instead of a
   hand-picked ~5-character subset (H-13, Tier-3 LSP-migration arc, Task 1).**
   `protocol.rs`'s encoder only escaped space/`(`/`)`/`[`/`]`, so any other byte the

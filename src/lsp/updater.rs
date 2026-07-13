@@ -1477,6 +1477,34 @@ mod tests {
         assert_eq!(new_snap.generation, base.generation + 1);
     }
 
+    // ── ChangeEvent::Overflow forces rung 3, exactly like DepsChanged ───────
+    // (T3 Task 15 review fix-wave: `classify` already matches `Overflow` in
+    // the SAME arm as `DepsChanged` — see that match — so this was
+    // structurally covered from Task 9 onward but never named/pinned on its
+    // own. Made explicit here rather than left as an implicit consequence of
+    // a shared match arm.)
+
+    #[test]
+    fn overflow_event_escalates_to_rung3() {
+        let dir = fixture_dir();
+        let (base, parsed) = build(dir.path());
+        let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+        let batch = vec![ChangeEvent::Overflow];
+        let (new_snap, rung) = updater
+            .apply_batch(&base, &batch)
+            .expect("apply_batch must succeed (rebuilds from disk unchanged)");
+
+        assert_eq!(
+            rung,
+            Rung::Three,
+            "a backend-reported event-buffer overflow/rescan must force a full \
+             rebuild — any file may have changed since the last event this \
+             watcher actually delivered, so nothing less than rung 3 is sound"
+        );
+        assert_eq!(new_snap.generation, base.generation + 1);
+    }
+
     // ── batch semantics: any rung-2 event forces the WHOLE batch to rung 2 ──
 
     #[test]
