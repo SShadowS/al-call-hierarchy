@@ -172,38 +172,108 @@ mod release_checks {
     const COMPUTE_ALL_BOUND: Duration = Duration::from_millis(150); // target: 50ms (architectural)
     const COMPUTE_ALL_SYNTHETIC_BOUND: Duration = Duration::from_millis(15); // ~2.8x ~5.4ms measured baseline
 
-    // `COMPUTE_ALL_SCALING_FACTOR` (t3 final review): a machine-INDEPENDENT
-    // complexity-class check, added because ANY magnitude bound (both above)
-    // is inherently machine-speed-dependent — the exact property that made
-    // the original 30ms bound marginal (see that constant's own doc).
-    // Measuring `compute_all` at TWO corpus sizes and asserting the ratio
-    // stays under this factor tests the ALGORITHM's complexity class
-    // directly instead of an absolute time.
+    // `COMPUTE_ALL_SCALING_FACTOR`: a machine-INDEPENDENT complexity-class
+    // check, added because ANY magnitude bound (both above) is inherently
+    // machine-speed-dependent — the exact property that made the original
+    // 30ms bound marginal (see that constant's own doc). Measuring
+    // `compute_all` at TWO corpus sizes and asserting the ratio stays under
+    // this factor tests the ALGORITHM's complexity class directly instead
+    // of an absolute time.
     //
-    // The FILE-COUNT ratio is 4x (250 vs. 1000 files — see
-    // `compute_all_within_bound`), not the 2x this constant's own first
-    // draft used: empirical measurement (10+ separate `cargo test --release`
-    // invocations, matching real CI usage — NOT a single in-process probe,
-    // which measures noticeably calmer than separate process invocations
-    // do) found a 2x file-count ratio gives an unreliably NARROW gap between
-    // the fixed and buggy regimes (fixed-code ratios observed as high as
-    // ~3.9, buggy-code ratios as low as ~3.3 — they OVERLAP). At a 4x
-    // file-count ratio, with `measure_compute_all`'s 5-iteration warm-up (up
-    // from 1) and 9 timed samples (up from 5) — both needed to tame the
-    // small (250-file) corpus's otherwise-noisy sub-millisecond timing —
-    // repeated measurement gives a clean, non-overlapping separation:
-    // FIXED code ratio range 5.47-7.99 (6 separate runs); BUGGY code
-    // (`effective_incoming_count` temporarily reverted to the old
-    // `event_edges` scan) ratio range 11.81-12.38 (4 separate runs). 10 sits
-    // almost exactly at the midpoint (9.9) of that gap, with ~2x margin on
-    // both sides — unlike an absolute-time bound, this margin does not
-    // shrink or grow with the machine running it, since it's a ratio of two
-    // measurements taken on the SAME machine in the SAME process.
-    const COMPUTE_ALL_SCALING_FACTOR: u32 = 10;
+    // FOUR rounds of empirical tuning were needed — each one driven by
+    // the reviewer (or, in round 4, this file's own author) actually
+    // RUNNING the gate repeatedly under real conditions rather than trusting
+    // a single measurement or a plausible-sounding theoretical ratio. This
+    // history is kept in full because the failure modes are non-obvious and
+    // a future editor changing these numbers should understand what already
+    // didn't work and why:
+    //
+    // **v1** — MEDIAN of 9 samples, 4x file-count ratio (250 vs. 1000
+    // files), factor 10. FAILED: the reviewer ran the committed gate 5x
+    // back-to-back and got 2/5 FALSE FAILURES on the FIXED implementation.
+    // Root cause: the small (250-file) corpus takes only ~1-2ms, a scale
+    // where OS scheduling/cache noise is a LARGE FRACTION of the
+    // measurement — and that noise is STRICTLY ONE-SIDED (an interrupted
+    // run is always slower, never faster), so the MEDIAN of a load-skewed
+    // sample set is itself skewed upward, inflating the ratio.
+    //
+    // **v2** — switched to [`min_of`] instead of [`median`] (the correct
+    // estimator when noise is one-sided — see that function's doc), same
+    // 250-vs-1000 sizes, factor 10. Isolated `-- compute_all`-filtered runs
+    // looked clean (fixed 4.37-6.89, buggy 10.82-12.51, no overlap) — but
+    // FAILED when actually run as part of the FULL, UNFILTERED test binary
+    // (`cargo test --release --test perf_bounds`, no test-name filter — the
+    // REAL CI invocation shape): the 8 OTHER tests in this file run first
+    // and leave residual system load/cache pressure that `compute_all`'s
+    // small 250-file measurement doesn't fully recover from before the gate
+    // starts timing, inflating the ratio; a full-suite run measured 9.966,
+    // just over the factor-10 threshold.
+    //
+    // **v3** — per the team lead's own contingency plan, raised BOTH corpus
+    // sizes so absolute times sit further above the noise floor: 500 vs.
+    // 2000 (same 4x ratio), still sequential (measure ALL of 500 first,
+    // then ALL of 2000). Measured via repeated FULL, UNFILTERED runs (the
+    // real invocation shape, learned from v2's failure): fixed-code ratio
+    // swung from ~3 to ~10.3 across just 10 runs — WORSE variance than v2,
+    // and briefly overlapping the buggy range. Root cause: measuring one
+    // size FULLY before starting the other is vulnerable to a SUSTAINED
+    // (not merely transient) load window landing almost entirely within
+    // just ONE of the two measurement phases — `min_of` alone only rejects
+    // brief, one-sided spikes; it cannot recover a "true" fast measurement
+    // from a phase where the ENTIRE window was under elevated load, and the
+    // much-longer 2000-file phase is more likely to catch such a window
+    // than the shorter 500-file phase running moments before it.
+    //
+    // **v4 (current)** — kept 500 vs. 2000 and `min_of`, but INTERLEAVED
+    // the two measurements (`measure_compute_all_interleaved`: small, big,
+    // small, big, ... within one shared timing loop, both snapshots
+    // pre-built) instead of measuring one size fully before the other. This
+    // makes both sizes share the EXACT SAME sequence of temporal windows, so
+    // a sustained load spell hits both proportionally rather than landing on
+    // just one phase. Re-measured over repeated FULL, UNFILTERED runs:
+    // - FIXED code min-ratio range: **3.013-4.715** (10 separate full-suite runs)
+    // - BUGGY code min-ratio range: **10.409-12.224** (6 separate full-suite
+    //   runs, `effective_incoming_count` temporarily reverted to the old
+    //   `event_edges` scan for the measurement, then restored)
+    // A clean, non-overlapping gap 5.69 wide — far more comfortable than any
+    // prior version. 7 sits with real margin on both sides (2.29 above the
+    // fixed max, 3.41 below the buggy min) — unlike an absolute-time bound,
+    // this margin does not shrink or grow with the machine running it,
+    // since it's a ratio of two measurements taken on the SAME machine, in
+    // the SAME process, in the SAME interleaved sequence. Hardened by
+    // running the FIXED-code gate 10x back-to-back via the FULL, UNFILTERED
+    // command (deliberately inducing load, matching how the reviewer found
+    // the v1/v3 flakes) requiring 10/10 green, then the BUGGY scan 5x via
+    // the same full command requiring 5/5 red — see the task report for the
+    // exact run log.
+    const COMPUTE_ALL_SCALING_FACTOR: u32 = 7;
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
         samples[samples.len() / 2]
+    }
+
+    /// The MINIMUM of `samples` — the statistic [`measure_compute_all`] uses
+    /// instead of [`median`] (t3 final review, v2). Wall-clock measurement
+    /// noise on a shared machine (OS scheduling preemption, cache/TLB
+    /// eviction from other processes, CPU frequency scaling) is ONE-SIDED: an
+    /// interrupted run is always slower than an uninterrupted one, never
+    /// faster. That makes the minimum of repeated samples the
+    /// maximum-likelihood estimator of the TRUE cost — every sample above it
+    /// is explained by "plus some noise," while the median of a noise-skewed
+    /// sample set is ITSELF skewed toward whatever fraction of samples
+    /// happened to get interrupted (proven empirically: the median-based
+    /// scaling gate this replaces flaked 2/5 times on the FIXED
+    /// implementation when the reviewer ran it 5x back-to-back, deliberately
+    /// under load). This is the standard estimator throughout the
+    /// microbenchmarking literature (`hyperfine`, Criterion-style harnesses)
+    /// for exactly this reason — see `COMPUTE_ALL_SCALING_FACTOR`'s doc for
+    /// the re-measurement this motivated. Used for BOTH `compute_all`'s
+    /// magnitude bounds and its scaling ratio (not just the ratio) — the
+    /// same one-sided-noise argument applies to a plain "is this under Nms"
+    /// check just as much as to a ratio of two such checks.
+    fn min_of(samples: &[Duration]) -> Duration {
+        *samples.iter().min().expect("samples is never empty")
     }
 
     /// A minimal `app.json` so `LspSnapshot::build_full`/`build_full_with_parsed`
@@ -398,15 +468,14 @@ mod release_checks {
         );
     }
 
-    /// Measure `compute_all`'s median wall-clock time on a
-    /// `file_count`-file event-bearing corpus: 5 warm-up iterations then 9
-    /// timed samples. Both counts are higher than this file's other rows use
-    /// (which warm up once, time 5) — needed to tame the SMALL (250-file)
-    /// corpus's otherwise-noisy sub-millisecond timing enough for the
-    /// SCALING assertion below to be reliable; see `COMPUTE_ALL_SCALING_FACTOR`'s
-    /// own doc for the empirical case. Shared by `compute_all_within_bound`'s
-    /// magnitude bounds (1000 files) and its SCALING assertion (250 vs. 1000
-    /// files).
+    /// Measure `compute_all`'s MINIMUM wall-clock time (see [`min_of`]'s doc
+    /// for why min, not median) on a `file_count`-file event-bearing corpus:
+    /// 5 warm-up iterations then 9 timed samples. Used ONLY for
+    /// `compute_all_within_bound`'s magnitude bounds (a single measurement,
+    /// not a ratio) — see [`measure_compute_all_interleaved`] for the
+    /// SCALING assertion's two-corpus-size measurement, which needs a
+    /// different (interleaved) sampling strategy for reasons that function's
+    /// own doc explains.
     fn measure_compute_all(file_count: usize) -> (Duration, Vec<Duration>) {
         let (_dir, snap) = build_snapshot(file_count);
         let cfg = DiagnosticConfig::default();
@@ -424,7 +493,67 @@ mod release_checks {
                 "sanity: compute_all must produce entries for a {file_count}-file workspace"
             );
         }
-        (median(samples.clone()), samples)
+        (min_of(&samples), samples)
+    }
+
+    /// Measure `compute_all`'s MINIMUM wall-clock time at TWO corpus sizes,
+    /// INTERLEAVED (small, big, small, big, ...) rather than sequentially
+    /// (all of one size, then all of the other) — the fix for a real failure
+    /// mode found empirically (t3 final review v3): measuring size A fully,
+    /// then size B fully, is vulnerable to a SUSTAINED (not merely
+    /// transient) load window landing almost entirely within just ONE of
+    /// the two measurement phases. `min_of` alone (v2) assumes noise is a
+    /// series of brief, one-sided spikes a large-enough sample will dodge at
+    /// least once — true for transient interrupts, but NOT for a period of
+    /// genuinely elevated system load lasting as long as an entire
+    /// measurement phase (confirmed: repeated full-suite runs on this
+    /// machine showed the sequential 500-vs-2000 ratio swing from ~3 to
+    /// ~10 for the IDENTICAL fixed code — the 2000-file phase alone was
+    /// sometimes caught entirely inside such a window while the much
+    /// shorter 500-file phase, running moments earlier, was not).
+    /// Interleaving means both sizes share the EXACT SAME sequence of
+    /// temporal windows, so a sustained load spell hits both proportionally
+    /// instead of landing disproportionately on whichever phase happens to
+    /// be running during it — turning a whole-run confound back into the
+    /// per-sample noise `min_of` was already designed to reject.
+    fn measure_compute_all_interleaved(
+        small_count: usize,
+        big_count: usize,
+    ) -> (Duration, Duration, Vec<Duration>, Vec<Duration>) {
+        let (_small_dir, small_snap) = build_snapshot(small_count);
+        let (_big_dir, big_snap) = build_snapshot(big_count);
+        let cfg = DiagnosticConfig::default();
+
+        for _ in 0..5 {
+            let _ = compute_all(&small_snap, PositionEncoding::Utf8, &cfg); // warm-up
+            let _ = compute_all(&big_snap, PositionEncoding::Utf8, &cfg); // warm-up
+        }
+
+        let mut small_samples = Vec::with_capacity(9);
+        let mut big_samples = Vec::with_capacity(9);
+        for _ in 0..9 {
+            let start = Instant::now();
+            let small_result = compute_all(&small_snap, PositionEncoding::Utf8, &cfg);
+            small_samples.push(start.elapsed());
+            assert!(
+                !small_result.is_empty(),
+                "sanity: compute_all must produce entries for a {small_count}-file workspace"
+            );
+
+            let start = Instant::now();
+            let big_result = compute_all(&big_snap, PositionEncoding::Utf8, &cfg);
+            big_samples.push(start.elapsed());
+            assert!(
+                !big_result.is_empty(),
+                "sanity: compute_all must produce entries for a {big_count}-file workspace"
+            );
+        }
+        (
+            min_of(&small_samples),
+            min_of(&big_samples),
+            small_samples,
+            big_samples,
+        )
     }
 
     /// `compute_all` — the full diagnostics recompute `on_swap` runs after
@@ -457,46 +586,44 @@ mod release_checks {
 
         let (m1000, samples1000) = measure_compute_all(1000);
         println!(
-            "[perf_bounds] compute_all(1000): median={m1000:?} absolute_bound={COMPUTE_ALL_BOUND:?} \
+            "[perf_bounds] compute_all(1000): min={m1000:?} absolute_bound={COMPUTE_ALL_BOUND:?} \
              synthetic_bound={COMPUTE_ALL_SYNTHETIC_BOUND:?} samples={samples1000:?}"
         );
         // Both MAGNITUDE bounds asserted, same dual-bound convention as rung
         // 1/2 (see COMPUTE_ALL_SYNTHETIC_BOUND's own doc for why it was
         // tightened, and why a magnitude bound alone is not enough — see the
         // SCALING assertion below, which is the one that actually matters).
+        // `min_of`, not `median` — see that function's doc for why.
         assert!(
             m1000 <= COMPUTE_ALL_BOUND,
-            "compute_all median {m1000:?} exceeds the architectural bound {COMPUTE_ALL_BOUND:?} \
+            "compute_all min {m1000:?} exceeds the architectural bound {COMPUTE_ALL_BOUND:?} \
              (samples: {samples1000:?})"
         );
         assert!(
             m1000 <= COMPUTE_ALL_SYNTHETIC_BOUND,
-            "compute_all median {m1000:?} exceeds the corpus-relative bound \
+            "compute_all min {m1000:?} exceeds the corpus-relative bound \
              {COMPUTE_ALL_SYNTHETIC_BOUND:?} (samples: {samples1000:?}) — this is the exact \
              O(decls * event_edges) regression class the t3 whole-branch review fix-wave closed"
         );
 
-        // SCALING assertion (t3 final review) — the gate that actually
-        // matters, machine-speed-independent unlike the magnitude bounds
-        // above (see COMPUTE_ALL_SCALING_FACTOR's own doc for why: the
-        // ORIGINAL 30ms magnitude bound was PROVEN marginal — the buggy
-        // implementation's samples ranged 29.13-32.46ms against it, so 2/5
-        // buggy runs would have PASSED on run-to-run noise alone). Measuring
-        // the SAME operation at a QUARTER the corpus size (250 vs. 1000
-        // files — a 4x file-count ratio, not 2x; see COMPUTE_ALL_SCALING_FACTOR's
-        // doc for why 2x was empirically too noisy to discriminate reliably)
-        // and asserting the ratio stays under COMPUTE_ALL_SCALING_FACTOR
-        // tests the complexity class directly instead of an absolute time.
-        let (msmall, samplessmall) = measure_compute_all(250);
-        let ratio = m1000.as_secs_f64() / msmall.as_secs_f64();
+        // SCALING assertion (t3 final review, v1 -> v2 -> v3 -> v4) — the
+        // gate that actually matters, machine-speed-independent unlike the
+        // magnitude bounds above (see COMPUTE_ALL_SCALING_FACTOR's own doc
+        // for the full history of what each prior version got wrong). Uses
+        // its OWN, INDEPENDENT, INTERLEAVED pair of corpus-size measurements
+        // (500 vs. 2000 — NOT reusing `m1000` above; see
+        // `measure_compute_all_interleaved`'s doc for why interleaving,
+        // specifically, was necessary).
+        let (msmall, mbig, samplessmall, samplesbig) = measure_compute_all_interleaved(500, 2000);
+        let ratio = mbig.as_secs_f64() / msmall.as_secs_f64();
         println!(
-            "[perf_bounds] compute_all scaling: t(250)={msmall:?} t(1000)={m1000:?} ratio={ratio:.3} \
-             samples250={samplessmall:?}"
+            "[perf_bounds] compute_all scaling: t(500)={msmall:?} t(2000)={mbig:?} ratio={ratio:.3} \
+             samples500={samplessmall:?} samples2000={samplesbig:?}"
         );
         assert!(
-            m1000 < msmall * COMPUTE_ALL_SCALING_FACTOR,
-            "compute_all's 1000-file cost ({m1000:?}) must be under {COMPUTE_ALL_SCALING_FACTOR}x \
-             its 250-file cost ({msmall:?}, ratio={ratio:.3}) — a ratio at/above \
+            mbig < msmall * COMPUTE_ALL_SCALING_FACTOR,
+            "compute_all's 2000-file cost ({mbig:?}) must be under {COMPUTE_ALL_SCALING_FACTOR}x \
+             its 500-file cost ({msmall:?}, ratio={ratio:.3}) — a ratio at/above \
              {COMPUTE_ALL_SCALING_FACTOR}x is the complexity-class signature of the \
              O(decls * event_edges) quadratic this fix-wave closed, and unlike the magnitude \
              bounds above, this check does not get weaker on a faster machine"
