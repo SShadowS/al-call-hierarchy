@@ -1061,6 +1061,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extraction failure — identity comes from the manifest, not from whether a
   large symbol blob happens to parse, so a corrupt package is a properly
   surfaced drop either way.
+  - **Fix (availability regression, same task):** the first cut of this
+    reorder introduced a real regression — if the manifest-first dedup
+    WINNER (highest version) had a corrupt `SymbolReference.json`, the
+    dependency vanished entirely, where the old symbols-first order would
+    have tried every physically-discovered copy and loaded whichever one
+    actually parsed. Fixed: `load_all_apps`'s symbol-extraction phase now
+    walks each GUID's candidates highest-version-first and falls back to
+    the next-highest copy when a candidate's symbols fail to parse,
+    repeating until one succeeds or the group is exhausted (matching, and
+    in the corrupt-winner case bettering, the old order's effective
+    resilience). The corrupt ex-winner is warned about (not reported as a
+    dedup drop — it never lost a version comparison, it was simply
+    unreadable); the promoted good copy is the new kept version, and only
+    candidates ranked below IT are reported as dedup drops.
 - **Embedded/workspace source text is now ONE shared `Arc<str>` allocation per
   file across the whole snapshot/parse/LSP pipeline (perf safe-wins plan,
   Task 1)** — kills the ~228 MB duplicate-text overhead on the reference

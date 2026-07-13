@@ -309,7 +309,9 @@ identified in §4:
 - **Mitigation 5** (dedup `.app` files before opening) — commit
   `d305f25`: manifest-first `.app` GUID dedup — `SymbolReference.json` is
   now parsed only for dedup winners, instead of for every `.app` found
-  across all `.alpackages` directories.
+  across all `.alpackages` directories. (A corrupt-symbols winner now falls
+  back to the next-highest good copy of the same GUID rather than the
+  dependency vanishing — see CHANGELOG's Unreleased entry.)
 
 Mitigations 3 (§3.3a, stop retaining dep IR arenas / stable dep routine
 identity) and 4 (persistent dep-layer artifact cache) are **not** part of

@@ -103,33 +103,25 @@ struct DiscoveredApp {
 /// `package.metadata` (itself built from the manifest, verbatim), just read
 /// one phase earlier, BEFORE any SymbolReference.json is parsed. A loser is
 /// now dropped without its symbol blob ever being touched.
+///
+/// Kept as a thin `#[cfg(test)]`-only wrapper over [`group_discovered_by_guid`]
+/// so the five scenario tests below stay exercising the exact "keep index 0,
+/// drop the rest" policy in isolation. `load_all_apps` itself calls
+/// `group_discovered_by_guid` directly — it needs the FULL ordered candidate
+/// list per GUID (not just the winner) for the corrupt-winner fallback (see
+/// that function's doc).
+#[cfg(test)]
 fn dedup_by_guid_keep_highest_version(
     deps: Vec<DiscoveredApp>,
 ) -> (Vec<DiscoveredApp>, Vec<DroppedDuplicateDependency>) {
-    let mut by_guid: std::collections::HashMap<String, Vec<DiscoveredApp>> =
-        std::collections::HashMap::new();
     let mut kept: Vec<DiscoveredApp> = Vec::new();
-
-    for rd in deps {
-        if rd.meta.app_id.is_empty() {
-            kept.push(rd);
-        } else {
-            by_guid.entry(rd.meta.app_id.clone()).or_default().push(rd);
-        }
-    }
-
     let mut dropped: Vec<DroppedDuplicateDependency> = Vec::new();
-    for (_guid, mut group) in by_guid {
+
+    for mut group in group_discovered_by_guid(deps) {
         if group.len() == 1 {
             kept.push(group.pop().expect("len == 1"));
             continue;
         }
-        // Highest version first (`compare_versions`: higher version sorts
-        // first — see its doc); ties broken by path for determinism.
-        group.sort_by(|a, b| {
-            compare_versions(&a.meta.version, &b.meta.version)
-                .then_with(|| a.app_path.cmp(&b.app_path))
-        });
         let mut iter = group.into_iter();
         let winner = iter.next().expect("group.len() > 1");
         for loser in iter {
@@ -146,6 +138,41 @@ fn dedup_by_guid_keep_highest_version(
     }
 
     (kept, dropped)
+}
+
+/// Group `deps` into one bucket per non-empty GUID (highest version first,
+/// ties broken by path for determinism — same policy
+/// [`dedup_by_guid_keep_highest_version`]'s doc describes), plus one
+/// singleton bucket per GUID-less entry (never merged with anything else —
+/// see that function's doc for why). Shared by
+/// [`dedup_by_guid_keep_highest_version`] (the simple "keep index 0" policy)
+/// and `load_all_apps`'s Phase 3 (which needs the FULL ordered candidate
+/// list per GUID so a winner whose symbols turn out to be corrupt can fall
+/// back to the next-best copy instead of the dependency vanishing).
+fn group_discovered_by_guid(deps: Vec<DiscoveredApp>) -> Vec<Vec<DiscoveredApp>> {
+    let mut by_guid: std::collections::HashMap<String, Vec<DiscoveredApp>> =
+        std::collections::HashMap::new();
+    let mut groups: Vec<Vec<DiscoveredApp>> = Vec::new();
+
+    for rd in deps {
+        if rd.meta.app_id.is_empty() {
+            groups.push(vec![rd]);
+        } else {
+            by_guid.entry(rd.meta.app_id.clone()).or_default().push(rd);
+        }
+    }
+
+    for (_guid, mut group) in by_guid {
+        // Highest version first (`compare_versions`: higher version sorts
+        // first — see its doc); ties broken by path for determinism.
+        group.sort_by(|a, b| {
+            compare_versions(&a.meta.version, &b.meta.version)
+                .then_with(|| a.app_path.cmp(&b.app_path))
+        });
+        groups.push(group);
+    }
+
+    groups
 }
 
 /// Parse app.json to extract dependencies
@@ -458,41 +485,82 @@ pub fn load_all_apps(
         }
     }
 
-    // Phase 2: GUID dedup on manifest identity (H-2) — losers are dropped
-    // HERE, before the expensive symbol parse below ever sees them.
-    let (winners, dropped) = dedup_by_guid_keep_highest_version(discovered);
+    // Phase 2: GUID grouping on manifest identity (H-2) — each group is
+    // ordered highest-version-first (ties broken by path), NOT yet committed
+    // to a winner. That commitment happens in Phase 3 below, because a
+    // group's best candidate can still fail symbol extraction (a corrupt
+    // SymbolReference.json) — see `group_discovered_by_guid`'s doc.
+    let groups = group_discovered_by_guid(discovered);
 
-    // Phase 3: full symbol extraction, winners only.
+    // Phase 3: full symbol extraction, trying each group's candidates
+    // best-first until one succeeds (availability regression fix: a
+    // corrupt-symbols dedup winner must fall back to the next-highest good
+    // copy of the SAME GUID rather than the dependency vanishing entirely —
+    // the old symbols-first code effectively got this for free by trying
+    // every physically-discovered copy before dedup ever ran). Candidates
+    // that fail before a winner is found are warned about but NOT reported
+    // as dedup drops (they never "lost" a dedup decision — they were simply
+    // unreadable); only candidates ranked BELOW the eventual winner are
+    // genuine dedup drops.
     let mut out: Vec<ResolvedDependency> = Vec::new();
-    for d in winners {
-        match crate::app_package::extract_app_symbols(&d.app_path) {
-            Ok(objects) => {
-                debug!(
-                    "load_all_apps: loaded {} v{} ({} objects)",
-                    d.meta.name,
-                    d.meta.version,
-                    objects.len()
-                );
-                out.push(ResolvedDependency {
-                    dependency: AppDependency {
-                        app_id: d.meta.app_id.clone(),
-                        name: d.meta.name.clone(),
-                        publisher: d.meta.publisher.clone(),
-                        version: d.meta.version.clone(),
-                    },
-                    app_path: d.app_path,
-                    package: ParsedAppPackage {
-                        metadata: d.meta,
-                        objects,
-                    },
-                });
+    let mut dropped: Vec<DroppedDuplicateDependency> = Vec::new();
+    for group in groups {
+        let mut winner_idx: Option<usize> = None;
+        for (i, candidate) in group.iter().enumerate() {
+            match crate::app_package::extract_app_symbols(&candidate.app_path) {
+                Ok(objects) => {
+                    debug!(
+                        "load_all_apps: loaded {} v{} ({} objects)",
+                        candidate.meta.name,
+                        candidate.meta.version,
+                        objects.len()
+                    );
+                    out.push(ResolvedDependency {
+                        dependency: AppDependency {
+                            app_id: candidate.meta.app_id.clone(),
+                            name: candidate.meta.name.clone(),
+                            publisher: candidate.meta.publisher.clone(),
+                            version: candidate.meta.version.clone(),
+                        },
+                        app_path: candidate.app_path.clone(),
+                        package: ParsedAppPackage {
+                            metadata: candidate.meta.clone(),
+                            objects,
+                        },
+                    });
+                    winner_idx = Some(i);
+                    break;
+                }
+                Err(e) => {
+                    let has_fallback = i + 1 < group.len();
+                    warn!(
+                        "load_all_apps: failed to parse {} v{}: {}{}",
+                        candidate.app_path.display(),
+                        candidate.meta.version,
+                        e,
+                        if has_fallback {
+                            " — falling back to next-highest copy of this GUID"
+                        } else {
+                            ""
+                        }
+                    );
+                }
             }
-            Err(e) => {
-                warn!(
-                    "load_all_apps: failed to parse {}: {}",
-                    d.app_path.display(),
-                    e
-                );
+        }
+        // Every candidate ranked BELOW the winner (if one was found) is a
+        // genuine dedup drop against the ACTUAL kept version — not
+        // necessarily the group's nominal best, if a fallback occurred.
+        if let Some(idx) = winner_idx {
+            let winner = &group[idx];
+            for loser in group.iter().skip(idx + 1) {
+                dropped.push(DroppedDuplicateDependency {
+                    guid: winner.meta.app_id.clone(),
+                    name: winner.meta.name.clone(),
+                    kept_version: winner.meta.version.clone(),
+                    kept_path: winner.app_path.clone(),
+                    dropped_version: loser.meta.version.clone(),
+                    dropped_path: loser.app_path.clone(),
+                });
             }
         }
     }
@@ -1016,6 +1084,91 @@ mod tests {
         );
         assert_eq!(dropped[0].dropped_version, "24.0.0.0");
         assert_eq!(dropped[0].kept_version, "25.0.0.0");
+    }
+
+    /// Availability regression fix: when the manifest-first dedup WINNER's
+    /// symbols are corrupt (fails `extract_app_symbols`), the dependency
+    /// must not simply vanish — the fresh manifest-first ordering must fall
+    /// back to the next-highest copy of the SAME GUID (here, a good 24.0.0.0
+    /// sitting right alongside the corrupt 25.0.0.0) rather than dropping the
+    /// dependency entirely (which the old symbols-first code never did: it
+    /// tried every copy, in whatever order it found them, and only skipped
+    /// the ones that actually failed to parse).
+    #[test]
+    fn corrupt_winner_falls_back_to_next_highest_good_copy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpackages = dir.path().join(".alpackages");
+        std::fs::create_dir_all(&alpackages).unwrap();
+        let guid = "dddddddd-3333-3333-3333-333333333333";
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_25.0.0.0.app",
+            guid,
+            "25.0.0.0",
+            "{ this is not JSON",
+        );
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_24.0.0.0.app",
+            guid,
+            "24.0.0.0",
+            r#"{"Codeunits":[{"Id":50100,"Name":"DupCU","Methods":[{"Name":"DoIt","Id":1}]}]}"#,
+        );
+
+        let (kept, dropped) = load_all_apps(dir.path()).expect("load_all_apps");
+
+        assert_eq!(
+            kept.len(),
+            1,
+            "the good 24.0 copy must be loaded as a fallback, not dropped entirely"
+        );
+        assert_eq!(
+            kept[0].dependency.version, "24.0.0.0",
+            "the corrupt 25.0 winner must be skipped in favor of the good 24.0 copy"
+        );
+        assert!(
+            !dropped
+                .iter()
+                .any(|d| d.dropped_version == "24.0.0.0" && d.guid == guid),
+            "the promoted fallback copy (24.0) must NOT be reported as a dropped duplicate; got {dropped:#?}"
+        );
+    }
+
+    /// If EVERY copy of a duplicated GUID fails symbol extraction, the
+    /// dependency is legitimately absent — but this must never panic, and
+    /// must not incorrectly report a "dropped duplicate" (there was no good
+    /// survivor to keep).
+    #[test]
+    fn all_copies_corrupt_leaves_dependency_absent_without_panicking() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpackages = dir.path().join(".alpackages");
+        std::fs::create_dir_all(&alpackages).unwrap();
+        let guid = "eeeeeeee-4444-4444-4444-444444444444";
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_25.0.0.0.app",
+            guid,
+            "25.0.0.0",
+            "{ this is not JSON either",
+        );
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_24.0.0.0.app",
+            guid,
+            "24.0.0.0",
+            "{ still not JSON",
+        );
+
+        let (kept, dropped) = load_all_apps(dir.path()).expect("load_all_apps");
+
+        assert!(
+            !kept.iter().any(|k| k.dependency.app_id == guid),
+            "no copy could be loaded, so the dependency must be absent"
+        );
+        assert!(
+            !dropped.iter().any(|d| d.guid == guid),
+            "with no surviving copy there is nothing to report as a dedup drop"
+        );
     }
 
     #[test]
