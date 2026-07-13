@@ -1044,6 +1044,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current `RoutineNodeId`/`DeclEntry`/`EdgeRef` shapes.
 
 ### Changed
+- **`load_all_apps` is now manifest-first (perf safe-wins plan, Task 3)** —
+  discovered `.app` files are GUID-deduped (H-2) on a cheap manifest-only
+  read (`extract_app_metadata`, KB-sized `NavxManifest.xml` only) BEFORE any
+  `SymbolReference.json` (MB-sized, sometimes 100 MB) is parsed; only the
+  per-GUID version winners then pay `extract_app_symbols`. Duplicate Base
+  App / System App copies discovered across ancestor `.alpackages` folders
+  no longer each pay a full SymbolReference parse — only the highest-version
+  survivor does. `dedup_by_guid_keep_highest_version` is retyped from
+  `Vec<ResolvedDependency>` to a new manifest-level `DiscoveredApp{app_path,
+  meta}`; `load_all_apps`'s own public signature and its trailing
+  deterministic sort are unchanged. **Known, accepted behavior change:** a
+  duplicated-GUID `.app` whose version-losing copy has a corrupt
+  `SymbolReference.json` is now dropped as a reported dedup loser (named in
+  `load_all_apps`'s second return value) instead of the old order's silent
+  extraction failure — identity comes from the manifest, not from whether a
+  large symbol blob happens to parse, so a corrupt package is a properly
+  surfaced drop either way.
 - **Embedded/workspace source text is now ONE shared `Arc<str>` allocation per
   file across the whole snapshot/parse/LSP pipeline (perf safe-wins plan,
   Task 1)** — kills the ~228 MB duplicate-text overhead on the reference

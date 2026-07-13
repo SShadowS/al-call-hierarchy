@@ -312,6 +312,22 @@ pub fn extract_app_package(path: &Path) -> Result<ParsedAppPackage> {
     Ok(ParsedAppPackage { metadata, objects })
 }
 
+/// Manifest-only read (perf safe-wins Task 3): parses NavxManifest.xml
+/// (KB-sized) WITHOUT touching SymbolReference.json (MB-sized) — the cheap
+/// identity probe `load_all_apps` dedups on before paying for full symbol
+/// extraction.
+pub fn extract_app_metadata(path: &Path) -> Result<AppMetadata> {
+    let mut archive = open_app_zip(path)?;
+    parse_manifest(&mut archive)
+}
+
+/// Symbols-only read: the expensive half of [`extract_app_package`], for a
+/// caller that already holds the manifest via [`extract_app_metadata`].
+pub fn extract_app_symbols(path: &Path) -> Result<Vec<ExternalObject>> {
+    let mut archive = open_app_zip(path)?;
+    parse_symbols(&mut archive)
+}
+
 /// Parse NavxManifest.xml to extract app metadata
 fn parse_manifest<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<AppMetadata> {
     let manifest_file = archive
