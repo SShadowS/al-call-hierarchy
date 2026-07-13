@@ -157,15 +157,49 @@ mod release_checks {
     // ARCHITECTURAL one rather than a CDO-anchored one: a diagnostics
     // recompute should complete in a small fraction of rung-1's own 100ms
     // CDO-anchored budget, since it runs ON TOP of that cost after every
-    // swap. `COMPUTE_ALL_SYNTHETIC_BOUND` (5x today's measured 1000-file
-    // baseline — same convention as the rung rows above) is the row that
-    // actually matters for catching a regression back into the fixed bug:
-    // measured BEFORE this fix-wave's O(1) `publisher_fanout` lookup, the
-    // identical 1000-file event-bearing corpus took ~31.9ms (vs. ~5.4ms
-    // after) — comfortably ABOVE this bound, so the synthetic bound alone
-    // would have caught the exact regression class this fix-wave closes.
+    // swap.
+    //
+    // `COMPUTE_ALL_SYNTHETIC_BOUND` was ORIGINALLY 30ms (5x the ~5.4ms
+    // measured baseline) — the t3 final review PROVED this margin marginal:
+    // reverting the fix and re-measuring the buggy 1000-file cost gave a
+    // median of ~31.04ms, but samples ranged 29.13-32.46ms — 2 of 5 buggy
+    // samples were BELOW the 30ms bound. Run-to-run noise (~±5%) exceeds a
+    // 3% margin (31.9ms buggy vs. 30ms bound), so a 7%-faster machine would
+    // let the exact quadratic this fix-wave closed sail through silently.
+    // Tightened to 15ms: ~2.8x headroom over the fixed ~5.4ms baseline, and
+    // a full ~2x BELOW the buggy ~31ms median — outside the observed noise
+    // band on both sides.
     const COMPUTE_ALL_BOUND: Duration = Duration::from_millis(150); // target: 50ms (architectural)
-    const COMPUTE_ALL_SYNTHETIC_BOUND: Duration = Duration::from_millis(30); // 5x ~5.4ms measured baseline
+    const COMPUTE_ALL_SYNTHETIC_BOUND: Duration = Duration::from_millis(15); // ~2.8x ~5.4ms measured baseline
+
+    // `COMPUTE_ALL_SCALING_FACTOR` (t3 final review): a machine-INDEPENDENT
+    // complexity-class check, added because ANY magnitude bound (both above)
+    // is inherently machine-speed-dependent — the exact property that made
+    // the original 30ms bound marginal (see that constant's own doc).
+    // Measuring `compute_all` at TWO corpus sizes and asserting the ratio
+    // stays under this factor tests the ALGORITHM's complexity class
+    // directly instead of an absolute time.
+    //
+    // The FILE-COUNT ratio is 4x (250 vs. 1000 files — see
+    // `compute_all_within_bound`), not the 2x this constant's own first
+    // draft used: empirical measurement (10+ separate `cargo test --release`
+    // invocations, matching real CI usage — NOT a single in-process probe,
+    // which measures noticeably calmer than separate process invocations
+    // do) found a 2x file-count ratio gives an unreliably NARROW gap between
+    // the fixed and buggy regimes (fixed-code ratios observed as high as
+    // ~3.9, buggy-code ratios as low as ~3.3 — they OVERLAP). At a 4x
+    // file-count ratio, with `measure_compute_all`'s 5-iteration warm-up (up
+    // from 1) and 9 timed samples (up from 5) — both needed to tame the
+    // small (250-file) corpus's otherwise-noisy sub-millisecond timing —
+    // repeated measurement gives a clean, non-overlapping separation:
+    // FIXED code ratio range 5.47-7.99 (6 separate runs); BUGGY code
+    // (`effective_incoming_count` temporarily reverted to the old
+    // `event_edges` scan) ratio range 11.81-12.38 (4 separate runs). 10 sits
+    // almost exactly at the midpoint (9.9) of that gap, with ~2x margin on
+    // both sides — unlike an absolute-time bound, this margin does not
+    // shrink or grow with the machine running it, since it's a ratio of two
+    // measurements taken on the SAME machine in the SAME process.
+    const COMPUTE_ALL_SCALING_FACTOR: u32 = 10;
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
@@ -364,6 +398,35 @@ mod release_checks {
         );
     }
 
+    /// Measure `compute_all`'s median wall-clock time on a
+    /// `file_count`-file event-bearing corpus: 5 warm-up iterations then 9
+    /// timed samples. Both counts are higher than this file's other rows use
+    /// (which warm up once, time 5) — needed to tame the SMALL (250-file)
+    /// corpus's otherwise-noisy sub-millisecond timing enough for the
+    /// SCALING assertion below to be reliable; see `COMPUTE_ALL_SCALING_FACTOR`'s
+    /// own doc for the empirical case. Shared by `compute_all_within_bound`'s
+    /// magnitude bounds (1000 files) and its SCALING assertion (250 vs. 1000
+    /// files).
+    fn measure_compute_all(file_count: usize) -> (Duration, Vec<Duration>) {
+        let (_dir, snap) = build_snapshot(file_count);
+        let cfg = DiagnosticConfig::default();
+        for _ in 0..5 {
+            let _ = compute_all(&snap, PositionEncoding::Utf8, &cfg); // warm-up
+        }
+
+        let mut samples = Vec::with_capacity(9);
+        for _ in 0..9 {
+            let start = Instant::now();
+            let result = compute_all(&snap, PositionEncoding::Utf8, &cfg);
+            samples.push(start.elapsed());
+            assert!(
+                !result.is_empty(),
+                "sanity: compute_all must produce entries for a {file_count}-file workspace"
+            );
+        }
+        (median(samples.clone()), samples)
+    }
+
     /// `compute_all` — the full diagnostics recompute `on_swap` runs after
     /// EVERY snapshot swap (t3 whole-branch review, blocker fix). This
     /// corpus is event-bearing (2 publishers + 2 subscribers per file — see
@@ -374,54 +437,69 @@ mod release_checks {
     /// unmeasured through 17 prior tasks.
     #[test]
     fn compute_all_within_bound() {
-        let (_dir, snap) = build_snapshot(1000);
-        let cfg = DiagnosticConfig::default();
-
+        let sanity_dir = corpus_dir(1000);
+        let sanity_snap = LspSnapshot::build_full(sanity_dir.path()).expect("build_full");
         assert_eq!(
-            snap.event_edges.len(),
+            sanity_snap.event_edges.len(),
             1000 * perf_support::PUBLISHERS_PER_FILE,
             "sanity: this 1000-file event-bearing corpus must have \
              PUBLISHERS_PER_FILE publisher declarations per file"
         );
         let file1 = perf_support::file_name(1);
         assert_eq!(
-            snap.decls_by_file[&file1].len(),
+            sanity_snap.decls_by_file[&file1].len(),
             perf_support::PROCS_PER_FILE + perf_support::EVENT_ROUTINES_PER_FILE,
             "sanity: every file declares PROCS_PER_FILE plain procedures plus \
              EVENT_ROUTINES_PER_FILE event-bearing routines"
         );
+        drop(sanity_snap);
+        drop(sanity_dir);
 
-        // Warm-up.
-        let _ = compute_all(&snap, PositionEncoding::Utf8, &cfg);
-
-        let mut samples = Vec::with_capacity(5);
-        for _ in 0..5 {
-            let start = Instant::now();
-            let result = compute_all(&snap, PositionEncoding::Utf8, &cfg);
-            samples.push(start.elapsed());
-            assert!(
-                !result.is_empty(),
-                "sanity: compute_all must produce entries for a 1000-file workspace"
-            );
-        }
-        let m = median(samples.clone());
+        let (m1000, samples1000) = measure_compute_all(1000);
         println!(
-            "[perf_bounds] compute_all: median={m:?} absolute_bound={COMPUTE_ALL_BOUND:?} \
-             synthetic_bound={COMPUTE_ALL_SYNTHETIC_BOUND:?} samples={samples:?}"
+            "[perf_bounds] compute_all(1000): median={m1000:?} absolute_bound={COMPUTE_ALL_BOUND:?} \
+             synthetic_bound={COMPUTE_ALL_SYNTHETIC_BOUND:?} samples={samples1000:?}"
         );
-        // Both bounds asserted, same dual-bound convention as rung 1/2 (see
-        // COMPUTE_ALL_SYNTHETIC_BOUND's own doc for why the synthetic bound
-        // is the one that actually discriminates the fixed bug here).
+        // Both MAGNITUDE bounds asserted, same dual-bound convention as rung
+        // 1/2 (see COMPUTE_ALL_SYNTHETIC_BOUND's own doc for why it was
+        // tightened, and why a magnitude bound alone is not enough — see the
+        // SCALING assertion below, which is the one that actually matters).
         assert!(
-            m <= COMPUTE_ALL_BOUND,
-            "compute_all median {m:?} exceeds the architectural bound {COMPUTE_ALL_BOUND:?} \
-             (samples: {samples:?})"
+            m1000 <= COMPUTE_ALL_BOUND,
+            "compute_all median {m1000:?} exceeds the architectural bound {COMPUTE_ALL_BOUND:?} \
+             (samples: {samples1000:?})"
         );
         assert!(
-            m <= COMPUTE_ALL_SYNTHETIC_BOUND,
-            "compute_all median {m:?} exceeds the corpus-relative bound \
-             {COMPUTE_ALL_SYNTHETIC_BOUND:?} (samples: {samples:?}) — this is the exact \
+            m1000 <= COMPUTE_ALL_SYNTHETIC_BOUND,
+            "compute_all median {m1000:?} exceeds the corpus-relative bound \
+             {COMPUTE_ALL_SYNTHETIC_BOUND:?} (samples: {samples1000:?}) — this is the exact \
              O(decls * event_edges) regression class the t3 whole-branch review fix-wave closed"
+        );
+
+        // SCALING assertion (t3 final review) — the gate that actually
+        // matters, machine-speed-independent unlike the magnitude bounds
+        // above (see COMPUTE_ALL_SCALING_FACTOR's own doc for why: the
+        // ORIGINAL 30ms magnitude bound was PROVEN marginal — the buggy
+        // implementation's samples ranged 29.13-32.46ms against it, so 2/5
+        // buggy runs would have PASSED on run-to-run noise alone). Measuring
+        // the SAME operation at a QUARTER the corpus size (250 vs. 1000
+        // files — a 4x file-count ratio, not 2x; see COMPUTE_ALL_SCALING_FACTOR's
+        // doc for why 2x was empirically too noisy to discriminate reliably)
+        // and asserting the ratio stays under COMPUTE_ALL_SCALING_FACTOR
+        // tests the complexity class directly instead of an absolute time.
+        let (msmall, samplessmall) = measure_compute_all(250);
+        let ratio = m1000.as_secs_f64() / msmall.as_secs_f64();
+        println!(
+            "[perf_bounds] compute_all scaling: t(250)={msmall:?} t(1000)={m1000:?} ratio={ratio:.3} \
+             samples250={samplessmall:?}"
+        );
+        assert!(
+            m1000 < msmall * COMPUTE_ALL_SCALING_FACTOR,
+            "compute_all's 1000-file cost ({m1000:?}) must be under {COMPUTE_ALL_SCALING_FACTOR}x \
+             its 250-file cost ({msmall:?}, ratio={ratio:.3}) — a ratio at/above \
+             {COMPUTE_ALL_SCALING_FACTOR}x is the complexity-class signature of the \
+             O(decls * event_edges) quadratic this fix-wave closed, and unlike the magnitude \
+             bounds above, this check does not get weaker on a faster machine"
         );
     }
 
