@@ -1108,7 +1108,7 @@ mod tests {
             source: Some(SourceRoot {
                 files: vec![SourceFile {
                     virtual_path: name.to_string(),
-                    text: src.to_string(),
+                    text: src.into(),
                 }],
                 tier,
                 content_hash: String::new(),

@@ -1476,3 +1476,40 @@ fn dep_bearing_rung1_then_rung2_stay_equivalent_with_nonvacuous_dep_indexes() {
         "rung 2 must reuse the cached, unchanged dep layer — dep_decl_by_id identical across a workspace-only signature-change rebuild"
     );
 }
+
+/// Perf safe-wins Task 1: embedded dependency source text must be ONE shared
+/// allocation — `dep_texts`'s `Arc<str>` and the `AppSetSnapshot`'s own
+/// `SourceFile.text` must be pointer-equal, never independent copies (the
+/// perf doc's T1/T2 duplication).
+#[test]
+fn dep_texts_share_the_snapshot_source_text_allocation() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, _parsed) = build_full_with_parsed(dir.path());
+
+    assert!(
+        !base.dep_texts.is_empty(),
+        "fixture sanity: dep_texts must carry Source Mgt.al's embedded source"
+    );
+    for ((app_ref, vp), dep_text) in base.dep_texts.iter() {
+        let app_id = base.graph.apps.resolve(*app_ref);
+        let unit = base
+            .snap
+            .apps
+            .iter()
+            .find(|u| &u.id == app_id)
+            .expect("dep_texts app must exist in snap");
+        let sf = unit
+            .source
+            .as_ref()
+            .expect("dep with texts has embedded source")
+            .files
+            .iter()
+            .find(|f| &f.virtual_path == vp)
+            .expect("dep_texts path must exist in snap source");
+        assert!(
+            std::sync::Arc::ptr_eq(dep_text, &sf.text),
+            "dep_texts[({app_ref:?}, {vp})] must share the snapshot's text \
+             allocation, not copy it"
+        );
+    }
+}

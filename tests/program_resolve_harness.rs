@@ -290,7 +290,7 @@ fn make_teeth_unit(guid: &str, name: &str, src: &str) -> (AppId, ParsedUnit) {
             virtual_path: "Sub.al".to_string(),
             file: al_syntax::parse(src),
             provenance,
-            text: src.to_string(),
+            text: src.into(),
         }],
     };
     (app_id, unit)
@@ -6607,11 +6607,11 @@ codeunit 50971 "Compound Overload Subscriber"
         files: vec![
             SourceFile {
                 virtual_path: "CompoundTarget.al".into(),
-                text: target_src.clone(),
+                text: target_src.clone().into(),
             },
             SourceFile {
                 virtual_path: "CompoundSubscriber.al".into(),
-                text: subscriber_src,
+                text: subscriber_src.into(),
             },
         ],
         tier: TrustTier::Workspace,
@@ -6623,7 +6623,7 @@ codeunit 50971 "Compound Overload Subscriber"
     let dep_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "CompoundTarget.al".into(),
-            text: target_src,
+            text: target_src.into(),
         }],
         tier: TrustTier::EmbeddedSource,
         content_hash: "dep-hash".into(),
@@ -6828,7 +6828,7 @@ codeunit 50980 "Alias Target"
     let ws_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "AliasTarget.al".into(),
-            text: src,
+            text: src.into(),
         }],
         tier: TrustTier::Workspace,
         content_hash: "ws-hash".into(),
@@ -6953,7 +6953,7 @@ codeunit 50981 "Dup Target"
     let ws_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "DupTarget.al".into(),
-            text: src.clone(),
+            text: src.clone().into(),
         }],
         tier: TrustTier::Workspace,
         content_hash: "ws-hash".into(),
@@ -6961,7 +6961,7 @@ codeunit 50981 "Dup Target"
     let dep_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "DupTarget.al".into(),
-            text: src,
+            text: src.into(),
         }],
         tier: TrustTier::EmbeddedSource,
         content_hash: "dep-hash".into(),
@@ -7066,7 +7066,7 @@ codeunit 50982 "Dual Publisher Target"
     let ws_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "DualPublisherTarget.al".into(),
-            text: src,
+            text: src.into(),
         }],
         tier: TrustTier::Workspace,
         content_hash: "ws-hash".into(),

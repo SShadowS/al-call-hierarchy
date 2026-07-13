@@ -652,7 +652,7 @@ mod tests {
                     .into_iter()
                     .map(|(path, text)| crate::snapshot::embedded::SourceFile {
                         virtual_path: path.to_string(),
-                        text: text.to_string(),
+                        text: text.into(),
                     })
                     .collect(),
                 tier,
@@ -883,7 +883,7 @@ codeunit 50100 "Ws2 Cu"
                         tier: TrustTier::Workspace,
                         content_hash: String::new(),
                     },
-                    text: src.to_string(),
+                    text: src.into(),
                 }],
             }
         }

@@ -4,6 +4,7 @@
 //! ABI is consumed by later resolution phases.
 
 use rayon::prelude::*;
+use std::sync::Arc;
 
 use crate::snapshot::identity::{AppId, Provenance};
 use crate::snapshot::snapshot::AppSetSnapshot;
@@ -17,10 +18,9 @@ pub struct ParsedFile {
     pub virtual_path: String,
     pub file: al_syntax::ir::AlFile,
     pub provenance: Provenance,
-    /// The original AL source text.  Stored here so downstream phases (stub
-    /// resolver, witness span recovery) can slice byte ranges from the IR
-    /// without re-reading from disk.
-    pub text: String,
+    /// The original AL source text — the SAME `Arc<str>` allocation as the
+    /// snapshot's `SourceFile.text` (perf safe-wins Task 1), never a copy.
+    pub text: Arc<str>,
 }
 
 /// All parsed files for one source-bearing app.
@@ -91,7 +91,7 @@ pub fn parse_snapshot(snap: &AppSetSnapshot) -> Vec<ParsedUnit> {
                         virtual_path: f.virtual_path.clone(),
                         file: al_syntax::parse(&f.text),
                         provenance: unit.provenance.clone(),
-                        text: f.text.clone(),
+                        text: Arc::clone(&f.text),
                     })
                     .collect();
                 Some(ParsedUnit {
@@ -169,7 +169,7 @@ mod tests {
                     .into_iter()
                     .map(|(path, text)| SourceFile {
                         virtual_path: path.to_string(),
-                        text: text.to_string(),
+                        text: text.into(),
                     })
                     .collect(),
                 tier: TrustTier::Workspace,

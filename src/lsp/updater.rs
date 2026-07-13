@@ -317,6 +317,7 @@ impl Updater {
                             };
                             let provenance = self.file_provenance(cur, &vp);
                             let file = al_syntax::parse(&text);
+                            let text: Arc<str> = text.into();
                             // Fail-closed: a `Recovered` parse cannot be trusted
                             // for rung 1's fingerprint-equality shortcut — the
                             // IR may have silently dropped content (see
@@ -1624,7 +1625,7 @@ mod tests {
             virtual_path: "Alpha.al".to_string(),
             file: al_syntax::parse(&text1),
             provenance: updater.file_provenance(&base, "Alpha.al"),
-            text: text1,
+            text: text1.into(),
         };
         let snap1 = apply_rung1_core(
             &base,
@@ -1663,7 +1664,7 @@ mod tests {
             virtual_path: "Alpha.al".to_string(),
             file: al_syntax::parse(&text2),
             provenance: updater.file_provenance(&base, "Alpha.al"),
-            text: text2,
+            text: text2.into(),
         };
         let snap2 = apply_rung1_core(
             &snap1,

@@ -3153,7 +3153,7 @@ mod tests {
                 virtual_path: virtual_path.to_string(),
                 file: al_syntax::parse(src),
                 provenance,
-                text: src.to_string(),
+                text: src.into(),
             }],
         }
     }
@@ -9773,7 +9773,7 @@ codeunit 51801 "DepImpl" implements IFoo
                     tier: TrustTier::SymbolOnly,
                     content_hash: String::new(),
                 },
-                text: src_dep.to_string(),
+                text: src_dep.into(),
             }],
         };
 

@@ -3180,7 +3180,7 @@ mod tests {
                 virtual_path: "Ev.al".into(),
                 file: al_syntax::parse(src),
                 provenance,
-                text: src.to_string(),
+                text: src.into(),
             }],
         };
         (app_id, unit)

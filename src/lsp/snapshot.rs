@@ -81,7 +81,8 @@ pub struct DeclEntry {
 /// without re-reading disk or re-parsing.
 pub struct ParsedFileEntry {
     pub file: AlFile,
-    pub text: String,
+    /// Shares the workspace `SourceFile.text` allocation (perf safe-wins Task 1).
+    pub text: Arc<str>,
     pub virtual_path: String,
     pub surface: DefSurface,
 }
@@ -400,7 +401,7 @@ impl LspSnapshot {
     #[must_use]
     pub fn decl_and_text(&self, id: &RoutineNodeId) -> Option<(&DeclEntry, &str)> {
         if let Some(d) = self.decl_by_id.get(id) {
-            let text = self.parsed.get(&d.virtual_path)?.text.as_str();
+            let text: &str = &self.parsed.get(&d.virtual_path)?.text;
             return Some((d, text));
         }
         let d = self.dep_decl_by_id.get(id)?;
@@ -627,7 +628,7 @@ pub(crate) fn build_dep_indexes(
         for pf in &unit.files {
             dep_texts
                 .entry((app_ref, pf.virtual_path.clone()))
-                .or_insert_with(|| Arc::from(pf.text.as_str()));
+                .or_insert_with(|| Arc::clone(&pf.text));
         }
     }
 

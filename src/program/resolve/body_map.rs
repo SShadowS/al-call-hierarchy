@@ -131,7 +131,7 @@ mod tests {
                 virtual_path: "Test.al".into(),
                 file,
                 provenance,
-                text: src.to_string(),
+                text: src.into(),
             }],
         }
     }

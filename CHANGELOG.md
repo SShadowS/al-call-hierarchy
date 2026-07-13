@@ -1044,6 +1044,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current `RoutineNodeId`/`DeclEntry`/`EdgeRef` shapes.
 
 ### Changed
+- **Embedded/workspace source text is now ONE shared `Arc<str>` allocation per
+  file across the whole snapshot/parse/LSP pipeline (perf safe-wins plan,
+  Task 1)** — kills the ~228 MB duplicate-text overhead on the reference
+  workspace documented in `docs/perf-regression-t3-vs-0.9.3.md` §3.1, where
+  `AppSetSnapshot`'s `SourceFile.text`, `ParsedFile.text` (previously cloned
+  in `parse_snapshot`), and `LspSnapshot::dep_texts` (previously a fresh copy
+  built in `build_dep_indexes`) each held an independent copy of the same
+  embedded dependency source (~114 MB on a real BC workspace, tripled).
+  `SourceFile.text`/`ParsedFile.text`/`ParsedFileEntry.text` are now
+  `std::sync::Arc<str>`, and `dep_texts` shares that SAME allocation via
+  `Arc::clone` instead of copying it; `Arc<str>` derefs to `&str` so almost
+  every call site kept compiling unchanged. Enabled serde's `rc` feature so
+  `SourceFile`'s content-addressed cache (`src/snapshot/cache.rs`) still
+  serializes `Arc<str>` as a plain string — the on-disk JSON format, and
+  every existing cache entry, is unchanged.
 - **`tests/perf_bounds.rs`/`benches/lsp_pipeline.rs` rewritten onto the
   ENGINE-BACKED LSP surface (T3 LSP-migration arc, Task 16) — the last thing
   standing before Task 17 deletes the legacy `Indexer`/`graph`/`handlers`

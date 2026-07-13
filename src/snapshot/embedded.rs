@@ -15,10 +15,17 @@ use std::path::Path;
 const NAVX_HEADER_SIZE: u64 = 40;
 
 /// One embedded source file recovered from a `.app`.
+///
+/// `text` is `Arc<str>` (perf safe-wins Task 1): the SAME allocation is
+/// shared by `ParsedFile.text` and `LspSnapshot::dep_texts` — embedded
+/// dependency source (~114 MB on a real BC workspace) must exist in memory
+/// exactly once. Serde's `rc` feature serializes it as a plain string, so
+/// the content-addressed source cache format (`snapshot::cache`) is
+/// unchanged.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SourceFile {
     pub virtual_path: String,
-    pub text: String,
+    pub text: std::sync::Arc<str>,
 }
 
 /// Open a `.app`'s embedded zip by seeking past the NAVX header.
@@ -78,7 +85,10 @@ pub fn extract_embedded_source(app_path: &Path) -> Result<Vec<SourceFile>> {
         let virtual_path = percent_encoding::percent_decode_str(&name)
             .decode_utf8_lossy()
             .into_owned();
-        out.push(SourceFile { virtual_path, text });
+        out.push(SourceFile {
+            virtual_path,
+            text: text.into(),
+        });
     }
     Ok(out)
 }

@@ -473,7 +473,7 @@ mod tests {
                 tier: TrustTier::Workspace,
                 content_hash: String::new(),
             },
-            text: src.to_string(),
+            text: src.into(),
         }
     }
 

@@ -921,7 +921,7 @@ mod tests {
             source: Some(SourceRoot {
                 files: vec![SourceFile {
                     virtual_path: "Ws.al".to_string(),
-                    text: WS_SRC.to_string(),
+                    text: WS_SRC.into(),
                 }],
                 tier: TrustTier::Workspace,
                 content_hash: String::new(),
