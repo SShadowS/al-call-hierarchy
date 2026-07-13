@@ -390,6 +390,17 @@ fn assert_snapshots_equivalent(incremental: &LspSnapshot, fresh: &LspSnapshot, c
         );
     }
 
+    // t3 whole-branch review (blocker fix wave): publisher_fanout is DERIVED
+    // state built alongside `incoming` in the SAME `build_incoming` pass — it
+    // must be equivalence-checked exactly like `incoming` itself, not left
+    // unpinned just because it's new. A plain `HashMap` equality is enough
+    // (no EdgeRef/position indirection to canonicalize — every value is a
+    // positionless `RoutineNodeId -> usize` count).
+    assert_eq!(
+        incremental.publisher_fanout, fresh.publisher_fanout,
+        "{context}: publisher_fanout diverged (incremental vs fresh build_full)"
+    );
+
     // T3 Task 11 review fix-wave: dep_decl_by_id/dep_texts/workspace_root —
     // trivially equal on this dep-less fixture (see the module doc's note);
     // still compared so a future regression can't slip through silently.

@@ -22,10 +22,17 @@ use al_call_hierarchy::lsp::handlers::{self, ItemData};
 use al_call_hierarchy::lsp::snapshot::LspSnapshot;
 use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
 use al_call_hierarchy::protocol::path_to_uri;
-use perf_support::{HUB_INDEX, PROCS_PER_FILE, file_name, generate_corpus};
+use perf_support::{
+    EVENT_ROUTINES_PER_FILE, HUB_INDEX, PROCS_PER_FILE, file_name, generate_corpus,
+};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+
+/// Total routines per generated file: the plain `Proc*` procedures plus the
+/// event-bearing publisher/subscriber quartet (t3 whole-branch review — see
+/// `tests/perf_support/mod.rs`'s "Event-bearing" doc section).
+const ROUTINES_PER_FILE: usize = PROCS_PER_FILE + EVENT_ROUTINES_PER_FILE;
 
 #[test]
 fn generates_expected_file_count() {
@@ -79,7 +86,7 @@ fn indexes_with_expected_definitions_and_hub_fan_in() {
 
     let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
     let total_decls: usize = snap.decls_by_file.values().map(|v| v.len()).sum();
-    assert_eq!(total_decls, file_count * PROCS_PER_FILE);
+    assert_eq!(total_decls, file_count * ROUTINES_PER_FILE);
 
     // The hub's Proc0 must have exactly `file_count - 1` incoming calls (one
     // qualified call — via a declared `Hub` variable — from every other
@@ -112,6 +119,28 @@ fn indexes_with_expected_definitions_and_hub_fan_in() {
         .to_string();
     let prepared = handlers::prepare(&snap, PositionEncoding::Utf8, &hub_uri, 2, 15);
     assert!(prepared.is_some(), "sanity: prepare must find Proc0");
+
+    // Non-vacuity (t3 whole-branch review): the corpus is now event-bearing
+    // (2 publishers/file, each with exactly one real subscriber, wired to
+    // the PREVIOUS file — see tests/perf_support/mod.rs's doc), so
+    // `event_edges`/`publisher_fanout` must actually be populated at scale —
+    // NOT the accidental zero that let the O(decls * event_edges) quadratic
+    // in `compute_all` go undetected before this fix.
+    assert_eq!(
+        snap.event_edges.len(),
+        file_count * perf_support::PUBLISHERS_PER_FILE,
+        "PUBLISHERS_PER_FILE publisher declarations per file, unconditionally emitted"
+    );
+    assert_eq!(
+        snap.publisher_fanout.len(),
+        file_count * perf_support::PUBLISHERS_PER_FILE,
+        "every publisher has exactly one real subscriber, so every publisher \
+         gets a publisher_fanout entry"
+    );
+    assert!(
+        snap.publisher_fanout.values().all(|&n| n == 1),
+        "every publisher in this corpus has EXACTLY one real subscriber"
+    );
 }
 
 #[test]
@@ -124,7 +153,7 @@ fn rewrite_with_extra_procedure_adds_one_definition_and_takes_rung2() {
     let (base, parsed) =
         LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
     let file1 = file_name(1);
-    assert_eq!(base.decls_by_file[&file1].len(), PROCS_PER_FILE);
+    assert_eq!(base.decls_by_file[&file1].len(), ROUTINES_PER_FILE);
 
     let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
     perf_support::rewrite_with_extra_procedure(dir.path(), file_count, 1);
@@ -140,7 +169,7 @@ fn rewrite_with_extra_procedure_adds_one_definition_and_takes_rung2() {
     );
     assert_eq!(
         next.decls_by_file[&file1].len(),
-        PROCS_PER_FILE + 1,
+        ROUTINES_PER_FILE + 1,
         "rewritten file must contribute one extra definition (ProcExtra)"
     );
 }
@@ -155,7 +184,7 @@ fn body_only_comment_edit_adds_no_definitions_and_stays_rung1() {
     let (base, parsed) =
         LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
     let file1 = file_name(1);
-    assert_eq!(base.decls_by_file[&file1].len(), PROCS_PER_FILE);
+    assert_eq!(base.decls_by_file[&file1].len(), ROUTINES_PER_FILE);
 
     let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
     perf_support::body_only_comment_edit(dir.path(), file_count, 1);
@@ -167,7 +196,7 @@ fn body_only_comment_edit_adds_no_definitions_and_stays_rung1() {
     assert_eq!(rung, Rung::One, "a comment-only body edit must stay rung 1");
     assert_eq!(
         next.decls_by_file[&file1].len(),
-        PROCS_PER_FILE,
+        ROUTINES_PER_FILE,
         "a body-only comment edit must add ZERO definitions"
     );
 }

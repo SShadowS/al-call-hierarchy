@@ -47,6 +47,8 @@
 //! 9. `fields` (document order)
 //! 10. `dataitems` (document order)
 //! 11. `parse_incomplete` (file-level parse-health flag)
+//! 22. `name`, RAW-cased (see "LSP-surface additions" below — added
+//!     alongside item 2's lowercased form, not instead of it)
 //!
 //! Then, for each routine of that object, in `RoutineNodeId` order (sorted by
 //! `(name_lc, enclosing_member_lc, params_count, sig_fp)` — audit §4 item 3's
@@ -66,6 +68,7 @@
 //!     audit's §3.2 finding that this is the one place the live resolver
 //!     itself reads through to `RoutineDecl` rather than `RoutineNode`
 //! 21. `parse_incomplete` (routine-level parse-health flag)
+//! 23. `is_trigger` (see "LSP-surface additions" below)
 //!
 //! # Object `name`: a gap found here, now closed in the audit doc too
 //!
@@ -90,10 +93,35 @@
 //! never resolution-outcome-relevant), `tier` (structurally invariant per
 //! file), every ABI-only `RoutineNode` field (always absent for a source
 //! file), `abi_overload_collapsed`/`source_overload_aliased` (derived,
-//! redundant with `params`), "enum values" (verified NOT a real resolver
-//! read — audit §2.3), and `is_trigger` (zero resolution-path reads — audit
-//! §4/§6.2). Also excluded, not from the audit but by the same reasoning: a
-//! parameter's declared NAME (only its `ty`/`by_ref` feed arg-type dispatch).
+//! redundant with `params`), and "enum values" (verified NOT a real resolver
+//! read — audit §2.3). Also excluded, not from the audit but by the same
+//! reasoning: a parameter's declared NAME (only its `ty`/`by_ref` feed
+//! arg-type dispatch).
+//!
+//! # LSP-surface additions (items 22/23) — a t3 whole-branch review finding,
+//! dated 2026-07-13, NOT a correction to the audit's own reasoning
+//!
+//! The audit (and its §6.2 correction) is still correct on its own terms:
+//! `RoutineNode::is_trigger` has zero RESOLUTION-path reads, and item 2's
+//! lowercased `name` is sufficient for `graph.resolve_object`'s by-name
+//! lookup. Both remain true. What the audit's scope never considered is a
+//! SECOND class of reader that exists on this SAME `ProgramGraph`/
+//! `ObjectNode`/`RoutineNode` data — the LSP SURFACE's DISPLAY code, added
+//! by later T3 tasks after this audit was written:
+//! `src/lsp/handlers.rs`'s `symbol_kind_for` reads `RoutineNode::is_trigger`
+//! to classify a `CallHierarchyItem`'s `SymbolKind` (FUNCTION vs. EVENT), and
+//! `object_name_for` reads the graph's RAW-cased `ObjectNode::name` for a
+//! `CallHierarchyItem`'s `detail` text. Since rung 1 NEVER rebuilds `graph`
+//! (it reuses `cur.graph` unchanged — see `src/lsp/updater.rs`'s module
+//! doc), a change invisible to the fingerprint but visible to one of these
+//! DISPLAY reads would leave a stale icon/detail string served until an
+//! UNRELATED rung-2/3 happened to refresh the graph. Both fields are added
+//! to the fingerprint for this reason — display-staleness prevention, not
+//! resolution-soundness — which is why they're NEW items (22/23) appended
+//! after the audit's original list, not edits to items 1/2's own reasoning.
+//! Cost: an extra rung-2 rebuild on a procedure<->trigger flip or a
+//! case-only object rename — both rare edits — is more than paid for by
+//! closing this display-correctness gap.
 
 use al_syntax::ir::ObjectKind;
 use blake3::Hasher;
@@ -201,6 +229,7 @@ pub fn def_surface_fingerprint(pf: &ParsedFile) -> DefSurface {
         write_list(h, &obj.fields, write_field); // 9
         write_list(h, &obj.dataitems, write_dataitem); // 10
         write_bool(h, obj.parse_incomplete); // 11
+        write_str(h, &obj.name); // 22 (LSP-surface addition — see module doc)
 
         write_list(h, routines, |h, entry| {
             write_routine_identity(h, &entry.node.id); // 12
@@ -217,6 +246,7 @@ pub fn def_surface_fingerprint(pf: &ParsedFile) -> DefSurface {
                 write_bool(h, *by_ref);
             });
             write_bool(h, entry.raw.parse_incomplete); // 21
+            write_bool(h, entry.node.is_trigger); // 23 (LSP-surface addition — see module doc)
         });
     });
 
@@ -1280,6 +1310,82 @@ interface "Renamed Interface"
             fp(variant),
             "renaming an id-less object changes its ObjKey::Name identity \
              (item 1) directly"
+        );
+    }
+
+    // ── t3 whole-branch review: LSP-surface display-relevant additions ────
+    // (items 22/23 — see the module doc's "LSP-surface additions" section)
+
+    #[test]
+    fn is_trigger_flip_changes_fingerprint() {
+        // Same name, same arity — `RoutineNodeId` (name_lc/enclosing_member_lc/
+        // params_count/sig_fp) is IDENTICAL between `procedure OnRun()` and
+        // `trigger OnRun()`, and no OTHER existing fingerprint field moves
+        // either (access/event_subscribers/publisher_kind/include_sender/
+        // return_type/param_sig_key/params/parse_incomplete are all
+        // unaffected by a bare kind flip) — so before this fix, flipping a
+        // routine between Procedure and Trigger was INVISIBLE to the
+        // fingerprint, leaving `src/lsp/handlers.rs`'s `symbol_kind_for`
+        // (which reads `RoutineNode::is_trigger` for the CallHierarchyItem's
+        // icon/kind) serving a STALE classification across rung 1 (which
+        // never rebuilds `graph`) until an unrelated rung-2/3 happened to
+        // refresh it.
+        let base = r#"
+codeunit 50100 T
+{
+    procedure OnRun()
+    begin
+    end;
+}
+"#;
+        let variant = r#"
+codeunit 50100 T
+{
+    trigger OnRun()
+    begin
+    end;
+}
+"#;
+        assert_ne!(
+            fp(base),
+            fp(variant),
+            "a procedure<->trigger kind flip (same name/arity) must move the \
+             fingerprint — symbol_kind_for's is_trigger read would otherwise \
+             go stale across rung 1"
+        );
+    }
+
+    #[test]
+    fn object_renamed_case_only_changes_fingerprint() {
+        // Item 2's existing `name.to_ascii_lowercase()` write folds case
+        // away entirely, so a CASE-ONLY rename of a NUMBERED object (its
+        // `ObjKey::Id` identity — item 1 — never moves either) was
+        // previously invisible to the fingerprint, leaving
+        // `src/lsp/handlers.rs`'s `object_name_for` (which reads the graph's
+        // RAW-cased `ObjectNode::name` for a CallHierarchyItem's `detail`
+        // text) serving a stale display name across rung 1.
+        let base = r#"
+codeunit 50100 "Sales Helper"
+{
+    procedure Post()
+    begin
+    end;
+}
+"#;
+        let variant = r#"
+codeunit 50100 "SALES HELPER"
+{
+    procedure Post()
+    begin
+    end;
+}
+"#;
+        assert_ne!(
+            fp(base),
+            fp(variant),
+            "a case-only object rename (same numeric id, same lowercased \
+             name) must move the fingerprint — object_name_for's raw-cased \
+             read would otherwise go stale across rung 1"
         );
     }
 }

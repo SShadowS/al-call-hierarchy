@@ -184,15 +184,27 @@ operation stays within 3x its target on every PR (rung 1/rung 2 additionally car
 corpus-relative bound — see that file's own doc), so an order-of-magnitude regression
 fails loudly even though the day-to-day numbers below have wide headroom.
 
-| Operation | Target | Measured (2026-07-12, dev machine, Criterion median) |
+| Operation | Target | Measured (2026-07-13, dev machine, Criterion median) |
 |-----------|--------|-------------------------------------------------------|
 | `build_full` (100 files) | < 500ms | ~8.07ms |
 | `build_full` (1000 files) | < 2s | ~74.45ms |
 | `prepare` (prepareCallHierarchy) | < 1ms | ~7.88µs |
 | `incoming` (1000-file graph, 999-way real fan-in) | ~25ms — see note below | ~16.34ms |
 | `outgoing` (1000-file graph) | < 1ms | ~6.60µs |
+| `compute_all` (diagnostics recompute, 1000-file event-bearing graph) | 50ms (architectural — see footnote below) | ~7.9ms |
 | Incremental update, rung 1 (body-only edit, 1000-file graph) | 100ms (real-CDO-workspace re-measurement) | ~13.28ms |
 | Incremental update, rung 2 (signature-change edit, 1000-file graph) | ~1.5s (real-CDO-workspace re-measurement) | ~149.93ms |
+
+**Every rung-1/rung-2 save additionally pays `compute_all`'s own cost** — `server.rs`'s
+`on_swap` runs the full diagnostics recompute after EVERY snapshot swap, including a
+single-file rung-1 body edit, so the real per-save latency a user experiences is
+rung-N's own number PLUS `compute_all`'s row above (~13.28ms + ~7.9ms ≈ 21ms for a
+rung-1 save on this corpus). `compute_all` used to carry a real O(decls × event_edges)
+quadratic cost (found and fixed in a t3 whole-branch review pass — see
+`src/lsp/snapshot.rs`'s `LspSnapshot::publisher_fanout` doc); the row above already
+reflects the fix, measured on an event-bearing corpus (`tests/perf_support/`'s
+generator now declares 2 publisher/2 subscriber routines per file specifically so this
+cost is never accidentally measured against an all-zero `event_edges` population).
 
 **`incoming`'s target moved from the legacy pipeline's sub-microsecond number to
 ~25ms — this is architectural, not a regression.** The legacy `graph.rs` stored a

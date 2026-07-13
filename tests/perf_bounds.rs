@@ -88,6 +88,8 @@ const DEBUG_BUILD_SKIPS_REAL_PERF_BOUNDS: &str = "see module doc comment";
 #[cfg(not(debug_assertions))]
 mod release_checks {
     use super::perf_support;
+    use al_call_hierarchy::config::DiagnosticConfig;
+    use al_call_hierarchy::lsp::diagnostics::compute_all;
     use al_call_hierarchy::lsp::encoding::PositionEncoding;
     use al_call_hierarchy::lsp::handlers::{self, ItemData};
     use al_call_hierarchy::lsp::snapshot::LspSnapshot;
@@ -143,6 +145,27 @@ mod release_checks {
     // the absolute bound alone cannot catch at synthetic-corpus scale.
     const RUNG1_SYNTHETIC_BOUND: Duration = Duration::from_millis(100); // 5x ~20ms measured baseline
     const RUNG2_SYNTHETIC_BOUND: Duration = Duration::from_millis(750); // 5x ~150ms measured baseline
+
+    // `compute_all` (diagnostics recompute — t3 whole-branch review, blocker
+    // fix): runs on EVERY snapshot swap, including a rung-1 single-file body
+    // edit (`server.rs`'s `on_swap`), which is exactly what made a pre-fix
+    // O(decls * event_edges) scan inside `effective_incoming_count`
+    // (`src/lsp/lens.rs`) a real quadratic blocker — see
+    // `LspSnapshot::publisher_fanout`'s doc for the fix. This is a GENUINELY
+    // NEW gate (no prior CDO re-measurement exists for it), so
+    // `COMPUTE_ALL_BOUND`'s target is a deliberately chosen, reasoned
+    // ARCHITECTURAL one rather than a CDO-anchored one: a diagnostics
+    // recompute should complete in a small fraction of rung-1's own 100ms
+    // CDO-anchored budget, since it runs ON TOP of that cost after every
+    // swap. `COMPUTE_ALL_SYNTHETIC_BOUND` (5x today's measured 1000-file
+    // baseline — same convention as the rung rows above) is the row that
+    // actually matters for catching a regression back into the fixed bug:
+    // measured BEFORE this fix-wave's O(1) `publisher_fanout` lookup, the
+    // identical 1000-file event-bearing corpus took ~31.9ms (vs. ~5.4ms
+    // after) — comfortably ABOVE this bound, so the synthetic bound alone
+    // would have caught the exact regression class this fix-wave closes.
+    const COMPUTE_ALL_BOUND: Duration = Duration::from_millis(150); // target: 50ms (architectural)
+    const COMPUTE_ALL_SYNTHETIC_BOUND: Duration = Duration::from_millis(30); // 5x ~5.4ms measured baseline
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
@@ -338,6 +361,67 @@ mod release_checks {
         assert!(
             m <= QUERY_BOUND,
             "outgoing median {m:?} exceeds 3x-target bound {QUERY_BOUND:?} (samples: {samples:?})"
+        );
+    }
+
+    /// `compute_all` — the full diagnostics recompute `on_swap` runs after
+    /// EVERY snapshot swap (t3 whole-branch review, blocker fix). This
+    /// corpus is event-bearing (2 publishers + 2 subscribers per file — see
+    /// `tests/perf_support/mod.rs`'s doc), so `event_edges`/
+    /// `publisher_fanout` are genuinely populated at scale — the exact
+    /// condition that was missing before this fix-wave and let the
+    /// O(decls * event_edges) quadratic in `effective_incoming_count` go
+    /// unmeasured through 17 prior tasks.
+    #[test]
+    fn compute_all_within_bound() {
+        let (_dir, snap) = build_snapshot(1000);
+        let cfg = DiagnosticConfig::default();
+
+        assert_eq!(
+            snap.event_edges.len(),
+            1000 * perf_support::PUBLISHERS_PER_FILE,
+            "sanity: this 1000-file event-bearing corpus must have \
+             PUBLISHERS_PER_FILE publisher declarations per file"
+        );
+        let file1 = perf_support::file_name(1);
+        assert_eq!(
+            snap.decls_by_file[&file1].len(),
+            perf_support::PROCS_PER_FILE + perf_support::EVENT_ROUTINES_PER_FILE,
+            "sanity: every file declares PROCS_PER_FILE plain procedures plus \
+             EVENT_ROUTINES_PER_FILE event-bearing routines"
+        );
+
+        // Warm-up.
+        let _ = compute_all(&snap, PositionEncoding::Utf8, &cfg);
+
+        let mut samples = Vec::with_capacity(5);
+        for _ in 0..5 {
+            let start = Instant::now();
+            let result = compute_all(&snap, PositionEncoding::Utf8, &cfg);
+            samples.push(start.elapsed());
+            assert!(
+                !result.is_empty(),
+                "sanity: compute_all must produce entries for a 1000-file workspace"
+            );
+        }
+        let m = median(samples.clone());
+        println!(
+            "[perf_bounds] compute_all: median={m:?} absolute_bound={COMPUTE_ALL_BOUND:?} \
+             synthetic_bound={COMPUTE_ALL_SYNTHETIC_BOUND:?} samples={samples:?}"
+        );
+        // Both bounds asserted, same dual-bound convention as rung 1/2 (see
+        // COMPUTE_ALL_SYNTHETIC_BOUND's own doc for why the synthetic bound
+        // is the one that actually discriminates the fixed bug here).
+        assert!(
+            m <= COMPUTE_ALL_BOUND,
+            "compute_all median {m:?} exceeds the architectural bound {COMPUTE_ALL_BOUND:?} \
+             (samples: {samples:?})"
+        );
+        assert!(
+            m <= COMPUTE_ALL_SYNTHETIC_BOUND,
+            "compute_all median {m:?} exceeds the corpus-relative bound \
+             {COMPUTE_ALL_SYNTHETIC_BOUND:?} (samples: {samples:?}) — this is the exact \
+             O(decls * event_edges) regression class the t3 whole-branch review fix-wave closed"
         );
     }
 

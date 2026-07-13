@@ -96,34 +96,60 @@ pub fn compute_all(
         out.entry(workspace_uri(snap, virtual_path)).or_default();
     }
 
+    // Local, single-pass memoization (t3 whole-branch review, "while you're
+    // there" item — linear-but-real, not the quadratic blocker): makes the
+    // "at most one `LineTable::new` per file per `compute_all` call"
+    // invariant STRUCTURAL rather than incidental, so a future addition to
+    // this function's per-decl body can never silently regress into
+    // rebuilding a file's table more than once per pass. Deliberately a
+    // LOCAL cache, not a snapshot-level one — `compute_all` runs once per
+    // swap regardless (recomputing every file's diagnostics from scratch is
+    // this module's own documented design, see the module doc), so caching
+    // ACROSS calls would require snapshot-level storage this fix explicitly
+    // does not add.
+    let mut line_tables: HashMap<&str, LineTable<'_>> = HashMap::new();
+
     for (virtual_path, decls) in &snap.decls_by_file {
         let Some(entry) = snap.parsed.get(virtual_path) else {
             continue;
         };
         let uri = workspace_uri(snap, virtual_path);
-        let table = LineTable::new(&entry.text);
+        let table = line_tables
+            .entry(virtual_path.as_str())
+            .or_insert_with(|| LineTable::new(&entry.text));
 
         for decl in decls.iter() {
             let Some(routine) = find_routine_by_origin(&entry.file, decl.origin.byte.start) else {
                 continue;
             };
 
-            if cfg.unused_procedures && is_unused_procedure(snap, decl, routine) {
+            // Computed ONCE per declaration and reused below — a t3
+            // whole-branch review found this call duplicated (once inside
+            // `is_unused_procedure`, once here) on EVERY declaration, and the
+            // SECOND call site was not even gated behind
+            // `cfg.unused_procedures`, so disabling that rule didn't avoid
+            // paying for it. Doubling the cost of an already-hot per-decl
+            // call was small next to the O(event_edges) scan
+            // `effective_incoming_count` used to do internally (see that
+            // function's own doc for the real fix), but halving it here is
+            // still a real, free win now that the call itself is O(1).
+            let incoming_count = effective_incoming_count(snap, &decl.id);
+
+            if cfg.unused_procedures && is_unused_procedure(decl, routine, incoming_count) {
                 out.entry(uri.clone())
                     .or_default()
-                    .push(unused_procedure_diagnostic(snap, decl, &table, enc));
+                    .push(unused_procedure_diagnostic(snap, decl, table, enc));
             }
 
             let complexity = crate::analysis::routine_complexity_ir(&entry.file.ir, routine);
             let parameter_count = parameter_count_of(routine);
             let line_count = decl.origin.end.row.saturating_sub(decl.origin.start.row) + 1;
-            let incoming_count = effective_incoming_count(snap, &decl.id);
 
             push_quality_diagnostics(
                 out.entry(uri.clone()).or_default(),
                 snap,
                 decl,
-                &table,
+                table,
                 enc,
                 complexity,
                 parameter_count,
@@ -165,9 +191,9 @@ fn diagnostic_sort_key(d: &Diagnostic) -> (u32, u32, String) {
 // ---------------------------------------------------------------------------
 
 fn is_unused_procedure(
-    snap: &LspSnapshot,
     decl: &DeclEntry,
     routine: &al_syntax::ir::RoutineDecl,
+    incoming_count: usize,
 ) -> bool {
     // R1: only Procedure-kind routines are eligible; a Trigger is always excluded.
     if routine.kind != RoutineKind::Procedure {
@@ -205,8 +231,12 @@ fn is_unused_procedure(
     }
     // R2 (subscriber "used" via a real EventFlow edge) + R5 (InternalEvent
     // flagged unless subscribed or raised) + every ordinary procedure all
-    // fall through to the SAME zero-incoming check.
-    effective_incoming_count(snap, &decl.id) == 0
+    // fall through to the SAME zero-incoming check — `incoming_count` is the
+    // CALLER's already-computed `effective_incoming_count(snap, &decl.id)`,
+    // never recomputed here (t3 whole-branch review: this was previously a
+    // SECOND `effective_incoming_count` call per declaration, doubling an
+    // already-hot per-decl cost — see `compute_all`'s own doc).
+    incoming_count == 0
 }
 
 /// Byte-for-byte legacy message/code/severity/tags

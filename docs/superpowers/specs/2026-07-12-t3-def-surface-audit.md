@@ -482,6 +482,47 @@ Independently reviewed and CONFIRMED (re-verified the same `graph.rs` citations
 above) before this doc was patched — §4's per-object list now includes `name` as
 item 2.1, ahead of `declared_id`.
 
+### 6.6 LSP-surface display reads of `is_trigger`/raw `name` — dated correction, 2026-07-13 (t3 whole-branch review)
+
+**This is NOT a reversal of §6.2's `is_trigger` correction or of item 2's
+lowercased-`name` reasoning.** Both remain true on their own terms:
+`RoutineNode::is_trigger` still has zero RESOLUTION-path reads, and item 2's
+lowercased `name` is still what `graph.resolve_object`'s by-name index keys
+on. What this audit's scope (§1's "does a call-graph resolution path ever
+read this field") never considered, because it did not exist yet when this
+audit was written, is a SECOND class of reader added by LATER T3 tasks: the
+LSP SURFACE's own DISPLAY code, which reads the identical `ProgramGraph`/
+`ObjectNode`/`RoutineNode` data this fingerprint is built from, for a
+DIFFERENT purpose than resolution.
+
+**The finding:** `src/lsp/handlers.rs`'s `symbol_kind_for` (added by Task 11,
+after this audit) reads `RoutineNode::is_trigger` to classify a
+`CallHierarchyItem`'s `SymbolKind` (FUNCTION vs. EVENT); `object_name_for`
+(also Task 11) reads the graph's RAW-cased `ObjectNode::name` for a
+`CallHierarchyItem`'s `detail` text. Since rung 1 (Task 9) never rebuilds
+`graph` (it Arc-clones `cur.graph` unchanged — see `src/lsp/updater.rs`'s
+module doc), a source edit invisible to THIS fingerprint but visible to one
+of these display reads would leave a stale icon/detail string served across
+every subsequent rung-1 save, until an unrelated rung-2/3 event happened to
+rebuild the graph and refresh it. Two concrete edits demonstrate this: a bare
+`procedure Foo()` <-> `trigger Foo()` kind flip (same name/arity — no OTHER
+fingerprint field moves either) and a case-only object rename on a NUMBERED
+object (e.g. `"Sales Helper"` -> `"SALES HELPER"` — item 1's `ObjKey::Id`
+identity is unchanged, and item 2's lowercased `name` folds the case
+difference away).
+
+**Disposition:** both fields are now ALSO in the fingerprint — `is_trigger`
+as item 23 (routine-level), the RAW-cased `name` as item 22 (object-level,
+alongside item 2's existing lowercased form, not replacing it) — but for
+DISPLAY-staleness prevention, not resolution-soundness, which is why they
+are recorded as NEW items appended after the audit's original list rather
+than edits to items 1/2/§6.2's own reasoning. Cost: an extra rung-2 rebuild
+on either edit (both rare) — negligible against the correctness gap closed.
+Regression tests: `is_trigger_flip_changes_fingerprint` and
+`object_renamed_case_only_changes_fingerprint` (`src/lsp/def_surface.rs`),
+both confirmed to FAIL against the pre-fix fingerprint before the fix
+landed (TDD), per this project's own verification discipline.
+
 ## 7. Reviewer instruction (per the brief's Step 4 — refute-by-default)
 
 Independently grep `\b(graph|index)\.[a-zA-Z_]+` and `body_map\.(get|get_with_path)\(`

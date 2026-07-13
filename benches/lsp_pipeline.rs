@@ -3,10 +3,12 @@
 //! surface Task 15 cut the server over to. Measures: `build_full` over the
 //! 100/1000-file synthetic corpora, the 3 call-hierarchy query handlers
 //! (`prepare` / `incoming` / `outgoing`) against a 1000-file batch-built
-//! snapshot, and the incremental updater's rung-1 (body edit) / rung-2
-//! (signature edit) `apply_batch` paths — all in-process, no LSP stdio loop.
-//! This file previously benched the LEGACY `indexer.rs`/`graph.rs`/
-//! `handlers.rs` pipeline (T0.5); that pipeline is deleted in Task 17.
+//! snapshot, `compute_all` (the diagnostics recompute run after every
+//! snapshot swap — added in the t3 whole-branch review's blocker fix-wave),
+//! and the incremental updater's rung-1 (body edit) / rung-2 (signature
+//! edit) `apply_batch` paths — all in-process, no LSP stdio loop. This file
+//! previously benched the LEGACY `indexer.rs`/`graph.rs`/`handlers.rs`
+//! pipeline (T0.5); that pipeline is deleted in Task 17.
 //!
 //! Run: `cargo bench --bench lsp_pipeline` (or `cargo bench` for every bench
 //! target). See `tests/perf_bounds.rs` for the release-only CI gate these
@@ -24,6 +26,8 @@
 #[allow(dead_code)]
 mod perf_support;
 
+use al_call_hierarchy::config::DiagnosticConfig;
+use al_call_hierarchy::lsp::diagnostics::compute_all;
 use al_call_hierarchy::lsp::encoding::PositionEncoding;
 use al_call_hierarchy::lsp::handlers::{self, ItemData};
 use al_call_hierarchy::lsp::snapshot::LspSnapshot;
@@ -154,6 +158,25 @@ fn bench_queries(c: &mut Criterion) {
     group.finish();
 }
 
+/// `compute_all` — the full diagnostics recompute `on_swap` runs after
+/// EVERY snapshot swap (t3 whole-branch review, blocker fix — see
+/// `LspSnapshot::publisher_fanout`'s doc and `tests/perf_bounds.rs`'s
+/// `compute_all_within_bound` for the CI gate this bench's numbers feed).
+/// This corpus is event-bearing (see `tests/perf_support/mod.rs`'s doc), so
+/// `event_edges`/`publisher_fanout` are genuinely populated at scale —
+/// building the snapshot happens once, outside the timed closure.
+fn bench_compute_all(c: &mut Criterion) {
+    let dir = corpus_dir(1000);
+    let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
+    let cfg = DiagnosticConfig::default();
+
+    c.bench_function("compute_all_1000_files", |b| {
+        b.iter(|| {
+            black_box(compute_all(&snap, PositionEncoding::Utf8, &cfg));
+        });
+    });
+}
+
 /// The incremental updater's rung-1 (body-only edit) path against a
 /// 1000-file snapshot (T3 Task 9 Step-3b CDO re-measurement: ~10.5ms
 /// warm-context; CLAUDE.md target: <100ms). Every iteration re-saves the
@@ -244,6 +267,7 @@ criterion_group!(
     benches,
     bench_build_full,
     bench_queries,
+    bench_compute_all,
     bench_rung1_body_edit,
     bench_rung2_signature_edit
 );

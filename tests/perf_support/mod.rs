@@ -29,12 +29,47 @@
 //! exists for that text — see `src/indexer.rs`'s `add_variable_binding`/
 //! `callee_object` handling) tolerated the bare form, which is how this
 //! generator originally read; the engine-backed LSP surface (T3) does not.
+//!
+//! # Event-bearing (t3 whole-branch review — closes a real coverage hole)
+//!
+//! Every file ALSO declares [`EVENT_ROUTINES_PER_FILE`] event-related
+//! routines: two publishers (`OnEventA` — `[IntegrationEvent]`; `OnEventB` —
+//! `[InternalEvent]`) and two subscribers (`HandleEventA`/`HandleEventB`,
+//! each `[EventSubscriber(...)]`-attributed against the PREVIOUS file's
+//! (index `i-1`, wrapping around) matching publisher) — 2 real
+//! `event_edges` entries per file, each with exactly one real resolved
+//! route. Before this addition, the corpus had ZERO events at all, so
+//! `LspSnapshot::event_edges` was always empty and `effective_incoming_count`'s
+//! (`src/lsp/lens.rs`) per-declaration publisher-fan-out term read as
+//! literally free — the exact condition that let a genuine O(decls ×
+//! event_edges) quadratic in `compute_all` (`src/lsp/diagnostics.rs`) go
+//! undetected through 17 prior tasks and every review: neither
+//! `tests/perf_bounds.rs` nor `benches/lsp_pipeline.rs` ever called
+//! `compute_all` at all, and the one thing that WOULD have caught the cost
+//! (a non-trivial `event_edges` population) never existed in this shared
+//! fixture. See `tests/perf_bounds.rs`'s `compute_all_*` rows for the
+//! measurement this now enables.
 
 use std::fs;
 use std::path::Path;
 
 /// Procedures generated per codeunit.
 pub const PROCS_PER_FILE: usize = 6;
+
+/// Event-related routines generated per codeunit, in ADDITION to
+/// [`PROCS_PER_FILE`] — see the module doc's "Event-bearing" section. Always
+/// appended AFTER the `Proc*` routines in source order, so `Proc0` stays the
+/// first procedure in the file (preserving [`body_only_comment_edit`]'s
+/// "first `begin\n` in the file is `Proc0`'s" assumption). Half of these
+/// ([`PUBLISHERS_PER_FILE`]) are publishers; the other half are subscribers.
+pub const EVENT_ROUTINES_PER_FILE: usize = 4;
+
+/// The publisher half of [`EVENT_ROUTINES_PER_FILE`] (`OnEventA`/`OnEventB`)
+/// — exposed separately since `LspSnapshot::event_edges` carries one entry
+/// PER PUBLISHER declaration (`emit_event_flow_edges`'s own contract), not
+/// per event-bearing routine, so `file_count * PUBLISHERS_PER_FILE` is the
+/// corpus's exact expected `event_edges.len()`.
+pub const PUBLISHERS_PER_FILE: usize = 2;
 
 /// Object ID base for generated codeunits — a high custom-range ID that
 /// won't collide with any real AL object.
@@ -149,6 +184,25 @@ fn codeunit_source(i: usize, file_count: usize) -> String {
             "    procedure Proc{last}()\n    begin\n    end;\n"
         ));
     }
+
+    // Event routines (see the module doc's "Event-bearing" section): this
+    // file's own 2 publishers, plus 2 subscribers targeting the PREVIOUS
+    // file's publishers (wrapping around — a lone file self-subscribes,
+    // still exercising the publisher side, which is what drives
+    // `event_edges` scale).
+    let target = object_name((i + file_count - 1) % file_count);
+    body.push_str("\n    [IntegrationEvent(false, false)]\n");
+    body.push_str("    procedure OnEventA()\n    begin\n    end;\n\n");
+    body.push_str("    [InternalEvent(false)]\n");
+    body.push_str("    procedure OnEventB()\n    begin\n    end;\n\n");
+    body.push_str(&format!(
+        "    [EventSubscriber(ObjectType::Codeunit, Codeunit::\"{target}\", 'OnEventA', '', false, false)]\n"
+    ));
+    body.push_str("    local procedure HandleEventA()\n    begin\n    end;\n\n");
+    body.push_str(&format!(
+        "    [EventSubscriber(ObjectType::Codeunit, Codeunit::\"{target}\", 'OnEventB', '', false, false)]\n"
+    ));
+    body.push_str("    local procedure HandleEventB()\n    begin\n    end;\n");
 
     format!("codeunit {id} \"{name}\"\n{{\n{body}}}\n")
 }

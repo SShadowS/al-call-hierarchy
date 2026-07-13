@@ -129,8 +129,8 @@ fn format_lens_title(
     format!("{ref_text} | {complexity_text}, {lines_text}, {params_text}")
 }
 
-/// Legacy hardcodes 0 parameters for triggers (`parser.rs`'s
-/// `parse_file_ir`) — mirrored here from the raw `RoutineDecl`.
+/// Legacy hardcoded 0 parameters for triggers (a T3-deleted `parser.rs`
+/// behavior, kept for continuity) — mirrored here from the raw `RoutineDecl`.
 pub(crate) fn parameter_count_of(routine: &RoutineDecl) -> u32 {
     match routine.kind {
         RoutineKind::Trigger => 0,
@@ -165,23 +165,25 @@ pub(crate) fn find_routine_by_origin(
 ///   doc). This is the mechanism that makes an `[EventSubscriber]` routine
 ///   "used" without any attribute-based special-casing (see `diagnostics.rs`'s
 ///   module doc, rule R2).
-/// - **as-publisher fan-out**: the number of REAL routes on every `event_edges`
-///   entry whose `edge.from == id` (i.e. `id` is a PUBLISHER with ≥1 resolved
-///   subscriber). Deliberately counts ROUTES, not edges — `emit_event_flow_edges`
-///   emits one `ClassifiedEdge` per publisher UNCONDITIONALLY (even with zero
-///   subscribers), so "is `id` the `from` of an event edge" is never itself
-///   evidence of usage; only a NON-EMPTY route list (an actual subscriber)
-///   counts, mirroring legacy's own `event_subscriptions.get(qname).len()`
-///   term (rule R5's "subscribed" half).
+/// - **as-publisher fan-out**: `snap.publisher_fanout[id]` — the REAL
+///   resolved-subscriber count when `id` is a PUBLISHER (precomputed once per
+///   snapshot rebuild — see [`crate::lsp::snapshot::LspSnapshot::publisher_fanout`]'s
+///   doc). O(1): a t3 whole-branch review found the ORIGINAL version of this
+///   function scanned ALL of `event_edges` on every single call (`O(event_edges)`
+///   per query), and `compute_all` calls it once per declaration on every
+///   diagnostics recompute — itself run on every snapshot swap, INCLUDING a
+///   rung-1 single-file body edit — making a full diagnostics pass
+///   `O(decls × event_edges)`: quadratic in workspace size, measured 3.4x
+///   slower for a 2x larger event-bearing corpus. `publisher_fanout` already
+///   sums ROUTES (never mere edge presence — `emit_event_flow_edges` emits
+///   one `ClassifiedEdge` per publisher UNCONDITIONALLY, even with zero
+///   subscribers, so a publisher's own entry existing is never itself
+///   evidence of usage), mirroring legacy's own
+///   `event_subscriptions.get(qname).len()` term (rule R5's "subscribed" half).
 #[must_use]
 pub(crate) fn effective_incoming_count(snap: &LspSnapshot, id: &RoutineNodeId) -> usize {
     let direct = snap.incoming.get(id).map(Vec::len).unwrap_or(0);
-    let as_publisher_fan_out: usize = snap
-        .event_edges
-        .iter()
-        .filter(|ce| ce.edge.from == *id)
-        .map(|ce| ce.edge.routes.len())
-        .sum();
+    let as_publisher_fan_out = snap.publisher_fanout.get(id).copied().unwrap_or(0);
     direct + as_publisher_fan_out
 }
 

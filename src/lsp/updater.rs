@@ -461,7 +461,7 @@ impl Updater {
         );
 
         let decl_by_id = build_decl_by_id(&decls_by_file);
-        let incoming = build_incoming(&edges_by_file, &event_edges);
+        let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
         // Dependency source never changes at rung 2 (it reuses the cached,
         // unchanged `dep_layer` — see this method's own doc), but `new_graph`
         // is a freshly assembled `ProgramGraph` value, so `dep_decl_by_id`/
@@ -480,6 +480,7 @@ impl Updater {
             edges_by_file,
             event_edges,
             incoming,
+            publisher_fanout,
             decls_by_file,
             decl_by_id,
             dep_decl_by_id: Arc::new(dep_decl_by_id),
@@ -655,7 +656,14 @@ fn apply_rung1_core(
 
     let event_edges = Arc::clone(&cur.event_edges);
     let decl_by_id = build_decl_by_id(&decls_by_file);
-    let incoming = build_incoming(&edges_by_file, &event_edges);
+    // `event_edges` is unchanged at rung 1 (Arc::clone'd above, never
+    // recomputed — rung 1 touches only workspace Call/Run/ImplicitTrigger
+    // edges), so the resulting `publisher_fanout` is byte-identical to
+    // `cur.publisher_fanout`; recomputed anyway (cheap — same loop
+    // `build_incoming` already runs to rebuild `incoming` from the changed
+    // `edges_by_file`) rather than special-cased, mirroring how `incoming`
+    // itself is always rebuilt fresh at every rung rather than forwarded.
+    let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
 
     LspSnapshot {
         generation: cur.generation + 1,
@@ -666,6 +674,7 @@ fn apply_rung1_core(
         edges_by_file,
         event_edges,
         incoming,
+        publisher_fanout,
         decls_by_file,
         decl_by_id,
         // Rung 1 touches ONLY workspace files — dependency source is

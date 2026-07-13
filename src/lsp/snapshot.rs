@@ -124,6 +124,22 @@ pub struct LspSnapshot {
     /// DERIVED — see [`build_incoming`]'s doc. O(E) wholesale rebuild only;
     /// never incrementally edited.
     pub incoming: HashMap<RoutineNodeId, Vec<EdgeRef>>,
+    /// DERIVED, precomputed in the SAME O(E) pass [`build_incoming`] makes
+    /// over `event_edges` (t3 whole-branch review, blocker fix): for every
+    /// routine `P` that is the `from` (publisher) of at least one
+    /// `event_edges` entry, the sum of that entry's `routes.len()` — the
+    /// REAL resolved-subscriber count [`crate::lsp::lens::
+    /// effective_incoming_count`] needs for its "as-publisher fan-out" term.
+    /// Before this field existed, that function computed the identical value
+    /// by scanning ALL of `event_edges` on EVERY call — O(E) per query,
+    /// called once per declaration by `compute_all` on every diagnostics
+    /// recompute (itself run on every snapshot swap, including a rung-1
+    /// single-file body edit), making a full diagnostics pass O(decls ×
+    /// event_edges) — quadratic in workspace size. Precomputing it here
+    /// keeps `effective_incoming_count` O(1) per call, matching `incoming`'s
+    /// own precomputed-index pattern; rebuilt wholesale alongside `incoming`
+    /// at every rung (H-10 law — never incrementally patched).
+    pub publisher_fanout: HashMap<RoutineNodeId, usize>,
     /// Sorted by `origin.byte.start` within each file. `Arc`-wrapped per file
     /// (T3 Task 9) so an incremental rung-1/rung-2 rebuild can share every
     /// UNCHANGED file's decl list via a cheap `Arc::clone` instead of
@@ -297,7 +313,7 @@ impl LspSnapshot {
             // ownership-move phase below needs to consume `parsed` by value.
         }
 
-        let incoming = build_incoming(&edges_by_file, &event_edges);
+        let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
         let decl_by_id = build_decl_by_id(&decls_by_file);
 
         // ── Ownership-move phase: consume `parsed` by value, pairing each
@@ -335,6 +351,7 @@ impl LspSnapshot {
             edges_by_file,
             event_edges,
             incoming,
+            publisher_fanout,
             decls_by_file,
             decl_by_id,
             dep_decl_by_id: Arc::new(dep_decl_by_id),
@@ -417,11 +434,24 @@ fn point_in_origin(pos: (u32, u32), origin: &al_syntax::ir::Origin) -> bool {
 /// meant to show every statically-possible caller, including one gated behind
 /// `ManualBinding`/`AmbiguousDispatch`, not just the unconditionally-firing
 /// subset `Edge::default_reachable_routes` would give).
+///
+/// Returns `(incoming, publisher_fanout)` — see [`LspSnapshot::publisher_fanout`]'s
+/// doc for why the second map is precomputed HERE, in the SAME loop over
+/// `event_edges` this function already runs, rather than via a separate pass
+/// (t3 whole-branch review, blocker fix): `publisher_fanout[P]` is the sum of
+/// `routes.len()` over every `event_edges` entry whose `edge.from == P` —
+/// the REAL resolved-subscriber count, never mere edge presence (an
+/// `emit_event_flow_edges` publisher entry always exists even with zero
+/// subscribers, so counting entries rather than summing routes would
+/// overcount an unsubscribed publisher as "used").
 #[must_use]
 pub fn build_incoming(
     edges_by_file: &HashMap<String, Arc<Vec<ClassifiedEdge>>>,
     event_edges: &[ClassifiedEdge],
-) -> HashMap<RoutineNodeId, Vec<EdgeRef>> {
+) -> (
+    HashMap<RoutineNodeId, Vec<EdgeRef>>,
+    HashMap<RoutineNodeId, usize>,
+) {
     let mut incoming: HashMap<RoutineNodeId, Vec<EdgeRef>> = HashMap::new();
 
     for (file, edges) in edges_by_file {
@@ -430,11 +460,15 @@ pub fn build_incoming(
         }
     }
 
+    let mut publisher_fanout: HashMap<RoutineNodeId, usize> = HashMap::new();
     for (idx, ce) in event_edges.iter().enumerate() {
         push_edge_targets(&mut incoming, &ce.edge, EVENT_EDGES_KEY, idx as u32);
+        if !ce.edge.routes.is_empty() {
+            *publisher_fanout.entry(ce.edge.from.clone()).or_insert(0) += ce.edge.routes.len();
+        }
     }
 
-    incoming
+    (incoming, publisher_fanout)
 }
 
 /// Push one [`EdgeRef`] per DISTINCT `RouteTarget::Routine` target `edge`
@@ -894,6 +928,95 @@ mod tests {
         }
     }
 
+    // ── publisher_fanout: precomputed, O(1)-lookupable (t3 whole-branch ───
+    // ── review blocker fix — see LspSnapshot::publisher_fanout's doc) ──────
+
+    #[test]
+    fn publisher_fanout_counts_real_routes_and_omits_unpublished_routines() {
+        let dir = fixture_dir();
+        let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
+
+        // Beta.OnAfterProcess is a real publisher with exactly one real
+        // subscriber (Gamma.HandleAfterProcess, per the fixture) — its
+        // publisher_fanout entry must equal 1, matching the OLD
+        // effective_incoming_count's `event_edges.iter().filter(from ==
+        // id).map(routes.len()).sum()` computation exactly (same value, now
+        // precomputed instead of scanned per call).
+        let beta_on_after_process = snap.decls_by_file["Beta.al"]
+            .iter()
+            .find(|d| d.name == "OnAfterProcess")
+            .expect("Beta.OnAfterProcess decl")
+            .id
+            .clone();
+        assert_eq!(
+            snap.publisher_fanout.get(&beta_on_after_process).copied(),
+            Some(1),
+            "a publisher with exactly one real subscriber must have \
+             publisher_fanout == 1"
+        );
+
+        // A routine that is NEVER a publisher (Beta.Process, an ordinary
+        // procedure) must have NO publisher_fanout entry at all — never a
+        // spurious Some(0) that would silently inflate a future consumer's
+        // sum by an extra hashmap probe for no reason.
+        let beta_process = snap.decls_by_file["Beta.al"]
+            .iter()
+            .find(|d| d.name == "Process")
+            .expect("Beta.Process decl")
+            .id
+            .clone();
+        assert_eq!(
+            snap.publisher_fanout.get(&beta_process),
+            None,
+            "an ordinary (non-publisher) routine must have no publisher_fanout entry"
+        );
+    }
+
+    #[test]
+    fn publisher_fanout_omits_a_publisher_with_zero_real_subscribers() {
+        // emit_event_flow_edges emits ONE ClassifiedEdge per publisher
+        // declaration UNCONDITIONALLY, even with zero subscribers — mere
+        // edge PRESENCE must never count as fan-out (mirrors
+        // effective_incoming_count's own "as-publisher fan-out" doc).
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("app.json"),
+            r#"{
+    "id": "33333333-0000-0000-0000-00000000000f",
+    "name": "PublisherFanoutZeroFixture",
+    "publisher": "probe",
+    "version": "1.0.0.0"
+}"#,
+        )
+        .expect("write app.json");
+        std::fs::write(
+            dir.path().join("Lonely.al"),
+            r#"codeunit 50100 "Lonely"
+{
+    [IntegrationEvent(false, false)]
+    procedure OnNobodyListens()
+    begin
+    end;
+}
+"#,
+        )
+        .expect("write Lonely.al");
+
+        let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
+        let publisher = snap.decls_by_file["Lonely.al"]
+            .iter()
+            .find(|d| d.name == "OnNobodyListens")
+            .expect("OnNobodyListens decl")
+            .id
+            .clone();
+        assert_eq!(
+            snap.publisher_fanout.get(&publisher),
+            None,
+            "a publisher with ZERO real subscribers must have no \
+             publisher_fanout entry — edge presence alone is never fan-out"
+        );
+    }
+
     // ── build_incoming: one edge, 2 routes to the SAME target → 1 EdgeRef ──
     // (T3 Task 9 review carry-over from Task 8: a pathological
     // ambiguous-overload-style edge whose routes list happens to name the
@@ -965,7 +1088,7 @@ mod tests {
             }]),
         );
 
-        let incoming = build_incoming(&edges_by_file, &[]);
+        let (incoming, _fanout) = build_incoming(&edges_by_file, &[]);
         let refs = incoming
             .get(&target)
             .expect("target must have an incoming entry");
@@ -1063,7 +1186,7 @@ mod tests {
             ]),
         );
 
-        let incoming = build_incoming(&edges_by_file, &[]);
+        let (incoming, _fanout) = build_incoming(&edges_by_file, &[]);
         let refs = incoming
             .get(&target)
             .expect("target must have incoming entries");
