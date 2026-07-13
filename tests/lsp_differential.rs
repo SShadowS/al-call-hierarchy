@@ -892,6 +892,18 @@ struct RoutineEntry {
     /// caller's own source text (see `run_sweep`). `VariableReceiverResolved`'s
     /// mechanical predicate.
     new_incoming_variable_receiver_sites: BTreeSet<NormRange>,
+    /// `ImplicitTriggerEdge`'s OUTGOING-axis counterpart (CDO re-run
+    /// finding, t3.14 final residual): call-site ranges (byte-native,
+    /// `NormRange` space) where THIS routine (as CALLER) has an outgoing
+    /// edge backed by `EdgeKind::ImplicitTrigger` — e.g. `Rec.Validate(Field,
+    /// Value)` fanning out to a MULTICAST set of the record's field
+    /// `OnValidate` triggers. Looked up directly against this routine's own
+    /// file's `LspSnapshot::edges_by_file` bucket, filtered to edges `FROM`
+    /// this exact routine (see `run_sweep`) — legacy never models trigger
+    /// dispatch at all (`Validate` is just a builtin record method to it),
+    /// so every one of the fan-out's candidate targets is new-only at this
+    /// site.
+    new_outgoing_implicit_trigger_sites: BTreeSet<NormRange>,
 }
 
 struct Sweep {
@@ -987,6 +999,7 @@ fn run_sweep(
                 new_incoming_implicit_trigger_sites: BTreeSet::new(),
                 new_incoming_implicit_rec_sites: BTreeSet::new(),
                 new_incoming_variable_receiver_sites: BTreeSet::new(),
+                new_outgoing_implicit_trigger_sites: BTreeSet::new(),
             });
         }
     }
@@ -1060,6 +1073,7 @@ fn run_sweep(
                     new_incoming_implicit_trigger_sites: BTreeSet::new(),
                     new_incoming_implicit_rec_sites: BTreeSet::new(),
                     new_incoming_variable_receiver_sites: BTreeSet::new(),
+                    new_outgoing_implicit_trigger_sites: BTreeSet::new(),
                 });
             }
         }
@@ -1221,6 +1235,29 @@ fn run_sweep(
                                     .new_incoming_variable_receiver_sites
                                     .insert(canonical_span_to_norm_range(&ce.edge.site.span));
                             }
+                        }
+                    }
+                }
+
+                // ImplicitTriggerEdge's OUTGOING-axis counterpart (CDO
+                // re-run finding, t3.14 final residual): this routine's OWN
+                // outgoing edges (as CALLER) backed by an
+                // `EdgeKind::ImplicitTrigger` edge — e.g. `Rec.Validate(Field,
+                // Value)` fanning out to a MULTICAST set of the record's
+                // field `OnValidate` triggers. No reverse "outgoing" index
+                // exists on `LspSnapshot` (unlike `incoming` above), so this
+                // scans this routine's own file's `edges_by_file` bucket
+                // directly, filtered to edges `FROM` this EXACT routine
+                // (`RoutineNodeId` equality: object + name_lc +
+                // enclosing_member_lc + params_count + sig_fp).
+                if let Some(file_edges) =
+                    new_virtual_path.and_then(|vp| new_snap.edges_by_file.get(vp))
+                {
+                    for ce in file_edges.iter() {
+                        if ce.edge.from == data.node && ce.edge.kind == EdgeKind::ImplicitTrigger {
+                            entry
+                                .new_outgoing_implicit_trigger_sites
+                                .insert(canonical_span_to_norm_range(&ce.edge.site.span));
                         }
                     }
                 }
@@ -1444,6 +1481,47 @@ fn is_new_event_derived_outgoing(
     })
 }
 
+/// Push new-only outgoing findings for `n_items`, all sharing `site` —
+/// `ImplicitTriggerEdge` (CDO re-run finding, final residual) if `site` is
+/// a recorded outgoing-implicit-trigger fan-out site (see `run_sweep`),
+/// else the ordinary `NewUnexplained`. Shared by both the `([], _)` and the
+/// per-target-name `(0, _)` new-only arms below, since a multicast
+/// implicit-trigger fan-out (e.g. `Rec.Validate(Field, Value)` → every
+/// field's `OnValidate`) can legitimately produce SEVERAL distinct new-only
+/// items at the identical site.
+fn push_new_only_outgoing(
+    ledger: &mut Ledger,
+    entry: &RoutineEntry,
+    routine: &str,
+    site: NormRange,
+    n_items: &[&CallHierarchyOutgoingCall],
+) {
+    let is_implicit_trigger = entry.new_outgoing_implicit_trigger_sites.contains(&site);
+    for n in n_items {
+        if is_implicit_trigger {
+            ledger.push(
+                "outgoing",
+                routine,
+                Class::NewBetter(NewBetterClass::ImplicitTriggerEdge),
+                format!(
+                    "new-only outgoing item at site {site:?}: target={:?} — a record operation's run-trigger fan-out legacy never models",
+                    n.to.name
+                ),
+            );
+        } else {
+            ledger.push(
+                "outgoing",
+                routine,
+                Class::NewUnexplained,
+                format!(
+                    "new-only outgoing item at site {site:?}: target={:?}",
+                    n.to.name
+                ),
+            );
+        }
+    }
+}
+
 fn classify_outgoing(ledger: &mut Ledger, sweep: &Sweep, new_snap: &LspSnapshot) {
     for entry in sweep.entries.values() {
         let routine = entry.identity.key();
@@ -1483,17 +1561,7 @@ fn classify_outgoing(ledger: &mut Ledger, sweep: &Sweep, new_snap: &LspSnapshot)
                 ([], []) => unreachable!("site came from one of the two maps"),
                 ([l], [n]) => classify_outgoing_pair(ledger, sweep, new_snap, &routine, l, n),
                 ([], _) => {
-                    for n in &n_items {
-                        ledger.push(
-                            "outgoing",
-                            &routine,
-                            Class::NewUnexplained,
-                            format!(
-                                "new-only outgoing item at site {site:?}: target={:?}",
-                                n.to.name
-                            ),
-                        );
-                    }
+                    push_new_only_outgoing(ledger, entry, &routine, site, &n_items);
                 }
                 (_, []) => {
                     for l in &l_items {
@@ -1544,17 +1612,7 @@ fn classify_outgoing(ledger: &mut Ledger, sweep: &Sweep, new_snap: &LspSnapshot)
                         let n_group = n_by_name.get(&name).cloned().unwrap_or_default();
                         match (l_group.len(), n_group.len()) {
                             (0, _) => {
-                                for n in &n_group {
-                                    ledger.push(
-                                        "outgoing",
-                                        &routine,
-                                        Class::NewUnexplained,
-                                        format!(
-                                            "new-only outgoing item at site {site:?}: target={:?}",
-                                            n.to.name
-                                        ),
-                                    );
-                                }
+                                push_new_only_outgoing(ledger, entry, &routine, site, &n_group);
                             }
                             (_, 0) => {
                                 for l in &l_group {
@@ -2844,27 +2902,51 @@ fn lsp_diff_deps_fixture_has_zero_regressions_and_zero_unexplained() {
 /// it MATCHES cleanly (verified empirically, not assumed) — legacy's
 /// `push_variables_ir` DOES capture `var`-section locals correctly, so only
 /// the parameter shape is a genuine gap, not "any variable receiver."
+/// `ImplicitTriggerTableExt.al` (CDO re-run finding, final residual)
+/// extends `ImplicitTrigger.al`'s table with a SECOND `"Amount".OnValidate`
+/// via `modify("Amount")`, and `ImplicitTriggerCaller.al`'s `DoValidate`
+/// calls `Rec.Validate(Amount, ...)` — `ImplicitTriggerEdge`'s OUTGOING-axis
+/// counterpart: legacy never models trigger dispatch at all, so a
+/// same-field Validate call's MULTICAST fan-out (both the base table's and
+/// the extension's `OnValidate` legitimately fire — real AL semantics, not
+/// a duplicate-emission artifact) produces 2 distinct new-only outgoing
+/// items at the identical call site, mirroring CDO's own 7-candidate shape
+/// (`Table 6175283 "CDO E-Mail Template Header"`.`UpdateTemplateLines`).
 #[test]
 fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
     let ledger = run_differential(&fixture_path("lsp-diff-nested"), false);
     ledger.assert_gates_clean("lsp-diff-nested");
     let counts = ledger.class_counts();
 
-    // 2 total: Rec.Insert(true)'s ImplicitTrigger edge shows up once on the
-    // incoming axis (OnInsert's caller) and once on codeLens (OnInsert's
-    // inflated ref count) — outgoing's own divergence for the SAME call
-    // site is already explained by UnqualifiedCallResolved (legacy's arm-3
-    // "totally unresolved" placeholder — `Insert` is a builtin record
-    // method, never a user Definition — is the IDENTICAL `data: None` shape
-    // an unqualified call produces, so the existing predicate already
-    // covers it without double-counting).
+    // 8 total: 2 (unchanged) + 6 NEW (CDO re-run finding, final residual —
+    // ImplicitTriggerEdge's OUTGOING-axis counterpart).
+    // - Rec.Insert(true)'s ImplicitTrigger edge shows up once on the
+    //   incoming axis (OnInsert's caller) and once on codeLens (OnInsert's
+    //   inflated ref count) — outgoing's own divergence for the SAME call
+    //   site is already explained by UnqualifiedCallResolved (legacy's arm-3
+    //   "totally unresolved" placeholder — `Insert` is a builtin record
+    //   method, never a user Definition — is the IDENTICAL `data: None`
+    //   shape an unqualified call produces, so the existing predicate
+    //   already covers it without double-counting) = 2.
+    // - `DoValidate`'s `Rec.Validate(Amount, ...)` — `ImplicitTriggerTableExt.al`'s
+    //   `modify("Amount") { trigger OnValidate() }` extends the base
+    //   table's OWN "Amount".OnValidate, so the SAME field's Validate call
+    //   fans out to a genuine MULTICAST candidate set of 2 (base +
+    //   extension, both legitimately firing — real AL semantics, not a
+    //   duplicate-emission artifact, mirroring CDO's own 7-candidate
+    //   shape): 2 outgoing (one per candidate, SAME site) + 2 incoming (one
+    //   per candidate's own file) + 2 codeLens (one per candidate's own
+    //   file) = 6. Outgoing's OWN divergence for the SAME call site is
+    //   ALSO separately explained by UnqualifiedCallResolved (`Rec.Validate`
+    //   is a bareword/unqualified call too, same root cause as
+    //   `Rec.Insert(true)` above), not double-counted here.
     assert_eq!(
         counts
             .get("NewBetter::ImplicitTriggerEdge")
             .copied()
             .unwrap_or(0),
-        2,
-        "ImplicitTriggerEdge: Rec.Insert(true) firing OnInsert, incoming + codeLens; counts={counts:?}"
+        8,
+        "ImplicitTriggerEdge: Rec.Insert(true) (2: incoming+codeLens) + Rec.Validate(Amount) multicast fan-out (6: 2 outgoing + 2 incoming + 2 codeLens); counts={counts:?}"
     );
     // 6 total: the page action's OnAction -> SetBackgroundPDF and the
     // page's OnAfterGetCurrRecord -> RefreshCache cross-object implicit-Rec
@@ -2935,11 +3017,18 @@ fn lsp_diff_nested_fixture_has_zero_regressions_and_zero_unexplained() {
     // `SendQueue`, and `RunDispatchTarget`'s `OnRun` — every axis of every
     // new routine that ISN'T one of the 11 VariableReceiverResolved
     // divergences above) — inspected via the same probe, not blindly
-    // copied forward.
+    // copied forward. Bumped again from 56 to 61 (+5) by the
+    // ImplicitTriggerEdge outgoing-axis fixture additions' own remaining
+    // facts (3 new prepare Matches for `ImplicitTrigger.al`'s
+    // "Amount".OnValidate, `ImplicitTriggerCaller.al`'s `DoValidate`, and
+    // `ImplicitTriggerTableExt.al`'s OnValidate; 1 codeLens Match for
+    // `DoValidate` itself; 1 diagnostics Match — `DoValidate` is never
+    // called on EITHER side, agreeing cleanly) — inspected via the same
+    // probe, not blindly copied forward.
     assert_eq!(
         counts.get("Match").copied().unwrap_or(0),
-        56,
-        "Match: the 4 nested-trigger-caller falsification shapes + UseLocalVar's local-variable-receiver match + every other routine's remaining facts (layer 3 + layer 4 fixtures); counts={counts:?}"
+        61,
+        "Match: the 4 nested-trigger-caller falsification shapes + UseLocalVar's local-variable-receiver match + every other routine's remaining facts (layer 3 + layer 4 + final-residual fixtures); counts={counts:?}"
     );
 }
 

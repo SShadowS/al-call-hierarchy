@@ -355,6 +355,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an engine fix (Task 9), not a test change. Both new tests added to
   `src/lsp/updater.rs`'s own test module. CDO pins deliberately left
   unchanged; the controller re-runs and hands back updated numbers.
+  **CDO re-run: final residual (8/9 green)** — after Findings A/B landed,
+  the controller's H-10 test PASSED for real on CDO (confirming the
+  `classify_path` engine fix) and the diagnostics-axis collapse closed;
+  ONE residual remained: 7 new-only OUTGOING items at a single site
+  (`Table 6175283 "CDO E-Mail Template Header"`.`UpdateTemplateLines`'s
+  `EMailTemplateLine.Validate("Dimension Code", "Dimension Code")`) — the
+  engine's implicit-trigger machinery fans a same-field `Validate` call
+  out to a MULTICAST candidate set (7 distinct field-scoped `OnValidate`
+  routines across the base table and its extensions, all legitimately
+  firing — real AL semantics, not a duplicate-emission bug), which
+  legacy never models (`Validate` is just a builtin record method to
+  it). This is `ImplicitTriggerEdge` — already wired into
+  `classify_incoming`/`classify_code_lens` — but never into the
+  OUTGOING axis's new-only arms. Fix: `run_sweep` now ALSO records this
+  routine's own file's `edges_by_file` entries backed by
+  `EdgeKind::ImplicitTrigger` where `edge.from` matches this exact
+  routine (no reverse "outgoing" index exists on `LspSnapshot`, unlike
+  `incoming`), into a new `new_outgoing_implicit_trigger_sites` set;
+  `classify_outgoing`'s two new-only arms (`([], _)` and the MED-3
+  per-target-name `(0, _)`) both route through a new shared
+  `push_new_only_outgoing` helper that checks this set before defaulting
+  to `NewUnexplained`. New fixture arm in `tests/fixtures/lsp-diff-nested/`:
+  `ImplicitTriggerTableExt.al` extends `ImplicitTrigger.al`'s table with
+  a SECOND `"Amount".OnValidate` via `modify("Amount")`, and
+  `ImplicitTriggerCaller.al`'s new `DoValidate` calls
+  `Rec.Validate(Amount, ...)` — reproducing a genuine 2-candidate
+  multicast locally (mirroring CDO's 7-candidate shape exactly).
+  `ImplicitTriggerEdge` 2→8 on `lsp-diff-nested` (every finding
+  individually probed before pinning — 2 outgoing + 2 incoming + 2
+  codeLens for the new multicast pair, on top of the unchanged
+  `Rec.Insert(true)` pair). TDD-calibrated: forced the new outgoing
+  check off, confirmed the exact 2 multicast findings correctly fail as
+  `NewUnexplained`, reverted. This is expected to be the LAST layer —
+  the controller re-runs CDO and, if green, hands back the FINAL pin
+  numbers for every class.
 - **`tests/lsp_incremental_parity.rs`: dep-bearing fixture arm (T3
   LSP-migration arc, Task 14 Step 5, plan-amended)** —
   `tests/fixtures/lsp-diff-deps/` exercises the incremental-vs-batch gate
