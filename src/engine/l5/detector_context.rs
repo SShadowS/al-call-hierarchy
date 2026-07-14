@@ -144,14 +144,18 @@ pub struct DetectorContext<'a> {
     /// EMPTY for source-only runs (no dep .app parsed).
     pub app_versions: HashMap<String, String>,
     /// R4-F Stage-5b — the L4.5 ordering facts the d47/d49/d51 detectors consume,
-    /// keyed by `StableRoutineId`. al-sem computes this LAZILY (`ctx.getOrderingFacts()`,
-    /// memoized — only d47/d49/d51 reference it, so non-ordering runs never pay the
-    /// snapshot→digest→ordering cost). The Rust port computes it EAGERLY here (one
-    /// `compute_ordering_facts` pass over the resolved model); the R4 differential
-    /// filters findings by detector name, so eager computation only adds the
-    /// snapshot/digest cost — it never changes output. Detectors read it via
-    /// `get_ordering_facts()`.
-    pub ordering_facts: HashMap<String, crate::engine::l5::ordering_facts::OrderingFacts>,
+    /// keyed by `StableRoutineId`. Computed LAZILY on first `get_ordering_facts()`
+    /// access and memoized — exactly al-sem's `ctx.getOrderingFacts()` semantics.
+    /// Only d47/d49/d51 (opt-in detectors) read it, so a default `analyze` run
+    /// never pays the snapshot→digest→ordering cost (measured 43.6 s+ on CDO —
+    /// the "alsem never completes" hang; see
+    /// `.superpowers/sdd/alsem-parallel/investigation.md`).
+    pub ordering_facts:
+        std::sync::OnceLock<HashMap<String, crate::engine::l5::ordering_facts::OrderingFacts>>,
+    /// The resolved model `get_ordering_facts()` computes from. `None` for the
+    /// cross-app context (whose ordering facts are ALWAYS empty — d13/d16/d17
+    /// never read them; matches the previous eager `HashMap::new()`).
+    pub ordering_source: Option<&'a L3Resolved>,
     /// G-19 — the closed-world proven-temp `(routineId, paramIndex)` set: a
     /// keyword-less by-var record param of a `local` procedure ALL of whose
     /// resolved callers (and the routine's complete, fully-resolved same-object
@@ -171,13 +175,20 @@ pub struct DetectorContext<'a> {
 }
 
 impl DetectorContext<'_> {
-    /// The L4.5 ordering facts, keyed by `StableRoutineId`. Eagerly computed in
-    /// `build_detector_context` (see field doc). d47/d49/d51 look up their reportable
-    /// routine's facts here exactly as al-sem's `ctx.getOrderingFacts()`.
+    /// The L4.5 ordering facts, keyed by `StableRoutineId`. Lazily computed on
+    /// first access (memoized via `OnceLock` — thread-safe for future parallel
+    /// detector runs). d47/d49/d51 look up their reportable routine's facts here
+    /// exactly as al-sem's `ctx.getOrderingFacts()`.
     pub fn get_ordering_facts(
         &self,
     ) -> &HashMap<String, crate::engine::l5::ordering_facts::OrderingFacts> {
-        &self.ordering_facts
+        self.ordering_facts
+            .get_or_init(|| match self.ordering_source {
+                Some(resolved) => {
+                    crate::engine::l5::ordering_facts::compute_ordering_facts(resolved)
+                }
+                None => HashMap::new(),
+            })
     }
 }
 
@@ -426,9 +437,9 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         .map(|rc| (rc.routine_id.clone(), rc.clone()))
         .collect();
 
-    // R4-F Stage-5b ordering facts — eagerly computed (see field doc). Keyed by
-    // StableRoutineId; d47/d49/d51 read it via `get_ordering_facts()`.
-    let ordering_facts = crate::engine::l5::ordering_facts::compute_ordering_facts(resolved);
+    // R4-F Stage-5b ordering facts — computed lazily on first
+    // `get_ordering_facts()` access (see field doc). Keyed by StableRoutineId;
+    // d47/d49/d51 read it via `get_ordering_facts()`.
 
     DetectorContext {
         graph,
@@ -454,7 +465,8 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         declared_dependencies: Vec::new(),
         app_versions: HashMap::new(),
         root_classifications_by_routine,
-        ordering_facts,
+        ordering_facts: std::sync::OnceLock::new(),
+        ordering_source: Some(resolved),
         closed_world_temp_params,
         summarize_diagnostics,
     }
@@ -470,9 +482,10 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
 /// (d17), and the eager indexes; the path-walker substrate (uncertainties /
 /// summaries) is built identically for any future cross-app detector.
 ///
-/// `root_classifications` + `ordering_facts` are EMPTY here (d13/d16/d17 never read
-/// them; the base does not carry the resolved-model classifier inputs). A future
-/// cross-app ordering detector would thread them additively.
+/// `root_classifications` are EMPTY here; `ordering_source` is `None` here (ordering
+/// facts lazily resolve to EMPTY — d13/d16/d17 never read them; the base does not
+/// carry the resolved-model classifier inputs). A future cross-app ordering detector
+/// would thread them additively.
 pub(crate) fn build_detector_context_cross_app(
     base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
 ) -> DetectorContext<'_> {
@@ -668,8 +681,44 @@ pub(crate) fn build_detector_context_cross_app(
         declared_dependencies,
         app_versions,
         root_classifications_by_routine: HashMap::new(),
-        ordering_facts: HashMap::new(),
+        ordering_facts: std::sync::OnceLock::new(),
+        ordering_source: None,
         closed_world_temp_params,
         summarize_diagnostics,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Laziness contract: `build_detector_context` must NOT compute ordering facts
+    /// (the OnceLock starts empty); first `get_ordering_facts()` call computes and
+    /// memoizes a map EQUAL to a direct `compute_ordering_facts(resolved)` run.
+    #[test]
+    fn ordering_facts_are_lazy_and_parity_with_direct_compute() {
+        // Empty workspace: cheap, and exercises the full lazy path end-to-end.
+        let resolved = crate::engine::l3::l3_workspace::L3Resolved {
+            workspace: crate::engine::l3::l3_workspace::L3Workspace {
+                objects: Vec::new(),
+                tables: Vec::new(),
+                routines: Vec::new(),
+            },
+            root_classifications: Vec::new(),
+            primary_app: None,
+            infra_diagnostics: Vec::new(),
+        };
+        let ctx = build_detector_context(&resolved);
+        assert!(
+            ctx.ordering_facts.get().is_none(),
+            "ordering facts must not be computed eagerly"
+        );
+        let via_ctx = ctx.get_ordering_facts();
+        let direct = crate::engine::l5::ordering_facts::compute_ordering_facts(&resolved);
+        assert_eq!(via_ctx.len(), direct.len());
+        assert!(
+            ctx.ordering_facts.get().is_some(),
+            "first access must memoize"
+        );
     }
 }
