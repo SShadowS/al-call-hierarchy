@@ -303,6 +303,31 @@ impl Updater {
         }
     }
 
+    /// Classify `batch` and, if (and only if) it lands on rung 1, apply it
+    /// against the prebuilt `ctx` — the EXACT call [`spawn_updater`]'s inner
+    /// loop makes. Returns `None` for a `Noop` batch or one that would
+    /// escalate to rung 2/3 (the caller must then take the
+    /// [`Self::apply_batch`] path, whose context `ctx` — built against the
+    /// OLD graph — would be stale for).
+    pub fn apply_batch_scoped(
+        &mut self,
+        cur: &LspSnapshot,
+        batch: &[ChangeEvent],
+        ctx: &Rung1Context<'_>,
+    ) -> Option<LspSnapshot> {
+        match self.classify(cur, batch) {
+            Decision::Rung1(saves) => Some(apply_rung1_core(
+                cur,
+                saves,
+                &ctx.index,
+                &ctx.surface,
+                &ctx.obj_node_map,
+                &mut self.pending,
+            )),
+            _ => None,
+        }
+    }
+
     /// Classify one batch against `cur` (the currently-published snapshot),
     /// per file/event, escalating per the module doc's rung summary.
     /// Read-only (`&self`) — never mutates `self`, so it composes freely
@@ -573,6 +598,14 @@ impl Updater {
     // -----------------------------------------------------------------------
     // Small helpers
     // -----------------------------------------------------------------------
+
+    /// The updater's current workspace `ParsedUnit` — needed by callers (the
+    /// bench/perf gate) that build a [`Rung1Context`] outside `spawn_updater`'s
+    /// hot loop, which otherwise has no external access to this private field.
+    #[must_use]
+    pub fn workspace(&self) -> &ParsedUnit {
+        &self.workspace
+    }
 
     /// Fold `self.pending` into `self.workspace`. No-op when `pending` is
     /// empty (the common case for `apply_batch`'s simple path, which
@@ -852,6 +885,39 @@ fn gather_batch(rx: &Receiver<ChangeEvent>) -> Option<Vec<ChangeEvent>> {
     Some(coalesce_batch(batch))
 }
 
+/// The rung-1 scoped context [`spawn_updater`]'s outer loop builds ONCE per
+/// published graph and reuses across every consecutive rung-1 batch (see the
+/// module doc's "scoped-context loop"). Public so the bench/perf gate can
+/// measure the EXACT production path (previously they could only reach
+/// [`Updater::apply_batch`], which rebuilds this context per call — a
+/// worst-case the live server never pays per keystroke).
+pub struct Rung1Context<'g> {
+    index: ResolveIndex,
+    surface: DeclSurface,
+    obj_node_map: HashMap<ObjectNodeId, &'g ObjectNode>,
+}
+
+impl<'g> Rung1Context<'g> {
+    /// Build from the currently published snapshot + the updater's current
+    /// workspace unit — exactly the construction the hot loop performs at
+    /// the top of each outer iteration. `index`/`surface` are fully owned;
+    /// only `obj_node_map` borrows `cur.graph` (hence the lifetime).
+    #[must_use]
+    pub fn build(cur: &'g LspSnapshot, workspace: &ParsedUnit) -> Self {
+        Rung1Context {
+            index: ResolveIndex::build(&cur.graph),
+            surface: DeclSurface::build(&cur.graph, std::slice::from_ref(workspace))
+                .with_frozen(Arc::clone(&cur.dep_meta)),
+            obj_node_map: cur
+                .graph
+                .objects
+                .iter()
+                .map(|o| (o.id.clone(), o))
+                .collect(),
+        }
+    }
+}
+
 /// Spawn the updater thread implementing the module doc's "scoped-context
 /// loop": right after every swap (or at startup), a `ResolveIndex`/
 /// `DeclSurface`/`obj_node_map` context is built ONCE from the just-published
@@ -877,26 +943,16 @@ pub fn spawn_updater(
         let mut cur = shared.get();
 
         loop {
-            // `index`/`surface`/`obj_node_map` all borrow from `cur`/
-            // `updater.workspace` as they stand RIGHT NOW; they are built
-            // once per iteration of this OUTER loop and reused for every
-            // consecutive rung-1 batch the INNER loop processes. `inner_cur`
-            // is a SEPARATE cloned `Arc` (not a move of `cur`) so `cur`
-            // itself stays unborrowed-from-a-moved-value — `obj_node_map`'s
-            // references stay valid through every rung-1 swap because rung
-            // 1 always reuses the SAME underlying `Arc<ProgramGraph>`
-            // (`apply_rung1_core` never rebuilds `graph`).
+            // `ctx` borrows from `cur`/`updater.workspace` as they stand
+            // RIGHT NOW; it is built once per iteration of this OUTER loop
+            // and reused for every consecutive rung-1 batch the INNER loop
+            // processes. `inner_cur` is a SEPARATE cloned `Arc` (not a move
+            // of `cur`) so `cur` itself stays unborrowed-from-a-moved-value
+            // — `ctx.obj_node_map`'s references stay valid through every
+            // rung-1 swap because rung 1 always reuses the SAME underlying
+            // `Arc<ProgramGraph>` (`apply_rung1_core` never rebuilds `graph`).
             let (new_cur, decision) = {
-                let index = ResolveIndex::build(&cur.graph);
-                let surface =
-                    DeclSurface::build(&cur.graph, std::slice::from_ref(&updater.workspace))
-                        .with_frozen(Arc::clone(&cur.dep_meta));
-                let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = cur
-                    .graph
-                    .objects
-                    .iter()
-                    .map(|o| (o.id.clone(), o))
-                    .collect();
+                let ctx = Rung1Context::build(&cur, &updater.workspace);
 
                 let mut inner_cur = Arc::clone(&cur);
                 let escalated = loop {
@@ -909,9 +965,9 @@ pub fn spawn_updater(
                             let new_snapshot = apply_rung1_core(
                                 &inner_cur,
                                 saves,
-                                &index,
-                                &surface,
-                                &obj_node_map,
+                                &ctx.index,
+                                &ctx.surface,
+                                &ctx.obj_node_map,
                                 &mut updater.pending,
                             );
                             let new_arc = Arc::new(new_snapshot);
@@ -923,7 +979,7 @@ pub fn spawn_updater(
                     }
                 };
                 (inner_cur, escalated)
-            }; // `index`/`surface`/`obj_node_map` dropped here.
+            }; // `ctx` dropped here.
             cur = new_cur;
 
             match decision {
@@ -1616,15 +1672,7 @@ mod tests {
         // Built ONCE — never rebuilt for either of the two edits below,
         // proving the exact caching property `spawn_updater`'s hot loop
         // relies on for the rung-1 budget.
-        let index = ResolveIndex::build(&base.graph);
-        let surface = DeclSurface::build(&base.graph, std::slice::from_ref(&updater.workspace))
-            .with_frozen(Arc::clone(&base.dep_meta));
-        let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
-            .graph
-            .objects
-            .iter()
-            .map(|o| (o.id.clone(), o))
-            .collect();
+        let ctx = Rung1Context::build(&base, &updater.workspace);
 
         // Edit 1: Alpha gets a second call to Beta.Process().
         std::fs::write(
@@ -1652,9 +1700,9 @@ mod tests {
         let snap1 = apply_rung1_core(
             &base,
             vec![("Alpha.al".to_string(), pf1)],
-            &index,
-            &surface,
-            &obj_node_map,
+            &ctx.index,
+            &ctx.surface,
+            &ctx.obj_node_map,
             &mut updater.pending,
         );
         assert_eq!(snap1.edges_by_file["Alpha.al"].len(), 2);
@@ -1691,9 +1739,9 @@ mod tests {
         let snap2 = apply_rung1_core(
             &snap1,
             vec![("Alpha.al".to_string(), pf2)],
-            &index,
-            &surface,
-            &obj_node_map,
+            &ctx.index,
+            &ctx.surface,
+            &ctx.obj_node_map,
             &mut updater.pending,
         );
         assert_eq!(
@@ -1961,15 +2009,7 @@ mod tests {
         // that follows it.
         let mut rung1_times = Vec::with_capacity(RUNS);
         {
-            let index = ResolveIndex::build(&base.graph);
-            let surface = DeclSurface::build(&base.graph, std::slice::from_ref(&updater.workspace))
-                .with_frozen(Arc::clone(&base.dep_meta));
-            let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> = base
-                .graph
-                .objects
-                .iter()
-                .map(|o| (o.id.clone(), o))
-                .collect();
+            let ctx = Rung1Context::build(&base, &updater.workspace);
             let mut pending: HashMap<String, ParsedFile> = HashMap::new();
 
             for _ in 0..RUNS {
@@ -1985,9 +2025,9 @@ mod tests {
                 let _snapshot = apply_rung1_core(
                     &base,
                     vec![(target_vp.clone(), pf)],
-                    &index,
-                    &surface,
-                    &obj_node_map,
+                    &ctx.index,
+                    &ctx.surface,
+                    &ctx.obj_node_map,
                     &mut pending,
                 );
                 rung1_times.push(t0.elapsed());

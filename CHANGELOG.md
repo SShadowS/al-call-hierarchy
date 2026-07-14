@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- The rung-1 bench + release perf gate now also measure the PRODUCTION
+  scoped-context path (`Rung1Context` + `Updater::apply_batch_scoped`,
+  extracted from `spawn_updater`'s hot loop so bench and server share one
+  code path); the old `apply_batch` bench remains as the worst-case.
 - Deleted `LspSnapshot.dep_decl_by_id` — dependency decl lookups
   (`decl_and_text`) are now served directly from the `dep_meta` frozen tier
   via a borrowed `DeclView`, removing a fully redundant ~126k-entry map

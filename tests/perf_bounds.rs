@@ -93,7 +93,7 @@ mod release_checks {
     use al_call_hierarchy::lsp::encoding::PositionEncoding;
     use al_call_hierarchy::lsp::handlers::{self, ItemData};
     use al_call_hierarchy::lsp::snapshot::LspSnapshot;
-    use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
+    use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Rung1Context, Updater};
     use al_call_hierarchy::protocol::path_to_uri;
     use al_call_hierarchy::snapshot::ParsedUnit;
     use std::path::Path;
@@ -145,6 +145,14 @@ mod release_checks {
     // the absolute bound alone cannot catch at synthetic-corpus scale.
     const RUNG1_SYNTHETIC_BOUND: Duration = Duration::from_millis(100); // 5x ~20ms measured baseline
     const RUNG2_SYNTHETIC_BOUND: Duration = Duration::from_millis(750); // 5x ~150ms measured baseline
+
+    // The PRODUCTION scoped-context path (F6): `Rung1Context` built ONCE,
+    // reused across every sample — exactly `spawn_updater`'s hot loop, unlike
+    // `RUNG1_SYNTHETIC_BOUND`'s `apply_batch` path above (which rebuilds the
+    // context every call, a cost production never pays per keystroke-save).
+    // Measured ~12.9ms median on this corpus (release, dev machine,
+    // 2026-07-14) — 5x that baseline, per this file's own convention.
+    const RUNG1_SCOPED_SYNTHETIC_BOUND: Duration = Duration::from_millis(65); // 5x ~12.9ms measured baseline
 
     // `compute_all` (diagnostics recompute — t3 whole-branch review, blocker
     // fix): runs on EVERY snapshot swap, including a rung-1 single-file body
@@ -689,6 +697,65 @@ mod release_checks {
             "rung-1 body-edit median {m:?} exceeds corpus-relative bound {RUNG1_SYNTHETIC_BOUND:?} \
              (samples: {samples:?}) — this is a real regression on THIS corpus even though it \
              may still be under the looser CDO-anchored bound"
+        );
+    }
+
+    #[test]
+    fn rung1_body_edit_scoped_within_bound() {
+        let (dir, base, parsed) = build_snapshot_with_parsed(1000);
+        let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+        let target = dir.path().join(perf_support::file_name(1));
+
+        // Body-only edit, on disk once — outside the timed region. No
+        // routine identity/signature change, so this must stay rung 1 on
+        // every apply below (see `body_only_comment_edit`'s doc).
+        perf_support::body_only_comment_edit(dir.path(), 1000, 1);
+        let batch = vec![ChangeEvent::FileSaved(target)];
+
+        // The PRODUCTION path: `Rung1Context` built ONCE (like
+        // `spawn_updater`'s scoped-context loop) and reused across every
+        // sample below — see F6's finding for why `apply_batch` alone
+        // (rebuilding this context per call) over-measures what a real
+        // keystroke-save actually costs.
+        let ctx = Rung1Context::build(&base, updater.workspace());
+
+        // Warm-up (also proves the rung-1 path works before timing it).
+        let warm = updater
+            .apply_batch_scoped(&base, &batch, &ctx)
+            .expect("a comment-only body edit must stay rung 1");
+
+        // Every subsequent call re-saves the SAME (already-applied) content:
+        // the fingerprint stays unchanged relative to whatever was just
+        // published, which is exactly rung 1's own gate condition — so
+        // repeating the identical batch keeps exercising the genuine rung-1
+        // path without needing a fresh edit each iteration.
+        let mut cur = warm;
+        let mut samples = Vec::with_capacity(3);
+        for _ in 0..3 {
+            let start = Instant::now();
+            let next = updater
+                .apply_batch_scoped(&cur, &batch, &ctx)
+                .expect("must stay rung 1");
+            samples.push(start.elapsed());
+            cur = next;
+        }
+        let m = median(samples.clone());
+        println!(
+            "[perf_bounds] rung1_body_edit_scoped: median={m:?} absolute_bound={RUNG1_BOUND:?} \
+             synthetic_bound={RUNG1_SCOPED_SYNTHETIC_BOUND:?} samples={samples:?}"
+        );
+        // Both bounds are asserted, mirroring the `apply_batch` test above.
+        assert!(
+            m <= RUNG1_BOUND,
+            "rung-1 scoped body-edit median {m:?} exceeds CDO-anchored bound {RUNG1_BOUND:?} \
+             (samples: {samples:?})"
+        );
+        assert!(
+            m <= RUNG1_SCOPED_SYNTHETIC_BOUND,
+            "rung-1 scoped body-edit median {m:?} exceeds corpus-relative bound \
+             {RUNG1_SCOPED_SYNTHETIC_BOUND:?} (samples: {samples:?}) — this is a real \
+             regression on THIS corpus even though it may still be under the looser \
+             CDO-anchored bound"
         );
     }
 
