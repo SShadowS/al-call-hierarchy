@@ -50,6 +50,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use al_syntax::ir::AlFile;
+use rayon::prelude::*;
 
 use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
@@ -386,19 +387,37 @@ impl LspSnapshot {
             dep_meta = dep_meta_arc;
 
             if let Some(idx) = primary_unit_idx {
-                for pf in &parsed[idx].files {
-                    if !ws_file_set.contains(&pf.virtual_path) {
-                        continue;
-                    }
-
-                    let (edges, surface, decls) = recompute_file(
-                        pf,
-                        primary_app_ref,
-                        &graph,
-                        &index,
-                        &surface,
-                        &obj_node_map,
-                    );
+                // T3 Task 3 (F7): same ordered-collect-then-`par_iter` shape as
+                // `resolve_full_program_from_parts`'s Phase-1 loop — `files`
+                // preserves `parsed[idx].files`' original order, `recompute_file`
+                // reads only immutable shared borrows, and the indexed
+                // `par_iter`/`collect()` keeps `results` in that same order, so
+                // the sequential `insert`s below are byte-identical to the old
+                // serial loop. Big-stack pool for the same reason as
+                // `snapshot::parse::parse_snapshot`: the resolver's
+                // receiver/extraction walk recurses over the AL expression tree.
+                let files: Vec<&ParsedFile> = parsed[idx]
+                    .files
+                    .iter()
+                    .filter(|pf| ws_file_set.contains(&pf.virtual_path))
+                    .collect();
+                let results: Vec<(Vec<ClassifiedEdge>, DefSurface, Vec<DeclEntry>)> =
+                    crate::big_stack::big_stack_pool().install(|| {
+                        files
+                            .par_iter()
+                            .map(|pf| {
+                                recompute_file(
+                                    pf,
+                                    primary_app_ref,
+                                    &graph,
+                                    &index,
+                                    &surface,
+                                    &obj_node_map,
+                                )
+                            })
+                            .collect()
+                    });
+                for (pf, (edges, surface, decls)) in files.iter().zip(results) {
                     edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
                     surfaces_by_file.insert(pf.virtual_path.clone(), surface);
                     decls_by_file.insert(pf.virtual_path.clone(), Arc::new(decls));

@@ -32,6 +32,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- The three serial per-file resolve loops (`resolve_full_program_from_parts`'s
+  Phase-1 loop in `src/program/resolve/full.rs` — the `aldump`
+  north-star/cold-start path; `LspSnapshot::from_context`'s per-file loop in
+  `src/lsp/snapshot.rs`; `Updater::apply_rung2`'s per-file loop in
+  `src/lsp/updater.rs`) are now parallelized (Tier-2 latency wave, Task 3 /
+  item E / F7). Each `resolve_file_obligations`/`recompute_file` call reads
+  only immutable shared borrows (`&graph`/`&index`/`&surface`/
+  `&obj_node_map`) and returns its own per-file result — embarrassingly
+  parallel. Each site now collects the ordered, already-filtered file list
+  first, resolves it with an INDEXED `par_iter`/`collect()` (which preserves
+  iteration order), then folds the results in the ORIGINAL file order in a
+  sequential pass — byte-identical to the old serial loop's accumulator
+  inserts. Runs on a dedicated `crate::big_stack::big_stack_pool()` (32 MiB
+  worker stacks), not the rayon global pool: the resolver's
+  receiver/extraction walk recurses over the AL expression tree and can
+  overflow rayon's default ~1 MiB worker stack on real BC files — the same
+  hazard `snapshot::parse::parse_snapshot` already guards against for the
+  lowerer. Measured on CDO
+  (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, best of 3 runs):
+  CLI cold start (`al-call-hierarchy --project`) 3.36 s → 3.00 s (−11%);
+  `aldump --program-call-graph-stats` wall time 3.73 s → 3.42 s (−8%).
+  North-star JSON on CDO remains byte-identical, SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` (fc-verified,
+  no resolver change). `cargo bench --bench lsp_pipeline`'s synthetic corpus:
+  `build_full/100_files` −6.3%, `build_full/1000_files` −22.0%.
 - `src/lsp/diagnostics.rs`/`src/lsp/updater.rs`/`src/server.rs`: diagnostics recompute
   is now scoped to the swap that triggered it (Tier-2 latency wave, Task 2 / item D).
   `spawn_updater`'s `on_swap` callback signature changed from

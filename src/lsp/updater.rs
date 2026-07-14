@@ -120,8 +120,9 @@ use std::time::{Duration, Instant};
 
 use al_syntax::ir::ParseStatus;
 use log::warn;
+use rayon::prelude::*;
 
-use crate::lsp::def_surface::def_surface_fingerprint;
+use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
 use crate::lsp::snapshot::{
     DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_decl_multiplicity,
     build_incoming, edge_targets, push_edge_targets, recompute_file,
@@ -518,15 +519,35 @@ impl Updater {
         let mut decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>> = HashMap::new();
         let mut parsed_files: HashMap<String, Arc<ParsedFileEntry>> = HashMap::new();
 
-        for pf in &self.workspace.files {
-            let (edges, surface, decls) = recompute_file(
-                pf,
-                primary_app_ref,
-                &new_graph,
-                &index,
-                &surface,
-                &obj_node_map,
-            );
+        // T3 Task 3 (F7): same ordered-collect-then-`par_iter` shape as
+        // `resolve_full_program_from_parts`'s Phase-1 loop and
+        // `LspSnapshot::from_context`'s per-file loop — `files` preserves
+        // `self.workspace.files`' original order, `recompute_file` reads
+        // only immutable shared borrows, and the indexed `par_iter`/
+        // `collect()` keeps `results` in that same order, so the sequential
+        // `insert`s below are byte-identical to the old serial loop.
+        // Big-stack pool: the resolver's receiver/extraction walk recurses
+        // over the AL expression tree and can overflow a default worker
+        // stack on real BC files (rung 2 re-resolves EVERY workspace file).
+        let files: Vec<&ParsedFile> = self.workspace.files.iter().collect();
+        let results: Vec<(Vec<ClassifiedEdge>, DefSurface, Vec<DeclEntry>)> =
+            crate::big_stack::big_stack_pool().install(|| {
+                files
+                    .par_iter()
+                    .map(|pf| {
+                        recompute_file(
+                            pf,
+                            primary_app_ref,
+                            &new_graph,
+                            &index,
+                            &surface,
+                            &obj_node_map,
+                        )
+                    })
+                    .collect()
+            });
+
+        for (pf, (edges, def_surface, decls)) in files.iter().zip(results) {
             edges_by_file.insert(pf.virtual_path.clone(), Arc::new(edges));
             decls_by_file.insert(pf.virtual_path.clone(), Arc::new(decls));
 
@@ -540,7 +561,7 @@ impl Updater {
                     file: Arc::clone(&pf.file),
                     text: Arc::clone(&pf.text),
                     virtual_path: pf.virtual_path.clone(),
-                    surface,
+                    surface: def_surface,
                 }),
             );
         }

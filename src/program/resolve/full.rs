@@ -34,6 +34,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use al_syntax::ir::ObjectKind;
+use rayon::prelude::*;
 
 use crate::program::build::{DepLayer, assemble_program_graph, build_dep_layer};
 use crate::program::graph::ProgramGraph;
@@ -777,43 +778,66 @@ fn resolve_full_program_from_parts(
     let mut indeterminate: Vec<IndeterminateBuiltinDispatchSite> = Vec::new();
 
     // ── Phase 1: resolve call-site obligations (workspace source routines) ────
-    for unit in parsed {
-        let Some(app_ref) = graph.apps.find(&unit.app) else {
-            continue;
-        };
-        if app_ref != primary_app_ref {
-            continue;
+    //
+    // T3 Task 3 (F7): the ordered list of in-scope files is collected FIRST
+    // (same nested-loop order as the old serial version: units in `parsed`
+    // order, files in `unit.files` order, both already filtered to the
+    // primary app / `ws_file_set`), then resolved with an INDEXED `par_iter`
+    // — `collect()` on an indexed parallel iterator preserves that order, so
+    // `file_results` is byte-identical in order to what the serial loop would
+    // have produced one file at a time. Each `resolve_file_obligations` call
+    // reads only immutable shared borrows (`graph`/`index`/`surface`/
+    // `obj_node_map`) and returns its own `FileResolution` — no shared
+    // mutable state crosses the parallel closure, so the accumulator inserts
+    // below (which must stay sequential: `HashSet`/`Vec` accumulation order
+    // matters for downstream determinism) are unaffected by evaluation order.
+    //
+    // Runs on a dedicated big-stack pool (`crate::big_stack`), not the rayon
+    // global pool: the resolver's receiver/extraction walk recurses over the
+    // AL expression tree and can overflow rayon's default ~1 MiB worker stack
+    // on real BC files — the same hazard `snapshot::parse::parse_snapshot`
+    // already guards against for the lowerer.
+    let files_to_resolve: Vec<&ParsedFile> = parsed
+        .iter()
+        .filter(|unit| graph.apps.find(&unit.app) == Some(primary_app_ref))
+        .flat_map(|unit| {
+            unit.files
+                .iter()
+                .filter(|pf| ws_file_set.contains(&pf.virtual_path))
+        })
+        .collect();
+
+    let file_results: Vec<FileResolution> = crate::big_stack::big_stack_pool().install(|| {
+        files_to_resolve
+            .par_iter()
+            .map(|pf| {
+                resolve_file_obligations(
+                    pf,
+                    primary_app_ref,
+                    graph,
+                    &index,
+                    &surface,
+                    &obj_node_map,
+                )
+            })
+            .collect()
+    });
+
+    for file_res in file_results {
+        // T3 Task 6: `resolve_file_obligations` no longer inserts into
+        // `obligation_id_set` inline (it has no access to this whole-run
+        // accumulator) — insert from the returned edges' obligation ids
+        // instead. Identical set contents: every call-site obligation
+        // that would have been inserted inline produces EXACTLY one
+        // `ClassifiedEdge` carrying that same id (see the function's own
+        // loop), so deriving the id set from the edges post-hoc is a
+        // no-op change to the set's membership.
+        for ce in &file_res.edges {
+            obligation_id_set.insert(ce.obligation_id.clone());
         }
-
-        for pf in &unit.files {
-            if !ws_file_set.contains(&pf.virtual_path) {
-                continue;
-            }
-
-            let file_res = resolve_file_obligations(
-                pf,
-                primary_app_ref,
-                graph,
-                &index,
-                &surface,
-                &obj_node_map,
-            );
-
-            // T3 Task 6: `resolve_file_obligations` no longer inserts into
-            // `obligation_id_set` inline (it has no access to this whole-run
-            // accumulator) — insert from the returned edges' obligation ids
-            // instead. Identical set contents: every call-site obligation
-            // that would have been inserted inline produces EXACTLY one
-            // `ClassifiedEdge` carrying that same id (see the function's own
-            // loop), so deriving the id set from the edges post-hoc is a
-            // no-op change to the set's membership.
-            for ce in &file_res.edges {
-                obligation_id_set.insert(ce.obligation_id.clone());
-            }
-            classified_edges.extend(file_res.edges);
-            flagged.extend(file_res.flagged);
-            indeterminate.extend(file_res.indeterminate);
-        }
+        classified_edges.extend(file_res.edges);
+        flagged.extend(file_res.flagged);
+        indeterminate.extend(file_res.indeterminate);
     }
 
     // ── Phase 2: publisher event flow obligations (all apps) ──────────────────
