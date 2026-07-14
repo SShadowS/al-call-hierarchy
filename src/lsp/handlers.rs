@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use crate::lsp::encoding::{LineTable, PositionEncoding};
 use crate::lsp::snapshot::{DeclEntry, LspSnapshot};
 use crate::program::resolve::edge::{AbiRoutineKey, EdgeKind, Route, RouteTarget};
+use crate::program::resolve::full::ClassifiedEdge;
 use crate::program::{AppRef, ObjectNodeId, ProgramGraph, RoutineNodeId};
 use crate::protocol::{path_to_uri, uri_to_path};
 
@@ -161,18 +162,26 @@ pub fn incoming(
         return Vec::new();
     };
 
-    let mut has_event_flow: HashMap<RoutineNodeId, bool> = HashMap::new();
+    // One pass: resolve every EdgeRef exactly once, grouping by caller.
+    // (Previously this re-filtered ALL refs per distinct caller — O(refs²)
+    // with a string-hashed map lookup per pair; see the 2026-07-14
+    // improvement-hunt F1 finding.)
+    let mut groups: HashMap<RoutineNodeId, (bool, Vec<&ClassifiedEdge>)> = HashMap::new();
     for r in refs {
         let ce = snap.edge(r);
-        let caller_id = ce.edge.from.clone();
-        *has_event_flow.entry(caller_id).or_insert(false) |= ce.edge.kind == EdgeKind::EventFlow;
+        let entry = groups
+            .entry(ce.edge.from.clone())
+            .or_insert_with(|| (false, Vec::new()));
+        entry.0 |= ce.edge.kind == EdgeKind::EventFlow;
+        entry.1.push(ce);
     }
 
-    let mut callers: Vec<RoutineNodeId> = has_event_flow.keys().cloned().collect();
+    let mut callers: Vec<RoutineNodeId> = groups.keys().cloned().collect();
     callers.sort();
 
     let mut out = Vec::new();
     for caller_id in callers {
+        let (has_event_flow, edges) = &groups[&caller_id];
         let Some((decl, text)) = snap.decl_and_text(&caller_id) else {
             // The caller's own decl vanished from the current snapshot —
             // fail closed by dropping this group rather than guessing at a
@@ -182,8 +191,7 @@ pub fn incoming(
         let table = LineTable::new(text);
 
         let mut from_ranges: Vec<Range> = Vec::new();
-        for r in refs.iter().filter(|r| snap.edge(r).edge.from == caller_id) {
-            let ce = snap.edge(r);
+        for ce in edges {
             let range = if ce.edge.kind == EdgeKind::EventFlow {
                 // Rule 2: an EventFlow edge's own site span is stale-prone;
                 // re-derive from the PUBLISHER's (== this caller's) fresh
@@ -197,11 +205,7 @@ pub fn incoming(
         from_ranges.sort_by_key(range_sort_key);
         from_ranges.dedup();
 
-        let tag = has_event_flow
-            .get(&caller_id)
-            .copied()
-            .unwrap_or(false)
-            .then_some("[EventPublisher]");
+        let tag = (*has_event_flow).then_some("[EventPublisher]");
         let item = build_item(snap, enc, decl, &table, decl_uri(snap, decl), tag);
 
         out.push(CallHierarchyIncomingCall {
