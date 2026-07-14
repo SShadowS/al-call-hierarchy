@@ -20,8 +20,7 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::snapshot::project_r4f_snapshot;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// The R4-F snapshot corpus (mirrors al-sem `R4F_SNAPSHOT_FIXTURES`).
 const FIXTURES: &[&str] = &[

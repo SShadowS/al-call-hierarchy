@@ -36,8 +36,7 @@ use al_call_hierarchy::engine::l5::finding::{
 };
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// A smoke entry — the wave representative fixtures (one per substrate wave).
 /// These are kept from R4-0 for continuity; the per-detector fixtures below are the

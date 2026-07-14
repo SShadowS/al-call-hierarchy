@@ -20,8 +20,7 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::digest::project_r4f_scoped_guarantees;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// The R4-F scoped-guarantees corpus (mirrors al-sem `R4F_SCOPED_GUARANTEE_FIXTURES`).
 const FIXTURES: &[&str] = &[

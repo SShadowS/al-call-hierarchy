@@ -18,8 +18,7 @@ use std::path::PathBuf;
 use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
 use al_call_hierarchy::engine::l5::ordering_facts::project_r4f_ordering_facts;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// The R4-F ordering-facts corpus (21 fixtures, mirroring the M5 goldens).
 const FIXTURES: &[&str] = &[

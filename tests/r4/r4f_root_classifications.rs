@@ -22,8 +22,7 @@ use al_call_hierarchy::engine::root_classification::{
     R4FRootClassProjection, project_r4f_root_classifications,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// The R4-F root-classification corpus (mirrors al-sem
 /// `scripts/r4f-root-classification-projection.ts` `R4F_ROOT_CLASS_FIXTURES`).

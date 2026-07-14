@@ -21,8 +21,7 @@ use al_call_hierarchy::engine::return_summary::{
     R4FReturnSummaryProjection, project_r4f_return_summaries,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// The R4-F return-summaries corpus (8 fixtures).
 const FIXTURES: &[&str] = &[
