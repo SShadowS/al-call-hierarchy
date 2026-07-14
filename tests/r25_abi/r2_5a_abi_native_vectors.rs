@@ -76,7 +76,7 @@ fn routine_from_row(row: &Value) -> AbiRoutine {
 
 #[test]
 fn abi_native_sig_vectors_replay_byte_for_byte() {
-    let raw = include_str!("r2-5a-vectors/abi-native-sig-vectors.json");
+    let raw = include_str!("../r2-5a-vectors/abi-native-sig-vectors.json");
     let doc: Value = serde_json::from_str(raw).expect("sig vectors must parse");
 
     let app_guid = doc["appGuid"].as_str().unwrap();

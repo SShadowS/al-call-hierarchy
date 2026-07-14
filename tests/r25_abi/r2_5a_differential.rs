@@ -44,8 +44,7 @@ use al_call_hierarchy::engine::deps::merged_index::{
 };
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const R2_5A_MODEL_INSTANCE_ID: &str = "r2.5a";
 

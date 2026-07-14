@@ -75,7 +75,7 @@ fn build_symbol_reference_json(rows: &[Value], app_guid: &str) -> String {
 
 #[test]
 fn abi_native_attr_vectors_replay_byte_for_byte() {
-    let raw = include_str!("r2-5a-vectors/abi-native-attr-vectors.json");
+    let raw = include_str!("../r2-5a-vectors/abi-native-attr-vectors.json");
     let doc: Value = serde_json::from_str(raw).expect("attr vectors must parse");
 
     let app_guid = doc["appGuid"].as_str().unwrap();

@@ -51,8 +51,7 @@ use al_call_hierarchy::engine::deps::cross_app_l3::{
 };
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const R2_5B_MODEL_INSTANCE_ID: &str = "r2.5b";
 

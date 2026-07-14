@@ -136,9 +136,9 @@ fn project_one(r: &AbiRoutine, app_guid: &str, model_instance_id: &str) -> Proje
 
 #[test]
 fn stable_id_independence_vectors_replay_byte_for_byte() {
-    let stable_raw = include_str!("r2-5a-vectors/stable-id-independence-vector.json");
-    let sig_raw = include_str!("r2-5a-vectors/abi-native-sig-vectors.json");
-    let attr_raw = include_str!("r2-5a-vectors/abi-native-attr-vectors.json");
+    let stable_raw = include_str!("../r2-5a-vectors/stable-id-independence-vector.json");
+    let sig_raw = include_str!("../r2-5a-vectors/abi-native-sig-vectors.json");
+    let attr_raw = include_str!("../r2-5a-vectors/abi-native-attr-vectors.json");
 
     let stable_doc: Value = serde_json::from_str(stable_raw).expect("stable vectors must parse");
     let sig_doc: Value = serde_json::from_str(sig_raw).expect("sig vectors must parse");
