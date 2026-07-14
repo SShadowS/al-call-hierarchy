@@ -119,7 +119,7 @@ fn ws_d2_l2_features_match_golden_and_have_no_forbidden_fields() {
     // projection equals it (the strongest smoke).
     assert!(
         golden_path.is_file(),
-        "missing golden {} (run `REGEN_TEMP_GOLDENS=1 cargo test --test al2dump_smoke`)",
+        "missing golden {} (run `REGEN_TEMP_GOLDENS=1 cargo test --test cli al2dump_smoke::`)",
         golden_path.display()
     );
     let golden_text = std::fs::read_to_string(&golden_path).expect("read ws-d2 golden");

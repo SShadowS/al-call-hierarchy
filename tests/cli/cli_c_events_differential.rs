@@ -7,7 +7,7 @@
 //!      `tests/cli-c-events-goldens/`.
 //!
 //! Goldens are Rust-owned baselines (the al-sem TS oracle is retired); rebaseline
-//! with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_c_events_differential`.
+//! with `REGEN_TEMP_GOLDENS=1 cargo test --test cli cli_c_events_differential::`.
 //!
 //! ## Coverage
 //!   - 13 fixtures × 4 files = 52 base goldens (fanout.human + fanout.json +

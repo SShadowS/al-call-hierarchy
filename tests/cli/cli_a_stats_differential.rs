@@ -311,7 +311,7 @@ fn compact(v: &serde_json::Value) -> String {
 }
 
 /// Refresh test — writes Rust output into the in-repo vendored goldens dir. Run
-/// with: cargo test --test cli_a_stats_differential refresh -- --ignored
+/// with: cargo test --test cli cli_a_stats_differential::refresh -- --ignored
 #[test]
 #[ignore]
 fn refresh() {

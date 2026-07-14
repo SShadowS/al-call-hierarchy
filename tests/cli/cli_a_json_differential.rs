@@ -16,7 +16,7 @@
 //!
 //! ## Refresh
 //! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
-//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_a_json_differential`.
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli cli_a_json_differential::`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

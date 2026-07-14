@@ -11,7 +11,7 @@
 //!
 //! Default `cargo test` runs entirely OFFLINE: everything is committed in-repo.
 //! Goldens are Rust-owned baselines (the al-sem TS oracle is retired); rebaseline
-//! with `REGEN_TEMP_GOLDENS=1 cargo test --test r2_5a_differential`.
+//! with `REGEN_TEMP_GOLDENS=1 cargo test --test r25_abi r2_5a_differential::`.
 //!
 //! ## Capture point (R2.5a)
 //!

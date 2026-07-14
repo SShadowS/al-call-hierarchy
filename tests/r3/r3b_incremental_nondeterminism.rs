@@ -14,7 +14,7 @@
 //!   4. `RUST_HASH_SEED` — the internal `HashMap`/`HashSet` iteration order must not
 //!      leak into output. This suite is RE-RUN under varied seeds in CI; locally,
 //!      run e.g. `RUST_HASH_SEED=0`, `RUST_HASH_SEED=1`, `RUST_HASH_SEED=999` before
-//!      `cargo test --test r3b_incremental_nondeterminism`.
+//!      `cargo test --test r3 r3b_incremental_nondeterminism::`.
 //!
 //! Rust's `RandomState` reads `RUST_HASH_SEED` when set; the assertions below hold
 //! for any seed. The harness also self-checks by shuffling demand order, which

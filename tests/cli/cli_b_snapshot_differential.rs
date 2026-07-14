@@ -17,7 +17,7 @@
 //! ## Refresh
 //!
 //! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
-//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_snapshot_differential`.
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli cli_b_snapshot_differential::`.
 //!
 //! ## Tracked want — localeCompare coverage
 //!
@@ -382,4 +382,4 @@ fn shards_match_goldens() {
 }
 
 // Rust-owned goldens are regenerated in-process via `REGEN_TEMP_GOLDENS=1 cargo
-// test --test cli_b_snapshot_differential` (al-sem `dump-snapshot.ts` retired).
+// test --test cli cli_b_snapshot_differential::` (al-sem `dump-snapshot.ts` retired).

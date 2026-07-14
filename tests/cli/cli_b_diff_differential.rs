@@ -16,7 +16,7 @@
 //! `ws-diff-removed-field` fixture trees) in-repo and regenerated every OUTPUT
 //! golden from THIS engine — no al-sem checkout is read anymore, and there is
 //! no skip-gate: missing inputs are a hard failure. Regenerate with
-//! `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_diff_differential`.
+//! `REGEN_TEMP_GOLDENS=1 cargo test --test cli cli_b_diff_differential::`.
 
 use std::path::PathBuf;
 

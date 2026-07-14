@@ -154,7 +154,7 @@ fn ws_d2_l3_event_graph_matches_golden() {
 
     assert!(
         golden_path.is_file(),
-        "missing golden {} (run `REGEN_TEMP_GOLDENS=1 cargo test --test aldump_smoke`)",
+        "missing golden {} (run `REGEN_TEMP_GOLDENS=1 cargo test --test cli aldump_smoke::`)",
         golden_path.display()
     );
     let golden_text = std::fs::read_to_string(&golden_path).expect("read ws-d2 l3eg golden");

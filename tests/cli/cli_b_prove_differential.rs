@@ -18,7 +18,7 @@
 //! ## Refresh
 //!
 //! Goldens are Rust-owned baselines (the al-sem TS oracle is retired).
-//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_prove_differential`.
+//! Rebaseline with `REGEN_TEMP_GOLDENS=1 cargo test --test cli cli_b_prove_differential::`.
 
 use std::path::PathBuf;
 
@@ -341,4 +341,4 @@ fn dummy_doc_exits_2() {
 }
 
 // Rust-owned goldens regenerated in-process via
-// `REGEN_TEMP_GOLDENS=1 cargo test --test cli_b_prove_differential`.
+// `REGEN_TEMP_GOLDENS=1 cargo test --test cli cli_b_prove_differential::`.
