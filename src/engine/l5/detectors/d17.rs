@@ -470,7 +470,8 @@ mod tests {
             declared_dependencies: declared,
             app_versions,
             root_classifications_by_routine: HashMap::new(),
-            ordering_facts: HashMap::new(),
+            ordering_facts: std::sync::OnceLock::new(),
+            ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
         }

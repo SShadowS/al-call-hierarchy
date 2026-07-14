@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `alsem analyze` no longer hangs (10+ min, single core pegged) on large workspaces: the
+  L4.5 ordering-facts pass (43.6 s+ on CDO, superlinear witness reconstruction) ran eagerly
+  in `build_detector_context` although only the OPT-IN d47/d49/d51 detectors read it. It is
+  now computed lazily on first `get_ordering_facts()` access (al-sem's own memoized
+  `ctx.getOrderingFacts()` semantics), so the default detector set never pays it. Default
+  `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
+
 ### Changed
 - The rung-1 bench + release perf gate now also measure the PRODUCTION
   scoped-context path (`Rung1Context` + `Updater::apply_batch_scoped`,

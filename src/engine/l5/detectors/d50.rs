@@ -551,7 +551,8 @@ mod tests {
             declared_dependencies: Vec::new(),
             app_versions: HashMap::new(),
             root_classifications_by_routine,
-            ordering_facts: HashMap::new(),
+            ordering_facts: std::sync::OnceLock::new(),
+            ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
         }
@@ -696,7 +697,8 @@ mod tests {
             declared_dependencies: Vec::new(),
             app_versions: HashMap::new(),
             root_classifications_by_routine: HashMap::new(),
-            ordering_facts: HashMap::new(),
+            ordering_facts: std::sync::OnceLock::new(),
+            ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
         };
