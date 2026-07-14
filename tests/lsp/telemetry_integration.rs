@@ -1,8 +1,6 @@
 //! End-to-end tests: queue overflow accounting, dedup workspace isolation,
 //! shutdown drains and emits summary.
 
-#![cfg(feature = "telemetry")]
-
 use al_call_hierarchy::telemetry::counters::Counters;
 use al_call_hierarchy::telemetry::events::LeafKind;
 use al_call_hierarchy::telemetry::pipeline::Pipeline;

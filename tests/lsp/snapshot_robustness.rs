@@ -5,8 +5,7 @@
 // `tests/common/cdo.rs` for why this is `#[path]`-included rather than a
 // regular crate dependency (separate test-binary crates can't `use` each
 // other's `mod`s).
-#[path = "common/cdo.rs"]
-mod cdo;
+use crate::cdo;
 use cdo::cdo_ws_or_enforce;
 
 #[test]

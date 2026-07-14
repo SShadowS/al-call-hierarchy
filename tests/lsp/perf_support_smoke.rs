@@ -14,7 +14,7 @@
 //! counts) under a plain `cargo test` (debug profile) too — every ordinary
 //! `cargo test` run, not just `cargo test --release --test perf_bounds`.
 
-#[path = "perf_support/mod.rs"]
+#[path = "../perf_support/mod.rs"]
 mod perf_support;
 
 use al_call_hierarchy::lsp::encoding::PositionEncoding;
