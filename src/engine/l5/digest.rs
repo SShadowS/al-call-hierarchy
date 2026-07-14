@@ -2040,9 +2040,7 @@ fn digest_query(
     isolated_event_ids: Option<&std::collections::HashSet<String>>,
     ordering_witness_only: bool,
 ) -> Vec<DigestEntryResult> {
-    const MAX_PATHS: usize = 3;
     let idx = build_fingerprint_indexes(snap);
-    let mut entries: Vec<DigestEntryResult> = Vec::new();
 
     // callsiteById (&str-keyed) for the ordering engine's cross-hop substrate.
     let mut callsite_by_id_str: HashMap<&str, &SnapshotCallsiteEvidence> = HashMap::new();
@@ -2062,10 +2060,54 @@ fn digest_query(
         .map(|op| (op.operation_id.as_str(), op.control_context.as_deref()))
         .collect();
 
-    for rid in roots {
-        let Some(display) = idx.routine_display_by_id.get(rid).cloned() else {
-            continue;
-        };
+    // Per-root computation is embarrassingly parallel: every input below is an
+    // immutable `&` reference (snap/idx/maps), each root's witness reconstruction +
+    // ordering pass is independent and internally deterministic, and `roots` is
+    // deduped so `routine_id` keys are unique — the final `sort_by(routine_id)`
+    // below fully determines output order regardless of scheduling order. Runs on
+    // the GLOBAL rayon pool (no AL-source lowering happens here — the big-stack pool
+    // is only for the CST lowerer; witness BFS is heap-based with MAX_DEPTH = 64).
+    use rayon::prelude::*;
+    let mut entries: Vec<DigestEntryResult> = roots
+        .par_iter()
+        .filter_map(|rid| {
+            digest_one_root(
+                rid,
+                snap,
+                &idx,
+                &callsite_by_id_str,
+                &cs_ctx,
+                &op_ctx,
+                return_summaries,
+                isolated_event_ids,
+                ordering_witness_only,
+            )
+        })
+        .collect();
+
+    // Sort entries by routineId.
+    entries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
+    entries
+}
+
+/// Per-root body of `digest_query` — extracted so the root loop can be driven by
+/// `rayon::par_iter`. Pure over its immutable inputs; returns `None` when the root
+/// has no display entry (mirrors the original loop's early `continue`).
+#[allow(clippy::too_many_arguments)]
+fn digest_one_root(
+    rid: &str,
+    snap: &CapabilitySnapshot,
+    idx: &FingerprintIndexes<'_>,
+    callsite_by_id_str: &HashMap<&str, &SnapshotCallsiteEvidence>,
+    cs_ctx: &HashMap<&str, Option<&str>>,
+    op_ctx: &HashMap<&str, Option<&str>>,
+    return_summaries: Option<&HashMap<String, crate::engine::return_summary::RoutineReturnSummary>>,
+    isolated_event_ids: Option<&std::collections::HashSet<String>>,
+    ordering_witness_only: bool,
+) -> Option<DigestEntryResult> {
+    const MAX_PATHS: usize = 3;
+    {
+        let display = idx.routine_display_by_id.get(rid).cloned()?;
 
         let empty_facts: Vec<&Fact> = Vec::new();
         let all_facts = idx.facts_by_routine.get(rid).unwrap_or(&empty_facts);
@@ -2140,7 +2182,7 @@ fn digest_query(
                     diagnostics: Vec::new(),
                 }
             } else {
-                reconstruct_witness_paths(rid, fact, &idx, HARD_PATH_CAP)
+                reconstruct_witness_paths(rid, fact, idx, HARD_PATH_CAP)
             };
 
             let shortest = outcome.paths.first();
@@ -2168,12 +2210,12 @@ fn digest_query(
             let projected_paths: Vec<Vec<QueryWitnessHop>> = outcome
                 .paths
                 .iter()
-                .map(|p| project_path(p, rid, &display, &idx))
+                .map(|p| project_path(p, rid, &display, idx))
                 .collect();
             let path_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> = outcome
                 .paths
                 .iter()
-                .map(|p| compute_path_conditionality(p, &cs_ctx, &op_ctx))
+                .map(|p| compute_path_conditionality(p, cs_ctx, op_ctx))
                 .collect();
 
             let key = dedupe_key(effect_type, terminal, fact, &detail);
@@ -2403,7 +2445,7 @@ fn digest_query(
                 rid,
                 &ordering_inputs,
                 snap,
-                &callsite_by_id_str,
+                callsite_by_id_str,
                 return_summaries,
                 isolated_event_ids,
             );
@@ -2414,15 +2456,11 @@ fn digest_query(
             }
         }
 
-        entries.push(DigestEntryResult {
-            routine_id: rid.clone(),
+        Some(DigestEntryResult {
+            routine_id: rid.to_string(),
             effects,
-        });
+        })
     }
-
-    // Sort entries by routineId.
-    entries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-    entries
 }
 
 // ===========================================================================

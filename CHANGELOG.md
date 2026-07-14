@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- `digest_query` (the L5 witness/ordering digest behind `--preset transaction-integrity`'s
+  d47/d48/d49 and the digest CLI) now processes roots in parallel (rayon). Each root's
+  witness reconstruction + ordering pass reads only immutable inputs (`snap`/`idx`/context
+  maps) and is fully independent; the existing final sort by `routineId` keeps output
+  byte-identical regardless of scheduling order. CDO `transaction-integrity` preset:
+  ~1061 s (sequential, Task-1 commit `f71b8d1`) → ~88.7 s (parallel, this commit) — ~12x.
+  Verified byte-identical JSON output aside from the (expected, non-deterministic)
+  `generatedAt` timestamp.
 - The rung-1 bench + release perf gate now also measure the PRODUCTION
   scoped-context path (`Rung1Context` + `Updater::apply_batch_scoped`,
   extracted from `spawn_updater`'s hot loop so bench and server share one
