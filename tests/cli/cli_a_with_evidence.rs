@@ -142,6 +142,10 @@ fn d1_findings(doc: &serde_json::Value) -> Vec<&serde_json::Value> {
 
 #[test]
 fn two_field_with_evidence_distinct_member_per_finding() {
+    // Reader-side env serialization: the produced doc embeds `alsemVersion`
+    // from the env-reading `driver_version()`, so hold the crate ENV_LOCK
+    // against the `cli_a_*` writers of `ALCH_DRIVER_VERSION_OVERRIDE`.
+    let _env = crate::env_guard();
     let ws = write_workspace("twofield-we", "twofield.al", TWO_FIELD_TABLE);
     let doc = parse(&run_json(&ws, true));
 
@@ -207,6 +211,10 @@ fn two_field_with_evidence_distinct_member_per_finding() {
 
 #[test]
 fn default_output_byte_identical_minus_evidence_keys() {
+    // Reader-side env serialization (see two_field test): both runs must see
+    // the same `ALCH_DRIVER_VERSION_OVERRIDE` state or `alsemVersion` differs
+    // and the byte-identical assertion below flakes.
+    let _env = crate::env_guard();
     let ws = write_workspace("twofield-default", "twofield.al", TWO_FIELD_TABLE);
     let plain = run_json(&ws, false);
     let evid = run_json(&ws, true);
@@ -292,6 +300,8 @@ codeunit 50101 "E3 Proc"
 
 #[test]
 fn finding_outside_member_trigger_has_no_member() {
+    // Reader-side env serialization (see two_field test).
+    let _env = crate::env_guard();
     let ws = write_workspace("proc-only", "proc.al", PROCEDURE_ONLY);
     let doc = parse(&run_json(&ws, true));
 
@@ -362,6 +372,8 @@ page 50102 "E3 Card"
 
 #[test]
 fn page_field_trigger_finding_has_member() {
+    // Reader-side env serialization (see two_field test).
+    let _env = crate::env_guard();
     let ws = write_workspace("page-field", "page.al", PAGE_FIELD_TRIGGER);
     let doc = parse(&run_json(&ws, true));
 

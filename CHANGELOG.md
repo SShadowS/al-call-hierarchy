@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously recompiled and re-ran per including binary. The `cli` umbrella
   adds `ENV_LOCK`/`env_guard()` serializing the process-global `std::env`
   mutation in the `cli_a_*` differentials (a pre-existing race under
-  multi-threaded plain `cargo test`); `telemetry_integration`'s crate-level
+  multi-threaded plain `cargo test`), with reader-side guards in
+  `cli_a_with_evidence` too (its output embeds the env-dependent
+  `alsemVersion`; final-review finding); `telemetry_integration`'s crate-level
   `#![cfg(feature = "telemetry")]` moved to a `#[cfg]` on its `mod` in the
   `lsp` umbrella. `scripts/cdo-gate` now invokes
   `cargo test --release --test lsp -- program_graph:: snapshot_robustness::`.
