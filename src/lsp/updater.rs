@@ -745,8 +745,18 @@ fn apply_rung1_core(
         // `Arc::clone` (cheap), so holding these past the `edges_by_file`/
         // `decls_by_file` inserts further down is sound (no borrow of the
         // map itself, just a refcounted view of the file's old Vec).
-        let old_decls = cur.decls_by_file.get(&vp).cloned();
-        let old_edges = cur.edges_by_file.get(&vp).cloned();
+        //
+        // Read from the WORKING maps, not `cur` (review finding, task-1
+        // Fable review): if the same `vp` appears twice in one batch (the
+        // coalescer dedupes by exact `PathBuf`, but `classify_path`'s
+        // case-insensitive fallback can map two spellings to one `vp`),
+        // iteration 2 must remove iteration 1's freshly-pushed edges, not
+        // `cur`'s stale list — otherwise `incoming` keeps duplicate
+        // `EdgeRef`s until the next rebuild. On first occurrence the
+        // working maps are identical to `cur`'s, so this is a pure
+        // idempotency fix.
+        let old_decls = decls_by_file.get(&vp).cloned();
+        let old_edges = edges_by_file.get(&vp).cloned();
 
         let (edges, surface, decls) = recompute_file(
             &pf,

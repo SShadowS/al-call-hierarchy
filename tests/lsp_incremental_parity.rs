@@ -1995,6 +1995,118 @@ codeunit 50100 "Alpha"
     );
 }
 
+/// Task-1 review finding (Fable, Medium): if the same `vp` appears TWICE in
+/// one rung-1 batch (`classify` pushes one `Planned::Save` per event with no
+/// vp dedup; the production coalescer dedupes by exact `PathBuf` only, and
+/// `classify_path`'s case-insensitive fallback can map two spellings to one
+/// vp), the per-save loop's removal pass must derive the file's OLD edge
+/// targets from the WORKING maps (iteration 1's fresh state), not from
+/// `cur`'s stale list — otherwise iteration 2 re-pushes the file's new
+/// edges without removing iteration 1's, leaving duplicate `EdgeRef`s in
+/// `incoming` until the next rebuild. This test sends the SAME `FileSaved`
+/// event twice in one batch and asserts full sorted-multiset parity of
+/// `incoming` against a fresh wholesale `build_incoming`.
+#[test]
+fn rung1_duplicate_vp_in_one_batch_stays_equivalent() {
+    let dir = copy_fixture_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+    // Same body-only edit shape as `rung1_patched_indexes_match_wholesale_
+    // rebuild`, plus a call to a target with NO prior incoming edge from
+    // this file (`OnAfterWork` — never called in the base fixture): the
+    // stale-removal bug only materializes for a target absent from the OLD
+    // edge list (iteration 2's removal pass never visits it, then re-pushes
+    // its fresh EdgeRef → duplicate).
+    std::fs::write(
+        dir.path().join("Alpha.al"),
+        r#"// Unicode smoke test (Task 10 fixture requirement): æøå
+codeunit 50100 "Alpha"
+{
+    procedure DoWork()
+    var
+        Beta: Codeunit "Beta";
+    begin
+        Beta.Process();
+        Beta.Process();
+        Calc(1);
+        Calc('x');
+        Løbenr();
+        OnAfterWork();
+    end;
+
+    procedure Calc(X: Integer)
+    begin
+    end;
+
+    procedure Calc(X: Text)
+    begin
+    end;
+
+    procedure Løbenr()
+    begin
+    end;
+
+    [IntegrationEvent(false, false)]
+    procedure OnAfterWork()
+    begin
+    end;
+}
+"#,
+    )
+    .expect("rewrite Alpha.al");
+
+    // The SAME save event twice in ONE batch — un-coalesced, as the public
+    // `apply_batch` API permits.
+    let batch = vec![
+        ChangeEvent::FileSaved(dir.path().join("Alpha.al")),
+        ChangeEvent::FileSaved(dir.path().join("Alpha.al")),
+    ];
+    let (new_snap, rung) = updater
+        .apply_batch(&base, &batch)
+        .expect("apply_batch must succeed");
+    assert_eq!(rung, Rung::One, "a body-only edit must take rung 1");
+
+    let (fresh_incoming, _) = al_call_hierarchy::lsp::snapshot::build_incoming(
+        &new_snap.edges_by_file,
+        &new_snap.event_edges,
+    );
+    let sort_refs = |v: &[al_call_hierarchy::lsp::snapshot::EdgeRef]| {
+        let mut v: Vec<(String, u32)> = v.iter().map(|r| (r.file.to_string(), r.idx)).collect();
+        v.sort();
+        v
+    };
+    let mut all_targets: Vec<RoutineNodeId> = new_snap
+        .incoming
+        .keys()
+        .cloned()
+        .chain(fresh_incoming.keys().cloned())
+        .collect();
+    all_targets.sort();
+    all_targets.dedup();
+    assert!(
+        !all_targets.is_empty(),
+        "fixture sanity: at least one incoming target must exist"
+    );
+    for target in &all_targets {
+        let patched: Vec<(String, u32)> = new_snap
+            .incoming
+            .get(target)
+            .map(|v| sort_refs(v))
+            .unwrap_or_default();
+        let fresh: Vec<(String, u32)> = fresh_incoming
+            .get(target)
+            .map(|v| sort_refs(v))
+            .unwrap_or_default();
+        assert_eq!(
+            patched, fresh,
+            "duplicate-vp batch: patched incoming[{target:?}] must match a fresh \
+             build_incoming — a mismatch means the removal pass read stale `cur` \
+             state instead of the working maps"
+        );
+    }
+}
+
 /// A NEW fixture: two workspace files each independently declare `codeunit
 /// 50100 "Dup"` with an identically-shaped `procedure Shared()` — since
 /// `RoutineNodeId` is derived from the object's key + name + arity + sig_fp
