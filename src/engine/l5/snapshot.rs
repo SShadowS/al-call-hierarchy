@@ -1119,26 +1119,39 @@ fn capability_fact_sort_key(f: &SnapshotCapabilityFact) -> String {
 }
 
 fn derive_capability_facts(base: &R3a3SourceBase) -> Vec<SnapshotCapabilityFact> {
-    let mut all: Vec<SnapshotCapabilityFact> = Vec::new();
-    for r in &base.ws_routines {
-        // Only routines with a cone entry contribute (mirrors composeSnapshot:
-        // facts come from `r.summary`, present iff the cone ran for the routine).
-        if !base.cones.contains_key(&r.id) {
-            continue;
-        }
-        let subject = stable_routine_id(&r.id, &base.routine_to_stable);
-        if let Some(direct) = base.direct_full.get(&r.id) {
-            for f in direct {
-                all.push(snapshot_fact(f, &subject));
+    use rayon::prelude::*;
+    // Per-routine emission is independent; indexed par_iter + sequential flatten
+    // preserves the exact sequential emission order (ties in the sort key below are
+    // resolved by the STABLE sort from this input order — do not reorder).
+    let per_routine: Vec<Vec<SnapshotCapabilityFact>> = base
+        .ws_routines
+        .par_iter()
+        .map(|r| {
+            // Only routines with a cone entry contribute (mirrors composeSnapshot:
+            // facts come from `r.summary`, present iff the cone ran for the routine).
+            if !base.cones.contains_key(&r.id) {
+                return Vec::new();
             }
-        }
-        if let Some(cone) = base.cones.get(&r.id) {
-            for f in &cone.inherited {
-                all.push(snapshot_fact(f, &subject));
+            let subject = stable_routine_id(&r.id, &base.routine_to_stable);
+            let mut v: Vec<SnapshotCapabilityFact> = Vec::new();
+            if let Some(direct) = base.direct_full.get(&r.id) {
+                for f in direct {
+                    v.push(snapshot_fact(f, &subject));
+                }
             }
-        }
-    }
-    all.sort_by_key(capability_fact_sort_key);
+            if let Some(cone) = base.cones.get(&r.id) {
+                for f in &cone.inherited {
+                    v.push(snapshot_fact(f, &subject));
+                }
+            }
+            v
+        })
+        .collect();
+    let mut all: Vec<SnapshotCapabilityFact> = per_routine.into_iter().flatten().collect();
+    // sort_by_cached_key: identical order to sort_by_key (same key, both stable),
+    // but the 8-field join("|") String is built ONCE per fact instead of per
+    // comparison (~128k facts on CDO).
+    all.sort_by_cached_key(capability_fact_sort_key);
     all
 }
 

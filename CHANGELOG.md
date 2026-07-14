@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Merge-identity effect-fact dedup (previous entry, below): the skip was not
+  provably output-neutral for an identity's FIRST duplicate — a duplicate-free
+  entry from the fresh-insert branch stores its paths in raw BFS order, not the
+  MERGE branch's `(projected_len, query_hops_json)`-sorted + json-deduped order,
+  so a later duplicate that used to trigger a real merge (and thus normalize the
+  entry) previously just vanished, silently leaving the entry un-normalized.
+  `digest_one_root` now re-normalizes the target accumulator entry (via a new
+  shared `merge_normalize_via_paths` helper, used by both the live MERGE branch
+  and this path) on an identity's FIRST duplicate — with no new paths appended,
+  since the duplicate's own path set is a proven subset of what's already stored
+  — and skips outright from the SECOND duplicate onward (a normalized list is a
+  fixed point). `tempState` is recomputed for real (cheap, non-BFS) rather than
+  assumed unchanged, since an unrelated identity sharing the same `dedupe_key`
+  may have mutated it in between. Byte-identical on CDO (fc-verified); previously
+  this was corpus luck, not a proven invariant. transaction-integrity preset:
+  ~24.7 s → ~24.9 s (no measurable regression from the fix).
 - `alsem analyze` no longer hangs (10+ min, single core pegged) on large workspaces: the
   L4.5 ordering-facts pass (43.6 s+ on CDO, superlinear witness reconstruction) ran eagerly
   in `build_detector_context` although only the OPT-IN d47/d49/d51 detectors read it. It is
@@ -16,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- digest per-root loop now skips duplicate effect facts (merge-identity dedup, measured
+  ~2.3× duplication on CDO): a fact identical in every consumed field to an earlier one
+  contributes a provable no-op to the effect map, so its witness BFS + projection +
+  merge are skipped entirely. Byte-identical (fc-verified). transaction-integrity
+  preset: 63.6 s → 24.7 s.
+- digest per-root merge loop de-quadratized: O(1) HashMap index over the insertion-ordered
+  effect map (was an O(F) scan per fact → O(F²) on 1500-fact Page roots) + `query_hops_json`
+  memoized per path instead of re-serialized on every merge sort/dedupe. Byte-identical
+  (fc-verified on CDO). transaction-integrity preset: 94.1 s → 63.6 s.
 - `digest_query` (the L5 witness/ordering digest behind `--preset transaction-integrity`'s
   d47/d48/d49 and the digest CLI) now processes roots in parallel (rayon). Each root's
   witness reconstruction + ordering pass reads only immutable inputs (`snap`/`idx`/context
@@ -24,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ~1061 s (sequential, Task-1 commit `f71b8d1`) → ~88.7 s (parallel, this commit) — ~12x.
   Verified byte-identical JSON output aside from the (expected, non-deterministic)
   `generatedAt` timestamp.
+- `compose_snapshot`'s capability-fact materialization parallelized per routine and its
+  canonical sort switched to `sort_by_cached_key` (key built once per fact instead of per
+  comparison; ~128k facts on CDO). Byte-identical (fc-verified). Full CDO
+  transaction-integrity preset: 24.88 s → 23.09 s.
+- witness/digest optimization close-out (`docs/perf-regression-t3-vs-0.9.3.md` §12):
+  final CDO measurement at branch tip, `transaction-integrity` preset 94.12 s → 22.90 s
+  (median of 3 fresh-process runs), default `analyze` unchanged (7.31 s → 6.53 s, within
+  noise). Byte-identical (fc-verified vs the pre-branch `--deterministic` baseline).
+  Candidate F (inner-root parallelism over the giant Page roots) is a NO-GO: the <30 s
+  target was met with ~7 s of headroom, so its added complexity isn't justified; it
+  remains a documented backlog lever if a future workload regresses the preset.
 - The rung-1 bench + release perf gate now also measure the PRODUCTION
   scoped-context path (`Rung1Context` + `Updater::apply_batch_scoped`,
   extracted from `spawn_updater`'s hot loop so bench and server share one
