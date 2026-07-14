@@ -1858,6 +1858,53 @@ fn detail_json(detail: &[(String, String)]) -> String {
     s
 }
 
+/// Identity of a fact's ENTIRE `digest_one_root` loop contribution. Two facts with
+/// equal keys produce byte-identical witness outcomes, projections, dedupe keys, and
+/// merge inputs — so every occurrence after the first is a provable no-op on
+/// `effect_map` (the merge dedupes identical paths by hops-JSON and merges
+/// temp_state/truncation idempotently). Skipping them changes nothing in the output
+/// while removing the measured ~2.3× duplicate-fact cost (witness-investigation.md §3).
+///
+/// Fields, and why each is here (grepped every `fact.`/`fact_equivalent` use inside
+/// `digest_one_root`'s call tree — see witness-investigation.md §3 and the brief):
+///   - `provenance`, `witness_operation_id`, `witness_callsite_id`, `op`, `subject` —
+///     `reconstruct_witness_paths`'s direct BFS-input fields (cases A/B/C dispatch).
+///   - `resource_kind`, `resource_id` — read by `reconstruct_witness_paths` (Case-C
+///     reachability seeding via `direct_facts_by_op_kind`) AND by `dedupe_key`.
+///   - `resource_arg_source` (serialized) — read by `fact_equivalent(d, fact)`
+///     (called on the CURRENT fact as `b`, both in the `valid_nodes` reverse-BFS
+///     seed AND the terminal-match check inside the Case-C BFS) — an easy field to
+///     miss because it lives OUTSIDE `extra`, but it changes `fact_equivalent`'s
+///     result and therefore the BFS's reachable-node set.
+///   - `extra` (serialized) — carries `dispatch`'s `objectType` (also read by
+///     `fact_equivalent`) and `table`'s `temp_state` (read directly in the loop for
+///     the physical-write filter), plus every other extra field the (currently
+///     unread-elsewhere) variants carry — over-included defensively.
+///   - `detail` (the computed `effect_detail_of` output) — folded into `dedupe_key`'s
+///     grouping key, so two facts differing only in a detail field must NOT collapse.
+///
+/// `confidence`/`via` are NOT included: `via` is read only for a diagnostics detail
+/// string, and `confidence` is not read anywhere in `digest_one_root`'s call tree;
+/// neither affects `effect_map`, and duplicate outcomes' `diagnostics`/`incomplete`
+/// are NOT consumed by `digest_one_root` (only `reconstruct_witness_paths_pub`
+/// forwards them, a different caller) — omitting them only lowers the dedup factor
+/// if they ever start mattering, never causes incorrect output.
+fn effect_fact_loop_identity(fact: &Fact, detail: &[(String, String)]) -> String {
+    format!(
+        "{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
+        fact.provenance,
+        fact.op,
+        fact.resource_kind,
+        fact.resource_id.as_deref().unwrap_or(""),
+        fact.witness_callsite_id.as_deref().unwrap_or(""),
+        fact.witness_operation_id.as_deref().unwrap_or(""),
+        fact.subject,
+        serde_json::to_string(&fact.resource_arg_source).unwrap_or_default(),
+        serde_json::to_string(&fact.extra).unwrap_or_default(),
+        detail_json(detail),
+    )
+}
+
 /// `buildCanonicalOccurrenceKey` (ordering-engine.ts) — link-signature from viaPaths[0].
 fn build_canonical_key(
     root_routine_id: &str,
@@ -2156,6 +2203,11 @@ fn digest_one_root(
         // the Vec keeps insertion order for output; this only replaces the O(F)
         // `iter().position()` scan that made the loop O(F²) on 1500-fact roots).
         let mut effect_index: HashMap<String, usize> = HashMap::new();
+        // Merge-identity dedup (see `effect_fact_loop_identity`'s doc): facts whose
+        // ENTIRE consumed field set is equal produce a byte-identical loop
+        // contribution, so every occurrence after the first is skipped before the
+        // expensive witness BFS.
+        let mut seen_identity: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // Effect types the ordering engine grades (FIX 2). When `ordering_witness_only`
         // is set we skip witness reconstruction for effect types outside this set —
@@ -2180,6 +2232,13 @@ fn digest_one_root(
                 continue;
             };
             let detail = effect_detail_of(fact, &idx.stable_id_to_display);
+
+            // Merge-identity dedup — see effect_fact_loop_identity's doc. Must run
+            // BEFORE reconstruct_witness_paths (the expensive half) and keep FIRST
+            // occurrence order so effect_map insertion order is unchanged.
+            if !seen_identity.insert(effect_fact_loop_identity(fact, &detail)) {
+                continue;
+            }
 
             // FIX 2: skip expensive witness reconstruction for effect types the
             // ordering engine never grades when called from the ordering-only path.

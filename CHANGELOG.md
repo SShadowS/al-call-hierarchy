@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- digest per-root loop now skips duplicate effect facts (merge-identity dedup, measured
+  ~2.3× duplication on CDO): a fact identical in every consumed field to an earlier one
+  contributes a provable no-op to the effect map, so its witness BFS + projection +
+  merge are skipped entirely. Byte-identical (fc-verified). transaction-integrity
+  preset: 63.6 s → 24.7 s.
 - digest per-root merge loop de-quadratized: O(1) HashMap index over the insertion-ordered
   effect map (was an O(F) scan per fact → O(F²) on 1500-fact Page roots) + `query_hops_json`
   memoized per path instead of re-serialized on every merge sort/dedupe. Byte-identical
