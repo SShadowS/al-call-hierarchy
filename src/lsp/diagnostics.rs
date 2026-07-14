@@ -148,8 +148,13 @@ pub fn compute_for_files(
 ///
 /// **Why this is a COMPLETE cover.** Per-file diagnostics
 /// (complexity/param-count/line-count) depend only on the edited file's own
-/// body, so `delta.files` alone covers those. The ONE cross-file rule is
-/// unused-procedure, which depends on exactly
+/// body, so `delta.files` alone covers those. TWO rules are cross-file —
+/// unused-procedure AND high-fan-in (`push_quality_diagnostics`'s
+/// `fan_in_enabled` branch; task-2 Fable review: any future narrowing of
+/// this cover must preserve BOTH, e.g. a "only zero↔nonzero incoming flips
+/// matter" shortcut would keep unused-procedure correct while silently
+/// missing a high-fan-in threshold crossing) — and both depend on exactly
+/// the same input:
 /// `effective_incoming_count` = `incoming` (edge-derived) +
 /// `publisher_fanout` (event-derived). Rung 1 NEVER changes
 /// `publisher_fanout` — `apply_rung1_core` Arc-forwards it unchanged from
@@ -160,7 +165,8 @@ pub fn compute_for_files(
 /// `apply_rung1_core`) as exactly every `RoutineNodeId` whose `incoming`
 /// entry changed (removed-edge targets union added-edge targets, across
 /// every touched file). Therefore the file containing EVERY decl whose
-/// unused-procedure verdict could possibly have flipped is either in
+/// unused-procedure or high-fan-in verdict could possibly have flipped is
+/// either in
 /// `delta.files` (the edit itself) or is the declaring file of some id in
 /// `delta.affected_ids` — this function's two union terms — making the
 /// cover complete. `affected_ids` is a superset (Task 1's own doc: also
@@ -479,7 +485,15 @@ impl DiagnosticsState {
 
         for (uri, diags) in entries {
             seen.insert(uri.clone());
-            let changed = self.last_published.get(&uri) != Some(&diags);
+            // `None` (never published / previously cleared) and an empty new
+            // vec are the SAME published state — without this, every clean
+            // file gets an empty re-publish on EVERY diff call (task-2 Fable
+            // review finding: `None != Some(&vec![])` is `true`), O(workspace)
+            // redundant notifications per full swap.
+            let changed = match self.last_published.get(&uri) {
+                Some(prev) => *prev != diags,
+                None => !diags.is_empty(),
+            };
             if changed {
                 out.push((uri.clone(), diags.clone()));
             }
@@ -526,7 +540,12 @@ impl DiagnosticsState {
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (uri, diags) in entries {
-            let changed = self.last_published.get(&uri) != Some(&diags);
+            // Same unchanged-empty rule as [`Self::diff`] (see the comment
+            // there): `None` and empty are the same published state.
+            let changed = match self.last_published.get(&uri) {
+                Some(prev) => *prev != diags,
+                None => !diags.is_empty(),
+            };
             if changed {
                 out.push((uri.clone(), diags.clone()));
             }
@@ -1128,6 +1147,22 @@ mod tests {
             publish2,
             vec![("file:///Cu.al".to_string(), Vec::new())],
             "a uri whose findings dropped to zero must be included as a clear"
+        );
+
+        // Unchanged-empty (task-2 Fable review finding): the SAME empty set
+        // again — for both diff and diff_partial — must be a no-op, not an
+        // eternal re-publish (`None` and empty are the same published state).
+        let mut third = HashMap::new();
+        third.insert("file:///Cu.al".to_string(), Vec::new());
+        assert!(
+            state.diff(third).is_empty(),
+            "an unchanged-EMPTY uri must not be re-published by diff"
+        );
+        let mut fourth = HashMap::new();
+        fourth.insert("file:///Cu.al".to_string(), Vec::new());
+        assert!(
+            state.diff_partial(fourth).is_empty(),
+            "an unchanged-EMPTY uri must not be re-published by diff_partial"
         );
     }
 
