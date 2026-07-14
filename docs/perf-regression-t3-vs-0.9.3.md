@@ -1114,3 +1114,26 @@ genuinely new design, not a retry of either measured-blocked variant.
 - The CDO north-star SHA `0a3b85bc…` held byte-identical at every task and
   at this close-out (5/5 trials) — no drift introduced anywhere in the arc.
 
+
+## Addendum (2026-07-15): test-crate consolidation — build/link time, not runtime
+
+Not an LSP-latency change; recorded here because it moves the same
+day-to-day perf surface (developer iteration speed) the arcs above kept
+paying link tax against. The 151 top-level `tests/*.rs` integration-test
+crates were consolidated into 9 umbrella crates plus 3 deliberate
+standalones (151 → 12 test link targets); see the 2026-07-15 design spec
+and CHANGELOG entry.
+
+- **Methodology:** warm dev build, touch `src/lib.rs`, `Measure-Command
+  { cargo test --no-run }`, rust-lld linker, median of 3 (plain cargo,
+  never nextest, per measurement policy).
+- **Full-suite touch-relink: 43.7 s → 9.3 s median (−79%)** (before:
+  36.1/52.1/43.7; after: 9.5/9.3/9.0).
+- Whole-suite count 2602 → 2447 — the −155 is exactly the deduplicated
+  `tests/common/regen.rs` unit-test instances (36 including binaries × 5
+  tests collapsed to 5 umbrella copies); zero domain tests lost, whole
+  suite green, clippy clean, CDO gate green (187 + 2) using the new
+  `--test lsp -- program_graph:: snapshot_robustness::` invocation.
+- **Trade-off:** a single-member edit now recompiles its whole umbrella
+  crate (acceptable: umbrella compile is seconds, and the relink win
+  dominates every edit-test loop that touches `src/`).
