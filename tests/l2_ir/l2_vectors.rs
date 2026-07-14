@@ -38,7 +38,7 @@ struct Vector {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r1a-vectors/l2-vectors.json");
+    let raw = include_str!("../r1a-vectors/l2-vectors.json");
     serde_json::from_str(raw).expect("l2-vectors.json parses into VectorsDoc")
 }
 

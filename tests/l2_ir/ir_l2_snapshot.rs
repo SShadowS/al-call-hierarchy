@@ -23,8 +23,7 @@ use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::l2::ir_walk::project_routine_features_ir;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 fn collect_al_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {

@@ -67,7 +67,7 @@ struct EligibilityExpect {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r1b-vectors/l2cc-vectors.json");
+    let raw = include_str!("../r1b-vectors/l2cc-vectors.json");
     serde_json::from_str(raw).expect("l2cc-vectors.json parses into VectorsDoc")
 }
 

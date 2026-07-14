@@ -52,7 +52,7 @@ struct Vector {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r1d-vectors/l2cap-vectors.json");
+    let raw = include_str!("../r1d-vectors/l2cap-vectors.json");
     serde_json::from_str(raw).expect("l2cap-vectors.json parses into VectorsDoc")
 }
 

@@ -97,7 +97,7 @@ fn encode(kind: &str, input: &Value) -> String {
 
 #[test]
 fn all_encoder_vectors_pass_byte_for_byte() {
-    let raw = include_str!("r0-vectors/encoder-vectors.json");
+    let raw = include_str!("../r0-vectors/encoder-vectors.json");
     let doc: Value = serde_json::from_str(raw).expect("encoder-vectors.json must parse");
 
     let vectors = doc["vectors"].as_array().expect("vectors must be an array");

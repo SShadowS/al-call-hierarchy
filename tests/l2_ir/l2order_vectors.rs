@@ -83,7 +83,7 @@ struct FrameExpect {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r1c-vectors/l2order-vectors.json");
+    let raw = include_str!("../r1c-vectors/l2order-vectors.json");
     serde_json::from_str(raw).expect("l2order-vectors.json parses into VectorsDoc")
 }
 
