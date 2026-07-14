@@ -661,16 +661,6 @@ pub fn build_incoming(
 /// twice for no reason). Routes from a DIFFERENT edge naming the same
 /// target are NOT deduplicated — those are genuinely distinct callers (a
 /// different `idx`), never touched by this guard.
-/// Push one [`EdgeRef`] per DISTINCT `RouteTarget::Routine` target `edge`
-/// resolves to (T3 Task 9 review carry-over from Task 8: a single edge can
-/// carry >1 route to the exact SAME target — e.g. a pathological
-/// ambiguous-overload candidate set where two routes happen to name the
-/// same routine — and without this per-edge dedup guard, `incoming[target]`
-/// would carry the IDENTICAL `EdgeRef` more than once: pure noise for a
-/// consumer, e.g. `incomingCalls`' `fromRanges` showing the same call site
-/// twice for no reason). Routes from a DIFFERENT edge naming the same
-/// target are NOT deduplicated — those are genuinely distinct callers (a
-/// different `idx`), never touched by this guard.
 ///
 /// `pub(crate)` (Tier-2 latency wave, Task 1): the rung-1 `incoming` patch
 /// (`apply_rung1_core`, `src/lsp/updater.rs`) reuses this exact function to

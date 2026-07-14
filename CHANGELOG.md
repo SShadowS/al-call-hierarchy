@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `diagnostics::rung1_cover` (final tier-2 whole-branch review finding): the
+  cover resolved each affected `RoutineNodeId` to a SINGLE file via
+  `decl_by_id`, whose winner for a cross-file-duplicate id is explicitly
+  unspecified — so when a rung-1 edit flipped a duplicated procedure's
+  `effective_incoming_count`, only one of its declaring files was recomputed
+  and the other's unused-procedure/high-fan-in verdict stayed stale until the
+  next rung-2/3 swap. The cover now scans `decls_by_file` and inserts EVERY
+  declaring file of every affected id (one hash probe per workspace decl,
+  microseconds). New regression test
+  `rung1_cover_includes_all_declaring_files_of_duplicate_id` (verified to fail
+  against the old lookup).
 - Merge-identity effect-fact dedup (previous entry, below): the skip was not
   provably output-neutral for an identity's FIRST duplicate — a duplicate-free
   entry from the fresh-insert branch stores its paths in raw BFS order, not the
@@ -89,8 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a rung-1 swap never adds/removes workspace files). The rung-1 recompute cover
   (`diagnostics::rung1_cover`) is `delta.files` (the edited files) UNION every
   `virtual_path` declaring a decl in `delta.affected_ids` (Task 1's per-file
-  `incoming`-delta) — complete because the only cross-file diagnostic rule
-  (unused-procedure) depends on exactly `incoming` + `publisher_fanout`, and rung 1
+  `incoming`-delta) — complete because both cross-file diagnostic rules
+  (unused-procedure AND high-fan-in) depend on exactly `incoming` + `publisher_fanout`,
+  and rung 1
   never changes `publisher_fanout` (Task 1 Arc-forwards it unchanged). `Updater` gains
   a public `rung1_context` accessor so a caller outside `updater.rs` can drive
   `apply_batch_scoped` without reaching into a private field. Measured on CDO

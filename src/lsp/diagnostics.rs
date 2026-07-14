@@ -167,17 +167,33 @@ pub fn compute_for_files(
 /// every touched file). Therefore the file containing EVERY decl whose
 /// unused-procedure or high-fan-in verdict could possibly have flipped is
 /// either in
-/// `delta.files` (the edit itself) or is the declaring file of some id in
+/// `delta.files` (the edit itself) or is A declaring file of some id in
 /// `delta.affected_ids` — this function's two union terms — making the
 /// cover complete. `affected_ids` is a superset (Task 1's own doc: also
 /// includes removed/added decl ids), so over-inclusion here is safe, just
 /// occasionally recomputes one extra unaffected file.
+///
+/// **Why a `decls_by_file` scan and not a `decl_by_id` lookup** (final
+/// whole-branch review finding): a cross-file-duplicate `RoutineNodeId` is
+/// declared in MORE than one file, each carrying its own
+/// unused-procedure/high-fan-in verdict for the same shared id — and
+/// `decl_by_id`'s winner for such an id is explicitly UNSPECIFIED
+/// (`build_decl_by_id`'s doc), so resolving each affected id to that single
+/// winner would leave every non-winner declaring file's flipped verdict
+/// stale until the next rung-2/3 swap. The scan visits every declaring
+/// file of every affected id by construction. Cost: one pass over all
+/// workspace decls with a hash probe each (~5k on the reference workspace,
+/// microseconds) — noise next to `compute_for_files` itself.
 #[must_use]
 pub fn rung1_cover(snap: &LspSnapshot, delta: &Rung1Delta) -> BTreeSet<String> {
     let mut cover: BTreeSet<String> = delta.files.iter().cloned().collect();
-    for id in &delta.affected_ids {
-        if let Some(decl) = snap.decl_by_id.get(id) {
-            cover.insert(decl.virtual_path.clone());
+    if !delta.affected_ids.is_empty() {
+        let affected: std::collections::HashSet<&crate::program::RoutineNodeId> =
+            delta.affected_ids.iter().collect();
+        for (virtual_path, decls) in &snap.decls_by_file {
+            if !cover.contains(virtual_path) && decls.iter().any(|d| affected.contains(&d.id)) {
+                cover.insert(virtual_path.clone());
+            }
         }
     }
     cover
@@ -1370,6 +1386,105 @@ mod tests {
             "BFile.Proc must flip to unused after CallerA's only call is \
              removed; got {after_b:?}"
         );
+    }
+
+    // ── Final whole-branch review finding: the cover must include EVERY ────
+    // declaring file of a cross-file-duplicate RoutineNodeId, not just
+    // `decl_by_id`'s (unspecified) winner — both files carry an
+    // unused-procedure verdict for the SAME id, so both flip when the last
+    // caller disappears.
+
+    #[test]
+    fn rung1_cover_includes_all_declaring_files_of_duplicate_id() {
+        use crate::lsp::updater::{ChangeEvent, Updater};
+
+        let dir = tempfile::tempdir().unwrap();
+        write_app(dir.path(), "10000000-0000-0000-0000-00000000000e", "T2Dup");
+        let dup_body = r#"codeunit 50100 "Dup"
+{
+    procedure Shared()
+    begin
+    end;
+}
+"#;
+        std::fs::write(dir.path().join("Dup1.al"), dup_body).unwrap();
+        std::fs::write(dir.path().join("Dup2.al"), dup_body).unwrap();
+        std::fs::write(
+            dir.path().join("CallerA.al"),
+            r#"codeunit 50101 "CallerA"
+{
+    procedure DoWork()
+    var
+        D: Codeunit "Dup";
+    begin
+        D.Shared();
+    end;
+}
+"#,
+        )
+        .unwrap();
+
+        let (base, parsed) =
+            LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
+        let cfg = DiagnosticConfig::default();
+        let enc = PositionEncoding::Utf16;
+        let before = compute_all(&base, enc, &cfg);
+
+        // Fixture sanity: the two files really declare the SAME id.
+        let id1 = &base.decls_by_file["Dup1.al"]
+            .iter()
+            .find(|d| d.name == "Shared")
+            .expect("Dup1.Shared")
+            .id;
+        let id2 = &base.decls_by_file["Dup2.al"]
+            .iter()
+            .find(|d| d.name == "Shared")
+            .expect("Dup2.Shared")
+            .id;
+        assert_eq!(id1, id2, "fixture must produce a cross-file-duplicate id");
+
+        // Edit CallerA.al: drop the ONLY call to Dup.Shared — body-only,
+        // provably rung 1.
+        std::fs::write(
+            dir.path().join("CallerA.al"),
+            r#"codeunit 50101 "CallerA"
+{
+    procedure DoWork()
+    begin
+    end;
+}
+"#,
+        )
+        .unwrap();
+
+        let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+        let ctx = updater.rung1_context(&base);
+        let batch = vec![ChangeEvent::FileSaved(dir.path().join("CallerA.al"))];
+        let (new_snap, delta) = updater
+            .apply_batch_scoped(&base, &batch, &ctx)
+            .expect("a body-only edit must classify as rung 1");
+        assert!(
+            delta.affected_ids.contains(id1),
+            "the duplicate id's incoming entry changed; delta = {delta:?}"
+        );
+
+        // BOTH declaring files must be covered — `decl_by_id`'s winner for a
+        // duplicate id is unspecified, so covering only one of them leaves
+        // the other's flipped verdict stale until the next full swap.
+        let cover = rung1_cover(&new_snap, &delta);
+        assert!(
+            cover.contains("Dup1.al") && cover.contains("Dup2.al"),
+            "cover must include EVERY declaring file of the duplicate id; \
+             cover = {cover:?}"
+        );
+
+        // Differential gate: merged partial == fresh full recompute.
+        let partial = compute_for_files(&new_snap, enc, &cfg, &cover);
+        let mut merged = before.clone();
+        for (uri, diags) in &partial {
+            merged.insert(uri.clone(), diags.clone());
+        }
+        assert_eq!(merged, compute_all(&new_snap, enc, &cfg));
     }
 
     // -----------------------------------------------------------------------
