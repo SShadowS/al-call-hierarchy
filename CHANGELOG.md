@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Merge-identity effect-fact dedup (previous entry, below): the skip was not
+  provably output-neutral for an identity's FIRST duplicate — a duplicate-free
+  entry from the fresh-insert branch stores its paths in raw BFS order, not the
+  MERGE branch's `(projected_len, query_hops_json)`-sorted + json-deduped order,
+  so a later duplicate that used to trigger a real merge (and thus normalize the
+  entry) previously just vanished, silently leaving the entry un-normalized.
+  `digest_one_root` now re-normalizes the target accumulator entry (via a new
+  shared `merge_normalize_via_paths` helper, used by both the live MERGE branch
+  and this path) on an identity's FIRST duplicate — with no new paths appended,
+  since the duplicate's own path set is a proven subset of what's already stored
+  — and skips outright from the SECOND duplicate onward (a normalized list is a
+  fixed point). `tempState` is recomputed for real (cheap, non-BFS) rather than
+  assumed unchanged, since an unrelated identity sharing the same `dedupe_key`
+  may have mutated it in between. Byte-identical on CDO (fc-verified); previously
+  this was corpus luck, not a proven invariant. transaction-integrity preset:
+  ~24.7 s → ~24.9 s (no measurable regression from the fix).
 - `alsem analyze` no longer hangs (10+ min, single core pegged) on large workspaces: the
   L4.5 ordering-facts pass (43.6 s+ on CDO, superlinear witness reconstruction) ran eagerly
   in `build_detector_context` although only the OPT-IN d47/d49/d51 detectors read it. It is

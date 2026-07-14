@@ -2137,6 +2137,131 @@ fn digest_query(
     entries
 }
 
+/// tempState of a fact's originating table-write (the physical-write filter's
+/// input) — a plain field projection off `fact.extra`, NOT part of the expensive
+/// witness-BFS half of `digest_one_root`'s loop, so it stays cheap to recompute for
+/// an identity-duplicate fact whose BFS reconstruction is skipped.
+fn fact_temp_state_of(fact: &Fact) -> Option<SnapTempState> {
+    match &fact.extra {
+        Some(SnapCapabilityExtra::Table { temp_state, .. }) => temp_state.clone(),
+        _ => None,
+    }
+}
+
+/// The MERGE branch's tempState combination rule, extracted so the identity-duplicate
+/// normalization path (see `digest_one_root`) can re-apply it exactly. Conservative:
+/// stays known-temp only if BOTH sides are known-temp; otherwise degrades to the new
+/// side once the existing side is no longer trusted-known. NOT assumed idempotent —
+/// an intervening, different-identity fact sharing the same `dedupe_key` may have
+/// changed the accumulator's `temp_state` since this identity's own first
+/// contribution, so callers must always pass the CURRENT stored value, never skip
+/// the recomputation.
+fn merge_temp_state(
+    existing: &Option<SnapTempState>,
+    new: &Option<SnapTempState>,
+) -> Option<SnapTempState> {
+    let is_known_temp =
+        |t: &Option<SnapTempState>| matches!(t, Some(SnapTempState::Known { value: true }));
+    if is_known_temp(existing) && is_known_temp(new) {
+        existing.clone()
+    } else if is_known_temp(existing) {
+        new.clone()
+    } else {
+        existing.clone()
+    }
+}
+
+/// The MERGE branch's via-paths normalization, extracted so it can be shared between
+/// a live merge (a genuinely new fact's projected paths, `new_*` non-empty) and the
+/// identity-duplicate normalization path (`new_*` empty — see `digest_one_root`'s
+/// identity-duplicate handling). Combines `existing_*` with `new_*` into
+/// (path, conditionality, json) triples, stable-sorts by `(projected_len, json)`,
+/// dedupes by json (first occurrence wins), then caps `via_paths` at `max_paths` and
+/// ORs in `had_truncation`. This is byte-for-byte the inline logic the MERGE branch
+/// used to run — extracting it does not change any output.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn merge_normalize_via_paths(
+    existing_paths: &[Vec<QueryWitnessHop>],
+    existing_conds: &[crate::engine::l5::conditionality::EffectConditionality],
+    existing_jsons: &[String],
+    existing_had_truncation: bool,
+    new_paths: &[Vec<QueryWitnessHop>],
+    new_conds: &[crate::engine::l5::conditionality::EffectConditionality],
+    new_jsons: &[String],
+    new_truncated: bool,
+    max_paths: usize,
+) -> (
+    Vec<Vec<QueryWitnessHop>>,
+    bool,
+    Vec<Vec<QueryWitnessHop>>,
+    Vec<crate::engine::l5::conditionality::EffectConditionality>,
+    Vec<String>,
+) {
+    let mut merged: Vec<(
+        Vec<QueryWitnessHop>,
+        crate::engine::l5::conditionality::EffectConditionality,
+        String,
+    )> = Vec::with_capacity(existing_paths.len() + new_paths.len());
+    for (i, p) in existing_paths.iter().enumerate() {
+        let c = existing_conds
+            .get(i)
+            .copied()
+            .unwrap_or(crate::engine::l5::conditionality::UNKNOWN);
+        let j = existing_jsons
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| query_hops_json(p));
+        merged.push((p.clone(), c, j));
+    }
+    for ((p, c), j) in new_paths
+        .iter()
+        .cloned()
+        .zip(new_conds.iter().copied())
+        .zip(new_jsons.iter().cloned())
+    {
+        merged.push((p, c, j));
+    }
+    merged.sort_by(|a, b| {
+        if a.0.len() != b.0.len() {
+            return a.0.len().cmp(&b.0.len());
+        }
+        a.2.cmp(&b.2)
+    });
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut unique_paths: Vec<Vec<QueryWitnessHop>> = Vec::new();
+    let mut unique_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> = Vec::new();
+    let mut unique_jsons: Vec<String> = Vec::new();
+    for (p, c, j) in merged {
+        if seen.insert(j.clone()) {
+            unique_paths.push(p);
+            unique_conds.push(c);
+            unique_jsons.push(j);
+        }
+    }
+    let had_truncation = existing_had_truncation || new_truncated || unique_paths.len() > max_paths;
+    let via: Vec<Vec<QueryWitnessHop>> = unique_paths.iter().take(max_paths).cloned().collect();
+    (
+        via,
+        had_truncation,
+        unique_paths,
+        unique_conds,
+        unique_jsons,
+    )
+}
+
+/// Per-identity dedup state (see `effect_fact_loop_identity`'s doc and
+/// `digest_one_root`'s identity-duplicate handling).
+enum IdentitySeen {
+    /// First occurrence's contribution landed at this `effect_map` position (via
+    /// either a fresh insert or a live merge into a pre-existing entry from a
+    /// DIFFERENT identity sharing the same `dedupe_key`).
+    First(usize),
+    /// A duplicate has already been merge-normalized into the entry above; the
+    /// normalized list is a fixed point for any further identical duplicate (see
+    /// the `IdentitySeen::First` match arm's comment in `digest_one_root`).
+    Normalized,
+}
+
 /// Per-root body of `digest_query` — extracted so the root loop can be driven by
 /// `rayon::par_iter`. Pure over its immutable inputs; returns `None` when the root
 /// has no display entry (mirrors the original loop's early `continue`).
@@ -2205,9 +2330,13 @@ fn digest_one_root(
         let mut effect_index: HashMap<String, usize> = HashMap::new();
         // Merge-identity dedup (see `effect_fact_loop_identity`'s doc): facts whose
         // ENTIRE consumed field set is equal produce a byte-identical loop
-        // contribution, so every occurrence after the first is skipped before the
-        // expensive witness BFS.
-        let mut seen_identity: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // contribution, so the expensive witness BFS is skipped for every occurrence
+        // after the first. The FIRST duplicate additionally re-normalizes the
+        // target accumulator entry (see the `IdentitySeen::First` match arm below)
+        // to reproduce the old code's MERGE-branch normalization that a duplicate
+        // would otherwise have triggered — see review finding in
+        // .superpowers/sdd/alsem-parallel/wit-task-2-fix-report.md.
+        let mut identity_seen: HashMap<String, IdentitySeen> = HashMap::new();
 
         // Effect types the ordering engine grades (FIX 2). When `ordering_witness_only`
         // is set we skip witness reconstruction for effect types outside this set —
@@ -2232,12 +2361,68 @@ fn digest_one_root(
                 continue;
             };
             let detail = effect_detail_of(fact, &idx.stable_id_to_display);
+            let identity = effect_fact_loop_identity(fact, &detail);
 
-            // Merge-identity dedup — see effect_fact_loop_identity's doc. Must run
-            // BEFORE reconstruct_witness_paths (the expensive half) and keep FIRST
-            // occurrence order so effect_map insertion order is unchanged.
-            if !seen_identity.insert(effect_fact_loop_identity(fact, &detail)) {
-                continue;
+            // Merge-identity dedup — see effect_fact_loop_identity's doc AND
+            // IdentitySeen's doc. Must run BEFORE reconstruct_witness_paths (the
+            // expensive half); keeps insertion order unchanged (the target
+            // accumulator entry's POSITION never moves, only its stored fields).
+            match identity_seen.get(&identity) {
+                Some(IdentitySeen::Normalized) => {
+                    // SECOND+ duplicate: the entry was already merge-normalized by
+                    // the FIRST duplicate below. Merging an identical subset of
+                    // paths into an already sorted+deduped list is a provable no-op
+                    // (the sorted+deduped list is a fixed point for its own
+                    // members), and `merge_temp_state` re-applied with the SAME
+                    // tempState input twice in a row is also a no-op (see that
+                    // function's doc) — so there is nothing left to do here.
+                    continue;
+                }
+                Some(&IdentitySeen::First(pos)) => {
+                    // FIRST duplicate of this identity: reproduce, WITHOUT
+                    // re-running the expensive BFS, the state transition the OLD
+                    // code's MERGE branch would have applied here (this is the
+                    // review finding this block fixes). The duplicate's own path
+                    // set is a proven subset of the entry's current `all_paths`
+                    // (identical BFS inputs ⇒ identical outcome — see
+                    // `effect_fact_loop_identity`'s doc), so re-sorting/deduping the
+                    // EXISTING paths alone (no new paths appended) yields exactly
+                    // what stable-sorting + json-deduping (existing ∪ duplicate)
+                    // would have produced: the duplicate's entries are exact
+                    // (len, json) ties with ones already in `existing`, appear
+                    // strictly AFTER them in the concatenation the old code built,
+                    // and a stable sort never reorders equal-key ties — so they are
+                    // always absorbed by the dedupe pass and never survive it.
+                    let acc = &mut effect_map[pos].1;
+                    let (via, had_truncation, all_paths, all_path_conds, all_path_jsons) =
+                        merge_normalize_via_paths(
+                            &acc.all_paths,
+                            &acc.all_path_conds,
+                            &acc.all_path_jsons,
+                            acc.had_truncation,
+                            &[],
+                            &[],
+                            &[],
+                            false,
+                            MAX_PATHS,
+                        );
+                    acc.via_paths = via;
+                    acc.had_truncation = had_truncation;
+                    acc.all_paths = all_paths;
+                    acc.all_path_conds = all_path_conds;
+                    acc.all_path_jsons = all_path_jsons;
+                    // temp_state is NOT assumed idempotent (unlike the paths above):
+                    // a different identity sharing this entry's dedupe_key may have
+                    // mutated it since this identity's first occurrence, so it is
+                    // cheaply recomputed for real with the SAME merge formula and
+                    // this duplicate's own (non-BFS, plain field) tempState.
+                    let dup_temp_state = fact_temp_state_of(fact);
+                    acc.temp_state = merge_temp_state(&acc.temp_state, &dup_temp_state);
+
+                    identity_seen.insert(identity, IdentitySeen::Normalized);
+                    continue;
+                }
+                None => {}
             }
 
             // FIX 2: skip expensive witness reconstruction for effect types the
@@ -2291,100 +2476,45 @@ fn digest_one_root(
             let key = dedupe_key(effect_type, terminal, fact, &detail);
 
             // tempState of the originating table-write fact (physical-write filter).
-            let fact_temp_state: Option<SnapTempState> = match &fact.extra {
-                Some(SnapCapabilityExtra::Table { temp_state, .. }) => temp_state.clone(),
-                _ => None,
-            };
+            let fact_temp_state: Option<SnapTempState> = fact_temp_state_of(fact);
 
             // Find existing in ordered effect_map.
             let existing_pos = effect_index.get(&key).copied();
 
-            if let Some(pos) = existing_pos {
+            let final_pos = if let Some(pos) = existing_pos {
                 // Merge: combine (path, cond, json) triples, sort shortest-first + JSON
                 // tiebreak, dedupe exact dups by hops-JSON. Conds/jsons travel WITH
-                // their paths (#8).
-                //
-                // INVARIANCE NOTE: the sort previously compared `query_hops_json(&a.0)`
-                // vs `query_hops_json(&b.0)` computed on the fly; `a.2`/`b.2` below are
-                // the SAME strings computed once (at projection, or reused from a prior
-                // merge's cache) — ordering and dedupe sets are unchanged byte-for-byte.
-                let mut merged: Vec<(
-                    Vec<QueryWitnessHop>,
-                    crate::engine::l5::conditionality::EffectConditionality,
-                    String,
-                )> = Vec::new();
-                {
-                    let existing = &effect_map[pos].1;
-                    for (i, p) in existing.all_paths.iter().enumerate() {
-                        let c = existing
-                            .all_path_conds
-                            .get(i)
-                            .copied()
-                            .unwrap_or(crate::engine::l5::conditionality::UNKNOWN);
-                        let j = existing
-                            .all_path_jsons
-                            .get(i)
-                            .cloned()
-                            .unwrap_or_else(|| query_hops_json(p));
-                        merged.push((p.clone(), c, j));
-                    }
-                }
-                for ((p, c), j) in projected_paths
-                    .iter()
-                    .cloned()
-                    .zip(path_conds.iter().copied())
-                    .zip(projected_jsons.iter().cloned())
-                {
-                    merged.push((p, c, j));
-                }
-                merged.sort_by(|a, b| {
-                    if a.0.len() != b.0.len() {
-                        return a.0.len().cmp(&b.0.len());
-                    }
-                    a.2.cmp(&b.2)
-                });
-                let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-                let mut unique_paths: Vec<Vec<QueryWitnessHop>> = Vec::new();
-                let mut unique_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> =
-                    Vec::new();
-                let mut unique_jsons: Vec<String> = Vec::new();
-                for (p, c, j) in merged {
-                    if seen.insert(j.clone()) {
-                        unique_paths.push(p);
-                        unique_conds.push(c);
-                        unique_jsons.push(j);
-                    }
-                }
-                let had_truncation = effect_map[pos].1.had_truncation
-                    || outcome.truncated
-                    || unique_paths.len() > MAX_PATHS;
-                let via: Vec<Vec<QueryWitnessHop>> =
-                    unique_paths.iter().take(MAX_PATHS).cloned().collect();
-                // Merge tempState conservatively: stays known-temp only if BOTH are.
-                let is_known_temp = |t: &Option<SnapTempState>| {
-                    matches!(t, Some(SnapTempState::Known { value: true }))
-                };
-                let existing_temp = effect_map[pos].1.temp_state.clone();
-                let merged_temp =
-                    if is_known_temp(&existing_temp) && is_known_temp(&fact_temp_state) {
-                        existing_temp
-                    } else if is_known_temp(&existing_temp) {
-                        fact_temp_state.clone()
-                    } else {
-                        existing_temp
-                    };
+                // their paths (#8). Delegates to `merge_normalize_via_paths`, the SAME
+                // helper the identity-duplicate normalization path above uses, so the
+                // two can never drift apart.
+                let existing = &effect_map[pos].1;
+                let (via, had_truncation, all_paths, all_path_conds, all_path_jsons) =
+                    merge_normalize_via_paths(
+                        &existing.all_paths,
+                        &existing.all_path_conds,
+                        &existing.all_path_jsons,
+                        existing.had_truncation,
+                        &projected_paths,
+                        &path_conds,
+                        &projected_jsons,
+                        outcome.truncated,
+                        MAX_PATHS,
+                    );
+                let merged_temp = merge_temp_state(&existing.temp_state, &fact_temp_state);
                 let acc = &mut effect_map[pos].1;
                 acc.via_paths = via;
                 acc.had_truncation = had_truncation;
-                acc.all_paths = unique_paths;
-                acc.all_path_conds = unique_conds;
-                acc.all_path_jsons = unique_jsons;
+                acc.all_paths = all_paths;
+                acc.all_path_conds = all_path_conds;
+                acc.all_path_jsons = all_path_jsons;
                 acc.temp_state = merged_temp;
+                pos
             } else {
                 let via: Vec<Vec<QueryWitnessHop>> =
                     projected_paths.iter().take(MAX_PATHS).cloned().collect();
                 let had_truncation = outcome.truncated || projected_paths.len() > MAX_PATHS;
-                effect_index.insert(key.clone(), effect_map.len());
+                let pos = effect_map.len();
+                effect_index.insert(key.clone(), pos);
                 effect_map.push((
                     key,
                     AccumulatedEffect {
@@ -2407,7 +2537,13 @@ fn digest_one_root(
                         fact_subject: fact.subject.clone(),
                     },
                 ));
-            }
+                pos
+            };
+
+            // Record where this identity's own (first) contribution landed, so a
+            // later duplicate can normalize the SAME entry without re-running BFS
+            // — see `IdentitySeen`'s doc and the match above.
+            identity_seen.insert(identity, IdentitySeen::First(final_pos));
         }
 
         // Materialize effects from effectMap.values() insertion order.
@@ -3953,5 +4089,200 @@ mod tests {
             buggy_fold, folded,
             "shared-terminal (buggy) fold must differ from per-path fold"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Review-finding regression: an identity-duplicate's FIRST occurrence must
+    // merge-normalize the accumulator (via `merge_normalize_via_paths`) instead of
+    // leaving a fresh-insert entry's RAW BFS order un-normalized.
+    //
+    // `merge_normalize_via_paths` is the pure, extracted helper both the live MERGE
+    // branch and the identity-duplicate path in `digest_one_root` call — testing it
+    // directly exercises the EXACT code both paths run (a full `digest_one_root`
+    // fixture would need a whole `CapabilitySnapshot`/`FingerprintIndexes` graph to
+    // reach this code and would only re-verify plumbing already covered by the CDO
+    // byte-compare; the divergence itself lives entirely in this helper).
+    // -----------------------------------------------------------------------
+
+    /// Minimal QueryWitnessHop for path-length/sort tests — content is irrelevant to
+    /// `merge_normalize_via_paths`'s logic (only `path.len()` and the caller-supplied
+    /// json string participate in its sort/dedupe), so every field is a placeholder.
+    fn mk_hop(tag: &str) -> QueryWitnessHop {
+        QueryWitnessHop {
+            kind: "call",
+            from_routine_id: format!("R{tag}"),
+            from_display: tag.to_string(),
+            to_routine_id: None,
+            to_display: None,
+            callee_display: None,
+            callsite_id: None,
+            event_id: None,
+            target_app_guid: None,
+            edge_kind: None,
+            anchor: None,
+            receiver_type: None,
+            interface_name: None,
+            candidate_count: None,
+        }
+    }
+
+    #[test]
+    fn first_duplicate_normalization_matches_reference_two_full_merges() {
+        // Reproduce the review finding's divergence scheme: a fresh-insert entry
+        // stores paths in RAW BFS final order — NOT sorted by (projected_len, json).
+        // Here: a raw-len-2 ("terminal") path stored BEFORE a raw-len-1 ("boundary")
+        // path, i.e. the OPPOSITE of merge-normalized order (which sorts shortest
+        // first, then lexicographically by json).
+        let terminal_path = vec![mk_hop("t1"), mk_hop("t2")]; // len 2
+        let boundary_path = vec![mk_hop("b1")]; // len 1
+        let raw_paths = vec![terminal_path.clone(), boundary_path.clone()];
+        let raw_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> =
+            vec![crate::engine::l5::conditionality::UNCONDITIONAL; 2];
+        let raw_jsons = vec!["Z_terminal_json".to_string(), "A_boundary_json".to_string()];
+
+        // This IS the fresh-insert branch's stored state (`all_paths`/`had_truncation`
+        // set directly from `outcome`/`projected_paths` — never sorted). Simulate it
+        // directly rather than via a helper, since the fresh-insert branch never
+        // normalizes.
+        let existing_had_truncation = false;
+
+        // --- Our fix: FIRST duplicate normalizes with an EMPTY new contribution. ---
+        let (via_dup, trunc_dup, all_paths_dup, conds_dup, jsons_dup) = merge_normalize_via_paths(
+            &raw_paths,
+            &raw_conds,
+            &raw_jsons,
+            existing_had_truncation,
+            &[],
+            &[],
+            &[],
+            false,
+            3,
+        );
+
+        // --- Reference: OLD code's real MERGE branch, fed the duplicate's OWN
+        // contribution as a genuine "new" fact (byte-identical to the existing
+        // paths, since identical BFS inputs ⇒ identical outcome — see
+        // `effect_fact_loop_identity`'s doc). This is what actually running BFS a
+        // second time for the duplicate and merging it for real would have produced.
+        let (via_ref, trunc_ref, all_paths_ref, conds_ref, jsons_ref) = merge_normalize_via_paths(
+            &raw_paths,
+            &raw_conds,
+            &raw_jsons,
+            existing_had_truncation,
+            &raw_paths,
+            &raw_conds,
+            &raw_jsons,
+            false,
+            3,
+        );
+
+        assert_eq!(
+            jsons_dup, jsons_ref,
+            "first-duplicate normalization (no new paths) must match a real second full merge"
+        );
+        assert_eq!(conds_dup, conds_ref);
+        assert_eq!(trunc_dup, trunc_ref);
+        assert_eq!(via_dup.len(), via_ref.len());
+        for (a, b) in via_dup.iter().zip(via_ref.iter()) {
+            assert_eq!(a.len(), b.len());
+        }
+        assert_eq!(all_paths_dup.len(), all_paths_ref.len());
+
+        // And prove the fix actually CHANGES the un-normalized fresh-insert state:
+        // sorted-first-by-len puts the boundary (len 1) path ahead of the terminal
+        // (len 2) path — the reverse of the raw insertion order above.
+        assert_eq!(
+            jsons_dup,
+            vec!["A_boundary_json".to_string(), "Z_terminal_json".to_string()],
+            "normalization must re-sort the raw fresh-insert order by (len, json)"
+        );
+        assert_ne!(
+            jsons_dup, raw_jsons,
+            "the raw fresh-insert order must actually be non-normalized for this test \
+             to be meaningful"
+        );
+    }
+
+    #[test]
+    fn second_and_later_duplicates_are_a_no_op_fixed_point() {
+        // An already merge-normalized (sorted + deduped) list must be unchanged by
+        // a further identity-duplicate normalization pass (SECOND+ duplicates are
+        // skipped outright in `digest_one_root`, but this proves WHY that is sound:
+        // normalizing an already-normalized list with no new paths is a fixed point).
+        let sorted_paths = vec![vec![mk_hop("b1")], vec![mk_hop("t1"), mk_hop("t2")]];
+        let sorted_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> =
+            vec![crate::engine::l5::conditionality::UNCONDITIONAL; 2];
+        let sorted_jsons = vec!["A_boundary_json".to_string(), "Z_terminal_json".to_string()];
+
+        let (via, had_truncation, all_paths, conds, jsons) = merge_normalize_via_paths(
+            &sorted_paths,
+            &sorted_conds,
+            &sorted_jsons,
+            false,
+            &[],
+            &[],
+            &[],
+            false,
+            3,
+        );
+
+        assert_eq!(
+            jsons, sorted_jsons,
+            "already-normalized order must be unchanged"
+        );
+        assert_eq!(conds, sorted_conds);
+        assert!(!had_truncation);
+        assert_eq!(all_paths.len(), 2);
+        assert_eq!(via.len(), 2);
+    }
+
+    /// `SnapTempState` has no `PartialEq` (production code has no need for it) — a
+    /// small structural comparator local to this test avoids adding a derive to
+    /// `snapshot.rs` for test-only purposes.
+    fn temp_state_eq(a: &Option<SnapTempState>, b: &Option<SnapTempState>) -> bool {
+        match (a, b) {
+            (None, None) => true,
+            (
+                Some(SnapTempState::Known { value: v1 }),
+                Some(SnapTempState::Known { value: v2 }),
+            ) => v1 == v2,
+            (
+                Some(SnapTempState::ParameterDependent {
+                    parameter_index: p1,
+                }),
+                Some(SnapTempState::ParameterDependent {
+                    parameter_index: p2,
+                }),
+            ) => p1 == p2,
+            (Some(SnapTempState::Unknown), Some(SnapTempState::Unknown)) => true,
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn merge_temp_state_recomputes_for_real_not_assumed_idempotent() {
+        // existing known-temp=true, new NOT known-temp → downgrades to `new`
+        // (mirrors the live MERGE branch's formula exactly).
+        let known_true = Some(SnapTempState::Known { value: true });
+        let known_false = Some(SnapTempState::Known { value: false });
+
+        let downgraded = merge_temp_state(&known_true, &known_false);
+        assert!(
+            temp_state_eq(&downgraded, &known_false),
+            "existing known-temp merged with a non-known-temp new value must downgrade"
+        );
+
+        // Re-applying the SAME `new` value again must be a no-op (idempotent for a
+        // repeated identical duplicate) — this is the case
+        // `digest_one_root`'s SECOND+ duplicate skip relies on.
+        let reapplied = merge_temp_state(&downgraded, &known_false);
+        assert!(
+            temp_state_eq(&reapplied, &downgraded),
+            "re-applying the identical new value must not change the result further"
+        );
+
+        // Both known-temp=true → stays existing (unchanged, no downgrade).
+        let both_true = merge_temp_state(&known_true, &known_true);
+        assert!(temp_state_eq(&both_true, &known_true));
     }
 }
