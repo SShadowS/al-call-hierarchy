@@ -7,7 +7,7 @@ al-sem TypeScript encoder produced (never hand-computed).
 - **Provenance**: copied verbatim from al-sem
   `scripts/r0-goldens/encoder-vectors.json` @ commit `f0ae38c`.
 - **Refresh**: manual. When al-sem regenerates the vectors, re-copy the file here
-  and re-run `cargo test --test encoder_vectors`.
+  and re-run `cargo test --test l2_ir encoder_vectors::`.
 - **Why committed**: so `cargo test` runs fully offline — no Bun, no al-sem
   checkout required.
 

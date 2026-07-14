@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidated the 151 top-level `tests/*.rs` integration-test crates into 9
+  umbrella crates (`tests/{gap,cli,l3,l2_ir,temp_state,r25_abi,r3,r4,lsp}/main.rs`,
+  one link target each) plus 3 deliberately-standalone targets
+  (`program_resolve_harness`, `perf_bounds`, `differential`) — 151 → 12 test
+  link targets. Each umbrella's `main.rs` hoists the shared
+  `tests/common/{regen,cdo}.rs` include once (members `use crate::regen;` /
+  `use crate::cdo;`), which also deduplicates `regen`'s own 5 unit tests that
+  previously recompiled and re-ran per including binary. The `cli` umbrella
+  adds `ENV_LOCK`/`env_guard()` serializing the process-global `std::env`
+  mutation in the `cli_a_*` differentials (a pre-existing race under
+  multi-threaded plain `cargo test`), with reader-side guards in
+  `cli_a_with_evidence` too (its output embeds the env-dependent
+  `alsemVersion`; final-review finding); `telemetry_integration`'s crate-level
+  `#![cfg(feature = "telemetry")]` moved to a `#[cfg]` on its `mod` in the
+  `lsp` umbrella. `scripts/cdo-gate` now invokes
+  `cargo test --release --test lsp -- program_graph:: snapshot_robustness::`.
+  Measured (dev machine, warm build, touch `src/lib.rs`, `cargo test --no-run`,
+  rust-lld, median of 3): full-suite touch-relink **43.7 s → 9.3 s (−79%)**;
+  whole-suite test count 2602 → 2447, the delta exactly the 155 deduplicated
+  regen unit-test instances (36 includers × 5 tests → 5 umbrella copies × 5);
+  zero domain tests lost (2447/2447 pass), `cargo clippy --release
+  --all-targets --all-features` clean, CDO gate green (187 + 2) with the new
+  invocation. Trade-off: editing one member now recompiles its whole umbrella.
+
 ### Fixed
 - `diagnostics::rung1_cover` (final tier-2 whole-branch review finding): the
   cover resolved each affected `RoutineNodeId` to a SINGLE file via

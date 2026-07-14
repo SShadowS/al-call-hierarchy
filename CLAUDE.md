@@ -161,10 +161,19 @@ binding (`language.rs`), the generated raw vocabulary + typed CST (`raw/generate
 the CST→IR lowerer (`lower/mod.rs`), and the owned AL syntax IR (`ir/`) every consumer
 above builds on. See the Grammar section below.
 
-**Testing:** `tests/common/{cdo,regen}.rs` are shared `#[path = "common/..."]`-included
-helpers (each `tests/*.rs` file is its own crate, so plain `mod`/`use` can't share code
-across them) — `cdo.rs` gates CDO-workspace tests, `regen.rs` gates golden-regeneration
-paths. `scripts/cdo-gate` runs the full CDO-gated suite with `ENFORCE_CDO_WS=1` (see
+**Testing:** Integration tests are consolidated into **umbrella crates** — one
+`tests/<dir>/main.rs` per domain (`tests/{gap,cli,l3,l2_ir,temp_state,r25_abi,r3,r4,lsp}/`),
+each a single link target whose `main.rs` lists its members as `mod` items;
+`program_resolve_harness`, `perf_bounds`, and `differential` remain standalone
+top-level `tests/*.rs` crates. Run one member module with
+`cargo test --test <umbrella> <member_stem>::` (libtest module filter).
+`tests/common/{cdo,regen}.rs` are shared helpers — `cdo.rs` gates CDO-workspace
+tests, `regen.rs` gates golden-regeneration paths; each umbrella's `main.rs`
+hoists the needed include ONCE (`#[path = "../common/regen.rs"] mod regen;`),
+and members reach it via `use crate::regen;`/`use crate::cdo;`. The `cli`
+umbrella additionally owns `ENV_LOCK`/`env_guard()`, which serializes the
+process-global `std::env` mutation in the `cli_a_*` differentials.
+`scripts/cdo-gate` runs the full CDO-gated suite with `ENFORCE_CDO_WS=1` (see
 Testing Philosophy & Goldens below).
 
 **Core Patterns:**

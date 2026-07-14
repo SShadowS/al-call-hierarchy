@@ -41,7 +41,7 @@ if ! cargo test --release --test program_resolve_harness -- --test-threads=1; th
 fi
 
 echo "cdo-gate: running program_graph + snapshot_robustness..."
-if ! cargo test --release --test program_graph --test snapshot_robustness; then
+if ! cargo test --release --test lsp -- program_graph:: snapshot_robustness::; then
     status=1
 fi
 

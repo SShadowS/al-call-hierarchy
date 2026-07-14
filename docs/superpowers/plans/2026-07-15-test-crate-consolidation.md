@@ -18,15 +18,23 @@
 - **Conservation gate (every umbrella task):** the SAME `cargo nextest list` regex expression must return the SAME test count before and after the move (the regex matches both the old binary names and the new umbrella name), and `cargo nextest run -E 'binary(<umbrella>)'` must be green. Run counts from repo root.
 - Perf measurement uses plain `cargo` (`cargo test --no-run`), never nextest.
 - Standalone targets `program_resolve_harness`, `perf_bounds`, `differential` are NOT moved.
-- Total suite count must remain constant end-to-end (record the exact number in Task 1, re-verify in Task 11).
+- Total suite count: 2602 baseline; final expected = 2602 − 5 × (total regen includers that get hoisted − number of surviving targets carrying regen) per the R1 dedup rule. Task 11 computes and verifies the exact figure; every delta must be attributable to regen-test dedup ONLY.
 
 ## Shared Recipe Details (referenced by every umbrella task — the task lists give the exact per-group inputs)
 
 **R1 — count gate.** Before moving:
 ```powershell
-(cargo nextest list -E "binary(/<REGEX>/)" 2>$null | Select-String '^\s{4}\S').Count
+(cargo nextest list -E "binary(/<REGEX>/)" 2>$null | Measure-Object -Line).Lines
 ```
-Record the number. After the move, re-run the SAME command — must be equal.
+(Piped `nextest list` output is flat `binary-name test-name` lines — one per test — so a
+line count IS the test count. The indented-tree form only appears on a TTY.)
+Record the number. After the move, re-run the SAME command — must be equal, **minus the
+regen dedup**: `tests/common/regen.rs` carries 5 unit tests of its own that were
+previously compiled into EVERY including binary. An umbrella that hoists regen runs them
+ONCE, so the expected after-count is `before − 5 × (regen_includers_in_group − 1)`.
+Groups with no regen includers must match exactly. (`common/cdo.rs` has no tests — cdo
+hoists never change counts.) Zero domain tests may be lost; verify the run is green with
+the expected count.
 
 **R2 — move.** `git mv tests/<file>.rs tests/<umbrella>/<file>.rs` for each member (create the directory first: `New-Item -ItemType Directory tests/<umbrella>`).
 
@@ -65,7 +73,7 @@ git commit -m "refactor(tests): consolidate <group> into tests/<umbrella>/ umbre
 - [ ] **Step 1:** `git checkout master; git checkout -b feat/test-crate-consolidation`
 - [ ] **Step 2:** Record the whole-suite baseline count and the link-time baseline:
 ```powershell
-cargo nextest list 2>$null | Select-String '^\s{4}\S' | Measure-Object | % Count   # expect ~2609; record EXACT number
+(cargo nextest list 2>$null | Measure-Object -Line).Lines   # recorded: 2602
 cargo test --no-run 2>$null | Out-Null                                             # warm
 (Get-Item src\lib.rs).LastWriteTime = Get-Date
 Measure-Command { cargo test --no-run 2>$null } | % TotalSeconds                    # record: touch-relink baseline (~36.7s)
