@@ -229,14 +229,14 @@ fn bench_rung1_body_edit_scoped(c: &mut Criterion) {
     let batch = vec![ChangeEvent::FileSaved(target)];
 
     let ctx = Rung1Context::build(&base, updater.workspace());
-    let warm = updater
+    let (warm, _delta) = updater
         .apply_batch_scoped(&base, &batch, &ctx)
         .expect("a comment-only body edit must stay rung 1");
     let mut cur = warm;
 
     c.bench_function("rung1_body_edit_scoped_1000_files", |b| {
         b.iter(|| {
-            let next = updater
+            let (next, _delta) = updater
                 .apply_batch_scoped(&cur, black_box(&batch), &ctx)
                 .expect("must stay rung 1");
             cur = next;

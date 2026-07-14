@@ -111,7 +111,7 @@
 //!   batch requires (a single rebuild serves the whole batch — never one
 //!   rebuild per event).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, RwLock};
@@ -123,10 +123,11 @@ use log::warn;
 
 use crate::lsp::def_surface::def_surface_fingerprint;
 use crate::lsp::snapshot::{
-    DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_incoming, recompute_file,
+    DeclEntry, LspSnapshot, ParsedFileEntry, build_decl_by_id, build_decl_multiplicity,
+    build_incoming, edge_targets, push_edge_targets, recompute_file,
 };
 use crate::program::assemble_program_graph;
-use crate::program::node::ObjectNodeId;
+use crate::program::node::{ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::emit_event_flow_edges;
@@ -221,6 +222,19 @@ pub struct Updater {
     /// across many consecutive rung-1 applies, flushing only right before a
     /// rung-2/3 rebuild needs `workspace` to be current).
     pending: HashMap<String, ParsedFile>,
+    /// Count of DISTINCT declaring files per `RoutineNodeId`, across the
+    /// currently-published snapshot's `decls_by_file` (Tier-2 latency wave,
+    /// Task 1) — the companion index `apply_rung1_core`'s duplicate-safe
+    /// `decl_by_id` patch needs to tell "this id's last declaring file just
+    /// lost it" (evict) apart from "this id survives in another file too"
+    /// (keep, possibly re-derive the winner). `None` until the first rung-1
+    /// call needs it, at which point it is lazily built ONCE from the
+    /// published snapshot's `decls_by_file` (`build_decl_multiplicity`) —
+    /// `Updater::new` has no snapshot to build it from yet, only a
+    /// `ParsedUnit`. Rebuilt wholesale (via the SAME function) alongside
+    /// `decl_by_id` at every rung-2/3 rebuild (`apply_rung2`/`apply_rung3`),
+    /// so it never goes stale across a workspace-layer rebuild.
+    decl_multiplicity: Option<HashMap<RoutineNodeId, u32>>,
 }
 
 /// The classification outcome for one coalesced batch — shared by
@@ -244,6 +258,7 @@ impl Updater {
             workspace_root,
             workspace,
             pending: HashMap::new(),
+            decl_multiplicity: None,
         }
     }
 
@@ -286,13 +301,14 @@ impl Updater {
                     .iter()
                     .map(|o| (o.id.clone(), o))
                     .collect();
-                let snapshot = apply_rung1_core(
+                let (snapshot, _delta) = apply_rung1_core(
                     cur,
                     saves,
                     &index,
                     &surface,
                     &obj_node_map,
                     &mut self.pending,
+                    &mut self.decl_multiplicity,
                 );
                 drop(surface);
                 self.flush_pending();
@@ -309,12 +325,16 @@ impl Updater {
     /// escalate to rung 2/3 (the caller must then take the
     /// [`Self::apply_batch`] path, whose context `ctx` — built against the
     /// OLD graph — would be stale for).
+    ///
+    /// Returns `(LspSnapshot, Rung1Delta)` (Tier-2 latency wave, Task 1) —
+    /// the delta is plumbed no further than this return value for THIS
+    /// task; Task 2 wires it into the diagnostics recompute.
     pub fn apply_batch_scoped(
         &mut self,
         cur: &LspSnapshot,
         batch: &[ChangeEvent],
         ctx: &Rung1Context<'_>,
-    ) -> Option<LspSnapshot> {
+    ) -> Option<(LspSnapshot, Rung1Delta)> {
         match self.classify(cur, batch) {
             Decision::Rung1(saves) => Some(apply_rung1_core(
                 cur,
@@ -323,6 +343,7 @@ impl Updater {
                 &ctx.surface,
                 &ctx.obj_node_map,
                 &mut self.pending,
+                &mut self.decl_multiplicity,
             )),
             _ => None,
         }
@@ -522,7 +543,9 @@ impl Updater {
         );
 
         let decl_by_id = build_decl_by_id(&decls_by_file);
+        self.decl_multiplicity = Some(build_decl_multiplicity(&decls_by_file));
         let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
+        let publisher_fanout = Arc::new(publisher_fanout);
 
         LspSnapshot {
             generation: cur.generation + 1,
@@ -592,6 +615,12 @@ impl Updater {
         snapshot.generation = cur.generation + 1;
         self.workspace = workspace;
         self.pending.clear();
+        // A rung-3 rebuild replaces `decls_by_file` wholesale (fresh disk
+        // read) — invalidate the cached multiplicity so the next rung-1
+        // call lazily rebuilds it from the NEW snapshot's `decls_by_file`
+        // (see `Updater::decl_multiplicity`'s own doc) instead of patching
+        // against a now-stale count.
+        self.decl_multiplicity = None;
         Some((snapshot, Rung::Three))
     }
 
@@ -641,6 +670,22 @@ impl Updater {
     }
 }
 
+/// The per-save delta [`apply_rung1_core`] returns alongside the patched
+/// snapshot (Tier-2 latency wave, Task 1 — Task 2 of the same plan consumes
+/// this to scope its own rung-1 diagnostics recompute to just these files/
+/// ids, instead of `compute_all`'s full workspace scan). `affected_ids` is
+/// the union, across every touched file, of every `RoutineNodeId` whose
+/// `incoming` Vec changed (removed-edge targets from the file's OLD edges,
+/// UNION added-edge targets from its NEW edges) — sorted, for a
+/// deterministic diff downstream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rung1Delta {
+    /// Virtual paths touched by this rung-1 apply, in save order.
+    pub files: Vec<String>,
+    /// Every `RoutineNodeId` whose `incoming` entry changed, sorted.
+    pub affected_ids: Vec<RoutineNodeId>,
+}
+
 /// Rung-1 CORE — see the module doc's "why a `pending` overlay" section.
 /// Given an already-built context (POSSIBLY cached and reused across many
 /// calls by [`spawn_updater`]'s hot loop), resolves each touched file
@@ -657,6 +702,9 @@ impl Updater {
 /// field-level distinction and make the two borrows conflict at the call
 /// site; passing the two fields in separately keeps them provably disjoint
 /// to the borrow checker.
+///
+/// Returns `(LspSnapshot, Rung1Delta)` (Tier-2 latency wave, Task 1) — see
+/// [`Rung1Delta`]'s own doc.
 fn apply_rung1_core(
     cur: &LspSnapshot,
     saves: Vec<(String, ParsedFile)>,
@@ -664,7 +712,8 @@ fn apply_rung1_core(
     surface: &DeclSurface,
     obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
     pending: &mut HashMap<String, ParsedFile>,
-) -> LspSnapshot {
+    decl_multiplicity: &mut Option<HashMap<RoutineNodeId, u32>>,
+) -> (LspSnapshot, Rung1Delta) {
     let primary_app_ref = cur
         .graph
         .apps
@@ -675,7 +724,30 @@ fn apply_rung1_core(
     let mut decls_by_file = cur.decls_by_file.clone();
     let mut parsed_files = cur.parsed.clone();
 
+    // Tier-2 latency wave, Task 1 (item B): `decl_by_id`/`incoming` are
+    // cloned ONCE here (cheap-ish — `EdgeRef.file: Arc<str>` makes the
+    // `incoming` clone a pure refcount-bump pass) and then PATCHED below for
+    // only the touched file(s), instead of rebuilt wholesale from the full
+    // (possibly CDO-scale) `edges_by_file`/`decls_by_file` — see this
+    // module's amended H-10 doc (`src/lsp/snapshot.rs`'s module doc) for the
+    // licensing parity gate (`tests/lsp_incremental_parity.rs`).
+    let mut decl_by_id = cur.decl_by_id.clone();
+    let mut incoming = cur.incoming.clone();
+    let mult = decl_multiplicity.get_or_insert_with(|| build_decl_multiplicity(&cur.decls_by_file));
+
+    let mut touched_files: Vec<String> = Vec::new();
+    let mut affected_ids: HashSet<RoutineNodeId> = HashSet::new();
+
     for (vp, pf) in saves {
+        touched_files.push(vp.clone());
+
+        // OLD contributions of this file, BEFORE any mutation below — an
+        // `Arc::clone` (cheap), so holding these past the `edges_by_file`/
+        // `decls_by_file` inserts further down is sound (no borrow of the
+        // map itself, just a refcounted view of the file's old Vec).
+        let old_decls = cur.decls_by_file.get(&vp).cloned();
+        let old_edges = cur.edges_by_file.get(&vp).cloned();
+
         let (edges, surface, decls) = recompute_file(
             &pf,
             primary_app_ref,
@@ -684,6 +756,74 @@ fn apply_rung1_core(
             surface,
             obj_node_map,
         );
+
+        // ---- decl_by_id / decl_multiplicity: duplicate-safe patch ----
+        // (brief's design, `.superpowers/sdd/tier2-lsp/task-1-brief.md`
+        // Task 1 Design step 2 — verified against the code above.)
+        let old_ids: HashSet<RoutineNodeId> = old_decls
+            .as_ref()
+            .map(|d| d.iter().map(|e| e.id.clone()).collect())
+            .unwrap_or_default();
+        let new_ids: HashSet<RoutineNodeId> = decls.iter().map(|e| e.id.clone()).collect();
+
+        // Removed: present in the OLD list, absent from the NEW one.
+        for id in old_ids.difference(&new_ids) {
+            affected_ids.insert(id.clone());
+            if let Some(count) = mult.get_mut(id) {
+                *count -= 1;
+                if *count == 0 {
+                    mult.remove(id);
+                    decl_by_id.remove(id);
+                } else if decl_by_id.get(id).is_some_and(|e| e.virtual_path == vp) {
+                    // The id survives in another file, but THIS file was the
+                    // current winner — re-derive by scanning the ALREADY
+                    // per-file-updated `decls_by_file` (every prior file in
+                    // this same batch has already applied its own update;
+                    // this file's own contribution is scanned below with its
+                    // NEW decl list, which no longer declares `id`) for any
+                    // surviving declaring file.
+                    let winner = decls_by_file
+                        .iter()
+                        .filter(|(f, _)| f.as_str() != vp.as_str())
+                        .find_map(|(_, ds)| ds.iter().find(|d| &d.id == id));
+                    if let Some(w) = winner {
+                        decl_by_id.insert(id.clone(), w.clone());
+                    }
+                }
+            }
+        }
+
+        // Added/overwritten: every id in the NEW list.
+        for d in decls.iter() {
+            affected_ids.insert(d.id.clone());
+            if !old_ids.contains(&d.id) {
+                *mult.entry(d.id.clone()).or_insert(0) += 1;
+            }
+            decl_by_id.insert(d.id.clone(), d.clone());
+        }
+
+        // ---- incoming: remove this file's OLD edge targets, push NEW ----
+        if let Some(old) = &old_edges {
+            for ce in old.iter() {
+                for target in edge_targets(&ce.edge) {
+                    affected_ids.insert(target.clone());
+                    if let Some(v) = incoming.get_mut(target) {
+                        v.retain(|r| *r.file != vp);
+                        if v.is_empty() {
+                            incoming.remove(target);
+                        }
+                    }
+                }
+            }
+        }
+        let file_arc: Arc<str> = Arc::from(vp.as_str());
+        for (idx, ce) in edges.iter().enumerate() {
+            for target in edge_targets(&ce.edge) {
+                affected_ids.insert(target.clone());
+            }
+            push_edge_targets(&mut incoming, &ce.edge, &file_arc, idx as u32);
+        }
+
         edges_by_file.insert(vp.clone(), Arc::new(edges));
         decls_by_file.insert(vp.clone(), Arc::new(decls));
 
@@ -705,17 +845,23 @@ fn apply_rung1_core(
     }
 
     let event_edges = Arc::clone(&cur.event_edges);
-    let decl_by_id = build_decl_by_id(&decls_by_file);
-    // `event_edges` is unchanged at rung 1 (Arc::clone'd above, never
-    // recomputed — rung 1 touches only workspace Call/Run/ImplicitTrigger
-    // edges), so the resulting `publisher_fanout` is byte-identical to
-    // `cur.publisher_fanout`; recomputed anyway (cheap — same loop
-    // `build_incoming` already runs to rebuild `incoming` from the changed
-    // `edges_by_file`) rather than special-cased, mirroring how `incoming`
-    // itself is always rebuilt fresh at every rung rather than forwarded.
-    let (incoming, publisher_fanout) = build_incoming(&edges_by_file, &event_edges);
+    // `event_edges` is unchanged at rung 1 — rung 1 touches only workspace
+    // Call/Run/ImplicitTrigger edges — so `publisher_fanout` (derived ONLY
+    // from `event_edges`, see its own doc) is byte-identical to `cur`'s;
+    // Arc-forwarded rather than recomputed (Tier-2 latency wave, Task 1 —
+    // was recomputed via a full `build_incoming` pass every rung-1 call
+    // before this task; see updater.rs's own history in the CHANGELOG).
+    let publisher_fanout = Arc::clone(&cur.publisher_fanout);
 
-    LspSnapshot {
+    let mut affected_ids: Vec<RoutineNodeId> = affected_ids.into_iter().collect();
+    affected_ids.sort();
+
+    let delta = Rung1Delta {
+        files: touched_files,
+        affected_ids,
+    };
+
+    let snapshot = LspSnapshot {
         generation: cur.generation + 1,
         graph: Arc::clone(&cur.graph),
         dep_layer: Arc::clone(&cur.dep_layer),
@@ -735,7 +881,9 @@ fn apply_rung1_core(
         dep_texts: Arc::clone(&cur.dep_texts),
         dep_meta: Arc::clone(&cur.dep_meta),
         workspace_root: Arc::clone(&cur.workspace_root),
-    }
+    };
+
+    (snapshot, delta)
 }
 
 /// Replace-or-append `pf` in `unit.files` by `virtual_path` match.
@@ -962,13 +1110,14 @@ pub fn spawn_updater(
                     match updater.classify(&inner_cur, &batch) {
                         Decision::Noop => {}
                         Decision::Rung1(saves) => {
-                            let new_snapshot = apply_rung1_core(
+                            let (new_snapshot, _delta) = apply_rung1_core(
                                 &inner_cur,
                                 saves,
                                 &ctx.index,
                                 &ctx.surface,
                                 &ctx.obj_node_map,
                                 &mut updater.pending,
+                                &mut updater.decl_multiplicity,
                             );
                             let new_arc = Arc::new(new_snapshot);
                             shared.swap(Arc::clone(&new_arc));
@@ -1304,7 +1453,7 @@ mod tests {
             .incoming
             .get(&beta_process)
             .expect("Beta.Process must have incoming callers");
-        let from_alpha = incoming.iter().filter(|r| r.file == "Alpha.al").count();
+        let from_alpha = incoming.iter().filter(|r| &*r.file == "Alpha.al").count();
         assert_eq!(
             from_alpha, 2,
             "both of Alpha's call sites must be indexed as incoming"
@@ -1426,10 +1575,10 @@ mod tests {
             .get(&beta_process)
             .expect("Beta.Process must have incoming callers before delete");
         assert!(
-            incoming_before.iter().any(|r| r.file == "Gamma.al"),
+            incoming_before.iter().any(|r| &*r.file == "Gamma.al"),
             "baseline: Gamma.al must be one of Beta.Process's incoming callers"
         );
-        assert!(incoming_before.iter().any(|r| r.file == "Alpha.al"));
+        assert!(incoming_before.iter().any(|r| &*r.file == "Alpha.al"));
 
         std::fs::remove_file(dir.path().join("Gamma.al")).expect("delete Gamma.al");
         let batch = vec![ChangeEvent::FileRemoved(dir.path().join("Gamma.al"))];
@@ -1451,11 +1600,11 @@ mod tests {
             .get(&beta_process)
             .expect("Beta.Process must still have Alpha.al as an incoming caller");
         assert!(
-            !incoming_after.iter().any(|r| r.file == "Gamma.al"),
+            !incoming_after.iter().any(|r| &*r.file == "Gamma.al"),
             "Gamma.al's incoming entry must be gone"
         );
         assert!(
-            incoming_after.iter().any(|r| r.file == "Alpha.al"),
+            incoming_after.iter().any(|r| &*r.file == "Alpha.al"),
             "Alpha.al's own incoming entry must survive"
         );
 
@@ -1704,7 +1853,9 @@ mod tests {
             &ctx.surface,
             &ctx.obj_node_map,
             &mut updater.pending,
-        );
+            &mut updater.decl_multiplicity,
+        )
+        .0;
         assert_eq!(snap1.edges_by_file["Alpha.al"].len(), 2);
         assert!(Arc::ptr_eq(
             &base.edges_by_file["Beta.al"],
@@ -1743,7 +1894,9 @@ mod tests {
             &ctx.surface,
             &ctx.obj_node_map,
             &mut updater.pending,
-        );
+            &mut updater.decl_multiplicity,
+        )
+        .0;
         assert_eq!(
             snap2.edges_by_file["Alpha.al"].len(),
             3,
@@ -2011,6 +2164,7 @@ mod tests {
         {
             let ctx = Rung1Context::build(&base, &updater.workspace);
             let mut pending: HashMap<String, ParsedFile> = HashMap::new();
+            let mut decl_multiplicity: Option<HashMap<RoutineNodeId, u32>> = None;
 
             for _ in 0..RUNS {
                 let t0 = Instant::now();
@@ -2022,13 +2176,14 @@ mod tests {
                     provenance,
                     text: target_text.clone(),
                 };
-                let _snapshot = apply_rung1_core(
+                let (_snapshot, _delta) = apply_rung1_core(
                     &base,
                     vec![(target_vp.clone(), pf)],
                     &ctx.index,
                     &ctx.surface,
                     &ctx.obj_node_map,
                     &mut pending,
+                    &mut decl_multiplicity,
                 );
                 rung1_times.push(t0.elapsed());
             }

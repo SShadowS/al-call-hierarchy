@@ -32,6 +32,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- Rung-1 (`apply_rung1_core`, `src/lsp/updater.rs`) no longer rebuilds `decl_by_id` and
+  `incoming` wholesale on every 1-file body-only edit. Both are now patched
+  incrementally: only the touched file's OLD/NEW declarations and edge targets are
+  diffed against the current indexes. `decl_by_id` uses a new duplicate-safe
+  multiplicity refcount (`build_decl_multiplicity`, `Updater::decl_multiplicity`) so a
+  `RoutineNodeId` declared identically in two workspace files (a real, if rare,
+  cross-file duplicate) is never wrongly evicted when only one of its declaring files
+  is edited — the winner is re-derived from `decls_by_file` on eviction instead of
+  assumed. `incoming` is patched via a new `edge_targets`/`push_edge_targets` pair
+  operating on the touched file's edge diff only. `LspSnapshot::publisher_fanout` is now
+  `Arc<HashMap<...>>` and forwarded (not rebuilt) at rung 1. `EdgeRef.file` changed from
+  `String` to `Arc<str>` (one alloc per distinct file per rebuild instead of one alloc
+  per edge). `apply_rung1_core`/`apply_batch_scoped` now additionally return a
+  `Rung1Delta { files, affected_ids }` describing exactly what changed, for a future
+  incremental diagnostics patch. The H-10 doc contract (`src/lsp/snapshot.rs` module
+  doc) is amended: `decl_by_id`/`incoming`/`publisher_fanout` are wholesale-rebuilt at
+  rung 2/3/`build_full`, but patched in place at rung 1.
+  Measured on CDO (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, median of 3
+  runs via `rung1_rung2_wall_clock_on_cdo`): rung 1 (warm context, swap excluded)
+  21.19 ms → 4.83 ms. `cargo bench --bench lsp_pipeline` corroborates on the synthetic
+  1000-file corpus: `rung1_body_edit_scoped_1000_files` 6.35–6.72 ms (−63–66%),
+  `rung1_body_edit_1000_files` (full `apply_batch`) 26.9–28.3 ms (−26–31%). Rung 2 is
+  unaffected (~760 ms before/after — `apply_rung2` still rebuilds `decl_multiplicity`
+  wholesale, as documented). North-star `aldump --program-call-graph-stats` JSON on CDO
+  remains byte-identical, SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`.
 - digest per-root loop now skips duplicate effect facts (merge-identity dedup, measured
   ~2.3× duplication on CDO): a fact identical in every consumed field to an earlier one
   contributes a provable no-op to the effect map, so its witness BFS + projection +

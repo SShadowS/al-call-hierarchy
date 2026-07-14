@@ -10,15 +10,40 @@
 //! (never a borrow into another field), so the whole snapshot can be handed
 //! to a query thread as `Arc<LspSnapshot>` without any lifetime entanglement.
 //!
-//! # Ownership law (spec §3 / H-10 lesson)
+//! # Ownership law (spec §3 / H-10 lesson) — AMENDED (Tier-2 latency wave, Task 1)
 //!
 //! `ResolveIndex`/`DeclSurface`/the `ObjectNodeId → &ObjectNode` map all BORROW
 //! `graph`/`parsed` and are built TRANSIENTLY inside [`LspSnapshot::build_full`]
 //! — they never appear as fields on `LspSnapshot` itself (that would make the
-//! struct self-referential). [`build_incoming`] is the one INDEX that IS
-//! derived and stored: it is rebuilt WHOLESALE on every `build_full` call,
-//! never incrementally edited — a future incremental updater (Task 9) always
-//! throws it away and recomputes it from `edges_by_file`/`event_edges`.
+//! struct self-referential).
+//!
+//! [`build_incoming`]/[`build_decl_by_id`] are the two DERIVED indexes stored
+//! on the snapshot. The ORIGINAL H-10 law (T3 Task 9) required both to be
+//! rebuilt WHOLESALE on every generation, with no exception — reacting to a
+//! real staleness bug the law was written to rule out. **That law is now
+//! amended, not repealed**, licensed by a permanent parity gate (see below):
+//! [`LspSnapshot::build_full`] and every RUNG-2/RUNG-3 rebuild
+//! (`Updater::apply_rung2`/`apply_rung3`) still rebuild `incoming`/
+//! `decl_by_id` WHOLESALE, from scratch, via [`build_incoming`]/
+//! [`build_decl_by_id`] — the wholesale path is untouched and remains the
+//! ONLY path for any rebuild that can add/remove a workspace file or change
+//! a routine's identity/signature. RUNG 1 (`apply_rung1_core`,
+//! `src/lsp/updater.rs`) is the sole exception: because a rung-1 batch is,
+//! by construction, a set of `DefSurface`-fingerprint-UNCHANGED body edits to
+//! ALREADY-KNOWN files, its effect on both indexes is providably confined to
+//! the touched file(s)' own contribution — so rung 1 instead PATCHES
+//! `incoming`/`decl_by_id` (clone-then-mutate only the touched files'
+//! entries, using a `RoutineNodeId` decl-multiplicity refcount to stay
+//! duplicate-safe — see `Updater`'s own doc) rather than re-deriving either
+//! index from the WHOLE workspace. `publisher_fanout` is Arc-forwarded
+//! unchanged at rung 1 (it depends only on `event_edges`, which rung 1 never
+//! touches). The permanent gate this amendment is licensed by:
+//! `tests/lsp_incremental_parity.rs`'s index-equality assertions (a rung-1
+//! patched `decl_by_id`/`incoming` must always equal a fresh
+//! [`build_decl_by_id`]/[`build_incoming`] recomputed from the SAME
+//! post-edit `decls_by_file`/`edges_by_file`) plus its cross-file-duplicate-
+//! `RoutineNodeId` fixture — any future change that breaks that gate breaks
+//! the license, not just a test.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -41,9 +66,19 @@ use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit};
 /// Reference to one edge: (virtual_path, index into `edges_by_file[path]`).
 /// Index-based — never a borrow — so [`LspSnapshot`] stays self-contained and
 /// `Arc`-shareable.
+///
+/// `file: Arc<str>` (Tier-2 latency wave, Task 1 / item F5): was `String`.
+/// [`push_edge_targets`] used to allocate a FRESH `String` (`file.to_string()`)
+/// per `EdgeRef` pushed — the single hottest allocation in [`build_incoming`]
+/// (~9-13ms best-of-7 on CDO's 17,973 workspace edges, almost entirely this
+/// alloc). An `Arc<str>` lets every `EdgeRef` for the SAME file share one
+/// allocation (`Arc::clone`, a refcount bump — no allocation at all), built
+/// once per file per `build_incoming`/patch call. Compare via `&*r.file ==
+/// "some/path"` or `r.file.as_ref() == "..."` — `Arc<str>` has no direct
+/// `PartialEq<str>`/`PartialEq<&str>` impl the way `String` does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EdgeRef {
-    pub file: String,
+    pub file: Arc<str>,
     pub idx: u32,
 }
 
@@ -151,8 +186,10 @@ pub struct LspSnapshot {
     /// app, not just the workspace) — kept in ONE flat bucket rather than
     /// per-file, addressed via the reserved [`EVENT_EDGES_KEY`].
     pub event_edges: Arc<Vec<ClassifiedEdge>>,
-    /// DERIVED — see [`build_incoming`]'s doc. O(E) wholesale rebuild only;
-    /// never incrementally edited.
+    /// DERIVED — see [`build_incoming`]'s doc. Rebuilt WHOLESALE at rung 2/3
+    /// (and by [`LspSnapshot::build_full`]); PATCHED (touched-file-local) at
+    /// rung 1 by `apply_rung1_core` — see this module's amended ownership-law
+    /// doc above.
     pub incoming: HashMap<RoutineNodeId, Vec<EdgeRef>>,
     /// DERIVED, precomputed in the SAME O(E) pass [`build_incoming`] makes
     /// over `event_edges` (t3 whole-branch review, blocker fix): for every
@@ -168,8 +205,13 @@ pub struct LspSnapshot {
     /// event_edges) — quadratic in workspace size. Precomputing it here
     /// keeps `effective_incoming_count` O(1) per call, matching `incoming`'s
     /// own precomputed-index pattern; rebuilt wholesale alongside `incoming`
-    /// at every rung (H-10 law — never incrementally patched).
-    pub publisher_fanout: HashMap<RoutineNodeId, usize>,
+    /// at rung 2/3. `Arc`-WRAPPED (Tier-2 latency wave, Task 1): this field
+    /// is derived ONLY from `event_edges`, which rung 1 NEVER changes (rung 1
+    /// touches only workspace `Call`/`Run`/`ImplicitTrigger` edges) — so
+    /// `apply_rung1_core` forwards it via `Arc::clone` instead of
+    /// recomputing (it used to be recomputed anyway, wastefully, alongside
+    /// `incoming` — see `apply_rung1_core`'s own doc for the fix).
+    pub publisher_fanout: Arc<HashMap<RoutineNodeId, usize>>,
     /// Sorted by `origin.byte.start` within each file. `Arc`-wrapped per file
     /// (T3 Task 9) so an incremental rung-1/rung-2 rebuild can share every
     /// UNCHANGED file's decl list via a cheap `Arc::clone` instead of
@@ -177,10 +219,11 @@ pub struct LspSnapshot {
     /// `DeclEntry`'s `String` fields would otherwise be re-heap-allocated on
     /// every save, across the WHOLE workspace, just to replace one file).
     pub decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>>,
-    /// DERIVED — like [`Self::incoming`], always rebuilt WHOLESALE from
-    /// `decls_by_file` (see [`build_decl_by_id`]) rather than
-    /// cloned-then-patched. Never treat this as an independent source of
-    /// truth to surgically edit (H-10 law).
+    /// DERIVED — like [`Self::incoming`], rebuilt WHOLESALE from
+    /// `decls_by_file` (see [`build_decl_by_id`]) at rung 2/3; PATCHED
+    /// (touched-file-local, duplicate-`RoutineNodeId`-safe via
+    /// `Updater::decl_multiplicity`) at rung 1 — see this module's amended
+    /// ownership-law doc above and `apply_rung1_core`'s doc.
     pub decl_by_id: HashMap<RoutineNodeId, DeclEntry>,
     /// Source text for every file contributing an entry to
     /// [`Self::dep_meta`], keyed `(app, virtual_path)` — a
@@ -420,7 +463,7 @@ impl LspSnapshot {
             edges_by_file,
             event_edges,
             incoming,
-            publisher_fanout,
+            publisher_fanout: Arc::new(publisher_fanout),
             decls_by_file,
             decl_by_id,
             dep_texts: Arc::new(dep_texts),
@@ -483,10 +526,10 @@ impl LspSnapshot {
     /// Look up one classified edge by its [`EdgeRef`].
     #[must_use]
     pub fn edge(&self, r: &EdgeRef) -> &ClassifiedEdge {
-        if r.file == EVENT_EDGES_KEY {
+        if &*r.file == EVENT_EDGES_KEY {
             &self.event_edges[r.idx as usize]
         } else {
-            &self.edges_by_file[&r.file][r.idx as usize]
+            &self.edges_by_file[r.file.as_ref()][r.idx as usize]
         }
     }
 
@@ -531,9 +574,10 @@ fn point_in_origin(pos: (u32, u32), origin: &al_syntax::ir::Origin) -> bool {
     pos >= start && pos < end
 }
 
-/// O(E) wholesale rebuild — NEVER incrementally edited (spec §3 law / H-10
-/// lesson: a stale incrementally-patched index is exactly the bug class that
-/// law exists to rule out).
+/// O(E) wholesale rebuild — used by [`LspSnapshot::build_full`] and every
+/// rung-2/3 rebuild. Rung 1 instead PATCHES `incoming` for the touched
+/// file(s) only (`apply_rung1_core`, `src/lsp/updater.rs`) — see this
+/// module's amended ownership-law doc for the licensing gate.
 ///
 /// `Incoming(S)` gets: every `Call`/`Run`/`ImplicitTrigger` edge with a route
 /// `RouteTarget::Routine(S)` (from `edges_by_file`), AND every `EventFlow`
@@ -554,6 +598,11 @@ fn point_in_origin(pos: (u32, u32), origin: &al_syntax::ir::Origin) -> bool {
 /// `emit_event_flow_edges` publisher entry always exists even with zero
 /// subscribers, so counting entries rather than summing routes would
 /// overcount an unsubscribed publisher as "used").
+///
+/// Builds ONE `Arc<str>` per file (Tier-2 latency wave, Task 1 / F5) — every
+/// `EdgeRef` for that file's edges `Arc::clone`s it, replacing the OLD
+/// per-`EdgeRef` `file.to_string()` allocation (the single hottest cost in
+/// this function).
 #[must_use]
 pub fn build_incoming(
     edges_by_file: &HashMap<String, Arc<Vec<ClassifiedEdge>>>,
@@ -565,14 +614,16 @@ pub fn build_incoming(
     let mut incoming: HashMap<RoutineNodeId, Vec<EdgeRef>> = HashMap::new();
 
     for (file, edges) in edges_by_file {
+        let file_arc: Arc<str> = Arc::from(file.as_str());
         for (idx, ce) in edges.iter().enumerate() {
-            push_edge_targets(&mut incoming, &ce.edge, file, idx as u32);
+            push_edge_targets(&mut incoming, &ce.edge, &file_arc, idx as u32);
         }
     }
 
     let mut publisher_fanout: HashMap<RoutineNodeId, usize> = HashMap::new();
+    let event_key: Arc<str> = Arc::from(EVENT_EDGES_KEY);
     for (idx, ce) in event_edges.iter().enumerate() {
-        push_edge_targets(&mut incoming, &ce.edge, EVENT_EDGES_KEY, idx as u32);
+        push_edge_targets(&mut incoming, &ce.edge, &event_key, idx as u32);
         if !ce.edge.routes.is_empty() {
             *publisher_fanout.entry(ce.edge.from.clone()).or_insert(0) += ce.edge.routes.len();
         }
@@ -591,10 +642,26 @@ pub fn build_incoming(
 /// twice for no reason). Routes from a DIFFERENT edge naming the same
 /// target are NOT deduplicated — those are genuinely distinct callers (a
 /// different `idx`), never touched by this guard.
-fn push_edge_targets(
+/// Push one [`EdgeRef`] per DISTINCT `RouteTarget::Routine` target `edge`
+/// resolves to (T3 Task 9 review carry-over from Task 8: a single edge can
+/// carry >1 route to the exact SAME target — e.g. a pathological
+/// ambiguous-overload candidate set where two routes happen to name the
+/// same routine — and without this per-edge dedup guard, `incoming[target]`
+/// would carry the IDENTICAL `EdgeRef` more than once: pure noise for a
+/// consumer, e.g. `incomingCalls`' `fromRanges` showing the same call site
+/// twice for no reason). Routes from a DIFFERENT edge naming the same
+/// target are NOT deduplicated — those are genuinely distinct callers (a
+/// different `idx`), never touched by this guard.
+///
+/// `pub(crate)` (Tier-2 latency wave, Task 1): the rung-1 `incoming` patch
+/// (`apply_rung1_core`, `src/lsp/updater.rs`) reuses this exact function to
+/// add the touched file's NEW edges — the ONE place "which targets does this
+/// edge push to" is defined, so the wholesale and patched paths can never
+/// disagree about the per-edge dedup rule.
+pub(crate) fn push_edge_targets(
     incoming: &mut HashMap<RoutineNodeId, Vec<EdgeRef>>,
     edge: &Edge,
-    file: &str,
+    file: &Arc<str>,
     idx: u32,
 ) {
     let mut seen_this_edge: Vec<&RoutineNodeId> = Vec::new();
@@ -605,11 +672,29 @@ fn push_edge_targets(
             }
             seen_this_edge.push(target);
             incoming.entry(target.clone()).or_default().push(EdgeRef {
-                file: file.to_string(),
+                file: Arc::clone(file),
                 idx,
             });
         }
     }
+}
+
+/// The DISTINCT `RouteTarget::Routine` targets `edge` pushes to — the same
+/// per-edge dedup rule [`push_edge_targets`] applies, exposed standalone so
+/// the rung-1 `incoming` patch (`apply_rung1_core`) can compute "which
+/// targets did this OLD edge contribute to" when REMOVING a touched file's
+/// stale entries, without needing a `file`/`idx` to construct a throwaway
+/// [`EdgeRef`] just to discard it.
+pub(crate) fn edge_targets(edge: &Edge) -> Vec<&RoutineNodeId> {
+    let mut seen: Vec<&RoutineNodeId> = Vec::new();
+    for route in &edge.routes {
+        if let RouteTarget::Routine(target) = &route.target
+            && !seen.contains(&target)
+        {
+            seen.push(target);
+        }
+    }
+    seen
 }
 
 /// One workspace file's contribution to a snapshot: its resolved edge list,
@@ -666,11 +751,22 @@ pub(crate) fn recompute_file(
 }
 
 /// DERIVED index (see [`LspSnapshot::decl_by_id`]'s doc): every `DeclEntry`
-/// across every file, keyed by its `RoutineNodeId`. Always rebuilt WHOLESALE
-/// from `decls_by_file` — never cloned-then-patched — mirroring
-/// [`build_incoming`]'s own H-10-law rebuild pattern.
+/// across every file, keyed by its `RoutineNodeId`. Rebuilt WHOLESALE from
+/// `decls_by_file` at [`LspSnapshot::build_full`] and every rung-2/3 rebuild;
+/// rung 1 instead PATCHES this index for the touched file(s) only
+/// (`apply_rung1_core`) — see this module's amended ownership-law doc.
+///
+/// **Duplicate-`RoutineNodeId` winner is UNSPECIFIED** (`decls_by_file` can
+/// hold the SAME id declared in >1 file — the
+/// `dedup_routines_preserving_genuine_overloads` population — and this
+/// function, iterating a `HashMap`, lets whichever file's entry is visited
+/// LAST win, which is already nondeterministic across builds/platforms). The
+/// only invariant callers may rely on: every id present in the UNION of
+/// `decls_by_file` maps to ONE of its declaring files' own entries. The
+/// rung-1 patch (`Updater::decl_multiplicity`) preserves this exact
+/// invariant rather than any specific winner — see `apply_rung1_core`'s doc.
 #[must_use]
-pub(crate) fn build_decl_by_id(
+pub fn build_decl_by_id(
     decls_by_file: &HashMap<String, Arc<Vec<DeclEntry>>>,
 ) -> HashMap<RoutineNodeId, DeclEntry> {
     let mut decl_by_id = HashMap::new();
@@ -680,6 +776,34 @@ pub(crate) fn build_decl_by_id(
         }
     }
     decl_by_id
+}
+
+/// Count of DISTINCT declaring FILES per `RoutineNodeId` across
+/// `decls_by_file` (Tier-2 latency wave, Task 1) — the companion index
+/// `Updater::decl_multiplicity` maintains alongside `decl_by_id` so a rung-1
+/// patch can tell whether an id disappearing from ONE file's decl list is
+/// gone from the workspace entirely (multiplicity reaches 0 — evict from
+/// `decl_by_id`) or merely loses ONE of several declaring files (still >0 —
+/// `decl_by_id`'s entry survives, re-derived from a surviving file if the
+/// evicted file happened to be the current winner). An id declared TWICE
+/// within the SAME file (a pathological, not-expected-in-practice case)
+/// still counts as ONE declaring file here — `decls_by_file`'s own
+/// per-file dedup, mirrored via the `seen` set below, keeps this a
+/// per-FILE count, not a raw per-decl occurrence count.
+#[must_use]
+pub fn build_decl_multiplicity(
+    decls_by_file: &HashMap<String, Arc<Vec<DeclEntry>>>,
+) -> HashMap<RoutineNodeId, u32> {
+    let mut mult: HashMap<RoutineNodeId, u32> = HashMap::new();
+    for decls in decls_by_file.values() {
+        let mut seen: std::collections::HashSet<&RoutineNodeId> = std::collections::HashSet::new();
+        for d in decls.iter() {
+            if seen.insert(&d.id) {
+                *mult.entry(d.id.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+    mult
 }
 
 /// Build [`LspSnapshot::dep_texts`] — the dependency-app text source
@@ -896,7 +1020,7 @@ mod tests {
             .iter()
             .map(|(k, v)| {
                 let mut v = v.clone();
-                v.sort_by(|a, b| (a.file.as_str(), a.idx).cmp(&(b.file.as_str(), b.idx)));
+                v.sort_by(|a, b| (a.file.as_ref(), a.idx).cmp(&(b.file.as_ref(), b.idx)));
                 (k.clone(), v)
             })
             .collect();
@@ -905,7 +1029,7 @@ mod tests {
             .iter()
             .map(|(k, v)| {
                 let mut v = v.clone();
-                v.sort_by(|a, b| (a.file.as_str(), a.idx).cmp(&(b.file.as_str(), b.idx)));
+                v.sort_by(|a, b| (a.file.as_ref(), a.idx).cmp(&(b.file.as_ref(), b.idx)));
                 (k.clone(), v)
             })
             .collect();
@@ -985,11 +1109,11 @@ mod tests {
             .get(&beta_process)
             .expect("Beta.Process must have an incoming caller");
         assert!(
-            incoming_process.iter().any(|r| r.file == "Alpha.al"),
+            incoming_process.iter().any(|r| &*r.file == "Alpha.al"),
             "Alpha.DoWork's cross-file call must be indexed as incoming to \
              Beta.Process; got {incoming_process:?}"
         );
-        for r in incoming_process.iter().filter(|r| r.file == "Alpha.al") {
+        for r in incoming_process.iter().filter(|r| &*r.file == "Alpha.al") {
             let ce = snap.edge(r);
             assert!(
                 ce.edge.routes.iter().any(
@@ -1010,11 +1134,11 @@ mod tests {
             .get(&gamma_sub)
             .expect("the subscriber must have an incoming publisher edge");
         assert!(
-            incoming_sub.iter().any(|r| r.file == EVENT_EDGES_KEY),
+            incoming_sub.iter().any(|r| &*r.file == EVENT_EDGES_KEY),
             "the event edge must be indexed under the reserved event-edges \
              key; got {incoming_sub:?}"
         );
-        for r in incoming_sub.iter().filter(|r| r.file == EVENT_EDGES_KEY) {
+        for r in incoming_sub.iter().filter(|r| &*r.file == EVENT_EDGES_KEY) {
             let ce = snap.edge(r);
             assert_eq!(ce.edge.kind, EdgeKind::EventFlow);
         }
