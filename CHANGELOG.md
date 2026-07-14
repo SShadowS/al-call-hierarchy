@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical sort switched to `sort_by_cached_key` (key built once per fact instead of per
   comparison; ~128k facts on CDO). Byte-identical (fc-verified). Full CDO
   transaction-integrity preset: 24.88 s → 23.09 s.
+- witness/digest optimization close-out (`docs/perf-regression-t3-vs-0.9.3.md` §12):
+  final CDO measurement at branch tip, `transaction-integrity` preset 94.12 s → 22.90 s
+  (median of 3 fresh-process runs), default `analyze` unchanged (7.31 s → 6.53 s, within
+  noise). Byte-identical (fc-verified vs the pre-branch `--deterministic` baseline).
+  Candidate F (inner-root parallelism over the giant Page roots) is a NO-GO: the <30 s
+  target was met with ~7 s of headroom, so its added complexity isn't justified; it
+  remains a documented backlog lever if a future workload regresses the preset.
 - The rung-1 bench + release perf gate now also measure the PRODUCTION
   scoped-context path (`Rung1Context` + `Updater::apply_batch_scoped`,
   extracted from `spawn_updater`'s hot loop so bench and server share one

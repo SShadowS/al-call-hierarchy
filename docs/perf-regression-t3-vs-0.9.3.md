@@ -903,3 +903,53 @@ Residual backlog (measured, deliberately deferred):
 - `d1-db-op-in-loop` 3.37 s — the largest remaining default-set cost.
 - Per-detector fan-out in `run_each` (~1.5–2× on 3.9 s; bounded by d1) — low priority.
 
+## 12. alsem witness/digest optimization (2026-07-14)
+
+Investigation: `.superpowers/sdd/alsem-parallel/witness-investigation.md`. The 88 s
+transaction-integrity run was ~76 s digest par-loop, split ~50% witness BFS / ~48%
+O(F²) merge+projection, both amplified 2.3× by duplicate effect facts.
+
+| Command (CDO) | §11 baseline | After |
+|---|---:|---:|
+| `analyze` (default set) | 7.31 s | 6.53 s |
+| `--preset transaction-integrity` | 88.4 s | 22.90 s |
+
+Full journey (branch `feat/witness-digest-opt`, `--preset transaction-integrity`,
+CDO, median of 3 fresh-process runs each):
+
+| Point | Elapsed | Delta |
+|---|---:|---:|
+| Journey baseline (Task 1 fresh measurement) | 94.12 s | — |
+| Task 1 — O(1) effect-map index + memoized path JSON | 63.64 s | −32.4% |
+| Task 2 — merge-identity effect-fact dedup + normalization fix (`fca2833`) | 24.88 s | −60.9% |
+| Task 3 — `compose_snapshot` par + cached-key sort | 23.09 s | −7.2% |
+| **Task 4 — final measurement (branch tip `55e7bcb`)** | **22.90 s** | −0.8% |
+
+Landed: O(1) effect-map index + memoized path JSON; merge-identity effect-fact dedup
+(~2.3×); parallel + cached-key `compose_snapshot`. All byte-identical at every step
+(fc.exe-verified vs the pre-branch `--deterministic` baseline, `$env:TEMP\witness-base.json`,
+re-checked after every task including this close-out — `FC: no differences
+encountered`). Default-set `analyze` is unchanged within run-to-run noise (6.53 s vs
+7.31 s; the digest par-loop these tasks touch is not on the default detector set's
+path).
+
+Measured and REJECTED (do not re-chase): `valid_nodes` memo (260× dedup but 0.4% of
+cost); cross-root cone/suffix sharing (first hop carries the root id — not portable —
+and shared BFS budgets break byte-identity).
+
+**Candidate-F go/no-go: NO-GO.** Gate was median < 30 s ⇒ NO-GO on Candidate F
+(inner-root parallelism over the distinct-fact loop of the ~9 giant Page roots,
+deterministic re-assembly required). Measured median 22.90 s clears the <30 s target
+with ~7 s of headroom, so the added complexity of Candidate F (parallelizing inside a
+single root's fact loop while preserving deterministic output ordering) is not
+justified today. It remains documented as a backlog lever
+(witness-investigation.md §5) if a future workload regresses the preset back above
+the 30 s gate.
+
+Remaining backlog (carried over from §11, still unaddressed by this arc):
+- `d1-db-op-in-loop` 3.37 s — the largest remaining default-set cost (unrelated to the
+  witness/digest path; out of scope for this arc).
+- Per-detector fan-out in `run_each` (~1.5–2× on 3.9 s; bounded by d1) — low priority.
+
+Raw runs: `.superpowers/sdd/alsem-parallel/witness-close-out.md` (gitignored).
+
