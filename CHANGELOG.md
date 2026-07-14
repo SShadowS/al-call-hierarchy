@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `diagnostics::rung1_cover` (final tier-2 whole-branch review finding): the
+  cover resolved each affected `RoutineNodeId` to a SINGLE file via
+  `decl_by_id`, whose winner for a cross-file-duplicate id is explicitly
+  unspecified — so when a rung-1 edit flipped a duplicated procedure's
+  `effective_incoming_count`, only one of its declaring files was recomputed
+  and the other's unused-procedure/high-fan-in verdict stayed stale until the
+  next rung-2/3 swap. The cover now scans `decls_by_file` and inserts EVERY
+  declaring file of every affected id (one hash probe per workspace decl,
+  microseconds). New regression test
+  `rung1_cover_includes_all_declaring_files_of_duplicate_id` (verified to fail
+  against the old lookup).
 - Merge-identity effect-fact dedup (previous entry, below): the skip was not
   provably output-neutral for an identity's FIRST duplicate — a duplicate-free
   entry from the fresh-insert branch stores its paths in raw BFS order, not the
@@ -32,6 +43,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- **Tier-2 latency wave close-out** (docs `docs/perf-regression-t3-vs-0.9.3.md`
+  §13): final independent median-of-5 CDO measurement pass confirms the
+  per-task numbers below hold together as a whole — rung-1 save end-to-end
+  (apply + diagnostics) ≈5.37 ms, rung-2 641.7 ms (unaffected by this wave,
+  within noise of the arc-start baseline), cold start 3.069 s, `aldump`
+  wall time 3.511 s, steady-state peak RSS ~1,584 MB (unchanged — this wave
+  landed zero RSS movement, see below). North-star SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` held
+  byte-identical across all 5 trials. Item A (dep-node RSS, ~49 MB) is
+  **deferred** under both of its known designs: the investigation's original
+  three-segment-façade variant (too invasive to the north-star resolver
+  core) and Task 4's drop-and-rebuild variant (measured ~1.49 s added to
+  rung-2, ~4× the brief's own regression ceiling — see Task 4's report,
+  no code committed). Item C (`RoutineNodeId` interning) confirmed NO-GO
+  standalone (18.7 MB measured, not the originally-claimed 40-80 MB). Tier-2
+  is re-labelled the **incremental-latency wave** (Tasks 1-3); the RSS work
+  (item A) is carried forward as its own future arc — see docs §13.5 for the
+  two candidate future routes (widening the frozen `DeclSurface` tier, or an
+  M4 disk-cached dep layer).
+- The three serial per-file resolve loops (`resolve_full_program_from_parts`'s
+  Phase-1 loop in `src/program/resolve/full.rs` — the `aldump`
+  north-star/cold-start path; `LspSnapshot::from_context`'s per-file loop in
+  `src/lsp/snapshot.rs`; `Updater::apply_rung2`'s per-file loop in
+  `src/lsp/updater.rs`) are now parallelized (Tier-2 latency wave, Task 3 /
+  item E / F7). Each `resolve_file_obligations`/`recompute_file` call reads
+  only immutable shared borrows (`&graph`/`&index`/`&surface`/
+  `&obj_node_map`) and returns its own per-file result — embarrassingly
+  parallel. Each site now collects the ordered, already-filtered file list
+  first, resolves it with an INDEXED `par_iter`/`collect()` (which preserves
+  iteration order), then folds the results in the ORIGINAL file order in a
+  sequential pass — byte-identical to the old serial loop's accumulator
+  inserts. Runs on a dedicated `crate::big_stack::big_stack_pool()` (32 MiB
+  worker stacks), not the rayon global pool: the resolver's
+  receiver/extraction walk recurses over the AL expression tree and can
+  overflow rayon's default ~1 MiB worker stack on real BC files — the same
+  hazard `snapshot::parse::parse_snapshot` already guards against for the
+  lowerer. Measured on CDO
+  (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, best of 3 runs):
+  CLI cold start (`al-call-hierarchy --project`) 3.36 s → 3.00 s (−11%);
+  `aldump --program-call-graph-stats` wall time 3.73 s → 3.42 s (−8%).
+  North-star JSON on CDO remains byte-identical, SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` (fc-verified,
+  no resolver change). `cargo bench --bench lsp_pipeline`'s synthetic corpus:
+  `build_full/100_files` −6.3%, `build_full/1000_files` −22.0%.
+- `src/lsp/diagnostics.rs`/`src/lsp/updater.rs`/`src/server.rs`: diagnostics recompute
+  is now scoped to the swap that triggered it (Tier-2 latency wave, Task 2 / item D).
+  `spawn_updater`'s `on_swap` callback signature changed from
+  `Fn(&LspSnapshot, &LspSnapshot)` (old, new) to `Fn(&LspSnapshot, &SwapScope)`, where
+  the new `SwapScope` enum is `Full` (rung 2/3 — every file is recomputed, unchanged
+  behavior) or `Rung1(Rung1Delta)` (rung 1 — only a restricted cover is recomputed). A
+  new `compute_for_files` (restricted key set) shares a single per-file `compute_file`
+  helper with `compute_all` so the full and partial recompute paths can never drift.
+  `DiagnosticsState::diff_partial` diffs only the supplied uris, leaving every other
+  uri's last-published state untouched (unlike `diff`, it never clears an absent uri —
+  a rung-1 swap never adds/removes workspace files). The rung-1 recompute cover
+  (`diagnostics::rung1_cover`) is `delta.files` (the edited files) UNION every
+  `virtual_path` declaring a decl in `delta.affected_ids` (Task 1's per-file
+  `incoming`-delta) — complete because both cross-file diagnostic rules
+  (unused-procedure AND high-fan-in) depend on exactly `incoming` + `publisher_fanout`,
+  and rung 1
+  never changes `publisher_fanout` (Task 1 Arc-forwards it unchanged). `Updater` gains
+  a public `rung1_context` accessor so a caller outside `updater.rs` can drive
+  `apply_batch_scoped` without reaching into a private field. Measured on CDO
+  (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, median of 3 runs, new
+  `rung1_diagnostics_wall_clock_on_cdo` test): per-save diagnostics cost `compute_all`
+  11.8 ms → `rung1_cover` + `compute_for_files` 0.21 ms (−98%). End-to-end rung-1 save
+  (apply + diagnostics), measured through this task's own harness (`apply_batch_scoped`,
+  which pays real `classify`/fs-read/re-parse overhead Task 1's own direct-call harness
+  bypassed): apply 11.35 ms + diagnostics 11.8 ms ≈ 23.15 ms → apply 11.35 ms +
+  diagnostics 0.21 ms ≈ 11.56 ms (measured 11.73 ms). Combined with Task 1's own
+  warm-context apply number (4.83 ms, `rung1_rung2_wall_clock_on_cdo`): ≈16.6 ms →
+  ≈5.04 ms end-to-end, matching this arc's original ~5-6 ms target. North-star
+  `aldump --program-call-graph-stats` JSON on CDO remains byte-identical, SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` (no resolver
+  change).
+- Rung-1 (`apply_rung1_core`, `src/lsp/updater.rs`) no longer rebuilds `decl_by_id` and
+  `incoming` wholesale on every 1-file body-only edit. Both are now patched
+  incrementally: only the touched file's OLD/NEW declarations and edge targets are
+  diffed against the current indexes. `decl_by_id` uses a new duplicate-safe
+  multiplicity refcount (`build_decl_multiplicity`, `Updater::decl_multiplicity`) so a
+  `RoutineNodeId` declared identically in two workspace files (a real, if rare,
+  cross-file duplicate) is never wrongly evicted when only one of its declaring files
+  is edited — the winner is re-derived from `decls_by_file` on eviction instead of
+  assumed. `incoming` is patched via a new `edge_targets`/`push_edge_targets` pair
+  operating on the touched file's edge diff only. `LspSnapshot::publisher_fanout` is now
+  `Arc<HashMap<...>>` and forwarded (not rebuilt) at rung 1. `EdgeRef.file` changed from
+  `String` to `Arc<str>` (one alloc per distinct file per rebuild instead of one alloc
+  per edge). `apply_rung1_core`/`apply_batch_scoped` now additionally return a
+  `Rung1Delta { files, affected_ids }` describing exactly what changed, for a future
+  incremental diagnostics patch. The H-10 doc contract (`src/lsp/snapshot.rs` module
+  doc) is amended: `decl_by_id`/`incoming`/`publisher_fanout` are wholesale-rebuilt at
+  rung 2/3/`build_full`, but patched in place at rung 1.
+  Measured on CDO (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, median of 3
+  runs via `rung1_rung2_wall_clock_on_cdo`): rung 1 (warm context, swap excluded)
+  21.19 ms → 4.83 ms. `cargo bench --bench lsp_pipeline` corroborates on the synthetic
+  1000-file corpus: `rung1_body_edit_scoped_1000_files` 6.35–6.72 ms (−63–66%),
+  `rung1_body_edit_1000_files` (full `apply_batch`) 26.9–28.3 ms (−26–31%). Rung 2 is
+  unaffected (~760 ms before/after — `apply_rung2` still rebuilds `decl_multiplicity`
+  wholesale, as documented). North-star `aldump --program-call-graph-stats` JSON on CDO
+  remains byte-identical, SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`.
 - digest per-root loop now skips duplicate effect facts (merge-identity dedup, measured
   ~2.3× duplication on CDO): a fact identical in every consumed field to an earlier one
   contributes a provable no-op to the effect map, so its witness BFS + projection +

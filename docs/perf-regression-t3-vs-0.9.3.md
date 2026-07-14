@@ -953,3 +953,164 @@ Remaining backlog (carried over from §11, still unaddressed by this arc):
 
 Raw runs: `.superpowers/sdd/alsem-parallel/witness-close-out.md` (gitignored).
 
+---
+
+## 13. Tier-2 latency wave close-out (2026-07-14)
+
+Plan: `.superpowers/sdd/tier2-lsp/` (investigation.md + task-{1..5}-brief.md).
+Branch `feat/tier2-latency-wave` off `master` @ `4a3da07`. CDO workspace as in
+§1/§7 (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, 551 ws files /
+10,727 dep files / 4,872 ws decls / 17,973 ws edges / 126,640 dep decls).
+
+### 13.1 Honest re-scope
+
+Tier-2 was originally framed as "medium-effort RSS wins." The investigation
+(measured, not estimated) inverted that: the two RSS items (A — Arc-share dep
+node Vecs, ~49 MB; C — intern `RoutineNodeId` key strings) turned out to be
+the two highest-risk, and one of the two headline synthesis claims didn't
+survive contact with real numbers:
+
+- **Item C: NO-GO as measured.** Real retained key-string footprint on CDO
+  is **18.7 MB** (326,767 `String` allocs, 6.2 MB of content + realistic
+  allocator overhead), not the 40–80 MB originally claimed — a ~3-4×
+  inflation. Mutating `RoutineNodeId`'s identity fields for an 18 MB win was
+  judged a poor risk/reward and folded down to just the cheap subset
+  (`EdgeRef.file: String → Arc<str>`, landed inside Task 1 as F5).
+- **Item F2** (generation-keyed `LineTable` memo) — deferred; low marginal
+  value once Task 1 already cut `incoming` to single-digit ms.
+- **Item A — deferred twice.** The investigation rejected the "three-segment
+  node store + façade" variant as too invasive to the north-star resolver
+  core (see investigation.md §Item A) and recommended a cheaper
+  "drop-and-rebuild on rung-2" variant instead. Task 4 measured THAT variant
+  too and found it blocked (§13.4 below) — so item A is now DEFERRED under
+  both known designs, not just the riskier one.
+- **Net effect:** the wave that actually landed (Tasks 1–3) is a **latency**
+  wave, not an RSS wave — hence the re-label. Zero RSS movement was landed;
+  the ~1,580–1,588 MB steady-state peak RSS measured in §13.2 below is
+  consistent with §7's post-owned-DeclSurface baseline (1,584–1,645 MB),
+  confirming no regression and no (yet-unearned) improvement.
+
+### 13.2 Final measurement pass (CDO, release build, `c6f4d8d`)
+
+All wall-clock numbers below are **median-of-5** (5 separate process/test
+invocations; each of the two in-process harnesses — `rung1_rung2_wall_clock_on_cdo`
+and `rung1_diagnostics_wall_clock_on_cdo` — itself reports a median-of-3 per
+invocation, so the values below are a median of five such medians). Cold
+start / `aldump` are 5 fresh-process trials each, plain `cargo test`/binary
+invocation — never `nextest` for perf, per policy.
+
+| Metric | Value (median-of-5) | Spread |
+|---|---:|---|
+| Rung-1 apply (`apply_rung1_core`, warm context) | **5.21 ms** | 4.98–9.11 ms |
+| Rung-1 diagnostics (`rung1_cover` + `compute_for_files`) | **0.154 ms** | 0.146–0.165 ms |
+| **Rung-1 save, end-to-end (apply + diagnostics)** | **≈5.37 ms** | — |
+| `compute_all` (full recompute, reference) | 12.11 ms | 11.25–16.65 ms |
+| Rung 2 (`apply_rung2`, splice + re-resolve-ALL) | **641.7 ms** | 611.0–666.4 ms |
+| Cold start (`--project`, CLI, wall) | **3.069 s** | 3.044–3.254 s |
+| `aldump --program-call-graph-stats` wall | **3.511 s** | 3.434–3.657 s |
+| Steady-state peak RSS (`--project`, `scripts/peak_rss.py`) | **~1,584 MB** | 1,580–1,588 MB (3 runs) |
+
+North-star SHA-256 (`aldump --program-call-graph-stats` JSON, all 5 trials):
+`0A3B85BC832FF0A3E77ACEE118D203EDBF62827DC37617C8D9315FE52D5CB7D0` — matches
+the required `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`
+exactly, every trial, byte-identical. Zero golden regenerations across the
+whole arc.
+
+### 13.3 Journey table (baseline → final, per-task attribution)
+
+| Point | rung-1 e2e (save) | `compute_all`/diag | Cold start | `aldump` wall |
+|---|---:|---:|---:|---:|
+| §10 baseline (owned-DeclSurface era) | 11.4 ms probe / 21.19 ms warm-harness | 11.4 ms | **~2.79 s** | — |
+| Task 3's own fresh remeasure of the SAME baseline, immediately pre-arc | — | — | **3.36 s** | 3.73 s |
+| Task 1 (rung-1 incremental patch + `Arc<str>` EdgeRef) | apply: 21.19→**4.83 ms** | unchanged | unchanged | unchanged |
+| Task 2 (rung-scoped diagnostics) | apply+diag: ≈16.6→**≈5.04 ms** (own harness: ≈11.73 ms incl. classify/reparse) | 11.8→**0.21 ms** | unchanged | unchanged |
+| Task 3 (parallel per-file resolve) | unchanged | unchanged | 3.36→**3.00 s** (−11%) | 3.73→**3.42 s** (−8%) |
+| Task 4 | BLOCKED, no code landed (see §13.4) | — | — | — |
+| **This close-out (§13.2), independent final pass** | **≈5.37 ms** | **0.154 ms** | **3.069 s** | **3.511 s** |
+
+**Baseline drift, noted honestly.** §10's documented cold-start figure
+(~2.79 s) predates this arc by enough intervening work (unrelated commits
+between §10 and `2505a91`) that Task 3's own "before" remeasurement on the
+arc's actual starting commit came in at 3.36 s — 570 ms higher than §10's
+number, on presumably the same machine/workspace. This close-out's own final
+cold-start median (3.069 s) is measured against Task 3's own 3.36 s baseline
+(−9%, consistent with Task 3's reported −11%, within run-to-run machine
+noise), **not** directly against §10's older 2.79 s figure — comparing
+across that gap would silently misattribute unrelated drift to this arc's
+Task 3. The rung-1/rung-2/diagnostics numbers don't have this problem: Task
+1/2's own before/after pairs were measured back-to-back (`git stash`
+comparisons) on the same run, so those deltas are clean.
+
+**Rung 2 stayed flat by design** — Tasks 1–3 never touch `apply_rung2`'s own
+critical path except Task 3's parallelization of its per-file resolve loop,
+which this close-out's 641.7 ms median (vs. the arc-start 760.17 ms/762.996 ms
+readings recorded in Task 1's report) is consistent with within the same
+noise band Task 1 itself flagged ("noise") — no separate rung-2 win is
+claimed by this arc; Task 4 (the task that WOULD have touched rung-2's cost,
+by adding a dep-layer rebuild there) never landed.
+
+### 13.4 Task 4 blocker — recap and disposition
+
+Task 4 (drop `DepLayer.dep_objects`/`dep_routines` from `LspSnapshot`, rebuild
+on rung-2) is **BLOCKED, not implemented, no code committed** (full detail:
+`task-4-report.md`). Summary for this close-out:
+
+- The brief's own stop condition: *"if rebuilding regresses rung-2 by more
+  than [~375 ms], stop and investigate before committing."* Measured
+  drop-and-rebuild cost (re-parse dependency source ~1.22 s + `build_dep_layer`
+  extraction ~266–282 ms ≈ **~1.49 s total**) is **~4× over that ceiling**,
+  which would take a real rung-2 save from ~760 ms to **~2.25 s** —
+  user-visible, not "infrequent signature-change save" territory.
+- **No cheaper variant exists given what's currently retained.** The T3
+  Task-12 owned-DeclSurface migration (§8 above) deliberately drops
+  dependency `ParsedUnit`s (the parse trees `build_dep_layer` needs) to
+  reclaim ~1.5 GB — re-retaining them to skip the re-parse would cost
+  **more** RSS than Task 4 saves (30×over). Reconstructing `RoutineNode`
+  from the retained `RoutineMeta` projection is unsound — `RoutineMeta`
+  deliberately omits resolver-critical fields (`access`, `tier`,
+  `event_subscribers`, `abi_params`, `return_type`, …) that the north-star
+  edge classification depends on. A reconstruction from that projection
+  would either fabricate defaults (silently wrong edge classification,
+  risking the north-star SHA) or require widening `RoutineMeta` back out to
+  `RoutineNode`'s own shape — which is exactly the ~49 MB this task wants to
+  stop retaining.
+- **Both known variants of item A are therefore now DEFERRED**: the
+  investigation's original three-segment-façade variant (rejected as too
+  invasive to the resolver core) and Task 4's drop-and-rebuild variant
+  (rejected as a rung-2 latency cliff or an RSS regression, per above).
+
+**User decision:** defer item A. It remains the single largest known RSS
+opportunity (~49 MB, ~3% of the ~1.58 GB steady-state peak) but needs a
+genuinely new design, not a retry of either measured-blocked variant.
+
+### 13.5 Remaining backlog
+
+- **Item A (dep-node RSS, ~49 MB), future route 1 — widen the frozen tier.**
+  Turn `RoutineMeta`/`DeclSurface`'s dependency (frozen) tier into a strict
+  superset carrying every field `RoutineNode` needs (`access`, `tier`,
+  `event_subscribers`, `abi_params`, `return_type`, …), so a rung-2 rebuild
+  can reconstruct `dep_objects`/`dep_routines` from the ALREADY-RETAINED
+  richer projection instead of re-parsing dependency `AlFile` trees. This is
+  a substantially larger, identity-type-adjacent redesign (same
+  `RoutineNode`/`RoutineMeta` boundary items B/C/A's own interaction notes
+  already flagged as high-risk) — its own gated arc, not a quick follow-up.
+- **Item A, future route 2 — M4 disk-cached dep layer.** A persistent
+  on-disk cache for the resolved dependency node layer (keyed on `.app`
+  package identity/hash) would let a rung-2 rebuild load from disk instead
+  of re-parsing/re-extracting — this is the same serialization boundary the
+  synthesis's M4 backlog item already gestures at. Task 4's `DepLayerSlim`
+  shape (the `apps`/`topology`/`friends`/`abi_ingest_errors` fields that
+  assemble cheaply, minus the two heavy Vecs) is a concrete step TOWARD what
+  M4's cache would need to serialize — this arc's blocked measurement is not
+  wasted, it scopes M4's actual boundary precisely.
+- **Item C** (`RoutineNodeId` interning beyond the cheap `EdgeRef.file`
+  subset already landed): remains NO-GO standalone (~18.7 MB measured, poor
+  risk/reward against a north-star identity-type churn). Only worth
+  revisiting if bundled with a future item-A redesign that already touches
+  the same identity boundary (per the investigation's interaction notes —
+  C would need to land BEFORE any such A revival, not after).
+- **Item F2** (generation-keyed `LineTable` memo for `incoming`): still
+  low-value post-Task-1; remains deferred.
+- The CDO north-star SHA `0a3b85bc…` held byte-identical at every task and
+  at this close-out (5/5 trials) — no drift introduced anywhere in the arc.
+

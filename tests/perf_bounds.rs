@@ -720,7 +720,7 @@ mod release_checks {
         let ctx = Rung1Context::build(&base, updater.workspace());
 
         // Warm-up (also proves the rung-1 path works before timing it).
-        let warm = updater
+        let (warm, _delta) = updater
             .apply_batch_scoped(&base, &batch, &ctx)
             .expect("a comment-only body edit must stay rung 1");
 
@@ -733,7 +733,7 @@ mod release_checks {
         let mut samples = Vec::with_capacity(3);
         for _ in 0..3 {
             let start = Instant::now();
-            let next = updater
+            let (next, _delta) = updater
                 .apply_batch_scoped(&cur, &batch, &ctx)
                 .expect("must stay rung 1");
             samples.push(start.elapsed());

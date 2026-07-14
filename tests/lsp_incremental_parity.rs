@@ -720,7 +720,7 @@ fn delete_file_stays_equivalent() {
         .get(&beta_process)
         .expect("Beta.Process must have incoming callers before delete");
     assert!(
-        incoming_before.iter().any(|r| r.file == "MyPage.al"),
+        incoming_before.iter().any(|r| &*r.file == "MyPage.al"),
         "baseline: MyPage.al must be one of Beta.Process's incoming callers"
     );
 
@@ -1829,5 +1829,418 @@ fn every_dep_routine_route_target_resolves_via_dep_meta() {
     assert!(
         dep_targets > 0,
         "fixture sanity: at least one dependency-routine route target must exist"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tier-2 latency wave, Task 1: rung-1 incremental decl_by_id/incoming patch
+// ---------------------------------------------------------------------------
+//
+// The two scripts below are the brief's Step 1 gate
+// (`.superpowers/sdd/tier2-lsp/task-1-brief.md`, Task 1): (a) the patched
+// `decl_by_id`/`incoming` indexes a rung-1 apply produces must match a fresh
+// WHOLESALE rebuild (`build_decl_by_id`/`build_incoming`) of the exact same
+// post-edit `decls_by_file`/`edges_by_file` — a STRONGER, more direct check
+// than `assert_snapshots_equivalent` above (which only compares the
+// UNDERLYING `decls_by_file`/`edges_by_file` populations, never the derived
+// `decl_by_id`/`incoming` indexes themselves — see this module's doc for why
+// that's sufficient for the OTHER scripts, which never touch `decl_by_id`
+// directly enough to risk a duplicate-id bookkeeping bug). (b) a NEW
+// cross-file-duplicate-`RoutineNodeId` fixture exercises the duplicate-safe
+// multiplicity rule.
+
+/// `decl_by_id`/`incoming` MUST be presentable as "a valid instance of a
+/// wholesale rebuild" after a rung-1 patch: `decl_by_id`'s key set matches
+/// `build_decl_by_id`'s key set, and every entry is SOME declaring file's own
+/// `DeclEntry` (winner is unspecified for a duplicate id — see
+/// `build_decl_by_id`'s doc — so this does not assert byte-identical maps,
+/// only the invariant the patch is allowed to preserve). `incoming` is
+/// compared as a genuine sorted-multiset equality against a fresh
+/// `build_incoming` (per the brief's step 1(a) ordering caveat:
+/// `build_incoming`'s per-target `Vec<EdgeRef>` order is ALREADY
+/// nondeterministic, so every consumer — including this gate — must sort by
+/// `(file, idx)` before comparing). `publisher_fanout` is compared for exact
+/// equality (Arc-forwarded at rung 1, so it must be byte-identical to a
+/// fresh rebuild from the unchanged `event_edges`).
+#[test]
+fn rung1_patched_indexes_match_wholesale_rebuild() {
+    let dir = copy_fixture_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+    // A body-only edit (extra call to an already-existing target) — no
+    // identity/signature change, so this must stay rung-1-eligible.
+    std::fs::write(
+        dir.path().join("Alpha.al"),
+        r#"// Unicode smoke test (Task 10 fixture requirement): æøå
+codeunit 50100 "Alpha"
+{
+    procedure DoWork()
+    var
+        Beta: Codeunit "Beta";
+    begin
+        Beta.Process();
+        Beta.Process();
+        Calc(1);
+        Calc('x');
+        Løbenr();
+    end;
+
+    procedure Calc(X: Integer)
+    begin
+    end;
+
+    procedure Calc(X: Text)
+    begin
+    end;
+
+    procedure Løbenr()
+    begin
+    end;
+
+    [IntegrationEvent(false, false)]
+    procedure OnAfterWork()
+    begin
+    end;
+}
+"#,
+    )
+    .expect("rewrite Alpha.al");
+
+    let batch = vec![ChangeEvent::FileSaved(dir.path().join("Alpha.al"))];
+    let (new_snap, rung) = updater
+        .apply_batch(&base, &batch)
+        .expect("apply_batch must succeed");
+    assert_eq!(rung, Rung::One, "a body-only edit must take rung 1");
+
+    // ---- decl_by_id: key-set equality + "one of the declaring files' own
+    // entries" per id, against a fresh wholesale rebuild of the SAME
+    // post-edit decls_by_file. ----
+    let fresh_decl_by_id =
+        al_call_hierarchy::lsp::snapshot::build_decl_by_id(&new_snap.decls_by_file);
+    let mut patched_ids: Vec<&RoutineNodeId> = new_snap.decl_by_id.keys().collect();
+    let mut fresh_ids: Vec<&RoutineNodeId> = fresh_decl_by_id.keys().collect();
+    patched_ids.sort();
+    fresh_ids.sort();
+    assert_eq!(
+        patched_ids, fresh_ids,
+        "rung-1 patched decl_by_id's key set must match a fresh wholesale rebuild"
+    );
+    for id in &patched_ids {
+        let patched_entry = &new_snap.decl_by_id[*id];
+        let is_valid_winner = new_snap
+            .decls_by_file
+            .values()
+            .flat_map(|decls| decls.iter())
+            .any(|d| {
+                &d.id == *id
+                    && d.virtual_path == patched_entry.virtual_path
+                    && canon_decl(d) == canon_decl(patched_entry)
+            });
+        assert!(
+            is_valid_winner,
+            "decl_by_id[{id:?}] = {patched_entry:?} must be ONE of the declaring \
+             files' own DeclEntry values"
+        );
+    }
+
+    // ---- incoming: sorted-multiset equality against a fresh build_incoming
+    // over the SAME post-edit edges_by_file/event_edges. ----
+    let (fresh_incoming, fresh_publisher_fanout) = al_call_hierarchy::lsp::snapshot::build_incoming(
+        &new_snap.edges_by_file,
+        &new_snap.event_edges,
+    );
+    let sort_refs = |v: &[al_call_hierarchy::lsp::snapshot::EdgeRef]| {
+        let mut v: Vec<(String, u32)> = v.iter().map(|r| (r.file.to_string(), r.idx)).collect();
+        v.sort();
+        v
+    };
+    let mut all_targets: Vec<RoutineNodeId> = new_snap
+        .incoming
+        .keys()
+        .cloned()
+        .chain(fresh_incoming.keys().cloned())
+        .collect();
+    all_targets.sort();
+    all_targets.dedup();
+    for target in &all_targets {
+        let patched: Vec<(String, u32)> = new_snap
+            .incoming
+            .get(target)
+            .map(|v| sort_refs(v))
+            .unwrap_or_default();
+        let fresh: Vec<(String, u32)> = fresh_incoming
+            .get(target)
+            .map(|v| sort_refs(v))
+            .unwrap_or_default();
+        assert_eq!(
+            patched, fresh,
+            "rung-1 patched incoming[{target:?}] must match a fresh build_incoming \
+             (sorted by (file, idx))"
+        );
+    }
+
+    // ---- publisher_fanout: Arc-forwarded at rung 1, must be byte-identical
+    // to a fresh rebuild off the unchanged event_edges. ----
+    assert_eq!(
+        *new_snap.publisher_fanout, fresh_publisher_fanout,
+        "rung-1 Arc-forwarded publisher_fanout must equal a fresh build_incoming's"
+    );
+
+    // Non-vacuity: the fixture's incoming population must be non-empty, or
+    // the loop above would trivially pass over zero targets.
+    assert!(
+        !all_targets.is_empty(),
+        "fixture sanity: at least one incoming target must exist"
+    );
+}
+
+/// Task-1 review finding (Fable, Medium): if the same `vp` appears TWICE in
+/// one rung-1 batch (`classify` pushes one `Planned::Save` per event with no
+/// vp dedup; the production coalescer dedupes by exact `PathBuf` only, and
+/// `classify_path`'s case-insensitive fallback can map two spellings to one
+/// vp), the per-save loop's removal pass must derive the file's OLD edge
+/// targets from the WORKING maps (iteration 1's fresh state), not from
+/// `cur`'s stale list — otherwise iteration 2 re-pushes the file's new
+/// edges without removing iteration 1's, leaving duplicate `EdgeRef`s in
+/// `incoming` until the next rebuild. This test sends the SAME `FileSaved`
+/// event twice in one batch and asserts full sorted-multiset parity of
+/// `incoming` against a fresh wholesale `build_incoming`.
+#[test]
+fn rung1_duplicate_vp_in_one_batch_stays_equivalent() {
+    let dir = copy_fixture_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+    // Same body-only edit shape as `rung1_patched_indexes_match_wholesale_
+    // rebuild`, plus a call to a target with NO prior incoming edge from
+    // this file (`OnAfterWork` — never called in the base fixture): the
+    // stale-removal bug only materializes for a target absent from the OLD
+    // edge list (iteration 2's removal pass never visits it, then re-pushes
+    // its fresh EdgeRef → duplicate).
+    std::fs::write(
+        dir.path().join("Alpha.al"),
+        r#"// Unicode smoke test (Task 10 fixture requirement): æøå
+codeunit 50100 "Alpha"
+{
+    procedure DoWork()
+    var
+        Beta: Codeunit "Beta";
+    begin
+        Beta.Process();
+        Beta.Process();
+        Calc(1);
+        Calc('x');
+        Løbenr();
+        OnAfterWork();
+    end;
+
+    procedure Calc(X: Integer)
+    begin
+    end;
+
+    procedure Calc(X: Text)
+    begin
+    end;
+
+    procedure Løbenr()
+    begin
+    end;
+
+    [IntegrationEvent(false, false)]
+    procedure OnAfterWork()
+    begin
+    end;
+}
+"#,
+    )
+    .expect("rewrite Alpha.al");
+
+    // The SAME save event twice in ONE batch — un-coalesced, as the public
+    // `apply_batch` API permits.
+    let batch = vec![
+        ChangeEvent::FileSaved(dir.path().join("Alpha.al")),
+        ChangeEvent::FileSaved(dir.path().join("Alpha.al")),
+    ];
+    let (new_snap, rung) = updater
+        .apply_batch(&base, &batch)
+        .expect("apply_batch must succeed");
+    assert_eq!(rung, Rung::One, "a body-only edit must take rung 1");
+
+    let (fresh_incoming, _) = al_call_hierarchy::lsp::snapshot::build_incoming(
+        &new_snap.edges_by_file,
+        &new_snap.event_edges,
+    );
+    let sort_refs = |v: &[al_call_hierarchy::lsp::snapshot::EdgeRef]| {
+        let mut v: Vec<(String, u32)> = v.iter().map(|r| (r.file.to_string(), r.idx)).collect();
+        v.sort();
+        v
+    };
+    let mut all_targets: Vec<RoutineNodeId> = new_snap
+        .incoming
+        .keys()
+        .cloned()
+        .chain(fresh_incoming.keys().cloned())
+        .collect();
+    all_targets.sort();
+    all_targets.dedup();
+    assert!(
+        !all_targets.is_empty(),
+        "fixture sanity: at least one incoming target must exist"
+    );
+    for target in &all_targets {
+        let patched: Vec<(String, u32)> = new_snap
+            .incoming
+            .get(target)
+            .map(|v| sort_refs(v))
+            .unwrap_or_default();
+        let fresh: Vec<(String, u32)> = fresh_incoming
+            .get(target)
+            .map(|v| sort_refs(v))
+            .unwrap_or_default();
+        assert_eq!(
+            patched, fresh,
+            "duplicate-vp batch: patched incoming[{target:?}] must match a fresh \
+             build_incoming — a mismatch means the removal pass read stale `cur` \
+             state instead of the working maps"
+        );
+    }
+}
+
+/// A NEW fixture: two workspace files each independently declare `codeunit
+/// 50100 "Dup"` with an identically-shaped `procedure Shared()` — since
+/// `RoutineNodeId` is derived from the object's key + name + arity + sig_fp
+/// (never from `virtual_path` — see `source_routine_node_id`), both files'
+/// `DeclEntry` for `Shared` compute the EXACT SAME `RoutineNodeId`: the
+/// `decls_by_file`-level cross-file-duplicate-id population the brief's
+/// duplicate-safe multiplicity rule exists for (this is a DIFFERENT,
+/// per-snapshot phenomenon than the graph-level
+/// `dedup_routines_preserving_genuine_overloads` pass, which the LSP
+/// snapshot's per-file `decls_by_file` construction — `recompute_file`,
+/// independent per file — never runs at all).
+///
+/// A body-only edit to ONE of the two files can never observe the
+/// duplicate-EVICTION path (fingerprint covers decls — see the brief's Step
+/// 1(b) note), so this test instead: (1) asserts the duplicate survives a
+/// rung-1 body edit to one of the two files, with `decl_multiplicity`
+/// (recomputed from scratch via `build_decl_multiplicity`) still counting 2
+/// declaring files; then (2) deletes the OTHER file entirely (a rung-2
+/// escalation), and asserts the id still survives with multiplicity 1 —
+/// exercising the decrement-without-eviction path — matching a fresh
+/// from-scratch `build_decl_multiplicity` count at every step (the binding
+/// "matches a from-scratch count" requirement).
+#[test]
+fn rung1_cross_file_duplicate_routine_id_survives_edit() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("app.json"),
+        r#"{
+    "id": "77777777-0000-0000-0000-000000000011",
+    "name": "Task1 Cross-File Duplicate Fixture",
+    "publisher": "probe",
+    "version": "1.0.0.0"
+}"#,
+    )
+    .expect("write app.json");
+    let dup_body = |comment: &str| {
+        format!(
+            r#"codeunit 50100 "Dup"
+{{
+    procedure Shared()
+    begin
+        // {comment}
+    end;
+}}
+"#
+        )
+    };
+    std::fs::write(dir.path().join("Dup1.al"), dup_body("v1")).expect("write Dup1.al");
+    std::fs::write(dir.path().join("Dup2.al"), dup_body("v1")).expect("write Dup2.al");
+
+    let (base, parsed) = build_full_with_parsed(dir.path());
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+    let shared_id = base.decls_by_file["Dup1.al"]
+        .iter()
+        .find(|d| d.name == "Shared")
+        .expect("Dup1.Shared decl")
+        .id
+        .clone();
+    assert_eq!(
+        base.decls_by_file["Dup2.al"]
+            .iter()
+            .find(|d| d.name == "Shared")
+            .expect("Dup2.Shared decl")
+            .id,
+        shared_id,
+        "fixture sanity: both files must compute the IDENTICAL RoutineNodeId for Shared"
+    );
+    assert_eq!(
+        al_call_hierarchy::lsp::snapshot::build_decl_multiplicity(&base.decls_by_file)
+            .get(&shared_id)
+            .copied(),
+        Some(2),
+        "baseline: Shared must be declared by exactly 2 files"
+    );
+    assert!(
+        base.decl_by_id.contains_key(&shared_id),
+        "baseline: the duplicate id must resolve to SOME declaring file's entry"
+    );
+
+    // Step 1: a rung-1 body-only edit to Dup1.al — the duplicate must
+    // survive, with multiplicity still 2 (recomputed from scratch, matching
+    // the live `Updater::decl_multiplicity`'s own bookkeeping — see this
+    // function's own doc).
+    std::fs::write(dir.path().join("Dup1.al"), dup_body("v2")).expect("rewrite Dup1.al");
+    let batch1 = vec![ChangeEvent::FileSaved(dir.path().join("Dup1.al"))];
+    let (snap1, rung1) = updater
+        .apply_batch(&base, &batch1)
+        .expect("apply_batch must succeed");
+    assert_eq!(rung1, Rung::One, "a body-only edit must take rung 1");
+    assert!(
+        snap1.decl_by_id.contains_key(&shared_id),
+        "the duplicate id must survive a rung-1 edit to one of its 2 declaring files"
+    );
+    assert_eq!(
+        al_call_hierarchy::lsp::snapshot::build_decl_multiplicity(&snap1.decls_by_file)
+            .get(&shared_id)
+            .copied(),
+        Some(2),
+        "after editing Dup1.al only, Shared must still be declared by 2 files \
+         (a from-scratch recount must match)"
+    );
+
+    // Step 2: delete Dup2.al entirely — a rung-2 escalation. The duplicate
+    // must still survive (now declared by exactly 1 file), and — since only
+    // ONE file remains — decl_by_id[shared_id] is UNAMBIGUOUSLY that file's
+    // own entry (no winner ambiguity left).
+    std::fs::remove_file(dir.path().join("Dup2.al")).expect("delete Dup2.al");
+    let batch2 = vec![ChangeEvent::FileRemoved(dir.path().join("Dup2.al"))];
+    let (snap2, rung2) = updater
+        .apply_batch(&snap1, &batch2)
+        .expect("apply_batch must succeed");
+    assert_eq!(rung2, Rung::Two, "a file delete must take rung 2");
+    assert!(
+        snap2.decl_by_id.contains_key(&shared_id),
+        "the id must survive losing one of its 2 declaring files (multiplicity 2 -> 1)"
+    );
+    assert_eq!(
+        al_call_hierarchy::lsp::snapshot::build_decl_multiplicity(&snap2.decls_by_file)
+            .get(&shared_id)
+            .copied(),
+        Some(1),
+        "after deleting Dup2.al, Shared must be declared by exactly 1 file \
+         (a from-scratch recount must match)"
+    );
+    assert_eq!(
+        snap2.decl_by_id[&shared_id].virtual_path, "Dup1.al",
+        "with only 1 declaring file left, decl_by_id must resolve to it unambiguously"
+    );
+
+    let fresh2 = LspSnapshot::build_full(dir.path()).expect("fresh build_full after delete");
+    assert_snapshots_equivalent(
+        &snap2,
+        &fresh2,
+        "cross-file-duplicate: after Dup2.al delete",
     );
 }
