@@ -55,11 +55,7 @@ pub struct EdgeRef {
 /// event-flow edges.
 pub const EVENT_EDGES_KEY: &str = "\u{0}events";
 
-/// [`LspSnapshot::dep_decl_by_id`]'s map type — aliased so
-/// [`build_dep_indexes`]'s signature stays readable (clippy
-/// `type_complexity`).
-pub(crate) type DepDeclById = HashMap<RoutineNodeId, DeclEntry>;
-/// [`LspSnapshot::dep_texts`]'s map type — see [`DepDeclById`]'s doc.
+/// [`LspSnapshot::dep_texts`]'s map type.
 pub(crate) type DepTexts = HashMap<(AppRef, String), Arc<str>>;
 
 /// One routine declaration's identity + LSP-facing spans, owned (never
@@ -74,6 +70,37 @@ pub struct DeclEntry {
     /// Name-token span (`CallHierarchyItem.selectionRange`).
     pub name_origin: al_syntax::ir::Origin,
     pub virtual_path: String,
+}
+
+/// A borrowed, source-agnostic view of one routine declaration's LSP-facing
+/// data — the common shape of a workspace [`DeclEntry`] and a dependency
+/// [`RoutineMeta`] (`dep_meta` tier), so [`LspSnapshot::decl_and_text`] can
+/// serve BOTH without materializing a second owned map for dependencies
+/// (the old `dep_decl_by_id` duplicated ~103 MB of `dep_meta`'s data on a
+/// CDO-scale workspace, plus an O(all-dep-decls) build pass at every rung-3).
+#[derive(Clone, Copy, Debug)]
+pub struct DeclView<'a> {
+    pub id: &'a RoutineNodeId,
+    /// Raw casing, for display (`RoutineNodeId::name_lc` is lowercased).
+    pub name: &'a str,
+    /// Whole declaration span (`CallHierarchyItem.range`).
+    pub origin: &'a al_syntax::ir::Origin,
+    /// Name-token span (`CallHierarchyItem.selectionRange`).
+    pub name_origin: &'a al_syntax::ir::Origin,
+    pub virtual_path: &'a str,
+}
+
+impl<'a> DeclView<'a> {
+    #[must_use]
+    pub fn from_entry(e: &'a DeclEntry) -> Self {
+        DeclView {
+            id: &e.id,
+            name: &e.name,
+            origin: &e.origin,
+            name_origin: &e.name_origin,
+            virtual_path: &e.virtual_path,
+        }
+    }
 }
 
 /// One parsed file's owned data: the `AlFile` IR, its source text, and its
@@ -155,21 +182,8 @@ pub struct LspSnapshot {
     /// cloned-then-patched. Never treat this as an independent source of
     /// truth to surgically edit (H-10 law).
     pub decl_by_id: HashMap<RoutineNodeId, DeclEntry>,
-    /// The `RouteTarget::Routine(id)`-target counterpart of [`Self::decl_by_id`]
-    /// for every NON-primary (dependency) app — the design doc's §5 promise
-    /// that "a dep with embedded source gets REAL navigable spans (legacy
-    /// never could)". `make_routine_route` (the resolver) only ever
-    /// constructs `RouteTarget::Routine(id)` when the SAME `DeclSurface` this
-    /// entry is built from just answered `Some` for `id` — so any `id` an
-    /// edge carries as a `Routine` target is guaranteed to be found in
-    /// EITHER `decl_by_id` (workspace) or here, never neither. A dependency's
-    /// own source cannot change except on a rung-3 rebuild (rung 1/2 both
-    /// reuse the cached, unchanged `dep_layer` — see `Updater::apply_rung2`'s
-    /// doc), so callers `Arc::clone` this forward across rung 1/2 rather than
-    /// recomputing it. See [`build_dep_indexes`].
-    pub dep_decl_by_id: Arc<DepDeclById>,
     /// Source text for every file contributing an entry to
-    /// [`Self::dep_decl_by_id`], keyed `(app, virtual_path)` — a
+    /// [`Self::dep_meta`], keyed `(app, virtual_path)` — a
     /// dependency's `virtual_path` is only unique WITHIN its own app (two
     /// different deps can each have their own "Codeunit1.al"), unlike
     /// `Self::parsed`'s workspace-only, plain-`String`-keyed map. This is
@@ -183,12 +197,23 @@ pub struct LspSnapshot {
     /// `parse_incomplete`, param `ty`/`by_ref` — never the body), built once
     /// at startup/rung-3 via [`DeclSurface::freeze_dep_tier`] and forwarded
     /// by `Arc::clone` across rungs 1/2 (sound for the same reason
-    /// `dep_decl_by_id`/`dep_texts` are: dependency source cannot change on
-    /// those rungs — see their docs). Rung 1/2 rebuild a workspace-only
-    /// `DeclSurface` via [`DeclSurface::with_frozen`], composing it with
-    /// this tier rather than re-deriving it, which is what lets the LSP
-    /// steady state drop dependency parse arenas after the first full
-    /// build (see [`Self::from_context`]).
+    /// `dep_texts` is: dependency source cannot change on those rungs — see
+    /// its doc). Rung 1/2 rebuild a workspace-only `DeclSurface` via
+    /// [`DeclSurface::with_frozen`], composing it with this tier rather than
+    /// re-deriving it, which is what lets the LSP steady state drop
+    /// dependency parse arenas after the first full build (see
+    /// [`Self::from_context`]). ALSO doubles as the `RouteTarget::Routine(id)`
+    /// counterpart of [`Self::decl_by_id`] for every NON-primary (dependency)
+    /// app — the design doc's §5 promise that "a dep with embedded source
+    /// gets REAL navigable spans (legacy never could)". `make_routine_route`
+    /// (the resolver) only ever constructs `RouteTarget::Routine(id)` when
+    /// the SAME `DeclSurface` this tier is built from just answered `Some`
+    /// for `id` — so any `id` an edge carries as a `Routine` target is
+    /// guaranteed to be found in EITHER `decl_by_id` (workspace) or here,
+    /// never neither. Served (as a borrowed [`DeclView`]) via
+    /// [`Self::decl_and_text`] rather than a dedicated owned map — the old
+    /// `dep_decl_by_id` duplicated this exact data (see [`build_dep_texts`]'s
+    /// doc for the history).
     pub dep_meta: Arc<DepMetaMap>,
     /// The workspace root every `virtual_path` in this snapshot is relative
     /// to, normalized via [`crate::protocol::normalize_path`] (T3 Task 11) —
@@ -261,7 +286,7 @@ impl LspSnapshot {
     /// (T3 Task 12): dependency `ParsedUnit`s in `ctx.parsed` are consumed
     /// and dropped here, at the end of the transient borrow phase below —
     /// the exact point the memory win takes effect — after the frozen
-    /// dep-tier `DeclSurface`/`dep_decl_by_id`/`dep_texts` have all been
+    /// dep-tier `DeclSurface`/`dep_meta`/`dep_texts` have all been
     /// derived from them. `ParsedFile.file`/`.text` are `Arc`-shared (perf
     /// safe-wins Task 2), so the published snapshot's workspace
     /// `ParsedFileEntry`s hold `Arc::clone`s rather than consuming the
@@ -297,7 +322,6 @@ impl LspSnapshot {
         let mut surfaces_by_file: HashMap<String, DefSurface> = HashMap::new();
         let mut decls_by_file: HashMap<String, Arc<Vec<DeclEntry>>> = HashMap::new();
         let event_edges: Arc<Vec<ClassifiedEdge>>;
-        let dep_decl_by_id: HashMap<RoutineNodeId, DeclEntry>;
         let dep_texts: HashMap<(AppRef, String), Arc<str>>;
         let dep_meta: Arc<DepMetaMap>;
 
@@ -313,7 +337,7 @@ impl LspSnapshot {
             // than only from rung 1/2 onward) proves it resolves identically
             // to the old always-local `BodyMap`-style build for every
             // consumer below (`recompute_file`/`emit_event_flow_edges`/
-            // `build_dep_indexes`).
+            // `build_dep_texts`).
             let (surface, dep_meta_arc) =
                 DeclSurface::build_split(&graph, &parsed, primary_app_ref);
             dep_meta = dep_meta_arc;
@@ -349,8 +373,7 @@ impl LspSnapshot {
                     .collect(),
             );
 
-            (dep_decl_by_id, dep_texts) =
-                build_dep_indexes(&graph, &surface, &parsed, primary_app_ref);
+            dep_texts = build_dep_texts(&graph, &parsed, primary_app_ref);
             // `index`/`surface`/`obj_node_map` drop here, at the end of this
             // block — their borrows of `graph`/`parsed` end before the
             // sharing phase below needs to (immutably) re-borrow `parsed`.
@@ -365,7 +388,7 @@ impl LspSnapshot {
         // below — dependency `ParsedUnit`s are handed to a background thread
         // and dropped a few lines down (see the drop block), once every
         // consumer that needs them (the frozen dep-tier `DeclSurface`,
-        // `dep_decl_by_id`, `dep_texts` — all derived above) has already
+        // `dep_meta`, `dep_texts` — all derived above) has already
         // run.
         let mut parsed_files: HashMap<String, Arc<ParsedFileEntry>> = HashMap::new();
         if let Some(idx) = primary_unit_idx {
@@ -400,7 +423,6 @@ impl LspSnapshot {
             publisher_fanout,
             decls_by_file,
             decl_by_id,
-            dep_decl_by_id: Arc::new(dep_decl_by_id),
             dep_texts: Arc::new(dep_texts),
             dep_meta,
             workspace_root: Arc::new(crate::protocol::normalize_path(workspace_root)),
@@ -411,7 +433,7 @@ impl LspSnapshot {
         // trees + owned IR, uniquely owned by these units) to a detached
         // background thread to DROP off the critical path (T3 Task 12
         // follow-up). Every consumer of dependency parse arenas — the frozen
-        // dep-tier `DeclSurface`, `dep_decl_by_id`, `dep_texts` — has already
+        // dep-tier `DeclSurface`, `dep_meta`, `dep_texts` — has already
         // run above, so nothing observes the deps after this point; the
         // snapshot retains only `Arc::clone`s of WORKSPACE `pf.file`/`text`
         // (plus dependency TEXT via `dep_texts`), never the dependency
@@ -469,24 +491,33 @@ impl LspSnapshot {
     }
 
     /// Resolve ANY `RoutineNodeId` — workspace OR dependency — to its live
-    /// decl entry plus the source text needed for position-encoding
+    /// decl data plus the source text needed for position-encoding
     /// conversion (`LineTable::new(text)`). The one lookup handlers.rs uses
     /// for every position-bearing `RouteTarget::Routine(id)` surface, so a
-    /// caller never needs to know which of [`Self::decl_by_id`]/
-    /// [`Self::dep_decl_by_id`] actually holds `id`. Returns `None` for a
-    /// stale id (not in either map) — the fail-closed "never guess" contract
-    /// every handler built on this must honor.
+    /// caller never needs to know whether `id` is served from
+    /// [`Self::decl_by_id`] (workspace) or [`Self::dep_meta`] (dependency).
+    /// Returns `None` for a stale id (not in either map) — the fail-closed
+    /// "never guess" contract every handler built on this must honor.
     #[must_use]
-    pub fn decl_and_text(&self, id: &RoutineNodeId) -> Option<(&DeclEntry, &str)> {
+    pub fn decl_and_text(&self, id: &RoutineNodeId) -> Option<(DeclView<'_>, &str)> {
         if let Some(d) = self.decl_by_id.get(id) {
             let text: &str = &self.parsed.get(&d.virtual_path)?.text;
-            return Some((d, text));
+            return Some((DeclView::from_entry(d), text));
         }
-        let d = self.dep_decl_by_id.get(id)?;
+        let (key, m) = self.dep_meta.get_key_value(id)?;
         let text = self
             .dep_texts
-            .get(&(id.object.app, d.virtual_path.clone()))?;
-        Some((d, text.as_ref()))
+            .get(&(id.object.app, m.virtual_path.clone()))?;
+        Some((
+            DeclView {
+                id: key,
+                name: &m.name,
+                origin: &m.origin,
+                name_origin: &m.name_origin,
+                virtual_path: &m.virtual_path,
+            },
+            text.as_ref(),
+        ))
     }
 }
 
@@ -651,51 +682,32 @@ pub(crate) fn build_decl_by_id(
     decl_by_id
 }
 
-/// Build [`LspSnapshot::dep_decl_by_id`]/[`LspSnapshot::dep_texts`] — the
-/// dependency-app counterpart of `decl_by_id`/`parsed`, which stay
-/// workspace-only (see their own docs). Walks `graph.routines` (every app,
-/// pre-sorted at graph-build time) rather than `parsed`'s per-file objects,
-/// since `graph.routines` already carries the exact node identity any edge's
-/// `RouteTarget::Routine(id)` names — skipping the primary (workspace) app
-/// (already covered by `decl_by_id`) and any routine `surface` can't find a
-/// decl for (a `SymbolOnly` boundary routine with no embedded source — no
-/// position exists to serve, so no entry is produced; see
-/// `resolver::make_routine_route`'s doc for why `Routine(id)` is only ever
-/// constructed when this SAME `surface` lookup just succeeded).
+/// Build [`LspSnapshot::dep_texts`] — the dependency-app text source
+/// [`LspSnapshot::decl_and_text`] pairs with [`LspSnapshot::dep_meta`] to
+/// serve a dependency decl's position-encoding conversion (mirrors
+/// `decl_by_id`/`parsed`, which stay workspace-only — see their own docs).
 ///
 /// Called ONLY from [`LspSnapshot::from_context`] (T3 Task 12 — previously
 /// also from [`crate::lsp::updater::Updater::apply_rung2`], but rung 2 now
-/// Arc-forwards `dep_decl_by_id`/`dep_texts` from the current snapshot
-/// instead of recomputing them, since dependency source cannot change on
-/// rung 2 either — see `apply_rung2`'s doc). Rung 1 never called this
-/// either, for the same underlying reason (see `dep_decl_by_id`'s doc) —
-/// this function now runs exactly once per rung-3 (full) rebuild.
+/// Arc-forwards `dep_texts`/`dep_meta` from the current snapshot instead of
+/// recomputing them, since dependency source cannot change on rung 2
+/// either — see `apply_rung2`'s doc). Rung 1 never called this either, for
+/// the same underlying reason (see `dep_meta`'s doc) — this function now
+/// runs exactly once per rung-3 (full) rebuild.
+///
+/// (Renamed from `build_dep_indexes`/reduced from a pair-of-maps builder:
+/// the perf quick-wins Tier-1 pass deleted the redundant `dep_decl_by_id`
+/// decl loop this function used to also run — `DeclSurface::build_split`'s
+/// `dep_meta` tier already carries the identical per-routine data, so
+/// [`LspSnapshot::decl_and_text`] now derives a borrowed `DeclView` from
+/// `dep_meta` directly instead of looking up a second, fully-duplicate
+/// owned map.)
 #[must_use]
-pub(crate) fn build_dep_indexes(
+pub(crate) fn build_dep_texts(
     graph: &ProgramGraph,
-    surface: &DeclSurface,
     parsed: &[ParsedUnit],
     primary_app: AppRef,
-) -> (DepDeclById, DepTexts) {
-    let mut dep_decl_by_id: HashMap<RoutineNodeId, DeclEntry> = HashMap::new();
-    for node in &graph.routines {
-        if node.id.object.app == primary_app {
-            continue;
-        }
-        if let Some((decl, path)) = surface.get_with_path(&node.id) {
-            dep_decl_by_id.insert(
-                node.id.clone(),
-                DeclEntry {
-                    id: node.id.clone(),
-                    name: decl.name.clone(),
-                    origin: decl.origin.clone(),
-                    name_origin: decl.name_origin.clone(),
-                    virtual_path: path.to_string(),
-                },
-            );
-        }
-    }
-
+) -> DepTexts {
     let mut dep_texts: HashMap<(AppRef, String), Arc<str>> = HashMap::new();
     for unit in parsed {
         let Some(app_ref) = graph.apps.find(&unit.app) else {
@@ -711,7 +723,7 @@ pub(crate) fn build_dep_indexes(
         }
     }
 
-    (dep_decl_by_id, dep_texts)
+    dep_texts
 }
 
 // ---------------------------------------------------------------------------

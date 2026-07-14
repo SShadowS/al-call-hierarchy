@@ -512,7 +512,7 @@ impl Updater {
             decls_by_file,
             decl_by_id,
             // Dependency source cannot change at rung 2 (it reuses the
-            // cached, unchanged `dep_layer` above), and all three of these
+            // cached, unchanged `dep_layer` above), and both of these
             // maps are fully OWNED data keyed by `RoutineNodeId` — whose
             // `AppRef`s are stable across rungs 1/2 (the graph reuses the
             // cached `dep_layer`'s cloned `AppRegistry`, never re-interning
@@ -520,7 +520,6 @@ impl Updater {
             // only rung that ever rebuilds them (T3 Task 12 — previously
             // rebuilt here too, before the dep tier was frozen once and
             // forwarded).
-            dep_decl_by_id: Arc::clone(&cur.dep_decl_by_id),
             dep_texts: Arc::clone(&cur.dep_texts),
             dep_meta: Arc::clone(&cur.dep_meta),
             // The workspace root never changes across a rung 2 rebuild — the
@@ -697,10 +696,9 @@ fn apply_rung1_core(
         decl_by_id,
         // Rung 1 touches ONLY workspace files — dependency source is
         // untouched and `cur.graph` is reused unchanged (see this function's
-        // doc), so `dep_decl_by_id`/`dep_texts`/`dep_meta` are byte-identical
+        // doc), so `dep_texts`/`dep_meta` are byte-identical
         // to the previous snapshot's; `Arc::clone` rather than recompute
-        // (see `build_dep_indexes`'s doc / `LspSnapshot::dep_meta`'s doc).
-        dep_decl_by_id: Arc::clone(&cur.dep_decl_by_id),
+        // (see `build_dep_texts`'s doc / `LspSnapshot::dep_meta`'s doc).
         dep_texts: Arc::clone(&cur.dep_texts),
         dep_meta: Arc::clone(&cur.dep_meta),
         workspace_root: Arc::clone(&cur.workspace_root),

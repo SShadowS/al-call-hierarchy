@@ -124,7 +124,7 @@ fn main() -> Result<()> {
 /// the program engine's identity/dedup rules differ from the legacy
 /// `QualifiedName`-keyed graph. The legacy "external definitions" line is
 /// replaced by a count of dependency routines with EMBEDDED source
-/// (`dep_decl_by_id` — real per-routine identities, unlike a `.app`'s
+/// (`dep_meta` — real per-routine identities, unlike a `.app`'s
 /// symbol-only ABI catalog, which has no equivalent "definition" to count).
 fn report_index_stats(project: &Path) -> Result<()> {
     let Some(snap) = LspSnapshot::build_full(project) else {
@@ -137,7 +137,7 @@ fn report_index_stats(project: &Path) -> Result<()> {
 
     let definitions: usize = snap.decls_by_file.values().map(|v| v.len()).sum();
     let call_sites: usize = snap.edges_by_file.values().map(|v| v.len()).sum();
-    let dep_definitions = snap.dep_decl_by_id.len();
+    let dep_definitions = snap.dep_meta.len();
 
     info!("Indexed {} definitions", definitions);
     info!(

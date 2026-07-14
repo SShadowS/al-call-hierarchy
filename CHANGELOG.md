@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Deleted `LspSnapshot.dep_decl_by_id` — dependency decl lookups
+  (`decl_and_text`) are now served directly from the `dep_meta` frozen tier
+  via a borrowed `DeclView`, removing a fully redundant ~126k-entry map
+  (~103 MB steady-state RSS on a CDO-scale workspace) and the O(all-dep-decls)
+  `build_dep_indexes` decl pass (~150-200 ms of every cold start / rung-3
+  rebuild). LSP responses are byte-identical (both maps were built from the
+  same frozen `RoutineMeta` source).
 - `callHierarchy/incomingCalls` now groups call sites by caller in a single
   pass (previously O(refs²) re-filtering with a string-hashed edge lookup per
   caller×ref pair) — measured ~21.46 ms → ~4.02 ms on the 999-way fan-in
