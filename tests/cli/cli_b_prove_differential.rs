@@ -24,8 +24,7 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l5::prove::run_prove_pipeline;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 

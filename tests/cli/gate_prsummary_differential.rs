@@ -26,8 +26,7 @@ use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// How a golden's txn slot was produced on the al-sem side (mirrors the SARIF corpus).
 #[derive(Clone, Copy)]

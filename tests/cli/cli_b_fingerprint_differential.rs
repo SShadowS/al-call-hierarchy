@@ -44,8 +44,7 @@ use al_call_hierarchy::engine::l5::snapshot_full::{
     serialize_sharded,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 

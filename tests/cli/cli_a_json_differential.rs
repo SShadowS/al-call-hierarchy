@@ -24,8 +24,7 @@ use std::sync::Mutex;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const TEST_NAME: &str = "cli_a_json_differential";
 
@@ -309,6 +308,7 @@ fn diff_values(
 
 #[test]
 fn cli_a_json_byte_match() {
+    let _env = crate::env_guard();
     let all_csv = all_detector_csv();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
@@ -365,6 +365,7 @@ fn cli_a_json_byte_match() {
 /// payload.findings:[], and bySeverity:{}, byDetector:{}.
 #[test]
 fn zero_findings_fixture_has_empty_maps() {
+    let _env = crate::env_guard();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();
@@ -407,6 +408,7 @@ fn zero_findings_fixture_has_empty_maps() {
 /// Envelope fields for any fixture must match the pinned contract values.
 #[test]
 fn envelope_fields_are_correct() {
+    let _env = crate::env_guard();
     let fixture_dir = corpus_dir().join("ws-txn-d46-neg");
     assert!(
         fixture_dir.is_dir(),
@@ -540,6 +542,7 @@ fn run_json_path(ws: &Path, detector_csv: &str) -> String {
 /// the fix this assertion FAILS: the array was empty).
 #[test]
 fn fail_closed_multi_app_emits_discover_diagnostic() {
+    let _env = crate::env_guard();
     let ws = scratch_ws("multiapp");
     // Root app.json WITH a valid id (so the only fail-closed trigger is multi-app).
     std::fs::write(
@@ -596,6 +599,7 @@ fn fail_closed_multi_app_emits_discover_diagnostic() {
 /// also fails closed with a `DIAG-discover` error.
 #[test]
 fn fail_closed_idless_app_json_emits_discover_diagnostic() {
+    let _env = crate::env_guard();
     let ws = scratch_ws("idless");
     std::fs::write(
         ws.join("app.json"),
@@ -635,6 +639,7 @@ fn fail_closed_idless_app_json_emits_discover_diagnostic() {
 /// empty output, but the index diagnostic is preserved.)
 #[test]
 fn no_object_declaration_emits_index_diagnostic() {
+    let _env = crate::env_guard();
     let ws = scratch_ws("noobj");
     std::fs::write(
         ws.join("app.json"),

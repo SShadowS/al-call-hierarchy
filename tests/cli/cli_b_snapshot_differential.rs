@@ -42,8 +42,7 @@ use al_call_hierarchy::engine::l5::snapshot_full::{
     serialize_cbor_gz, serialize_envelope, serialize_json, serialize_sharded,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// al-sem `DEFAULT_DETECTORS` (34) by name — `analyzeWorkspace` runs this set, so
 /// the envelope's detector diagnostics (e.g. d43's substrate guard) must come from

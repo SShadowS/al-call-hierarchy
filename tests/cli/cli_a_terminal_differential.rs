@@ -25,8 +25,7 @@ use std::sync::Mutex;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const TEST_NAME: &str = "cli_a_terminal_differential";
 
@@ -221,6 +220,7 @@ fn text_diff(fixture: &str, slot: &str, golden: &str, rust: &str) -> String {
 
 #[test]
 fn cli_a_terminal_byte_match() {
+    let _env = crate::env_guard();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let mut divergences: Vec<String> = Vec::new();
 
@@ -320,6 +320,7 @@ fn cli_a_terminal_byte_match() {
 /// ws-txn-d46-neg (canonical 0-findings fixture) must emit the "No findings." line.
 #[test]
 fn zero_findings_fixture_shows_no_findings() {
+    let _env = crate::env_guard();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
@@ -336,6 +337,7 @@ fn zero_findings_fixture_shows_no_findings() {
 /// ws-rollup-multi-detector must contain "3 detectors agree:" in its plain golden.
 #[test]
 fn rollup_fixture_has_3_detectors_agree() {
+    let _env = crate::env_guard();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.
@@ -352,6 +354,7 @@ fn rollup_fixture_has_3_detectors_agree() {
 /// group-by output for ws-d1-multi-caller must contain "Grouped by detector".
 #[test]
 fn group_by_detector_contains_header() {
+    let _env = crate::env_guard();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let _guard = ENV_LOCK.lock().unwrap();
     // TODO: Audit that the environment access only happens in single-threaded code.

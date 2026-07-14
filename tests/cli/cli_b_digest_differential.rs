@@ -24,8 +24,7 @@ use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::l5::digest_cli::run_digest_pipeline;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 

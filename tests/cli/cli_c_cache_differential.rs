@@ -27,8 +27,7 @@ use al_call_hierarchy::engine::gate::cache_prune::{
     PruneCacheEntry, PruneStatus, classify_artifact_for_prune, format_prune_report, prune_cache,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 // ---------------------------------------------------------------------------
 // Helpers

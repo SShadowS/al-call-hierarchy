@@ -29,8 +29,7 @@ use al_call_hierarchy::engine::gate::events::{
     format_fanout_human, format_fanout_json, run_events_chains, run_events_fanout,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 use al_call_hierarchy::engine::l5::event_flow::Scope;
 
 // ---------------------------------------------------------------------------

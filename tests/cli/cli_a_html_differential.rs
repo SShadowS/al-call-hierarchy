@@ -30,8 +30,7 @@ use std::sync::Mutex;
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const TEST_NAME: &str = "cli_a_html_differential";
 
@@ -250,6 +249,7 @@ fn html_diff(fixture: &str, slot: &str, golden: &str, rust: &str) -> String {
 
 #[test]
 fn cli_a_html_byte_match() {
+    let _env = crate::env_guard();
     let all_csv = all_detector_csv();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
     let all_slot_set: std::collections::HashSet<&str> = ALL_SLOT_FIXTURES.iter().copied().collect();
@@ -329,6 +329,7 @@ fn cli_a_html_byte_match() {
 /// empty body and the app masthead from app.json.
 #[test]
 fn zero_findings_fixture_renders_correctly() {
+    let _env = crate::env_guard();
     let default_csv = detector_arg(DEFAULT_DETECTOR_NAMES);
 
     let _guard = ENV_LOCK.lock().unwrap();
@@ -352,6 +353,7 @@ fn zero_findings_fixture_renders_correctly() {
 /// bezier paths and column headers.
 #[test]
 fn event_graph_fixture_renders_svg() {
+    let _env = crate::env_guard();
     let fixture_dir = corpus_dir().join("ws-d8-commit-in-tx");
     assert!(
         fixture_dir.is_dir(),

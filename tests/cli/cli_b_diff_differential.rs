@@ -29,8 +29,7 @@ use al_call_hierarchy::engine::gate::diff::{
 };
 use al_call_hierarchy::engine::gate::snapshot_deserialize::{SnapshotFormat, deserialize_snapshot};
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const VERSION_OVERRIDE: &str = "cli-b-v1";
 

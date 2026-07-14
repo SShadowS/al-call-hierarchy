@@ -15,8 +15,7 @@
 use al_call_hierarchy::engine::l2::l2_workspace::project_workspace;
 use std::path::PathBuf;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

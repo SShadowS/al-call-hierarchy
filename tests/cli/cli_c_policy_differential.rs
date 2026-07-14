@@ -31,8 +31,7 @@ use al_call_hierarchy::engine::gate::policy::pipeline::{
     PolicyCheckOptions, PolicyExplainOptions, run_policy_check, run_policy_explain,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const ALSEM_VERSION: &str = "cli-c-v1";
 

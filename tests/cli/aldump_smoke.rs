@@ -12,8 +12,7 @@ use al_call_hierarchy::engine::snapshot::snapshot_workspace;
 use std::path::PathBuf;
 use std::process::Command;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

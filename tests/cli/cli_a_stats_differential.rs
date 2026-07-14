@@ -23,8 +23,7 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l5::detectors::registered_detectors;
 use al_call_hierarchy::engine::l5::registry::{run_detectors, serialize_detector_stats};
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const TEST_NAME: &str = "cli_a_stats_differential";
 

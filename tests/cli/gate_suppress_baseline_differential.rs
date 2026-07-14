@@ -30,8 +30,7 @@ use al_call_hierarchy::engine::gate::run::{
     AnalyzeArgs, OutputFormat, run_analyze, run_analyze_with_exit,
 };
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const PIN_VERSION: &str = "gate-sarif-v1";
 
