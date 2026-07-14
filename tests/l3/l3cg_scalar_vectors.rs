@@ -69,7 +69,7 @@ struct ExpectedRef {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r2b-vectors/l3cg-vectors.json");
+    let raw = include_str!("../r2b-vectors/l3cg-vectors.json");
     serde_json::from_str(raw).expect("l3cg-vectors.json parses into VectorsDoc")
 }
 

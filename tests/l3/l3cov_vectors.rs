@@ -151,7 +151,7 @@ fn resolution_from_wire(s: &str) -> Resolution {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r2d-vectors/l3cov-vectors.json");
+    let raw = include_str!("../r2d-vectors/l3cov-vectors.json");
     serde_json::from_str(raw).expect("l3cov-vectors.json parses into VectorsDoc")
 }
 

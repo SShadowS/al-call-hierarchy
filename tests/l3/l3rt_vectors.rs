@@ -90,7 +90,7 @@ struct ExpectedField {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r2a-vectors/l3rt-vectors.json");
+    let raw = include_str!("../r2a-vectors/l3rt-vectors.json");
     serde_json::from_str(raw).expect("l3rt-vectors.json parses into VectorsDoc")
 }
 

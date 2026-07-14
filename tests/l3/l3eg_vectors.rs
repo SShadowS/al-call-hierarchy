@@ -113,7 +113,7 @@ struct ExpectedGraph {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r2c-vectors/l3eg-vectors.json");
+    let raw = include_str!("../r2c-vectors/l3eg-vectors.json");
     serde_json::from_str(raw).expect("l3eg-vectors.json parses into VectorsDoc")
 }
 
