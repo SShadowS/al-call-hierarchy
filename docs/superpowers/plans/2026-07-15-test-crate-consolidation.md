@@ -24,8 +24,10 @@
 
 **R1 — count gate.** Before moving:
 ```powershell
-(cargo nextest list -E "binary(/<REGEX>/)" 2>$null | Select-String '^\s{4}\S').Count
+(cargo nextest list -E "binary(/<REGEX>/)" 2>$null | Measure-Object -Line).Lines
 ```
+(Piped `nextest list` output is flat `binary-name test-name` lines — one per test — so a
+line count IS the test count. The indented-tree form only appears on a TTY.)
 Record the number. After the move, re-run the SAME command — must be equal.
 
 **R2 — move.** `git mv tests/<file>.rs tests/<umbrella>/<file>.rs` for each member (create the directory first: `New-Item -ItemType Directory tests/<umbrella>`).
@@ -65,7 +67,7 @@ git commit -m "refactor(tests): consolidate <group> into tests/<umbrella>/ umbre
 - [ ] **Step 1:** `git checkout master; git checkout -b feat/test-crate-consolidation`
 - [ ] **Step 2:** Record the whole-suite baseline count and the link-time baseline:
 ```powershell
-cargo nextest list 2>$null | Select-String '^\s{4}\S' | Measure-Object | % Count   # expect ~2609; record EXACT number
+(cargo nextest list 2>$null | Measure-Object -Line).Lines   # recorded: 2602
 cargo test --no-run 2>$null | Out-Null                                             # warm
 (Get-Item src\lib.rs).LastWriteTime = Get-Date
 Measure-Command { cargo test --no-run 2>$null } | % TotalSeconds                    # record: touch-relink baseline (~36.7s)
