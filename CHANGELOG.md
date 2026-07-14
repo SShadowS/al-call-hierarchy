@@ -8,9 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Cold-start regression from the owned-DeclSurface arena drop DIAGNOSED and FIXED (docs/perf-regression-t3-vs-0.9.3.md §9): phase instrumentation attributed the +0.5s to the SYNCHRONOUS drop of the ~10,727 dependency parse arenas on the critical path (~500ms — the old pipeline retained them, never dropping at startup) plus back-to-back build+freeze_dep_tier of ~127k entries (~305ms). Fix: (1) drop the dependency arenas on a detached background thread off the critical path (~500ms -> ~50µs handoff); (2) fuse DeclSurface::build+freeze_dep_tier into single-pass DeclSurface::build_split (~305ms -> ~190ms). Same-session A/B: LSP cold start 3.44s -> 2.82s (-18%), restoring the pre-branch base (~2.78s); steady-state RSS unchanged (~750 MB). Zero goldens; parity suite green.
 - LSP steady state no longer retains dependency parse arenas: the updater keeps only the workspace ParsedUnit; the frozen dep DeclSurface tier, dep_decl_by_id and dep_texts are Arc-forwarded across rungs 1/2 and rebuilt only at rung 3.
 - Resolution decl lookups migrated from the borrowed BodyMap<'a> to the owned DeclSurface; BodyMap deleted. No behavioral change (goldens unchanged).
-- Measured impact of the owned-DeclSurface arena drop (docs/perf-regression-t3-vs-0.9.3.md §8): LSP steady-state RSS -54% (1,584 MB -> ~726 MB) on the DO.Support-SlowDOSetup Cloud workspace, at the cost of a +19% cold-start regression (2.87s -> 3.42s) from the eager RoutineMeta projection build; rung2_signature_edit bench -25% (~149.93ms -> ~113ms), rung1_body_edit flat after accounting for machine variance.
+- Measured impact of the owned-DeclSurface arena drop (docs/perf-regression-t3-vs-0.9.3.md §8): LSP steady-state RSS -54% (1,584 MB -> ~726 MB) on the DO.Support-SlowDOSetup Cloud workspace, at the cost of a +19% cold-start regression (2.87s -> 3.42s) initially hypothesized as the eager RoutineMeta projection build; rung2_signature_edit bench -25% (~149.93ms -> ~113ms), rung1_body_edit flat after accounting for machine variance. (The cold-start regression was later re-attributed to the synchronous dep-arena drop and FIXED — see §9 and the top Changed bullet.)
 
 ### Added
 - DeclSurface: owned two-tier routine-decl metadata surface (workspace tier +

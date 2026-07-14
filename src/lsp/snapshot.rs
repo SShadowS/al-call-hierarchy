@@ -274,7 +274,7 @@ impl LspSnapshot {
         let ProgramContext {
             snap,
             graph,
-            parsed,
+            mut parsed,
             primary_app_ref,
             ws_file_set,
             dep_layer,
@@ -305,16 +305,18 @@ impl LspSnapshot {
             let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
                 graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
             let index = ResolveIndex::build(&graph);
-            // Build the two-tier surface, then IMMEDIATELY freeze the
-            // dependency tier (T3 Task 12) — this is the very first build,
-            // so exercising the frozen two-tier lookup here (rather than
-            // only from rung 1/2 onward) proves the composed surface
-            // resolves identically to the old always-local `BodyMap`-style
-            // build for every consumer below (`recompute_file`/
-            // `emit_event_flow_edges`/`build_dep_indexes`).
-            let mut surface = DeclSurface::build(&graph, &parsed);
-            dep_meta = surface.freeze_dep_tier(primary_app_ref);
-            let surface = surface; // immutable from here
+            // Build the two-tier surface with the dependency tier already
+            // split out (T3 Task 12) — `build_split` fuses the old
+            // `DeclSurface::build` + `freeze_dep_tier` into one pass,
+            // avoiding a second drain-and-re-partition of every (~127k)
+            // entry. Exercising the composed two-tier lookup here (rather
+            // than only from rung 1/2 onward) proves it resolves identically
+            // to the old always-local `BodyMap`-style build for every
+            // consumer below (`recompute_file`/`emit_event_flow_edges`/
+            // `build_dep_indexes`).
+            let (surface, dep_meta_arc) =
+                DeclSurface::build_split(&graph, &parsed, primary_app_ref);
+            dep_meta = dep_meta_arc;
 
             if let Some(idx) = primary_unit_idx {
                 for pf in &parsed[idx].files {
@@ -360,8 +362,8 @@ impl LspSnapshot {
         // ── Sharing phase (perf safe-wins Task 2): `AlFile`/text are
         // `Arc`-shared, so the published snapshot CLONES the `Arc`s and
         // leaves `parsed`'s workspace entries intact for the extraction
-        // below — dependency `ParsedUnit`s are consumed and dropped a few
-        // lines down, inside `parsed.into_iter().find(...)`, once every
+        // below — dependency `ParsedUnit`s are handed to a background thread
+        // and dropped a few lines down (see the drop block), once every
         // consumer that needs them (the frozen dep-tier `DeclSurface`,
         // `dep_decl_by_id`, `dep_texts` — all derived above) has already
         // run.
@@ -404,19 +406,36 @@ impl LspSnapshot {
             workspace_root: Arc::new(crate::protocol::normalize_path(workspace_root)),
         };
 
-        // Extract ONLY the workspace `ParsedUnit` to return — every
-        // dependency `ParsedUnit` in `parsed` is dropped right here, at the
-        // end of `parsed.into_iter()` below (T3 Task 12): the frozen
-        // dep-tier `DeclSurface`/`dep_decl_by_id`/`dep_texts` above are the
-        // LAST consumers of dependency parse arenas for this build: this is
-        // the memory win's exact release point.
-        let workspace_unit = parsed
-            .into_iter()
-            .find(|u| u.app == snapshot.snap.workspace_app)
-            .unwrap_or_else(|| ParsedUnit {
+        // Extract ONLY the workspace `ParsedUnit` to return; hand the
+        // dependency `ParsedUnit`s (the ~1.5GB of parse arenas — tree-sitter
+        // trees + owned IR, uniquely owned by these units) to a detached
+        // background thread to DROP off the critical path (T3 Task 12
+        // follow-up). Every consumer of dependency parse arenas — the frozen
+        // dep-tier `DeclSurface`, `dep_decl_by_id`, `dep_texts` — has already
+        // run above, so nothing observes the deps after this point; the
+        // snapshot retains only `Arc::clone`s of WORKSPACE `pf.file`/`text`
+        // (plus dependency TEXT via `dep_texts`), never the dependency
+        // `AlFile` arenas. Dropping them synchronously here cost ~0.5s of
+        // cold-start wall time (measured); off-thread it costs the caller
+        // only the O(#apps) `swap_remove` scan below. If the process exits
+        // before the drop finishes, the OS reclaims the memory anyway; if
+        // the thread can't be spawned, the closure (and `parsed`) is dropped
+        // right here instead — a sound synchronous fallback.
+        let ws_pos = parsed
+            .iter()
+            .position(|u| u.app == snapshot.snap.workspace_app);
+        let workspace_unit = match ws_pos {
+            Some(i) => parsed.swap_remove(i),
+            None => ParsedUnit {
                 app: snapshot.snap.workspace_app.clone(),
                 files: vec![],
-            });
+            },
+        };
+        if !parsed.is_empty() {
+            let _ = std::thread::Builder::new()
+                .name("dep-arena-drop".into())
+                .spawn(move || drop(parsed));
+        }
         (snapshot, workspace_unit)
     }
 

@@ -637,3 +637,128 @@ regenerated). The CDO gate could not be re-run in this environment
 ~150-300 MB hypothesis is attributed to the resolved program graph /
 LSP query surface (not decomposed further without a heap profiler) —
 tracked as a follow-up, not a regression introduced by this task.
+
+  ---
+
+  ## 9. 2026-07-14 cold-start regression — DIAGNOSED + FIXED
+
+  §8's owned-DeclSurface landing traded ~0.5 s of cold start for the ~54 %
+  RSS win, and flagged the cause only as an unverified hypothesis ("eager
+  `RoutineMeta` projection build"). This section **instruments the actual
+  phases**, attributes the regression, fixes the root cause, and re-measures
+  — the regression is now **fully recovered** with the RSS win intact.
+
+  ### 9.1 Phase attribution (measured, deterministic)
+
+  A scratch harness called `LspSnapshot::build_full_with_parsed` on the §7/§8
+  workspace (`DO.Support-SlowDOSetup` Cloud, 551 ws files / 10,727 dep files /
+  ~126,640 dep routine decls) with `std::time::Instant` spans around every
+  phase of `build_context` + `from_context`. Stable medians (least-contended
+  of 4 fresh-process trials), **pre-fix** (branch HEAD `e86e276`):
+
+  | Phase | Cost | New in this branch? |
+  |---|---:|---|
+  | `parse_snapshot` | ~1.10 s | no (pre-existing) |
+  | `build_dep_layer` | ~225 ms | no |
+  | `assemble_program_graph` | ~280 ms | no |
+  | `ResolveIndex::build` (+obj map) | ~110 ms | no |
+  | **`DeclSurface::build`** | **~187 ms** | **YES** (owned projection) |
+  | **`freeze_dep_tier`** | **~118 ms** | **YES** (drain + re-partition of ~127k) |
+  | `recompute_file` loop | ~200-250 ms | no |
+  | `emit_event_flow_edges` | ~4 ms | no |
+  | `build_dep_indexes` | ~200 ms | mostly pre-existing |
+  | **dep `ParsedUnit` drop (SYNC, critical path)** | **~500 ms** | **YES — the dominant new cost** |
+
+  The hypothesis in §8.5 was only partly right. The single largest new cost
+  is **not** the projection build but the **synchronous drop of the ~10,727
+  dependency parse arenas** (~500 ms, measured 495-583 ms across trials) that
+  §8's landing performs on the critical path *before returning the first
+  snapshot*. The pre-`e86e276` pipeline **retained** those arenas for the
+  updater's lifetime, so it never paid this drop at startup at all — the drop
+  is a brand-new critical-path cost, and it alone ≈ the whole +0.5 s
+  regression. Secondary: the owned `DeclSurface::build` (~187 ms) followed by
+  `freeze_dep_tier` (~118 ms) re-partitions every one of ~127k entries a
+  second time, back-to-back.
+
+  ### 9.2 The fix (two changes, root-cause targeted)
+
+  1. **Drop the dependency parse arenas off the critical path.**
+     `from_context` now `swap_remove`s the one workspace `ParsedUnit` and
+     hands the remaining dependency units to a detached background thread
+     (`std::thread` named `dep-arena-drop`) that drops them, instead of
+     dropping them inline. Every consumer of dependency parse arenas (the
+     frozen dep-tier `DeclSurface`, `dep_decl_by_id`, `dep_texts`) has
+     already run, and the published snapshot retains only `Arc::clone`s of
+     *workspace* `AlFile`/text (plus dependency *text* via `dep_texts`) —
+     never the dependency `AlFile` arenas — so nothing observes the deps
+     after this point. If the thread can't spawn, the closure drops `parsed`
+     synchronously (sound fallback). The caller now pays only the O(#apps)
+     `swap_remove` scan (~50 µs, measured) instead of ~500 ms.
+
+  2. **Fuse `build` + `freeze_dep_tier` into `DeclSurface::build_split`.**
+     A single-pass partitioned builder routes each routine into the `local`
+     (primary-app) or frozen (dependency) tier as it is built, eliminating
+     the second drain-and-re-partition of ~127k entries. Semantics are
+     identical to `build` + `freeze_dep_tier` — proven by the new
+     `build_split_matches_build_then_freeze` unit test (asserts identical
+     local + frozen key sets and matching metas). Saves ~115 ms.
+
+  Post-fix, the same probe measures the dep-drop handoff at **~50 µs** (was
+  ~500 ms) and `build_split` at **~190 ms** (was ~305 ms for build+freeze).
+
+  ### 9.3 Cold-start re-measurement (same LSP-stdio methodology as §7/§8)
+
+  Same raw-stdio LSP client as §8.4 (initialize → didOpen one ws file →
+  `prepareCallHierarchy` at `OpenOutlookEMail`'s decl), but run as a
+  **same-session, alternating A/B** (pre-fix binary then post-fix binary, six
+  pairs back-to-back) to cancel this shared machine's ~±0.4 s session-to-
+  session drift. Pair 1 (disk/warmup) excluded; medians of pairs 2-6:
+
+  | Binary | Cold start → first `prepareCallHierarchy` | RSS @ first response | RSS @ +30 s |
+  |---|---:|---:|---:|
+  | **PRE-fix** (`e86e276`) | **3.44 s** (3.421/3.439/3.548/3.469/3.432) | ~653 MB | ~723 MB |
+  | **POST-fix** | **2.82 s** (2.863/2.810/2.786/2.870/2.819) | ~1,597 MB | ~750 MB |
+  | base `1765b7a` (pre-branch, ref) | 2.78 s (2.822/2.779/2.779/2.798) | ~1,586 MB | ~1,640 MB |
+
+  `items=1` (real `OpenOutlookEMail` `RoutineNodeId` resolved) on every
+  trial — no output-quality change.
+
+  **The +0.5 s regression is fully recovered: 3.44 s → 2.82 s (−18 %),
+  landing at the pre-branch base cold start (~2.78 s) within noise.** The
+  RSS win is intact — steady-state ~750 MB (vs. the base's ~1,640 MB, a
+  ~−54 % reduction; the small delta from §8.4's 726 MB is cross-session
+  variance, not a regression).
+
+  ### 9.4 The one honest tradeoff: transient peak RSS
+
+  Because the arena drop is now asynchronous, `RSS @ first response` is
+  **higher** post-fix (~1,597 MB vs. pre-fix's ~653 MB): for the ~0.5 s
+  between publishing the first snapshot and the background thread finishing,
+  both the (soon-to-be-dropped) dependency arenas AND the resolved query
+  surface are briefly resident. This transient peak lasts only until the
+  drop completes (well under a second), after which steady state settles to
+  ~750 MB exactly as before. This is a deliberate latency-for-transient-peak
+  trade: the user gets a usable editor ~0.6 s sooner, and the extra memory
+  is reclaimed before they finish reading the first response.
+
+  ### 9.5 Known residual (not fixed here — deliberately scoped out)
+
+  `dep_decl_by_id` (a ~126,640-entry `HashMap<RoutineNodeId, DeclEntry>`) is
+  **fully redundant** with `dep_meta` (the frozen `RoutineMeta` tier already
+  holds the same name/origin/name_origin/virtual_path keyed by the same id).
+  Eliminating it — serving dep decls from `dep_meta` in `decl_and_text` —
+  would recover a further ~150-200 ms of serial cold-start build AND remove
+  ~50-80 MB of redundant RSS. It was **not** done here because
+  `tests/lsp_incremental_parity.rs` pins `dep_decl_by_id`'s Arc-forwarding
+  across rungs in 31 assertions; migrating those to `dep_meta` is a distinct,
+  larger refactor whose risk to the permanent parity gate is not worth
+  bundling into a regression fix. Tracked as the highest-value follow-up.
+
+  ### 9.6 Validation
+
+  - `cargo test`: all green (full suite, incl. `lsp_incremental_parity`);
+    new `build_split_matches_build_then_freeze` unit test passes.
+  - `cargo clippy --all-targets --all-features`: clean.
+  - `cargo test --release --test perf_bounds`: 9/9 PASS.
+  - Zero goldens regenerated (behavior-preserving).
+
