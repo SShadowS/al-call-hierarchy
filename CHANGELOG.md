@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ~1061 s (sequential, Task-1 commit `f71b8d1`) → ~88.7 s (parallel, this commit) — ~12x.
   Verified byte-identical JSON output aside from the (expected, non-deterministic)
   `generatedAt` timestamp.
+- `compose_snapshot`'s capability-fact materialization parallelized per routine and its
+  canonical sort switched to `sort_by_cached_key` (key built once per fact instead of per
+  comparison; ~128k facts on CDO). Byte-identical (fc-verified). Full CDO
+  transaction-integrity preset: 24.88 s → 23.09 s.
 - The rung-1 bench + release perf gate now also measure the PRODUCTION
   scoped-context path (`Rung1Context` + `Updater::apply_batch_scoped`,
   extracted from `spawn_updater`'s hot loop so bench and server share one
