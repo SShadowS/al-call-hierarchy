@@ -36,8 +36,7 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::combined_graph::R3a1Projection;
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 /// Keys that must NEVER appear on either side of the R3a-1 comparison — later-gate
 /// (R3a-2/3/4) surfaces. Mirrors the al-sem manifest's `forbiddenKeys`.

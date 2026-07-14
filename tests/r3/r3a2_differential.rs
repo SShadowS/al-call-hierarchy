@@ -43,8 +43,7 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::summary::{R3a2Projection, project_r3a2};
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const R3A2_TEST_NAME: &str = "differential_r3a2_summary_core_match_goldens";
 

@@ -40,7 +40,7 @@ fn fixture_app_bytes() -> Vec<u8> {
 }
 
 fn load_vectors() -> Value {
-    let raw = include_str!("r3a4-vectors/r3a4-vectors.json");
+    let raw = include_str!("../r3a4-vectors/r3a4-vectors.json");
     serde_json::from_str(raw).expect("r3a4-vectors.json parses")
 }
 

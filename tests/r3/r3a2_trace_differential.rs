@@ -26,8 +26,7 @@ use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_
 use al_call_hierarchy::engine::l4::summary::{R3a2Trace, project_r3a2_with_trace};
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const R3A2_TRACE_TEST_NAME: &str = "differential_r3a2_trace_match_goldens";
 

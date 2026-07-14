@@ -29,8 +29,7 @@
 
 use std::path::PathBuf;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 use al_call_hierarchy::engine::l4::capability_cone::{
     R3a5FullSummaryProjection, project_r3a5_cross_app,

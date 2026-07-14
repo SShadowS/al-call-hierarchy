@@ -42,8 +42,7 @@ use al_call_hierarchy::engine::l4::capability_cone::{
 };
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const R3A3_TEST_NAME: &str = "differential_r3a3_cone_coverage_match_goldens";
 

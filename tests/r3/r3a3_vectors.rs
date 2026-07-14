@@ -38,7 +38,7 @@ struct PipelineExpected {
 }
 
 fn load_vectors() -> VectorsDoc {
-    let raw = include_str!("r3a3-vectors/r3a3-vectors.json");
+    let raw = include_str!("../r3a3-vectors/r3a3-vectors.json");
     serde_json::from_str(raw).expect("r3a3-vectors.json parses into VectorsDoc")
 }
 

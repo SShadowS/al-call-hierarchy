@@ -31,8 +31,7 @@ use al_call_hierarchy::engine::deps::r3a4_projection::{
 };
 use serde_json::Value;
 
-#[path = "common/regen.rs"]
-mod regen;
+use crate::regen;
 
 const R3A4_TEST_NAME: &str = "differential_r3a4_dep_hooks_match_goldens";
 const FIXTURE: &str = "cross-app-dep-hooks";
