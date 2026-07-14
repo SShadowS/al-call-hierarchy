@@ -38,8 +38,9 @@ use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 
 use crate::lsp::encoding::{LineTable, PositionEncoding};
-use crate::lsp::snapshot::{DeclEntry, LspSnapshot};
+use crate::lsp::snapshot::{DeclView, LspSnapshot};
 use crate::program::resolve::edge::{AbiRoutineKey, EdgeKind, Route, RouteTarget};
+use crate::program::resolve::full::ClassifiedEdge;
 use crate::program::{AppRef, ObjectNodeId, ProgramGraph, RoutineNodeId};
 use crate::protocol::{path_to_uri, uri_to_path};
 
@@ -102,7 +103,8 @@ pub fn prepare(
     let byte_col = table.col_in(line, character, enc);
 
     let decl = snap.decl_at(&virtual_path, line, byte_col)?;
-    let item = build_item(snap, enc, decl, &table, decl_uri(snap, decl), None);
+    let view = DeclView::from_entry(decl);
+    let item = build_item(snap, enc, view, &table, decl_uri(snap, view), None);
     Some(vec![item])
 }
 
@@ -161,18 +163,26 @@ pub fn incoming(
         return Vec::new();
     };
 
-    let mut has_event_flow: HashMap<RoutineNodeId, bool> = HashMap::new();
+    // One pass: resolve every EdgeRef exactly once, grouping by caller.
+    // (Previously this re-filtered ALL refs per distinct caller — O(refs²)
+    // with a string-hashed map lookup per pair; see the 2026-07-14
+    // improvement-hunt F1 finding.)
+    let mut groups: HashMap<RoutineNodeId, (bool, Vec<&ClassifiedEdge>)> = HashMap::new();
     for r in refs {
         let ce = snap.edge(r);
-        let caller_id = ce.edge.from.clone();
-        *has_event_flow.entry(caller_id).or_insert(false) |= ce.edge.kind == EdgeKind::EventFlow;
+        let entry = groups
+            .entry(ce.edge.from.clone())
+            .or_insert_with(|| (false, Vec::new()));
+        entry.0 |= ce.edge.kind == EdgeKind::EventFlow;
+        entry.1.push(ce);
     }
 
-    let mut callers: Vec<RoutineNodeId> = has_event_flow.keys().cloned().collect();
+    let mut callers: Vec<RoutineNodeId> = groups.keys().cloned().collect();
     callers.sort();
 
     let mut out = Vec::new();
     for caller_id in callers {
+        let (has_event_flow, edges) = &groups[&caller_id];
         let Some((decl, text)) = snap.decl_and_text(&caller_id) else {
             // The caller's own decl vanished from the current snapshot —
             // fail closed by dropping this group rather than guessing at a
@@ -182,13 +192,12 @@ pub fn incoming(
         let table = LineTable::new(text);
 
         let mut from_ranges: Vec<Range> = Vec::new();
-        for r in refs.iter().filter(|r| snap.edge(r).edge.from == caller_id) {
-            let ce = snap.edge(r);
+        for ce in edges {
             let range = if ce.edge.kind == EdgeKind::EventFlow {
                 // Rule 2: an EventFlow edge's own site span is stale-prone;
                 // re-derive from the PUBLISHER's (== this caller's) fresh
                 // name_origin instead.
-                origin_to_range(&decl.name_origin, &table, enc)
+                origin_to_range(decl.name_origin, &table, enc)
             } else {
                 canonical_span_to_range(&ce.edge.site.span, &table, enc)
             };
@@ -197,11 +206,7 @@ pub fn incoming(
         from_ranges.sort_by_key(range_sort_key);
         from_ranges.dedup();
 
-        let tag = has_event_flow
-            .get(&caller_id)
-            .copied()
-            .unwrap_or(false)
-            .then_some("[EventPublisher]");
+        let tag = (*has_event_flow).then_some("[EventPublisher]");
         let item = build_item(snap, enc, decl, &table, decl_uri(snap, decl), tag);
 
         out.push(CallHierarchyIncomingCall {
@@ -306,8 +311,8 @@ fn push_route_items(
                 // Structurally shouldn't happen (a `Routine(id)` route is
                 // only ever constructed when the SAME body_map lookup this
                 // snapshot's decl indexes were built from just succeeded —
-                // see `dep_decl_by_id`'s doc) — fail closed by skipping
-                // rather than guessing.
+                // see `LspSnapshot::dep_meta`'s doc) — fail closed by
+                // skipping rather than guessing.
                 None => continue,
             },
             RouteTarget::AbiSymbol { key } => abi_symbol_item(snap, key),
@@ -370,7 +375,7 @@ fn abi_symbol_item(snap: &LspSnapshot, key: &AbiRoutineKey) -> CallHierarchyItem
 fn build_item(
     snap: &LspSnapshot,
     enc: PositionEncoding,
-    decl: &DeclEntry,
+    decl: DeclView<'_>,
     table: &LineTable<'_>,
     uri: Uri,
     tag: Option<&str>,
@@ -383,13 +388,13 @@ fn build_item(
     }
 
     CallHierarchyItem {
-        name: decl.name.clone(),
-        kind: symbol_kind_for(snap, &decl.id),
+        name: decl.name.to_string(),
+        kind: symbol_kind_for(snap, decl.id),
         tags: None,
         detail: Some(detail),
         uri,
-        range: origin_to_range(&decl.origin, table, enc),
-        selection_range: origin_to_range(&decl.name_origin, table, enc),
+        range: origin_to_range(decl.origin, table, enc),
+        selection_range: origin_to_range(decl.name_origin, table, enc),
         data: Some(
             serde_json::to_value(ItemData {
                 node: decl.id.clone(),
@@ -406,11 +411,11 @@ fn build_item(
 /// decl (no real on-disk `.al` file exists for embedded-source dependency
 /// text — see `src/snapshot/embedded.rs`'s doc: it is extracted straight
 /// from the `.app` zip into memory, never materialized to disk).
-fn decl_uri(snap: &LspSnapshot, decl: &DeclEntry) -> Uri {
+fn decl_uri(snap: &LspSnapshot, decl: DeclView<'_>) -> Uri {
     if is_dep_app(snap, decl.id.object.app) {
-        dep_source_uri(snap, decl.id.object.app, &decl.virtual_path)
+        dep_source_uri(snap, decl.id.object.app, decl.virtual_path)
     } else {
-        path_to_uri(&snap.workspace_root.join(&decl.virtual_path))
+        path_to_uri(&snap.workspace_root.join(decl.virtual_path))
     }
 }
 
@@ -577,6 +582,7 @@ fn range_sort_key(r: &Range) -> (u32, u32, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lsp::snapshot::DeclEntry;
     use crate::lsp::updater::{ChangeEvent, Rung, Updater};
 
     /// The fixture workspace exercised by every test in this module: a

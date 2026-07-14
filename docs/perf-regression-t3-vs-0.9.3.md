@@ -762,3 +762,114 @@ tracked as a follow-up, not a regression introduced by this task.
   - `cargo test --release --test perf_bounds`: 9/9 PASS.
   - Zero goldens regenerated (behavior-preserving).
 
+  ## 10. 2026-07-14 close-out: Tier-1 quick wins (`feat/tier1-perf-quick-wins`) — MEASURED
+
+  Three review-verified Tier-1 items from
+  `.superpowers/sdd/investigation-synthesis-2026-07-14.md` landed on top of
+  §9's post-fix baseline:
+
+  1. **`5391e44`** — single-pass caller grouping in `incomingCalls`
+     (O(refs²) → O(refs), F1). Synthetic bench (999-way fan-in):
+     **21.46 ms → 4.02 ms** median (−81%). Output byte-identical
+     (`incoming` unit tests + `lsp_incremental_parity` green).
+  2. **`5408e5f`** — deleted the redundant `dep_decl_by_id` map
+     (~126,640-entry `HashMap<RoutineNodeId, DeclEntry>`), serving
+     dependency decl lookups from the existing `dep_meta` frozen tier via a
+     new borrowed `DeclView<'_>`. This is the change expected to move real-
+     workspace RSS and cold start (§9.5's tracked follow-up).
+  3. **`2f8c150`** — extracted `spawn_updater`'s hot-loop context
+     construction into a public `Rung1Context`, used by both production and
+     a new `apply_batch_scoped` bench/gate, closing the rung-1 measurement
+     blind spot (F6). Production-path (scoped) bench median: **12.86 ms**
+     (vs. the pre-existing worst-case `apply_batch` bench's 34.41 ms/38.76 ms
+     medians on the same corpus) — new gate `RUNG1_SCOPED_SYNTHETIC_BOUND =
+     65ms` (5x measured).
+
+  ### 10.1 Real-workspace measurement (methodology: §4/§8.4/§9.3, unchanged)
+
+  Same workspace (`U:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, 551
+  ws files / 10,727 dep files / ~126,640 dep routine decls), same raw-stdio
+  LSP client shape (initialize with percent-encoded `rootUri` → `initialized`
+  → `didOpen` one workspace file → `prepareCallHierarchy` at
+  `OpenOutlookEMail`'s declaration, line 12 char 14 zero-based — the prior
+  arc's report cited 1-based "line 12 char 20"; both address the same
+  token), skipping `publishDiagnostics` notifications while matching by
+  request id. RSS sampled via `psutil` at first response and at +10/+20/+30s.
+  5 fresh-process trials on this run; unlike §8.4/§9.3 no trial paid a
+  disk-cold penalty this time (OS file cache was already warm from the
+  build+earlier trial runs in the same session), so all 5 are reported
+  (median of 5, no exclusion needed):
+
+  | Trial | Cold start → first response | RSS @ first response (transient peak) | RSS @ +30s (steady state) |
+  |---|---:|---:|---:|
+  | 1 | 2.785 s | 1,486.6 MB | 629.7 MB |
+  | 2 | 2.824 s | 1,485.7 MB | 627.8 MB |
+  | 3 | 2.754 s | 1,487.1 MB | 653.6 MB |
+  | 4 | 2.791 s | 1,480.4 MB | 624.8 MB |
+  | 5 | 2.803 s | 1,485.4 MB | 655.8 MB |
+  | **Median** | **2.791 s** | **1,485.7 MB** | **629.7 MB** |
+
+  Every trial's `prepareCallHierarchy` response resolved the same real
+  symbol (`OpenOutlookEMail`/`CDO Document E-Mail Management.al`, full
+  `RoutineNodeId` payload) — no output-quality regression.
+
+  ### 10.2 Before/after vs. §9's post-fix baseline
+
+  | Metric | BEFORE (§9.3 POST-fix, `e86e276`) | AFTER (this arc, `2f8c150`) | Delta |
+  |---|---:|---:|---:|
+  | Cold start → first usable `prepareCallHierarchy` | 2.82 s | **2.79 s** | ~unchanged (within session noise) |
+  | RSS transient peak (@ first response) | ~1,597 MB | **~1,486 MB** | **−111 MB (−7%)** |
+  | RSS steady state (+30 s) | ~750 MB | **~630 MB** | **−120 MB (−16%)** |
+  | `incomingCalls` bench (999-way fan-in, synthetic) | 21.46 ms | **4.02 ms** | **−81%** |
+  | Rung-1 production path (scoped context) bench | *(no gate existed — F6 blind spot)* | **12.86 ms** | new gate: `RUNG1_SCOPED_SYNTHETIC_BOUND = 65ms` |
+
+  **RSS dropped materially, as expected**: −120 MB steady-state (−16%),
+  −111 MB transient-peak. This is somewhat below the plan's ~102.8 MB net
+  heap prediction taken at face value, but comfortably in the same
+  direction and same order of magnitude — the plan itself flagged that
+  allocator slack means RSS moves less cleanly than heap-attribution
+  arithmetic (§9.4's transient-peak discussion makes the same point about
+  RSS vs. logical retained-bytes not tracking 1:1). No investigation
+  trigger: the brief's stop condition was "RSS does NOT drop materially" —
+  a clean ~16% steady-state reduction, present consistently across all 5
+  trials (624.8–655.8 MB, a tight band with no outlier suggesting a missed
+  effect), is a materially real drop.
+
+  **Cold start is unchanged, as expected**: `build_dep_indexes` →
+  `build_dep_texts` (Task 2's rename/simplification, deleting the O(127k)
+  decl-copy loop) does strictly less work than before, but that loop's
+  absolute cost was always small relative to the ~2.8 s total (parse +
+  resolve dominate); the plan's own "expected: cold start down ~150-200 ms"
+  hypothesis (task-1-brief §Goal) did not materialize as a *measurable*
+  session-level delta — 2.79 s vs. 2.82 s is within this same-machine
+  session's own noise band (§9.3's own A/B pairs varied ±0.1 s run to run).
+  This is not a concern: cold start was never regressed, and the ~120 MB
+  RSS win (the item's primary goal) landed cleanly.
+
+  ### 10.3 Net assessment
+
+  All three Tier-1 items are implemented, validated (full `cargo test`,
+  `cargo clippy --all-targets --all-features` clean at every commit,
+  `lsp_incremental_parity` green, zero goldens regenerated — see each
+  task's own commit), and deliver their intended direction: `incomingCalls`
+  is ~5x faster on high fan-in (F1, closes the biggest single-handler
+  latency finding from the 2026-07-14 investigation), real-workspace
+  steady-state RSS drops a further ~16% (~120 MB) on top of §9's ~54%
+  reduction, and the rung-1 measurement blind spot (F6) is closed with a
+  production-path-accurate gate. Cold start is unaffected (neither
+  regressed nor measurably improved at the session-noise level).
+
+  **CDO gate note**: as in §8.3/§9, `CDO_WS` was not exercised for this
+  measurement pass (this environment has the real workspace path available
+  for ad hoc RSS/cold-start measurement, but the gate's own
+  `scripts/cdo-gate` invocation — `program_resolve_harness` +
+  `program_graph`/`snapshot_robustness` under `ENFORCE_CDO_WS=1` — was not
+  run as part of this docs-only task). Per the plan's post-plan note, this
+  is expected to run once before any merge to `master`, not as part of
+  Task 4.
+
+  **Remaining backlog**: Tier-2/Tier-3 items from the same investigation
+  synthesis are tracked in
+  `.superpowers/sdd/investigation-synthesis-2026-07-14.md` and are out of
+  scope for this arc.
+

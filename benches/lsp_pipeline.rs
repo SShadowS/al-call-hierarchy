@@ -31,7 +31,7 @@ use al_call_hierarchy::lsp::diagnostics::compute_all;
 use al_call_hierarchy::lsp::encoding::PositionEncoding;
 use al_call_hierarchy::lsp::handlers::{self, ItemData};
 use al_call_hierarchy::lsp::snapshot::LspSnapshot;
-use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Updater};
+use al_call_hierarchy::lsp::updater::{ChangeEvent, Rung, Rung1Context, Updater};
 use al_call_hierarchy::protocol::path_to_uri;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
@@ -214,6 +214,37 @@ fn bench_rung1_body_edit(c: &mut Criterion) {
     });
 }
 
+/// The PRODUCTION rung-1 path: context built once (like `spawn_updater`'s
+/// scoped-context loop), then reused across every iteration — measures what
+/// a user's keystroke-save actually costs, unlike `rung1_body_edit_1000_files`
+/// (kept as the worst-case: context rebuilt per call). See the 2026-07-14
+/// improvement-hunt F6 finding.
+fn bench_rung1_body_edit_scoped(c: &mut Criterion) {
+    let dir = corpus_dir(1000);
+    let (base, parsed) =
+        LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+    let target = dir.path().join(perf_support::file_name(1));
+    perf_support::body_only_comment_edit(dir.path(), 1000, 1);
+    let batch = vec![ChangeEvent::FileSaved(target)];
+
+    let ctx = Rung1Context::build(&base, updater.workspace());
+    let warm = updater
+        .apply_batch_scoped(&base, &batch, &ctx)
+        .expect("a comment-only body edit must stay rung 1");
+    let mut cur = warm;
+
+    c.bench_function("rung1_body_edit_scoped_1000_files", |b| {
+        b.iter(|| {
+            let next = updater
+                .apply_batch_scoped(&cur, black_box(&batch), &ctx)
+                .expect("must stay rung 1");
+            cur = next;
+            black_box(&cur);
+        });
+    });
+}
+
 /// The incremental updater's rung-2 (definition-surface-change) path against
 /// a 1000-file snapshot (T3 Task 9 Step-3b CDO re-measurement: ~1.464s;
 /// REPLACES Task 3's superseded ~1.9s algebraic upper-bound estimate — see
@@ -269,6 +300,7 @@ criterion_group!(
     bench_queries,
     bench_compute_all,
     bench_rung1_body_edit,
+    bench_rung1_body_edit_scoped,
     bench_rung2_signature_edit
 );
 criterion_main!(benches);
