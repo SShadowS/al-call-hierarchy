@@ -32,6 +32,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- **Tier-2 latency wave close-out** (docs `docs/perf-regression-t3-vs-0.9.3.md`
+  §13): final independent median-of-5 CDO measurement pass confirms the
+  per-task numbers below hold together as a whole — rung-1 save end-to-end
+  (apply + diagnostics) ≈5.37 ms, rung-2 641.7 ms (unaffected by this wave,
+  within noise of the arc-start baseline), cold start 3.069 s, `aldump`
+  wall time 3.511 s, steady-state peak RSS ~1,584 MB (unchanged — this wave
+  landed zero RSS movement, see below). North-star SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` held
+  byte-identical across all 5 trials. Item A (dep-node RSS, ~49 MB) is
+  **deferred** under both of its known designs: the investigation's original
+  three-segment-façade variant (too invasive to the north-star resolver
+  core) and Task 4's drop-and-rebuild variant (measured ~1.49 s added to
+  rung-2, ~4× the brief's own regression ceiling — see Task 4's report,
+  no code committed). Item C (`RoutineNodeId` interning) confirmed NO-GO
+  standalone (18.7 MB measured, not the originally-claimed 40-80 MB). Tier-2
+  is re-labelled the **incremental-latency wave** (Tasks 1-3); the RSS work
+  (item A) is carried forward as its own future arc — see docs §13.5 for the
+  two candidate future routes (widening the frozen `DeclSurface` tier, or an
+  M4 disk-cached dep layer).
 - The three serial per-file resolve loops (`resolve_full_program_from_parts`'s
   Phase-1 loop in `src/program/resolve/full.rs` — the `aldump`
   north-star/cold-start path; `LspSnapshot::from_context`'s per-file loop in
