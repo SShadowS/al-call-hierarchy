@@ -873,3 +873,33 @@ tracked as a follow-up, not a regression introduced by this task.
   `.superpowers/sdd/investigation-synthesis-2026-07-14.md` and are out of
   scope for this arc.
 
+## 11. alsem `analyze` hang fix + digest parallelization (2026-07-14)
+
+Investigation: `.superpowers/sdd/alsem-parallel/investigation.md`. Root cause of the
+"never completes" hang: `compute_ordering_facts` (43.6 s for 120/635 roots on CDO;
+witness reconstruction is ~O(cone²) on top-of-graph Page roots) ran EAGERLY in
+`build_detector_context` although only opt-in d47/d49/d51 read it — pure dead work for
+the default detector set.
+
+| Command (CDO) | Before | After |
+|---|---:|---:|
+| `analyze --format json` (default set) | DNF (>10 min) | 7.31 s |
+| `analyze --preset transaction-integrity` | 1061 s | 88.44 s |
+
+Fixes: (1) lazy `OnceLock` ordering facts (al-sem parity semantics restored); (2) rayon
+`par_iter` over `digest_query` roots (byte-identical: final sort by routineId).
+
+Both medians are of 3 fresh-process runs at the branch tip (`9142e11`); raw runs in
+`.superpowers/sdd/alsem-parallel/close-out.md`. Output byte size was identical across
+all 3 runs of each command; Task 2's report already established full payload
+byte-identity (modulo the documented non-deterministic `generatedAt` timestamp) between
+the sequential and parallel `digest_query` implementations.
+
+Residual backlog (measured, deliberately deferred):
+- `reconstruct_witness_paths` redundancy: per-(root,fact) BFS with no sharing across a
+  root's facts or overlapping cones — the algorithmic cut if transaction-integrity is
+  still too slow (share the reverse-BFS `valid_nodes` set, digest.rs:940).
+- `compose_snapshot` 2.6–12 s one-time on the ordering path (parallelizable per-routine).
+- `d1-db-op-in-loop` 3.37 s — the largest remaining default-set cost.
+- Per-detector fan-out in `run_each` (~1.5–2× on 3.9 s; bounded by d1) — low priority.
+
