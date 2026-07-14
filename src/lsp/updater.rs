@@ -349,6 +349,20 @@ impl Updater {
         }
     }
 
+    /// Build a [`Rung1Context`] against `cur`'s graph and this updater's
+    /// current `workspace` unit — the same construction `spawn_updater`'s
+    /// hot loop performs once per outer-loop iteration (see that function's
+    /// own doc). Exposed so a caller outside this module (e.g. the Task 2
+    /// differential test in `src/lsp/diagnostics.rs`, which needs a real
+    /// [`Rung1Delta`] to test `compute_for_files`/`rung1_cover` against)
+    /// can drive [`Self::apply_batch_scoped`] without duplicating
+    /// `spawn_updater`'s private wiring or reaching into `self.workspace`
+    /// directly (a private field).
+    #[must_use]
+    pub fn rung1_context<'g>(&self, cur: &'g LspSnapshot) -> Rung1Context<'g> {
+        Rung1Context::build(cur, &self.workspace)
+    }
+
     /// Classify one batch against `cur` (the currently-published snapshot),
     /// per file/event, escalating per the module doc's rung summary.
     /// Read-only (`&self`) — never mutates `self`, so it composes freely
@@ -684,6 +698,26 @@ pub struct Rung1Delta {
     pub files: Vec<String>,
     /// Every `RoutineNodeId` whose `incoming` entry changed, sorted.
     pub affected_ids: Vec<RoutineNodeId>,
+}
+
+/// The scope of one [`spawn_updater`] `on_swap` call (Tier-2 latency wave,
+/// Task 2 / item D) — tells the diagnostics recompute whether it can trust
+/// a rung-1 [`Rung1Delta`]-scoped cover, or must fall back to
+/// `compute_all`'s full workspace scan.
+///
+/// A rung-2/3 swap rebuilds `graph`/`decl_by_id`/`incoming` wholesale (see
+/// `src/lsp/snapshot.rs`'s H-10 doc), so there is no cheap per-file delta to
+/// hand the diagnostics recompute — `Full` is the only sound scope for
+/// those rungs. Only rung 1 (a body-only edit patching `decl_by_id`/
+/// `incoming` in place — Task 1) produces a [`Rung1Delta`] precise enough to
+/// scope the recompute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SwapScope {
+    /// Rung 2/3 (or any future non-rung-1 swap): recompute every file.
+    Full,
+    /// Rung 1: recompute only `crate::lsp::diagnostics::rung1_cover`'s
+    /// cover set for this delta.
+    Rung1(Rung1Delta),
 }
 
 /// Rung-1 CORE — see the module doc's "why a `pending` overlay" section.
@@ -1094,7 +1128,7 @@ pub fn spawn_updater(
     rx: Receiver<ChangeEvent>,
     workspace_root: PathBuf,
     initial_workspace: ParsedUnit,
-    on_swap: impl Fn(&LspSnapshot, &LspSnapshot) + Send + 'static,
+    on_swap: impl Fn(&LspSnapshot, &SwapScope) + Send + 'static,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut updater = Updater::new(workspace_root, initial_workspace);
@@ -1120,7 +1154,7 @@ pub fn spawn_updater(
                     match updater.classify(&inner_cur, &batch) {
                         Decision::Noop => {}
                         Decision::Rung1(saves) => {
-                            let (new_snapshot, _delta) = apply_rung1_core(
+                            let (new_snapshot, delta) = apply_rung1_core(
                                 &inner_cur,
                                 saves,
                                 &ctx.index,
@@ -1131,7 +1165,7 @@ pub fn spawn_updater(
                             );
                             let new_arc = Arc::new(new_snapshot);
                             shared.swap(Arc::clone(&new_arc));
-                            on_swap(&inner_cur, &new_arc);
+                            on_swap(&new_arc, &SwapScope::Rung1(delta));
                             inner_cur = new_arc;
                         }
                         decision @ (Decision::Rung2(_) | Decision::Rung3) => break decision,
@@ -1146,14 +1180,14 @@ pub fn spawn_updater(
                     let new_snapshot = updater.apply_rung2(&cur, planned);
                     let new_arc = Arc::new(new_snapshot);
                     shared.swap(Arc::clone(&new_arc));
-                    on_swap(&cur, &new_arc);
+                    on_swap(&new_arc, &SwapScope::Full);
                     cur = new_arc;
                 }
                 Decision::Rung3 => {
                     if let Some((new_snapshot, _)) = updater.apply_rung3(&cur) {
                         let new_arc = Arc::new(new_snapshot);
                         shared.swap(Arc::clone(&new_arc));
-                        on_swap(&cur, &new_arc);
+                        on_swap(&new_arc, &SwapScope::Full);
                         cur = new_arc;
                     }
                 }
@@ -1936,7 +1970,7 @@ mod tests {
             rx,
             dir.path().to_path_buf(),
             parsed,
-            move |_old, _new| {
+            move |_new, _scope| {
                 counter2.fetch_add(1, Ordering::SeqCst);
             },
         );
@@ -1981,23 +2015,48 @@ mod tests {
         // Classify each swap's rung from Arc identity alone (no test-only
         // hook needed): rung 1 keeps `graph` Arc-identical; rung 2 rebuilds
         // `graph` but keeps `dep_layer` Arc-identical; rung 3 rebuilds both.
+        // `on_swap`'s `SwapScope` (Task 2) only distinguishes rung 1 from
+        // "everything else" (`Full` covers both rung 2 and rung 3 — see
+        // that enum's own doc), so this test tracks the previous swap's
+        // `graph`/`dep_layer` Arcs itself to keep its original finer-grained
+        // rung classification, AND cross-checks it against `SwapScope`.
         let events: Arc<Mutex<Vec<(u64, Rung)>>> = Arc::new(Mutex::new(Vec::new()));
         let events2 = Arc::clone(&events);
+        let prev = Arc::new(Mutex::new((
+            Arc::clone(&shared.get().graph),
+            Arc::clone(&shared.get().dep_layer),
+        )));
+        let prev2 = Arc::clone(&prev);
 
         let handle = spawn_updater(
             Arc::clone(&shared),
             rx,
             dir.path().to_path_buf(),
             parsed,
-            move |old, new| {
-                let rung = if !Arc::ptr_eq(&old.dep_layer, &new.dep_layer) {
+            move |new, scope| {
+                let mut prev_guard = prev2.lock().unwrap();
+                let (old_graph, old_dep_layer) = &*prev_guard;
+                let rung = if !Arc::ptr_eq(old_dep_layer, &new.dep_layer) {
                     Rung::Three
-                } else if !Arc::ptr_eq(&old.graph, &new.graph) {
+                } else if !Arc::ptr_eq(old_graph, &new.graph) {
                     Rung::Two
                 } else {
                     Rung::One
                 };
+                match scope {
+                    SwapScope::Rung1(_) => assert_eq!(
+                        rung,
+                        Rung::One,
+                        "SwapScope::Rung1 must correspond to an Arc-identical graph/dep_layer swap"
+                    ),
+                    SwapScope::Full => assert_ne!(
+                        rung,
+                        Rung::One,
+                        "SwapScope::Full must correspond to a rung-2/3 (graph or dep_layer) swap"
+                    ),
+                }
                 events2.lock().unwrap().push((new.generation, rung));
+                *prev_guard = (Arc::clone(&new.graph), Arc::clone(&new.dep_layer));
             },
         );
 

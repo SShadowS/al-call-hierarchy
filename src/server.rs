@@ -44,9 +44,9 @@ use log::{debug, info, warn};
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
     CallHierarchyIncomingCallsParams, CallHierarchyItem, CallHierarchyOutgoingCallsParams,
-    CallHierarchyPrepareParams, CodeLensOptions, CodeLensParams, DidSaveTextDocumentParams,
-    InitializeParams, InitializeResult, PositionEncodingKind, PublishDiagnosticsParams,
-    ServerCapabilities, Uri,
+    CallHierarchyPrepareParams, CodeLensOptions, CodeLensParams, Diagnostic,
+    DidSaveTextDocumentParams, InitializeParams, InitializeResult, PositionEncodingKind,
+    PublishDiagnosticsParams, ServerCapabilities, Uri,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -61,12 +61,12 @@ use crate::lsp::custom::{
     SymbolPropertiesParams, action_properties, dependency_document_symbol,
     event_publishers_in_file, event_reference_at_position, field_properties,
 };
-use crate::lsp::diagnostics::{DiagnosticsState, compute_all};
+use crate::lsp::diagnostics::{DiagnosticsState, compute_all, compute_for_files, rung1_cover};
 use crate::lsp::encoding::{PositionEncoding, negotiate};
 use crate::lsp::handlers::{ItemData, incoming, outgoing, prepare};
 use crate::lsp::lens::code_lenses;
 use crate::lsp::snapshot::LspSnapshot;
-use crate::lsp::updater::{ChangeEvent, SharedSnapshot, spawn_updater};
+use crate::lsp::updater::{ChangeEvent, Rung1Delta, SharedSnapshot, SwapScope, spawn_updater};
 use crate::protocol::uri_to_path;
 use crate::watcher::{AlFileWatcher, FileChange};
 
@@ -369,7 +369,7 @@ fn build_server_state(
     let diag_state = Arc::new(Mutex::new(DiagnosticsState::new()));
     {
         let sender = connection.sender.clone();
-        publish_diagnostics_diff(
+        publish_full_diagnostics_diff(
             move |m| {
                 if let Err(e) = sender.send(m) {
                     warn!("Failed to publish initial diagnostics: {}", e);
@@ -391,19 +391,28 @@ fn build_server_state(
         rx,
         workspace_root.to_path_buf(),
         workspace,
-        move |_old, new| {
+        move |new, scope| {
             let sender = sender_bg.clone();
-            publish_diagnostics_diff(
-                move |m| {
-                    if let Err(e) = sender.send(m) {
-                        warn!("Failed to publish diagnostics: {}", e);
-                    }
-                },
-                &diag_state_bg,
-                new,
-                encoding,
-                &config_bg,
-            );
+            let send = move |m| {
+                if let Err(e) = sender.send(m) {
+                    warn!("Failed to publish diagnostics: {}", e);
+                }
+            };
+            match scope {
+                SwapScope::Full => {
+                    publish_full_diagnostics_diff(send, &diag_state_bg, new, encoding, &config_bg);
+                }
+                SwapScope::Rung1(delta) => {
+                    publish_rung1_diagnostics_diff(
+                        send,
+                        &diag_state_bg,
+                        new,
+                        encoding,
+                        &config_bg,
+                        delta,
+                    );
+                }
+            }
         },
     );
 
@@ -418,13 +427,13 @@ fn build_server_state(
 
 /// Recompute-diff-publish: run [`compute_all`] over `snap`, diff it through
 /// `diag_state`, and hand every changed `(uri, diagnostics)` pair to `send`
-/// as a `textDocument/publishDiagnostics` notification. Shared by the
-/// initial (pre-updater) publish and every subsequent `on_swap` call so the
-/// two paths can never drift apart. `send` is generic rather than a concrete
-/// `crossbeam_channel::Sender<Message>` purely to avoid naming that type
-/// here (an indirect dependency, never a direct one of this crate) — both
-/// call sites just pass a small closure wrapping `Sender::send`.
-fn publish_diagnostics_diff(
+/// as a `textDocument/publishDiagnostics` notification. Used for the
+/// initial (pre-updater) publish and every `SwapScope::Full` (rung-2/3)
+/// swap — see [`publish_rung1_diagnostics_diff`] for the rung-1-scoped
+/// counterpart, and [`publish_changed`] for the shared "send what changed"
+/// tail both funnel through so the two recompute scopes can never drift in
+/// how they're published.
+fn publish_full_diagnostics_diff(
     send: impl Fn(Message),
     diag_state: &Mutex<DiagnosticsState>,
     snap: &LspSnapshot,
@@ -436,7 +445,39 @@ fn publish_diagnostics_diff(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .diff(all);
+    publish_changed(send, changed);
+}
 
+/// The rung-1-scoped counterpart of [`publish_full_diagnostics_diff`]
+/// (Tier-2 latency wave, Task 2 / item D): recomputes ONLY `delta`'s
+/// recompute cover (`rung1_cover`) via `compute_for_files`, and diffs it
+/// through `DiagnosticsState::diff_partial` — never a full workspace
+/// recompute. See `rung1_cover`'s own doc for why this cover is a complete
+/// substitute for `compute_all` on a rung-1 swap.
+fn publish_rung1_diagnostics_diff(
+    send: impl Fn(Message),
+    diag_state: &Mutex<DiagnosticsState>,
+    snap: &LspSnapshot,
+    enc: PositionEncoding,
+    cfg: &DiagnosticConfig,
+    delta: &Rung1Delta,
+) {
+    let cover = rung1_cover(snap, delta);
+    let touched = compute_for_files(snap, enc, cfg, &cover);
+    let changed = diag_state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .diff_partial(touched);
+    publish_changed(send, changed);
+}
+
+/// Send every changed `(uri, diagnostics)` pair as a
+/// `textDocument/publishDiagnostics` notification. `send` is generic rather
+/// than a concrete `crossbeam_channel::Sender<Message>` purely to avoid
+/// naming that type here (an indirect dependency, never a direct one of
+/// this crate) — every call site just passes a small closure wrapping
+/// `Sender::send`.
+fn publish_changed(send: impl Fn(Message), changed: Vec<(String, Vec<Diagnostic>)>) {
     for (uri, diagnostics) in changed {
         let Ok(uri) = uri.parse::<Uri>() else {
             warn!("Skipping diagnostics publish for an unparsable uri: {uri}");
@@ -750,7 +791,7 @@ mod tests {
     use super::*;
     use crate::protocol::path_to_uri;
     use lsp_server::RequestId;
-    use lsp_types::{CallHierarchyItem, CallHierarchyOutgoingCall, Diagnostic};
+    use lsp_types::{CallHierarchyItem, CallHierarchyOutgoingCall};
     use std::time::Instant;
 
     fn write_fixture_workspace(dir: &Path) {

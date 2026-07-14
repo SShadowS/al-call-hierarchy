@@ -32,6 +32,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- `src/lsp/diagnostics.rs`/`src/lsp/updater.rs`/`src/server.rs`: diagnostics recompute
+  is now scoped to the swap that triggered it (Tier-2 latency wave, Task 2 / item D).
+  `spawn_updater`'s `on_swap` callback signature changed from
+  `Fn(&LspSnapshot, &LspSnapshot)` (old, new) to `Fn(&LspSnapshot, &SwapScope)`, where
+  the new `SwapScope` enum is `Full` (rung 2/3 — every file is recomputed, unchanged
+  behavior) or `Rung1(Rung1Delta)` (rung 1 — only a restricted cover is recomputed). A
+  new `compute_for_files` (restricted key set) shares a single per-file `compute_file`
+  helper with `compute_all` so the full and partial recompute paths can never drift.
+  `DiagnosticsState::diff_partial` diffs only the supplied uris, leaving every other
+  uri's last-published state untouched (unlike `diff`, it never clears an absent uri —
+  a rung-1 swap never adds/removes workspace files). The rung-1 recompute cover
+  (`diagnostics::rung1_cover`) is `delta.files` (the edited files) UNION every
+  `virtual_path` declaring a decl in `delta.affected_ids` (Task 1's per-file
+  `incoming`-delta) — complete because the only cross-file diagnostic rule
+  (unused-procedure) depends on exactly `incoming` + `publisher_fanout`, and rung 1
+  never changes `publisher_fanout` (Task 1 Arc-forwards it unchanged). `Updater` gains
+  a public `rung1_context` accessor so a caller outside `updater.rs` can drive
+  `apply_batch_scoped` without reaching into a private field. Measured on CDO
+  (`u:\Git\DO.Support-SlowDOSetup\DocumentOutput\Cloud`, median of 3 runs, new
+  `rung1_diagnostics_wall_clock_on_cdo` test): per-save diagnostics cost `compute_all`
+  11.8 ms → `rung1_cover` + `compute_for_files` 0.21 ms (−98%). End-to-end rung-1 save
+  (apply + diagnostics), measured through this task's own harness (`apply_batch_scoped`,
+  which pays real `classify`/fs-read/re-parse overhead Task 1's own direct-call harness
+  bypassed): apply 11.35 ms + diagnostics 11.8 ms ≈ 23.15 ms → apply 11.35 ms +
+  diagnostics 0.21 ms ≈ 11.56 ms (measured 11.73 ms). Combined with Task 1's own
+  warm-context apply number (4.83 ms, `rung1_rung2_wall_clock_on_cdo`): ≈16.6 ms →
+  ≈5.04 ms end-to-end, matching this arc's original ~5-6 ms target. North-star
+  `aldump --program-call-graph-stats` JSON on CDO remains byte-identical, SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` (no resolver
+  change).
 - Rung-1 (`apply_rung1_core`, `src/lsp/updater.rs`) no longer rebuilds `decl_by_id` and
   `incoming` wholesale on every 1-file body-only edit. Both are now patched
   incrementally: only the touched file's OLD/NEW declarations and edge targets are
