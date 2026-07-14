@@ -131,13 +131,13 @@ pub(crate) fn source_param_sig_fp(params: &[Param]) -> u64 {
 
 /// ONE shared constructor for a SOURCE-tier `RoutineNodeId` (Task 2) — used
 /// by every live reconstruction site (`node_extract::extract_nodes`,
-/// `resolve::body_map::BodyMap::build`,
+/// `resolve::decl_surface::DeclSurface::build`,
 /// `resolve::full::resolve_full_program_from_parts`,
 /// `resolve::stub::resolve_program`,
 /// `resolve::semantic_golden::build_fan_out_site_context`) so a real
 /// declaration's identity can never silently diverge between sites. The
 /// ORIGINAL Task 2 audit covered 5 sites (`node_extract.rs:452`,
-/// `body_map.rs:65`, `full.rs:210` [dead code, since deleted — see
+/// `decl_surface.rs:65`, `full.rs:210` [dead code, since deleted — see
 /// `full.rs`'s module doc], `full.rs:573`, `stub.rs:68`); a Task 2 review
 /// fix then found a 6th LIVE site the audit had missed
 /// (`semantic_golden.rs::build_fan_out_site_context`, which independently

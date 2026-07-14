@@ -309,14 +309,17 @@ mod release_checks {
         (dir, snap)
     }
 
-    /// As [`build_snapshot`], but also returns the parsed units an
+    /// As [`build_snapshot`], but also returns the workspace `ParsedUnit` an
     /// [`Updater`] needs to own as its mutable working state — for the
-    /// rung-1/rung-2 incremental-update bounds checks.
-    fn build_snapshot_with_parsed(file_count: usize) -> (TempDir, LspSnapshot, Vec<ParsedUnit>) {
+    /// rung-1/rung-2 incremental-update bounds checks. Dependency parse
+    /// arenas are NOT returned here — they're dropped inside
+    /// `build_full_with_parsed` once the frozen dep `DeclSurface` tier is
+    /// derived (T3 Task 12's owned-DeclSurface lifecycle).
+    fn build_snapshot_with_parsed(file_count: usize) -> (TempDir, LspSnapshot, ParsedUnit) {
         let dir = corpus_dir(file_count);
-        let (snap, parsed) =
+        let (snap, workspace) =
             LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
-        (dir, snap, parsed)
+        (dir, snap, workspace)
     }
 
     #[test]

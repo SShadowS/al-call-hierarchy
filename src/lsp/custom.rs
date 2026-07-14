@@ -87,7 +87,7 @@
 //!    method, a real regression from legacy's real names. For an
 //!    EmbeddedSource dependency the gap is worse: `RoutineNode::abi_params` is
 //!    unconditionally `AbiParams::Missing` for a non-`SymbolOnly` routine (its
-//!    parameter data lives in `BodyMap`/`RoutineDecl`, which `LspSnapshot`
+//!    parameter data lives in `DeclSurface`/`RoutineMeta`, which `LspSnapshot`
 //!    deliberately does NOT retain for dependency files — only position data
 //!    survives into `dep_decl_by_id`'s `DeclEntry`). Reaching real fidelity via
 //!    the graph would require either re-parsing the dependency file on demand
@@ -921,7 +921,7 @@ mod tests {
             source: Some(SourceRoot {
                 files: vec![SourceFile {
                     virtual_path: "Ws.al".to_string(),
-                    text: WS_SRC.to_string(),
+                    text: WS_SRC.into(),
                 }],
                 tier: TrustTier::Workspace,
                 content_hash: String::new(),
@@ -1026,7 +1026,7 @@ mod tests {
             ws_file_set,
             dep_layer,
         };
-        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace"))
+        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace")).0
     }
 
     // ── dependencyDocumentSymbol ───────────────────────────────────────────

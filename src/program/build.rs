@@ -652,7 +652,7 @@ mod tests {
                     .into_iter()
                     .map(|(path, text)| crate::snapshot::embedded::SourceFile {
                         virtual_path: path.to_string(),
-                        text: text.to_string(),
+                        text: text.into(),
                     })
                     .collect(),
                 tier,
@@ -877,13 +877,13 @@ codeunit 50100 "Ws2 Cu"
                 app: ws_id.clone(),
                 files: vec![crate::snapshot::ParsedFile {
                     virtual_path: "Ws2.al".to_string(),
-                    file: al_syntax::parse(src),
+                    file: std::sync::Arc::new(al_syntax::parse(src)),
                     provenance: Provenance {
                         app: ws_id.clone(),
                         tier: TrustTier::Workspace,
                         content_hash: String::new(),
                     },
-                    text: src.to_string(),
+                    text: src.into(),
                 }],
             }
         }

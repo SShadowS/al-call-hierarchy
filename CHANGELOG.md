@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Cold-start regression from the owned-DeclSurface arena drop DIAGNOSED and FIXED (docs/perf-regression-t3-vs-0.9.3.md §9): phase instrumentation attributed the +0.5s to the SYNCHRONOUS drop of the ~10,727 dependency parse arenas on the critical path (~500ms — the old pipeline retained them, never dropping at startup) plus back-to-back build+freeze_dep_tier of ~127k entries (~305ms). Fix: (1) drop the dependency arenas on a detached background thread off the critical path (~500ms -> ~50µs handoff); (2) fuse DeclSurface::build+freeze_dep_tier into single-pass DeclSurface::build_split (~305ms -> ~190ms). Same-session A/B: LSP cold start 3.44s -> 2.82s (-18%), restoring the pre-branch base (~2.78s); steady-state RSS unchanged (~750 MB). Zero goldens; parity suite green.
+- LSP steady state no longer retains dependency parse arenas: the updater keeps only the workspace ParsedUnit; the frozen dep DeclSurface tier, dep_decl_by_id and dep_texts are Arc-forwarded across rungs 1/2 and rebuilt only at rung 3.
+- Resolution decl lookups migrated from the borrowed BodyMap<'a> to the owned DeclSurface; BodyMap deleted. No behavioral change (goldens unchanged).
+- Measured impact of the owned-DeclSurface arena drop (docs/perf-regression-t3-vs-0.9.3.md §8): LSP steady-state RSS -54% (1,584 MB -> ~726 MB) on the DO.Support-SlowDOSetup Cloud workspace, at the cost of a +19% cold-start regression (2.87s -> 3.42s) initially hypothesized as the eager RoutineMeta projection build; rung2_signature_edit bench -25% (~149.93ms -> ~113ms), rung1_body_edit flat after accounting for machine variance. (The cold-start regression was later re-attributed to the synchronous dep-arena drop and FIXED — see §9 and the top Changed bullet.)
+
 ### Added
+- DeclSurface: owned two-tier routine-decl metadata surface (workspace tier +
+  Arc-frozen dependency tier), groundwork for dropping dependency parse
+  arenas from LSP steady state.
 - **`tests/lsp_differential.rs`: adjudicated legacy-vs-new differential parity
   harness (T3 LSP-migration arc, Task 14) — the DELETION LICENSE for the
   legacy LSP pipeline (Task 17): runs BOTH backends in-process over identical
@@ -1044,6 +1053,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current `RoutineNodeId`/`DeclEntry`/`EdgeRef` shapes.
 
 ### Changed
+- **`load_all_apps` is now manifest-first (perf safe-wins plan, Task 3)** —
+  discovered `.app` files are GUID-deduped (H-2) on a cheap manifest-only
+  read (`extract_app_metadata`, KB-sized `NavxManifest.xml` only) BEFORE any
+  `SymbolReference.json` (MB-sized, sometimes 100 MB) is parsed; only the
+  per-GUID version winners then pay `extract_app_symbols`. Duplicate Base
+  App / System App copies discovered across ancestor `.alpackages` folders
+  no longer each pay a full SymbolReference parse — only the highest-version
+  survivor does. `dedup_by_guid_keep_highest_version` is retyped from
+  `Vec<ResolvedDependency>` to a new manifest-level `DiscoveredApp{app_path,
+  meta}`; `load_all_apps`'s own public signature and its trailing
+  deterministic sort are unchanged. **Known, accepted behavior change:** a
+  duplicated-GUID `.app` whose version-losing copy has a corrupt
+  `SymbolReference.json` is now dropped as a reported dedup loser (named in
+  `load_all_apps`'s second return value) instead of the old order's silent
+  extraction failure — identity comes from the manifest, not from whether a
+  large symbol blob happens to parse, so a corrupt package is a properly
+  surfaced drop either way.
+  - **Fix (availability regression, same task):** the first cut of this
+    reorder introduced a real regression — if the manifest-first dedup
+    WINNER (highest version) had a corrupt `SymbolReference.json`, the
+    dependency vanished entirely, where the old symbols-first order would
+    have tried every physically-discovered copy and loaded whichever one
+    actually parsed. Fixed: `load_all_apps`'s symbol-extraction phase now
+    walks each GUID's candidates highest-version-first and falls back to
+    the next-highest copy when a candidate's symbols fail to parse,
+    repeating until one succeeds or the group is exhausted (matching, and
+    in the corrupt-winner case bettering, the old order's effective
+    resilience). The corrupt ex-winner is warned about (not reported as a
+    dedup drop — it never lost a version comparison, it was simply
+    unreadable); the promoted good copy is the new kept version, and only
+    candidates ranked below IT are reported as dedup drops.
+- **Embedded/workspace source text is now ONE shared `Arc<str>` allocation per
+  file across the whole snapshot/parse/LSP pipeline (perf safe-wins plan,
+  Task 1)** — kills the ~228 MB duplicate-text overhead on the reference
+  workspace documented in `docs/perf-regression-t3-vs-0.9.3.md` §3.1, where
+  `AppSetSnapshot`'s `SourceFile.text`, `ParsedFile.text` (previously cloned
+  in `parse_snapshot`), and `LspSnapshot::dep_texts` (previously a fresh copy
+  built in `build_dep_indexes`) each held an independent copy of the same
+  embedded dependency source (~114 MB on a real BC workspace, tripled).
+  `SourceFile.text`/`ParsedFile.text`/`ParsedFileEntry.text` are now
+  `std::sync::Arc<str>`, and `dep_texts` shares that SAME allocation via
+  `Arc::clone` instead of copying it; `Arc<str>` derefs to `&str` so almost
+  every call site kept compiling unchanged. Enabled serde's `rc` feature so
+  `SourceFile`'s content-addressed cache (`src/snapshot/cache.rs`) still
+  serializes `Arc<str>` as a plain string — the on-disk JSON format, and
+  every existing cache entry, is unchanged.
 - **`tests/perf_bounds.rs`/`benches/lsp_pipeline.rs` rewritten onto the
   ENGINE-BACKED LSP surface (T3 LSP-migration arc, Task 16) — the last thing
   standing before Task 17 deletes the legacy `Indexer`/`graph`/`handlers`
@@ -1106,7 +1161,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matching CLAUDE.md's documented bar; re-running that exact command against
   the WHOLE repo surfaced zero new findings (confirmed via a genuine forced
   recompile, not a stale cache hit).
-- **The LSP surface now SERVES the program-engine backend (T3 LSP-migration
+- **One `Arc<al_syntax::ir::AlFile>` per parse — the duplicate whole-program
+  parse at LSP startup, and every rung-1/rung-2 per-file re-parse, are gone
+  (perf safe-wins plan, Task 2).** `ParsedFile.file`/`ParsedFileEntry.file`
+  are now `Arc<AlFile>` (mirroring Task 1's `Arc<str>` text sharing) —
+  sound because nothing in the engine mutates an `AlFile` after
+  `al_syntax::parse` returns; every update REPLACES a whole `ParsedFile`/
+  `ParsedUnit` value (rung-1's `pending` splice, rung-2's `splice_file`,
+  rung-3's wholesale `Vec` replacement), so two owners of the same
+  `Arc<AlFile>` can never observe a torn or stale-relative-to-each-other
+  view. `LspSnapshot::from_context` no longer CONSUMES the one parse it's
+  handed — it clones `Arc`s into the published snapshot's
+  `ParsedFileEntry`s and returns the intact `Vec<ParsedUnit>` alongside it,
+  so `build_full_with_parsed` no longer needs (and no longer runs) a SECOND,
+  fully independent `parse_snapshot` pass over the whole workspace + every
+  embedded-source dependency at server startup. `Updater::apply_rung1_core`
+  and `Updater::apply_rung2` (`src/lsp/updater.rs`) previously re-parsed
+  each touched/every workspace file a SECOND time just to populate the
+  snapshot's own `ParsedFileEntry` copy; both now `Arc::clone` the already-
+  parsed file instead — rung 2 used to re-parse EVERY workspace file on
+  every signature-change edit and now re-parses none. Per
+  `docs/perf-regression-t3-vs-0.9.3.md` §2.3/§3.2, this eliminates roughly
+  1s of duplicate cold-start parsing plus one whole extra dependency
+  text+IR-arena set held in memory on the reference workspace. Zero LSP-served
+  data changed: `tests/lsp_incremental_parity.rs` (the permanent
+  incremental-vs-batch differential gate) passes unmodified plus a new
+  sharing-proof test
+  (`build_full_with_parsed_shares_one_parse_between_snapshot_and_updater`)
+  asserting `Arc::ptr_eq` between the published snapshot's and the
+  updater's `AlFile`/text allocations; `cargo test --release --test
+  perf_bounds` (the CI rung-budget gate) stays green.
+
   arc, Task 15 — the cutover).** `src/server.rs` no longer holds
   `Arc<RwLock<Indexer>>`; its state is `Arc<lsp::updater::SharedSnapshot>` (the
   published, immutable `LspSnapshot`) plus an `mpsc::Sender<ChangeEvent>`

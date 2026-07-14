@@ -157,7 +157,7 @@ struct RoutineEntry {
 /// Compute the definition-surface fingerprint of one parsed file.
 ///
 /// See the module doc for the exact field list and order. Nothing here
-/// consults a `ProgramGraph`/`ResolveIndex`/`BodyMap` — the fingerprint is
+/// consults a `ProgramGraph`/`ResolveIndex`/`DeclSurface` — the fingerprint is
 /// computed from `pf`'s own freshly re-parsed IR only, so comparing an old
 /// vs. new fingerprint never needs a rebuild of anything beyond the one file
 /// being re-parsed.
@@ -462,7 +462,7 @@ mod tests {
     fn parsed_file(src: &str) -> ParsedFile {
         ParsedFile {
             virtual_path: "Test.al".to_string(),
-            file: al_syntax::parse(src),
+            file: std::sync::Arc::new(al_syntax::parse(src)),
             provenance: Provenance {
                 app: AppId {
                     guid: String::new(),
@@ -473,7 +473,7 @@ mod tests {
                 tier: TrustTier::Workspace,
                 content_hash: String::new(),
             },
-            text: src.to_string(),
+            text: src.into(),
         }
     }
 

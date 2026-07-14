@@ -47,7 +47,10 @@ fn walk_al_source(root: &std::path::Path, tier: TrustTier) -> Result<Option<Sour
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
-        files.push(SourceFile { virtual_path, text });
+        files.push(SourceFile {
+            virtual_path,
+            text: text.into(),
+        });
     }
     if files.is_empty() {
         return Ok(None);

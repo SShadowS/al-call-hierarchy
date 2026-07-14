@@ -1108,7 +1108,7 @@ mod tests {
             source: Some(SourceRoot {
                 files: vec![SourceFile {
                     virtual_path: name.to_string(),
-                    text: src.to_string(),
+                    text: src.into(),
                 }],
                 tier,
                 content_hash: String::new(),
@@ -1166,7 +1166,7 @@ mod tests {
             ws_file_set,
             dep_layer,
         };
-        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace"))
+        LspSnapshot::from_context(ctx, std::path::Path::new("/workspace")).0
     }
 
     #[test]

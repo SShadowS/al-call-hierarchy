@@ -486,7 +486,7 @@ pub struct CanonicalEventRow {
 #[must_use]
 pub fn project_fresh_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow> {
     use crate::program::build::build_program_graph;
-    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::decl_surface::DeclSurface;
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::resolve::resolver::emit_event_flow_edges;
     use crate::snapshot::{SnapshotBuilder, parse_snapshot};
@@ -504,10 +504,10 @@ pub fn project_fresh_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow>
     let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
     let parsed = parse_snapshot(&snap);
     let index = ResolveIndex::build(&graph);
-    let body_map = BodyMap::build(&graph, &parsed);
+    let surface = DeclSurface::build(&graph, &parsed);
     let apps = &graph.apps;
 
-    let fresh_edges = emit_event_flow_edges(&graph, &index, &body_map);
+    let fresh_edges = emit_event_flow_edges(&graph, &index, &surface);
 
     let mut rows: Vec<CanonicalEventRow> = Vec::new();
     for edge in &fresh_edges {

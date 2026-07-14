@@ -57,6 +57,15 @@ pub struct DroppedDuplicateDependency {
     pub dropped_path: PathBuf,
 }
 
+/// One `.app` discovered on disk with ONLY its manifest read — the
+/// pre-symbol-extraction identity `load_all_apps` dedups on
+/// (perf safe-wins Task 3).
+#[derive(Debug)]
+struct DiscoveredApp {
+    app_path: PathBuf,
+    meta: crate::app_package::AppMetadata,
+}
+
 /// Collapse `deps` down to one entry per non-empty GUID, keeping the
 /// highest-version survivor (Tier-1 remediation, H-2 root cause).
 ///
@@ -87,45 +96,41 @@ pub struct DroppedDuplicateDependency {
 /// (arbitrary but deterministic, independent of filesystem iteration order —
 /// same "arbitrary but stable" convention as
 /// `program::build::dedup_routines_preserving_genuine_overloads`).
+///
+/// Perf safe-wins Task 3: identity now comes straight from the manifest
+/// ([`DiscoveredApp::meta`]) rather than from a fully-extracted
+/// `ResolvedDependency` — the same values the old code read from
+/// `package.metadata` (itself built from the manifest, verbatim), just read
+/// one phase earlier, BEFORE any SymbolReference.json is parsed. A loser is
+/// now dropped without its symbol blob ever being touched.
+///
+/// Kept as a thin `#[cfg(test)]`-only wrapper over [`group_discovered_by_guid`]
+/// so the five scenario tests below stay exercising the exact "keep index 0,
+/// drop the rest" policy in isolation. `load_all_apps` itself calls
+/// `group_discovered_by_guid` directly — it needs the FULL ordered candidate
+/// list per GUID (not just the winner) for the corrupt-winner fallback (see
+/// that function's doc).
+#[cfg(test)]
 fn dedup_by_guid_keep_highest_version(
-    deps: Vec<ResolvedDependency>,
-) -> (Vec<ResolvedDependency>, Vec<DroppedDuplicateDependency>) {
-    let mut by_guid: std::collections::HashMap<String, Vec<ResolvedDependency>> =
-        std::collections::HashMap::new();
-    let mut kept: Vec<ResolvedDependency> = Vec::new();
-
-    for rd in deps {
-        if rd.dependency.app_id.is_empty() {
-            kept.push(rd);
-        } else {
-            by_guid
-                .entry(rd.dependency.app_id.clone())
-                .or_default()
-                .push(rd);
-        }
-    }
-
+    deps: Vec<DiscoveredApp>,
+) -> (Vec<DiscoveredApp>, Vec<DroppedDuplicateDependency>) {
+    let mut kept: Vec<DiscoveredApp> = Vec::new();
     let mut dropped: Vec<DroppedDuplicateDependency> = Vec::new();
-    for (_guid, mut group) in by_guid {
+
+    for mut group in group_discovered_by_guid(deps) {
         if group.len() == 1 {
             kept.push(group.pop().expect("len == 1"));
             continue;
         }
-        // Highest version first (`compare_versions`: higher version sorts
-        // first — see its doc); ties broken by path for determinism.
-        group.sort_by(|a, b| {
-            compare_versions(&a.dependency.version, &b.dependency.version)
-                .then_with(|| a.app_path.cmp(&b.app_path))
-        });
         let mut iter = group.into_iter();
         let winner = iter.next().expect("group.len() > 1");
         for loser in iter {
             dropped.push(DroppedDuplicateDependency {
-                guid: winner.dependency.app_id.clone(),
-                name: winner.dependency.name.clone(),
-                kept_version: winner.dependency.version.clone(),
+                guid: winner.meta.app_id.clone(),
+                name: winner.meta.name.clone(),
+                kept_version: winner.meta.version.clone(),
                 kept_path: winner.app_path.clone(),
-                dropped_version: loser.dependency.version.clone(),
+                dropped_version: loser.meta.version.clone(),
                 dropped_path: loser.app_path.clone(),
             });
         }
@@ -133,6 +138,41 @@ fn dedup_by_guid_keep_highest_version(
     }
 
     (kept, dropped)
+}
+
+/// Group `deps` into one bucket per non-empty GUID (highest version first,
+/// ties broken by path for determinism — same policy
+/// [`dedup_by_guid_keep_highest_version`]'s doc describes), plus one
+/// singleton bucket per GUID-less entry (never merged with anything else —
+/// see that function's doc for why). Shared by
+/// [`dedup_by_guid_keep_highest_version`] (the simple "keep index 0" policy)
+/// and `load_all_apps`'s Phase 3 (which needs the FULL ordered candidate
+/// list per GUID so a winner whose symbols turn out to be corrupt can fall
+/// back to the next-best copy instead of the dependency vanishing).
+fn group_discovered_by_guid(deps: Vec<DiscoveredApp>) -> Vec<Vec<DiscoveredApp>> {
+    let mut by_guid: std::collections::HashMap<String, Vec<DiscoveredApp>> =
+        std::collections::HashMap::new();
+    let mut groups: Vec<Vec<DiscoveredApp>> = Vec::new();
+
+    for rd in deps {
+        if rd.meta.app_id.is_empty() {
+            groups.push(vec![rd]);
+        } else {
+            by_guid.entry(rd.meta.app_id.clone()).or_default().push(rd);
+        }
+    }
+
+    for (_guid, mut group) in by_guid {
+        // Highest version first (`compare_versions`: higher version sorts
+        // first — see its doc); ties broken by path for determinism.
+        group.sort_by(|a, b| {
+            compare_versions(&a.meta.version, &b.meta.version)
+                .then_with(|| a.app_path.cmp(&b.app_path))
+        });
+        groups.push(group);
+    }
+
+    groups
 }
 
 /// Parse app.json to extract dependencies
@@ -392,7 +432,7 @@ pub fn load_all_apps(
         return Ok((Vec::new(), Vec::new()));
     }
 
-    let mut out: Vec<ResolvedDependency> = Vec::new();
+    let mut discovered: Vec<DiscoveredApp> = Vec::new();
     let mut seen_paths: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
     for alpackages in folders {
@@ -420,37 +460,110 @@ pub fn load_all_apps(
                 continue;
             }
 
-            match extract_app_package(&path) {
-                Ok(package) => {
+            // Phase 1: manifest-only discovery — never touches SymbolReference.json.
+            match crate::app_package::extract_app_metadata(&path) {
+                Ok(meta) => {
                     debug!(
-                        "load_all_apps: loaded {} v{} ({} objects) from {}",
-                        package.metadata.name,
-                        package.metadata.version,
-                        package.objects.len(),
+                        "load_all_apps: discovered {} v{} from {}",
+                        meta.name,
+                        meta.version,
                         alpackages.display()
                     );
-                    out.push(ResolvedDependency {
-                        dependency: AppDependency {
-                            app_id: package.metadata.app_id.clone(),
-                            name: package.metadata.name.clone(),
-                            publisher: package.metadata.publisher.clone(),
-                            version: package.metadata.version.clone(),
-                        },
+                    discovered.push(DiscoveredApp {
                         app_path: path,
-                        package,
+                        meta,
                     });
                 }
                 Err(e) => {
-                    warn!("load_all_apps: failed to parse {}: {}", path.display(), e);
+                    warn!(
+                        "load_all_apps: failed to read manifest of {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
             }
         }
     }
 
-    // GUID-level dedup (H-1... H-2): collapse duplicate/stale versions BEFORE
-    // determining order, so the sort below never has to arbitrate between
-    // two entries claiming to be the same real app.
-    let (out, dropped) = dedup_by_guid_keep_highest_version(out);
+    // Phase 2: GUID grouping on manifest identity (H-2) — each group is
+    // ordered highest-version-first (ties broken by path), NOT yet committed
+    // to a winner. That commitment happens in Phase 3 below, because a
+    // group's best candidate can still fail symbol extraction (a corrupt
+    // SymbolReference.json) — see `group_discovered_by_guid`'s doc.
+    let groups = group_discovered_by_guid(discovered);
+
+    // Phase 3: full symbol extraction, trying each group's candidates
+    // best-first until one succeeds (availability regression fix: a
+    // corrupt-symbols dedup winner must fall back to the next-highest good
+    // copy of the SAME GUID rather than the dependency vanishing entirely —
+    // the old symbols-first code effectively got this for free by trying
+    // every physically-discovered copy before dedup ever ran). Candidates
+    // that fail before a winner is found are warned about but NOT reported
+    // as dedup drops (they never "lost" a dedup decision — they were simply
+    // unreadable); only candidates ranked BELOW the eventual winner are
+    // genuine dedup drops.
+    let mut out: Vec<ResolvedDependency> = Vec::new();
+    let mut dropped: Vec<DroppedDuplicateDependency> = Vec::new();
+    for group in groups {
+        let mut winner_idx: Option<usize> = None;
+        for (i, candidate) in group.iter().enumerate() {
+            match crate::app_package::extract_app_symbols(&candidate.app_path) {
+                Ok(objects) => {
+                    debug!(
+                        "load_all_apps: loaded {} v{} ({} objects)",
+                        candidate.meta.name,
+                        candidate.meta.version,
+                        objects.len()
+                    );
+                    out.push(ResolvedDependency {
+                        dependency: AppDependency {
+                            app_id: candidate.meta.app_id.clone(),
+                            name: candidate.meta.name.clone(),
+                            publisher: candidate.meta.publisher.clone(),
+                            version: candidate.meta.version.clone(),
+                        },
+                        app_path: candidate.app_path.clone(),
+                        package: ParsedAppPackage {
+                            metadata: candidate.meta.clone(),
+                            objects,
+                        },
+                    });
+                    winner_idx = Some(i);
+                    break;
+                }
+                Err(e) => {
+                    let has_fallback = i + 1 < group.len();
+                    warn!(
+                        "load_all_apps: failed to parse {} v{}: {}{}",
+                        candidate.app_path.display(),
+                        candidate.meta.version,
+                        e,
+                        if has_fallback {
+                            " — falling back to next-highest copy of this GUID"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+            }
+        }
+        // Every candidate ranked BELOW the winner (if one was found) is a
+        // genuine dedup drop against the ACTUAL kept version — not
+        // necessarily the group's nominal best, if a fallback occurred.
+        if let Some(idx) = winner_idx {
+            let winner = &group[idx];
+            for loser in group.iter().skip(idx + 1) {
+                dropped.push(DroppedDuplicateDependency {
+                    guid: winner.meta.app_id.clone(),
+                    name: winner.meta.name.clone(),
+                    kept_version: winner.meta.version.clone(),
+                    kept_path: winner.app_path.clone(),
+                    dropped_version: loser.meta.version.clone(),
+                    dropped_path: loser.app_path.clone(),
+                });
+            }
+        }
+    }
 
     // Deterministic, filesystem-independent order so downstream AppRef/NodeId
     // numbering is reproducible across machines (charter C8). `parse_version`
@@ -462,7 +575,6 @@ pub fn load_all_apps(
     // version-selection policy. Post-dedup there is at most one entry per
     // non-empty GUID, so this now IS purely a determinism tiebreak — but it's
     // still fixed to a real comparator rather than left honest-but-wrong.
-    let mut out = out;
     out.sort_by(|a, b| {
         (
             &a.dependency.app_id,
@@ -727,28 +839,19 @@ mod tests {
     // H-2 (Tier-1 remediation, Task T1.2): dedup_by_guid_keep_highest_version
     // -----------------------------------------------------------------------
 
-    fn resolved_dep(guid: &str, name: &str, version: &str, path: &str) -> ResolvedDependency {
-        ResolvedDependency {
-            dependency: AppDependency {
+    fn discovered(guid: &str, name: &str, version: &str, path: &str) -> DiscoveredApp {
+        DiscoveredApp {
+            app_path: PathBuf::from(path),
+            meta: crate::app_package::AppMetadata {
                 app_id: guid.to_string(),
                 name: name.to_string(),
                 publisher: "Pub".to_string(),
                 version: version.to_string(),
-            },
-            app_path: PathBuf::from(path),
-            package: ParsedAppPackage {
-                metadata: crate::app_package::AppMetadata {
-                    app_id: guid.to_string(),
-                    name: name.to_string(),
-                    publisher: "Pub".to_string(),
-                    version: version.to_string(),
-                    runtime: String::new(),
-                    platform: String::new(),
-                    application: String::new(),
-                    dependencies: vec![],
-                    internals_visible_to: vec![],
-                },
-                objects: vec![],
+                runtime: String::new(),
+                platform: String::new(),
+                application: String::new(),
+                dependencies: vec![],
+                internals_visible_to: vec![],
             },
         }
     }
@@ -762,13 +865,13 @@ mod tests {
     #[test]
     fn dedup_keeps_highest_version_and_names_the_dropped_file() {
         let deps = vec![
-            resolved_dep(
+            discovered(
                 "11111111-0000-0000-0000-000000000001",
                 "DupApp",
                 "24.0.0.0",
                 "/alpackages/Pub_DupApp_24.0.0.0.app",
             ),
-            resolved_dep(
+            discovered(
                 "11111111-0000-0000-0000-000000000001",
                 "DupApp",
                 "25.0.0.0",
@@ -779,7 +882,7 @@ mod tests {
         let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
 
         assert_eq!(kept.len(), 1, "only the higher version must survive");
-        assert_eq!(kept[0].dependency.version, "25.0.0.0");
+        assert_eq!(kept[0].meta.version, "25.0.0.0");
 
         assert_eq!(dropped.len(), 1);
         assert_eq!(dropped[0].guid, "11111111-0000-0000-0000-000000000001");
@@ -799,13 +902,13 @@ mod tests {
     #[test]
     fn dedup_picks_numerically_higher_version_even_when_lexicographically_smaller() {
         let deps = vec![
-            resolved_dep(
+            discovered(
                 "22222222-0000-0000-0000-000000000002",
                 "DigitApp",
                 "9.0.0.0",
                 "/alpackages/Pub_DigitApp_9.0.0.0.app",
             ),
-            resolved_dep(
+            discovered(
                 "22222222-0000-0000-0000-000000000002",
                 "DigitApp",
                 "10.0.0.0",
@@ -817,7 +920,7 @@ mod tests {
 
         assert_eq!(kept.len(), 1);
         assert_eq!(
-            kept[0].dependency.version, "10.0.0.0",
+            kept[0].meta.version, "10.0.0.0",
             "10.0.0.0 is numerically higher despite sorting lexicographically \
              smaller than 9.0.0.0"
         );
@@ -836,13 +939,13 @@ mod tests {
     #[test]
     fn dedup_collapses_byte_identical_duplicate_pair_to_one_survivor() {
         let deps = vec![
-            resolved_dep(
+            discovered(
                 "33333333-0000-0000-0000-000000000003",
                 "SameVerApp",
                 "1.0.0.0",
                 "/alpackages/a/Pub_SameVerApp_1.0.0.0.app",
             ),
-            resolved_dep(
+            discovered(
                 "33333333-0000-0000-0000-000000000003",
                 "SameVerApp",
                 "1.0.0.0",
@@ -869,8 +972,8 @@ mod tests {
     #[test]
     fn dedup_never_merges_guid_less_entries() {
         let deps = vec![
-            resolved_dep("", "NoGuidApp", "1.0.0.0", "/alpackages/a.app"),
-            resolved_dep("", "NoGuidApp", "1.0.0.0", "/alpackages/b.app"),
+            discovered("", "NoGuidApp", "1.0.0.0", "/alpackages/a.app"),
+            discovered("", "NoGuidApp", "1.0.0.0", "/alpackages/b.app"),
         ];
 
         let (kept, dropped) = dedup_by_guid_keep_highest_version(deps);
@@ -888,13 +991,13 @@ mod tests {
     #[test]
     fn dedup_no_op_when_every_guid_is_unique() {
         let deps = vec![
-            resolved_dep(
+            discovered(
                 "44444444-0000-0000-0000-000000000004",
                 "AppA",
                 "1.0.0.0",
                 "/alpackages/AppA.app",
             ),
-            resolved_dep(
+            discovered(
                 "55555555-0000-0000-0000-000000000005",
                 "AppB",
                 "2.0.0.0",
@@ -906,6 +1009,166 @@ mod tests {
 
         assert_eq!(kept.len(), 2);
         assert!(dropped.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Perf safe-wins Task 3: manifest-first dedup
+    // -----------------------------------------------------------------------
+
+    /// Like `snapshot::tests::write_minimal_app`, but with a caller-supplied
+    /// SymbolReference payload so a test can plant a CORRUPT one.
+    fn write_app_with_symbols(
+        dir: &std::path::Path,
+        filename: &str,
+        guid: &str,
+        version: &str,
+        symbol_reference: &str,
+    ) -> PathBuf {
+        use std::io::Write;
+        let manifest = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?><Package xmlns="http://schemas.microsoft.com/navx/2015/manifest"><App Id="{guid}" Name="DupApp" Publisher="Pub" Version="{version}" Runtime="13.0" /></Package>"#
+        );
+        let mut zip_bytes = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_bytes);
+            let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default();
+            zip.start_file("NavxManifest.xml", options).unwrap();
+            zip.write_all(manifest.as_bytes()).unwrap();
+            zip.start_file("SymbolReference.json", options).unwrap();
+            zip.write_all(symbol_reference.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        let path = dir.join(filename);
+        let mut out = std::fs::File::create(&path).unwrap();
+        out.write_all(&[0u8; 40]).unwrap(); // NAVX header (content unused)
+        out.write_all(zip_bytes.get_ref()).unwrap();
+        path
+    }
+
+    /// Perf safe-wins Task 3: GUID dedup must happen on MANIFEST identity,
+    /// BEFORE any SymbolReference.json is parsed. The stale 24.0 loser here
+    /// carries deliberately corrupt symbols — under the old order (extract
+    /// everything, then dedup) it fails extraction and is silently skipped
+    /// (dropped list EMPTY); under manifest-first it must be reported as a
+    /// proper dedup drop, and its symbol blob must never need to parse.
+    #[test]
+    fn guid_dedup_drops_loser_on_manifest_identity_without_parsing_its_symbols() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpackages = dir.path().join(".alpackages");
+        std::fs::create_dir_all(&alpackages).unwrap();
+        let guid = "cccccccc-2222-2222-2222-222222222222";
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_24.0.0.0.app",
+            guid,
+            "24.0.0.0",
+            "{ this is not JSON",
+        );
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_25.0.0.0.app",
+            guid,
+            "25.0.0.0",
+            r#"{"Codeunits":[{"Id":50100,"Name":"DupCU","Methods":[{"Name":"DoIt","Id":1}]}]}"#,
+        );
+
+        let (kept, dropped) = load_all_apps(dir.path()).expect("load_all_apps");
+
+        assert_eq!(kept.len(), 1, "exactly the 25.0 winner must survive");
+        assert_eq!(kept[0].dependency.version, "25.0.0.0");
+        assert_eq!(
+            dropped.len(),
+            1,
+            "the 24.0 loser must be a REPORTED dedup drop — not a silent \
+             extraction failure (which is what the old symbols-first order made it)"
+        );
+        assert_eq!(dropped[0].dropped_version, "24.0.0.0");
+        assert_eq!(dropped[0].kept_version, "25.0.0.0");
+    }
+
+    /// Availability regression fix: when the manifest-first dedup WINNER's
+    /// symbols are corrupt (fails `extract_app_symbols`), the dependency
+    /// must not simply vanish — the fresh manifest-first ordering must fall
+    /// back to the next-highest copy of the SAME GUID (here, a good 24.0.0.0
+    /// sitting right alongside the corrupt 25.0.0.0) rather than dropping the
+    /// dependency entirely (which the old symbols-first code never did: it
+    /// tried every copy, in whatever order it found them, and only skipped
+    /// the ones that actually failed to parse).
+    #[test]
+    fn corrupt_winner_falls_back_to_next_highest_good_copy() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpackages = dir.path().join(".alpackages");
+        std::fs::create_dir_all(&alpackages).unwrap();
+        let guid = "dddddddd-3333-3333-3333-333333333333";
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_25.0.0.0.app",
+            guid,
+            "25.0.0.0",
+            "{ this is not JSON",
+        );
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_24.0.0.0.app",
+            guid,
+            "24.0.0.0",
+            r#"{"Codeunits":[{"Id":50100,"Name":"DupCU","Methods":[{"Name":"DoIt","Id":1}]}]}"#,
+        );
+
+        let (kept, dropped) = load_all_apps(dir.path()).expect("load_all_apps");
+
+        assert_eq!(
+            kept.len(),
+            1,
+            "the good 24.0 copy must be loaded as a fallback, not dropped entirely"
+        );
+        assert_eq!(
+            kept[0].dependency.version, "24.0.0.0",
+            "the corrupt 25.0 winner must be skipped in favor of the good 24.0 copy"
+        );
+        assert!(
+            !dropped
+                .iter()
+                .any(|d| d.dropped_version == "24.0.0.0" && d.guid == guid),
+            "the promoted fallback copy (24.0) must NOT be reported as a dropped duplicate; got {dropped:#?}"
+        );
+    }
+
+    /// If EVERY copy of a duplicated GUID fails symbol extraction, the
+    /// dependency is legitimately absent — but this must never panic, and
+    /// must not incorrectly report a "dropped duplicate" (there was no good
+    /// survivor to keep).
+    #[test]
+    fn all_copies_corrupt_leaves_dependency_absent_without_panicking() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpackages = dir.path().join(".alpackages");
+        std::fs::create_dir_all(&alpackages).unwrap();
+        let guid = "eeeeeeee-4444-4444-4444-444444444444";
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_25.0.0.0.app",
+            guid,
+            "25.0.0.0",
+            "{ this is not JSON either",
+        );
+        write_app_with_symbols(
+            &alpackages,
+            "Pub_DupApp_24.0.0.0.app",
+            guid,
+            "24.0.0.0",
+            "{ still not JSON",
+        );
+
+        let (kept, dropped) = load_all_apps(dir.path()).expect("load_all_apps");
+
+        assert!(
+            !kept.iter().any(|k| k.dependency.app_id == guid),
+            "no copy could be loaded, so the dependency must be absent"
+        );
+        assert!(
+            !dropped.iter().any(|d| d.guid == guid),
+            "with no surviving copy there is nothing to report as a dedup drop"
+        );
     }
 
     #[test]

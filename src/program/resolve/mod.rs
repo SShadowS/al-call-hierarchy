@@ -1,13 +1,13 @@
 //! Plan 1B.2: fresh call/behaviour-edge resolver over `ProgramGraph`.
 //! Phase 0 = edge model + dual-run differential harness (this module set).
-//! Phase 1 Task 3 adds `body_map` + `index` for body lookup and topology-scoped indexes.
+//! Phase 1 Task 3 adds `decl_surface` + `index` for decl lookup and topology-scoped indexes.
 
 pub mod abi_check;
 pub mod anon;
 pub mod applicability;
 pub mod arg_dispatch;
-pub mod body_map;
 pub mod builtins;
+pub mod decl_surface;
 pub mod differential;
 pub mod edge;
 pub mod event;

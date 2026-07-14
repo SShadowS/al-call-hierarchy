@@ -43,7 +43,7 @@ use crate::program::resolve::abi_check::{
     AbiIntegrityReport, abi_ingestion_integrity, build_raw_abi_index_from_snapshot,
 };
 use crate::program::resolve::arg_dispatch::{self, ArgDispatchInfo};
-use crate::program::resolve::body_map::BodyMap;
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::edge::{
     CanonicalSpan, DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind, Histogram,
     OpenWorldReason, Route, RouteTarget, SetCompleteness, SiteId, UnknownReason, Witness,
@@ -364,7 +364,7 @@ fn resolve_call_site_obligation(
     primary_app_ref: AppRef,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
     // Task 2 enabling primitive: the parsed `AlFile` this obligation's call
     // site was extracted from, so a `CalleeShape::Member.receiver` `ExprId`
@@ -402,7 +402,7 @@ fn resolve_call_site_obligation(
             &obj_node.id,
             graph,
             index,
-            body_map,
+            surface,
             with_state,
         ),
         None => Vec::new(),
@@ -423,7 +423,7 @@ fn resolve_call_site_obligation(
             // shape.
             let (shape, routes) = if let Some(obj_node) = obj_node_opt {
                 resolve_bare_with_args(
-                    obj_node, &name_lc, arity, graph, index, body_map, with_state, &args_info,
+                    obj_node, &name_lc, arity, graph, index, surface, with_state, &args_info,
                 )
             } else {
                 (
@@ -457,10 +457,10 @@ fn resolve_call_site_obligation(
                     graph,
                     index,
                     receiver.map(|id| (file, id)),
-                    Some((body_map, with_state)),
+                    Some((surface, with_state)),
                 );
                 let (s, r) = resolve_member_with_args(
-                    &recv, &method_lc, arity, obj_node, graph, index, body_map, &args_info,
+                    &recv, &method_lc, arity, obj_node, graph, index, surface, &args_info,
                 );
                 finding = builtin_dispatch_finding(&recv, &method_lc, &r, file, call_args);
                 (s, r)
@@ -520,7 +520,7 @@ fn resolve_call_site_obligation(
                     *target_is_name,
                     graph,
                     index,
-                    body_map,
+                    surface,
                 );
                 (EdgeKind::Run, shape, completeness, routes, None)
             } else {
@@ -567,7 +567,7 @@ fn resolve_call_site_obligation(
             };
 
             let (shape, completeness, routes) = if let Some(table_node) = table_node_opt {
-                resolve_implicit_trigger(&op_lc, table_node, graph, index, body_map)
+                resolve_implicit_trigger(&op_lc, table_node, graph, index, surface)
             } else {
                 // No table resolved: honest-empty Multicast (open-world, no
                 // known triggers, but we cannot say there are none).
@@ -595,7 +595,7 @@ fn resolve_call_site_obligation(
             // this arm stays defensive-only rather than a live path any
             // real CDO/workspace source can reach.
             let (shape, routes) = if let Some(obj_node) = obj_node_opt {
-                resolve_bare(obj_node, "commit", 0, graph, index, body_map, with_state)
+                resolve_bare(obj_node, "commit", 0, graph, index, surface, with_state)
             } else {
                 (
                     DispatchShape::Exact,
@@ -640,7 +640,7 @@ pub(crate) fn resolve_file_obligations(
     primary_app_ref: AppRef,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     obj_node_map: &HashMap<ObjectNodeId, &ObjectNode>,
 ) -> FileResolution {
     let mut edges: Vec<ClassifiedEdge> = Vec::new();
@@ -701,7 +701,7 @@ pub(crate) fn resolve_file_obligations(
                     primary_app_ref,
                     graph,
                     index,
-                    body_map,
+                    surface,
                     site.with_state,
                     &pf.file,
                     &site.args,
@@ -768,7 +768,7 @@ fn resolve_full_program_from_parts(
         graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
 
     let index = ResolveIndex::build(graph);
-    let body_map = BodyMap::build(graph, parsed);
+    let surface = DeclSurface::build(graph, parsed);
 
     let mut obligation_id_set: HashSet<ObligationId> = HashSet::new();
     let mut classified_edges: Vec<ClassifiedEdge> = Vec::new();
@@ -795,7 +795,7 @@ fn resolve_full_program_from_parts(
                 primary_app_ref,
                 graph,
                 &index,
-                &body_map,
+                &surface,
                 &obj_node_map,
             );
 
@@ -819,7 +819,7 @@ fn resolve_full_program_from_parts(
     // ── Phase 2: publisher event flow obligations (all apps) ──────────────────
     // emit_event_flow_edges processes ALL graph.routines (no app filter).
     // We must track obligation ids in the same pass so coverage holds.
-    let event_edges = emit_event_flow_edges(graph, &index, &body_map);
+    let event_edges = emit_event_flow_edges(graph, &index, &surface);
     for edge in event_edges {
         // Each publisher routine emits exactly one EventFlow edge.
         let obl_id = ObligationId::Publisher(edge.from.clone());
@@ -1300,7 +1300,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Prints the program-engine's real per-stage wall-clock split — snapshot
-    /// / parse / build(graph) / `ResolveIndex::build` / `BodyMap::build` /
+    /// / parse / build(graph) / `ResolveIndex::build` / `DeclSurface::build` /
     /// resolve (inner loop, DERIVED by subtraction) — median of 3 runs, on
     /// the real CDO workspace.
     ///
@@ -1312,7 +1312,7 @@ mod tests {
     /// than measured directly: `build(graph) only` = `build_program_graph`
     /// total minus `parse`, and `resolve inner loop only` =
     /// `resolve_full_program_from_parts` total minus the standalone
-    /// `ResolveIndex::build`/`BodyMap::build` times (that function rebuilds
+    /// `ResolveIndex::build`/`DeclSurface::build` times (that function rebuilds
     /// both internally; timing them standalone first gives the subtrahend).
     ///
     /// Run: `CDO_WS=<path> cargo test --release stage_split -- --ignored --nocapture`
@@ -1386,9 +1386,9 @@ mod tests {
             drop(index);
 
             let t4 = std::time::Instant::now();
-            let body_map = BodyMap::build(&graph, &parsed);
+            let surface = DeclSurface::build(&graph, &parsed);
             body_map_times.push(t4.elapsed());
-            drop(body_map);
+            drop(surface);
 
             let primary_app_ref = graph
                 .apps
@@ -1435,7 +1435,7 @@ mod tests {
 
         if index_plus_body_map > std::time::Duration::from_millis(30) {
             eprintln!(
-                "\n*** RED FLAG: ResolveIndex::build + BodyMap::build = {index_plus_body_map:?} \
+                "\n*** RED FLAG: ResolveIndex::build + DeclSurface::build = {index_plus_body_map:?} \
                  > 30ms on CDO scale — Task 9's documented contingency applies (transient \
                  rebuild breaks the rung-1 100ms budget). ***\n"
             );
@@ -1449,14 +1449,16 @@ mod tests {
         eprintln!("build_program_graph (TOTAL, incl. internal parse) : {build_graph_total_med:?}");
         eprintln!("  -> build(graph) only [derived]                  : {build_graph_only:?}");
         eprintln!("ResolveIndex::build                               : {resolve_index_med:?}");
-        eprintln!("BodyMap::build                                    : {body_map_med:?}");
-        eprintln!("  -> ResolveIndex + BodyMap combined               : {index_plus_body_map:?}");
+        eprintln!("DeclSurface::build                                    : {body_map_med:?}");
         eprintln!(
-            "resolve_full_program_from_parts (TOTAL, incl. index+bodymap rebuild): {resolve_from_parts_total_med:?}"
+            "  -> ResolveIndex + DeclSurface combined               : {index_plus_body_map:?}"
+        );
+        eprintln!(
+            "resolve_full_program_from_parts (TOTAL, incl. index+DeclSurface rebuild): {resolve_from_parts_total_med:?}"
         );
         eprintln!("  -> resolve inner loop only [derived]             : {resolve_inner_loop:?}");
         eprintln!(
-            "  -> RUNG-2 BUDGET (ws-parse + build(graph) + index+bodymap + resolve): {rung2_budget:?}"
+            "  -> RUNG-2 BUDGET (ws-parse + build(graph) + index+DeclSurface + resolve): {rung2_budget:?}"
         );
     }
 
@@ -1535,14 +1537,14 @@ mod tests {
             "fixture must produce at least one call-site edge"
         );
 
-        // Rebuild the SAME index/body_map/obj_node_map
+        // Rebuild the SAME index/surface/obj_node_map
         // `resolve_full_program_from_parts` builds internally (it is a
         // private inner helper with no other seam to observe from) — this
         // mirrors its own setup exactly.
         let obj_node_map: HashMap<ObjectNodeId, &ObjectNode> =
             graph.objects.iter().map(|o| (o.id.clone(), o)).collect();
         let index = ResolveIndex::build(graph);
-        let body_map = BodyMap::build(graph, parsed);
+        let surface = DeclSurface::build(graph, parsed);
 
         // Walk in the EXACT same order `resolve_full_program_from_parts`
         // does: parsed units (filtered to the primary app) x unit.files
@@ -1565,7 +1567,7 @@ mod tests {
                     primary_app_ref,
                     graph,
                     &index,
-                    &body_map,
+                    &surface,
                     &obj_node_map,
                 );
 

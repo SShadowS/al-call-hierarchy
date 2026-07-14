@@ -2,7 +2,7 @@
 //! (LSP-migration arc) Task 3: MEASUREMENT ONLY, no engine behavior changes.
 //!
 //! Splits `aldump --program-call-graph-stats`'s pipeline into its stages —
-//! snapshot / parse / build(graph) / `ResolveIndex::build` / `BodyMap::build`
+//! snapshot / parse / build(graph) / `ResolveIndex::build` / `DeclSurface::build`
 //! / resolve — over the synthetic 100/1000-file perf corpus (same generator
 //! `benches/lsp_pipeline.rs` uses). Real (CDO-scale) numbers come from a
 //! separate `#[ignore]`d unit test inside `src/program/resolve/full.rs`
@@ -15,7 +15,7 @@
 //! `resolve_full_program_from_parts` (the obligation-resolution inner loop,
 //! `src/program/resolve/full.rs`) is a private fn — invisible to this bench,
 //! which (like every `benches/*.rs` file) compiles as its own external crate.
-//! `ResolveIndex::build` and `BodyMap::build` ARE `pub`, so they're benched
+//! `ResolveIndex::build` and `DeclSurface::build` ARE `pub`, so they're benched
 //! directly below. The only public entry point that reaches the private
 //! inner loop is [`resolve_full_program`], which re-does snapshot + parse +
 //! graph-build + index/body-map-build ITSELF (see `full.rs`'s
@@ -42,7 +42,7 @@ mod perf_support;
 
 use al_call_hierarchy::program::abi_ingest::AbiCache;
 use al_call_hierarchy::program::build::build_program_graph;
-use al_call_hierarchy::program::resolve::body_map::BodyMap;
+use al_call_hierarchy::program::resolve::decl_surface::DeclSurface;
 use al_call_hierarchy::program::resolve::full::resolve_full_program;
 use al_call_hierarchy::program::resolve::index::ResolveIndex;
 use al_call_hierarchy::snapshot::{AppSetSnapshot, SnapshotBuilder, parse_snapshot};
@@ -156,7 +156,7 @@ fn bench_resolve_index_build(c: &mut Criterion) {
     group.finish();
 }
 
-/// Stage 5: `BodyMap::build` — maps every `RoutineNodeId` to its borrowed
+/// Stage 5: `DeclSurface::build` — maps every `RoutineNodeId` to its borrowed
 /// `RoutineDecl` from the parsed IR. The other half of the red-flag pair.
 fn bench_body_map_build(c: &mut Criterion) {
     let mut group = c.benchmark_group("engine_stage_body_map_build");
@@ -167,8 +167,8 @@ fn bench_body_map_build(c: &mut Criterion) {
         let parsed = parse_snapshot(&snap);
         group.bench_function(format!("{file_count}_files"), |b| {
             b.iter(|| {
-                let body_map = BodyMap::build(black_box(&graph), black_box(&parsed));
-                black_box(&body_map);
+                let surface = DeclSurface::build(black_box(&graph), black_box(&parsed));
+                black_box(&surface);
             });
         });
     }

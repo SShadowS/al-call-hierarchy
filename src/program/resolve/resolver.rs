@@ -69,8 +69,8 @@ use crate::program::resolve::arg_dispatch::{
     ArgDispatchInfo, ParamDispatchInfo, candidate_param_infos, candidate_param_infos_abi,
     pick_candidate,
 };
-use crate::program::resolve::body_map::BodyMap;
 use crate::program::resolve::builtins::{catalog_version, global_builtin_id};
+use crate::program::resolve::decl_surface::DeclSurface;
 use crate::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, Condition,
     DispatchShape, Edge, EdgeKind, Evidence, EvidenceKind, OpenWorldReason, Route, RouteTarget,
@@ -121,27 +121,27 @@ fn extension_base_kind(kind: ObjectKind) -> Option<ObjectKind> {
 
 /// Build a `Route` for a resolved routine.
 ///
-/// - If the routine is in the `BodyMap` (source-bearing): `Evidence::Source` +
+/// - If the routine is in the `DeclSurface` (source-bearing): `Evidence::Source` +
 ///   `Witness::SourceSpan { file: virtual_path, span: (start_byte, end_byte) }`.
 /// - If the routine is `SymbolOnly` (dep boundary, body unavailable): `Evidence::Opaque` +
 ///   `Witness::AbiSymbol` — the symbol identity is retained as a boundary marker.
-/// - If the routine is NOT in the `BodyMap` (integration gap on a source-bearing tier):
+/// - If the routine is NOT in the `DeclSurface` (integration gap on a source-bearing tier):
 ///   `Evidence::Unknown` + `Witness::None`.  Surface this as Unknown so the gap shows up
 ///   in `real_unknown_rate` rather than being silently hidden.
 fn make_routine_route(
     rid: &RoutineNodeId,
     obj_tier: TrustTier,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     graph: &ProgramGraph,
 ) -> Route {
-    if let Some((decl, path)) = body_map.get_with_path(rid) {
+    if let Some((meta, path)) = surface.get_with_path(rid) {
         Route {
             target: RouteTarget::Routine(rid.clone()),
             evidence: tier_evidence(obj_tier),
             conditions: vec![],
             witness: Witness::SourceSpan {
                 file: path.to_string(),
-                span: (decl.origin.byte.start as u32, decl.origin.byte.end as u32),
+                span: (meta.origin.byte.start as u32, meta.origin.byte.end as u32),
             },
             receiver_tier: None,
         }
@@ -189,7 +189,7 @@ fn make_routine_route(
             receiver_tier: None,
         }
     } else {
-        // Source-tier BodyMap miss: integration bug.  Surface it as Unknown so
+        // Source-tier DeclSurface miss: integration bug.  Surface it as Unknown so
         // the gap shows up in `real_unknown_rate` rather than being silently hidden.
         unresolved_route(UnknownReason::IndexIntegrationGap)
     }
@@ -258,7 +258,7 @@ fn routine_is_collapse_marked(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool
 /// `RoutineNodeId` (see `build::dedup_routines_preserving_genuine_overloads`'s
 /// doc) — left unguarded, such a pair could reach `resolve_in_object`'s `_`
 /// arm as TWO candidates sharing one id, both resolving through the SAME
-/// `BodyMap` entry (`BodyMap` is keyed by `RoutineNodeId`), and construct an
+/// `DeclSurface` entry (`DeclSurface` is keyed by `RoutineNodeId`), and construct an
 /// `AmbiguousOverload` shape with two IDENTICAL-target concrete routes — the
 /// last laundering path out of `unknown` this prevalidation exists to close.
 fn routine_is_source_aliased(rid: &RoutineNodeId, graph: &ProgramGraph) -> bool {
@@ -348,7 +348,7 @@ fn resolve_in_object(
     from_object: &ObjectNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     // Task 2 (argtype-dispatch-and-page-catalog plan): the call site's typed
     // arguments, consulted ONLY by the `_` arm's fail-closed pick (see
     // `arg_dispatch`'s module doc) — every other arm ignores this entirely.
@@ -485,7 +485,7 @@ fn resolve_in_object(
             }
             Some((
                 DispatchShape::Exact,
-                vec![make_routine_route(rid0, obj_tier, body_map, graph)],
+                vec![make_routine_route(rid0, obj_tier, surface, graph)],
             ))
         }
         // pre_filter_count == 1 was already handled by the guarded arm above;
@@ -501,7 +501,7 @@ fn resolve_in_object(
         // reclassification plan, Task 4 — round-2 closer #1 PREVALIDATION):
         // every candidate must be CONCRETE — not collapse-marked (ABI or
         // source-alias) AND its constructed route must carry non-`Unknown`
-        // evidence (a source-tier candidate absent from `BodyMap` would
+        // evidence (a source-tier candidate absent from `DeclSurface` would
         // otherwise silently degrade `make_routine_route` to
         // `Unknown(IndexIntegrationGap)`) — BEFORE the
         // `DispatchShape::AmbiguousOverload` shape is ever constructed. A
@@ -548,10 +548,10 @@ fn resolve_in_object(
             // fail-closed arg-type pick over `visible` BEFORE constructing
             // the AmbiguousOverload route set — see `arg_dispatch`'s module
             // doc for the full hardened rule set. Per-candidate metadata now
-            // comes from BodyMap FIRST, falling back to the ABI-AWARE route
-            // (`arg_dispatch::candidate_param_infos_abi`) ONLY when BodyMap
+            // comes from DeclSurface FIRST, falling back to the ABI-AWARE route
+            // (`arg_dispatch::candidate_param_infos_abi`) ONLY when DeclSurface
             // has no entry — see `candidate_param_infos_either`'s doc for why
-            // "no BodyMap entry" (not `obj_tier`) is the correct trigger.
+            // "no DeclSurface entry" (not `obj_tier`) is the correct trigger.
             // `visible` already passed the `degraded` prevalidation above, so
             // every SOURCE candidate reaching the pick is individually
             // CONCRETE (non-collapse-marked, non-source-aliased) by
@@ -564,7 +564,7 @@ fn resolve_in_object(
                 let mut candidate_params = Vec::with_capacity(visible.len());
                 let mut all_known = true;
                 for rid in &visible {
-                    match candidate_param_infos_either(rid, graph, index, body_map) {
+                    match candidate_param_infos_either(rid, graph, index, surface) {
                         Some(p) => candidate_params.push(p),
                         None => {
                             all_known = false;
@@ -576,14 +576,14 @@ fn resolve_in_object(
                     let rid0 = visible[picked_idx];
                     return Some((
                         DispatchShape::Exact,
-                        vec![make_routine_route(rid0, obj_tier, body_map, graph)],
+                        vec![make_routine_route(rid0, obj_tier, surface, graph)],
                     ));
                 }
             }
 
             let candidate_routes: Vec<Route> = visible
                 .iter()
-                .map(|rid| make_routine_route(rid, obj_tier, body_map, graph))
+                .map(|rid| make_routine_route(rid, obj_tier, surface, graph))
                 .collect();
             if candidate_routes
                 .iter()
@@ -607,11 +607,11 @@ fn resolve_in_object(
 }
 
 /// Per-candidate parameter metadata lookup for the arg-type pick (Task 2,
-/// roadmap-closure plan) — `BodyMap` FIRST (the pre-existing SOURCE-tier
+/// roadmap-closure plan) — `DeclSurface` FIRST (the pre-existing SOURCE-tier
 /// route, unchanged), then the ABI-AWARE fallback
-/// ([`candidate_param_infos_abi`]) ONLY when `BodyMap` has no entry for
-/// `rid`. "No `BodyMap` entry" — not `rid.object`'s tier — is deliberately
-/// the trigger: every SOURCE-tier routine has a `BodyMap` entry and every
+/// ([`candidate_param_infos_abi`]) ONLY when `DeclSurface` has no entry for
+/// `rid`. "No `DeclSurface` entry" — not `rid.object`'s tier — is deliberately
+/// the trigger: every SOURCE-tier routine has a `DeclSurface` entry and every
 /// `TrustTier::SymbolOnly` routine never does (see the `arg_dispatch` module
 /// doc's "SOURCE tier only" section, now extended by the ABI fallback below
 /// it), so the two routes can never disagree about which one applies to a
@@ -623,10 +623,10 @@ fn candidate_param_infos_either(
     rid: &RoutineNodeId,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> Option<Vec<ParamDispatchInfo>> {
-    if let Some(decl) = body_map.get(rid) {
-        return candidate_param_infos(decl, &rid.object, graph, index);
+    if let Some(meta) = surface.get(rid) {
+        return candidate_param_infos(meta, &rid.object, graph, index);
     }
     candidate_param_infos_abi(rid, graph, index)
 }
@@ -1057,7 +1057,7 @@ fn resolve_in_extendable_scope(
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     args: &[ArgDispatchInfo],
     extensions_of: for<'a> fn(&'a ResolveIndex, &str) -> &'a [ObjectNodeId],
     zero_match: ZeroMatchStrategy,
@@ -1126,7 +1126,7 @@ fn resolve_in_extendable_scope(
             &from_object.id,
             graph,
             index,
-            body_map,
+            surface,
             args,
         ) {
             Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
@@ -1176,7 +1176,7 @@ fn resolve_in_extendable_scope(
                         &from_object.id,
                         graph,
                         index,
-                        body_map,
+                        surface,
                         args,
                     ) {
                         Some((shape, routes)) => TableScopeOutcome::Resolved(shape, routes),
@@ -1214,7 +1214,7 @@ fn resolve_in_table_scope(
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     args: &[ArgDispatchInfo],
 ) -> TableScopeOutcome {
     resolve_in_extendable_scope(
@@ -1224,7 +1224,7 @@ fn resolve_in_table_scope(
         arity,
         graph,
         index,
-        body_map,
+        surface,
         args,
         ResolveIndex::table_extensions_of,
         ZeroMatchStrategy::AccessExcludedReason,
@@ -1273,7 +1273,7 @@ fn resolve_in_page_scope(
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     args: &[ArgDispatchInfo],
 ) -> TableScopeOutcome {
     resolve_in_extendable_scope(
@@ -1283,7 +1283,7 @@ fn resolve_in_page_scope(
         arity,
         graph,
         index,
-        body_map,
+        surface,
         args,
         ResolveIndex::page_extensions_of,
         ZeroMatchStrategy::PreserveArityMismatch,
@@ -1331,7 +1331,7 @@ fn resolve_in_report_scope(
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     args: &[ArgDispatchInfo],
 ) -> TableScopeOutcome {
     resolve_in_extendable_scope(
@@ -1341,7 +1341,7 @@ fn resolve_in_report_scope(
         arity,
         graph,
         index,
-        body_map,
+        surface,
         args,
         ResolveIndex::report_extensions_of,
         ZeroMatchStrategy::PreserveArityMismatch,
@@ -1558,7 +1558,7 @@ pub fn resolve_bare(
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
 ) -> (DispatchShape, Vec<Route>) {
     resolve_bare_with_args(
@@ -1567,7 +1567,7 @@ pub fn resolve_bare(
         arity,
         graph,
         index,
-        body_map,
+        surface,
         with_state,
         &[],
     )
@@ -1588,7 +1588,7 @@ pub(crate) fn resolve_bare_with_args(
     arity: usize,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     with_state: WithState,
     args: &[ArgDispatchInfo],
 ) -> (DispatchShape, Vec<Route>) {
@@ -1601,7 +1601,7 @@ pub(crate) fn resolve_bare_with_args(
         &from_object.id,
         graph,
         index,
-        body_map,
+        surface,
         args,
     ) {
         return (shape, routes);
@@ -1651,7 +1651,7 @@ pub(crate) fn resolve_bare_with_args(
                 &from_object.id,
                 graph,
                 index,
-                body_map,
+                surface,
                 args,
             ) {
                 return (shape, routes);
@@ -1704,7 +1704,7 @@ pub(crate) fn resolve_bare_with_args(
                     arity,
                     graph,
                     index,
-                    body_map,
+                    surface,
                     args,
                 ) {
                     TableScopeOutcome::Resolved(shape, routes) => {
@@ -1842,7 +1842,7 @@ fn dispatch_entry_trigger(
     object_kind: ObjectKind,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> (DispatchShape, Vec<Route>) {
     let trigger_name = entry_trigger_name(object_kind);
     let candidates = index.routines_in_object(target_id, trigger_name);
@@ -1887,7 +1887,7 @@ fn dispatch_entry_trigger(
 
     (
         DispatchShape::Exact,
-        vec![make_routine_route(entry_rid, target_tier, body_map, graph)],
+        vec![make_routine_route(entry_rid, target_tier, surface, graph)],
     )
 }
 
@@ -1918,7 +1918,7 @@ pub fn resolve_object_run(
     target_is_name: bool,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> (DispatchShape, SetCompleteness, Vec<Route>) {
     let Some(target_ref) = target_ref else {
         // Dynamic target (a runtime variable) — known shape, open world.
@@ -1968,7 +1968,7 @@ pub fn resolve_object_run(
         object_kind,
         graph,
         index,
-        body_map,
+        surface,
     );
     (shape, SetCompleteness::Complete, routes)
 }
@@ -2010,7 +2010,7 @@ pub fn resolve_implicit_trigger(
     table_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> (DispatchShape, SetCompleteness, Vec<Route>) {
     let trigger_name: &str = match op.to_ascii_lowercase().as_str() {
         "insert" => "oninsert",
@@ -2047,7 +2047,7 @@ pub fn resolve_implicit_trigger(
             routes.push(unresolved_route(UnknownReason::OverloadAmbiguous));
             continue;
         }
-        routes.push(make_routine_route(rid, table_object.tier, body_map, graph));
+        routes.push(make_routine_route(rid, table_object.tier, surface, graph));
     }
 
     // Triggers on every TableExtension of this table (reverse-dep; whole-snapshot).
@@ -2064,7 +2064,7 @@ pub fn resolve_implicit_trigger(
                 routes.push(unresolved_route(UnknownReason::OverloadAmbiguous));
                 continue;
             }
-            routes.push(make_routine_route(rid, ext_tier, body_map, graph));
+            routes.push(make_routine_route(rid, ext_tier, surface, graph));
         }
     }
 
@@ -2267,7 +2267,7 @@ pub fn resolve_member(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> (DispatchShape, Vec<Route>) {
     resolve_member_with_args(
         receiver,
@@ -2276,7 +2276,7 @@ pub fn resolve_member(
         from_object,
         graph,
         index,
-        body_map,
+        surface,
         &[],
     )
 }
@@ -2292,7 +2292,7 @@ pub(crate) fn resolve_member_with_args(
     from_object: &ObjectNode,
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
     args: &[ArgDispatchInfo],
 ) -> (DispatchShape, Vec<Route>) {
     match receiver {
@@ -2403,7 +2403,7 @@ pub(crate) fn resolve_member_with_args(
                     arity,
                     graph,
                     index,
-                    body_map,
+                    surface,
                     args,
                 ) {
                     TableScopeOutcome::Resolved(shape, routes) => return (shape, routes),
@@ -2473,7 +2473,7 @@ pub(crate) fn resolve_member_with_args(
             };
             if is_entry_trigger_dispatch && arity <= 1 {
                 let (shape, routes) =
-                    dispatch_entry_trigger(&target_id, target_tier, *kind, graph, index, body_map);
+                    dispatch_entry_trigger(&target_id, target_tier, *kind, graph, index, surface);
                 return (shape, routes);
             }
 
@@ -2502,7 +2502,7 @@ pub(crate) fn resolve_member_with_args(
                         arity,
                         graph,
                         index,
-                        body_map,
+                        surface,
                         args,
                     )
                 } else {
@@ -2513,7 +2513,7 @@ pub(crate) fn resolve_member_with_args(
                         arity,
                         graph,
                         index,
-                        body_map,
+                        surface,
                         args,
                     )
                 };
@@ -2546,7 +2546,7 @@ pub(crate) fn resolve_member_with_args(
                     &from_object.id,
                     graph,
                     index,
-                    body_map,
+                    surface,
                     args,
                 )
             };
@@ -2592,7 +2592,7 @@ pub(crate) fn resolve_member_with_args(
                 &from_object.id,
                 graph,
                 index,
-                body_map,
+                surface,
                 args,
             ) {
                 (shape, routes)
@@ -2650,7 +2650,7 @@ pub(crate) fn resolve_member_with_args(
                         &from_object.id,
                         graph,
                         index,
-                        body_map,
+                        surface,
                         args,
                     );
                     // The implementer object itself IS resolved (`impl_id`/
@@ -2700,7 +2700,7 @@ pub(crate) fn resolve_member_with_args(
                                     &from_object.id,
                                     graph,
                                     index,
-                                    body_map,
+                                    surface,
                                     args,
                                 );
                                 let route = interface_delegate_route(
@@ -2909,8 +2909,8 @@ fn resolve_abi_prefix_routine<'g>(
 /// TRUE dual-publisher source-overload-alias collision (Task 1,
 /// sigfp-and-ambiguous-reclassification plan).
 ///
-/// [`BodyMap::get_with_path`]'s lookup is keyed by `RoutineNodeId` alone and
-/// `BodyMap::build` is last-write-wins on that key (see its doc), so for an
+/// [`DeclSurface::get_with_path`]'s lookup is keyed by `RoutineNodeId` alone and
+/// `DeclSurface::build` is last-write-wins on that key (see its doc), so for an
 /// aliased id it can only ever return ONE decl+span — there is no way to
 /// tell, from inside [`emit_event_flow_edges`]'s loop, which of the ≥2
 /// physically distinct publisher declarations that single answer actually
@@ -2968,8 +2968,8 @@ pub fn dual_publisher_alias_skip_count(routines: &[RoutineNode]) -> usize {
 ///
 /// - `from` = the publisher `RoutineNodeId`.
 /// - `site` = `SiteId` anchored at the publisher routine's name-origin span
-///   (from the `body_map`; synthetic zero-span when the publisher is not in the
-///   `body_map`, e.g. a SymbolOnly dep or an integration gap).
+///   (from the `surface`; synthetic zero-span when the publisher is not in the
+///   `surface`, e.g. a SymbolOnly dep or an integration gap).
 /// - `kind` = `EdgeKind::EventFlow`.
 /// - `shape` = `DispatchShape::Multicast`.
 /// - `completeness` = `SetCompleteness::Partial { ReverseDependentSubscribers }`.
@@ -3005,7 +3005,7 @@ pub fn dual_publisher_alias_skip_count(routines: &[RoutineNode]) -> usize {
 pub fn emit_event_flow_edges(
     graph: &ProgramGraph,
     index: &ResolveIndex,
-    body_map: &BodyMap<'_>,
+    surface: &DeclSurface,
 ) -> Vec<Edge> {
     let mut edges = Vec::new();
     let dual_publisher_alias = dual_publisher_alias_ids(&graph.routines);
@@ -3050,15 +3050,15 @@ pub fn emit_event_flow_edges(
                     .unwrap_or(TrustTier::Workspace);
 
                 // Build base route using make_routine_route (handles Source/Opaque/Unknown
-                // tiers via body_map), then inject the subscriber's conditions.
-                let mut route = make_routine_route(&se.subscriber, sub_tier, body_map, graph);
+                // tiers via surface), then inject the subscriber's conditions.
+                let mut route = make_routine_route(&se.subscriber, sub_tier, surface, graph);
                 route.conditions = se.conditions.clone();
                 route
             })
             .collect();
 
         // SiteId: anchored at the publisher routine's name-origin span.
-        let site = if let Some((decl, path)) = body_map.get_with_path(&pub_routine.id) {
+        let site = if let Some((decl, path)) = surface.get_with_path(&pub_routine.id) {
             SiteId {
                 caller: pub_routine.id.clone(),
                 span: CanonicalSpan {
@@ -3075,7 +3075,7 @@ pub fn emit_event_flow_edges(
                 callee_fingerprint: callee_fp(&pub_routine.id.name_lc),
             }
         } else {
-            // Publisher not in body_map (SymbolOnly dep or integration gap):
+            // Publisher not in surface (SymbolOnly dep or integration gap):
             // use a synthetic zero-span site.
             SiteId {
                 caller: pub_routine.id.clone(),
@@ -3117,7 +3117,7 @@ mod tests {
         AbiParamRetained, AbiParams, Access, ObjectNode, RoutineNode, extract_nodes,
     };
     use crate::program::resolve::arg_dispatch::{CanonicalArgType, LiteralKind};
-    use crate::program::resolve::body_map::BodyMap;
+    use crate::program::resolve::decl_surface::DeclSurface;
     use crate::program::resolve::edge::{
         Condition, DispatchShape, Edge, EdgeKind, Evidence, Histogram, ObligationOutcome,
         OpenWorldReason, RouteTarget, SetCompleteness, Witness, classify_obligation,
@@ -3151,9 +3151,9 @@ mod tests {
             app: app_id,
             files: vec![ParsedFile {
                 virtual_path: virtual_path.to_string(),
-                file: al_syntax::parse(src),
+                file: std::sync::Arc::new(al_syntax::parse(src)),
                 provenance,
-                text: src.to_string(),
+                text: src.into(),
             }],
         }
     }
@@ -3334,7 +3334,7 @@ codeunit 50100 "MyCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "MyCU");
         let (_shape, routes) = resolve_bare(
@@ -3343,7 +3343,7 @@ codeunit 50100 "MyCU"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3387,7 +3387,7 @@ codeunit 50101 "CallerCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "CallerCU");
         // "message" (1 arg) is a recognized global builtin.
@@ -3397,7 +3397,7 @@ codeunit 50101 "CallerCU"
             1,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3472,7 +3472,7 @@ page 50901 "EMailJobsPage"
         let units = [unit_table, unit_page];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "EMailJobsPage");
         let (shape, routes) = resolve_bare(
@@ -3481,7 +3481,7 @@ page 50901 "EMailJobsPage"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3533,7 +3533,7 @@ page 50911 "BazPage"
         let units = [unit_table, unit_page];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "BazPage");
         let (shape, routes) = resolve_bare(
@@ -3542,7 +3542,7 @@ page 50911 "BazPage"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3582,7 +3582,7 @@ codeunit 50920 "CallerCU2"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "CallerCU2");
         let (shape, routes) = resolve_bare(
@@ -3591,7 +3591,7 @@ codeunit 50920 "CallerCU2"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3639,7 +3639,7 @@ page 50931 "Bar2Page"
         let units = [unit_table, unit_page];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "Bar2Page");
         let (shape, routes) = resolve_bare(
@@ -3648,7 +3648,7 @@ page 50931 "Bar2Page"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3685,7 +3685,7 @@ codeunit 50102 "AnotherCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "AnotherCU");
         let (_shape, routes) = resolve_bare(
@@ -3694,7 +3694,7 @@ codeunit 50102 "AnotherCU"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3729,7 +3729,7 @@ table 50108 "BareTableNF"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "BareTableNF");
         assert_eq!(
@@ -3743,7 +3743,7 @@ table 50108 "BareTableNF"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3799,7 +3799,7 @@ table 50000 Customer
 
         let graph = build_graph(&units, Some(("AppA", "AppB")));
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         // from_object = the TableExtension in App A.
         let from_obj = find_obj(&graph, "CustomerExt");
@@ -3817,7 +3817,7 @@ table 50000 Customer
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3883,7 +3883,7 @@ tableextension 52901 "ExtA" extends Base
         let units = [unit_base, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
         assert_eq!(from_obj.id.kind, ObjectKind::TableExtension);
@@ -3894,7 +3894,7 @@ tableextension 52901 "ExtA" extends Base
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3933,7 +3933,7 @@ tableextension 52903 "ExtA" extends Base
         let units = [unit_base, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
         let (_shape, routes) = resolve_bare(
@@ -3942,7 +3942,7 @@ tableextension 52903 "ExtA" extends Base
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -3982,7 +3982,7 @@ tableextension 52905 "ExtA" extends Base
         let units = [unit_base, unit_ext];
         let graph = build_graph(&units, Some(("AppA", "AppB")));
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
         let (_shape, routes) = resolve_bare(
@@ -3991,7 +3991,7 @@ tableextension 52905 "ExtA" extends Base
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -4032,7 +4032,7 @@ tableextension 52907 "ExtA" extends Base
         let units = [unit_base, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
         let (_shape, routes) = resolve_bare(
@@ -4041,7 +4041,7 @@ tableextension 52907 "ExtA" extends Base
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -4078,7 +4078,7 @@ pageextension 52909 "ExtA" extends BasePage
         let units = [unit_page, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
         assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
@@ -4089,7 +4089,7 @@ pageextension 52909 "ExtA" extends BasePage
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -4127,7 +4127,7 @@ pageextension 52911 "ExtA" extends BasePage
         let units = [unit_page, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ExtA");
         let (_shape, routes) = resolve_bare(
@@ -4136,7 +4136,7 @@ pageextension 52911 "ExtA" extends BasePage
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -4269,7 +4269,7 @@ pageextension 52911 "ExtA" extends BasePage
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let from_obj = graph
             .objects
@@ -4303,7 +4303,7 @@ pageextension 52911 "ExtA" extends BasePage
             2,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -4339,7 +4339,7 @@ pageextension 52911 "ExtA" extends BasePage
 
     fn plain_dispatch_marker_guard_fixture(
         collapsed: bool,
-    ) -> (ProgramGraph, ResolveIndex, BodyMap<'static>, ObjectNodeId) {
+    ) -> (ProgramGraph, ResolveIndex, DeclSurface, ObjectNodeId) {
         let ws_id = make_app_id("WS");
         let dep_id = make_app_id("DepApp");
 
@@ -4435,15 +4435,15 @@ pageextension 52911 "ExtA" extends BasePage
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
-        (graph, index, body_map, caller_obj_id)
+        let surface = DeclSurface::build(&graph, &[]);
+        (graph, index, surface, caller_obj_id)
     }
 
     #[test]
     fn plain_dispatch_declines_on_collapse_marked_candidate() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, caller_obj_id) = plain_dispatch_marker_guard_fixture(true);
+        let (graph, index, surface, caller_obj_id) = plain_dispatch_marker_guard_fixture(true);
         let from_obj = graph
             .objects
             .iter()
@@ -4456,7 +4456,7 @@ pageextension 52911 "ExtA" extends BasePage
             id: None,
         };
         let (_shape, routes) =
-            resolve_member(&receiver, "get", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "get", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -4490,7 +4490,7 @@ pageextension 52911 "ExtA" extends BasePage
     fn plain_dispatch_resolves_unmarked_candidate_normally() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, caller_obj_id) = plain_dispatch_marker_guard_fixture(false);
+        let (graph, index, surface, caller_obj_id) = plain_dispatch_marker_guard_fixture(false);
         let from_obj = graph
             .objects
             .iter()
@@ -4503,7 +4503,7 @@ pageextension 52911 "ExtA" extends BasePage
             id: None,
         };
         let (_shape, routes) =
-            resolve_member(&receiver, "get", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "get", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -4528,8 +4528,7 @@ pageextension 52911 "ExtA" extends BasePage
     /// `params_count`) to prove the structural guard holds independent of
     /// it, per the plan's "no unknown-metadata candidate is ever filtered
     /// out" rule.
-    fn abi_missing_metadata_fixture() -> (ProgramGraph, ResolveIndex, BodyMap<'static>, ObjectNodeId)
-    {
+    fn abi_missing_metadata_fixture() -> (ProgramGraph, ResolveIndex, DeclSurface, ObjectNodeId) {
         let ws_id = make_app_id("WS");
         let dep_id = make_app_id("DepApp");
 
@@ -4637,8 +4636,8 @@ pageextension 52911 "ExtA" extends BasePage
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
-        (graph, index, body_map, caller_obj_id)
+        let surface = DeclSurface::build(&graph, &[]);
+        (graph, index, surface, caller_obj_id)
     }
 
     /// Fixture (d): a `Missing`-metadata ABI candidate in the visible set
@@ -4649,7 +4648,7 @@ pageextension 52911 "ExtA" extends BasePage
     fn resolve_member_degrades_when_one_abi_candidate_has_missing_metadata() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, caller_obj_id) = abi_missing_metadata_fixture();
+        let (graph, index, surface, caller_obj_id) = abi_missing_metadata_fixture();
         let from_obj = graph
             .objects
             .iter()
@@ -4668,7 +4667,7 @@ pageextension 52911 "ExtA" extends BasePage
             var_passable: false,
         }];
         let (shape, routes) = resolve_member_with_args(
-            &receiver, "get", 1, from_obj, &graph, &index, &body_map, &args,
+            &receiver, "get", 1, from_obj, &graph, &index, &surface, &args,
         );
 
         assert_eq!(
@@ -4690,15 +4689,15 @@ pageextension 52911 "ExtA" extends BasePage
     /// Fixtures (e)/(f), at the `candidate_param_infos_either` mechanism
     /// level (the generic per-candidate helper `resolve_in_object`'s gate
     /// calls): a real SOURCE candidate (a genuinely parsed `RoutineDecl`, a
-    /// `BodyMap` hit) mixed with an ABI candidate — proven directly against
+    /// `DeclSurface` hit) mixed with an ABI candidate — proven directly against
     /// the helper rather than through `resolve_member`/`resolve_in_object`
     /// end-to-end, because ONE `ObjectNode` cannot legitimately carry two
     /// DIFFERENT tiers at once (an object is wholly SOURCE-parsed or wholly
     /// ABI-ingested by construction — see `TrustTier`'s doc); this
     /// nonetheless exercises the REAL contract `candidate_param_infos_either`
-    /// promises: "no BodyMap entry" (never `rid.object`'s tier) decides which
-    /// route serves a given `rid`, so a SOURCE `rid` (found in `BodyMap`) and
-    /// an ABI `rid` (not in `BodyMap`, but carrying `abi_params`) can
+    /// promises: "no DeclSurface entry" (never `rid.object`'s tier) decides which
+    /// route serves a given `rid`, so a SOURCE `rid` (found in `DeclSurface`) and
+    /// an ABI `rid` (not in `DeclSurface`, but carrying `abi_params`) can
     /// coexist in one candidate list exactly as `resolve_in_object`'s loop
     /// assembles one.
     #[test]
@@ -4725,7 +4724,7 @@ codeunit 50611 "MixedCU"
             .clone();
 
         // Inject a SECOND same-name/same-arity overload on the SAME object,
-        // carrying ABI metadata instead of a BodyMap entry — see the fixture
+        // carrying ABI metadata instead of a DeclSurface entry — see the fixture
         // doc for why this is legitimately synthetic.
         let abi_rid = RoutineNodeId {
             object: source_obj_id.clone(),
@@ -4762,11 +4761,11 @@ codeunit 50611 "MixedCU"
         graph.routines.sort_by(|a, b| a.id.cmp(&b.id));
 
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
-        let source_params = candidate_param_infos_either(&source_rid, &graph, &index, &body_map)
-            .expect("the source candidate must read via BodyMap");
-        let abi_params = candidate_param_infos_either(&abi_rid, &graph, &index, &body_map)
+        let source_params = candidate_param_infos_either(&source_rid, &graph, &index, &surface)
+            .expect("the source candidate must read via DeclSurface");
+        let abi_params = candidate_param_infos_either(&abi_rid, &graph, &index, &surface)
             .expect("the ABI candidate must read via the AbiParams::Complete fallback");
 
         let args = [ArgDispatchInfo {
@@ -4840,14 +4839,14 @@ codeunit 50612 "MixedCU2"
         graph.routines.sort_by(|a, b| a.id.cmp(&b.id));
 
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         assert!(
-            candidate_param_infos_either(&source_rid, &graph, &index, &body_map).is_some(),
-            "the source candidate alone is perfectly readable via BodyMap"
+            candidate_param_infos_either(&source_rid, &graph, &index, &surface).is_some(),
+            "the source candidate alone is perfectly readable via DeclSurface"
         );
         assert!(
-            candidate_param_infos_either(&abi_rid, &graph, &index, &body_map).is_none(),
+            candidate_param_infos_either(&abi_rid, &graph, &index, &surface).is_none(),
             "the no-filtering rule: a Missing ABI sibling must decline on its \
              own terms, never be quietly dropped so the source candidate \
              resolves alone"
@@ -4892,7 +4891,7 @@ codeunit 50612 "MixedCU2"
     ) -> (
         ProgramGraph,
         ResolveIndex,
-        BodyMap<'static>,
+        DeclSurface,
         ObjectNodeId,
         ObjectNodeId,
     ) {
@@ -4986,15 +4985,15 @@ codeunit 50612 "MixedCU2"
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
-        (graph, index, body_map, caller_obj_id, dep_obj_id)
+        let surface = DeclSurface::build(&graph, &[]);
+        (graph, index, surface, caller_obj_id, dep_obj_id)
     }
 
     // --- Site 1: `resolve_object_run` ---------------------------------------
 
     #[test]
     fn object_run_declines_on_collapse_marked_entry_trigger() {
-        let (graph, index, body_map, _caller_obj_id, _dep_obj_id) =
+        let (graph, index, surface, _caller_obj_id, _dep_obj_id) =
             entry_trigger_marker_guard_fixture(true);
         let from = graph.apps.find_by_name("WS").expect("WS app");
 
@@ -5005,7 +5004,7 @@ codeunit 50612 "MixedCU2"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -5030,7 +5029,7 @@ codeunit 50612 "MixedCU2"
 
     #[test]
     fn object_run_resolves_unmarked_entry_trigger_normally() {
-        let (graph, index, body_map, _caller_obj_id, _dep_obj_id) =
+        let (graph, index, surface, _caller_obj_id, _dep_obj_id) =
             entry_trigger_marker_guard_fixture(false);
         let from = graph.apps.find_by_name("WS").expect("WS app");
 
@@ -5041,7 +5040,7 @@ codeunit 50612 "MixedCU2"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(routes.len(), 1);
@@ -5059,7 +5058,7 @@ codeunit 50612 "MixedCU2"
     fn resolve_member_object_run_arm_declines_on_collapse_marked_entry_trigger() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, caller_obj_id, _dep_obj_id) =
+        let (graph, index, surface, caller_obj_id, _dep_obj_id) =
             entry_trigger_marker_guard_fixture(true);
         let from_obj = graph
             .objects
@@ -5073,7 +5072,7 @@ codeunit 50612 "MixedCU2"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -5099,7 +5098,7 @@ codeunit 50612 "MixedCU2"
     fn resolve_member_object_run_arm_resolves_unmarked_entry_trigger_normally() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, caller_obj_id, _dep_obj_id) =
+        let (graph, index, surface, caller_obj_id, _dep_obj_id) =
             entry_trigger_marker_guard_fixture(false);
         let from_obj = graph
             .objects
@@ -5113,7 +5112,7 @@ codeunit 50612 "MixedCU2"
             id: None,
         };
         let (_shape, routes) =
-            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -5131,7 +5130,7 @@ codeunit 50612 "MixedCU2"
     /// trigger candidate carries `abi_overload_collapsed` directly.
     fn implicit_trigger_marker_guard_fixture(
         collapsed: bool,
-    ) -> (ProgramGraph, ResolveIndex, BodyMap<'static>, ObjectNodeId) {
+    ) -> (ProgramGraph, ResolveIndex, DeclSurface, ObjectNodeId) {
         let dep_id = make_app_id("DepApp");
         let mut apps = AppRegistry::default();
         let dep_ref = apps.intern(&dep_id);
@@ -5194,13 +5193,13 @@ codeunit 50612 "MixedCU2"
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
-        (graph, index, body_map, table_obj_id)
+        let surface = DeclSurface::build(&graph, &[]);
+        (graph, index, surface, table_obj_id)
     }
 
     #[test]
     fn implicit_trigger_declines_route_for_collapse_marked_trigger() {
-        let (graph, index, body_map, table_obj_id) = implicit_trigger_marker_guard_fixture(true);
+        let (graph, index, surface, table_obj_id) = implicit_trigger_marker_guard_fixture(true);
         let table_obj = graph
             .objects
             .iter()
@@ -5208,7 +5207,7 @@ codeunit 50612 "MixedCU2"
             .expect("table");
 
         let (shape, completeness, routes) =
-            resolve_implicit_trigger("insert", table_obj, &graph, &index, &body_map);
+            resolve_implicit_trigger("insert", table_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Multicast);
         assert_eq!(
@@ -5242,7 +5241,7 @@ codeunit 50612 "MixedCU2"
 
     #[test]
     fn implicit_trigger_resolves_unmarked_trigger_normally() {
-        let (graph, index, body_map, table_obj_id) = implicit_trigger_marker_guard_fixture(false);
+        let (graph, index, surface, table_obj_id) = implicit_trigger_marker_guard_fixture(false);
         let table_obj = graph
             .objects
             .iter()
@@ -5250,7 +5249,7 @@ codeunit 50612 "MixedCU2"
             .expect("table");
 
         let (_shape, _completeness, routes) =
-            resolve_implicit_trigger("insert", table_obj, &graph, &index, &body_map);
+            resolve_implicit_trigger("insert", table_obj, &graph, &index, &surface);
 
         assert_eq!(routes.len(), 1);
         let r = &routes[0];
@@ -5269,7 +5268,7 @@ codeunit 50612 "MixedCU2"
     /// collapsed` directly.
     fn event_flow_marker_guard_fixture(
         collapsed: bool,
-    ) -> (ProgramGraph, ResolveIndex, BodyMap<'static>) {
+    ) -> (ProgramGraph, ResolveIndex, DeclSurface) {
         let dep_id = make_app_id("DepApp");
         let mut apps = AppRegistry::default();
         let dep_ref = apps.intern(&dep_id);
@@ -5390,14 +5389,14 @@ codeunit 50612 "MixedCU2"
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
-        (graph, index, body_map)
+        let surface = DeclSurface::build(&graph, &[]);
+        (graph, index, surface)
     }
 
     #[test]
     fn event_flow_skips_route_for_collapse_marked_subscriber() {
-        let (graph, index, body_map) = event_flow_marker_guard_fixture(true);
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let (graph, index, surface) = event_flow_marker_guard_fixture(true);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
         let event_edges: Vec<&Edge> = edges
             .iter()
             .filter(|e| e.kind == EdgeKind::EventFlow)
@@ -5421,8 +5420,8 @@ codeunit 50612 "MixedCU2"
 
     #[test]
     fn event_flow_includes_route_for_unmarked_subscriber_normally() {
-        let (graph, index, body_map) = event_flow_marker_guard_fixture(false);
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let (graph, index, surface) = event_flow_marker_guard_fixture(false);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
         let event_edges: Vec<&Edge> = edges
             .iter()
             .filter(|e| e.kind == EdgeKind::EventFlow)
@@ -5458,7 +5457,7 @@ codeunit 50200 "ContractCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
         let from_obj = find_obj(&graph, "ContractCU");
 
         // Source route: resolve to own procedure.
@@ -5468,7 +5467,7 @@ codeunit 50200 "ContractCU"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(src_routes.len(), 1);
@@ -5486,7 +5485,7 @@ codeunit 50200 "ContractCU"
             1,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(cat_routes.len(), 1);
@@ -5504,7 +5503,7 @@ codeunit 50200 "ContractCU"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(unk_routes.len(), 1);
@@ -5541,7 +5540,7 @@ codeunit 50103 "ArityMismatchCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ArityMismatchCU");
         // "dofoo" exists with arity 0; we request arity 2 → no match.
@@ -5551,7 +5550,7 @@ codeunit 50103 "ArityMismatchCU"
             2,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -5603,7 +5602,7 @@ codeunit 50200 "TargetCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from = sole_app_ref(&graph);
         let (shape, completeness, routes) = resolve_object_run(
@@ -5613,7 +5612,7 @@ codeunit 50200 "TargetCU"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(
@@ -5663,7 +5662,7 @@ page 50300 "SomePage"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from = sole_app_ref(&graph);
         let (shape, completeness, routes) = resolve_object_run(
@@ -5673,7 +5672,7 @@ page 50300 "SomePage"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -5708,7 +5707,7 @@ codeunit 50201 "CallerCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from = sole_app_ref(&graph);
         let (shape, completeness, routes) = resolve_object_run(
@@ -5718,7 +5717,7 @@ codeunit 50201 "CallerCU"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(
@@ -5761,7 +5760,7 @@ codeunit 50202 "AnotherCaller"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from = sole_app_ref(&graph);
         let (shape, completeness, routes) = resolve_object_run(
@@ -5771,7 +5770,7 @@ codeunit 50202 "AnotherCaller"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(
@@ -5826,7 +5825,7 @@ codeunit 50203 "NoTriggerCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from = sole_app_ref(&graph);
         let (shape, completeness, routes) = resolve_object_run(
@@ -5836,7 +5835,7 @@ codeunit 50203 "NoTriggerCU"
             true,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -5878,11 +5877,11 @@ table 50400 "SomeTable"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "SomeTable");
         let (shape, completeness, routes) =
-            resolve_implicit_trigger("insert", table_obj, &graph, &index, &body_map);
+            resolve_implicit_trigger("insert", table_obj, &graph, &index, &surface);
 
         assert_eq!(
             shape,
@@ -5906,14 +5905,14 @@ table 50400 "SomeTable"
     }
 
     // -----------------------------------------------------------------------
-    // (f) BodyMap-miss on a source-tier graph routine → Unknown, NOT silent Abi
+    // (f) DeclSurface-miss on a source-tier graph routine → Unknown, NOT silent Abi
     // -----------------------------------------------------------------------
 
     #[test]
-    fn bare_bodymap_miss_emits_unknown_route() {
+    fn bare_decl_surface_miss_emits_unknown_route() {
         // Build graph with a codeunit containing MyProc, but supply an EMPTY
-        // slice to BodyMap::build so the BodyMap has no entries.  MyProc is in
-        // the graph (ResolveIndex sees it) but absent from the BodyMap — a real
+        // slice to DeclSurface::build so the DeclSurface has no entries.  MyProc is in
+        // the graph (ResolveIndex sees it) but absent from the DeclSurface — a real
         // integration gap that must surface as Unknown, not silent Abi degradation.
         let src: &'static str = r#"
 codeunit 50104 "BodyMissCU"
@@ -5928,8 +5927,8 @@ codeunit 50104 "BodyMissCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        // Empty parsed slice: every graph routine is absent from the BodyMap.
-        let body_map = BodyMap::build(&graph, &[]);
+        // Empty parsed slice: every graph routine is absent from the DeclSurface.
+        let surface = DeclSurface::build(&graph, &[]);
 
         let from_obj = find_obj(&graph, "BodyMissCU");
         let (_shape, routes) = resolve_bare(
@@ -5938,7 +5937,7 @@ codeunit 50104 "BodyMissCU"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -5947,16 +5946,16 @@ codeunit 50104 "BodyMissCU"
         assert_eq!(
             r.target,
             RouteTarget::Unresolved,
-            "BodyMap-miss must yield Unresolved (not Routine+Abi)"
+            "DeclSurface-miss must yield Unresolved (not Routine+Abi)"
         );
         assert!(
             matches!(r.evidence, Evidence::Unknown(_)),
-            "BodyMap-miss must yield Unknown evidence"
+            "DeclSurface-miss must yield Unknown evidence"
         );
         assert_eq!(
             r.witness,
             Witness::None,
-            "BodyMap-miss must yield None witness"
+            "DeclSurface-miss must yield None witness"
         );
     }
 
@@ -5986,7 +5985,7 @@ codeunit 50300 "OverloadCU"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         // Collect the RoutineNodeIds for "post" from the graph.
         let post_rids: Vec<_> = graph
@@ -6021,7 +6020,7 @@ codeunit 50300 "OverloadCU"
             1,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(routes1.len(), 1);
@@ -6046,7 +6045,7 @@ codeunit 50300 "OverloadCU"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
         assert_eq!(routes0.len(), 1);
@@ -6069,11 +6068,11 @@ codeunit 50300 "OverloadCU"
     // Phase 3 Task 2 — resolve_member tests
     // -----------------------------------------------------------------------
 
-    /// Build a minimal test graph, index and body_map for resolve_member tests.
+    /// Build a minimal test graph, index and surface for resolve_member tests.
     fn minimal_resolve_member_fixtures() -> (
         ProgramGraph,
         ResolveIndex,
-        crate::program::resolve::body_map::BodyMap<'static>,
+        crate::program::resolve::decl_surface::DeclSurface,
         crate::program::node_extract::ObjectNode,
     ) {
         use crate::program::node::{AppRegistry, ObjKey, ObjectNodeId};
@@ -6098,7 +6097,7 @@ codeunit 50300 "OverloadCU"
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = crate::program::resolve::body_map::BodyMap::build(&graph, &[]);
+        let surface = crate::program::resolve::decl_surface::DeclSurface::build(&graph, &[]);
         let from_obj = ObjectNode {
             id: ObjectNodeId {
                 app,
@@ -6118,17 +6117,17 @@ codeunit 50300 "OverloadCU"
             dataitems: vec![],
             parse_incomplete: false,
         };
-        (graph, index, body_map, from_obj)
+        (graph, index, surface, from_obj)
     }
 
     #[test]
     fn resolve_member_framework_json_object_catalog_route() {
         use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::Framework(FrameworkKind::JsonObject);
         let (shape, routes) =
-            resolve_member(&receiver, "add", 1, &from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "add", 1, &from_obj, &graph, &index, &surface);
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert!(
@@ -6151,7 +6150,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_declared_matching_call_is_catalog() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "cdo.editor".into(),
@@ -6166,7 +6165,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -6183,7 +6182,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_declared_zero_arity_matching_call_is_catalog() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "cdo.editor".into(),
@@ -6191,9 +6190,8 @@ codeunit 50300 "OverloadCU"
                 procedures: vec![("initeditor".to_string(), 2), ("gethtml".to_string(), 0)],
             },
         };
-        let (_, routes) = resolve_member(
-            &receiver, "gethtml", 0, &from_obj, &graph, &index, &body_map,
-        );
+        let (_, routes) =
+            resolve_member(&receiver, "gethtml", 0, &from_obj, &graph, &index, &surface);
         assert_eq!(routes[0].evidence, Evidence::Catalog);
     }
 
@@ -6203,7 +6201,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_declared_typo_is_unknown_member_not_found() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "cdo.editor".into(),
@@ -6218,7 +6216,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(routes.len(), 1);
         assert_eq!(
@@ -6234,7 +6232,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_declared_name_matches_wrong_arity_is_unknown() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "cdo.editor".into(),
@@ -6249,7 +6247,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(
             routes[0].evidence,
@@ -6264,7 +6262,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_declared_event_name_is_unknown() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "cdo.editor".into(),
@@ -6279,7 +6277,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(
             routes[0].evidence,
@@ -6294,7 +6292,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_true_platform_any_method_is_catalog() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "webpageviewer".into(),
@@ -6307,7 +6305,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(routes[0].evidence, Evidence::Catalog);
         if let RouteTarget::Builtin(ref bid) = routes[0].target {
@@ -6323,7 +6321,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(routes2[0].evidence, Evidence::Catalog);
     }
@@ -6344,7 +6342,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_controladdin_declared_no_platform_base_members_silently_resolve() {
         use crate::program::resolve::receiver::{ControlAddInSurface, ReceiverType};
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::ControlAddIn {
             name_lc: "cdo.editor".into(),
@@ -6353,9 +6351,8 @@ codeunit 50300 "OverloadCU"
             },
         };
         for candidate in ["visible", "editable", "enabled", "update", "caption"] {
-            let (_, routes) = resolve_member(
-                &receiver, candidate, 1, &from_obj, &graph, &index, &body_map,
-            );
+            let (_, routes) =
+                resolve_member(&receiver, candidate, 1, &from_obj, &graph, &index, &surface);
             assert_eq!(
                 routes[0].evidence,
                 Evidence::Unknown(UnknownReason::MemberNotFound),
@@ -6367,11 +6364,11 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_fieldref_value_catalog_route() {
         use crate::program::resolve::receiver::ReceiverType;
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::FieldRef;
         let (shape, routes) =
-            resolve_member(&receiver, "value", 0, &from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "value", 0, &from_obj, &graph, &index, &surface);
         assert_eq!(shape, DispatchShape::Exact);
         assert!(matches!(routes[0].target, RouteTarget::Builtin(_)));
         assert_eq!(routes[0].evidence, Evidence::Catalog);
@@ -6380,12 +6377,12 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_record_builtin_catalog_route() {
         use crate::program::resolve::receiver::ReceiverType;
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         // Record builtin → Catalog route
         let receiver = ReceiverType::Record { table: None };
         let (shape, routes) = resolve_member(
-            &receiver, "setrange", 2, &from_obj, &graph, &index, &body_map,
+            &receiver, "setrange", 2, &from_obj, &graph, &index, &surface,
         );
         assert_eq!(shape, DispatchShape::Exact);
         assert!(matches!(routes[0].target, RouteTarget::Builtin(_)));
@@ -6399,7 +6396,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(routes2[0].target, RouteTarget::Unresolved);
         assert!(matches!(routes2[0].evidence, Evidence::Unknown(_)));
@@ -6408,7 +6405,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_primitive_is_unknown() {
         use crate::program::resolve::receiver::ReceiverType;
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let (shape, routes) = resolve_member(
             &ReceiverType::Primitive,
@@ -6417,7 +6414,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape, DispatchShape::Exact);
         assert!(matches!(routes[0].evidence, Evidence::Unknown(_)));
@@ -6426,7 +6423,7 @@ codeunit 50300 "OverloadCU"
     #[test]
     fn resolve_member_dynamic_is_dynamic_open() {
         use crate::program::resolve::receiver::ReceiverType;
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let (shape, _routes) = resolve_member(
             &ReceiverType::Dynamic,
@@ -6435,7 +6432,7 @@ codeunit 50300 "OverloadCU"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape, DispatchShape::DynamicOpen);
     }
@@ -6472,7 +6469,7 @@ codeunit 50501 "Caller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "Caller");
         let receiver = ReceiverType::Object {
@@ -6481,7 +6478,7 @@ codeunit 50501 "Caller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -6536,7 +6533,7 @@ codeunit 50503 "Caller2"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "caller2");
         let real_target_id = find_obj(&graph, "realtarget").id.clone();
@@ -6549,7 +6546,7 @@ codeunit 50503 "Caller2"
             id: Some(real_target_id.clone()),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -6594,7 +6591,7 @@ codeunit 50503 "RunCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RunCaller");
         let receiver = ReceiverType::Object {
@@ -6604,7 +6601,7 @@ codeunit 50503 "RunCaller"
         };
         // arity=0 is Cu.Run() with no record argument
         let (shape, routes) =
-            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -6642,7 +6639,7 @@ codeunit 50504 "SelfCU"
         let units = [unit_self];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SelfCU");
         let (shape, routes) = resolve_member(
@@ -6652,7 +6649,7 @@ codeunit 50504 "SelfCU"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -6697,7 +6694,7 @@ codeunit 50506 "AnotherCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "AnotherCaller");
         let receiver = ReceiverType::Object {
@@ -6712,7 +6709,7 @@ codeunit 50506 "AnotherCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -6752,7 +6749,7 @@ codeunit 50507 "OrphanCaller"
         let units = [unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "OrphanCaller");
         // "ghosttarget" does not exist in the graph at all
@@ -6768,7 +6765,7 @@ codeunit 50507 "OrphanCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -6819,7 +6816,7 @@ codeunit 50701 "TableProcCaller"
         let units = [unit_table, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Customer");
         let receiver = ReceiverType::Record {
@@ -6833,7 +6830,7 @@ codeunit 50701 "TableProcCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -6893,7 +6890,7 @@ codeunit 50802 "ExtCaller"
         let units = [unit_table, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Vendor");
         let receiver = ReceiverType::Record {
@@ -6907,7 +6904,7 @@ codeunit 50802 "ExtCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -6967,7 +6964,7 @@ codeunit 50901 "CatalogFirstCaller"
         let units = [unit_table, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "SomeTable");
         let receiver = ReceiverType::Record {
@@ -6979,7 +6976,7 @@ codeunit 50901 "CatalogFirstCaller"
         // "setview" procedure (base table or extension) — zero source
         // candidates, so resolution correctly falls through to the catalog.
         let (shape, routes) =
-            resolve_member(&receiver, "setview", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "setview", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7010,7 +7007,7 @@ codeunit 51000 "NoneTableCaller"
         let units = [unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "NoneTableCaller");
         let receiver = ReceiverType::Record { table: None };
@@ -7021,7 +7018,7 @@ codeunit 51000 "NoneTableCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -7058,7 +7055,7 @@ codeunit 51101 "NotFoundCaller"
         let units = [unit_table, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Invoice");
         let receiver = ReceiverType::Record {
@@ -7072,7 +7069,7 @@ codeunit 51101 "NotFoundCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -7118,7 +7115,7 @@ codeunit 50951 "ShadowCaller"
         let units = [unit_table, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Acme");
         let receiver = ReceiverType::Record {
@@ -7129,7 +7126,7 @@ codeunit 50951 "ShadowCaller"
         // "fieldno" IS a genuine Record catalog builtin (arity 1) — but the
         // table declares its OWN FieldNo(FieldName: Text), matching arity 1.
         let (shape, routes) =
-            resolve_member(&receiver, "fieldno", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "fieldno", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7198,7 +7195,7 @@ codeunit 50963 "AmbiguousCaller"
         let units = [unit_table, unit_ext1, unit_ext2, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Widget");
         let receiver = ReceiverType::Record {
@@ -7207,7 +7204,7 @@ codeunit 50963 "AmbiguousCaller"
         let from_obj = find_obj(&graph, "AmbiguousCaller");
 
         let (shape, routes) =
-            resolve_member(&receiver, "rename", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "rename", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7269,7 +7266,7 @@ codeunit 52202 "CollCaller"
         let units = [unit_table, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "CollBase");
         let receiver = ReceiverType::Record {
@@ -7277,7 +7274,7 @@ codeunit 52202 "CollCaller"
         };
         let from_obj = find_obj(&graph, "CollCaller");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7336,7 +7333,7 @@ codeunit 52302 "OutClosureCaller"
         // AppA -> AppB only; AppC is never a dependency of AppA.
         let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "VisFoo");
         let receiver = ReceiverType::Record {
@@ -7344,7 +7341,7 @@ codeunit 52302 "OutClosureCaller"
         };
         let from_obj = find_obj(&graph, "OutClosureCaller");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7395,7 +7392,7 @@ codeunit 52501 "BaseIntCallerA"
         let units = [unit_table, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "BaseIntFoo");
         let receiver = ReceiverType::Record {
@@ -7403,7 +7400,7 @@ codeunit 52501 "BaseIntCallerA"
         };
         let from_obj = find_obj(&graph, "BaseIntCallerA");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7456,7 +7453,7 @@ codeunit 52402 "IntCallerA"
         let units = [unit_table, unit_ext, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "IntFoo");
         let receiver = ReceiverType::Record {
@@ -7464,7 +7461,7 @@ codeunit 52402 "IntCallerA"
         };
         let from_obj = find_obj(&graph, "IntCallerA");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7514,7 +7511,7 @@ codeunit 52412 "LocCallerA"
         let units = [unit_table, unit_ext, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "LocFoo");
         let receiver = ReceiverType::Record {
@@ -7522,7 +7519,7 @@ codeunit 52412 "LocCallerA"
         };
         let from_obj = find_obj(&graph, "LocCallerA");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7571,7 +7568,7 @@ codeunit 52422 "PubCallerA"
         let units = [unit_table, unit_ext, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "PubFoo");
         let receiver = ReceiverType::Record {
@@ -7579,7 +7576,7 @@ codeunit 52422 "PubCallerA"
         };
         let from_obj = find_obj(&graph, "PubCallerA");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7638,7 +7635,7 @@ table 52600 "LocSelfFoo"
         let units = [unit_table];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "LocSelfFoo");
         let receiver = ReceiverType::Record {
@@ -7646,7 +7643,7 @@ table 52600 "LocSelfFoo"
         };
         // The CALLING object IS the table itself — the self case.
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, table_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, table_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7701,7 +7698,7 @@ codeunit 52612 "CallerA"
         let units = [unit_table, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Foo");
         let receiver = ReceiverType::Record {
@@ -7709,7 +7706,7 @@ codeunit 52612 "CallerA"
         };
         let from_obj = find_obj(&graph, "CallerA");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7759,7 +7756,7 @@ tableextension 52621 "FooExtC" extends Foo
         let units = [unit_table, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Foo");
         let receiver = ReceiverType::Record {
@@ -7767,7 +7764,7 @@ tableextension 52621 "FooExtC" extends Foo
         };
         let from_obj = find_obj(&graph, "FooExtC");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7823,7 +7820,7 @@ tableextension 52632 "FooExtB" extends Foo
         let units = [unit_table, unit_ext_a, unit_ext_b];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Foo");
         let receiver = ReceiverType::Record {
@@ -7831,7 +7828,7 @@ tableextension 52632 "FooExtB" extends Foo
         };
         let from_obj = find_obj(&graph, "FooExtB");
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7871,14 +7868,14 @@ table 52640 "Bar"
         let units = [unit_table];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Bar");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "p", 0, table_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "p", 0, table_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7925,15 +7922,14 @@ codeunit 52651 "CallerG"
         let units = [unit_table, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Bar");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let from_obj = find_obj(&graph, "CallerG");
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -7984,15 +7980,14 @@ page 52653 "CallerGPage"
         let units = [unit_table, unit_page];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Bar");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let from_obj = find_obj(&graph, "CallerGPage");
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8039,15 +8034,14 @@ codeunit 52661 "CallerH"
         let units = [unit_table, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("AppA", "AppB")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Bar");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let from_obj = find_obj(&graph, "CallerH");
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8093,15 +8087,14 @@ tableextension 52671 "BarExtI" extends Bar
         let units = [unit_table, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Bar");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let from_obj = find_obj(&graph, "BarExtI");
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8330,15 +8323,14 @@ tableextension 52700 "BarExtB" extends Bar
         let units = [unit_table, unit_ext_a, unit_ext_b];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Bar");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let from_obj = find_obj(&graph, "BarExtB");
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8386,15 +8378,14 @@ codeunit 52702 "CallerK"
         let units = [unit_table, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let table_obj = find_obj(&graph, "Foo");
         let receiver = ReceiverType::Record {
             table: Some(table_obj.id.clone()),
         };
         let from_obj = find_obj(&graph, "CallerK");
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8446,7 +8437,7 @@ codeunit 50611 "PageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PageCaller");
         let receiver = ReceiverType::Object {
@@ -8454,9 +8445,8 @@ codeunit 50611 "PageCaller"
             name_lc: "mypage".into(),
             id: None,
         };
-        let (shape, routes) = resolve_member(
-            &receiver, "runmodal", 0, from_obj, &graph, &index, &body_map,
-        );
+        let (shape, routes) =
+            resolve_member(&receiver, "runmodal", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8509,7 +8499,7 @@ codeunit 50613 "ReportCaller"
         let units = [unit_report, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ReportCaller");
         let receiver = ReceiverType::Object {
@@ -8524,7 +8514,7 @@ codeunit 50613 "ReportCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8551,7 +8541,7 @@ codeunit 50613 "ReportCaller"
     fn resolve_member_enum_asinteger_emits_catalog_route() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::EnumType {
             name_lc: "myenum".into(),
@@ -8563,7 +8553,7 @@ codeunit 50613 "ReportCaller"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8598,7 +8588,7 @@ codeunit 50613 "ReportCaller"
     fn resolve_member_enum_value_frominteger_is_unknown_not_catalog() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::EnumType {
             name_lc: "myenum".into(),
@@ -8610,7 +8600,7 @@ codeunit 50613 "ReportCaller"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8628,7 +8618,7 @@ codeunit 50613 "ReportCaller"
     fn resolve_member_enum_type_static_frominteger_emits_catalog_route() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::EnumTypeStatic {
             name_lc: "myenum".into(),
@@ -8640,7 +8630,7 @@ codeunit 50613 "ReportCaller"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8664,14 +8654,14 @@ codeunit 50613 "ReportCaller"
     fn resolve_member_enum_type_static_ordinals_names_resolve_asinteger_declines() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
         let receiver = ReceiverType::EnumTypeStatic {
             name_lc: "myenum".into(),
         };
 
         for member in ["ordinals", "names"] {
             let (shape, routes) =
-                resolve_member(&receiver, member, 0, &from_obj, &graph, &index, &body_map);
+                resolve_member(&receiver, member, 0, &from_obj, &graph, &index, &surface);
             assert_eq!(shape, DispatchShape::Exact);
             assert_eq!(routes.len(), 1);
             assert_eq!(
@@ -8688,7 +8678,7 @@ codeunit 50613 "ReportCaller"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -8705,7 +8695,7 @@ codeunit 50613 "ReportCaller"
     fn resolve_member_enum_unknown_method_emits_unknown() {
         use crate::program::resolve::receiver::ReceiverType;
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::EnumType {
             name_lc: "myenum".into(),
@@ -8717,7 +8707,7 @@ codeunit 50613 "ReportCaller"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8767,7 +8757,7 @@ codeunit 50615 "AnotherPageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "AnotherPageCaller");
         let receiver = ReceiverType::Object {
@@ -8782,7 +8772,7 @@ codeunit 50615 "AnotherPageCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8823,7 +8813,7 @@ codeunit 50621 "SetRecordPageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SetRecordPageCaller");
         let receiver = ReceiverType::Object {
@@ -8838,7 +8828,7 @@ codeunit 50621 "SetRecordPageCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -8884,7 +8874,7 @@ codeunit 50623 "GetRecordPageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "GetRecordPageCaller");
         let page_id = find_obj(&graph, "GetRecordPage").id.clone();
@@ -8908,7 +8898,7 @@ codeunit 50623 "GetRecordPageCaller"
                 from_obj,
                 &graph,
                 &index,
-                &body_map,
+                &surface,
             );
 
             assert_eq!(shape, DispatchShape::Exact);
@@ -8951,7 +8941,7 @@ codeunit 50625 "SelFilterPageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SelFilterPageCaller");
         let receiver = ReceiverType::Object {
@@ -8966,7 +8956,7 @@ codeunit 50625 "SelFilterPageCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -9010,7 +9000,7 @@ codeunit 50627 "SetTableViewReportCaller"
         let units = [unit_report, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SetTableViewReportCaller");
         let receiver = ReceiverType::Object {
@@ -9025,7 +9015,7 @@ codeunit 50627 "SetTableViewReportCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -9077,7 +9067,7 @@ codeunit 50629 "SaveRecordPageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SaveRecordPageCaller");
         let page_id = find_obj(&graph, "SaveRecordPage").id.clone();
@@ -9101,7 +9091,7 @@ codeunit 50629 "SaveRecordPageCaller"
                 from_obj,
                 &graph,
                 &index,
-                &body_map,
+                &surface,
             );
 
             assert_eq!(shape, DispatchShape::Exact);
@@ -9132,7 +9122,7 @@ codeunit 50629 "SaveRecordPageCaller"
     fn resolve_member_framework_pageinstance_saverecord_emits_catalog_route() {
         use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::Framework(FrameworkKind::PageInstance);
         let (shape, routes) = resolve_member(
@@ -9142,7 +9132,7 @@ codeunit 50629 "SaveRecordPageCaller"
             &from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -9173,11 +9163,11 @@ codeunit 50629 "SaveRecordPageCaller"
     fn resolve_member_framework_pageinstance_update_emits_catalog_route() {
         use crate::program::resolve::receiver::{FrameworkKind, ReceiverType};
 
-        let (graph, index, body_map, from_obj) = minimal_resolve_member_fixtures();
+        let (graph, index, surface, from_obj) = minimal_resolve_member_fixtures();
 
         let receiver = ReceiverType::Framework(FrameworkKind::PageInstance);
         let (shape, routes) =
-            resolve_member(&receiver, "update", 0, &from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "update", 0, &from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -9233,7 +9223,7 @@ codeunit 50617 "ShadowCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ShadowCaller");
         let receiver = ReceiverType::Object {
@@ -9242,7 +9232,7 @@ codeunit 50617 "ShadowCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "close", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "close", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -9290,7 +9280,7 @@ codeunit 50617 "ShadowCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ShadowCaller");
         let receiver = ReceiverType::Object {
@@ -9298,9 +9288,8 @@ codeunit 50617 "ShadowCaller"
             name_lc: "pagewithrunmodal".into(),
             id: None,
         };
-        let (shape, routes) = resolve_member(
-            &receiver, "runmodal", 0, from_obj, &graph, &index, &body_map,
-        );
+        let (shape, routes) =
+            resolve_member(&receiver, "runmodal", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -9360,14 +9349,14 @@ codeunit 51399 "IfaceCaller1"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IfaceCaller1");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(
             shape,
@@ -9429,14 +9418,14 @@ codeunit 51499 "IfaceCaller2"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IfaceCaller2");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Polymorphic);
         assert_eq!(
@@ -9496,7 +9485,7 @@ codeunit 51499 "IfaceNestedCaller"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         // Sanity: the ambiguous implementer genuinely has TWO same-arity
         // `Bar` candidates.
@@ -9513,7 +9502,7 @@ codeunit 51499 "IfaceNestedCaller"
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(
             shape,
@@ -9621,14 +9610,14 @@ codeunit 51599 "IfaceCaller3"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IfaceCaller3");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(
             shape,
@@ -9678,14 +9667,14 @@ codeunit 51699 "IfaceCaller4"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IfaceCaller4");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Polymorphic);
         assert_eq!(
@@ -9739,7 +9728,7 @@ codeunit 51699 "IfaceCaller4"
         use crate::program::resolve::receiver::ReceiverType;
 
         // AppBSym provides a SymbolOnly codeunit "DepImpl" implementing IFoo.
-        // Parsed from source to populate graph+index nodes, but the BodyMap is built
+        // Parsed from source to populate graph+index nodes, but the DeclSurface is built
         // WITHOUT this unit (empty parsed slice) — mirrors real SymbolOnly loading from
         // .app SymbolReference where bodies are unavailable.
         let src_caller: &'static str = r#"
@@ -9767,30 +9756,30 @@ codeunit 51801 "DepImpl" implements IFoo
             app: app_b_id.clone(),
             files: vec![ParsedFile {
                 virtual_path: "DepImpl.al".to_string(),
-                file: al_syntax::parse(src_dep),
+                file: std::sync::Arc::new(al_syntax::parse(src_dep)),
                 provenance: Provenance {
                     app: app_b_id,
                     tier: TrustTier::SymbolOnly,
                     content_hash: String::new(),
                 },
-                text: src_dep.to_string(),
+                text: src_dep.into(),
             }],
         };
 
         let all_units = [unit_caller, unit_dep];
         let graph = build_graph(&all_units, Some(("AppA", "AppBSym")));
         let index = ResolveIndex::build(&graph);
-        // BodyMap: empty — SymbolOnly routines have no parsed body in production.
-        // A BodyMap miss on a SymbolOnly-tier routine triggers the AbiSymbol path
+        // DeclSurface: empty — SymbolOnly routines have no parsed body in production.
+        // A DeclSurface miss on a SymbolOnly-tier routine triggers the AbiSymbol path
         // in `make_routine_route`.
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let from_obj = find_obj(&graph, "IfaceCallerSym");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Polymorphic);
         assert_eq!(
@@ -9856,7 +9845,7 @@ codeunit 50619 "EmptyPageCaller"
         let units = [unit_page, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "EmptyPageCaller");
         let receiver = ReceiverType::Object {
@@ -9871,7 +9860,7 @@ codeunit 50619 "EmptyPageCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -9921,9 +9910,9 @@ codeunit 50701 "EvtManualSub"
     fn event_flow_manual_subscriber_emits_correct_edge() {
         let (graph, units) = build_event_flow_fixture_manual();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
 
         // Must produce exactly ONE EventFlow edge (for OnAfterX publisher).
         let event_edges: Vec<&Edge> = edges
@@ -9989,11 +9978,11 @@ codeunit 50701 "EvtManualSub"
             r.conditions
         );
 
-        // Subscriber is in the body_map → Source evidence + SourceSpan witness.
+        // Subscriber is in the surface → Source evidence + SourceSpan witness.
         assert_eq!(r.evidence, Evidence::Source);
         assert!(
             matches!(r.witness, Witness::SourceSpan { .. }),
-            "witness must be SourceSpan (subscriber in body_map); got {:?}",
+            "witness must be SourceSpan (subscriber in surface); got {:?}",
             r.witness
         );
     }
@@ -10003,9 +9992,9 @@ codeunit 50701 "EvtManualSub"
     fn event_flow_manual_route_excluded_from_default_reachable() {
         let (graph, units) = build_event_flow_fixture_manual();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
         let e = edges
             .iter()
             .find(|e| e.kind == EdgeKind::EventFlow)
@@ -10045,9 +10034,9 @@ codeunit 50702 "NoSubPub"
         let units = vec![unit_pub];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
 
         let event_edges: Vec<&Edge> = edges
             .iter()
@@ -10121,8 +10110,8 @@ codeunit 50710 "CustDeleteSub"
 
         // The subscriber binds to it → exactly one EventFlow edge, one route, Resolved.
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let surface = DeclSurface::build(&graph, &units);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
         let e = edges
             .iter()
             .find(|e| e.from == synth.id)
@@ -10183,8 +10172,8 @@ codeunit 50711 "CustCardOpenSub"
             .expect("synthetic platform publisher injected on the page");
 
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let surface = DeclSurface::build(&graph, &units);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
         let e = edges
             .iter()
             .find(|e| e.from == synth.id)
@@ -10223,9 +10212,9 @@ codeunit 50704 "DefaultSub"
         let units = vec![unit_pub, unit_sub];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
-        let edges = emit_event_flow_edges(&graph, &index, &body_map);
+        let edges = emit_event_flow_edges(&graph, &index, &surface);
         let e = edges
             .iter()
             .find(|e| e.kind == EdgeKind::EventFlow)
@@ -10252,10 +10241,10 @@ codeunit 50704 "DefaultSub"
     fn event_flow_emission_is_deterministic() {
         let (graph, units) = build_event_flow_fixture_manual();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
-        let edges1 = emit_event_flow_edges(&graph, &index, &body_map);
-        let edges2 = emit_event_flow_edges(&graph, &index, &body_map);
+        let edges1 = emit_event_flow_edges(&graph, &index, &surface);
+        let edges2 = emit_event_flow_edges(&graph, &index, &surface);
 
         assert_eq!(
             edges1, edges2,
@@ -10410,7 +10399,7 @@ codeunit 50000 "Caller"
     fn symbolonly_event_publisher_route_carries_correct_abi_kind() {
         let (graph, units) = build_abi_kind_fixture();
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
         let from_obj = find_obj(&graph, "Caller");
 
         // --- event publisher: must be EventPublisher / Integration ---
@@ -10425,7 +10414,7 @@ codeunit 50000 "Caller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10459,7 +10448,7 @@ codeunit 50000 "Caller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape2, DispatchShape::Exact);
         assert_eq!(routes2.len(), 1);
@@ -10524,7 +10513,7 @@ codeunit 53901 "PubXCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("PrimaryApp1", "DepApp1")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PubXCaller");
         let receiver = ReceiverType::Object {
@@ -10533,7 +10522,7 @@ codeunit 53901 "PubXCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10573,7 +10562,7 @@ codeunit 53911 "IntXCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IntXCaller");
         let receiver = ReceiverType::Object {
@@ -10582,7 +10571,7 @@ codeunit 53911 "IntXCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10622,7 +10611,7 @@ pageextension 53921 "ProtXBaseExt" extends ProtXBase
         let units = [unit_page, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ProtXBaseExt");
         assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
@@ -10632,7 +10621,7 @@ pageextension 53921 "ProtXBaseExt" extends ProtXBase
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "prot", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "prot", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10693,7 +10682,7 @@ codeunit 61002 "PxMergeCaller1"
         let units = [unit_page, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller1");
         let receiver = ReceiverType::Object {
@@ -10702,7 +10691,7 @@ codeunit 61002 "PxMergeCaller1"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10766,7 +10755,7 @@ codeunit 61012 "PxMergeCaller2"
             ],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller2");
         let receiver = ReceiverType::Object {
@@ -10775,7 +10764,7 @@ codeunit 61012 "PxMergeCaller2"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10849,7 +10838,7 @@ codeunit 61022 "PxMergeCaller3"
             ],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller3");
         let receiver = ReceiverType::Object {
@@ -10858,7 +10847,7 @@ codeunit 61022 "PxMergeCaller3"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10922,7 +10911,7 @@ codeunit 61033 "PxMergeCaller4"
         let units = [unit_page, unit_ext_a, unit_ext_b, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller4");
         let receiver = ReceiverType::Object {
@@ -10931,7 +10920,7 @@ codeunit 61033 "PxMergeCaller4"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dupproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dupproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -10994,7 +10983,7 @@ codeunit 61042 "PxMergeCaller5"
         let units = [unit_page, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller5");
         let receiver = ReceiverType::Object {
@@ -11002,9 +10991,8 @@ codeunit 61042 "PxMergeCaller5"
             name_lc: "pxmergebase5".into(),
             id: None,
         };
-        let (shape, routes) = resolve_member(
-            &receiver, "sameproc", 0, from_obj, &graph, &index, &body_map,
-        );
+        let (shape, routes) =
+            resolve_member(&receiver, "sameproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -11061,7 +11049,7 @@ codeunit 61052 "PxMergeCaller6"
         let units = [unit_page, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller6");
         let receiver = ReceiverType::Object {
@@ -11071,9 +11059,8 @@ codeunit 61052 "PxMergeCaller6"
         };
 
         // The base's own procedure still resolves to Source.
-        let (shape, routes) = resolve_member(
-            &receiver, "baseproc", 0, from_obj, &graph, &index, &body_map,
-        );
+        let (shape, routes) =
+            resolve_member(&receiver, "baseproc", 0, from_obj, &graph, &index, &surface);
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert!(matches!(routes[0].target, RouteTarget::Routine(_)));
@@ -11082,7 +11069,7 @@ codeunit 61052 "PxMergeCaller6"
         // A genuine platform-instrinsic (PageInstance catalog) member absent
         // from both base and extension still falls through to Catalog.
         let (shape2, routes2) =
-            resolve_member(&receiver, "close", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "close", 0, from_obj, &graph, &index, &surface);
         assert_eq!(shape2, DispatchShape::Exact);
         assert_eq!(routes2.len(), 1);
         assert_eq!(routes2[0].evidence, Evidence::Catalog);
@@ -11127,7 +11114,7 @@ codeunit 61062 "PxMergeCaller7"
         let units = [unit_page, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller7");
         let receiver = ReceiverType::Object {
@@ -11143,7 +11130,7 @@ codeunit 61062 "PxMergeCaller7"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -11211,7 +11198,7 @@ codeunit 61072 "PxMergeCaller8"
             ],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "PxMergeCaller8");
         let receiver = ReceiverType::Object {
@@ -11226,7 +11213,7 @@ codeunit 61072 "PxMergeCaller8"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -11295,7 +11282,7 @@ codeunit 62002 "RxMergeCaller1"
         let units = [unit_report, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller1");
         let receiver = ReceiverType::Object {
@@ -11304,7 +11291,7 @@ codeunit 62002 "RxMergeCaller1"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -11368,7 +11355,7 @@ codeunit 62012 "RxMergeCaller2"
             ],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller2");
         let receiver = ReceiverType::Object {
@@ -11377,7 +11364,7 @@ codeunit 62012 "RxMergeCaller2"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -11454,7 +11441,7 @@ codeunit 62022 "RxMergeCaller3"
             ],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller3");
         let receiver = ReceiverType::Object {
@@ -11463,7 +11450,7 @@ codeunit 62022 "RxMergeCaller3"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "extproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -11535,7 +11522,7 @@ codeunit 62033 "RxMergeCaller4"
         let units = [unit_report, unit_ext_a, unit_ext_b, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller4");
         let receiver = ReceiverType::Object {
@@ -11544,7 +11531,7 @@ codeunit 62033 "RxMergeCaller4"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dupproc", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dupproc", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -11607,7 +11594,7 @@ codeunit 62042 "RxMergeCaller5"
         let units = [unit_report, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller5");
         let receiver = ReceiverType::Object {
@@ -11623,7 +11610,7 @@ codeunit 62042 "RxMergeCaller5"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -11692,7 +11679,7 @@ codeunit 62052 "RxMergeCaller6"
             ],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller6");
         let receiver = ReceiverType::Object {
@@ -11708,7 +11695,7 @@ codeunit 62052 "RxMergeCaller6"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -11769,7 +11756,7 @@ codeunit 62062 "RxMergeCaller7"
         let units = [unit_report, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller7");
         let receiver = ReceiverType::Object {
@@ -11785,7 +11772,7 @@ codeunit 62062 "RxMergeCaller7"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -11847,7 +11834,7 @@ codeunit 62072 "RxMergeCaller8"
         let units = [unit_report, unit_ext, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RxMergeCaller8");
         let receiver = ReceiverType::Object {
@@ -11857,9 +11844,8 @@ codeunit 62072 "RxMergeCaller8"
         };
 
         // The base's own procedure still resolves to Source.
-        let (shape, routes) = resolve_member(
-            &receiver, "baseproc", 0, from_obj, &graph, &index, &body_map,
-        );
+        let (shape, routes) =
+            resolve_member(&receiver, "baseproc", 0, from_obj, &graph, &index, &surface);
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
         assert!(matches!(routes[0].target, RouteTarget::Routine(_)));
@@ -11874,7 +11860,7 @@ codeunit 62072 "RxMergeCaller8"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape2, DispatchShape::Exact);
         assert_eq!(routes2.len(), 1);
@@ -11899,7 +11885,7 @@ codeunit 53930 "BareLocalSelf"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "BareLocalSelf");
         let (_shape, routes) = resolve_bare(
@@ -11908,7 +11894,7 @@ codeunit 53930 "BareLocalSelf"
             0,
             &graph,
             &index,
-            &body_map,
+            &surface,
             WithState::NoWithProven,
         );
 
@@ -11946,7 +11932,7 @@ codeunit 53940 "SelfLocalCaller"
         let units = [unit];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SelfLocalCaller");
         let (shape, routes) = resolve_member(
@@ -11956,7 +11942,7 @@ codeunit 53940 "SelfLocalCaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
 
         assert_eq!(shape, DispatchShape::Exact);
@@ -12001,7 +11987,7 @@ codeunit 53951 "IntNCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("PrimaryApp2", "DepApp2")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IntNCaller");
         let receiver = ReceiverType::Object {
@@ -12010,7 +11996,7 @@ codeunit 53951 "IntNCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12079,7 +12065,7 @@ codeunit 53971 "FriendCaller"
             &[("DepAppFriend", "PrimaryAppFriend")],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "FriendCaller");
         let receiver = ReceiverType::Object {
@@ -12088,7 +12074,7 @@ codeunit 53971 "FriendCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12133,7 +12119,7 @@ codeunit 53973 "StrangerCaller"
         let graph =
             build_graph_multi_dep_friends(&units, &[("PrimaryAppStranger", "DepAppStranger")], &[]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "StrangerCaller");
         let receiver = ReceiverType::Object {
@@ -12142,7 +12128,7 @@ codeunit 53973 "StrangerCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "secret", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12238,7 +12224,7 @@ codeunit 53979 "DirACaller"
             &[("PrimaryAppDirA", "DepAppDirB")],
         );
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "DirBCaller");
 
@@ -12255,7 +12241,7 @@ codeunit 53979 "DirACaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape_a, DispatchShape::Exact);
         assert_eq!(routes_a.len(), 1);
@@ -12280,7 +12266,7 @@ codeunit 53979 "DirACaller"
             from_obj,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape_b, DispatchShape::Exact);
         assert_eq!(routes_b.len(), 1);
@@ -12310,7 +12296,7 @@ codeunit 53979 "DirACaller"
             from_obj_a,
             &graph,
             &index,
-            &body_map,
+            &surface,
         );
         assert_eq!(shape_rev, DispatchShape::Exact);
         assert_eq!(routes_rev.len(), 1);
@@ -12362,7 +12348,7 @@ codeunit 53978 "SameAppCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph_multi_dep_friends(&units, &[], &[]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SameAppCaller");
         let receiver = ReceiverType::Object {
@@ -12371,7 +12357,7 @@ codeunit 53978 "SameAppCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "dowork", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12413,7 +12399,7 @@ codeunit 53961 "LocNCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "LocNCaller");
         let receiver = ReceiverType::Object {
@@ -12422,7 +12408,7 @@ codeunit 53961 "LocNCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "hidden", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "hidden", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12491,7 +12477,7 @@ codeunit 53971 "OverloadNCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("PrimaryApp3", "DepApp3")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         // Sanity: both overloads really did survive as one params_count==1
         // collision (proves the fixture actually exercises the guard, not a
@@ -12512,7 +12498,7 @@ codeunit 53971 "OverloadNCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12673,7 +12659,7 @@ codeunit 53971 "OverloadNCaller"
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         // Sanity: two GENUINELY distinct RoutineNodeIds (differing sig_fp),
         // not a same-id collision.
@@ -12699,7 +12685,7 @@ codeunit 53971 "OverloadNCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -12762,7 +12748,7 @@ codeunit 53973 "OverloadPCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         // Sanity: two same-arity `Bar` candidates, BOTH `Public`, DISTINCT ids.
         let target_obj = find_obj(&graph, "OverloadPTarget");
@@ -12784,7 +12770,7 @@ codeunit 53973 "OverloadPCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::AmbiguousOverload);
         assert_eq!(routes.len(), 2, "one route per candidate; got {routes:?}");
@@ -12899,7 +12885,7 @@ codeunit 53975 "Overload3Caller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let target_obj = find_obj(&graph, "Overload3Target");
         let baz_candidates = index.routines_in_object(&target_obj.id, "baz");
@@ -12916,7 +12902,7 @@ codeunit 53975 "Overload3Caller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "baz", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "baz", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::AmbiguousOverload);
         assert_eq!(routes.len(), 3, "one route per candidate; got {routes:?}");
@@ -13065,7 +13051,7 @@ codeunit 53975 "Overload3Caller"
             ..Default::default()
         };
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &[]);
+        let surface = DeclSurface::build(&graph, &[]);
 
         let from_obj = graph
             .objects
@@ -13078,7 +13064,7 @@ codeunit 53975 "Overload3Caller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(
             shape,
@@ -13114,8 +13100,8 @@ codeunit 53975 "Overload3Caller"
     /// collapsed` sibling fixture above. Pre-fix, `resolve_in_object`'s `_`
     /// arm's `degraded` predicate consulted ONLY `abi_overload_collapsed`, so
     /// this pair sailed through prevalidation — neither route's evidence is
-    /// `Unknown` (both candidates share the SAME `BodyMap` entry, since
-    /// `BodyMap` is keyed by `RoutineNodeId` and both candidates carry the
+    /// `Unknown` (both candidates share the SAME `DeclSurface` entry, since
+    /// `DeclSurface` is keyed by `RoutineNodeId` and both candidates carry the
     /// SAME one) — and constructed an `AmbiguousOverload` shape with two
     /// IDENTICAL-target routes: a genuine unresolved collision laundered into
     /// a confident-looking multi-route resolution, the last laundering path
@@ -13123,11 +13109,11 @@ codeunit 53975 "Overload3Caller"
     /// source-alias" was meant to close. The REAL `RoutineNodeId` (computed
     /// via the same [`crate::program::sig_fp::source_routine_node_id`]
     /// constructor production code uses) is reused for BOTH synthetic
-    /// `RoutineNode` entries below, so the `BodyMap` built from ONE real
+    /// `RoutineNode` entries below, so the `DeclSurface` built from ONE real
     /// parsed declaration satisfies both `make_routine_route` lookups —
     /// reproducing "two IDENTICAL-target concrete routes" faithfully rather
     /// than relying on the separate Unknown-evidence prevalidation (which
-    /// would mask this specific gap: an absent `BodyMap` entry, not a
+    /// would mask this specific gap: an absent `DeclSurface` entry, not a
     /// same-id collision, is what THAT check exists to catch).
     #[test]
     fn resolve_member_object_ambiguous_set_with_source_alias_candidates_stays_unknown() {
@@ -13188,7 +13174,7 @@ codeunit 53975 "Overload3Caller"
         // residual collision `dedup_routines_preserving_genuine_overloads`
         // marks `source_overload_aliased`, rather than fabricating an
         // arbitrary `sig_fp` integer that would not roundtrip through a real
-        // `BodyMap` lookup the same way.
+        // `DeclSurface` lookup the same way.
         let target_src: &'static str = r#"
 codeunit 60152 "AliasTarget"
 {
@@ -13257,10 +13243,10 @@ codeunit 60152 "AliasTarget"
         };
         let index = ResolveIndex::build(&graph);
         let units = [unit];
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         // Sanity preconditions: both candidates share the identical id, and
-        // the BodyMap resolves it (non-Unknown evidence for BOTH) — the
+        // the DeclSurface resolves it (non-Unknown evidence for BOTH) — the
         // exact shape the pre-fix `degraded` predicate failed to catch.
         assert_eq!(
             index.routines_in_object(&target_obj_id, "foo").len(),
@@ -13268,8 +13254,8 @@ codeunit 60152 "AliasTarget"
             "both source-aliased survivors must be indexed under the same id"
         );
         assert!(
-            body_map.get(&real_id).is_some(),
-            "BodyMap must resolve the shared id (non-Unknown evidence precondition)"
+            surface.get(&real_id).is_some(),
+            "DeclSurface must resolve the shared id (non-Unknown evidence precondition)"
         );
 
         let from_obj = graph
@@ -13283,7 +13269,7 @@ codeunit 60152 "AliasTarget"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "foo", 1, from_obj, &graph, &index, &surface);
 
         assert_eq!(
             shape,
@@ -13337,7 +13323,7 @@ codeunit 53981 "ProtNCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ProtNCaller");
         let receiver = ReceiverType::Object {
@@ -13345,8 +13331,7 @@ codeunit 53981 "ProtNCaller"
             name_lc: "protntarget".into(),
             id: None,
         };
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -13390,7 +13375,7 @@ codeunit 53991 "ProtXNCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("PrimaryApp4", "DepApp4")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "ProtXNCaller");
         let receiver = ReceiverType::Object {
@@ -13398,8 +13383,7 @@ codeunit 53991 "ProtXNCaller"
             name_lc: "protxntarget".into(),
             id: None,
         };
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -13453,7 +13437,7 @@ pageextension 54002 "SharedExt" extends Shared
         let units = [unit_table, unit_page, unit_ext];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "SharedExt");
         assert_eq!(from_obj.id.kind, ObjectKind::PageExtension);
@@ -13478,8 +13462,7 @@ pageextension 54002 "SharedExt" extends Shared
             name_lc: "shared".into(),
             id: None,
         };
-        let (shape, routes) =
-            resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &body_map);
+        let (shape, routes) = resolve_member(&receiver, "p", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -13537,14 +13520,14 @@ codeunit 54012 "IfaceCallerX"
         let units = [unit_pub_impl, unit_int_impl, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("CallerAppX", "ImplAppX")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IfaceCallerX");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Polymorphic);
         assert_eq!(
@@ -13613,14 +13596,14 @@ codeunit 54021 "IfaceCallerY"
         let units = [unit_impl, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "IfaceCallerY");
         let receiver = ReceiverType::Interface {
             name_lc: "ifoo".into(),
         };
         let (shape, routes) =
-            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "bar", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Polymorphic);
         assert_eq!(routes.len(), 1);
@@ -13666,7 +13649,7 @@ codeunit 54031 "RunNCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph_multi_dep(&units, &[("PrimaryApp5", "DepApp5")]);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "RunNCaller");
         let receiver = ReceiverType::Object {
@@ -13675,7 +13658,7 @@ codeunit 54031 "RunNCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "run", 2, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "run", 2, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);
@@ -13723,7 +13706,7 @@ codeunit 54041 "NoOnRunCaller"
         let units = [unit_target, unit_caller];
         let graph = build_graph(&units, None);
         let index = ResolveIndex::build(&graph);
-        let body_map = BodyMap::build(&graph, &units);
+        let surface = DeclSurface::build(&graph, &units);
 
         let from_obj = find_obj(&graph, "NoOnRunCaller");
         let receiver = ReceiverType::Object {
@@ -13732,7 +13715,7 @@ codeunit 54041 "NoOnRunCaller"
             id: None,
         };
         let (shape, routes) =
-            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &body_map);
+            resolve_member(&receiver, "run", 0, from_obj, &graph, &index, &surface);
 
         assert_eq!(shape, DispatchShape::Exact);
         assert_eq!(routes.len(), 1);

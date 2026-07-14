@@ -208,7 +208,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) {
     }
 }
 
-fn build_full_with_parsed(dir: &Path) -> (LspSnapshot, Vec<ParsedUnit>) {
+fn build_full_with_parsed(dir: &Path) -> (LspSnapshot, ParsedUnit) {
     LspSnapshot::build_full_with_parsed(dir).expect("build_full_with_parsed on fixture")
 }
 
@@ -790,7 +790,7 @@ fn overload_flip_body_only_edit_stays_rung1_and_equivalent() {
     // definition surface: no object/routine identity, arity, or param type
     // moved, so this must still take rung 1 — and the incremental path must
     // re-run arg-type dispatch against the file's FRESH content rather than
-    // a stale cached BodyMap (the module doc's soundness argument for why
+    // a stale cached DeclSurface (the module doc's soundness argument for why
     // rung 1 resolves the touched file directly from its fresh parse).
     std::fs::write(
         dir.path().join("Alpha.al"),
@@ -861,7 +861,7 @@ codeunit 50100 "Alpha"
                 .any(|r| r.evidence.kind() == EvidenceKind::Source),
             "each flipped call site must still cleanly resolve (Evidence::Source), \
              proving the incremental path re-ran arg-type dispatch against the \
-             fresh file rather than a stale cached BodyMap"
+             fresh file rather than a stale cached DeclSurface"
         );
     }
 
@@ -1474,5 +1474,326 @@ fn dep_bearing_rung1_then_rung2_stay_equivalent_with_nonvacuous_dep_indexes() {
         canon_dep_decl_by_id(&rung2_snap),
         base_dep_decls,
         "rung 2 must reuse the cached, unchanged dep layer — dep_decl_by_id identical across a workspace-only signature-change rebuild"
+    );
+}
+
+/// Perf safe-wins Task 1: embedded dependency source text must be ONE shared
+/// allocation — `dep_texts`'s `Arc<str>` and the `AppSetSnapshot`'s own
+/// `SourceFile.text` must be pointer-equal, never independent copies (the
+/// perf doc's T1/T2 duplication).
+#[test]
+fn dep_texts_share_the_snapshot_source_text_allocation() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, _parsed) = build_full_with_parsed(dir.path());
+
+    assert!(
+        !base.dep_texts.is_empty(),
+        "fixture sanity: dep_texts must carry Source Mgt.al's embedded source"
+    );
+    for ((app_ref, vp), dep_text) in base.dep_texts.iter() {
+        let app_id = base.graph.apps.resolve(*app_ref);
+        let unit = base
+            .snap
+            .apps
+            .iter()
+            .find(|u| &u.id == app_id)
+            .expect("dep_texts app must exist in snap");
+        let sf = unit
+            .source
+            .as_ref()
+            .expect("dep with texts has embedded source")
+            .files
+            .iter()
+            .find(|f| &f.virtual_path == vp)
+            .expect("dep_texts path must exist in snap source");
+        assert!(
+            std::sync::Arc::ptr_eq(dep_text, &sf.text),
+            "dep_texts[({app_ref:?}, {vp})] must share the snapshot's text \
+             allocation, not copy it"
+        );
+    }
+}
+
+/// Perf safe-wins Task 2: `build_full_with_parsed` must NOT run a second
+/// whole-program parse — the published snapshot's workspace `AlFile`s and
+/// the updater's working-state `AlFile`s must be the SAME `Arc` allocations.
+#[test]
+fn build_full_with_parsed_shares_one_parse_between_snapshot_and_updater() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+
+    assert_eq!(
+        parsed.app, base.snap.workspace_app,
+        "build_full_with_parsed must return the WORKSPACE ParsedUnit"
+    );
+    assert!(
+        !base.parsed.is_empty(),
+        "fixture sanity: snapshot must hold workspace ParsedFileEntry values"
+    );
+    for (vp, entry) in base.parsed.iter() {
+        let pf = parsed
+            .files
+            .iter()
+            .find(|f| &f.virtual_path == vp)
+            .expect("every snapshot workspace file must be in the updater unit");
+        assert!(
+            std::sync::Arc::ptr_eq(&entry.file, &pf.file),
+            "{vp}: snapshot and updater must share ONE parsed AlFile, \
+             not two independent parses"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(&entry.text, &pf.text),
+            "{vp}: snapshot and updater must share ONE text allocation"
+        );
+    }
+}
+
+/// T3 Task 12 (the owned-DeclSurface lifecycle's whole point): after a full
+/// build, the caller receives ONLY the workspace ParsedUnit — dependency
+/// parse arenas are dropped, not retained for the updater's lifetime.
+#[test]
+fn build_full_with_parsed_returns_only_the_workspace_unit() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (snap, workspace) = build_full_with_parsed(dir.path());
+    assert_eq!(workspace.app, snap.snap.workspace_app);
+    // and the dep tier is populated (deps were parsed, projected, then
+    // dropped) — proves the frozen tier really was derived from the dep
+    // arenas before they were released, not just vacuously empty.
+    assert!(
+        !snap.dep_meta.is_empty(),
+        "dep tier must hold the projected dep decls"
+    );
+}
+
+/// Rungs 1 and 2 must FORWARD the frozen dep tier (and the dep query maps),
+/// never rebuild them: Arc identity proves zero recompute. Covers BOTH
+/// rung-1 code paths — `Updater::apply_batch`'s Rung1 arm (exercised
+/// directly below) AND `spawn_updater`'s hot loop (exercised through the
+/// real background thread, via `spawn_updater`'s public `on_swap` hook,
+/// which is the only externally observable point from this integration
+/// test crate — `Updater`'s fields are private).
+#[test]
+fn rung1_and_rung2_forward_dep_meta_dep_decls_and_dep_texts_by_arc_identity() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+    assert!(
+        !base.dep_meta.is_empty(),
+        "fixture sanity: dep_meta must carry Source Lib's embedded DoWork"
+    );
+
+    // ── Path 1: Updater::apply_batch's Rung1 arm ───────────────────────────
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+    let body_only = r#"codeunit 50000 "Caller"
+{
+    procedure CallSymbolOnlyDep()
+    var
+        WidgetMgt: Codeunit "Widget Mgt";
+    begin
+        WidgetMgt.Compute(5);
+        WidgetMgt.Compute(6);
+    end;
+
+    procedure CallEmbeddedSourceDep()
+    var
+        SourceMgt: Codeunit "Source Mgt";
+    begin
+        SourceMgt.DoWork(3);
+    end;
+}
+"#;
+    std::fs::write(dir.path().join("Caller.al"), body_only).expect("rewrite Caller.al (rung 1)");
+    let batch1 = vec![ChangeEvent::FileSaved(dir.path().join("Caller.al"))];
+    let (rung1_snap, rung1) = updater
+        .apply_batch(&base, &batch1)
+        .expect("apply_batch must succeed (rung-1 step)");
+    assert_eq!(rung1, Rung::One);
+    assert!(
+        std::sync::Arc::ptr_eq(&base.dep_meta, &rung1_snap.dep_meta),
+        "apply_batch's Rung1 arm must forward dep_meta by Arc identity, never rebuild it"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&base.dep_decl_by_id, &rung1_snap.dep_decl_by_id),
+        "apply_batch's Rung1 arm must forward dep_decl_by_id by Arc identity"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&base.dep_texts, &rung1_snap.dep_texts),
+        "apply_batch's Rung1 arm must forward dep_texts by Arc identity"
+    );
+
+    // ── Rung 2, same Updater: a signature change on the workspace caller ──
+    let signature_change = r#"codeunit 50000 "Caller"
+{
+    procedure CallSymbolOnlyDep(Extra: Integer)
+    var
+        WidgetMgt: Codeunit "Widget Mgt";
+    begin
+        WidgetMgt.Compute(Extra);
+    end;
+
+    procedure CallEmbeddedSourceDep()
+    var
+        SourceMgt: Codeunit "Source Mgt";
+    begin
+        SourceMgt.DoWork(3);
+    end;
+}
+"#;
+    std::fs::write(dir.path().join("Caller.al"), signature_change)
+        .expect("rewrite Caller.al (rung 2)");
+    let batch2 = vec![ChangeEvent::FileSaved(dir.path().join("Caller.al"))];
+    let (rung2_snap, rung2) = updater
+        .apply_batch(&rung1_snap, &batch2)
+        .expect("apply_batch must succeed (rung-2 step)");
+    assert_eq!(rung2, Rung::Two);
+    assert!(
+        std::sync::Arc::ptr_eq(&rung1_snap.dep_meta, &rung2_snap.dep_meta),
+        "apply_rung2 must forward dep_meta by Arc identity, never rebuild it"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&rung1_snap.dep_decl_by_id, &rung2_snap.dep_decl_by_id),
+        "apply_rung2 must forward dep_decl_by_id by Arc identity"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&rung1_snap.dep_texts, &rung2_snap.dep_texts),
+        "apply_rung2 must forward dep_texts by Arc identity"
+    );
+
+    // ── Path 2: spawn_updater's hot loop — a SEPARATE Updater/thread, so it
+    // can never share Arc identity with the `base`/`rung1_snap` values
+    // above; this half proves the hot loop's cached-surface rung-1 variant
+    // ALSO forwards by Arc identity, against its OWN base snapshot.
+    use al_call_hierarchy::lsp::updater::{SharedSnapshot, spawn_updater};
+    use std::sync::Arc;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let dir2 = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base2, parsed2) = build_full_with_parsed(dir2.path());
+    let base2_dep_meta = Arc::clone(&base2.dep_meta);
+    let base2_dep_decl_by_id = Arc::clone(&base2.dep_decl_by_id);
+    let base2_dep_texts = Arc::clone(&base2.dep_texts);
+    let shared = Arc::new(SharedSnapshot::new(Arc::new(base2)));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_updater(
+        Arc::clone(&shared),
+        rx,
+        dir2.path().to_path_buf(),
+        parsed2,
+        |_old, _new| {},
+    );
+
+    let caller_path = dir2.path().join("Caller.al");
+    std::fs::write(&caller_path, body_only).expect("rewrite Caller.al (hot-loop rung 1)");
+    tx.send(ChangeEvent::FileSaved(caller_path))
+        .expect("send must succeed");
+    std::thread::sleep(Duration::from_millis(400));
+    drop(tx);
+    handle.join().expect("updater thread must exit cleanly");
+
+    let hot_loop_snap = shared.get();
+    assert!(
+        hot_loop_snap.generation > 0,
+        "the hot loop must have applied at least one rung-1 swap"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&base2_dep_meta, &hot_loop_snap.dep_meta),
+        "spawn_updater's hot-loop rung-1 path must forward dep_meta by Arc identity"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&base2_dep_decl_by_id, &hot_loop_snap.dep_decl_by_id),
+        "spawn_updater's hot-loop rung-1 path must forward dep_decl_by_id by Arc identity"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&base2_dep_texts, &hot_loop_snap.dep_texts),
+        "spawn_updater's hot-loop rung-1 path must forward dep_texts by Arc identity"
+    );
+}
+
+/// CONTENT-level proof (Arc identity proves forwarding, not correctness): a
+/// workspace routine's call into a DEP routine must still resolve AFTER the
+/// dep parse arenas are dropped — i.e. dispatched through the frozen tier's
+/// `RoutineMeta` (params ty/by_ref), not through any surviving
+/// `RoutineDecl`. Uses the `lsp-diff-deps` fixture's real embedded-source
+/// dependency call (`Caller.CallEmbeddedSourceDep` → `Source Mgt.DoWork`,
+/// arity 1) — its target `RoutineNodeId` (app + arity + sig_fp) is asserted
+/// on the freshly built snapshot AND again after a rung-1 body edit, so the
+/// SAME identity resolving twice — once before, once after the dep arenas
+/// are long gone — proves dispatch never regresses to relying on a
+/// surviving dependency parse.
+#[test]
+fn dep_overload_dispatch_resolves_through_frozen_tier_after_arena_drop() {
+    let dir = copy_fixture_lsp_diff_deps_to_tempdir();
+    let (base, parsed) = build_full_with_parsed(dir.path());
+
+    fn dep_routine_target(snap: &LspSnapshot) -> RoutineNodeId {
+        let edges = &snap.edges_by_file["Caller.al"];
+        let dowork_edge = edges
+            .iter()
+            .find(|ce| {
+                ce.edge.routes.iter().any(
+                    |r| matches!(&r.target, RouteTarget::Routine(id) if id.name_lc == "dowork"),
+                )
+            })
+            .expect("Caller.al must carry an edge routing to Source Mgt.DoWork");
+        let route = dowork_edge
+            .edge
+            .routes
+            .iter()
+            .find(|r| matches!(&r.target, RouteTarget::Routine(id) if id.name_lc == "dowork"))
+            .expect("route to DoWork must exist");
+        match &route.target {
+            RouteTarget::Routine(id) => id.clone(),
+            other => panic!("expected RouteTarget::Routine, got {other:?}"),
+        }
+    }
+
+    let base_target = dep_routine_target(&base);
+    assert_eq!(
+        base_target.params_count, 1,
+        "Source Mgt.DoWork(x: Integer) must dispatch as the 1-arity overload"
+    );
+    assert!(
+        base.dep_decl_by_id.contains_key(&base_target),
+        "the dispatched target must be a REAL dep decl, not a stale/absent one"
+    );
+
+    let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+    let body_only = r#"codeunit 50000 "Caller"
+{
+    procedure CallSymbolOnlyDep()
+    var
+        WidgetMgt: Codeunit "Widget Mgt";
+    begin
+        WidgetMgt.Compute(5);
+        WidgetMgt.Compute(6);
+    end;
+
+    procedure CallEmbeddedSourceDep()
+    var
+        SourceMgt: Codeunit "Source Mgt";
+    begin
+        SourceMgt.DoWork(3);
+    end;
+}
+"#;
+    std::fs::write(dir.path().join("Caller.al"), body_only).expect("rewrite Caller.al (rung 1)");
+    let batch = vec![ChangeEvent::FileSaved(dir.path().join("Caller.al"))];
+    let (rung1_snap, rung1) = updater
+        .apply_batch(&base, &batch)
+        .expect("apply_batch must succeed (rung-1 step)");
+    assert_eq!(rung1, Rung::One);
+
+    let rung1_target = dep_routine_target(&rung1_snap);
+    assert_eq!(
+        base_target, rung1_target,
+        "the dep dispatch target must resolve to the IDENTICAL RoutineNodeId \
+         after a rung-1 edit — dispatched via the frozen tier, not a stale \
+         surviving dependency parse (there is none left to survive)"
+    );
+    assert!(
+        rung1_snap.dep_decl_by_id.contains_key(&rung1_target),
+        "the post-rung-1 snapshot must still resolve the dep target to a real decl"
     );
 }

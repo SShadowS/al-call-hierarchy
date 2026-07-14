@@ -288,9 +288,9 @@ fn make_teeth_unit(guid: &str, name: &str, src: &str) -> (AppId, ParsedUnit) {
         app: app_id.clone(),
         files: vec![ParsedFile {
             virtual_path: "Sub.al".to_string(),
-            file: al_syntax::parse(src),
+            file: std::sync::Arc::new(al_syntax::parse(src)),
             provenance,
-            text: src.to_string(),
+            text: src.into(),
         }],
     };
     (app_id, unit)
@@ -6607,11 +6607,11 @@ codeunit 50971 "Compound Overload Subscriber"
         files: vec![
             SourceFile {
                 virtual_path: "CompoundTarget.al".into(),
-                text: target_src.clone(),
+                text: target_src.clone().into(),
             },
             SourceFile {
                 virtual_path: "CompoundSubscriber.al".into(),
-                text: subscriber_src,
+                text: subscriber_src.into(),
             },
         ],
         tier: TrustTier::Workspace,
@@ -6623,7 +6623,7 @@ codeunit 50971 "Compound Overload Subscriber"
     let dep_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "CompoundTarget.al".into(),
-            text: target_src,
+            text: target_src.into(),
         }],
         tier: TrustTier::EmbeddedSource,
         content_hash: "dep-hash".into(),
@@ -6779,7 +6779,7 @@ fn compound_obj_dup_and_overload_subscription_resolves_not_ambiguous() {
 // already kept BOTH survivors (Task 2-of-the-EARLIER-plan review fix — see
 // the tests above), but neither was flagged as aliased, so a role-lookup
 // consumer like `emit_event_flow_edges`'s publisher fan-out had no way to
-// know its `BodyMap` span answer might belong to the WRONG sibling.
+// know its `DeclSurface` span answer might belong to the WRONG sibling.
 //
 // Since Task 2 (this plan), SOURCE `sig_fp` is a real fingerprint
 // (`sig_fp::source_param_sig_fp`): a genuine same-name/same-arity overload
@@ -6828,7 +6828,7 @@ codeunit 50980 "Alias Target"
     let ws_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "AliasTarget.al".into(),
-            text: src,
+            text: src.into(),
         }],
         tier: TrustTier::Workspace,
         content_hash: "ws-hash".into(),
@@ -6953,7 +6953,7 @@ codeunit 50981 "Dup Target"
     let ws_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "DupTarget.al".into(),
-            text: src.clone(),
+            text: src.clone().into(),
         }],
         tier: TrustTier::Workspace,
         content_hash: "ws-hash".into(),
@@ -6961,7 +6961,7 @@ codeunit 50981 "Dup Target"
     let dep_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "DupTarget.al".into(),
-            text: src,
+            text: src.into(),
         }],
         tier: TrustTier::EmbeddedSource,
         content_hash: "dep-hash".into(),
@@ -7066,7 +7066,7 @@ codeunit 50982 "Dual Publisher Target"
     let ws_source = SourceRoot {
         files: vec![SourceFile {
             virtual_path: "DualPublisherTarget.al".into(),
-            text: src,
+            text: src.into(),
         }],
         tier: TrustTier::Workspace,
         content_hash: "ws-hash".into(),
@@ -7101,13 +7101,13 @@ codeunit 50982 "Dual Publisher Target"
 /// (`dual_publisher_alias_skip_count == 0`) — EACH publisher emits its OWN
 /// EventFlow edge, and its `site.span` is the FIDELITY FIX this whole plan
 /// exists for: it must match ITS OWN declaration's `name_origin`, never a
-/// sibling's (the last-write-wins `BodyMap` corruption Task 1's guard used to
+/// sibling's (the last-write-wins `DeclSurface` corruption Task 1's guard used to
 /// paper over by skipping both).
 #[test]
 fn distinct_sig_fp_publishers_both_emit_correct_spans() {
     use al_call_hierarchy::program::abi_ingest::AbiCache;
     use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::program::resolve::body_map::BodyMap;
+    use al_call_hierarchy::program::resolve::decl_surface::DeclSurface;
     use al_call_hierarchy::program::resolve::index::ResolveIndex;
     use al_call_hierarchy::program::resolve::resolver::{
         dual_publisher_alias_skip_count, emit_event_flow_edges,
@@ -7119,7 +7119,7 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
     let graph = build_program_graph(&snap, &cache);
     let parsed = parse_snapshot(&snap);
     let index = ResolveIndex::build(&graph);
-    let body_map = BodyMap::build(&graph, &parsed);
+    let surface = DeclSurface::build(&graph, &parsed);
 
     // Precondition: both overloads survived, both UNMARKED (distinct ids),
     // both publishers.
@@ -7157,7 +7157,7 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
          dual-publisher-alias skip"
     );
 
-    let edges = emit_event_flow_edges(&graph, &index, &body_map);
+    let edges = emit_event_flow_edges(&graph, &index, &surface);
     assert_eq!(
         edges.len(),
         2,
@@ -7166,7 +7166,7 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
     );
 
     // Per-overload span fidelity: each publisher's edge must carry ITS OWN
-    // decl's name-origin span (via BodyMap, now keyed by a distinct id per
+    // decl's name-origin span (via DeclSurface, now keyed by a distinct id per
     // sibling — no more last-write-wins collision).
     for entry in &resolve_entries {
         let matching: Vec<_> = edges.iter().filter(|e| e.from == entry.id).collect();
@@ -7176,9 +7176,9 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
             "each publisher id must have exactly one EventFlow edge; entry sig_fp={}",
             entry.id.sig_fp
         );
-        let (decl, path) = body_map
+        let (decl, path) = surface
             .get_with_path(&entry.id)
-            .expect("publisher must be in BodyMap under its own distinct id");
+            .expect("publisher must be in DeclSurface under its own distinct id");
         let expected_span = CanonicalSpan {
             unit: path.to_string(),
             start: SourcePos {
@@ -7212,7 +7212,7 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
 /// (`tests/fixtures/sigfp_overload_identity`), read independently through
 /// ALL FOUR live `sig_fp::source_routine_node_id` call sites
 /// (`node_extract::extract_nodes` via `graph.routines`;
-/// `resolve::body_map::BodyMap::build`; `resolve::full::
+/// `resolve::decl_surface::DeclSurface::build`; `resolve::full::
 /// resolve_full_program`'s `resolve_full_program_from_parts` site;
 /// `resolve::stub::resolve_program`), must agree on the SAME id for each
 /// overload — proving the shared constructor closes the "5 independent
@@ -7223,7 +7223,7 @@ fn distinct_sig_fp_publishers_both_emit_correct_spans() {
 fn sigfp_identity_agrees_across_all_four_live_sites() {
     use al_call_hierarchy::program::abi_ingest::AbiCache;
     use al_call_hierarchy::program::build::build_program_graph;
-    use al_call_hierarchy::program::resolve::body_map::BodyMap;
+    use al_call_hierarchy::program::resolve::decl_surface::DeclSurface;
     use al_call_hierarchy::program::resolve::stub;
     use al_call_hierarchy::snapshot::{SnapshotBuilder, parse_snapshot};
 
@@ -7272,19 +7272,19 @@ fn sigfp_identity_agrees_across_all_four_live_sites() {
         .id
         .clone();
 
-    // Site 2: resolve::body_map::BodyMap::build — each id must retrieve the
+    // Site 2: resolve::decl_surface::DeclSurface::build — each id must retrieve the
     // CORRECT decl (matching its own param type), never a last-write-wins
     // collision with its sibling.
     let parsed = parse_snapshot(&snap);
-    let body_map = BodyMap::build(&graph, &parsed);
-    let int_decl = body_map
+    let surface = DeclSurface::build(&graph, &parsed);
+    let int_decl = surface
         .get(&int_id)
-        .expect("Integer overload must be in BodyMap under its own id");
+        .expect("Integer overload must be in DeclSurface under its own id");
     assert_eq!(int_decl.params.len(), 1);
     assert_eq!(int_decl.params[0].ty.as_deref(), Some("Integer"));
-    let text_decl = body_map
+    let text_decl = surface
         .get(&text_id)
-        .expect("Text overload must be in BodyMap under its own id");
+        .expect("Text overload must be in DeclSurface under its own id");
     assert_eq!(text_decl.params.len(), 1);
     assert_eq!(text_decl.params[0].ty.as_deref(), Some("Text"));
 
