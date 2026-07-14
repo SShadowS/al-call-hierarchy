@@ -2140,6 +2140,11 @@ fn digest_one_root(
             /// Per-path conditionality, parallel to `all_paths` (PRE-capping). Computed
             /// from each raw path's own terminal hop (#8).
             all_path_conds: Vec<crate::engine::l5::conditionality::EffectConditionality>,
+            /// `query_hops_json` of each `all_paths[i]`, parallel to `all_paths` —
+            /// computed once at projection/merge and reused for every later merge's
+            /// sort tiebreak + dedupe (removes the repeated re-serialization the
+            /// giant tail roots paid; see witness-investigation.md §3).
+            all_path_jsons: Vec<String>,
             /// S4-internal (NOT serialized in the digest-effects golden): the
             /// originating table-write fact's tempState (for the physical-write filter).
             temp_state: Option<SnapTempState>,
@@ -2147,6 +2152,10 @@ fn digest_one_root(
             fact_subject: String,
         }
         let mut effect_map: Vec<(String, AccumulatedEffect)> = Vec::new();
+        // O(1) key → position index over effect_map (same keys, same positions —
+        // the Vec keeps insertion order for output; this only replaces the O(F)
+        // `iter().position()` scan that made the loop O(F²) on 1500-fact roots).
+        let mut effect_index: HashMap<String, usize> = HashMap::new();
 
         // Effect types the ordering engine grades (FIX 2). When `ordering_witness_only`
         // is set we skip witness reconstruction for effect types outside this set —
@@ -2217,6 +2226,8 @@ fn digest_one_root(
                 .iter()
                 .map(|p| compute_path_conditionality(p, cs_ctx, op_ctx))
                 .collect();
+            let projected_jsons: Vec<String> =
+                projected_paths.iter().map(|p| query_hops_json(p)).collect();
 
             let key = dedupe_key(effect_type, terminal, fact, &detail);
 
@@ -2227,14 +2238,21 @@ fn digest_one_root(
             };
 
             // Find existing in ordered effect_map.
-            let existing_pos = effect_map.iter().position(|(k, _)| k == &key);
+            let existing_pos = effect_index.get(&key).copied();
 
             if let Some(pos) = existing_pos {
-                // Merge: combine (path, cond) pairs, sort shortest-first + JSON tiebreak,
-                // dedupe exact dups by hops-JSON. Conds travel WITH their paths (#8).
+                // Merge: combine (path, cond, json) triples, sort shortest-first + JSON
+                // tiebreak, dedupe exact dups by hops-JSON. Conds/jsons travel WITH
+                // their paths (#8).
+                //
+                // INVARIANCE NOTE: the sort previously compared `query_hops_json(&a.0)`
+                // vs `query_hops_json(&b.0)` computed on the fly; `a.2`/`b.2` below are
+                // the SAME strings computed once (at projection, or reused from a prior
+                // merge's cache) — ordering and dedupe sets are unchanged byte-for-byte.
                 let mut merged: Vec<(
                     Vec<QueryWitnessHop>,
                     crate::engine::l5::conditionality::EffectConditionality,
+                    String,
                 )> = Vec::new();
                 {
                     let existing = &effect_map[pos].1;
@@ -2244,31 +2262,38 @@ fn digest_one_root(
                             .get(i)
                             .copied()
                             .unwrap_or(crate::engine::l5::conditionality::UNKNOWN);
-                        merged.push((p.clone(), c));
+                        let j = existing
+                            .all_path_jsons
+                            .get(i)
+                            .cloned()
+                            .unwrap_or_else(|| query_hops_json(p));
+                        merged.push((p.clone(), c, j));
                     }
                 }
-                for (p, c) in projected_paths
+                for ((p, c), j) in projected_paths
                     .iter()
                     .cloned()
                     .zip(path_conds.iter().copied())
+                    .zip(projected_jsons.iter().cloned())
                 {
-                    merged.push((p, c));
+                    merged.push((p, c, j));
                 }
                 merged.sort_by(|a, b| {
                     if a.0.len() != b.0.len() {
                         return a.0.len().cmp(&b.0.len());
                     }
-                    query_hops_json(&a.0).cmp(&query_hops_json(&b.0))
+                    a.2.cmp(&b.2)
                 });
                 let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
                 let mut unique_paths: Vec<Vec<QueryWitnessHop>> = Vec::new();
                 let mut unique_conds: Vec<crate::engine::l5::conditionality::EffectConditionality> =
                     Vec::new();
-                for (p, c) in merged {
-                    let k = query_hops_json(&p);
-                    if seen.insert(k) {
+                let mut unique_jsons: Vec<String> = Vec::new();
+                for (p, c, j) in merged {
+                    if seen.insert(j.clone()) {
                         unique_paths.push(p);
                         unique_conds.push(c);
+                        unique_jsons.push(j);
                     }
                 }
                 let had_truncation = effect_map[pos].1.had_truncation
@@ -2294,11 +2319,13 @@ fn digest_one_root(
                 acc.had_truncation = had_truncation;
                 acc.all_paths = unique_paths;
                 acc.all_path_conds = unique_conds;
+                acc.all_path_jsons = unique_jsons;
                 acc.temp_state = merged_temp;
             } else {
                 let via: Vec<Vec<QueryWitnessHop>> =
                     projected_paths.iter().take(MAX_PATHS).cloned().collect();
                 let had_truncation = outcome.truncated || projected_paths.len() > MAX_PATHS;
+                effect_index.insert(key.clone(), effect_map.len());
                 effect_map.push((
                     key,
                     AccumulatedEffect {
@@ -2316,6 +2343,7 @@ fn digest_one_root(
                         had_truncation,
                         all_paths: projected_paths,
                         all_path_conds: path_conds,
+                        all_path_jsons: projected_jsons,
                         temp_state: fact_temp_state,
                         fact_subject: fact.subject.clone(),
                     },

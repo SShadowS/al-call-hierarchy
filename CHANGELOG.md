@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `analyze` on CDO: never-completes → ~6.3 s. Output byte-identical.
 
 ### Changed
+- digest per-root merge loop de-quadratized: O(1) HashMap index over the insertion-ordered
+  effect map (was an O(F) scan per fact → O(F²) on 1500-fact Page roots) + `query_hops_json`
+  memoized per path instead of re-serialized on every merge sort/dedupe. Byte-identical
+  (fc-verified on CDO). transaction-integrity preset: 94.1 s → 63.6 s.
 - `digest_query` (the L5 witness/ordering digest behind `--preset transaction-integrity`'s
   d47/d48/d49 and the digest CLI) now processes roots in parallel (rayon). Each root's
   witness reconstruction + ordering pass reads only immutable inputs (`snap`/`idx`/context
