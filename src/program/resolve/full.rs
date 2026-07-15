@@ -918,8 +918,18 @@ fn resolve_full_program_from_parts(
 /// north-star metric: the resolution outcome comes entirely from this engine.
 #[must_use]
 pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
-    // ── Steps 1–4: shared setup (snapshot → graph → parse → primary app) ──────
     let ctx = build_context(workspace_root)?;
+    Some(resolve_full_program_with(&ctx))
+}
+
+/// The substrate-taking core of [`resolve_full_program`] (steps 5–8 of that
+/// function's documented pipeline). Callers that already hold a
+/// [`ProgramContext`] — e.g. a test harness that rebuilds the context once
+/// and resolves it many times — call this directly instead of paying
+/// `build_context`'s cost on every resolve.
+#[must_use]
+pub fn resolve_full_program_with(ctx: &ProgramContext) -> ProgramReport {
+    // ── Steps 1–4: shared setup (snapshot → graph → parse → primary app) ──────
     let ProgramContext {
         snap,
         graph,
@@ -927,7 +937,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         primary_app_ref,
         ws_file_set,
         ..
-    } = &ctx;
+    } = ctx;
     let primary_app_ref = *primary_app_ref;
 
     // ── Step 5: Resolve all obligations ──────────────────────────────────────
@@ -970,7 +980,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
     // diagnostic — surfaced, never gating (see `recovered_files`'s doc).
     let recovered_files = crate::snapshot::parse::recovered_file_paths(parsed);
 
-    Some(ProgramReport {
+    ProgramReport {
         edges,
         coverage,
         histogram,
@@ -980,7 +990,7 @@ pub fn resolve_full_program(workspace_root: &Path) -> Option<ProgramReport> {
         event_flow_dual_publisher_alias_skips,
         recovered_files,
         builtin_dispatch_audit,
-    })
+    }
 }
 
 /// Export-oriented entry: assemble the whole-program graph + classified edges +
@@ -1009,12 +1019,19 @@ pub fn resolve_full_program_for_export(
 /// [`resolve_full_program`] and [`resolve_full_program_for_export`] cannot drift.
 /// Returns `None` when the snapshot build fails or the workspace app is absent.
 ///
-/// `pub(crate)` (T3 Task 8): [`crate::lsp::snapshot::LspSnapshot::build_full`]
-/// is a second consumer of this exact composition — it additionally needs the
-/// [`DepLayer`] this function assembles `graph` from (to store as
-/// `Arc<DepLayer>` for a future incremental rung-2 rebuild), so it calls this
-/// function directly rather than re-deriving snapshot → parse → graph itself.
-pub(crate) struct ProgramContext {
+/// [`crate::lsp::snapshot::LspSnapshot::build_full`] is a second consumer of
+/// this exact composition — it additionally needs the [`DepLayer`] this
+/// function assembles `graph` from (to store as `Arc<DepLayer>` for a future
+/// incremental rung-2 rebuild), so it calls this function directly rather
+/// than re-deriving snapshot → parse → graph itself.
+///
+/// `pub` (shared-substrate refactor, 2026-07-15): a test harness that
+/// resolves the same workspace many times builds this once via
+/// [`build_context`] and resolves it repeatedly via
+/// [`resolve_full_program_with`], instead of paying the full snapshot →
+/// parse → graph cost on every resolve. Fields stay `pub(crate)` — external
+/// consumers go through the `graph()`/`parsed()` accessors below.
+pub struct ProgramContext {
     pub(crate) snap: AppSetSnapshot,
     pub(crate) graph: ProgramGraph,
     pub(crate) parsed: Vec<ParsedUnit>,
@@ -1027,7 +1044,22 @@ pub(crate) struct ProgramContext {
     pub(crate) dep_layer: DepLayer,
 }
 
-pub(crate) fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
+impl ProgramContext {
+    /// The assembled whole-program graph (shared-substrate consumers only).
+    #[must_use]
+    pub fn graph(&self) -> &ProgramGraph {
+        &self.graph
+    }
+
+    /// The parsed units backing `graph` (shared-substrate consumers only).
+    #[must_use]
+    pub fn parsed(&self) -> &[ParsedUnit] {
+        &self.parsed
+    }
+}
+
+#[must_use]
+pub fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
     // ── Step 1: Build snapshot ────────────────────────────────────────────────
     let snap = (SnapshotBuilder {
         workspace_root: workspace_root.to_path_buf(),

@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Shared one CDO program substrate across the read-only
+  `program_resolve_harness` CDO tests. `src/program/resolve/full.rs` now
+  exposes `ProgramContext` (opaque — fields stay `pub(crate)`, with `graph()`/
+  `parsed()` accessors), `build_context(&Path) -> Option<ProgramContext>`, and
+  `resolve_full_program_with(&ProgramContext) -> ProgramReport`;
+  `resolve_full_program(&Path)` is now the thin wrapper over the two (a
+  fixture-based equivalence test pins wrapper == core). The expensive
+  semantic-golden/differential/ABI helpers gained substrate-taking cores with
+  behavior-identical path wrappers: `run_route_applicability_on`,
+  `run_unknown_include_sender_plus1_subscribers_preflight_on`,
+  `run_cdo_semantic_audit_on`, `run_cdo_trigger_audit_on`,
+  `run_cdo_event_audit_on`, `mint_fresh_golden_for_kind_on` (`pub(crate)`),
+  `differential::project_fresh_event_rows_on`, and
+  `abi_check::run_abi_integrity_check_on`. The harness builds the CDO
+  snapshot → parse → graph → resolve pipeline ONCE (`CdoShared` in a
+  `OnceLock`; panics if the one build fails, `None` == the usual `CDO_WS`
+  skip) and rewires the ~10 hot CDO tests to it. Deliberately NOT rewired:
+  the resolve-determinism test (its two independent builds ARE the
+  assertion) and the three `#[ignore]`d diagnostic dumps. Scope note: the
+  audit tests' second "determinism re-run" calls now re-run the audit
+  PROJECTION over the same shared report — audit-projection determinism is
+  still asserted; resolve-layer determinism stays covered by the dedicated
+  determinism test. Metric identity verified: every printed north-star
+  digest/histogram/coverage line is byte-identical to the pre-refactor
+  baseline capture. Measured (CDO gate leg 1, release, `--test-threads=1`,
+  plain `cargo test`): **98.23 s → 25.44 s (−74%)**, 188 passed (187 + the
+  new equivalence test).
 - Consolidated the 151 top-level `tests/*.rs` integration-test crates into 9
   umbrella crates (`tests/{gap,cli,l3,l2_ir,temp_state,r25_abi,r3,r4,lsp}/main.rs`,
   one link target each) plus 3 deliberately-standalone targets

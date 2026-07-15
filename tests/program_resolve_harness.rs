@@ -35,6 +35,31 @@ use cdo::cdo_ws_or_enforce;
 #[path = "common/regen.rs"]
 mod regen;
 
+/// Shared CDO substrate (2026-07-15 shared-substrate spec): ONE snapshot →
+/// graph → parse → full-resolve build, consumed by every read-only CDO test.
+/// The engine's own determinism test (two independent builds, below) licenses
+/// the sharing; that test and the #[ignore]d dumps deliberately do NOT use
+/// this. Panics if the one build fails (every consumer would have failed
+/// identically). `None` == the usual CDO_WS skip.
+struct CdoShared {
+    ctx: al_call_hierarchy::program::resolve::full::ProgramContext,
+    report: al_call_hierarchy::program::resolve::full::ProgramReport,
+}
+
+static CDO_SHARED: std::sync::OnceLock<Option<CdoShared>> = std::sync::OnceLock::new();
+
+fn cdo_shared() -> Option<&'static CdoShared> {
+    CDO_SHARED
+        .get_or_init(|| {
+            let ws = cdo_ws_or_enforce()?;
+            let ctx = al_call_hierarchy::program::resolve::full::build_context(&ws)
+                .expect("shared CDO substrate: build_context must succeed on CDO_WS");
+            let report = al_call_hierarchy::program::resolve::full::resolve_full_program_with(&ctx);
+            Some(CdoShared { ctx, report })
+        })
+        .as_ref()
+}
+
 // ---------------------------------------------------------------------------
 // Test 1 (from brief): one missing L3 site must NOT cascade
 // ---------------------------------------------------------------------------
@@ -410,7 +435,7 @@ use al_call_hierarchy::engine::deps::symbol_reference::{
 };
 use al_call_hierarchy::program::node::AppRef;
 use al_call_hierarchy::program::resolve::abi_check::{
-    AbiIntegrityReport, RawAbiIndex, abi_ingestion_integrity, run_abi_integrity_check,
+    AbiIntegrityReport, RawAbiIndex, abi_ingestion_integrity, run_abi_integrity_check_on,
 };
 use al_call_hierarchy::program::resolve::edge::{
     AbiEventKind, AbiRoutineKey, AbiRoutineKind, BuiltinId, CanonicalSpan, DispatchShape, Edge,
@@ -874,11 +899,11 @@ fn histogram_taxonomy_split() {
 /// A miss = an ingestion/key-derivation bug — investigate and fix, do NOT relax.
 #[test]
 fn abi_ingestion_integrity_cdo_gate() {
-    let Some(ws) = cdo_ws_or_enforce() else {
+    let Some(shared) = cdo_shared() else {
         return;
     };
 
-    let report = run_abi_integrity_check(&ws);
+    let report = run_abi_integrity_check_on(&shared.ctx);
 
     eprintln!(
         "AbiIntegrityReport: abi_routes_total={} abi_mapped={} abi_unmapped={}",
@@ -921,21 +946,12 @@ fn abi_ingestion_integrity_cdo_gate() {
 
     // Also compute and print the histogram split.
     {
-        use al_call_hierarchy::program::abi_ingest::AbiCache;
-        use al_call_hierarchy::program::build::build_program_graph;
         use al_call_hierarchy::program::resolve::stub::resolve_program;
-        use al_call_hierarchy::snapshot::{SnapshotBuilder, parse_snapshot};
 
-        if let Ok(snap) = (SnapshotBuilder {
-            workspace_root: ws.clone(),
-            local_providers: vec![],
-        })
-        .build()
         {
-            let cache = AbiCache::new();
-            let graph = build_program_graph(&snap, &cache);
-            let parsed = parse_snapshot(&snap);
-            let edges = resolve_program(&graph, &parsed);
+            let graph = shared.ctx.graph();
+            let parsed = shared.ctx.parsed();
+            let edges = resolve_program(graph, parsed);
             let h = Histogram::of_edges(&edges);
             eprintln!(
                 "Histogram: total={} resolved_source={} resolved_catalog={} \
@@ -990,11 +1006,12 @@ fn abi_ingestion_integrity_cdo_gate() {
          ingestion/key-derivation bug; investigate and fix: {report:?}"
     );
 
-    // Determinism: two consecutive runs must produce identical output.
+    // Determinism: two consecutive runs (over the same shared substrate) must
+    // produce identical output.
     assert_eq!(
         report,
-        run_abi_integrity_check(&ws),
-        "run_abi_integrity_check must be deterministic"
+        run_abi_integrity_check_on(&shared.ctx),
+        "run_abi_integrity_check_on must be deterministic"
     );
 }
 
@@ -1147,6 +1164,35 @@ fn full_program_fixture_coverage_holds_and_histogram_is_correct() {
     assert!(
         (rate - 0.25).abs() < 1e-9,
         "real_unknown_rate must be 0.25 for this fixture; got {rate}"
+    );
+}
+
+/// Shared-substrate refactor (2026-07-15 spec): the context-taking core and
+/// the path wrapper must produce identical reports — the wrapper IS
+/// `build_context` + `resolve_full_program_with`, so any divergence means the
+/// split leaked behavior.
+#[test]
+fn resolve_full_program_with_matches_path_wrapper_on_fixture() {
+    use al_call_hierarchy::program::resolve::full::{build_context, resolve_full_program_with};
+
+    let fixture =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/semantic-golden");
+    let via_path = resolve_full_program(&fixture).expect("wrapper must succeed on fixture");
+    let ctx = build_context(&fixture).expect("build_context must succeed on fixture");
+    let via_ctx = resolve_full_program_with(&ctx);
+
+    assert_eq!(
+        via_path.histogram, via_ctx.histogram,
+        "histogram must match"
+    );
+    assert_eq!(
+        via_path.primary_histogram, via_ctx.primary_histogram,
+        "primary histogram must match"
+    );
+    assert_eq!(
+        via_path.edges.len(),
+        via_ctx.edges.len(),
+        "edge count must match"
     );
 }
 
@@ -1329,8 +1375,11 @@ fn cdo_full_program_coverage_and_self_reported_metric() {
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
+    let Some(shared) = cdo_shared() else {
+        return;
+    };
 
-    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+    let report = &shared.report;
 
     // ── Coverage contract ────────────────────────────────────────────────────
     assert!(
@@ -2814,8 +2863,9 @@ use al_call_hierarchy::program::resolve::semantic_golden::{
     VERDICT_L3_ERROR_INTRINSIC, adjudicated_overrides_path, cdo_anon_golden_path,
     cdo_event_anon_golden_path, cdo_trigger_anon_golden_path, load_adjudicated_overrides,
     load_anon_event_golden, load_anon_golden, mint_fresh_golden_for_kind, mint_l3_validated_golden,
-    run_cdo_event_audit, run_cdo_semantic_audit, run_cdo_trigger_audit, run_route_applicability,
-    run_semantic_diff, run_unknown_include_sender_plus1_subscribers_preflight,
+    run_cdo_event_audit_on, run_cdo_semantic_audit_on, run_cdo_trigger_audit_on,
+    run_route_applicability, run_route_applicability_on, run_semantic_diff,
+    run_unknown_include_sender_plus1_subscribers_preflight_on,
 };
 
 // beyond-1B.3b Task 3: the INDEPENDENT adjudication test's inputs — the
@@ -3081,11 +3131,11 @@ fn route_applicability_zero_violations() {
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
-    let Some(ws) = cdo_ws_or_enforce() else {
+    let Some(shared) = cdo_shared() else {
         return;
     };
 
-    let appl_cdo = run_route_applicability(&ws);
+    let appl_cdo = run_route_applicability_on(&shared.ctx, &shared.report);
     assert!(
         appl_cdo.is_clean(),
         "route-applicability contract violated on CDO_WS: witness_violations={} \
@@ -3373,12 +3423,11 @@ fn task3_dump_remaining_ambiguous_resolved_sites_on_cdo() {
 /// letting the policy discard it silently (see the diagnostic's own doc).
 #[test]
 fn cdo_unknown_include_sender_plus1_subscribers_preflight_is_zero() {
-    let Some(ws) = cdo_ws_or_enforce() else {
+    let Some(shared) = cdo_shared() else {
         return;
     };
 
-    let count = run_unknown_include_sender_plus1_subscribers_preflight(&ws)
-        .expect("snapshot build must succeed on CDO_WS");
+    let count = run_unknown_include_sender_plus1_subscribers_preflight_on(&shared.ctx);
     assert_eq!(
         count, 0,
         "unknown-IncludeSender publishers with +1-arity subscribers found on \
@@ -3437,8 +3486,11 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
+    let Some(shared) = cdo_shared() else {
+        return;
+    };
 
-    let audit = run_cdo_semantic_audit(&ws);
+    let audit = run_cdo_semantic_audit_on(&shared.ctx, &shared.report, &ws);
     enforce_audit_ran(audit.golden_loaded, audit.paired);
     assert!(
         audit.golden_loaded,
@@ -3765,7 +3817,7 @@ fn cdo_l3_semantic_audit_no_fresh_wrong() {
     );
 
     // ── Determinism: two consecutive runs produce the same digest ─────────────
-    let audit2 = run_cdo_semantic_audit(&ws);
+    let audit2 = run_cdo_semantic_audit_on(&shared.ctx, &shared.report, &ws);
     assert_eq!(
         audit.digest, audit2.digest,
         "CDO semantic audit must be deterministic (digest differs between runs)"
@@ -3792,8 +3844,11 @@ fn cdo_trigger_audit_frozen_load() {
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
+    let Some(shared) = cdo_shared() else {
+        return;
+    };
 
-    let audit = run_cdo_trigger_audit(&ws);
+    let audit = run_cdo_trigger_audit_on(&shared.ctx, &shared.report, &ws);
     enforce_audit_ran(audit.golden_loaded, audit.total_paired);
     assert!(
         audit.golden_loaded,
@@ -3855,7 +3910,7 @@ fn cdo_trigger_audit_frozen_load() {
     );
 
     // Determinism.
-    let audit2 = run_cdo_trigger_audit(&ws);
+    let audit2 = run_cdo_trigger_audit_on(&shared.ctx, &shared.report, &ws);
     assert_eq!(
         audit.digest, audit2.digest,
         "CDO trigger audit must be deterministic (digest differs between runs)"
@@ -3878,8 +3933,11 @@ fn cdo_event_audit_frozen_load() {
     let Some(ws) = cdo_ws_or_enforce() else {
         return;
     };
+    let Some(shared) = cdo_shared() else {
+        return;
+    };
 
-    let audit = run_cdo_event_audit(&ws);
+    let audit = run_cdo_event_audit_on(&shared.ctx, &ws);
     enforce_audit_ran(audit.golden_loaded, audit.matched_pairs);
     assert!(
         audit.golden_loaded,
@@ -3917,7 +3975,7 @@ fn cdo_event_audit_frozen_load() {
     );
 
     // Determinism.
-    let audit2 = run_cdo_event_audit(&ws);
+    let audit2 = run_cdo_event_audit_on(&shared.ctx, &ws);
     assert_eq!(
         audit.digest, audit2.digest,
         "CDO event audit must be deterministic (digest differs between runs)"
@@ -5220,11 +5278,11 @@ fn fan_out_applicability_zero_violations() {
     );
 
     // ── CDO (env-gated) ───────────────────────────────────────────────────────
-    let Some(ws) = cdo_ws_or_enforce() else {
+    let Some(shared) = cdo_shared() else {
         return;
     };
 
-    let appl_cdo = run_route_applicability(&ws);
+    let appl_cdo = run_route_applicability_on(&shared.ctx, &shared.report);
     assert_eq!(
         appl_cdo.interface_applicability_violations, 0,
         "Interface fan-out soundness violated on CDO_WS — a real bug, investigate \
@@ -10887,13 +10945,13 @@ fn ws_builtin_dispatch_audit_sites_produce_entry_trigger_run_edges() {
 /// sites in the flagged catalog, or this audit's own logic drifted.
 #[test]
 fn cdo_builtin_dispatch_audit_flagged_count_is_pinned() {
-    let Some(ws) = cdo_ws_or_enforce() else {
+    let Some(shared) = cdo_shared() else {
         return;
     };
 
     const CDO_ENTRY_DISPATCH_FLAGGED_PIN: usize = 0;
 
-    let report = resolve_full_program(&ws).expect("resolve_full_program must succeed on CDO_WS");
+    let report = &shared.report;
     let audit = &report.builtin_dispatch_audit;
 
     // Determinism: sorted output, stable across repeated re-derivation from

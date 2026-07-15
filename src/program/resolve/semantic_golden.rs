@@ -87,7 +87,7 @@ use crate::program::resolve::applicability::{
 };
 use crate::program::resolve::differential::{
     CanonicalEdge, CanonicalEventRow, CanonicalKey, CanonicalTarget, project_fresh,
-    project_fresh_event_rows, verify_event_subscriber_route, witness_contract_holds,
+    verify_event_subscriber_route, witness_contract_holds,
 };
 use crate::program::resolve::edge::{
     DispatchShape, Edge, EdgeKind, RouteTarget, SiteId, callee_fp,
@@ -1482,31 +1482,31 @@ pub fn mint_l3_trigger_golden(workspace_root: &Path) -> SemanticGolden {
 /// output — see [`mint_l3_validated_golden`]/[`mint_l3_trigger_golden`]).
 #[must_use]
 pub fn mint_fresh_golden_for_kind(workspace_root: &Path, kind: EdgeKind) -> SemanticGolden {
-    use crate::program::abi_ingest::AbiCache;
-    use crate::program::build::build_program_graph;
-    use crate::program::resolve::full::resolve_full_program;
-    use crate::snapshot::SnapshotBuilder;
+    use crate::program::resolve::full::{build_context, resolve_full_program_with};
 
-    let snap = match (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    {
-        Ok(s) => s,
-        Err(_) => return SemanticGolden::default(),
-    };
-    let graph = build_program_graph(&snap, &AbiCache::new());
-    let Some(report) = resolve_full_program(workspace_root) else {
+    let Some(ctx) = build_context(workspace_root) else {
         return SemanticGolden::default();
     };
+    let report = resolve_full_program_with(&ctx);
+    mint_fresh_golden_for_kind_on(&ctx, &report, kind)
+}
+
+/// Substrate-taking core of [`mint_fresh_golden_for_kind`] — reads the
+/// program graph and resolved report from `ctx`/`report` instead of
+/// rebuilding the snapshot/graph/resolve pass internally.
+#[must_use]
+pub(crate) fn mint_fresh_golden_for_kind_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+    report: &crate::program::resolve::full::ProgramReport,
+    kind: EdgeKind,
+) -> SemanticGolden {
     let edges: Vec<Edge> = report
         .edges
-        .into_iter()
-        .map(|ce| ce.edge)
+        .iter()
+        .map(|ce| ce.edge.clone())
         .filter(|e| e.kind == kind)
         .collect();
-    let canonical = project_fresh(&edges, &graph.apps);
+    let canonical = project_fresh(&edges, &ctx.graph.apps);
     build_golden_from_canonical(&canonical)
 }
 
@@ -2137,41 +2137,43 @@ pub fn run_semantic_diff(workspace_root: &Path, golden: &SemanticGolden) -> Sema
 /// [`route_applicability`].
 #[must_use]
 pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
-    use crate::program::abi_ingest::AbiCache;
-    use crate::program::build::build_program_graph;
-    use crate::program::resolve::full::resolve_full_program;
-    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
+    use crate::program::resolve::full::{build_context, resolve_full_program_with};
 
-    let snap = match (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    {
-        Ok(s) => s,
-        Err(_) => return ApplicabilityReport::default(),
-    };
-    let graph = build_program_graph(&snap, &AbiCache::new());
-    let raw_abi = build_raw_abi_index_from_snapshot(&snap, &graph.apps);
-    let Some(primary_app_ref) = graph.apps.find(&snap.workspace_app) else {
+    let Some(ctx) = build_context(workspace_root) else {
         return ApplicabilityReport::default();
     };
-    let ws_file_set: HashSet<String> = snap
-        .apps
-        .first()
-        .and_then(|u| u.source.as_ref())
-        .map(|s| s.files.iter().map(|f| f.virtual_path.clone()).collect())
-        .unwrap_or_default();
-    let parsed = parse_snapshot(&snap);
-    let index = ResolveIndex::build(&graph);
-    let fan_out_ctx =
-        build_fan_out_site_context(&graph, &index, &parsed, primary_app_ref, &ws_file_set);
+    let report = resolve_full_program_with(&ctx);
+    run_route_applicability_on(&ctx, &report)
+}
 
-    let Some(report) = resolve_full_program(workspace_root) else {
-        return ApplicabilityReport::default();
-    };
-    let all_edges: Vec<Edge> = report.edges.into_iter().map(|ce| ce.edge).collect();
-    route_applicability(&all_edges, &raw_abi, &graph, &index, &fan_out_ctx, &parsed)
+/// Substrate-taking core of [`run_route_applicability`] — builds the raw-ABI
+/// index, [`ResolveIndex`], and [`FanOutSiteContext`] map from `ctx` instead
+/// of rebuilding the snapshot/graph/parse internally, and reads the resolved
+/// edges from `report` instead of calling [`crate::program::resolve::full::
+/// resolve_full_program`] a second time.
+#[must_use]
+pub fn run_route_applicability_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+    report: &crate::program::resolve::full::ProgramReport,
+) -> ApplicabilityReport {
+    let raw_abi = build_raw_abi_index_from_snapshot(&ctx.snap, &ctx.graph.apps);
+    let index = ResolveIndex::build(&ctx.graph);
+    let fan_out_ctx = build_fan_out_site_context(
+        &ctx.graph,
+        &index,
+        &ctx.parsed,
+        ctx.primary_app_ref,
+        &ctx.ws_file_set,
+    );
+    let all_edges: Vec<Edge> = report.edges.iter().map(|ce| ce.edge.clone()).collect();
+    route_applicability(
+        &all_edges,
+        &raw_abi,
+        &ctx.graph,
+        &index,
+        &fan_out_ctx,
+        &ctx.parsed,
+    )
 }
 
 /// Run the [`crate::program::resolve::index::count_unknown_include_sender_
@@ -2184,19 +2186,24 @@ pub fn run_route_applicability(workspace_root: &Path) -> ApplicabilityReport {
 pub fn run_unknown_include_sender_plus1_subscribers_preflight(
     workspace_root: &Path,
 ) -> Option<usize> {
-    use crate::program::abi_ingest::AbiCache;
-    use crate::program::build::build_program_graph;
-    use crate::program::resolve::index::count_unknown_include_sender_plus1_subscribers;
-    use crate::snapshot::SnapshotBuilder;
+    use crate::program::resolve::full::build_context;
 
-    let snap = (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    .ok()?;
-    let graph = build_program_graph(&snap, &AbiCache::new());
-    Some(count_unknown_include_sender_plus1_subscribers(&graph))
+    let ctx = build_context(workspace_root)?;
+    Some(run_unknown_include_sender_plus1_subscribers_preflight_on(
+        &ctx,
+    ))
+}
+
+/// Substrate-taking core of [`run_unknown_include_sender_plus1_subscribers_preflight`]
+/// — reads the program graph from `ctx` instead of rebuilding the
+/// snapshot/graph internally.
+#[must_use]
+pub fn run_unknown_include_sender_plus1_subscribers_preflight_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+) -> usize {
+    use crate::program::resolve::index::count_unknown_include_sender_plus1_subscribers;
+
+    count_unknown_include_sender_plus1_subscribers(&ctx.graph)
 }
 
 /// CDO semantic audit: compare the fresh resolver against the COMMITTED,
@@ -2221,11 +2228,35 @@ pub fn run_unknown_include_sender_plus1_subscribers_preflight(
 /// `tests/program_resolve_harness.rs` hard-fails on this).
 #[must_use]
 pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
-    use crate::program::abi_ingest::AbiCache;
-    use crate::program::build::build_program_graph;
-    use crate::program::resolve::full::resolve_full_program;
-    use crate::snapshot::SnapshotBuilder;
+    use crate::program::resolve::full::{build_context, resolve_full_program_with};
 
+    let Some(ctx) = build_context(workspace_root) else {
+        // Mirror the old snap-build/ws_ref-lookup failure arms: the golden
+        // is still loaded (and its counts reported) even though there is no
+        // fresh side to compare against.
+        let golden = load_anon_golden(&cdo_anon_golden_path());
+        let golden_loaded = golden.is_some();
+        let l3_total = golden.map(|g| g.entries.len()).unwrap_or_default();
+        return CdoSemanticAuditReport {
+            golden_loaded,
+            l3_total,
+            ..Default::default()
+        };
+    };
+    let report = resolve_full_program_with(&ctx);
+    run_cdo_semantic_audit_on(&ctx, &report, workspace_root)
+}
+
+/// Substrate-taking core of [`run_cdo_semantic_audit`] — reads the program
+/// graph from `ctx` and the resolved edges from `report` instead of
+/// rebuilding the snapshot/graph/resolve pass internally. `workspace_root`
+/// is still needed for the golden-drift warning stamp.
+#[must_use]
+pub fn run_cdo_semantic_audit_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+    report: &crate::program::resolve::full::ProgramReport,
+    workspace_root: &Path,
+) -> CdoSemanticAuditReport {
     // ── Load the committed, anonymized golden (NO project_l3 call here) ──────
     let golden = load_anon_golden(&cdo_anon_golden_path());
     let golden_loaded = golden.is_some();
@@ -2255,24 +2286,9 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
         );
     }
 
-    // ── Build graph for AppRegistry (needed for project_fresh) ───────────────
-    let snap = match (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    {
-        Ok(s) => s,
-        Err(_) => {
-            return CdoSemanticAuditReport {
-                golden_loaded,
-                l3_total,
-                ..Default::default()
-            };
-        }
-    };
-    let graph = build_program_graph(&snap, &AbiCache::new());
-    let Some(ws_ref) = graph.apps.find(&snap.workspace_app) else {
+    // ── Graph for AppRegistry (needed for project_fresh) ──────────────────────
+    let graph = &ctx.graph;
+    let Some(ws_ref) = graph.apps.find(&ctx.snap.workspace_app) else {
         return CdoSemanticAuditReport {
             golden_loaded,
             l3_total,
@@ -2281,19 +2297,12 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     };
 
     // ── Fresh resolver ────────────────────────────────────────────────────────
-    let Some(report) = resolve_full_program(workspace_root) else {
-        return CdoSemanticAuditReport {
-            golden_loaded,
-            l3_total,
-            ..Default::default()
-        };
-    };
     // Filter to workspace app (L3 is workspace-scoped).
     let ws_edges: Vec<Edge> = report
         .edges
-        .into_iter()
+        .iter()
         .filter(|ce| ce.edge.from.object.app == ws_ref)
-        .map(|ce| ce.edge)
+        .map(|ce| ce.edge.clone())
         .collect();
     let fresh_total = ws_edges.len();
 
@@ -2311,7 +2320,7 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
     let diff = diff_against_anon_golden(&fresh_anon, &golden);
 
     // ── Adjudicate fresh_wrong into fresh_ahead_dispatch vs genuine_wrong ────
-    let obj_lookup_anon = build_obj_lookup_anon(&graph);
+    let obj_lookup_anon = build_obj_lookup_anon(graph);
 
     let mut fresh_ahead_dispatch_count = 0usize;
     let mut genuine_wrong_sites: Vec<GoldenSiteKey> = Vec::new();
@@ -2405,6 +2414,45 @@ pub fn run_cdo_semantic_audit(workspace_root: &Path) -> CdoSemanticAuditReport {
 /// [`AnonTriggerAuditReport`]).
 #[must_use]
 pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
+    use crate::program::resolve::full::{build_context, resolve_full_program_with};
+
+    let fresh_golden = match build_context(workspace_root) {
+        Some(ctx) => {
+            let report = resolve_full_program_with(&ctx);
+            mint_fresh_golden_for_kind_on(&ctx, &report, EdgeKind::ImplicitTrigger)
+        }
+        // Build failure: proceed with an EMPTY fresh side, exactly as the
+        // pre-split body did (its `mint_fresh_golden_for_kind` returned
+        // `SemanticGolden::default()` on snapshot/resolve failure and the
+        // audit still ran — non-empty digest over the golden entries, drift
+        // warning, deanon merge).
+        None => SemanticGolden::default(),
+    };
+    trigger_audit_from_fresh(&fresh_golden, workspace_root)
+}
+
+/// Substrate-taking core of [`run_cdo_trigger_audit`] — mints the fresh
+/// `ImplicitTrigger` golden from `ctx`/`report` instead of re-resolving the
+/// whole program a second time.
+#[must_use]
+pub fn run_cdo_trigger_audit_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+    report: &crate::program::resolve::full::ProgramReport,
+    workspace_root: &Path,
+) -> AnonTriggerAuditReport {
+    let fresh_golden = mint_fresh_golden_for_kind_on(ctx, report, EdgeKind::ImplicitTrigger);
+    trigger_audit_from_fresh(&fresh_golden, workspace_root)
+}
+
+/// Shared audit body of [`run_cdo_trigger_audit`]/[`run_cdo_trigger_audit_on`]:
+/// everything downstream of minting the fresh golden (golden load, drift warn,
+/// anonymize, diff, deanon merge, digest). Taking the fresh side as a
+/// parameter keeps the path wrapper's build-failure arm behavior-identical to
+/// the pre-split body (empty fresh side, audit still runs).
+fn trigger_audit_from_fresh(
+    fresh_golden: &SemanticGolden,
+    workspace_root: &Path,
+) -> AnonTriggerAuditReport {
     let golden = load_anon_golden(&cdo_trigger_anon_golden_path());
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
@@ -2413,7 +2461,6 @@ pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
         warn_on_workspace_drift(&golden.metadata, workspace_root);
     }
 
-    let fresh_golden = mint_fresh_golden_for_kind(workspace_root, EdgeKind::ImplicitTrigger);
     let fresh_total = fresh_golden.entries.len();
 
     let mut fresh_plain: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
@@ -2470,6 +2517,43 @@ pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
 /// see [`AnonEventAuditReport`]'s doc comment for scope.
 #[must_use]
 pub fn run_cdo_event_audit(workspace_root: &Path) -> AnonEventAuditReport {
+    use crate::program::resolve::full::build_context;
+
+    let fresh_rows = match build_context(workspace_root) {
+        Some(ctx) => crate::program::resolve::differential::project_fresh_event_rows_on(&ctx),
+        // Build failure: proceed with an EMPTY fresh side, exactly as the
+        // pre-split body did (its `project_fresh_event_rows` returned an
+        // empty vec on snapshot failure and the audit still ran — non-empty
+        // digest over the golden pairs, drift warning, deanon merge).
+        None => Vec::new(),
+    };
+    event_audit_from_fresh(&fresh_rows, workspace_root)
+}
+
+/// Substrate-taking core of [`run_cdo_event_audit`] — projects the fresh
+/// EventFlow rows from `ctx` (via [`crate::program::resolve::differential::
+/// project_fresh_event_rows_on`]) instead of rebuilding the snapshot/graph
+/// internally. The resolve report is not needed here — EventFlow rows come
+/// from [`crate::program::resolve::resolver::emit_event_flow_edges`] directly.
+#[must_use]
+pub fn run_cdo_event_audit_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+    workspace_root: &Path,
+) -> AnonEventAuditReport {
+    let fresh_rows = crate::program::resolve::differential::project_fresh_event_rows_on(ctx);
+    event_audit_from_fresh(&fresh_rows, workspace_root)
+}
+
+/// Shared audit body of [`run_cdo_event_audit`]/[`run_cdo_event_audit_on`]:
+/// everything downstream of projecting the fresh EventFlow rows (golden load,
+/// drift warn, anonymize, deanon merge, pair-set diff, digest). Taking the
+/// fresh side as a parameter keeps the path wrapper's build-failure arm
+/// behavior-identical to the pre-split body (empty fresh side, audit still
+/// runs).
+fn event_audit_from_fresh(
+    fresh_rows: &[crate::program::resolve::differential::CanonicalEventRow],
+    workspace_root: &Path,
+) -> AnonEventAuditReport {
     let golden = load_anon_event_golden(&cdo_event_anon_golden_path());
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
@@ -2478,11 +2562,10 @@ pub fn run_cdo_event_audit(workspace_root: &Path) -> AnonEventAuditReport {
         warn_on_workspace_drift(&golden.metadata, workspace_root);
     }
 
-    let fresh_rows = project_fresh_event_rows(workspace_root);
     let fresh_total = fresh_rows.len();
 
     let mut deanon: BTreeMap<String, String> = BTreeMap::new();
-    let fresh_golden = anonymize_event_rows_with_deanon(&fresh_rows, &mut deanon);
+    let fresh_golden = anonymize_event_rows_with_deanon(fresh_rows, &mut deanon);
     merge_deanon_map(&cdo_deanon_map_path(), &deanon);
 
     let l3_pairs: BTreeSet<AnonEventPairKey> =
