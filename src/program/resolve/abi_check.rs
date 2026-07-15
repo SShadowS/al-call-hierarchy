@@ -423,35 +423,36 @@ pub fn abi_ingestion_integrity_from_graph(
 ///
 /// Returns `abi_unmapped == 0` on a correct implementation.  Any miss
 /// represents an ingestion/key-derivation bug that MUST be fixed.
+///
+/// Substrate core (shared-substrate refactor, 2026-07-15): reads snapshot +
+/// graph from an already-built [`crate::program::resolve::full::ProgramContext`]
+/// instead of building them itself, so a harness that already holds a context
+/// (e.g. one built once and resolved many times) doesn't pay a second
+/// snapshot/graph-build cost just to check ABI integrity.
 #[must_use]
-pub fn run_abi_integrity_check(workspace_root: &Path) -> AbiIntegrityReport {
-    use crate::program::abi_ingest::AbiCache;
-    use crate::program::build::build_program_graph;
-    use crate::snapshot::SnapshotBuilder;
-
-    let snap = match (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    {
-        Ok(s) => s,
-        Err(_) => {
-            return AbiIntegrityReport {
-                abi_routes_total: 0,
-                abi_mapped: 0,
-                abi_unmapped: 0,
-                abi_unmapped_sites: vec![],
-            };
-        }
-    };
-
-    let cache = AbiCache::new();
-    let graph = build_program_graph(&snap, &cache);
-
+pub fn run_abi_integrity_check_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+) -> AbiIntegrityReport {
     // Build the raw-ABI index independently (fresh re-parse from .app files,
     // does NOT read graph.routines / graph.objects).
-    let raw_index = build_raw_abi_index_from_snapshot(&snap, &graph.apps);
+    let raw_index = build_raw_abi_index_from_snapshot(&ctx.snap, &ctx.graph.apps);
 
-    abi_ingestion_integrity_from_graph(&graph, &raw_index)
+    abi_ingestion_integrity_from_graph(&ctx.graph, &raw_index)
+}
+
+/// Thin path wrapper over [`run_abi_integrity_check_on`]: builds a
+/// [`crate::program::resolve::full::ProgramContext`] for `workspace_root` and
+/// delegates. Returns an all-zeros [`AbiIntegrityReport`] on context-build
+/// failure (fail-closed), same as before this was split.
+#[must_use]
+pub fn run_abi_integrity_check(workspace_root: &Path) -> AbiIntegrityReport {
+    match crate::program::resolve::full::build_context(workspace_root) {
+        Some(ctx) => run_abi_integrity_check_on(&ctx),
+        None => AbiIntegrityReport {
+            abi_routes_total: 0,
+            abi_mapped: 0,
+            abi_unmapped: 0,
+            abi_unmapped_sites: vec![],
+        },
+    }
 }
