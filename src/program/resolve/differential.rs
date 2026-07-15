@@ -485,29 +485,32 @@ pub struct CanonicalEventRow {
 /// fresh side — neither touches `engine::l3`.
 #[must_use]
 pub fn project_fresh_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow> {
-    use crate::program::build::build_program_graph;
+    use crate::program::resolve::full::build_context;
+
+    let Some(ctx) = build_context(workspace_root) else {
+        return Vec::new();
+    };
+    project_fresh_event_rows_on(&ctx)
+}
+
+/// Substrate-taking core of [`project_fresh_event_rows`] — reads the program
+/// graph and parsed units from `ctx` instead of rebuilding the
+/// snapshot/graph/parse internally.
+#[must_use]
+pub fn project_fresh_event_rows_on(
+    ctx: &crate::program::resolve::full::ProgramContext,
+) -> Vec<CanonicalEventRow> {
     use crate::program::resolve::decl_surface::DeclSurface;
     use crate::program::resolve::index::ResolveIndex;
     use crate::program::resolve::resolver::emit_event_flow_edges;
-    use crate::snapshot::{SnapshotBuilder, parse_snapshot};
 
-    let snap = match (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-
-    let graph = build_program_graph(&snap, &crate::program::abi_ingest::AbiCache::new());
-    let parsed = parse_snapshot(&snap);
-    let index = ResolveIndex::build(&graph);
-    let surface = DeclSurface::build(&graph, &parsed);
+    let graph = &ctx.graph;
+    let parsed = &ctx.parsed;
+    let index = ResolveIndex::build(graph);
+    let surface = DeclSurface::build(graph, parsed);
     let apps = &graph.apps;
 
-    let fresh_edges = emit_event_flow_edges(&graph, &index, &surface);
+    let fresh_edges = emit_event_flow_edges(graph, &index, &surface);
 
     let mut rows: Vec<CanonicalEventRow> = Vec::new();
     for edge in &fresh_edges {
