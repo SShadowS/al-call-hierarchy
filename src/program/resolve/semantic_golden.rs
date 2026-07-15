@@ -2416,18 +2416,19 @@ pub fn run_cdo_semantic_audit_on(
 pub fn run_cdo_trigger_audit(workspace_root: &Path) -> AnonTriggerAuditReport {
     use crate::program::resolve::full::{build_context, resolve_full_program_with};
 
-    let Some(ctx) = build_context(workspace_root) else {
-        let golden = load_anon_golden(&cdo_trigger_anon_golden_path());
-        let golden_loaded = golden.is_some();
-        let l3_total = golden.map(|g| g.entries.len()).unwrap_or_default();
-        return AnonTriggerAuditReport {
-            golden_loaded,
-            l3_total,
-            ..Default::default()
-        };
+    let fresh_golden = match build_context(workspace_root) {
+        Some(ctx) => {
+            let report = resolve_full_program_with(&ctx);
+            mint_fresh_golden_for_kind_on(&ctx, &report, EdgeKind::ImplicitTrigger)
+        }
+        // Build failure: proceed with an EMPTY fresh side, exactly as the
+        // pre-split body did (its `mint_fresh_golden_for_kind` returned
+        // `SemanticGolden::default()` on snapshot/resolve failure and the
+        // audit still ran — non-empty digest over the golden entries, drift
+        // warning, deanon merge).
+        None => SemanticGolden::default(),
     };
-    let report = resolve_full_program_with(&ctx);
-    run_cdo_trigger_audit_on(&ctx, &report, workspace_root)
+    trigger_audit_from_fresh(&fresh_golden, workspace_root)
 }
 
 /// Substrate-taking core of [`run_cdo_trigger_audit`] — mints the fresh
@@ -2439,6 +2440,19 @@ pub fn run_cdo_trigger_audit_on(
     report: &crate::program::resolve::full::ProgramReport,
     workspace_root: &Path,
 ) -> AnonTriggerAuditReport {
+    let fresh_golden = mint_fresh_golden_for_kind_on(ctx, report, EdgeKind::ImplicitTrigger);
+    trigger_audit_from_fresh(&fresh_golden, workspace_root)
+}
+
+/// Shared audit body of [`run_cdo_trigger_audit`]/[`run_cdo_trigger_audit_on`]:
+/// everything downstream of minting the fresh golden (golden load, drift warn,
+/// anonymize, diff, deanon merge, digest). Taking the fresh side as a
+/// parameter keeps the path wrapper's build-failure arm behavior-identical to
+/// the pre-split body (empty fresh side, audit still runs).
+fn trigger_audit_from_fresh(
+    fresh_golden: &SemanticGolden,
+    workspace_root: &Path,
+) -> AnonTriggerAuditReport {
     let golden = load_anon_golden(&cdo_trigger_anon_golden_path());
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
@@ -2447,7 +2461,6 @@ pub fn run_cdo_trigger_audit_on(
         warn_on_workspace_drift(&golden.metadata, workspace_root);
     }
 
-    let fresh_golden = mint_fresh_golden_for_kind_on(ctx, report, EdgeKind::ImplicitTrigger);
     let fresh_total = fresh_golden.entries.len();
 
     let mut fresh_plain: BTreeMap<GoldenSiteKey, BTreeSet<GoldenTarget>> = BTreeMap::new();
@@ -2506,17 +2519,15 @@ pub fn run_cdo_trigger_audit_on(
 pub fn run_cdo_event_audit(workspace_root: &Path) -> AnonEventAuditReport {
     use crate::program::resolve::full::build_context;
 
-    let Some(ctx) = build_context(workspace_root) else {
-        let golden = load_anon_event_golden(&cdo_event_anon_golden_path());
-        let golden_loaded = golden.is_some();
-        let l3_total = golden.map(|g| g.entries.len()).unwrap_or_default();
-        return AnonEventAuditReport {
-            golden_loaded,
-            l3_total,
-            ..Default::default()
-        };
+    let fresh_rows = match build_context(workspace_root) {
+        Some(ctx) => crate::program::resolve::differential::project_fresh_event_rows_on(&ctx),
+        // Build failure: proceed with an EMPTY fresh side, exactly as the
+        // pre-split body did (its `project_fresh_event_rows` returned an
+        // empty vec on snapshot failure and the audit still ran — non-empty
+        // digest over the golden pairs, drift warning, deanon merge).
+        None => Vec::new(),
     };
-    run_cdo_event_audit_on(&ctx, workspace_root)
+    event_audit_from_fresh(&fresh_rows, workspace_root)
 }
 
 /// Substrate-taking core of [`run_cdo_event_audit`] — projects the fresh
@@ -2529,6 +2540,20 @@ pub fn run_cdo_event_audit_on(
     ctx: &crate::program::resolve::full::ProgramContext,
     workspace_root: &Path,
 ) -> AnonEventAuditReport {
+    let fresh_rows = crate::program::resolve::differential::project_fresh_event_rows_on(ctx);
+    event_audit_from_fresh(&fresh_rows, workspace_root)
+}
+
+/// Shared audit body of [`run_cdo_event_audit`]/[`run_cdo_event_audit_on`]:
+/// everything downstream of projecting the fresh EventFlow rows (golden load,
+/// drift warn, anonymize, deanon merge, pair-set diff, digest). Taking the
+/// fresh side as a parameter keeps the path wrapper's build-failure arm
+/// behavior-identical to the pre-split body (empty fresh side, audit still
+/// runs).
+fn event_audit_from_fresh(
+    fresh_rows: &[crate::program::resolve::differential::CanonicalEventRow],
+    workspace_root: &Path,
+) -> AnonEventAuditReport {
     let golden = load_anon_event_golden(&cdo_event_anon_golden_path());
     let golden_loaded = golden.is_some();
     let golden = golden.unwrap_or_default();
@@ -2537,11 +2562,10 @@ pub fn run_cdo_event_audit_on(
         warn_on_workspace_drift(&golden.metadata, workspace_root);
     }
 
-    let fresh_rows = crate::program::resolve::differential::project_fresh_event_rows_on(ctx);
     let fresh_total = fresh_rows.len();
 
     let mut deanon: BTreeMap<String, String> = BTreeMap::new();
-    let fresh_golden = anonymize_event_rows_with_deanon(&fresh_rows, &mut deanon);
+    let fresh_golden = anonymize_event_rows_with_deanon(fresh_rows, &mut deanon);
     merge_deanon_map(&cdo_deanon_map_path(), &deanon);
 
     let l3_pairs: BTreeSet<AnonEventPairKey> =
