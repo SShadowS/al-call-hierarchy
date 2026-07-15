@@ -1137,3 +1137,81 @@ and CHANGELOG entry.
 - **Trade-off:** a single-member edit now recompiles its whole umbrella
   crate (acceptable: umbrella compile is seconds, and the relink win
   dominates every edit-test loop that touches `src/`).
+
+---
+
+## 8. 2026-07-15 re-measurement at `391b68c` (owned DeclSurface + dep-arena drop)
+
+Same harness/workspace as §7. HEAD now includes the §3.3(a)-class work:
+`3239388` (drop dep parse arenas after first build), `9bc35fd` (off-thread
+arena drop), `5408e5f` (delete `dep_decl_by_id`, serve dep decls from the
+frozen `dep_meta` tier), plus rung-1 incremental patches and parallel
+resolve loops.
+
+### 8.1 Numbers
+
+| Metric | v0.9.3 | pre-fix | §7 (58df646) | HEAD (391b68c) |
+|---|---:|---:|---:|---:|
+| LSP cold start -> first hover | 0.86 s | 5.10 s | 2.87 s | **2.66 s** |
+| RSS after cold index | 82 MB | ~2,000 MB | 1,584 MB | **~655 MB** |
+| RSS after warm session (4 didOpens + ops) | 82 MB | ~2,000 MB | ~1,590 MB | **~1,496 MB** |
+| CLI wall (median of 3) | 0.93 s | 3.95 s | 3.50 s | **3.05 s** |
+| CLI peak RSS | 222 MB | 1,869 MB | 1,645 MB | **1,579 MB** |
+| Warm op latency | sub-ms | sub-ms | sub-ms | sub-ms |
+| incoming/outgoing counts | (pkg bug) | 1/6, 1/0, 0/2, 4/13 | identical | **identical** |
+
+- Cold steady-state RSS is the §3.3(a) payoff: **1,584 -> ~655 MB (-59 %)**.
+  Peak still transits ~1.5 GB during the build (arenas alive until the
+  off-thread drop), but the resident set settles far lower.
+- The warm-session RSS climbing back to ~1.5 GB after `didOpen`s suggests
+  the updater's rebuild re-materializes dep state (or allocator retention
+  after the rung rebuild) — worth a look; cold-idle vs. post-edit residency
+  now differ by ~840 MB.
+
+### 8.2 Position-tolerance delta (NOT a regression — retracted)
+
+Initially flagged as an off-by-one regression; a per-procedure sweep of
+all 28 decls in `Codeunit 6175362 CDO Telemetry.al` against BOTH binaries
+disproved it:
+
+- Both v0.9.3 and `391b68c` resolve every `prepareCallHierarchy` at the
+  TRUE decl-name position correctly.
+- The harness's original probe targets (e.g. "L327" for `TrackCII`) were
+  one line off in the FIRST place — they pointed at the blank line above
+  each declaration. Pre-HEAD decl spans were loose enough to still match
+  from that blank line; HEAD's owned-DeclSurface spans are tighter and
+  (correctly) miss it. Same tolerance change explains hover.
+- `workspace/symbol` returns 0 on this workspace under both binaries —
+  no delta there either.
+
+Net: HEAD serves the same correct positions with stricter span
+boundaries. The §8.1 warm run used corrected (true-decl-line) targets;
+counts match §7 exactly.
+
+---
+
+## 9. 2026-07-15 CDO-gate harness substrate sharing
+
+Not an engine change — a test-harness architecture fix. The
+`program_resolve_harness` CDO leg of `scripts/cdo-gate` spent ~90 of its
+~98 s rebuilding the identical CDO program substrate (snapshot -> parse ->
+graph -> full resolve) inside ~10 read-only tests, because every library
+helper took `&Path` and rebuilt internally.
+
+Fix: `resolve_full_program` split into public `build_context` +
+`resolve_full_program_with(&ProgramContext)`; the semantic-golden /
+differential / ABI helpers gained substrate-taking `_on` cores (path
+wrappers unchanged); the harness builds ONCE into a `OnceLock<Option<CdoShared>>`
+and every read-only CDO test consumes it. The resolve-determinism test and
+the `#[ignore]`d dumps keep their own independent builds by design.
+
+| Metric | before (391b68c) | after |
+|---|---:|---:|
+| Gate leg 1 `finished in` (release, `--test-threads=1`) | 98.23 s | **25.44 s** |
+| Harness tests | 187 | 188 (+ wrapper==core equivalence test) |
+| Printed north-star digests/histograms | baseline | **byte-identical** |
+
+Methodology: plain `cargo test --release --test program_resolve_harness --
+--test-threads=1 --nocapture` with `CDO_WS`/`ENFORCE_CDO_WS=1`; metric
+lines (`digest=`/histogram/coverage/`l3_total=` etc.) diffed against the
+pre-refactor capture with `Compare-Object` — zero differences.
