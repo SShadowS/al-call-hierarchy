@@ -1150,6 +1150,35 @@ fn full_program_fixture_coverage_holds_and_histogram_is_correct() {
     );
 }
 
+/// Shared-substrate refactor (2026-07-15 spec): the context-taking core and
+/// the path wrapper must produce identical reports — the wrapper IS
+/// `build_context` + `resolve_full_program_with`, so any divergence means the
+/// split leaked behavior.
+#[test]
+fn resolve_full_program_with_matches_path_wrapper_on_fixture() {
+    use al_call_hierarchy::program::resolve::full::{build_context, resolve_full_program_with};
+
+    let fixture =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/semantic-golden");
+    let via_path = resolve_full_program(&fixture).expect("wrapper must succeed on fixture");
+    let ctx = build_context(&fixture).expect("build_context must succeed on fixture");
+    let via_ctx = resolve_full_program_with(&ctx);
+
+    assert_eq!(
+        via_path.histogram, via_ctx.histogram,
+        "histogram must match"
+    );
+    assert_eq!(
+        via_path.primary_histogram, via_ctx.primary_histogram,
+        "primary histogram must match"
+    );
+    assert_eq!(
+        via_path.edges.len(),
+        via_ctx.edges.len(),
+        "edge count must match"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Task 2 (mirrors I1): end-to-end call-graph fixture — object-typed declared
 // var shape preservation (`ParsedType::Object` → `ObjectRef`).
