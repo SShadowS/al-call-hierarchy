@@ -331,6 +331,12 @@
           "detector": "d62-telemetry-before-success",
           "findingsEmitted": 0,
           "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d63-html-concat-injection",
+          "findingsEmitted": 0,
+          "skipped": {}
         }
       ],
       "opaqueApps": [],

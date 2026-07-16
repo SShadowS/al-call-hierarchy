@@ -71,6 +71,7 @@ pub const OPT_IN_DETECTOR_NAMES: &[&str] = &[
     "d51-retry-side-effect-duplication",
     "d61-ishandled-bypasses-critical-write",
     "d62-telemetry-before-success",
+    "d63-html-concat-injection",
 ];
 
 /// The `transaction-integrity` preset members — verbatim from al-sem

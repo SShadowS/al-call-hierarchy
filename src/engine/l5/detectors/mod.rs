@@ -6,8 +6,9 @@
 //! publish-in-tryfunction-cone / event-publish-in-loop /
 //! clone-before-write-in-loop / singleinstance-growing-state /
 //! query-filter-after-open / integrationevent-var-boolean-guard /
-//! upgrade-loop-should-be-datatransfer), d61/d62 (BCQuality wave, OPT-IN,
-//! ishandled-bypasses-critical-write / telemetry-before-success).
+//! upgrade-loop-should-be-datatransfer), d61/d62/d63 (BCQuality wave, OPT-IN,
+//! ishandled-bypasses-critical-write / telemetry-before-success /
+//! html-concat-injection).
 
 pub mod d1;
 pub mod d10;
@@ -58,6 +59,7 @@ pub mod d59;
 pub mod d60;
 pub mod d61;
 pub mod d62;
+pub mod d63;
 pub mod d7;
 pub mod d8;
 pub mod d9;
@@ -906,7 +908,7 @@ where
 /// DEFAULT order (43): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
 ///   d16, d17, d18, d19, d20, d21, d22, d29, d32, d33, d34, d35, d36, d37, d38,
 ///   d39, d41, d42, d43, d44, d45, d52, d53, d54, d55, d56, d57, d58, d59, d60.
-/// OPT_IN order (9):  d40, d46, d47, d48, d49, d50, d51, d61, d62.
+/// OPT_IN order (10):  d40, d46, d47, d48, d49, d50, d51, d61, d62, d63.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
         // --- DEFAULT_DETECTORS (34, in al-sem registry order) ---
@@ -1136,6 +1138,11 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d62-telemetry-before-success".to_string(),
             run: d62::detect_d62,
+        },
+        // d63: OPT-IN (BCQuality wave, html-concat-injection).
+        Detector {
+            name: "d63-html-concat-injection".to_string(),
+            run: d63::detect_d63,
         },
     ]
 }

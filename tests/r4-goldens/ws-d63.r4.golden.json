@@ -1,0 +1,66 @@
+{
+  "fixtureName": "ws-d63",
+  "detectors": [
+    "d63-html-concat-injection"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d63-html-concat-injection",
+      "id": "d63/11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35/11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35/cs0",
+      "rootCauseKey": "d63/11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35/11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35/cs0",
+      "title": "HTML built by string concatenation",
+      "rootCause": "BuildUnsafe concatenates data into an HTML literal ('<b>' + UserName + '</b>') — AL has no built-in HtmlEncode, so any user-influenced value is an injection risk where this string reaches a browser or mail body.",
+      "severity": "low",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 5,
+          "startColumn": 13,
+          "endLine": 5,
+          "endColumn": 46
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 5,
+              "startColumn": 13,
+              "endLine": 5,
+              "endColumn": 46
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35",
+            "syntaxKind": "call_expression"
+          },
+          "note": "HTML literal + concatenation in argument",
+          "callsiteId": "11111111-0000-0000-0000-00000000d630:Codeunit:50940#54446d2dbe83ace1c35c0e93639640a62692aaeb23e810bd630c1664d5f89c35/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d630:Codeunit:50940"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Encode interpolated values (replace <, >, &, \" before splicing) or build the document with an XmlDocument/template API instead of concatenation.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "83a5ddd9be9b116e"
+    }
+  ]
+}

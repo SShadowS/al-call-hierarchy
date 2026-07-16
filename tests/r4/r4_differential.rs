@@ -247,6 +247,15 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    // d63 is OPT-IN (registry after d62) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d63",
+        wave: "R4-BCQ",
+        detectors: &["d63-html-concat-injection"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1114,6 +1123,14 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // detector short-circuits to 0 findings before scanning any call site.
     NegativeAssertion {
         detector: "d62-telemetry-before-success",
+        neutral_fixture: "ws-e2e",
+    },
+    // d63: ws-e2e contains no single-quoted literal with an HTML-tag-ish
+    // `<x`/`</x` sequence concatenated with `+` (grep-verified) — the
+    // looks_like_html_concat argument-text scan never matches any call site,
+    // so the detector short-circuits to 0 findings.
+    NegativeAssertion {
+        detector: "d63-html-concat-injection",
         neutral_fixture: "ws-e2e",
     },
 ];

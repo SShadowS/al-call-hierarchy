@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d60-upgrade-loop-should-be-datatransfer detector (BCQuality datatransfer-for-bulk-init).
 - d61-ishandled-bypasses-critical-write detector (opt-in; BCQuality do-not-bypass-critical-operations-with-ishandled).
 - d62-telemetry-before-success detector (opt-in; BCQuality feature-usage-only-after-success).
+- d63-html-concat-injection detector (opt-in heuristic; BCQuality al-has-no-built-in-htmlencode).
 
 ### Changed
 - Shared one CDO program substrate across the read-only
