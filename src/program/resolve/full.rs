@@ -63,7 +63,9 @@ use crate::program::resolve::resolver::{
     resolve_member_with_args, resolve_object_run,
 };
 use crate::program::sig_fp::source_routine_node_id;
-use crate::snapshot::{AppSetSnapshot, ParsedFile, ParsedUnit, SnapshotBuilder, parse_snapshot};
+use crate::snapshot::{
+    AppSetSnapshot, AppUnit, ParsedFile, ParsedUnit, SnapshotBuilder, parse_snapshot,
+};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1133,6 +1135,112 @@ pub fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
 }
 
 // ---------------------------------------------------------------------------
+// Preflight coverage status (see
+// `docs/superpowers/specs/2026-07-17-preflight-fresh-coverage-design.md` §1)
+// ---------------------------------------------------------------------------
+
+/// Preflight coverage status from the FRESH resolver — a narrow, cheap-to-hold
+/// summary factored from the SAME pipeline `aldump --program-call-graph-stats`
+/// drives (`build_context_res` → `resolve_full_program_with`), not a second
+/// hand-rolled pass.
+///
+/// NOT a bare `usize`: `coverage_holds == false` and `recovered_files > 0` can
+/// each coexist with `unknown == 0` and must not launder into "coverage
+/// complete" — every field is surfaced so a caller can distinguish "verified
+/// clean" from "the instrument itself can't vouch for this run" (instrument-
+/// honesty doctrine, CLAUDE.md "Resolution Coverage").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreshCoverage {
+    /// `primaryScoped` `unknown` — TRUE resolution failures (`ambiguousResolved`
+    /// excluded), the `realUnknownRate` definition.
+    pub unknown: usize,
+    /// The resolve run's own coverage contract (every obligation classified).
+    pub coverage_holds: bool,
+    /// Files whose parse was `ParseStatus::Recovered` — IR may have dropped
+    /// content, so `unknown == 0` does NOT prove completeness over them.
+    pub recovered_files: usize,
+    /// Symbol-only dependency apps, from the FRESH snapshot
+    /// (`AppUnit::source == None`) — one engine, one dependency universe.
+    ///
+    /// SCOPED to the primary app's reachable declared-dependency closure and
+    /// excluding the primary itself: `load_all_apps` deliberately loads EVERY
+    /// `.app` found in (ancestor) `.alpackages` folders without app.json
+    /// filtering (`src/dependencies.rs`), so an unscoped scan would report
+    /// unrelated cached packages as noise — and under `--require-dependencies`
+    /// flip exit 4 on a package the primary app never actually depends on.
+    ///
+    /// Display identity = `AppId.name`; deduped, sorted (name, then guid) for
+    /// deterministic messages.
+    pub opaque_apps: Vec<String>,
+}
+
+/// Symbol-only dep app names in the primary app's reachable declared-dependency
+/// closure. BFS over `AppUnit.declared_deps` GUIDs starting at the workspace app;
+/// the snapshot may contain UNRELATED cached packages (`load_all_apps` loads every
+/// `.app` in ancestor `.alpackages` without app.json filtering), so an unscoped
+/// scan would report noise — and under `--require-dependencies` flip exit 4 on it.
+fn opaque_dependency_closure(snap: &AppSetSnapshot) -> Vec<String> {
+    use std::collections::{HashMap, HashSet, VecDeque};
+    let by_guid: HashMap<String, &AppUnit> = snap
+        .apps
+        .iter()
+        .map(|u| (u.id.guid.to_ascii_lowercase(), u))
+        .collect();
+    let primary_guid = snap.workspace_app.guid.to_ascii_lowercase();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<&AppUnit> = VecDeque::new();
+    if let Some(primary) = by_guid.get(&primary_guid) {
+        seen.insert(primary_guid.clone());
+        queue.push_back(primary);
+    }
+    let mut opaque: Vec<(String, String)> = Vec::new(); // (name, guid) for stable sort
+    while let Some(unit) = queue.pop_front() {
+        for dep in &unit.declared_deps {
+            let guid = dep.app_id.to_ascii_lowercase();
+            if !seen.insert(guid.clone()) {
+                continue;
+            }
+            if let Some(u) = by_guid.get(&guid) {
+                if u.source.is_none() {
+                    opaque.push((u.id.name.clone(), u.id.guid.clone()));
+                }
+                queue.push_back(u);
+            }
+            // A declared dep ABSENT from the snapshot is a real gap, but
+            // reporting it is an explicit spec follow-up (OUTSTANDING.md) —
+            // not silently widened here.
+        }
+    }
+    opaque.sort();
+    opaque.dedup();
+    opaque.into_iter().map(|(name, _)| name).collect()
+}
+
+/// Compute [`FreshCoverage`] for `workspace_root`: build the fresh program
+/// context, resolve it once, and reduce the full [`ProgramReport`] down to the
+/// tiny preflight status a caller can hold onto cheaply.
+///
+/// The `ctx` (snapshot + graph + parsed files — the whole semantic model) is
+/// deliberately local to this function and dropped when it returns: callers
+/// hold only the small [`FreshCoverage`] value, never the whole-program model
+/// (spec §3's memory-sequencing requirement — `run_analyze` computes this
+/// FIRST and lets it go before assembling the separate L3 model, so the two
+/// semantic models are never resident together).
+pub fn fresh_coverage(workspace_root: &Path) -> Result<FreshCoverage, String> {
+    let ctx = build_context_res(workspace_root)?;
+    let report = resolve_full_program_with(&ctx);
+    let opaque_apps = opaque_dependency_closure(&ctx.snap);
+    Ok(FreshCoverage {
+        unknown: report.primary_histogram.unknown,
+        coverage_holds: coverage_holds(&report.coverage),
+        recovered_files: report.recovered_files.len(),
+        opaque_apps,
+    })
+    // ctx (snapshot + graph + parsed) drops HERE — callers hold only the tiny
+    // status struct, never the whole semantic model (spec §3 memory sequencing).
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -1697,5 +1805,43 @@ mod tests {
         let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ws-d2");
         assert!(build_context_res(&ws).is_ok());
         assert!(build_context(&ws).is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: FreshCoverage + fresh_coverage(ws) + opaque dependency closure
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn fresh_coverage_matches_direct_resolve_on_neutral_fixture() {
+        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r0-corpus/ws-e2e");
+        let fc = fresh_coverage(&ws).expect("neutral fixture resolves");
+        let report = resolve_full_program(&ws).expect("same fixture");
+        assert_eq!(fc.unknown, report.primary_histogram.unknown);
+        assert_eq!(fc.coverage_holds, coverage_holds(&report.coverage));
+        assert_eq!(fc.recovered_files, report.recovered_files.len());
+        assert!(fc.opaque_apps.is_empty(), "ws-e2e has no dependencies");
+    }
+
+    #[test]
+    fn fresh_coverage_reports_symbol_only_dep_in_closure() {
+        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/r0-corpus/ws-baseapp-closure");
+        let fc = fresh_coverage(&ws).expect("fixture resolves");
+        // The committed Microsoft Base Application .app is symbol-only (no embedded
+        // source) and declared by the fixture's app.json — it must appear by NAME.
+        assert!(
+            fc.opaque_apps
+                .iter()
+                .any(|n| n.contains("Base Application")),
+            "opaque_apps = {:?}",
+            fc.opaque_apps
+        );
+        // The primary app itself must never be listed.
+        assert!(!fc.opaque_apps.iter().any(|n| n.is_empty()));
+    }
+
+    #[test]
+    fn fresh_coverage_err_on_missing_workspace() {
+        assert!(fresh_coverage(std::path::Path::new("Z:/no/such/ws")).is_err());
     }
 }
