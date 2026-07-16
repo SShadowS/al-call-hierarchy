@@ -15,11 +15,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::engine::l2::features::PLoop;
+use crate::engine::l2::features::{PAnchor, PCFNNode, PLoop};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, anchor_within};
+use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -27,6 +27,36 @@ use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 const DETECTOR: &str = "d60-upgrade-loop-should-be-datatransfer";
 
 const CURSOR_OPS: &[&str] = &["FindSet", "Find", "FindFirst", "Next"];
+
+/// A CFG node's `source_range` sits fully inside `outer` (same 0-based/utf16
+/// basis as PAnchor).
+fn range_within(r: (u32, u32, u32, u32), outer: &PAnchor) -> bool {
+    let (sl, sc, el, ec) = r;
+    let starts_ok = outer.start_line < sl || (outer.start_line == sl && outer.start_column <= sc);
+    let ends_ok = el < outer.end_line || (el == outer.end_line && ec <= outer.end_column);
+    starts_ok && ends_ok
+}
+
+/// True if the statement tree contains an `if`/`case` branch node whose source
+/// range is within `loop_anchor` — i.e. the loop body branches. Structural, so
+/// it catches conditions of ANY shape (parenthesized, quoted-field scrutinee)
+/// that the identifier-only `condition_references` collection misses. Recurses
+/// every child group; the loop's own enclosing `if Rec.FindSet()` guard is NOT
+/// within the loop and so never matches.
+fn tree_has_branch_within(node: &PCFNNode, loop_anchor: &PAnchor) -> bool {
+    if (node.kind == "if" || node.kind == "case")
+        && node
+            .source_range
+            .is_some_and(|r| range_within(r, loop_anchor))
+    {
+        return true;
+    }
+    [&node.children, &node.else_children, &node.condition_leaves]
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|k| tree_has_branch_within(k, loop_anchor))
+}
 
 pub fn detect_d60(
     resolved: &L3Resolved,
@@ -118,10 +148,11 @@ pub fn detect_d60(
                 skipped_body_other_record += 1;
                 continue;
             }
-            if routine.condition_references.iter().any(|cr| {
-                (cr.condition_kind == "if" || cr.condition_kind == "case")
-                    && anchor_within(&cr.statement_anchor, &loop_info.source_anchor)
-            }) {
+            if routine
+                .statement_tree
+                .as_ref()
+                .is_some_and(|t| tree_has_branch_within(t, &loop_info.source_anchor))
+            {
                 skipped_body_conditional += 1;
                 continue;
             }

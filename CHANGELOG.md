@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d57-singleinstance-growing-state detector: unbounded global collection/temp-record growth in SingleInstance subscribers.
 - d58-query-filter-after-open detector (BCQuality set-query-filters-before-open).
 - d59-integrationevent-var-boolean-guard detector (BCQuality integrationevent-var-parameter-bypasses-security-guards).
-- d60-upgrade-loop-should-be-datatransfer detector (BCQuality datatransfer-for-bulk-init). Fires only on a DataTransfer-shaped loop body — no per-row call, no op on another record, no if/case computing the value; a body doing per-row work legitimately needs the loop (cleared 4/5 DO false positives — bodies with a codeunit call / cross-table `.Get` / `case`).
+- d60-upgrade-loop-should-be-datatransfer detector (BCQuality datatransfer-for-bulk-init). Fires only on a DataTransfer-shaped loop body — no per-row call, no op on another record, no if/case computing the value; a body doing per-row work legitimately needs the loop. Branch detection is structural (walks the control-flow tree for if/case nodes within the loop), so it catches conditions of any shape — parenthesized, quoted-field scrutinee — that the identifier-only `condition_references` collection misses. Cleared 5/5 DO false positives (bodies with a codeunit call / cross-table `.Get` / a `case` / a paren-wrapped quoted-field `if`).
 - d61-ishandled-bypasses-critical-write detector (opt-in; BCQuality do-not-bypass-critical-operations-with-ishandled).
 - d62-telemetry-before-success detector (opt-in; BCQuality feature-usage-only-after-success).
 - d63-html-concat-injection detector (opt-in heuristic; BCQuality al-has-no-built-in-htmlencode).

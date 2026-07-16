@@ -41,18 +41,39 @@ codeunit 50934 "D60 Upgrade"
             until Item.Next() = 0;
     end;
 
-    // NOT FLAGGED: the loop body COMPUTES the value under an if/case — a
-    // conditional DataTransfer cannot express.
+    // NOT FLAGGED: the loop body COMPUTES the value under a parenthesized,
+    // quoted-field `if` — a conditional DataTransfer cannot express. The parens +
+    // quoted field mirror the real DO shape that the identifier-only
+    // condition_references collection misses; the structural statement-tree walk
+    // still catches it.
     procedure UpgradeWithConditional()
     var
         Item: Record "D60 Item";
     begin
         if Item.FindSet() then
             repeat
-                if Item.Name = '' then
+                if (Item."No." = '') then
                     Item.Name := 'default'
                 else
                     Item.Name := 'set';
+                Item.Modify();
+            until Item.Next() = 0;
+    end;
+
+    // NOT FLAGGED: the loop body branches on a `case` over a quoted field — same
+    // structural reason (mirrors the DO UpgradeSendCode shape).
+    procedure UpgradeWithCase()
+    var
+        Item: Record "D60 Item";
+    begin
+        if Item.FindSet() then
+            repeat
+                case Item."No." of
+                    '':
+                        Item.Name := 'empty';
+                    else
+                        Item.Name := 'other';
+                end;
                 Item.Modify();
             until Item.Next() = 0;
     end;
