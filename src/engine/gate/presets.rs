@@ -56,6 +56,7 @@ pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d57-singleinstance-growing-state",
     "d58-query-filter-after-open",
     "d59-integrationevent-var-boolean-guard",
+    "d60-upgrade-loop-should-be-datatransfer",
 ];
 
 /// al-sem `OPT_IN_DETECTORS` names — not in the default registry. Surfaced only by

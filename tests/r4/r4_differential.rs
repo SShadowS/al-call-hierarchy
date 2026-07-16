@@ -222,6 +222,13 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    Smoke {
+        fixture: "ws-d60",
+        wave: "R4-BCQ",
+        detectors: &["d60-upgrade-loop-should-be-datatransfer"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1066,6 +1073,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // a candidate, so candidates_considered stays 0 and the detector emits 0.
     NegativeAssertion {
         detector: "d59-integrationevent-var-boolean-guard",
+        neutral_fixture: "ws-e2e",
+    },
+    // d60: ws-e2e declares no Codeunit with `Subtype = Upgrade`/`Install` at all
+    // (grep-verified) — the lifecycle_objects set is empty, so the detector
+    // short-circuits to 0 findings before ever scanning a routine.
+    NegativeAssertion {
+        detector: "d60-upgrade-loop-should-be-datatransfer",
         neutral_fixture: "ws-e2e",
     },
 ];
