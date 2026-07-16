@@ -1,0 +1,122 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-00000000d590:Codeunit:50933::OnAfterCheck::6b9c3775ffe1d6ea1d846f47af68311371947a7fa7b99ed8791fafffa2c7943c",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933",
+      "eventName": "OnAfterCheck",
+      "eventKind": "integration",
+      "signatureHash": "6b9c3775ffe1d6ea1d846f47af68311371947a7fa7b99ed8791fafffa2c7943c",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "HasAccess",
+          "typeText": "Boolean",
+          "isVar": false,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#6b9c3775ffe1d6ea1d846f47af68311371947a7fa7b99ed8791fafffa2c7943c"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d590:Codeunit:50933::OnBeforePost::7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933",
+      "eventName": "OnBeforePost",
+      "eventKind": "integration",
+      "signatureHash": "7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "IsHandled",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d590:Codeunit:50933::OnBeforeValidate::b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933",
+      "eventName": "OnBeforeValidate",
+      "eventKind": "integration",
+      "signatureHash": "b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "SkipValidation",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d590:Codeunit:50933::OnCheckAccess::d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933",
+      "eventName": "OnCheckAccess",
+      "eventKind": "integration",
+      "signatureHash": "d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "UserId",
+          "typeText": "Code[50]",
+          "isVar": false,
+          "isRecord": false
+        },
+        {
+          "index": 1,
+          "name": "HasAccess",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d590:Codeunit:50933::OnCollect::79eb6208db43ab023800b490bb04e8fc6c00abc2b53bbbfe19167d8a0a79343f",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933",
+      "eventName": "OnCollect",
+      "eventKind": "integration",
+      "signatureHash": "79eb6208db43ab023800b490bb04e8fc6c00abc2b53bbbfe19167d8a0a79343f",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "Found",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#79eb6208db43ab023800b490bb04e8fc6c00abc2b53bbbfe19167d8a0a79343f"
+    }
+  ],
+  "edges": []
+}

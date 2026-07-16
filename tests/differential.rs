@@ -2082,9 +2082,55 @@ fn differential_l3_event_graph_match_goldens() {
         diff_l3eg(fixture, &golden_json, &rust_json, &mut all_divergences);
     }
 
-    // REGEN mode wrote every golden above and asserts nothing.
+    // REGEN mode wrote every golden above and asserts nothing. It ALSO mints
+    // NEW goldens for any corpus fixture that has none yet but produces a
+    // non-empty event graph — the corpus grows independently of this golden
+    // family (new detector fixtures land under `tests/r0-corpus/` without a
+    // matching `.l3eg.golden.json`), and the loop above only ever touches
+    // fixtures `discover_l3eg_goldens()` already knows about, so it silently
+    // no-ops for them otherwise. This mirrors the inclusion-rule guard below
+    // (same corpus scan, same "non-empty projection" test) but MINTS in regen
+    // mode instead of asserting — the assert-path semantics for an
+    // ungoldened event-bearing fixture are untouched (still a hard failure
+    // outside regen mode).
     if regen::regen_mode() {
-        eprintln!("REGEN l3eg: wrote {} golden(s)", goldens.len());
+        let mut minted = 0usize;
+        if set == "full" || set.is_empty() {
+            let golden_set: std::collections::HashSet<&str> =
+                goldens.iter().map(|(f, _)| f.as_str()).collect();
+            let entries = std::fs::read_dir(corpus_dir()).expect("read corpus dir");
+            let mut corpus: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            corpus.sort();
+            for fixture in &corpus {
+                if golden_set.contains(fixture.as_str()) {
+                    continue;
+                }
+                let proj = rust_event_graph_projection(&corpus_dir().join(fixture));
+                if proj.events.is_empty() && proj.edges.is_empty() {
+                    continue; // correctly excluded (empty event graph) — no golden needed
+                }
+                let new_golden_path = repo_root()
+                    .join("tests")
+                    .join("r2c-goldens")
+                    .join(format!("{fixture}.l3eg.golden.json"));
+                let mut pretty = serde_json::to_string_pretty(&proj)
+                    .unwrap_or_else(|e| panic!("regen serialize NEW l3eg golden {fixture}: {e}"));
+                pretty.push('\n');
+                std::fs::write(&new_golden_path, pretty).unwrap_or_else(|e| {
+                    panic!("regen write NEW {}: {e}", new_golden_path.display())
+                });
+                eprintln!("REGEN NEW l3eg golden: {}", new_golden_path.display());
+                minted += 1;
+            }
+        }
+        eprintln!(
+            "REGEN l3eg: wrote {} golden(s), minted {minted} NEW golden(s)",
+            goldens.len()
+        );
         return;
     }
 
@@ -2203,22 +2249,23 @@ fn differential_l3_event_graph_match_goldens() {
     );
 }
 
-/// Oracle cross-check: the FULL-corpus Rust event-graph coverage matrix must equal
-/// the al-sem manifest's published `coverageMatrix` (the ground-truth totals). This
-/// is independent of the per-fixture golden compare — it guards the matrix counters
-/// themselves against drift.
+/// Oracle cross-check: the Rust event-graph coverage matrix, summed over EXACTLY the
+/// al-sem manifest's OWN recorded fixture population (its `fixtures[]` array — the 33
+/// fixtures al-sem actually captured at `alSemGitSha`), must equal the manifest's
+/// published `coverageMatrix` (the ground-truth totals). This is independent of the
+/// per-fixture golden compare — it guards the matrix counters themselves against
+/// drift.
+///
+/// Deliberately does NOT sum over `discover_l3eg_goldens()` (the live golden-dir
+/// listing): `manifest.json` is a frozen al-sem-era artifact (al-sem is retired — see
+/// CLAUDE.md's Testing Philosophy — and cannot analyze fixtures added after it), so a
+/// golden minted LATER by this test's own regen arm for a corpus fixture al-sem never
+/// saw (e.g. the BCQuality-wave's ws-d54/55/57/59) must not be silently folded into an
+/// al-sem-provenance cross-check — that would either fail spuriously (the manifest's
+/// totals don't know about it) or, worse, misrepresent the manifest as having grown
+/// al-sem ground truth it never actually captured.
 #[test]
 fn l3eg_coverage_matrix_matches_manifest_oracle() {
-    let goldens = discover_l3eg_goldens();
-    assert!(!goldens.is_empty(), "no L3eg goldens — corpus missing?");
-
-    let mut rust_cov = EventGraphCoverage::default();
-    for (fixture, _) in &goldens {
-        let proj = rust_event_graph_projection(&corpus_dir().join(fixture));
-        let rust_json = serde_json::to_value(&proj).expect("serialize");
-        rust_cov.add(&event_graph_coverage_of(&rust_json));
-    }
-
     let manifest_path = repo_root()
         .join("tests")
         .join("r2c-goldens")
@@ -2226,6 +2273,31 @@ fn l3eg_coverage_matrix_matches_manifest_oracle() {
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&manifest_path).expect("read r2c manifest"))
             .expect("parse r2c manifest");
+
+    let manifest_fixtures: Vec<String> = manifest
+        .get("fixtures")
+        .and_then(|f| f.as_array())
+        .expect("manifest has fixtures[]")
+        .iter()
+        .map(|f| {
+            f.get("fixture")
+                .and_then(|v| v.as_str())
+                .expect("manifest fixture entry has a `fixture` name")
+                .to_string()
+        })
+        .collect();
+    assert!(
+        !manifest_fixtures.is_empty(),
+        "manifest fixtures[] is empty — corpus missing?"
+    );
+
+    let mut rust_cov = EventGraphCoverage::default();
+    for fixture in &manifest_fixtures {
+        let proj = rust_event_graph_projection(&corpus_dir().join(fixture));
+        let rust_json = serde_json::to_value(&proj).expect("serialize");
+        rust_cov.add(&event_graph_coverage_of(&rust_json));
+    }
+
     let m = manifest
         .get("coverageMatrix")
         .expect("manifest has coverageMatrix");

@@ -1,0 +1,53 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-00000000d570:Codeunit:50927::OnThing::0a74e192c8db6ad82c1cd59ceef9e8abaef80a3bed8dd515acb62eedc001ed67",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d570:Codeunit:50927",
+      "eventName": "OnThing",
+      "eventKind": "integration",
+      "signatureHash": "0a74e192c8db6ad82c1cd59ceef9e8abaef80a3bed8dd515acb62eedc001ed67",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50927#0a74e192c8db6ad82c1cd59ceef9e8abaef80a3bed8dd515acb62eedc001ed67"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d570:Codeunit:50927::OnThing::0a74e192c8db6ad82c1cd59ceef9e8abaef80a3bed8dd515acb62eedc001ed67",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d570",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d570:Codeunit:50927::OnThing::0a74e192c8db6ad82c1cd59ceef9e8abaef80a3bed8dd515acb62eedc001ed67",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50929#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d570",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d570:Codeunit:50927::OnThing::0a74e192c8db6ad82c1cd59ceef9e8abaef80a3bed8dd515acb62eedc001ed67",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50930#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d570",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-00000000d540:Codeunit:50922::OnAfterThing::0f2242c5cbed16b79e258da0d09b1fa1b331c04f0bfdaae315b5c4cd188d0cea",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d540:Codeunit:50922",
+      "eventName": "OnAfterThing",
+      "eventKind": "integration",
+      "signatureHash": "0f2242c5cbed16b79e258da0d09b1fa1b331c04f0bfdaae315b5c4cd188d0cea",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d540:Codeunit:50922#0f2242c5cbed16b79e258da0d09b1fa1b331c04f0bfdaae315b5c4cd188d0cea"
+    }
+  ],
+  "edges": []
+}
