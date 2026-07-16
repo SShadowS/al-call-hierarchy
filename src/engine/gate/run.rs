@@ -195,6 +195,12 @@ pub fn run_analyze_with_exit(
     // internal RoutineIds embedded in each finding's rootCauseKey — and therefore the
     // SARIF fingerprint hashed over them — byte-match the al-sem `analyze` CLI goldens.
     let ws_path = Path::new(&args.workspace);
+    // Fresh-resolver coverage status (Task 3 wiring) — computed up front so it is
+    // available to `evaluate_preflight` below regardless of which path this run
+    // takes; the fresh pipeline's own local `ctx` is dropped inside `fresh_coverage`
+    // before this function ever touches the separate L3 model (spec §3 memory
+    // sequencing — see `FreshCoverage`'s doc).
+    let fresh = crate::program::resolve::full::fresh_coverage(ws_path);
     let model_instance_id = match compute_gate_model_instance_id(ws_path) {
         Some(id) => id,
         // Fail-closed layout → empty output, clean preflight, clean exit.
@@ -423,11 +429,7 @@ pub fn run_analyze_with_exit(
     // of --require-dependencies; only the FAILED→exit-4 path needs that flag.
     // We return the warning message as the 3rd tuple field; the bin emits it.
     // NOTE: `coverage` was already computed above for the Json formatter.
-    let pf = evaluate_preflight(
-        coverage.unresolved_callsites.len(),
-        &coverage.opaque_apps,
-        args.require_dependencies,
-    );
+    let pf = evaluate_preflight(&fresh, args.require_dependencies);
 
     // The degraded warning message — None when coverage is complete (pf.degraded false).
     // Matches al-sem: `if (pf.degraded) process.stderr.write(`al-sem: warning: ${pf.message}\n`)`.
