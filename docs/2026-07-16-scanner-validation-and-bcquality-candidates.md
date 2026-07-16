@@ -138,3 +138,61 @@ flowfield-without-calcfields; d16 covers obsolete-routine-call
    fixtures under `tests/fixtures/`.
 3. Consider the preflight fix from §1 (fresh-resolver coverage in `alsem
    analyze`) as a standalone quick task.
+
+## 6. Wave results (implemented 2026-07-16, branch `feat/bcquality-detector-wave`)
+
+All 13 candidates from §4 were built as L5 detectors d52–d64, plus a new
+`bcquality` analyze preset. Measured on DO, every new-detector finding was
+triaged against real source; the four detectors that produced false positives
+were fixed at ROOT CAUSE (not demoted-and-shipped-broken).
+
+### What shipped
+
+- 13 detectors d52–d64 + 3 additive substrate forwards (statement-position on
+  call sites; SingleInstance / page write-surface / object anchor on `L3Object`;
+  variable scope on `L3Variable`).
+- The `bcquality` analyze preset (the full d52–d64 wave; it is the explicit
+  opt-in for its opt-in members).
+- Verification: full suite **2468 pass**; CDO gate **PASS**; north-star resolver
+  output byte-identical — `aldump --program-call-graph-stats` SHA-256
+  `0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0` unchanged
+  (detectors are downstream of resolution).
+
+### DO measurement (final, post-fix)
+
+- Default run: **2282 → 2307 (+25)**, entirely from the two new DEFAULT detectors
+  that match on DO — d55 event-publish-in-loop (24) and d54
+  publish-in-tryfunction-cone (1), **both 100% precision** (triaged against
+  source). d53 and d60 emit 0 on DO after their precision fixes; d52/d57/d58/d59
+  emit 0 (pattern absent in DO).
+- `bcquality` preset (d52–d64): **27** — d55 24, d54 1, d56 2 (of which 1 is a
+  `.dependencies/`-scope finding; primary-scope d56 = 1).
+
+### FP triage → root-cause fixes
+
+| Detector | Pre-fix FP | Root cause | Fix | Post-fix FP |
+|----------|-----------:|------------|-----|------------:|
+| d55 | 0/21 | — precise | — | 0/24 |
+| d54 | 0/1 | — precise | — | 0/1 |
+| d63 | 2/2 | flagged pure-literal HTML templates joined with `+` (a `StrSubstNo` template; data enters via `%n`, not concat) | require a non-literal `+` operand | 0 |
+| d53 | 1/1 | flagged the trailing call of a deliberate `if not TryX(a) then TryX(b);` fallback | skip a try consumed elsewhere in the routine | 0 |
+| d60 | 5/5 | fired on any upgrade `repeat…Modify` without inspecting the body; the identifier-only `condition_references` signal also missed paren/quoted conditions | require a DataTransfer-shaped body via a **structural control-flow-tree** branch check | 0 |
+| d56 | 12/12 | never checked whether the copy SOURCE is `temporary` (a temp-buffer → persisted materialization is a different row, not a redundant re-write) | skip a temporary source; **demoted DEFAULT → OPT-IN** | 1 (opt-in, documented) |
+
+Only **d56** was demoted: after the temp-source fix, one residual FP shape
+remains — a persisted-source clone that reassigns the clone's current-key field
+before the write, targeting a genuinely different row (functionally required).
+Proving it needs per-field primary-key-reassignment analysis d56 does not yet
+carry, so d56 ships opt-in (see its module doc). Every other new detector is
+high-precision on DO.
+
+### Open follow-up
+
+- d56 residual: add primary-key-field-reassignment analysis → exclude
+  different-row clones → re-promote d56 to default.
+- `condition_references` (ir_walk) records only plain-identifier condition
+  references — it misses parenthesized conditions and quoted-field scrutinees.
+  Any future "is there a branch here" consumer should walk `statement_tree`
+  (structural) as d60 now does, not `condition_references`.
+- The §1 preflight fix (fresh-resolver coverage in `alsem analyze`) remains
+  unaddressed — still a standalone quick task.
