@@ -80,6 +80,20 @@ pub struct L3Object {
     /// Page / PageExtension layout controls (`part`/`systempart`/`usercontrol`) — used
     /// to resolve `CurrPage.<control>…` member calls. Empty for non-page objects.
     pub page_controls: Vec<L3PageControl>,
+    /// Object `SingleInstance` property (Codeunit only): `Some(true)`/`Some(false)`
+    /// when the property is written, `None` when absent. Additive — L3Object is NOT
+    /// Serialize-derived into any gate surface. Consumed by d57.
+    pub single_instance: Option<bool>,
+    /// Page `Editable` / `InsertAllowed` / `ModifyAllowed` / `DeleteAllowed`
+    /// property booleans (Page only, `None` when absent). Additive. Consumed by d64.
+    pub editable: Option<bool>,
+    pub insert_allowed: Option<bool>,
+    pub modify_allowed: Option<bool>,
+    pub delete_allowed: Option<bool>,
+    /// The object DECLARATION's own source anchor (native assembly only; dep
+    /// objects `None`). Lets object-level detectors (d64) anchor findings on the
+    /// object header instead of borrowing a routine anchor. Additive.
+    pub source_anchor: Option<crate::engine::l2::features::PAnchor>,
 }
 
 /// A page layout control relevant to member resolution: a `part`/`systempart`
@@ -623,6 +637,26 @@ fn project_file(
         } else {
             None
         };
+        // Object `SingleInstance` (Codeunit only) + Page write-surface booleans
+        // (`Editable`/`InsertAllowed`/`ModifyAllowed`/`DeleteAllowed`, Page only) —
+        // substrate for d57/d64. Same exact-"true" boolean convention as
+        // `source_table_temporary` above.
+        let bool_prop = |name: &str| ir_prop(name).map(|v| v.trim().to_lowercase() == "true");
+        let single_instance = if object_type == "Codeunit" {
+            bool_prop("singleinstance")
+        } else {
+            None
+        };
+        let (editable, insert_allowed, modify_allowed, delete_allowed) = if object_type == "Page" {
+            (
+                bool_prop("editable"),
+                bool_prop("insertallowed"),
+                bool_prop("modifyallowed"),
+                bool_prop("deleteallowed"),
+            )
+        } else {
+            (None, None, None, None)
+        };
         // Page controls (`part`/`systempart`/`usercontrol`) — used to resolve
         // `CurrPage.<control>…` member calls (Task 6+).
         let page_controls = if object_type == "Page" || object_type == "PageExtension" {
@@ -641,6 +675,11 @@ fn project_file(
         } else {
             Vec::new()
         };
+        // The object DECLARATION's own anchor (native assembly only) — mirrors the
+        // routine `source_anchor` construction above, on the object decl's own
+        // `Origin` rather than a routine's. Lets d64 anchor object-level findings on
+        // the object header instead of borrowing a routine anchor.
+        let source_anchor = Some(anchor_from_origin(&o.origin, source_unit_id, cols));
 
         workspace.objects.push(L3Object {
             id: object_id.clone(),
@@ -656,6 +695,12 @@ fn project_file(
             inherent_commit_behavior,
             source_table_temporary,
             page_controls,
+            single_instance,
+            editable,
+            insert_allowed,
+            modify_allowed,
+            delete_allowed,
+            source_anchor,
         });
 
         if object_type == "Table" || object_type == "TableExtension" {
@@ -1703,5 +1748,41 @@ impl TableView<'_> {
                 declaring_object_id: to_stable_object_id(&f.declaring_object_id),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Task 2 (BCQuality wave): `SingleInstance` (Codeunit) + the Page write-surface
+    // booleans (`Editable`/`InsertAllowed`/`ModifyAllowed`/`DeleteAllowed`) forward
+    // onto `L3Object`, plus the object decl's own `source_anchor` — substrate for
+    // d57/d64. Fixture: `tests/fixtures/props/`.
+    #[test]
+    fn object_property_forwards_single_instance_and_page_write_surface() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/props");
+        let resolved = assemble_and_resolve_workspace_default(&dir).expect("assemble");
+        let cu = resolved
+            .workspace
+            .objects
+            .iter()
+            .find(|o| o.name == "Si")
+            .unwrap();
+        assert_eq!(cu.single_instance, Some(true));
+        let pg = resolved
+            .workspace
+            .objects
+            .iter()
+            .find(|o| o.name == "Api")
+            .unwrap();
+        assert_eq!(pg.editable, Some(false));
+        assert_eq!(pg.insert_allowed, Some(false));
+        assert_eq!(pg.modify_allowed, None);
+        assert_eq!(pg.delete_allowed, None);
+        assert!(
+            pg.source_anchor.is_some(),
+            "native objects carry their decl anchor"
+        );
     }
 }
