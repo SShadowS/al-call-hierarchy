@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d59-integrationevent-var-boolean-guard detector (BCQuality integrationevent-var-parameter-bypasses-security-guards).
 - d60-upgrade-loop-should-be-datatransfer detector (BCQuality datatransfer-for-bulk-init).
 - d61-ishandled-bypasses-critical-write detector (opt-in; BCQuality do-not-bypass-critical-operations-with-ishandled).
+- d62-telemetry-before-success detector (opt-in; BCQuality feature-usage-only-after-success).
 
 ### Changed
 - Shared one CDO program substrate across the read-only

@@ -238,6 +238,15 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    // d62 is OPT-IN (registry after d61) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d62",
+        wave: "R4-BCQ",
+        detectors: &["d62-telemetry-before-success"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1098,6 +1107,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // findings before scanning any routine.
     NegativeAssertion {
         detector: "d61-ishandled-bypasses-critical-write",
+        neutral_fixture: "ws-e2e",
+    },
+    // d62: ws-e2e declares no "Feature Telemetry" typed variable at all
+    // (grep-verified) — the ft_vars per-routine filter never matches, so the
+    // detector short-circuits to 0 findings before scanning any call site.
+    NegativeAssertion {
+        detector: "d62-telemetry-before-success",
         neutral_fixture: "ws-e2e",
     },
 ];

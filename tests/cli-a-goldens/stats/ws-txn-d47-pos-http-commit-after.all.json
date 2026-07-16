@@ -318,5 +318,11 @@
     "detector": "d61-ishandled-bypasses-critical-write",
     "findingsEmitted": 0,
     "skipped": {}
+  },
+  {
+    "candidatesConsidered": 0,
+    "detector": "d62-telemetry-before-success",
+    "findingsEmitted": 0,
+    "skipped": {}
   }
 ]
