@@ -18,6 +18,18 @@ codeunit 50940 "D63 Demo"
         exit(Render('Hello ' + UserName));
     end;
 
+    // NOT FLAGGED: a multi-line HTML template joined with `+` where every operand
+    // is a static literal — dynamic values enter via StrSubstNo %n placeholders,
+    // not via concatenation (the DO false-positive shape: the StrSubstNo call
+    // site's template argument is pure-literal concat; %1/%2 are placeholders).
+    procedure BuildTemplate(Name: Text): Text
+    begin
+        exit(StrSubstNo(
+            '<div><p><br></p></div>' +
+            '<div><b>%1</b> &lt;%2&gt;<br></div>',
+            'Name:', Name));
+    end;
+
     local procedure Render(Html: Text): Text
     begin
         exit(Html);

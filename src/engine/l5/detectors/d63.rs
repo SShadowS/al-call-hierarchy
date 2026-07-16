@@ -5,6 +5,12 @@
 //! text — one finding per call site (first matching argument), OPT-IN because
 //! the engine cannot see where the string ends up.
 //!
+//! Fires only when a `+`-concatenation splices a NON-LITERAL operand into an
+//! HTML literal. A purely-static multi-line HTML template joined with `+`
+//! (e.g. a `StrSubstNo` template whose dynamic values enter via `%n`
+//! placeholders, not via `+`) is NOT flagged — every `+` operand is a developer
+//! literal, so there is no injection vector. See `looks_like_html_concat`.
+//!
 //! Severity: low. Confidence: possible.
 
 use crate::engine::l3::l3_workspace::L3Resolved;
@@ -25,13 +31,23 @@ fn html_tagish(lit: &str) -> bool {
 }
 
 /// Argument-text heuristic: at least one single-quoted AL literal containing an
-/// HTML-tag-ish sequence AND at least one `+` OUTSIDE the literals (a real
-/// concatenation). AL escapes `'` inside literals as `''`.
+/// HTML-tag-ish sequence, at least one `+` OUTSIDE the literals (a real
+/// concatenation), AND at least one NON-LITERAL operand outside the literals
+/// (an identifier / call / paren — i.e. actual data being spliced in). AL
+/// escapes `'` inside literals as `''`.
+///
+/// The `data_outside` requirement is what separates a genuine data-splice
+/// (`'<b>' + UserName`) from a purely-static multi-line HTML template joined
+/// with `+` (`'<div>' + '<p>%1</p>' + '</div>'`, the shape of a `StrSubstNo`
+/// template whose dynamic values enter via `%n` placeholders, NOT via `+`). The
+/// latter is not an injection vector — every concatenated operand is a developer
+/// literal — and used to false-positive before this guard.
 fn looks_like_html_concat(text: &str) -> bool {
     let mut in_lit = false;
     let mut lit = String::new();
     let mut html_lit = false;
     let mut concat_outside = false;
+    let mut data_outside = false;
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if in_lit {
@@ -53,9 +69,13 @@ fn looks_like_html_concat(text: &str) -> bool {
             in_lit = true;
         } else if c == '+' {
             concat_outside = true;
+        } else if !c.is_whitespace() {
+            // A non-literal, non-operator token outside the literals: an
+            // identifier / call / paren carrying spliced-in data.
+            data_outside = true;
         }
     }
-    html_lit && concat_outside
+    html_lit && concat_outside && data_outside
 }
 
 pub fn detect_d63(
@@ -149,6 +169,20 @@ mod tests {
         assert!(!looks_like_html_concat("'a' + 'b'")); // concat, no HTML tag... see note
         assert!(!looks_like_html_concat("X + Y")); // no literal
         assert!(!looks_like_html_concat("'2 < 3 and 4 > 1' + V")); // `< ` not tag-ish
+    }
+
+    #[test]
+    fn static_html_template_join_does_not_flag() {
+        // HTML tags present + `+` present, but every operand is a literal — a
+        // multi-line template joined with `+`, NOT a data splice. The DO false
+        // positive shape (a StrSubstNo template whose dynamic values enter via
+        // %n placeholders inside the literals).
+        assert!(!looks_like_html_concat("'<div>' + '</div>'"));
+        assert!(!looks_like_html_concat(
+            "'<div><p><br></p></div>' + '<b>%1</b> &lt;%2&gt;<br>' + '</div>'"
+        ));
+        // A non-literal operand tips it back to a real splice.
+        assert!(looks_like_html_concat("'<div>' + Body + '</div>'"));
     }
 
     #[test]

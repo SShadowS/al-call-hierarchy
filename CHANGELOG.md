@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
+- d63-html-concat-injection no longer flags a purely-static multi-line HTML
+  template joined with `+` (the shape of a `StrSubstNo` template whose dynamic
+  values enter via `%n` placeholders, not via concatenation). `looks_like_html_concat`
+  now additionally requires a NON-LITERAL `+` operand (real data being spliced in);
+  a literal-only join has no injection vector. Cleared 2/2 false positives measured
+  on the DO workspace (CDO E-Mail / Email Editor `GetReplyHtml`).
 - Object-anchored findings (d64 introduces the engine's first: a declarative
   API page has no routine to anchor on, so its `EvidenceStep`/`SourceAnchor`
   carry the object's own id in `enclosing_routine_id` by convention) no longer
