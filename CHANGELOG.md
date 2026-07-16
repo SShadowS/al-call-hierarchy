@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - d52-bulk-write-param-no-temp-guard detector (BCQuality guard-bulk-operations-with-istemporary): DeleteAll/ModifyAll on a var record parameter without temp proof or local filter.
-- d53-ignored-tryfunction-result detector: statement-position TryFunction calls silently swallow errors.
+- d53-ignored-tryfunction-result detector: statement-position TryFunction calls silently swallow errors. Skips a callee that is ALSO consumed elsewhere in the same routine — a deliberate best-effort fallback (`if not TryX(a) then TryX(b);`), not an accidental swallow (cleared the 1 DO false positive).
 - d54-publish-in-tryfunction-cone detector: events published under a [TryFunction] silence subscriber errors (call-graph transitive).
 - d55-event-publish-in-loop detector (BCQuality do-not-publish-events-inside-loops).
 - d56-clone-before-write-in-loop detector (opt-in; BCQuality avoid-cloning-records-before-modify-delete-in-loops). Skips a `temporary` copy SOURCE — a temp buffer being materialized into a persisted record is not the redundant cursor re-write the rule targets. Opt-in because a persisted-source key-remap residual (needs primary-key-reassignment analysis) is not yet handled.

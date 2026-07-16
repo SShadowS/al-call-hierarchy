@@ -359,8 +359,9 @@ ws-d53/src/Codeunit.al::0::TryStep	317dc0e15f547788
 ws-d53/src/Codeunit.al::0::IgnoresResult	f42cefea953f1a32
 ws-d53/src/Codeunit.al::0::ChecksResult	d2c2614f1cd0ce1f
 ws-d53/src/Codeunit.al::0::UnderAssert	02ca4f66fcf61c28
-ws-d53/src/Codeunit.al::0::PlainStep	4c7bee678025d2ab
-ws-d53/src/Codeunit.al::0::CallsPlain	aa2794d01ec47199
+ws-d53/src/Codeunit.al::0::FallbackRetry	d7dea4fe4dcb80cd
+ws-d53/src/Codeunit.al::0::PlainStep	293d32d6b8819e22
+ws-d53/src/Codeunit.al::0::CallsPlain	601af781327b949d
 ws-d54/src/Codeunit.al::0::OnAfterThing	3717eb495bbe3894
 ws-d54/src/Codeunit.al::1::TryDirect	3bf1cd2a116b7e04
 ws-d54/src/Codeunit.al::1::TryTransitive	19f61093a4582210
@@ -373,6 +374,7 @@ ws-d56/src/Codeunit.al::0::CloneAndModify	a12bfd6b1bb6509d
 ws-d56/src/Codeunit.al::0::DirectModify	e632993316ef6dd0
 ws-d56/src/Codeunit.al::0::CopyOutsideLoop	987a2bb13d6fe206
 ws-d56/src/Codeunit.al::0::CloneReadOnly	5b2f932243ec76ee
+ws-d56/src/Codeunit.al::0::MaterializeBuffer	9ec6a89fc3daf459
 ws-d57/src/Codeunit.al::0::OnThing	3717eb495bbe3894
 ws-d57/src/Codeunit.al::1::OnThingSub	d37b4669ebbafe15
 ws-d57/src/Codeunit.al::2::OnThingSub	ab811c276a0a9390
@@ -399,7 +401,8 @@ ws-d62/src/Codeunit.al::0::WorkThenLog	6d5665189064e933
 ws-d63/src/Codeunit.al::0::BuildUnsafe	c0bfc4c66052d7f9
 ws-d63/src/Codeunit.al::0::BuildStatic	22a075da5870b257
 ws-d63/src/Codeunit.al::0::BuildPlain	54a22e6f44de624e
-ws-d63/src/Codeunit.al::0::Render	54977e19c3d34eb7
+ws-d63/src/Codeunit.al::0::BuildTemplate	8670240a99f99ec9
+ws-d63/src/Codeunit.al::0::Render	ac2041ffa22a1ccb
 ws-d7-event-cycle/src/event-a.al::0::OnA	103ece56ff14588c
 ws-d7-event-cycle/src/event-a.al::0::RaiseA	98d3fb94f47a040f
 ws-d7-event-cycle/src/event-a.al::0::OnB	18fbf91496588a5e

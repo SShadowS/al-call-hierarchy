@@ -4,9 +4,11 @@
 //!
 //! Join: statement-position call site (Task-1 `in_statement_position`) whose
 //! RESOLVED callee carries `[TryFunction]`. Skips: `asserterror` scopes
-//! (deliberate negative-path assertions). Unresolved callees skip (fail-quiet,
-//! advisory precision-first). Inert on the cross-app context
-//! (`resolved_call_edge_by_callsite` is empty there).
+//! (deliberate negative-path assertions); a callee that is ALSO consumed
+//! (result read) elsewhere in the same routine — a deliberate best-effort
+//! fallback (`if not TryX(a) then TryX(b);`), not an accidental swallow.
+//! Unresolved callees skip (fail-quiet, advisory precision-first). Inert on the
+//! cross-app context (`resolved_call_edge_by_callsite` is empty there).
 //!
 //! Severity: high. Confidence: likely.
 
@@ -31,11 +33,25 @@ pub fn detect_d53(
     let mut candidates_considered = 0usize;
     let mut skipped_asserterror = 0u64;
     let mut skipped_result_consumed = 0u64;
+    let mut skipped_sibling_consumed = 0u64;
 
     for routine in &ws.routines {
         if !routine.body_available || routine.parse_incomplete {
             continue;
         }
+        // Callee ids whose result IS consumed somewhere in THIS routine (an
+        // expression-position call: if-condition, assignment RHS, argument). A
+        // statement-position call to the SAME try is then a deliberate
+        // best-effort fallback — `try X; on failure retry X with different args
+        // and accept the result` — not an accidental swallow. Skip it.
+        let consumed_callees: std::collections::HashSet<&str> = routine
+            .call_sites
+            .iter()
+            .filter(|cs| !cs.in_statement_position)
+            .filter_map(|cs| ctx.resolved_call_edge_by_callsite.get(&cs.id))
+            .filter_map(|edge| edge.to.as_deref())
+            .collect();
+
         for cs in &routine.call_sites {
             let Some(edge) = ctx.resolved_call_edge_by_callsite.get(&cs.id) else {
                 continue;
@@ -56,6 +72,10 @@ pub fn detect_d53(
             }
             if cs.under_asserterror == Some(true) {
                 skipped_asserterror += 1;
+                continue;
+            }
+            if consumed_callees.contains(to) {
+                skipped_sibling_consumed += 1;
                 continue;
             }
 
@@ -124,5 +144,6 @@ pub fn detect_d53(
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("resultConsumed", skipped_result_consumed);
     stats.add_skip("asserterror", skipped_asserterror);
+    stats.add_skip("siblingConsumed", skipped_sibling_consumed);
     Ok(DetectorOutput::no_diag(findings, stats))
 }

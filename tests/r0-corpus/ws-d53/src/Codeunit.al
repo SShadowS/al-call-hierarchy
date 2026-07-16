@@ -25,6 +25,15 @@ codeunit 50921 "D53 Demo"
         asserterror TryStep();
     end;
 
+    // NOT FLAGGED: deliberate best-effort fallback — the SAME try is consumed
+    // (checked) first, so the trailing statement-position retry is intentional
+    // (its failure is acceptably ignored). The DO false-positive shape.
+    procedure FallbackRetry()
+    begin
+        if not TryStep() then
+            TryStep();
+    end;
+
     // NOT FLAGGED: plain (non-Try) procedure called in statement position.
     procedure PlainStep()
     begin
