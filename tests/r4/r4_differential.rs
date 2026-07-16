@@ -201,6 +201,13 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    Smoke {
+        fixture: "ws-d57",
+        wave: "R4-BCQ",
+        detectors: &["d57-singleinstance-growing-state"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1024,6 +1031,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // and the detector emits 0.
     NegativeAssertion {
         detector: "d56-clone-before-write-in-loop",
+        neutral_fixture: "ws-e2e",
+    },
+    // d57: ws-e2e declares no SingleInstance codeunit at all (grep-verified) — the
+    // si_objects set is empty, so the detector short-circuits to 0 findings before
+    // ever scanning a routine.
+    NegativeAssertion {
+        detector: "d57-singleinstance-growing-state",
         neutral_fixture: "ws-e2e",
     },
 ];

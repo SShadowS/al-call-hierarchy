@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d54-publish-in-tryfunction-cone detector: events published under a [TryFunction] silence subscriber errors (call-graph transitive).
 - d55-event-publish-in-loop detector (BCQuality do-not-publish-events-inside-loops).
 - d56-clone-before-write-in-loop detector (BCQuality avoid-cloning-records-before-modify-delete-in-loops).
+- d57-singleinstance-growing-state detector: unbounded global collection/temp-record growth in SingleInstance subscribers.
 
 ### Changed
 - Shared one CDO program substrate across the read-only
