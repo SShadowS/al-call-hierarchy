@@ -187,6 +187,13 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    Smoke {
+        fixture: "ws-d55",
+        wave: "R4-BCQ",
+        detectors: &["d55-event-publish-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -992,6 +999,16 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d54-publish-in-tryfunction-cone",
         neutral_fixture: "ws-e2e",
+    },
+    // d55: ws-e2e is NOT usable here — it declares OnAfterRunIteration as an
+    // IntegrationEvent AND calls it inside RunBatch's `for` loop, so d55 would
+    // fire on it (grep-verified). ws-d41 has no IntegrationEvent/BusinessEvent
+    // declaration at all (grep-verified), so no resolved callee can ever have
+    // kind=="event-publisher" — candidates_considered stays 0 and the detector
+    // emits 0.
+    NegativeAssertion {
+        detector: "d55-event-publish-in-loop",
+        neutral_fixture: "ws-d41",
     },
 ];
 
