@@ -48,6 +48,7 @@ pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d43-event-ishandled-skip",
     "d44-event-multi-subscriber-overlap",
     "d45-event-transitive-table-exposure",
+    "d52-bulk-write-param-no-temp-guard",
 ];
 
 /// al-sem `OPT_IN_DETECTORS` names — not in the default registry. Surfaced only by

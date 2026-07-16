@@ -162,6 +162,17 @@ const WAVE_CROSS_APP: &[Smoke] = &[
     },
 ];
 
+/// BCQuality wave (d52–d64) per-detector fixtures. Each fixture contains both
+/// flagged and deliberately-unflagged cases; the golden byte-match pins the
+/// exact finding set.
+const WAVE_BCQ: &[Smoke] = &[Smoke {
+    fixture: "ws-d52",
+    wave: "R4-BCQ",
+    detectors: &["d52-bulk-write-param-no-temp-guard"],
+    ported: true,
+    corpus_dir: None,
+}];
+
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
 /// d14: ws-d14-dead-routine is the SMOKE positive (1 finding) flipped above;
 /// ws-interface-dispatch + ws-member-call-resolution are d14 NEGATIVES (0 findings,
@@ -945,6 +956,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
         detector: "d42-cross-call-wrong-setloadfields",
         neutral_fixture: "ws-d40",
     },
+    // d52: ws-e2e contains no DeleteAll/ModifyAll calls at all (grep-verified) — the
+    // bulk-op scan over every routine's record_operations never matches BULK_OPS, so
+    // candidates_considered stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d52-bulk-write-param-no-temp-guard",
+        neutral_fixture: "ws-e2e",
+    },
 ];
 
 fn repo_root() -> PathBuf {
@@ -1434,6 +1452,15 @@ fn differential_r4_findings_match_goldens() {
     // ported_results (EXEMPT from the anti-degenerate ≥1).
     for smoke in WAVE_F_NEGATIVES {
         run_smoke_entry(smoke, &registered_names, &mut all_divergences);
+    }
+
+    // --- R4-BCQ positives (d52–d64, BCQuality wave) ----------------------------
+    for smoke in WAVE_BCQ {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
     }
 
     // --- R4 CROSS-APP positives (d13/d16/d17 — committed dep .app in .alpackages) -

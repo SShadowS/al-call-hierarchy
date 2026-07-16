@@ -1,0 +1,127 @@
+{
+  "fixtureName": "ws-d52",
+  "detectors": [
+    "d52-bulk-write-param-no-temp-guard"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d52-bulk-write-param-no-temp-guard",
+      "id": "d52/11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1/11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1/op0",
+      "rootCauseKey": "d52/11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1/11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1/op0",
+      "title": "ModifyAll on unguarded record parameter",
+      "rootCause": "StampAll calls ModifyAll on the var record parameter Buffer (D52 Buffer) without proving it temporary (no `temporary` declaration, no IsTemporary entry guard) and without a local filter — called with a real record this bulk-writes the whole table.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 11,
+          "startColumn": 8,
+          "endLine": 11,
+          "endColumn": 35
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 35
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1",
+            "syntaxKind": "call_expression"
+          },
+          "note": "ModifyAll on parameter Buffer with no temp proof and no prior filter",
+          "operationId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#f3d53ec6f47557809c36d98b31e9f51952bd111f02e776f3a12b7703f1e74ad1/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d520:Codeunit:50920"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d520:Table:50920"
+      ],
+      "fixOptions": [
+        {
+          "description": "Add `if not Buffer.IsTemporary() then Error(...)` as the first statement (or declare the parameter `temporary`), or apply a SetRange/SetFilter before ModifyAll.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "a2ce87df44a4e5f9"
+    },
+    {
+      "detector": "d52-bulk-write-param-no-temp-guard",
+      "id": "d52/11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae/11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae/op0",
+      "rootCauseKey": "d52/11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae/11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae/op0",
+      "title": "DeleteAll on unguarded record parameter",
+      "rootCause": "NukeBuffer calls DeleteAll on the var record parameter Buffer (D52 Buffer) without proving it temporary (no `temporary` declaration, no IsTemporary entry guard) and without a local filter — called with a real record this bulk-writes the whole table.",
+      "severity": "high",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 5,
+          "startColumn": 8,
+          "endLine": 5,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 5,
+              "startColumn": 8,
+              "endLine": 5,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae",
+            "syntaxKind": "call_expression"
+          },
+          "note": "DeleteAll on parameter Buffer with no temp proof and no prior filter",
+          "operationId": "11111111-0000-0000-0000-00000000d520:Codeunit:50920#30299262220cc23fd0b46fd32089dfa0cd5e42647361fa5e74bc8a8c1f3978ae/op0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d520:Codeunit:50920"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d520:Table:50920"
+      ],
+      "fixOptions": [
+        {
+          "description": "Add `if not Buffer.IsTemporary() then Error(...)` as the first statement (or declare the parameter `temporary`), or apply a SetRange/SetFilter before DeleteAll.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "1cd40b5968cc4db9"
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
 //! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D), d32 (reverse-call-graph wave),
-//! d50 (R4-H checked-run-implicit-commit).
+//! d50 (R4-H checked-run-implicit-commit), d52 (BCQuality wave,
+//! bulk-write-param-no-temp-guard).
 
 pub mod d1;
 pub mod d10;
@@ -41,6 +42,7 @@ pub mod d49;
 pub mod d5;
 pub mod d50;
 pub mod d51;
+pub mod d52;
 pub mod d7;
 pub mod d8;
 pub mod d9;
@@ -683,6 +685,34 @@ fn callee_net_filters_implicit_self(callee: &L3Routine) -> bool {
     last.is_some_and(|(_, is_filter)| is_filter)
 }
 
+/// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE
+/// `bulk_op` in source order with no intervening `Reset` (which would wipe filters).
+/// (Was d33's private `was_filtered_before`; shared with d52.)
+pub(crate) fn record_filter_applied_before(
+    ops: &[crate::engine::l3::l3_workspace::L3RecordOperation],
+    var_key: &str,
+    bulk_op: &crate::engine::l3::l3_workspace::L3RecordOperation,
+) -> bool {
+    let mut filtered = false;
+    for other in ops {
+        if std::ptr::eq(other, bulk_op) {
+            continue;
+        }
+        if other.record_variable_name.to_lowercase() != var_key {
+            continue;
+        }
+        if !before_anchor(&other.source_anchor, &bulk_op.source_anchor) {
+            continue;
+        }
+        if RECORD_FILTER_OPS.contains(&other.op.as_str()) {
+            filtered = true;
+        } else if other.op == "Reset" {
+            filtered = false;
+        }
+    }
+    filtered
+}
+
 /// G-3: is the callee's NET effect on its parameter `param_lc` (lowercased)
 /// "filtered"? Scans the callee body's filter-relevant ops (`SetRange` /
 /// `SetFilter` / `Reset`) on that parameter and checks the LAST one (by
@@ -858,9 +888,9 @@ where
 /// `detectorStats` array for the `all` slot; the `default` slot is a subset in this
 /// same order (as `select_detectors` filters by name while preserving registry order).
 ///
-/// DEFAULT order (34): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
+/// DEFAULT order (35): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
 ///   d16, d17, d18, d19, d20, d21, d22, d29, d32, d33, d34, d35, d36, d37, d38,
-///   d39, d41, d42, d43, d44, d45.
+///   d39, d41, d42, d43, d44, d45, d52.
 /// OPT_IN order (7):  d40, d46, d47, d48, d49, d50, d51.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
@@ -1000,6 +1030,11 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d45-event-transitive-table-exposure".to_string(),
             run: d45::detect_d45,
+        },
+        // d52: BCQuality wave (bulk-write-param-no-temp-guard).
+        Detector {
+            name: "d52-bulk-write-param-no-temp-guard".to_string(),
+            run: d52::detect_d52,
         },
         // --- OPT_IN_DETECTORS (7, in al-sem registry order) ---
         // d40: OPT-IN in al-sem (transitive-load-missing).

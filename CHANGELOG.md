@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- d52-bulk-write-param-no-temp-guard detector (BCQuality guard-bulk-operations-with-istemporary): DeleteAll/ModifyAll on a var record parameter without temp proof or local filter.
+
 ### Changed
 - Shared one CDO program substrate across the read-only
   `program_resolve_harness` CDO tests. `src/program/resolve/full.rs` now
