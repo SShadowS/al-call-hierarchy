@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# scripts/git-hooks/pre-commit — block a commit that touches detectors, fixtures,
+# or goldens unless every byte-compared golden family still matches.
+#
+# Enabled repo-wide via `git config core.hooksPath scripts/git-hooks` (see
+# CLAUDE.md "Goldens"). Fires ONLY when a staged path can move a golden, so
+# ordinary commits are untouched. Bypass in a genuine emergency with
+# `git commit --no-verify` (do not make a habit of it — a stale golden shipping
+# green is exactly what this prevents).
+set -uo pipefail
+
+# Paths whose change can move a golden family.
+if ! git diff --cached --name-only | grep -qE '^(tests/r0-corpus/|tests/fixtures/|src/engine/l5/detectors/|tests/(r4|ir-l2|cli-a|r2c)-goldens/)'; then
+    exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+echo "pre-commit: detector/fixture/golden change staged — verifying goldens..."
+if ! "$repo_root/scripts/check-goldens"; then
+    echo "pre-commit: golden verification FAILED. Regenerate + inspect:" >&2
+    echo "  scripts/check-goldens --regen   # then review the diff and re-stage" >&2
+    exit 1
+fi
+echo "pre-commit: goldens OK"

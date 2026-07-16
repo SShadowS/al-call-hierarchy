@@ -406,7 +406,7 @@ ws-d62/src/Codeunit.al::0::WorkThenLog	6d5665189064e933
 ws-d63/src/Codeunit.al::0::BuildUnsafe	c0bfc4c66052d7f9
 ws-d63/src/Codeunit.al::0::BuildStatic	22a075da5870b257
 ws-d63/src/Codeunit.al::0::BuildPlain	54a22e6f44de624e
-ws-d63/src/Codeunit.al::0::BuildTemplate	8670240a99f99ec9
+ws-d63/src/Codeunit.al::0::BuildTemplate	8ca970d85ab76719
 ws-d63/src/Codeunit.al::0::Render	ac2041ffa22a1ccb
 ws-d7-event-cycle/src/event-a.al::0::OnA	103ece56ff14588c
 ws-d7-event-cycle/src/event-a.al::0::RaiseA	98d3fb94f47a040f

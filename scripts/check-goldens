@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# scripts/check-goldens — run the byte-compared golden test families in one shot.
+#
+# WHY: a change under tests/r0-corpus/ (fixtures), src/engine/l5/detectors/, or a
+# golden dir can move MORE golden families than the one you were looking at. In
+# the BCQuality wave, editing a fixture and regenerating only `--test r4` left
+# the l2_features.snapshot (l2_ir) stale and two commits shipped red. This script
+# runs every golden-bearing target together so that never happens again.
+#
+# Golden family -> test target map (keep in sync with CLAUDE.md "Goldens"):
+#   tests/r4-goldens/        -> --test r4
+#   tests/ir-l2-goldens/     -> --test l2_ir   (the l2_features.snapshot)
+#   tests/cli-a-goldens/     -> --test cli
+#   tests/r2c-goldens/       -> --test l3 (l3eg_oracles) + --test differential
+#
+# Usage:
+#   scripts/check-goldens            # verify (no regen) — exits nonzero on any stale golden
+#   scripts/check-goldens --regen    # REGEN_TEMP_GOLDENS=1 first (inspect the diff!), then verify
+set -uo pipefail
+
+targets=(--test r4 --test l2_ir --test l3 --test cli --test differential)
+
+if [[ "${1:-}" == "--regen" ]]; then
+    echo "check-goldens: regenerating (REGEN_TEMP_GOLDENS=1) — INSPECT the diff before committing"
+    REGEN_TEMP_GOLDENS=1 cargo test "${targets[@]}" || exit 1
+    echo "check-goldens: re-running WITHOUT regen to confirm green"
+fi
+
+cargo test "${targets[@]}"

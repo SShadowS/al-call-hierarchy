@@ -13,9 +13,13 @@ cargo build                    # Debug build
 cargo build --release          # Optimized release (full LTO)
 cargo build --profile release-fast  # Faster build with thin LTO
 cargo test                     # Run tests
+cargo test -p al-call-hierarchy --lib <filter>   # Package is al-call-hierarchy (HYPHEN); al_call_hierarchy fails
 rustfmt path/to/file.rs        # Format a file (NEVER `cargo fmt` — whole-crate churn)
 cargo clippy --all-targets --all-features  # Lint
+scripts/check-goldens          # Run ALL byte-compared golden families at once (see Testing Philosophy & Goldens)
 ```
+
+**Do not pipe a long-running gate/test through `| tail`** (e.g. `bash scripts/cdo-gate … | tail`): the pipeline's exit code is `tail`'s, not the command's, so a FAILURE reads as success. Redirect to a log file and `grep` it, or run it with `run_in_background` and read the output file.
 
 ## Running
 
@@ -408,6 +412,41 @@ under `docs/superpowers/specs/`.
   Inspect the diff is intended before committing. Manifest "matrix" oracles hold
   Rust-owned numbers; update them to the current Rust value when the engine intentionally
   improves.
+- **One fixture/detector change moves SEVERAL golden families — regen and run them
+  together, never one at a time.** A change under `tests/r0-corpus/` (fixtures),
+  `src/engine/l5/detectors/`, or any golden dir can move any of:
+
+  | Golden dir | Test target |
+  |------------|-------------|
+  | `tests/r4-goldens/` | `--test r4` |
+  | `tests/ir-l2-goldens/` (the `l2_features.snapshot`) | `--test l2_ir` |
+  | `tests/cli-a-goldens/` (json + stats) | `--test cli` |
+  | `tests/r2c-goldens/` (l3eg) | `--test l3` + `--test differential` |
+
+  Canonical loop: **`scripts/check-goldens --regen`** (regens all five targets),
+  inspect the diff, then **`scripts/check-goldens`** (no regen) to confirm green.
+  Regenerating only the family you were looking at is the trap that shipped two red
+  commits in the BCQuality wave (the `l2_features.snapshot` went stale). A
+  **pre-commit hook** (`scripts/git-hooks/pre-commit`, enabled via `git config
+  core.hooksPath scripts/git-hooks`) blocks a commit touching those paths unless
+  `check-goldens` passes; enable it once per clone.
+- **New advisory L5 detector = triage on a real workspace BEFORE shipping DEFAULT.**
+  Run it on DO/CDO, triage every finding against real source (the `triage-findings`
+  skill; or `/triage-wave` to fan out one subagent per detector). A detector with
+  **> 30% false positives on its sample ships OPT-IN, not default.** When a detector
+  is systematically wrong, **fix the root cause — do not demote-and-ship-broken**
+  (the BCQuality wave found d56/d60/d63 broken on real code and fixed all three; only
+  d56's residual key-remap shape kept it opt-in). Measure the population before
+  building taxonomy for it.
+- **Detector substrate gotcha — "is there a branch in this loop?" uses
+  `statement_tree`, NOT `condition_references`.** `L3Routine.condition_references`
+  (built by `ir_walk::collect_cond_idents`) records only PLAIN-identifier condition
+  references — it misses a parenthesized condition (`if (X)`) and a quoted-field
+  scrutinee (`case Rec."E-Mail" of`), exactly the shapes real BC code uses. Walk the
+  control-flow tree `L3Routine.statement_tree` (`PCFNNode`; `if`/`case` kind nodes
+  carry `source_range`) for a STRUCTURAL, shape-independent branch check — see d60's
+  `tree_has_branch_within`. This bit d60 (two paren/quoted conditions survived the
+  identifier-only guard) before the switch.
 - **al-sem retirement is COMPLETE.** `U:\Git\al-sem` was archived to
   `al-sem-OBOLETE`; nothing in this repo reads from it or writes into it at test
   time, and zero tests point at it any more. Every differential/golden is

@@ -1,6 +1,6 @@
 # Shell scripts run via Git Bash on Windows; force LF so autocrlf
 # (core.autocrlf=true on this checkout) does not corrupt the shebang line.
-scripts/* text eol=lf
+scripts/** text eol=lf
 
 # Goldens are byte-compared by several differential tests; force LF so autocrlf
 # (core.autocrlf=true on this checkout) does not corrupt the byte-exact comparison.
@@ -12,6 +12,19 @@ tests/**/*.cbor binary
 tests/**/*.gz binary
 tests/**/*.txt text eol=lf
 tests/**/*.md text eol=lf
+
+# Rust sources, r0-corpus AL fixtures, and the l2 snapshot golden: force LF so
+# autocrlf (core.autocrlf=true on this checkout) stops rewriting the working tree
+# to CRLF on every touch — the noisy "LF will be replaced by CRLF" commit warning
+# — and so the r0-corpus fixtures parse identically on Windows and Linux (a CRLF
+# checkout leaked into the l2_features.snapshot's captured argument text, making
+# it pass only on Windows). The AL rule is scoped to tests/r0-corpus/ ON PURPOSE:
+# a broad `*.al eol=lf` would leak `eol=lf` onto the byte-frozen tests/fixtures/**
+# trees below (the `-text` override clears `text` but NOT `eol`), which must never
+# be rewritten.
+*.rs text eol=lf
+tests/r0-corpus/**/*.al text eol=lf
+tests/**/*.snapshot text eol=lf
 
 # Vendored fixture TREES (Task 3.3) are historical byte-for-byte copies of AL
 # source from the frozen al-sem archive; their SHA-256 is verified against the
