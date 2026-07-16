@@ -1,0 +1,66 @@
+{
+  "fixtureName": "ws-d62",
+  "detectors": [
+    "d62-telemetry-before-success"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d62-telemetry-before-success",
+      "id": "d62/11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee/11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee/cs0",
+      "rootCauseKey": "d62/11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee/11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee/cs0",
+      "title": "Feature usage logged before success",
+      "rootCause": "LogThenWork calls FeatureTelemetry.LogUsage before fallible work later in the routine — runs that fail after the log still count as feature usage.",
+      "severity": "low",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 8,
+          "endLine": 9,
+          "endColumn": 59
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 9,
+              "startColumn": 8,
+              "endLine": 9,
+              "endColumn": 59
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee",
+            "syntaxKind": "call_expression"
+          },
+          "note": "LogUsage before fallible operations",
+          "callsiteId": "11111111-0000-0000-0000-00000000d620:Codeunit:50939#aed71db876a96b57f89b664c041c042a7843411acf19cc30996e0c262e6740ee/cs0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d620:Codeunit:50939"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Move LogUsage after the operation's success point (end of the routine / after the final write).",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "956b0d8abddfd2d0"
+    }
+  ]
+}

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- d52-bulk-write-param-no-temp-guard detector (BCQuality guard-bulk-operations-with-istemporary): DeleteAll/ModifyAll on a var record parameter without temp proof or local filter.
+- d53-ignored-tryfunction-result detector: statement-position TryFunction calls silently swallow errors. Skips a callee that is ALSO consumed elsewhere in the same routine — a deliberate best-effort fallback (`if not TryX(a) then TryX(b);`), not an accidental swallow (cleared the 1 DO false positive).
+- d54-publish-in-tryfunction-cone detector: events published under a [TryFunction] silence subscriber errors (call-graph transitive).
+- d55-event-publish-in-loop detector (BCQuality do-not-publish-events-inside-loops).
+- d56-clone-before-write-in-loop detector (opt-in; BCQuality avoid-cloning-records-before-modify-delete-in-loops). Skips a `temporary` copy SOURCE — a temp buffer being materialized into a persisted record is not the redundant cursor re-write the rule targets. Opt-in because a persisted-source key-remap residual (needs primary-key-reassignment analysis) is not yet handled.
+- d57-singleinstance-growing-state detector: unbounded global collection/temp-record growth in SingleInstance subscribers.
+- d58-query-filter-after-open detector (BCQuality set-query-filters-before-open).
+- d59-integrationevent-var-boolean-guard detector (BCQuality integrationevent-var-parameter-bypasses-security-guards).
+- d60-upgrade-loop-should-be-datatransfer detector (BCQuality datatransfer-for-bulk-init). Fires only on a DataTransfer-shaped loop body — no per-row call, no op on another record, no if/case computing the value; a body doing per-row work legitimately needs the loop. Branch detection is structural (walks the control-flow tree for if/case nodes within the loop), so it catches conditions of any shape — parenthesized, quoted-field scrutinee — that the identifier-only `condition_references` collection misses. Cleared 5/5 DO false positives (bodies with a codeunit call / cross-table `.Get` / a `case` / a paren-wrapped quoted-field `if`).
+- d61-ishandled-bypasses-critical-write detector (opt-in; BCQuality do-not-bypass-critical-operations-with-ishandled).
+- d62-telemetry-before-success detector (opt-in; BCQuality feature-usage-only-after-success).
+- d63-html-concat-injection detector (opt-in heuristic; BCQuality al-has-no-built-in-htmlencode).
+- d64-api-page-write-surface detector (opt-in; BCQuality disable-write-operations-on-read-only-api-pages).
+- `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
+
+### Fixed
+- d63-html-concat-injection no longer flags a purely-static multi-line HTML
+  template joined with `+` (the shape of a `StrSubstNo` template whose dynamic
+  values enter via `%n` placeholders, not via concatenation). `looks_like_html_concat`
+  now additionally requires a NON-LITERAL `+` operand (real data being spliced in);
+  a literal-only join has no injection vector. Cleared 2/2 false positives measured
+  on the DO workspace (CDO E-Mail / Email Editor `GetReplyHtml`).
+- Object-anchored findings (d64 introduces the engine's first: a declarative
+  API page has no routine to anchor on, so its `EvidenceStep`/`SourceAnchor`
+  carry the object's own id in `enclosing_routine_id` by convention) no longer
+  lose their location context downstream. `FingerprintIndex::fingerprint_of`
+  (`src/engine/l5/fingerprint.rs`) and the gate's `to_location`
+  (`src/engine/gate/projection.rs`) now fall back to a direct object-id lookup
+  when the routine lookup misses, so the fingerprint's objectType/objectNumber
+  component and the production SARIF/JSON/HTML/terminal output's object id/name
+  still resolve instead of going blank. Behavior-preserving for every
+  routine-anchored finding (the fallback only runs when the routine lookup
+  already missed).
+
 ### Changed
 - Shared one CDO program substrate across the read-only
   `program_resolve_harness` CDO tests. `src/program/resolve/full.rs` now

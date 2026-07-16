@@ -1,7 +1,14 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
 //! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D), d32 (reverse-call-graph wave),
-//! d50 (R4-H checked-run-implicit-commit).
+//! d50 (R4-H checked-run-implicit-commit), d52/d53/d54/d55/d56/d57/d58/d59/d60
+//! (BCQuality wave, bulk-write-param-no-temp-guard / ignored-tryfunction-result /
+//! publish-in-tryfunction-cone / event-publish-in-loop /
+//! clone-before-write-in-loop / singleinstance-growing-state /
+//! query-filter-after-open / integrationevent-var-boolean-guard /
+//! upgrade-loop-should-be-datatransfer), d61/d62/d63/d64 (BCQuality wave, OPT-IN,
+//! ishandled-bypasses-critical-write / telemetry-before-success /
+//! html-concat-injection / api-page-write-surface).
 
 pub mod d1;
 pub mod d10;
@@ -41,6 +48,19 @@ pub mod d49;
 pub mod d5;
 pub mod d50;
 pub mod d51;
+pub mod d52;
+pub mod d53;
+pub mod d54;
+pub mod d55;
+pub mod d56;
+pub mod d57;
+pub mod d58;
+pub mod d59;
+pub mod d60;
+pub mod d61;
+pub mod d62;
+pub mod d63;
+pub mod d64;
 pub mod d7;
 pub mod d8;
 pub mod d9;
@@ -683,6 +703,34 @@ fn callee_net_filters_implicit_self(callee: &L3Routine) -> bool {
     last.is_some_and(|(_, is_filter)| is_filter)
 }
 
+/// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE
+/// `bulk_op` in source order with no intervening `Reset` (which would wipe filters).
+/// (Was d33's private `was_filtered_before`; shared with d52.)
+pub(crate) fn record_filter_applied_before(
+    ops: &[crate::engine::l3::l3_workspace::L3RecordOperation],
+    var_key: &str,
+    bulk_op: &crate::engine::l3::l3_workspace::L3RecordOperation,
+) -> bool {
+    let mut filtered = false;
+    for other in ops {
+        if std::ptr::eq(other, bulk_op) {
+            continue;
+        }
+        if other.record_variable_name.to_lowercase() != var_key {
+            continue;
+        }
+        if !before_anchor(&other.source_anchor, &bulk_op.source_anchor) {
+            continue;
+        }
+        if RECORD_FILTER_OPS.contains(&other.op.as_str()) {
+            filtered = true;
+        } else if other.op == "Reset" {
+            filtered = false;
+        }
+    }
+    filtered
+}
+
 /// G-3: is the callee's NET effect on its parameter `param_lc` (lowercased)
 /// "filtered"? Scans the callee body's filter-relevant ops (`SetRange` /
 /// `SetFilter` / `Reset`) on that parameter and checks the LAST one (by
@@ -789,6 +837,26 @@ pub(crate) fn is_known_temp(op: &L3RecordOperation) -> bool {
     matches!(&op.temp_state, Some(ts) if ts.kind == "known" && ts.value == Some(true))
 }
 
+/// Anchor containment: `inner` sits fully inside `outer` (inclusive bounds).
+/// Shared by the loop-body detectors (d56 clone-in-loop, d60 upgrade-loop) to
+/// ask "is this statement/anchor within that loop?".
+pub(crate) fn anchor_within(inner: &PAnchor, outer: &PAnchor) -> bool {
+    let starts_ok = outer.start_line < inner.start_line
+        || (outer.start_line == inner.start_line && outer.start_column <= inner.start_column);
+    let ends_ok = inner.end_line < outer.end_line
+        || (inner.end_line == outer.end_line && inner.end_column <= outer.end_column);
+    starts_ok && ends_ok
+}
+
+/// The record-VARIABLE analogue of [`is_known_temp`]: `temp_state.kind == "known"
+/// && value == Some(true)` on an `L3RecordVariable`. A provably-temporary record
+/// var is an in-memory buffer — ops on it do no physical-db work. Used by d56 to
+/// exclude a temp-buffer source (materialize-into-persisted is not a redundant
+/// cursor re-write).
+pub(crate) fn is_known_temp_var(rv: &crate::engine::l3::l3_workspace::L3RecordVariable) -> bool {
+    rv.temp_state.kind == "known" && rv.temp_state.value == Some(true)
+}
+
 /// `unquotedFieldName` from `model/expression.ts`:
 /// Resolve a field-name argument to its unquoted form. Prefers `.value` (set on
 /// `quoted_identifier` / `string_literal` / `qualified_enum_value`) over `.text`.
@@ -858,13 +926,13 @@ where
 /// `detectorStats` array for the `all` slot; the `default` slot is a subset in this
 /// same order (as `select_detectors` filters by name while preserving registry order).
 ///
-/// DEFAULT order (34): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
+/// DEFAULT order (43): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
 ///   d16, d17, d18, d19, d20, d21, d22, d29, d32, d33, d34, d35, d36, d37, d38,
-///   d39, d41, d42, d43, d44, d45.
-/// OPT_IN order (7):  d40, d46, d47, d48, d49, d50, d51.
+///   d39, d41, d42, d43, d44, d45, d52, d53, d54, d55, d56, d57, d58, d59, d60.
+/// OPT_IN order (11):  d40, d46, d47, d48, d49, d50, d51, d61, d62, d63, d64.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
-        // --- DEFAULT_DETECTORS (34, in al-sem registry order) ---
+        // --- DEFAULT_DETECTORS (42: al-sem registry order, then the BCQuality-wave defaults) ---
         Detector {
             name: "d1-db-op-in-loop".to_string(),
             run: d1::detect_d1,
@@ -1001,7 +1069,47 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d45-event-transitive-table-exposure".to_string(),
             run: d45::detect_d45,
         },
-        // --- OPT_IN_DETECTORS (7, in al-sem registry order) ---
+        // d52: BCQuality wave (bulk-write-param-no-temp-guard).
+        Detector {
+            name: "d52-bulk-write-param-no-temp-guard".to_string(),
+            run: d52::detect_d52,
+        },
+        // d53: BCQuality wave (ignored-tryfunction-result).
+        Detector {
+            name: "d53-ignored-tryfunction-result".to_string(),
+            run: d53::detect_d53,
+        },
+        // d54: BCQuality wave (publish-in-tryfunction-cone).
+        Detector {
+            name: "d54-publish-in-tryfunction-cone".to_string(),
+            run: d54::detect_d54,
+        },
+        // d55: BCQuality wave (event-publish-in-loop).
+        Detector {
+            name: "d55-event-publish-in-loop".to_string(),
+            run: d55::detect_d55,
+        },
+        // d57: BCQuality wave (singleinstance-growing-state).
+        Detector {
+            name: "d57-singleinstance-growing-state".to_string(),
+            run: d57::detect_d57,
+        },
+        // d58: BCQuality wave (query-filter-after-open).
+        Detector {
+            name: "d58-query-filter-after-open".to_string(),
+            run: d58::detect_d58,
+        },
+        // d59: BCQuality wave (integrationevent-var-boolean-guard).
+        Detector {
+            name: "d59-integrationevent-var-boolean-guard".to_string(),
+            run: d59::detect_d59,
+        },
+        // d60: BCQuality wave (upgrade-loop-should-be-datatransfer).
+        Detector {
+            name: "d60-upgrade-loop-should-be-datatransfer".to_string(),
+            run: d60::detect_d60,
+        },
+        // --- OPT_IN_DETECTORS (12: al-sem opt-in order, then the BCQuality-wave opt-ins incl. demoted d56) ---
         // d40: OPT-IN in al-sem (transitive-load-missing).
         Detector {
             name: "d40-transitive-load-missing".to_string(),
@@ -1036,6 +1144,34 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d51-retry-side-effect-duplication".to_string(),
             run: d51::detect_d51,
+        },
+        // d56: OPT-IN (BCQuality wave, clone-before-write-in-loop). Demoted from
+        // default: precise after the temp-source guard, but a persisted-source
+        // key-remap clone residual (needs primary-key-reassignment analysis) keeps
+        // it opt-in. See d56.rs module doc.
+        Detector {
+            name: "d56-clone-before-write-in-loop".to_string(),
+            run: d56::detect_d56,
+        },
+        // d61: OPT-IN (BCQuality wave, ishandled-bypasses-critical-write).
+        Detector {
+            name: "d61-ishandled-bypasses-critical-write".to_string(),
+            run: d61::detect_d61,
+        },
+        // d62: OPT-IN (BCQuality wave, telemetry-before-success).
+        Detector {
+            name: "d62-telemetry-before-success".to_string(),
+            run: d62::detect_d62,
+        },
+        // d63: OPT-IN (BCQuality wave, html-concat-injection).
+        Detector {
+            name: "d63-html-concat-injection".to_string(),
+            run: d63::detect_d63,
+        },
+        // d64: OPT-IN (BCQuality wave, api-page-write-surface).
+        Detector {
+            name: "d64-api-page-write-surface".to_string(),
+            run: d64::detect_d64,
         },
     ]
 }

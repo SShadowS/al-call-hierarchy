@@ -24,7 +24,7 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
-    RECORD_FILTER_OPS, anchor_of, before_anchor, record_filtered_by_call_before,
+    anchor_of, record_filter_applied_before, record_filtered_by_call_before,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
@@ -100,7 +100,7 @@ pub fn detect_d33(
             // Check whether a narrowing filter was applied before this op —
             // inline (SetRange/SetFilter record op), or G-3: by a one-hop
             // helper call that takes the receiver by-`var` and filters it.
-            if was_filtered_before(&routine.record_operations, &var_key, op)
+            if record_filter_applied_before(&routine.record_operations, &var_key, op)
                 || record_filtered_by_call_before(
                     routine,
                     ctx,
@@ -199,35 +199,4 @@ pub fn detect_d33(
     stats.add_skip("unresolvedTable", skipped_unresolved_table);
     stats.add_skip("parseIncomplete", skipped_parse_incomplete);
     Ok(DetectorOutput::no_diag(findings, stats))
-}
-
-/// Returns true if a `SetRange` / `SetFilter` on `var_key` appears strictly BEFORE
-/// `bulk_op` in source order with no intervening `Reset` (which would wipe filters).
-///
-/// Mirrors al-sem `wasFilteredBefore`: scan all ops on the same var strictly before
-/// the bulk op; `SetRange`/`SetFilter` → filtered=true; `Reset` → filtered=false.
-fn was_filtered_before(
-    ops: &[crate::engine::l3::l3_workspace::L3RecordOperation],
-    var_key: &str,
-    bulk_op: &crate::engine::l3::l3_workspace::L3RecordOperation,
-) -> bool {
-    let mut filtered = false;
-    for other in ops {
-        // Skip self.
-        if std::ptr::eq(other, bulk_op) {
-            continue;
-        }
-        if other.record_variable_name.to_lowercase() != var_key {
-            continue;
-        }
-        if !before_anchor(&other.source_anchor, &bulk_op.source_anchor) {
-            continue;
-        }
-        if RECORD_FILTER_OPS.contains(&other.op.as_str()) {
-            filtered = true;
-        } else if other.op == "Reset" {
-            filtered = false;
-        }
-    }
-    filtered
 }

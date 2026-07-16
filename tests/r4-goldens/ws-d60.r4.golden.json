@@ -1,0 +1,85 @@
+{
+  "fixtureName": "ws-d60",
+  "detectors": [
+    "d60-upgrade-loop-should-be-datatransfer"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d60-upgrade-loop-should-be-datatransfer",
+      "id": "d60/11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/loop0/11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/op1",
+      "rootCauseKey": "d60/11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/loop0/item",
+      "title": "Row-by-row upgrade loop (use DataTransfer)",
+      "rootCause": "OnUpgradePerCompany (upgrade/install codeunit) rewrites D60 Item row-by-row in a repeat loop — DataTransfer performs the same bulk init/copy set-based, without per-row trigger cost.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 12,
+          "startColumn": 16,
+          "endLine": 12,
+          "endColumn": 29
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 12,
+              "endLine": 13,
+              "endColumn": 33
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+            "syntaxKind": "repeat_statement"
+          },
+          "note": "repeat loop over D60 Item",
+          "loopId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 12,
+              "startColumn": 16,
+              "endLine": 12,
+              "endColumn": 29
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5",
+            "syntaxKind": "call_expression"
+          },
+          "note": "per-row Modify",
+          "operationId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/op1",
+          "loopId": "11111111-0000-0000-0000-00000000d600:Codeunit:50934#4bede131c948eaabef06c2e6bfbc4f1239c15eb29e7a7e0b64b3cdeed16c79f5/loop0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d600:Codeunit:50934"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d600:Table:50934"
+      ],
+      "fixOptions": [
+        {
+          "description": "Replace the loop with a DataTransfer (SourceTable/DestinationTable + CopyFields/ConstantValue), or ModifyAll when a single field gets a constant.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "74796668bfdd6711"
+    }
+  ]
+}

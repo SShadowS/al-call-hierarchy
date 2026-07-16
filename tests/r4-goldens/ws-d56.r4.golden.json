@@ -1,0 +1,85 @@
+{
+  "fixtureName": "ws-d56",
+  "detectors": [
+    "d56-clone-before-write-in-loop"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d56-clone-before-write-in-loop",
+      "id": "d56/11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/loop0/11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/op1",
+      "rootCauseKey": "d56/11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/loop0",
+      "title": "Record cloned before Modify in loop",
+      "rootCause": "CloneAndModify copies the loop cursor cust into custcopy and calls Modify on the copy inside the loop — an extra SQL round-trip per row; the cursor already holds the row.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 12,
+          "startColumn": 16,
+          "endLine": 12,
+          "endColumn": 33
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 16,
+              "endLine": 10,
+              "endColumn": 32
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791",
+            "syntaxKind": "assignment_statement"
+          },
+          "note": "clone custcopy := cust inside repeat loop",
+          "loopId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/loop0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 12,
+              "startColumn": 16,
+              "endLine": 12,
+              "endColumn": 33
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791",
+            "syntaxKind": "call_expression"
+          },
+          "note": "Modify on the clone",
+          "operationId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/op1",
+          "loopId": "11111111-0000-0000-0000-00000000d560:Codeunit:50926#297dbcb920d19a276c07e00334f894db39e477df687922303f5fb72bbdf9d791/loop0"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d560:Codeunit:50926"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d560:Table:50926"
+      ],
+      "fixOptions": [
+        {
+          "description": "Call Modify on the cursor (cust) directly, or restructure to a set-based write (ModifyAll/DeleteAll) outside the loop.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "390c9e1c38e5c884"
+    }
+  ]
+}

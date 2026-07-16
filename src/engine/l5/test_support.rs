@@ -151,6 +151,7 @@ pub fn object_run_call_site(id: &str, object_kind: &str, return_used: Option<boo
         under_asserterror: None,
         control_context: None,
         order: None,
+        in_statement_position: false,
     }
 }
 

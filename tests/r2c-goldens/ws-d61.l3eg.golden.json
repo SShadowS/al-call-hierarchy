@@ -1,0 +1,72 @@
+{
+  "events": [
+    {
+      "id": "11111111-0000-0000-0000-00000000d610:Codeunit:50936::OnBeforeLog::9f5f9ff36abf09a4c5908a747065bc0e496659a8218616204856a1e0d6cd94d7",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d610:Codeunit:50936",
+      "eventName": "OnBeforeLog",
+      "eventKind": "integration",
+      "signatureHash": "9f5f9ff36abf09a4c5908a747065bc0e496659a8218616204856a1e0d6cd94d7",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "IsHandled",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50936#9f5f9ff36abf09a4c5908a747065bc0e496659a8218616204856a1e0d6cd94d7"
+    },
+    {
+      "id": "11111111-0000-0000-0000-00000000d610:Codeunit:50936::OnBeforePost::7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
+      "publisherObjectId": "11111111-0000-0000-0000-00000000d610:Codeunit:50936",
+      "eventName": "OnBeforePost",
+      "eventKind": "integration",
+      "signatureHash": "7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "IsHandled",
+          "typeText": "Boolean",
+          "isVar": true,
+          "isRecord": false
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50936#7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d610:Codeunit:50936::OnBeforeLog::9f5f9ff36abf09a4c5908a747065bc0e496659a8218616204856a1e0d6cd94d7",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50938#e6e398e903780705582b5498b6a010544f8c28ccbdea4a68f615f413f01f3b0b",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d610",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    },
+    {
+      "eventId": "11111111-0000-0000-0000-00000000d610:Codeunit:50936::OnBeforePost::7f06a5bc600b42b9e23d13c21743d89ae37521cabc8a07b1165d937df1570715",
+      "subscriberRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50938#1351c29ab401c55e64b2bdb3314c159c0945184930643845faad30db566f9e0d",
+      "subscriberAppId": "11111111-0000-0000-0000-00000000d610",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

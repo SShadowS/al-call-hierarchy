@@ -1,0 +1,100 @@
+{
+  "fixtureName": "ws-d61",
+  "detectors": [
+    "d61-ishandled-bypasses-critical-write"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d61-ishandled-bypasses-critical-write",
+      "id": "d61/11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181/11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181/cs0/11111111-0000-0000-0000-00000000d610:Codeunit:50938#1351c29ab401c55e64b2bdb3314c159c0945184930643845faad30db566f9e0d",
+      "rootCauseKey": "d61/11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181/11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181/cs0",
+      "title": "IsHandled bypasses critical write",
+      "rootCause": "Post guards a Modify on Item behind `if not ishandled` after publishing OnBeforePost; subscriber HandlePost sets ishandled := true unconditionally — the write is silently skipped.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 26,
+          "startColumn": 12,
+          "endLine": 26,
+          "endColumn": 25
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 34
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+            "syntaxKind": "call_expression"
+          },
+          "note": "publishes OnBeforePost",
+          "callsiteId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 26,
+              "startColumn": 12,
+              "endLine": 26,
+              "endColumn": 25
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181",
+            "syntaxKind": "call_expression"
+          },
+          "note": "guarded critical Modify",
+          "operationId": "11111111-0000-0000-0000-00000000d610:Codeunit:50937#69da3a5a5b5b3eb8cca4fa3198c06e2ef39cc161fdb7b807b8dc70586fb47181/op1"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50938#1351c29ab401c55e64b2bdb3314c159c0945184930643845faad30db566f9e0d",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 49,
+              "startColumn": 8,
+              "endLine": 49,
+              "endColumn": 25
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d610:Codeunit:50938#1351c29ab401c55e64b2bdb3314c159c0945184930643845faad30db566f9e0d",
+            "syntaxKind": "assignment_statement"
+          },
+          "note": "subscriber sets ishandled := true"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d610:Codeunit:50937",
+        "11111111-0000-0000-0000-00000000d610:Codeunit:50938"
+      ],
+      "affectedTables": [
+        "11111111-0000-0000-0000-00000000d610:Table:50936"
+      ],
+      "fixOptions": [
+        {
+          "description": "If the subscriber replaces the write, make it perform an equivalent durable operation; otherwise restrict the IsHandled contract to non-critical steps (split the event).",
+          "safety": "low"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "af64f573678fb4b4"
+    }
+  ]
+}

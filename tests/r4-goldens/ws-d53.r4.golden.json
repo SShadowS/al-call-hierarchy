@@ -1,0 +1,81 @@
+{
+  "fixtureName": "ws-d53",
+  "detectors": [
+    "d53-ignored-tryfunction-result"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d53-ignored-tryfunction-result",
+      "id": "d53/11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3/11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3/cs0",
+      "rootCauseKey": "d53/11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3/11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3/cs0",
+      "title": "Ignored TryFunction result",
+      "rootCause": "IgnoresResult calls the TryFunction TryStep in statement position — the Boolean result is discarded, so a caught error is silently swallowed and execution continues past the failed step.",
+      "severity": "high",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 11,
+          "startColumn": 8,
+          "endLine": 11,
+          "endColumn": 17
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 11,
+              "startColumn": 8,
+              "endLine": 11,
+              "endColumn": 17
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3",
+            "syntaxKind": "call_expression"
+          },
+          "note": "statement-position call to [TryFunction] TryStep",
+          "callsiteId": "11111111-0000-0000-0000-00000000d530:Codeunit:50921#44a6f7238defa280add677e4daec5815b559b5c37c2d172a0d2d80c0024fb5e3/cs0"
+        },
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d530:Codeunit:50921#80f6fa0e50070ff33e0d57ae4baf67d444d42e6b502a370366a8361f8f34dacb",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 3,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d530:Codeunit:50921#80f6fa0e50070ff33e0d57ae4baf67d444d42e6b502a370366a8361f8f34dacb",
+            "syntaxKind": "procedure"
+          },
+          "note": "[TryFunction] TryStep"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d530:Codeunit:50921"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Consume the result: `if not TryStep(...) then` handle/surface the failure (GetLastErrorText), or drop the [TryFunction] attribute if errors must propagate.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "a1a42abbf62b2668"
+    }
+  ]
+}

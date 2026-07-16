@@ -1,0 +1,121 @@
+{
+  "fixtureName": "ws-d57",
+  "detectors": [
+    "d57-singleinstance-growing-state"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d57-singleinstance-growing-state",
+      "id": "d57/11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663/11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663/cs0",
+      "rootCauseKey": "d57/11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663/seennames",
+      "title": "Growing global state in SingleInstance subscriber",
+      "rootCause": "OnThingSub is an event subscriber in a SingleInstance codeunit appending to the global List of [Text] SeenNames — no clearing path exists in the object, so the collection grows for the whole session.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 20,
+          "startColumn": 8,
+          "endLine": 20,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 20,
+              "startColumn": 8,
+              "endLine": 20,
+              "endColumn": 26
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+            "syntaxKind": "call_expression"
+          },
+          "note": "unbounded append to global SeenNames"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d570:Codeunit:50928"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Bound the growth: clear/drain SeenNames (Clear/Remove/DeleteAll) on a defined lifecycle point, or replace the session-lifetime cache with a keyed lookup that overwrites instead of appending.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "c903b11b11d55935"
+    },
+    {
+      "detector": "d57-singleinstance-growing-state",
+      "id": "d57/11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663/11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663/op1",
+      "rootCauseKey": "d57/11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663/templog",
+      "title": "Growing global state in SingleInstance subscriber",
+      "rootCause": "OnThingSub is an event subscriber in a SingleInstance codeunit inserting into the global temporary record TempLog — no Delete/DeleteAll exists in the object, so the buffer grows for the whole session.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 22,
+          "startColumn": 8,
+          "endLine": 22,
+          "endColumn": 24
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 22,
+              "startColumn": 8,
+              "endLine": 22,
+              "endColumn": 24
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d570:Codeunit:50928#8acdd00a3ec1c995d8e2392f0bfa3f23b9d312fa35eced57df74e0f98834a663",
+            "syntaxKind": "call_expression"
+          },
+          "note": "unbounded append to global TempLog"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d570:Codeunit:50928"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Bound the growth: clear/drain TempLog (Clear/Remove/DeleteAll) on a defined lifecycle point, or replace the session-lifetime cache with a keyed lookup that overwrites instead of appending.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "cebd3c74ca5d2be7"
+    }
+  ]
+}

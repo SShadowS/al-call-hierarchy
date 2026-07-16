@@ -1,0 +1,66 @@
+{
+  "fixtureName": "ws-d58",
+  "detectors": [
+    "d58-query-filter-after-open"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d58-query-filter-after-open",
+      "id": "d58/11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f/11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f/cs1",
+      "rootCauseKey": "d58/11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f/11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f/cs1",
+      "title": "Query filter set after Open",
+      "rootCause": "FilterAfterOpen sets a filter on the query variable Q.SetFilter AFTER Open() — the open dataset ignores it; the filter only applies on the next Open.",
+      "severity": "medium",
+      "confidence": {
+        "level": "likely",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Objects.al",
+        "range": {
+          "startLine": 19,
+          "startColumn": 8,
+          "endLine": 19,
+          "endColumn": 33
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Objects.al",
+            "range": {
+              "startLine": 19,
+              "startColumn": 8,
+              "endLine": 19,
+              "endColumn": 33
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f",
+            "syntaxKind": "call_expression"
+          },
+          "note": "filter after Open (ignored by the open dataset)",
+          "callsiteId": "11111111-0000-0000-0000-00000000d580:Codeunit:50932#5aa6420018bb85f7ab57d370b4f709c79691ab348265816d111de835efae506f/cs1"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d580:Codeunit:50932"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Move the SetFilter/SetRange before Open(), or Close() and re-Open() after changing filters.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "53b8bf582fe46209"
+    }
+  ]
+}

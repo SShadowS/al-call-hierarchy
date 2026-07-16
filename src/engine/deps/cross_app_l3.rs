@@ -117,6 +117,15 @@ fn dep_object_to_l3(o: &ProjectedObject) -> L3Object {
                 target: t.clone(),
             })
             .collect(),
+        // The ABI projection does not carry `SingleInstance` / page write-surface
+        // booleans / a decl anchor — dep objects default to `None`, mirroring the
+        // `source_table_temporary: None` default above.
+        single_instance: None,
+        editable: None,
+        insert_allowed: None,
+        modify_allowed: None,
+        delete_allowed: None,
+        source_anchor: None,
     }
 }
 

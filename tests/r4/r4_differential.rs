@@ -162,6 +162,111 @@ const WAVE_CROSS_APP: &[Smoke] = &[
     },
 ];
 
+/// BCQuality wave (d52–d64) per-detector fixtures. Each fixture contains both
+/// flagged and deliberately-unflagged cases; the golden byte-match pins the
+/// exact finding set.
+const WAVE_BCQ: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d52",
+        wave: "R4-BCQ",
+        detectors: &["d52-bulk-write-param-no-temp-guard"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d53",
+        wave: "R4-BCQ",
+        detectors: &["d53-ignored-tryfunction-result"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d54",
+        wave: "R4-BCQ",
+        detectors: &["d54-publish-in-tryfunction-cone"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d55",
+        wave: "R4-BCQ",
+        detectors: &["d55-event-publish-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d56",
+        wave: "R4-BCQ",
+        detectors: &["d56-clone-before-write-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d57",
+        wave: "R4-BCQ",
+        detectors: &["d57-singleinstance-growing-state"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d58",
+        wave: "R4-BCQ",
+        detectors: &["d58-query-filter-after-open"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d59",
+        wave: "R4-BCQ",
+        detectors: &["d59-integrationevent-var-boolean-guard"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d60",
+        wave: "R4-BCQ",
+        detectors: &["d60-upgrade-loop-should-be-datatransfer"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // d61 is OPT-IN (registry after d51) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d61",
+        wave: "R4-BCQ",
+        detectors: &["d61-ishandled-bypasses-critical-write"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // d62 is OPT-IN (registry after d61) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d62",
+        wave: "R4-BCQ",
+        detectors: &["d62-telemetry-before-success"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // d63 is OPT-IN (registry after d62) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d63",
+        wave: "R4-BCQ",
+        detectors: &["d63-html-concat-injection"],
+        ported: true,
+        corpus_dir: None,
+    },
+    // d64 is OPT-IN (registry after d63) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d64",
+        wave: "R4-BCQ",
+        detectors: &["d64-api-page-write-surface"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
+
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
 /// d14: ws-d14-dead-routine is the SMOKE positive (1 finding) flipped above;
 /// ws-interface-dispatch + ws-member-call-resolution are d14 NEGATIVES (0 findings,
@@ -945,6 +1050,106 @@ const NEGATIVES: &[NegativeAssertion] = &[
         detector: "d42-cross-call-wrong-setloadfields",
         neutral_fixture: "ws-d40",
     },
+    // d52: ws-e2e contains no DeleteAll/ModifyAll calls at all (grep-verified) — the
+    // bulk-op scan over every routine's record_operations never matches BULK_OPS, so
+    // candidates_considered stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d52-bulk-write-param-no-temp-guard",
+        neutral_fixture: "ws-e2e",
+    },
+    // d53: ws-e2e has no [TryFunction] procedures at all (grep-verified) — the
+    // resolved-callee attribute check never matches, so candidates_considered
+    // stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d53-ignored-tryfunction-result",
+        neutral_fixture: "ws-e2e",
+    },
+    // d54: ws-e2e has no [TryFunction] procedures at all (grep-verified) — the
+    // routine scan over attributes_parsed never matches, so candidates_considered
+    // stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d54-publish-in-tryfunction-cone",
+        neutral_fixture: "ws-e2e",
+    },
+    // d55: ws-e2e is NOT usable here — it declares OnAfterRunIteration as an
+    // IntegrationEvent AND calls it inside RunBatch's `for` loop, so d55 would
+    // fire on it (grep-verified). ws-d41 has no IntegrationEvent/BusinessEvent
+    // declaration at all (grep-verified), so no resolved callee can ever have
+    // kind=="event-publisher" — candidates_considered stays 0 and the detector
+    // emits 0.
+    NegativeAssertion {
+        detector: "d55-event-publish-in-loop",
+        neutral_fixture: "ws-d41",
+    },
+    // d56: ws-e2e has no whole-record copy between two record variables anywhere
+    // (grep-verified: the only assignment is the field-level
+    // `Customer.Address := Customer.Name`) — the var_assignments scan never finds
+    // a record-to-record rhs_identifier match, so candidates_considered stays 0
+    // and the detector emits 0.
+    NegativeAssertion {
+        detector: "d56-clone-before-write-in-loop",
+        neutral_fixture: "ws-e2e",
+    },
+    // d57: ws-e2e declares no SingleInstance codeunit at all (grep-verified) — the
+    // si_objects set is empty, so the detector short-circuits to 0 findings before
+    // ever scanning a routine.
+    NegativeAssertion {
+        detector: "d57-singleinstance-growing-state",
+        neutral_fixture: "ws-e2e",
+    },
+    // d58: ws-e2e declares no Query-typed variable at all (grep-verified) — the
+    // query_vars set is empty for every routine, so the detector short-circuits
+    // to 0 findings before ever scanning a call site.
+    NegativeAssertion {
+        detector: "d58-query-filter-after-open",
+        neutral_fixture: "ws-e2e",
+    },
+    // d59: ws-e2e's only IntegrationEvent publisher, OnAfterRunIteration, declares
+    // ZERO parameters (grep-verified) — the var-Boolean-parameter scan never finds
+    // a candidate, so candidates_considered stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d59-integrationevent-var-boolean-guard",
+        neutral_fixture: "ws-e2e",
+    },
+    // d60: ws-e2e declares no Codeunit with `Subtype = Upgrade`/`Install` at all
+    // (grep-verified) — the lifecycle_objects set is empty, so the detector
+    // short-circuits to 0 findings before ever scanning a routine.
+    NegativeAssertion {
+        detector: "d60-upgrade-loop-should-be-datatransfer",
+        neutral_fixture: "ws-e2e",
+    },
+    // d61: ws-e2e's only IntegrationEvent publisher, OnAfterRunIteration, declares
+    // ZERO parameters (grep-verified, same fact d59 relies on) — no var Boolean
+    // IsHandled-shaped formal can ever exist on it, so the publisher scan never
+    // matches, publisher_meta stays empty, and the detector short-circuits to 0
+    // findings before scanning any routine.
+    NegativeAssertion {
+        detector: "d61-ishandled-bypasses-critical-write",
+        neutral_fixture: "ws-e2e",
+    },
+    // d62: ws-e2e declares no "Feature Telemetry" typed variable at all
+    // (grep-verified) — the ft_vars per-routine filter never matches, so the
+    // detector short-circuits to 0 findings before scanning any call site.
+    NegativeAssertion {
+        detector: "d62-telemetry-before-success",
+        neutral_fixture: "ws-e2e",
+    },
+    // d63: ws-e2e contains no single-quoted literal with an HTML-tag-ish
+    // `<x`/`</x` sequence concatenated with `+` (grep-verified) — the
+    // looks_like_html_concat argument-text scan never matches any call site,
+    // so the detector short-circuits to 0 findings.
+    NegativeAssertion {
+        detector: "d63-html-concat-injection",
+        neutral_fixture: "ws-e2e",
+    },
+    // d64: ws-e2e declares NO `PageType` property at all (grep-verified) — the
+    // API-page candidate scan never matches any object, so
+    // candidates_considered stays 0 and the detector short-circuits to 0
+    // findings before ever inspecting a write-surface property.
+    NegativeAssertion {
+        detector: "d64-api-page-write-surface",
+        neutral_fixture: "ws-e2e",
+    },
 ];
 
 fn repo_root() -> PathBuf {
@@ -1434,6 +1639,15 @@ fn differential_r4_findings_match_goldens() {
     // ported_results (EXEMPT from the anti-degenerate ≥1).
     for smoke in WAVE_F_NEGATIVES {
         run_smoke_entry(smoke, &registered_names, &mut all_divergences);
+    }
+
+    // --- R4-BCQ positives (d52–d64, BCQuality wave) ----------------------------
+    for smoke in WAVE_BCQ {
+        if let Some((matched, count)) =
+            run_smoke_entry(smoke, &registered_names, &mut all_divergences)
+        {
+            ported_results.push((smoke.fixture, matched, count));
+        }
     }
 
     // --- R4 CROSS-APP positives (d13/d16/d17 — committed dep .app in .alpackages) -

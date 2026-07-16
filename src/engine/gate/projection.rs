@@ -64,7 +64,17 @@ impl<'a> ProjectionIndex<'a> {
 /// with the owning routine + object display names.
 fn to_location(anchor: &SourceAnchor, idx: &ProjectionIndex) -> FindingLocation {
     let routine = idx.routines_by_id.get(anchor.enclosing_routine_id.as_str());
-    let object = routine.and_then(|r| idx.objects_by_id.get(r.object_id.as_str()));
+    // Object-level finding convention (d64): `enclosing_routine_id` IS the
+    // object's own internal id when there is no routine to anchor on (e.g. a
+    // declarative page with no routines at all). Fall back to a direct object
+    // lookup so `object_id`/`object_name` still resolve in the production
+    // SARIF/JSON/HTML/terminal output; `routine_id`/`routine_name` correctly
+    // stay `None` below (there is no routine). Behavior-preserving for every
+    // routine-anchored finding: the `or_else` only runs when the routine
+    // branch already missed.
+    let object = routine
+        .and_then(|r| idx.objects_by_id.get(r.object_id.as_str()))
+        .or_else(|| idx.objects_by_id.get(anchor.enclosing_routine_id.as_str()));
     FindingLocation {
         file: anchor.source_unit_id.clone(),
         line: anchor.start_line + 1,

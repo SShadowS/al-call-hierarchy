@@ -354,6 +354,12 @@ mod tests {
             inherent_commit_behavior: None,
             source_table_temporary: None,
             page_controls: Vec::new(),
+            single_instance: None,
+            editable: None,
+            insert_allowed: None,
+            modify_allowed: None,
+            delete_allowed: None,
+            source_anchor: None,
         }
     }
 

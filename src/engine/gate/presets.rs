@@ -2,7 +2,7 @@
 //! `analyze` command's detector-selection logic in `src/cli/index.ts`.
 //!
 //! `DEFAULT_DETECTOR_NAMES` mirrors al-sem `registry.ts` `DEFAULT_DETECTORS`
-//! (the 35 non-opt-in detectors). `OPT_IN_DETECTOR_NAMES` mirrors `OPT_IN_DETECTORS`.
+//! (the 39 non-opt-in detectors). `OPT_IN_DETECTOR_NAMES` mirrors `OPT_IN_DETECTORS`.
 //! `resolve_preset("transaction-integrity")` returns the same 7-name list al-sem's
 //! `PRESET_NAMES["transaction-integrity"]` carries (some members are opt-in — the
 //! preset IS the explicit opt-in for them).
@@ -48,6 +48,14 @@ pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d43-event-ishandled-skip",
     "d44-event-multi-subscriber-overlap",
     "d45-event-transitive-table-exposure",
+    "d52-bulk-write-param-no-temp-guard",
+    "d53-ignored-tryfunction-result",
+    "d54-publish-in-tryfunction-cone",
+    "d55-event-publish-in-loop",
+    "d57-singleinstance-growing-state",
+    "d58-query-filter-after-open",
+    "d59-integrationevent-var-boolean-guard",
+    "d60-upgrade-loop-should-be-datatransfer",
 ];
 
 /// al-sem `OPT_IN_DETECTORS` names — not in the default registry. Surfaced only by
@@ -60,6 +68,11 @@ pub const OPT_IN_DETECTOR_NAMES: &[&str] = &[
     "d49-uncommitted-write-before-ui",
     "d50-checked-run-implicit-commit",
     "d51-retry-side-effect-duplication",
+    "d56-clone-before-write-in-loop",
+    "d61-ishandled-bypasses-critical-write",
+    "d62-telemetry-before-success",
+    "d63-html-concat-injection",
+    "d64-api-page-write-surface",
 ];
 
 /// The `transaction-integrity` preset members — verbatim from al-sem
@@ -74,8 +87,26 @@ pub const PRESET_TRANSACTION_INTEGRITY: &[&str] = &[
     "d49-uncommitted-write-before-ui",
 ];
 
+/// The `bcquality` preset — the full BCQuality wave (d52–d64), including its
+/// opt-in members (the preset IS the explicit opt-in for them).
+pub const PRESET_BCQUALITY: &[&str] = &[
+    "d52-bulk-write-param-no-temp-guard",
+    "d53-ignored-tryfunction-result",
+    "d54-publish-in-tryfunction-cone",
+    "d55-event-publish-in-loop",
+    "d56-clone-before-write-in-loop",
+    "d57-singleinstance-growing-state",
+    "d58-query-filter-after-open",
+    "d59-integrationevent-var-boolean-guard",
+    "d60-upgrade-loop-should-be-datatransfer",
+    "d61-ishandled-bypasses-critical-write",
+    "d62-telemetry-before-success",
+    "d63-html-concat-injection",
+    "d64-api-page-write-surface",
+];
+
 /// Known preset names (for the CLI surface + error messages).
-pub const PRESET_NAMES_LIST: &[&str] = &["transaction-integrity"];
+pub const PRESET_NAMES_LIST: &[&str] = &["transaction-integrity", "bcquality"];
 
 /// Resolve a preset name to its detector-name list. `Err` on an unknown preset
 /// (mirrors al-sem `resolvePreset` throwing).
@@ -85,6 +116,7 @@ pub fn resolve_preset(name: &str) -> Result<Vec<String>, String> {
             .iter()
             .map(|s| s.to_string())
             .collect()),
+        "bcquality" => Ok(PRESET_BCQUALITY.iter().map(|s| s.to_string()).collect()),
         other => Err(format!(
             "Unknown preset '{other}'. Known: {}",
             PRESET_NAMES_LIST.join(", ")
@@ -198,5 +230,19 @@ mod tests {
             resolve_analyze_detectors(Some("transaction-integrity"), Some("d1-db-op-in-loop"))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn preset_resolves_bcquality() {
+        let names = resolve_preset("bcquality").unwrap();
+        assert_eq!(names, PRESET_BCQUALITY);
+        assert_eq!(names.len(), 13);
+        // every member must be registered
+        let all = registered_detectors();
+        let registered: std::collections::HashSet<&str> =
+            all.iter().map(|d| d.name.as_str()).collect();
+        for n in &names {
+            assert!(registered.contains(n.as_str()), "{n} not registered");
+        }
     }
 }
