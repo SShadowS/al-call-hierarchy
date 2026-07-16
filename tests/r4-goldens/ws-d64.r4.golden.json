@@ -1,0 +1,121 @@
+{
+  "fixtureName": "ws-d64",
+  "detectors": [
+    "d64-api-page-write-surface"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d64-api-page-write-surface",
+      "id": "d64/11111111-0000-0000-0000-00000000d640/Page/50941",
+      "rootCauseKey": "d64/11111111-0000-0000-0000-00000000d640/Page/50941",
+      "title": "Read-only API page leaves write operations enabled",
+      "rootCause": "API page D64 ReadOnly Leaky declares Editable = false but does not disable InsertAllowed/ModifyAllowed/DeleteAllowed — the OData surface still accepts those writes.",
+      "severity": "low",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Pages.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 0,
+          "endLine": 23,
+          "endColumn": 1
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d640/Page/50941",
+        "syntaxKind": "page_declaration"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d640/Page/50941",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Pages.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 0,
+              "endLine": 23,
+              "endColumn": 1
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d640/Page/50941",
+            "syntaxKind": "page_declaration"
+          },
+          "note": "API page D64 ReadOnly Leaky"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d640:Page:50941"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Declare the write surface explicitly: set InsertAllowed/ModifyAllowed/DeleteAllowed = false on read-only API pages (and Editable = false), or document the writable intent.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "d0c912b66914dbbd"
+    },
+    {
+      "detector": "d64-api-page-write-surface",
+      "id": "d64/11111111-0000-0000-0000-00000000d640/Page/50942",
+      "rootCauseKey": "d64/11111111-0000-0000-0000-00000000d640/Page/50942",
+      "title": "API page write surface not declared",
+      "rootCause": "API page D64 Undeclared declares none of Editable/InsertAllowed/ModifyAllowed/DeleteAllowed — the default-open write surface ships silently; declare the intent explicitly.",
+      "severity": "info",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Pages.al",
+        "range": {
+          "startLine": 26,
+          "startColumn": 0,
+          "endLine": 38,
+          "endColumn": 1
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d640/Page/50942",
+        "syntaxKind": "page_declaration"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d640/Page/50942",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Pages.al",
+            "range": {
+              "startLine": 26,
+              "startColumn": 0,
+              "endLine": 38,
+              "endColumn": 1
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d640/Page/50942",
+            "syntaxKind": "page_declaration"
+          },
+          "note": "API page D64 Undeclared"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d640:Page:50942"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Declare the write surface explicitly: set InsertAllowed/ModifyAllowed/DeleteAllowed = false on read-only API pages (and Editable = false), or document the writable intent.",
+          "safety": "high"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "7c9a4710757fdbac"
+    }
+  ]
+}

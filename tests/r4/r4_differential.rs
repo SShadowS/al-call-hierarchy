@@ -256,6 +256,15 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    // d64 is OPT-IN (registry after d63) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d64",
+        wave: "R4-BCQ",
+        detectors: &["d64-api-page-write-surface"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1131,6 +1140,14 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // so the detector short-circuits to 0 findings.
     NegativeAssertion {
         detector: "d63-html-concat-injection",
+        neutral_fixture: "ws-e2e",
+    },
+    // d64: ws-e2e declares NO `PageType` property at all (grep-verified) — the
+    // API-page candidate scan never matches any object, so
+    // candidates_considered stays 0 and the detector short-circuits to 0
+    // findings before ever inspecting a write-surface property.
+    NegativeAssertion {
+        detector: "d64-api-page-write-surface",
         neutral_fixture: "ws-e2e",
     },
 ];

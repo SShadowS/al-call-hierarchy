@@ -89,10 +89,19 @@ impl<'a> FingerprintIndex<'a> {
     /// their stable ids before hashing (mirrors al-sem's stabilizing substitution —
     /// see module docs). Returns the first 16 hex chars of `sha256(parts.join("|"))`.
     pub fn fingerprint_of(&self, finding: &Finding) -> String {
-        let routine = self
-            .routines_by_id
-            .get(finding.primary_location.enclosing_routine_id.as_str());
-        let obj = routine.and_then(|r| self.objects_by_id.get(r.object_id.as_str()));
+        let enclosing = finding.primary_location.enclosing_routine_id.as_str();
+        let routine = self.routines_by_id.get(enclosing);
+        // Object-level finding convention (d64 — the first detector to anchor a
+        // finding directly on an object rather than a routine, e.g. a
+        // declarative page with no routines at all): `enclosing_routine_id` IS
+        // the object's own internal id when there is no routine to anchor on.
+        // Fall back to a direct object lookup so `obj_part` still resolves;
+        // `routine_name` correctly stays empty below (there is no routine).
+        // Behavior-preserving for every routine-anchored finding: the `or_else`
+        // only runs when the routine branch already missed.
+        let obj = routine
+            .and_then(|r| self.objects_by_id.get(r.object_id.as_str()))
+            .or_else(|| self.objects_by_id.get(enclosing));
 
         let obj_part = match obj {
             Some(o) => format!("{}/{}", o.object_type, o.object_number),

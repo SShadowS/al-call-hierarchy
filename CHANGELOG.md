@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d61-ishandled-bypasses-critical-write detector (opt-in; BCQuality do-not-bypass-critical-operations-with-ishandled).
 - d62-telemetry-before-success detector (opt-in; BCQuality feature-usage-only-after-success).
 - d63-html-concat-injection detector (opt-in heuristic; BCQuality al-has-no-built-in-htmlencode).
+- d64-api-page-write-surface detector (opt-in; BCQuality disable-write-operations-on-read-only-api-pages).
+
+### Fixed
+- Object-anchored findings (d64 introduces the engine's first: a declarative
+  API page has no routine to anchor on, so its `EvidenceStep`/`SourceAnchor`
+  carry the object's own id in `enclosing_routine_id` by convention) no longer
+  lose their location context downstream. `FingerprintIndex::fingerprint_of`
+  (`src/engine/l5/fingerprint.rs`) and the gate's `to_location`
+  (`src/engine/gate/projection.rs`) now fall back to a direct object-id lookup
+  when the routine lookup misses, so the fingerprint's objectType/objectNumber
+  component and the production SARIF/JSON/HTML/terminal output's object id/name
+  still resolve instead of going blank. Behavior-preserving for every
+  routine-anchored finding (the fallback only runs when the routine lookup
+  already missed).
 
 ### Changed
 - Shared one CDO program substrate across the read-only
