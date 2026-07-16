@@ -180,6 +180,13 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    Smoke {
+        fixture: "ws-d54",
+        wave: "R4-BCQ",
+        detectors: &["d54-publish-in-tryfunction-cone"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -977,6 +984,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // stays 0 and the detector emits 0.
     NegativeAssertion {
         detector: "d53-ignored-tryfunction-result",
+        neutral_fixture: "ws-e2e",
+    },
+    // d54: ws-e2e has no [TryFunction] procedures at all (grep-verified) — the
+    // routine scan over attributes_parsed never matches, so candidates_considered
+    // stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d54-publish-in-tryfunction-cone",
         neutral_fixture: "ws-e2e",
     },
 ];

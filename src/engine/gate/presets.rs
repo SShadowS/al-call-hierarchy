@@ -50,6 +50,7 @@ pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d45-event-transitive-table-exposure",
     "d52-bulk-write-param-no-temp-guard",
     "d53-ignored-tryfunction-result",
+    "d54-publish-in-tryfunction-cone",
 ];
 
 /// al-sem `OPT_IN_DETECTORS` names — not in the default registry. Surfaced only by
