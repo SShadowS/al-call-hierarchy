@@ -1,8 +1,8 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
 //! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D), d32 (reverse-call-graph wave),
-//! d50 (R4-H checked-run-implicit-commit), d52 (BCQuality wave,
-//! bulk-write-param-no-temp-guard).
+//! d50 (R4-H checked-run-implicit-commit), d52/d53 (BCQuality wave,
+//! bulk-write-param-no-temp-guard / ignored-tryfunction-result).
 
 pub mod d1;
 pub mod d10;
@@ -43,6 +43,7 @@ pub mod d5;
 pub mod d50;
 pub mod d51;
 pub mod d52;
+pub mod d53;
 pub mod d7;
 pub mod d8;
 pub mod d9;
@@ -1035,6 +1036,11 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d52-bulk-write-param-no-temp-guard".to_string(),
             run: d52::detect_d52,
+        },
+        // d53: BCQuality wave (ignored-tryfunction-result).
+        Detector {
+            name: "d53-ignored-tryfunction-result".to_string(),
+            run: d53::detect_d53,
         },
         // --- OPT_IN_DETECTORS (7, in al-sem registry order) ---
         // d40: OPT-IN in al-sem (transitive-load-missing).

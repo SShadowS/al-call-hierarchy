@@ -2,7 +2,7 @@
 //! `analyze` command's detector-selection logic in `src/cli/index.ts`.
 //!
 //! `DEFAULT_DETECTOR_NAMES` mirrors al-sem `registry.ts` `DEFAULT_DETECTORS`
-//! (the 35 non-opt-in detectors). `OPT_IN_DETECTOR_NAMES` mirrors `OPT_IN_DETECTORS`.
+//! (the 36 non-opt-in detectors). `OPT_IN_DETECTOR_NAMES` mirrors `OPT_IN_DETECTORS`.
 //! `resolve_preset("transaction-integrity")` returns the same 7-name list al-sem's
 //! `PRESET_NAMES["transaction-integrity"]` carries (some members are opt-in — the
 //! preset IS the explicit opt-in for them).
@@ -49,6 +49,7 @@ pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d44-event-multi-subscriber-overlap",
     "d45-event-transitive-table-exposure",
     "d52-bulk-write-param-no-temp-guard",
+    "d53-ignored-tryfunction-result",
 ];
 
 /// al-sem `OPT_IN_DETECTORS` names — not in the default registry. Surfaced only by

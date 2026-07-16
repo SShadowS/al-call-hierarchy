@@ -165,13 +165,22 @@ const WAVE_CROSS_APP: &[Smoke] = &[
 /// BCQuality wave (d52–d64) per-detector fixtures. Each fixture contains both
 /// flagged and deliberately-unflagged cases; the golden byte-match pins the
 /// exact finding set.
-const WAVE_BCQ: &[Smoke] = &[Smoke {
-    fixture: "ws-d52",
-    wave: "R4-BCQ",
-    detectors: &["d52-bulk-write-param-no-temp-guard"],
-    ported: true,
-    corpus_dir: None,
-}];
+const WAVE_BCQ: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d52",
+        wave: "R4-BCQ",
+        detectors: &["d52-bulk-write-param-no-temp-guard"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d53",
+        wave: "R4-BCQ",
+        detectors: &["d53-ignored-tryfunction-result"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
 /// d14: ws-d14-dead-routine is the SMOKE positive (1 finding) flipped above;
@@ -961,6 +970,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // candidates_considered stays 0 and the detector emits 0.
     NegativeAssertion {
         detector: "d52-bulk-write-param-no-temp-guard",
+        neutral_fixture: "ws-e2e",
+    },
+    // d53: ws-e2e has no [TryFunction] procedures at all (grep-verified) — the
+    // resolved-callee attribute check never matches, so candidates_considered
+    // stays 0 and the detector emits 0.
+    NegativeAssertion {
+        detector: "d53-ignored-tryfunction-result",
         neutral_fixture: "ws-e2e",
     },
 ];
