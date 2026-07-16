@@ -1,7 +1,9 @@
 # Preflight on the fresh resolver — design
 
 **Date:** 2026-07-17
-**Status:** approved (user + adversarial gpt-5.6-sol review folded in)
+**Status:** approved (user + two adversarial external reviews folded in:
+gpt-5.6-sol round 1 + round-2 verify, gemini-3.1-pro; every load-bearing claim
+verified against source before adoption)
 **Source item:** `docs/OUTSTANDING.md` → "§1 preflight fix"; origin
 `docs/2026-07-16-scanner-validation-and-bcquality-candidates.md` §1.
 
@@ -35,9 +37,11 @@ output. Measured cost: ~3.8 s on DO (the largest real workspace; analyze goes
 
 ### 1. Program-engine entry: `FreshCoverage`
 
-A narrow public entry on the program-engine side (factored from what
-`aldump --program-call-graph-stats` already does: `snapshot_workspace` → parse →
-`program::build` → `resolve_full_program` → `Histogram`):
+A narrow public entry on the program-engine side, factored from the REAL
+pipeline `aldump --program-call-graph-stats` drives — `resolve_full_program` →
+`build_context` → `SnapshotBuilder::build` → `parse_snapshot` →
+`assemble_program_graph` (`src/program/resolve/full.rs`) — not a second
+hand-rolled pipeline:
 
 ```rust
 pub struct FreshCoverage {
@@ -51,6 +55,13 @@ pub struct FreshCoverage {
     pub recovered_files: usize,
     /// Symbol-only dependency apps, from the FRESH snapshot
     /// (`AppUnit::source == None`) — one engine, one dependency universe.
+    /// SCOPED to the primary app's reachable dependency closure and excluding
+    /// the primary itself: `load_all_apps` deliberately loads EVERY `.app` in
+    /// (ancestor) `.alpackages` without app.json filtering
+    /// (`src/dependencies.rs:419+`), so an unscoped list would let an
+    /// UNRELATED cached package flip `--require-dependencies` to exit 4.
+    /// Display identity = `AppId.name`; deduped, sorted (name, then guid) for
+    /// deterministic messages.
     pub opaque_apps: Vec<String>,
 }
 
@@ -60,8 +71,10 @@ pub fn fresh_coverage(ws: &Path) -> Result<FreshCoverage, String>
 NOT a bare `usize`: `coverage_holds == false` and `recovered_files > 0` can
 each coexist with `unknown == 0` and must not launder into "coverage complete"
 (instrument-honesty doctrine). The `Err` arm preserves the underlying snapshot/
-build error text (today `resolve_full_program`'s errors get erased through
-`Option`; the helper threads them out).
+build error text — today `resolve_full_program`/`build_context` erase it via
+`.build().ok()?` into a bare `Option` (`src/program/resolve/full.rs`), so the
+implementation MUST refactor `build_context` (or add a sibling) to return
+`Result`; wrapping the existing `Option` cannot recover the message.
 
 Out of scope (recorded as follow-ups, not silently dropped): reporting
 dependency ABI-ingestion errors and declared-but-missing dependencies; sharing
@@ -87,20 +100,45 @@ clauses; signature moves from `(usize, &[String], bool)` to consuming
 - `failed = degraded && required` (unchanged fail-open contract; the warning
   always goes to stderr, exit 4 only under `--require-dependencies`).
 
-Clean message stays `dependency coverage complete`.
+**Combined clauses are all retained** (no clause overwrites another), in fixed
+order: unknown edges, coverage-contract violation, recovered files, opaque
+apps; comma-joined, opaque names pre-sorted. An all-signals unit test pins
+this.
 
-### 3. Wiring + the fail-closed hole
+Clean message becomes **`resolution coverage verified`** — NOT the old
+"dependency coverage complete", which over-claims while ABI-ingestion-error and
+declared-but-missing-dependency checks are still deferred follow-ups.
 
-`gate/run.rs` calls `fresh_coverage(ws)` where it currently reads
-`coverage.unresolved_callsites.len()` / `coverage.opaque_apps`. The L3
-`AnalysisCoverage` struct is untouched — it still feeds
-`routinesAnalyzed`/`sourceUnitsParsed` in the JSON output (verified: no
-formatter/golden exposes the L3 unresolved list; formatter bytes unchanged).
+### 3. Wiring, sequencing, and the fail-closed hole
 
-The fail-closed early returns (`empty_output_result`) stop fabricating a clean
-preflight: they evaluate the could-not-verify arm (reason = the fail-closed
-diagnostic), so an unreadable workspace warns, and fails (exit 4) under
-`--require-dependencies`.
+**Sequencing (memory peak):** `run_analyze` computes `fresh_coverage(ws)`
+FIRST and drops the whole `ProgramContext` immediately, keeping only the tiny
+`FreshCoverage` value, BEFORE L3 assembly — so the two semantic models are
+never resident together (the naive "add the fresh resolve next to the L3 model"
+would roughly double peak memory on big workspaces). The duplicated `.app`
+discovery/unzip I/O between the two passes is real but ALREADY included in the
+measured ~3.8 s (full `aldump` wall time); accepted, see follow-ups.
+
+`gate/run.rs` then evaluates preflight from the retained `FreshCoverage`
+instead of `coverage.unresolved_callsites.len()` / `coverage.opaque_apps`.
+
+**Formatted output follows the same universe:** the coverage views that print
+opaque apps — JSON `payload.summary.opaqueApps`
+(`src/engine/gate/format_json.rs:305+`), the terminal coverage line
+(`format_terminal.rs:314+/449+`), and the HTML coverage line — switch to the
+FRESH opaque list too. Leaving them on the L3 list (structurally `[]` on the
+gate path) would let one run print "N symbol-only apps" on stderr and
+`"opaqueApps": []` in JSON. This deliberately moves the affected goldens.
+`routinesAnalyzed`/`sourceUnitsParsed` stay L3-sourced (unchanged).
+
+**Fail-closed early returns** (`empty_output_result`) stop fabricating a clean
+result — today the function unconditionally ends `Ok((out, exit::CLEAN, None))`
+(`src/engine/gate/run.rs`, tail), i.e. silent clean, exit 0, no warning, even
+under `--require-dependencies`. It gains the could-not-verify arm: reason = the
+fail-closed provider diagnostic when one exists, else the defined fallback
+`workspace contained no readable AL source units` (some fail-closed paths
+produce ZERO diagnostics — e.g. valid app.json with no readable `.al` files);
+warn always, exit 4 under `--require-dependencies`.
 
 ### 4. CI-visible semantic change (CHANGELOG under Changed)
 
@@ -116,16 +154,22 @@ verify-failure. Consequences to document:
 ### 5. Tests
 
 - `preflight.rs` unit tests: rewrite for the new states/wording (clean /
-  unknown / opaque-only / contract-violated / recovered / could-not-verify,
-  each × required on/off).
-- Deliberate rebaselines: the warning oracle pinning `"unresolved callsite"`
-  (`tests/cli/gate_prsummary_differential.rs:636`) and the exit-codes golden
-  matrix (`tests/gate-goldens/exit-codes.json` — has exit-4 cells keyed to the
-  old semantics).
-- New integration assertions: DO-shaped case (L3-would-warn, fresh-clean → NO
-  warning) via a fixture with a symbol-only dep; verifier-error arm on the
-  fail-closed path; helper count == `primary_histogram.unknown` on a fixture
-  with a genuine unknown.
+  unknown / opaque-only / contract-violated / recovered / could-not-verify /
+  ALL-SIGNALS-combined, each × required on/off).
+- Deliberate rebaselines — the full pin inventory
+  (`tests/cli/gate_prsummary_differential.rs`): the warning oracle pinning
+  `"unresolved callsite"` (:636), `anti_degenerate_preflight_exit_four` (:586),
+  `oracle_exit_precedence_preflight_wins_over_findings` (:653), and the
+  exit-codes golden matrix (`tests/gate-goldens/exit-codes.json` — exit-4 cells
+  keyed to the old semantics). Plus the formatter goldens that carry
+  `opaqueApps` / the coverage line (§3).
+- New integration assertions: DO-shaped no-warning case via a fixture whose dep
+  has EMBEDDED SOURCE (a symbol-only dep would correctly still warn via the
+  opaque clause — the two cases must not be conflated); a separate symbol-only
+  fixture asserting the opaque-only warning; verifier-error arm on the
+  fail-closed path (both with a provider diagnostic and with the zero-diagnostic
+  fallback); helper count == `primary_histogram.unknown` on a fixture with a
+  genuine unknown.
 - `scripts/check-goldens` before commit (pre-commit hook enforces).
 
 ## Alternatives rejected
@@ -137,10 +181,13 @@ verify-failure. Consequences to document:
 - **Bare `usize` count**: launders contract violations and recovered parses
   into "complete". Rejected on instrument-honesty grounds (review finding).
 
-## Follow-ups (OUTSTANDING.md)
+## Follow-ups (recorded in `docs/OUTSTANDING.md`)
 
 - Shared parse: L3 assembly consuming `ProgramContext::parsed()` — removes the
-  duplicate parse (~halves the added cost) and the TOCTOU between the two
-  passes.
+  duplicate parse + `.app` unzip (~halves the added cost) and the TOCTOU
+  between the two passes.
 - Dependency ABI-ingestion error + declared-but-missing dependency reporting in
-  `FreshCoverage`.
+  `FreshCoverage` (then the clean message can strengthen again).
+- `empty_output_result`'s doc-comment claims stub formats return `Err` ("no
+  silent pass") while the code returns `Ok(CLEAN)` — the exit part is fixed by
+  this design; align the remaining doc/behavior while in there.

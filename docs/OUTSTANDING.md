@@ -12,7 +12,9 @@ Ordering within a tier is the suggested attack order.
 
 ## BCQuality wave follow-ups (doc `2026-07-16-scanner-validation…` §6)
 
-- [ ] **§1 preflight fix (quick win):** `alsem analyze` preflight consumes legacy L3 coverage → misleading `analysis coverage degraded — 1045 unresolved callsite(s)` warning on DO. Point it at the fresh resolver's coverage (`src/engine/l3/coverage.rs` → `src/engine/gate/preflight.rs` → `run.rs`)
+- [ ] **§1 preflight fix:** `alsem analyze` preflight consumes legacy L3 coverage → misleading `analysis coverage degraded — 1045 unresolved callsite(s)` warning on DO. Spec approved: `docs/superpowers/specs/2026-07-17-preflight-fresh-coverage-design.md` (FreshCoverage status struct from the fresh resolver + could-not-verify preflight state + fail-closed hole fix)
+- [ ] Preflight follow-up — shared parse: L3 assembly consuming `ProgramContext::parsed()` (halves the added analyze cost, kills the L3↔fresh TOCTOU)
+- [ ] Preflight follow-up — report dependency ABI-ingestion errors + declared-but-missing deps in `FreshCoverage`; then re-strengthen the clean message
 - [ ] **d56 re-promotion:** add primary-key-field-reassignment analysis (clone whose PK/current-key field is reassigned before the write targets a DIFFERENT row — the MoveEmailLog shape), exclude those, re-promote d56 OPT-IN → DEFAULT
 - [ ] **Validate d61/d62/d64 on real code:** emitted 0 on DO (fixture-proven only). Run `/triage-wave` on a corpus that exercises them before considering promotion
 - [ ] Audit other `condition_references` consumers (e.g. d43 IsHandled-guard) for the paren/quoted-condition blind spot that bit d60; migrate to `statement_tree` where bitten
