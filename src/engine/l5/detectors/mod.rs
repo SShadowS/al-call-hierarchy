@@ -837,6 +837,15 @@ pub(crate) fn is_known_temp(op: &L3RecordOperation) -> bool {
     matches!(&op.temp_state, Some(ts) if ts.kind == "known" && ts.value == Some(true))
 }
 
+/// The record-VARIABLE analogue of [`is_known_temp`]: `temp_state.kind == "known"
+/// && value == Some(true)` on an `L3RecordVariable`. A provably-temporary record
+/// var is an in-memory buffer — ops on it do no physical-db work. Used by d56 to
+/// exclude a temp-buffer source (materialize-into-persisted is not a redundant
+/// cursor re-write).
+pub(crate) fn is_known_temp_var(rv: &crate::engine::l3::l3_workspace::L3RecordVariable) -> bool {
+    rv.temp_state.kind == "known" && rv.temp_state.value == Some(true)
+}
+
 /// `unquotedFieldName` from `model/expression.ts`:
 /// Resolve a field-name argument to its unquoted form. Prefers `.value` (set on
 /// `quoted_identifier` / `string_literal` / `qualified_enum_value`) over `.text`.
@@ -912,7 +921,7 @@ where
 /// OPT_IN order (11):  d40, d46, d47, d48, d49, d50, d51, d61, d62, d63, d64.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
-        // --- DEFAULT_DETECTORS (34, in al-sem registry order) ---
+        // --- DEFAULT_DETECTORS (42: al-sem registry order, then the BCQuality-wave defaults) ---
         Detector {
             name: "d1-db-op-in-loop".to_string(),
             run: d1::detect_d1,
@@ -1069,11 +1078,6 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d55-event-publish-in-loop".to_string(),
             run: d55::detect_d55,
         },
-        // d56: BCQuality wave (clone-before-write-in-loop).
-        Detector {
-            name: "d56-clone-before-write-in-loop".to_string(),
-            run: d56::detect_d56,
-        },
         // d57: BCQuality wave (singleinstance-growing-state).
         Detector {
             name: "d57-singleinstance-growing-state".to_string(),
@@ -1094,7 +1098,7 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d60-upgrade-loop-should-be-datatransfer".to_string(),
             run: d60::detect_d60,
         },
-        // --- OPT_IN_DETECTORS (11, in al-sem registry order) ---
+        // --- OPT_IN_DETECTORS (12: al-sem opt-in order, then the BCQuality-wave opt-ins incl. demoted d56) ---
         // d40: OPT-IN in al-sem (transitive-load-missing).
         Detector {
             name: "d40-transitive-load-missing".to_string(),
@@ -1129,6 +1133,14 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d51-retry-side-effect-duplication".to_string(),
             run: d51::detect_d51,
+        },
+        // d56: OPT-IN (BCQuality wave, clone-before-write-in-loop). Demoted from
+        // default: precise after the temp-source guard, but a persisted-source
+        // key-remap clone residual (needs primary-key-reassignment analysis) keeps
+        // it opt-in. See d56.rs module doc.
+        Detector {
+            name: "d56-clone-before-write-in-loop".to_string(),
+            run: d56::detect_d56,
         },
         // d61: OPT-IN (BCQuality wave, ishandled-bypasses-critical-write).
         Detector {

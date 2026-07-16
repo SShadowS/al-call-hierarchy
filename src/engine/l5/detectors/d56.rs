@@ -9,7 +9,18 @@
 //!    for bare-identifier-to-bare-identifier copies) between two RECORD vars,
 //!  - the assignment sits inside a loop (innermost containing PLoop by anchor),
 //!  - a Modify/Delete on the CLONE, in the SAME loop (op.loop_stack), AFTER the copy,
-//!  - the SOURCE is a live cursor (has FindSet/Find/FindFirst/Next ops in the routine).
+//!  - the SOURCE is a live cursor (has FindSet/Find/FindFirst/Next ops in the routine),
+//!  - the SOURCE is NOT a `temporary` record. A temp source is an in-memory buffer
+//!    being MATERIALIZED into a persisted target (`Persisted := Temp; Persisted.
+//!    Insert()/Modify()`) — a genuinely different row, not the redundant re-write
+//!    the premise describes; the `Copy := Cursor` struct copy is itself SQL-free.
+//!
+//! Known residual (opt-in tier): a PERSISTED-source clone that reassigns the
+//! clone's PRIMARY-KEY / current-key fields before the write targets a DIFFERENT
+//! physical row (so the clone is functionally required, e.g. a key-remap loop) —
+//! the premise's "cursor already holds the row" is false there too, but proving it
+//! needs per-field primary-key-reassignment analysis this detector does not yet
+//! carry. That residual is why d56 ships OPT-IN.
 //!
 //! Severity: medium. Confidence: likely.
 
@@ -19,7 +30,7 @@ use crate::engine::l2::features::PAnchor;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor};
+use crate::engine::l5::detectors::{anchor_of, before_anchor, is_known_temp_var};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -48,6 +59,7 @@ pub fn detect_d56(
     let mut candidates_considered = 0usize;
     let mut skipped_no_write_back = 0u64;
     let mut skipped_source_not_cursor = 0u64;
+    let mut skipped_source_temp = 0u64;
 
     for routine in &ws.routines {
         if !routine.body_available || routine.parse_incomplete {
@@ -100,6 +112,20 @@ pub fn detect_d56(
             });
             if !src_is_cursor {
                 skipped_source_not_cursor += 1;
+                continue;
+            }
+            // The SOURCE must be a PHYSICAL cursor. A `temporary` source record is
+            // an in-memory buffer being MATERIALIZED into a persisted target
+            // (`Persisted := Temp; Persisted.Insert()/Modify()`) — a genuinely
+            // different row, not the redundant re-write of the cursor's own row
+            // the premise describes, and the `Copy := Cursor` assignment itself is
+            // an in-memory struct copy with no SQL round-trip. Skip.
+            let src_is_temp = routine
+                .record_variables
+                .iter()
+                .any(|rv| rv.name.to_lowercase() == rhs_lc && is_known_temp_var(rv));
+            if src_is_temp {
+                skipped_source_temp += 1;
                 continue;
             }
 
@@ -170,5 +196,6 @@ pub fn detect_d56(
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("noWriteBack", skipped_no_write_back);
     stats.add_skip("sourceNotCursor", skipped_source_not_cursor);
+    stats.add_skip("sourceTemp", skipped_source_temp);
     Ok(DetectorOutput::no_diag(findings, stats))
 }

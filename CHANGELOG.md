@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d53-ignored-tryfunction-result detector: statement-position TryFunction calls silently swallow errors.
 - d54-publish-in-tryfunction-cone detector: events published under a [TryFunction] silence subscriber errors (call-graph transitive).
 - d55-event-publish-in-loop detector (BCQuality do-not-publish-events-inside-loops).
-- d56-clone-before-write-in-loop detector (BCQuality avoid-cloning-records-before-modify-delete-in-loops).
+- d56-clone-before-write-in-loop detector (opt-in; BCQuality avoid-cloning-records-before-modify-delete-in-loops). Skips a `temporary` copy SOURCE — a temp buffer being materialized into a persisted record is not the redundant cursor re-write the rule targets. Opt-in because a persisted-source key-remap residual (needs primary-key-reassignment analysis) is not yet handled.
 - d57-singleinstance-growing-state detector: unbounded global collection/temp-record growth in SingleInstance subscribers.
 - d58-query-filter-after-open detector (BCQuality set-query-filters-before-open).
 - d59-integrationevent-var-boolean-guard detector (BCQuality integrationevent-var-parameter-bypasses-security-guards).

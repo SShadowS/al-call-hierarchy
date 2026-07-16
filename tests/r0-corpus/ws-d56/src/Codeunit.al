@@ -48,4 +48,20 @@ codeunit 50926 "D56 Demo"
                 CustCopy := Cust;
             until Cust.Next() = 0;
     end;
+
+    // NOT FLAGGED: the SOURCE cursor is a temporary in-memory buffer being
+    // materialized into a persisted record — a different row, and the copy is a
+    // SQL-free struct copy (the DO false-positive shape: temp-buffer → persisted).
+    procedure MaterializeBuffer()
+    var
+        TempBuf: Record "D56 Customer" temporary;
+        Cust: Record "D56 Customer";
+    begin
+        if TempBuf.FindSet() then
+            repeat
+                Cust := TempBuf;
+                Cust.Name := 'x';
+                Cust.Modify();
+            until TempBuf.Next() = 0;
+    end;
 }

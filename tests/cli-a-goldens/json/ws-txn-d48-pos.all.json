@@ -322,12 +322,6 @@
         },
         {
           "candidatesConsidered": 0,
-          "detector": "d56-clone-before-write-in-loop",
-          "findingsEmitted": 0,
-          "skipped": {}
-        },
-        {
-          "candidatesConsidered": 0,
           "detector": "d57-singleinstance-growing-state",
           "findingsEmitted": 0,
           "skipped": {}
@@ -393,6 +387,12 @@
         {
           "candidatesConsidered": 0,
           "detector": "d51-retry-side-effect-duplication",
+          "findingsEmitted": 0,
+          "skipped": {}
+        },
+        {
+          "candidatesConsidered": 0,
+          "detector": "d56-clone-before-write-in-loop",
           "findingsEmitted": 0,
           "skipped": {}
         },
