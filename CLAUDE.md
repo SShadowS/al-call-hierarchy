@@ -58,6 +58,12 @@ See `src/main.rs`'s `Args` (clap derive) for the authoritative flag list.
     `al-syntax` build script falls back to `../../tree-sitter-al` (relative to
     `crates/al-syntax`) when the env var is unset, which resolves correctly only for a
     normal (non-worktree) checkout.
+  - Removing a worktree: `git worktree remove` FAILS here ("working trees containing
+    submodules cannot be moved or removed") — verify the tree is clean/merged, then
+    `rm -rf <worktree-dir> && git worktree prune`.
+  - `.claude/` (skills, commands) is gitignored and exists only in the MAIN checkout —
+    from a worktree, reference skill scripts by absolute main-checkout path
+    (e.g. `U:/Git/al-call-hierarchy/.claude/skills/...`).
 
 ## Architecture
 
