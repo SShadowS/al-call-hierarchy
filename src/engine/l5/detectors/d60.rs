@@ -5,8 +5,13 @@
 //!
 //! Join: object_subtype ∈ {Upgrade, Install} (Codeunit), a Modify record op with
 //! non-empty loop_stack whose receiver is a live cursor (FindSet/Find/FindFirst/
-//! Next on the same var in the routine). One finding per (routine, loop, var) —
-//! first op wins. Severity: medium. Confidence: likely.
+//! Next on the same var in the routine), AND a DataTransfer-shaped loop body: NO
+//! per-row call, NO op on another record var, NO if/case computing the value.
+//! A body that does any of those legitimately needs the row-by-row loop and is
+//! not a DataTransfer candidate — inspecting the body (rather than firing on
+//! every upgrade repeat…Modify) is what keeps this precise on real upgrade code.
+//! One finding per (routine, loop, var) — first op wins. Severity: medium.
+//! Confidence: likely.
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,7 +19,7 @@ use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::anchor_of;
+use crate::engine::l5::detectors::{anchor_of, anchor_within};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -32,6 +37,9 @@ pub fn detect_d60(
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_not_cursor = 0u64;
+    let mut skipped_body_has_call = 0u64;
+    let mut skipped_body_other_record = 0u64;
+    let mut skipped_body_conditional = 0u64;
 
     let lifecycle_objects: HashSet<&str> = ws
         .objects
@@ -86,6 +94,37 @@ pub fn detect_d60(
             let Some(loop_info) = loop_by_id.get(rep_loop_id.as_str()) else {
                 continue;
             };
+
+            // DataTransfer can only express a set-based constant / same-record
+            // copy init. A loop body that does per-row WORK — calls a routine,
+            // touches ANOTHER record, or computes the value under an if/case —
+            // legitimately needs the row-by-row loop and is NOT a DataTransfer
+            // candidate. Inspecting the body (rather than firing on every
+            // upgrade repeat…Modify) is what keeps this precise on real upgrade
+            // code, where such bodies are the norm.
+            let loop_id = loop_info.id.as_str();
+            if routine
+                .call_sites
+                .iter()
+                .any(|cs| cs.loop_stack.iter().any(|id| id == loop_id))
+            {
+                skipped_body_has_call += 1;
+                continue;
+            }
+            if routine.record_operations.iter().any(|o| {
+                o.loop_stack.iter().any(|id| id == loop_id)
+                    && o.record_variable_name.to_lowercase() != var_lc
+            }) {
+                skipped_body_other_record += 1;
+                continue;
+            }
+            if routine.condition_references.iter().any(|cr| {
+                (cr.condition_kind == "if" || cr.condition_kind == "case")
+                    && anchor_within(&cr.statement_anchor, &loop_info.source_anchor)
+            }) {
+                skipped_body_conditional += 1;
+                continue;
+            }
 
             let table_name = op
                 .table_id
@@ -154,5 +193,8 @@ pub fn detect_d60(
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("notCursorVar", skipped_not_cursor);
+    stats.add_skip("bodyHasCall", skipped_body_has_call);
+    stats.add_skip("bodyOtherRecordOp", skipped_body_other_record);
+    stats.add_skip("bodyConditional", skipped_body_conditional);
     Ok(DetectorOutput::no_diag(findings, stats))
 }

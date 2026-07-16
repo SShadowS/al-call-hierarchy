@@ -837,6 +837,17 @@ pub(crate) fn is_known_temp(op: &L3RecordOperation) -> bool {
     matches!(&op.temp_state, Some(ts) if ts.kind == "known" && ts.value == Some(true))
 }
 
+/// Anchor containment: `inner` sits fully inside `outer` (inclusive bounds).
+/// Shared by the loop-body detectors (d56 clone-in-loop, d60 upgrade-loop) to
+/// ask "is this statement/anchor within that loop?".
+pub(crate) fn anchor_within(inner: &PAnchor, outer: &PAnchor) -> bool {
+    let starts_ok = outer.start_line < inner.start_line
+        || (outer.start_line == inner.start_line && outer.start_column <= inner.start_column);
+    let ends_ok = inner.end_line < outer.end_line
+        || (inner.end_line == outer.end_line && inner.end_column <= outer.end_column);
+    starts_ok && ends_ok
+}
+
 /// The record-VARIABLE analogue of [`is_known_temp`]: `temp_state.kind == "known"
 /// && value == Some(true)` on an `L3RecordVariable`. A provably-temporary record
 /// var is an in-memory buffer — ops on it do no physical-db work. Used by d56 to

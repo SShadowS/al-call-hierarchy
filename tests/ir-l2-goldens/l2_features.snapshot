@@ -389,7 +389,11 @@ ws-d59/src/Codeunit.al::0::OnBeforePost	8d4beda790b2cfe9
 ws-d59/src/Codeunit.al::0::OnAfterCheck	81c60885d10f017b
 ws-d59/src/Codeunit.al::0::OnCollect	585b0b6f9748202a
 ws-d60/src/Codeunit.al::0::OnUpgradePerCompany	c09d55a17a6f9d9a
-ws-d60/src/Codeunit.al::1::RegularLoop	c9a41627f6584a4e
+ws-d60/src/Codeunit.al::0::UpgradeWithCall	b56b348751bb6de1
+ws-d60/src/Codeunit.al::0::UpgradeWithOtherRecord	d3098493a74d93b4
+ws-d60/src/Codeunit.al::0::UpgradeWithConditional	8efb6d2c5a5f36bc
+ws-d60/src/Codeunit.al::0::Compute	5fb63ff8fcfe1eb4
+ws-d60/src/Codeunit.al::1::RegularLoop	1c909072546eb582
 ws-d61/src/Codeunit.al::0::OnBeforePost	f970f197047bb587
 ws-d61/src/Codeunit.al::0::OnBeforeLog	655805520233866c
 ws-d61/src/Codeunit.al::1::Post	09f4309a4f7be605

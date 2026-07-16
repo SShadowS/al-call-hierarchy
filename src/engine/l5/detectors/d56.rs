@@ -26,11 +26,10 @@
 
 use std::collections::HashSet;
 
-use crate::engine::l2::features::PAnchor;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, before_anchor, is_known_temp_var};
+use crate::engine::l5::detectors::{anchor_of, anchor_within, before_anchor, is_known_temp_var};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -39,15 +38,6 @@ const DETECTOR: &str = "d56-clone-before-write-in-loop";
 
 const CURSOR_OPS: &[&str] = &["FindSet", "Find", "FindFirst", "Next"];
 const WRITE_BACK_OPS: &[&str] = &["Modify", "Delete"];
-
-/// Anchor containment: `inner` fully inside `outer`.
-fn anchor_within(inner: &PAnchor, outer: &PAnchor) -> bool {
-    let starts_ok = outer.start_line < inner.start_line
-        || (outer.start_line == inner.start_line && outer.start_column <= inner.start_column);
-    let ends_ok = inner.end_line < outer.end_line
-        || (inner.end_line == outer.end_line && inner.end_column <= outer.end_column);
-    starts_ok && ends_ok
-}
 
 pub fn detect_d56(
     resolved: &L3Resolved,
