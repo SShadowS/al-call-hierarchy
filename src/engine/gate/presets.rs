@@ -69,6 +69,7 @@ pub const OPT_IN_DETECTOR_NAMES: &[&str] = &[
     "d49-uncommitted-write-before-ui",
     "d50-checked-run-implicit-commit",
     "d51-retry-side-effect-duplication",
+    "d61-ishandled-bypasses-critical-write",
 ];
 
 /// The `transaction-integrity` preset members — verbatim from al-sem

@@ -326,5 +326,11 @@
     "detector": "d51-retry-side-effect-duplication",
     "findingsEmitted": 0,
     "skipped": {}
+  },
+  {
+    "candidatesConsidered": 0,
+    "detector": "d61-ishandled-bypasses-critical-write",
+    "findingsEmitted": 0,
+    "skipped": {}
   }
 ]

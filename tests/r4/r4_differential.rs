@@ -229,6 +229,15 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    // d61 is OPT-IN (registry after d51) — still runs here via run_smoke_entry's
+    // by-name selection.
+    Smoke {
+        fixture: "ws-d61",
+        wave: "R4-BCQ",
+        detectors: &["d61-ishandled-bypasses-critical-write"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1080,6 +1089,15 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // short-circuits to 0 findings before ever scanning a routine.
     NegativeAssertion {
         detector: "d60-upgrade-loop-should-be-datatransfer",
+        neutral_fixture: "ws-e2e",
+    },
+    // d61: ws-e2e's only IntegrationEvent publisher, OnAfterRunIteration, declares
+    // ZERO parameters (grep-verified, same fact d59 relies on) — no var Boolean
+    // IsHandled-shaped formal can ever exist on it, so the publisher scan never
+    // matches, publisher_meta stays empty, and the detector short-circuits to 0
+    // findings before scanning any routine.
+    NegativeAssertion {
+        detector: "d61-ishandled-bypasses-critical-write",
         neutral_fixture: "ws-e2e",
     },
 ];
