@@ -1,9 +1,10 @@
 //! The ported L5 detectors. Each module ports one al-sem detector; the registered
 //! list grows as each wave lands. Currently: d4 (R4-0), d5/d10/d11/d18/d21/d36 (R4-A),
 //! d22/d33 (R4-B), d7/d12/d38 (R4-C), d8/d9/d34/d35 (R4-D), d32 (reverse-call-graph wave),
-//! d50 (R4-H checked-run-implicit-commit), d52/d53/d54/d55 (BCQuality wave,
+//! d50 (R4-H checked-run-implicit-commit), d52/d53/d54/d55/d56 (BCQuality wave,
 //! bulk-write-param-no-temp-guard / ignored-tryfunction-result /
-//! publish-in-tryfunction-cone / event-publish-in-loop).
+//! publish-in-tryfunction-cone / event-publish-in-loop /
+//! clone-before-write-in-loop).
 
 pub mod d1;
 pub mod d10;
@@ -47,6 +48,7 @@ pub mod d52;
 pub mod d53;
 pub mod d54;
 pub mod d55;
+pub mod d56;
 pub mod d7;
 pub mod d8;
 pub mod d9;
@@ -892,9 +894,9 @@ where
 /// `detectorStats` array for the `all` slot; the `default` slot is a subset in this
 /// same order (as `select_detectors` filters by name while preserving registry order).
 ///
-/// DEFAULT order (38): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
+/// DEFAULT order (39): d1, d2, d3, d4, d5, d7, d8, d9, d10, d11, d12, d13, d14,
 ///   d16, d17, d18, d19, d20, d21, d22, d29, d32, d33, d34, d35, d36, d37, d38,
-///   d39, d41, d42, d43, d44, d45, d52, d53, d54, d55.
+///   d39, d41, d42, d43, d44, d45, d52, d53, d54, d55, d56.
 /// OPT_IN order (7):  d40, d46, d47, d48, d49, d50, d51.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
@@ -1054,6 +1056,11 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d55-event-publish-in-loop".to_string(),
             run: d55::detect_d55,
+        },
+        // d56: BCQuality wave (clone-before-write-in-loop).
+        Detector {
+            name: "d56-clone-before-write-in-loop".to_string(),
+            run: d56::detect_d56,
         },
         // --- OPT_IN_DETECTORS (7, in al-sem registry order) ---
         // d40: OPT-IN in al-sem (transitive-load-missing).

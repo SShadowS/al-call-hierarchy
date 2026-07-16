@@ -194,6 +194,13 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    Smoke {
+        fixture: "ws-d56",
+        wave: "R4-BCQ",
+        detectors: &["d56-clone-before-write-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1009,6 +1016,15 @@ const NEGATIVES: &[NegativeAssertion] = &[
     NegativeAssertion {
         detector: "d55-event-publish-in-loop",
         neutral_fixture: "ws-d41",
+    },
+    // d56: ws-e2e has no whole-record copy between two record variables anywhere
+    // (grep-verified: the only assignment is the field-level
+    // `Customer.Address := Customer.Name`) — the var_assignments scan never finds
+    // a record-to-record rhs_identifier match, so candidates_considered stays 0
+    // and the detector emits 0.
+    NegativeAssertion {
+        detector: "d56-clone-before-write-in-loop",
+        neutral_fixture: "ws-e2e",
     },
 ];
 
