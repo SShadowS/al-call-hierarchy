@@ -289,6 +289,11 @@ pub struct L3Variable {
     /// dispatch / IO targets resolve to their literal/enum source (e.g.
     /// `CodeunitId := 50100; Codeunit.Run(CodeunitId)` → literal 50100).
     pub initializer: Option<serde_json::Value>,
+    /// Variable scope forwarded from the L2 `PVariableSymbol.scope`:
+    /// `"local" | "parameter" | "global"`. `None` only for construction paths
+    /// that lack the L2 symbol (defensive). Additive — L3Variable is not
+    /// Serialize-derived. Consumed by d57 (global-collection growth).
+    pub scope: Option<String>,
 }
 
 /// A routine parameter (the L3-relevant subset of al-sem's `ParameterSymbol`) —
@@ -896,6 +901,7 @@ fn project_file(
                     is_parameter: v.is_parameter,
                     parameter_index: v.parameter_index,
                     initializer: v.initializer.clone(),
+                    scope: Some(v.scope.clone()),
                 })
                 .collect();
 
@@ -1784,5 +1790,28 @@ mod tests {
             pg.source_anchor.is_some(),
             "native objects carry their decl anchor"
         );
+    }
+
+    // Task 3 (BCQuality wave): `PVariableSymbol.scope` forwards onto `L3Variable` —
+    // substrate for d57. Fixture: `tests/fixtures/props/` (adds `src/b.al`).
+    #[test]
+    fn variable_scope_forwarded_to_l3() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/props");
+        let resolved = assemble_and_resolve_workspace_default(&dir).expect("assemble");
+        let r = resolved
+            .workspace
+            .routines
+            .iter()
+            .find(|r| r.name == "P")
+            .unwrap();
+        let scope_of = |n: &str| {
+            r.variables
+                .iter()
+                .find(|v| v.name.eq_ignore_ascii_case(n))
+                .and_then(|v| v.scope.clone())
+        };
+        assert_eq!(scope_of("GlobalNames").as_deref(), Some("global"));
+        assert_eq!(scope_of("LocalN").as_deref(), Some("local"));
+        assert_eq!(scope_of("ParamN").as_deref(), Some("parameter"));
     }
 }

@@ -1423,6 +1423,7 @@ mod tests {
             is_parameter: false,
             parameter_index: None,
             initializer: None,
+            scope: None,
         }
     }
 
