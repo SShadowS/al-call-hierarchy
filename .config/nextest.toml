@@ -1,0 +1,24 @@
+# cargo-nextest configuration.
+#
+# Why nextest here: this crate has ~151 integration-test binaries, and several
+# mutate process-global state (std::env::set_var in the cli_a/cli_b differential
+# tests). nextest's process-per-test execution model makes those safe by
+# construction (no shared address space) while giving much better parallelism
+# than libtest's per-binary threading.
+#
+# Note: nextest does NOT run doctests — run `cargo test --doc` separately if
+# doctests are ever added.
+
+[profile.default]
+# One slot per logical CPU; the CDO-gated tests skip by default so the suite is
+# mostly CPU-bound parse/resolve work.
+test-threads = "num-cpus"
+# Fail fast locally but let already-running tests finish.
+fail-fast = true
+# Surface slow tests (parse-heavy differentials) without killing them.
+slow-timeout = { period = "60s" }
+
+[profile.ci]
+fail-fast = false
+retries = 0
+failure-output = "immediate-final"

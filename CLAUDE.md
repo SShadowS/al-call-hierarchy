@@ -10,8 +10,9 @@ AL Call Hierarchy is a high-performance LSP server providing call hierarchy func
 
 ```bash
 cargo build                    # Debug build
-cargo build --release          # Optimized release (full LTO)
-cargo build --profile release-fast  # Faster build with thin LTO
+cargo build --release          # Optimized release (full LTO, cu=1 — ~4 min for alsem; SLOW)
+cargo build --profile release-fast  # Thin LTO — USE THIS for measurement/triage loops (alsem/aldump on DO);
+                                    # full --release only for the SHA-pinned north-star measure, perf_bounds, benches
 cargo test                     # Run tests
 cargo test -p al-call-hierarchy --lib <filter>   # Package is al-call-hierarchy (HYPHEN); al_call_hierarchy fails
 rustfmt path/to/file.rs        # Format a file (NEVER `cargo fmt` — whole-crate churn)

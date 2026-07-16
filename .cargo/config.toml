@@ -1,0 +1,16 @@
+# Faster linking: rust-lld ships with the MSVC toolchain and is far faster than
+# link.exe. This matters a lot here — 151 integration-test binaries + 4 [[bin]]s
+# means link time dominates incremental test builds.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+
+[profile.dev]
+# Faster MSVC debuginfo handling (avoids monolithic PDB work per binary).
+split-debuginfo = "packed"
+
+# Compile dependencies (tree-sitter grammar, serde, regex, ...) with optimizations
+# even in dev/test builds. Deps rarely change so this is a one-time cost, and it
+# makes parse-heavy tests (al-syntax lowering over fixture corpora) several times
+# faster at runtime.
+[profile.dev.package."*"]
+opt-level = 2
