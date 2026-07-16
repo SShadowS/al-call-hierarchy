@@ -208,6 +208,13 @@ const WAVE_BCQ: &[Smoke] = &[
         ported: true,
         corpus_dir: None,
     },
+    Smoke {
+        fixture: "ws-d58",
+        wave: "R4-BCQ",
+        detectors: &["d58-query-filter-after-open"],
+        ported: true,
+        corpus_dir: None,
+    },
 ];
 
 /// R4-G per-detector fixtures (d14 dead-routine + d46 commit-in-lifecycle).
@@ -1038,6 +1045,13 @@ const NEGATIVES: &[NegativeAssertion] = &[
     // ever scanning a routine.
     NegativeAssertion {
         detector: "d57-singleinstance-growing-state",
+        neutral_fixture: "ws-e2e",
+    },
+    // d58: ws-e2e declares no Query-typed variable at all (grep-verified) — the
+    // query_vars set is empty for every routine, so the detector short-circuits
+    // to 0 findings before ever scanning a call site.
+    NegativeAssertion {
+        detector: "d58-query-filter-after-open",
         neutral_fixture: "ws-e2e",
     },
 ];
