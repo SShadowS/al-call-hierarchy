@@ -949,6 +949,7 @@ impl<'a> SpineCtx<'a> {
                     under_asserterror: under,
                     control_context: None,
                     order: None,
+                    in_statement_position: self.in_stmt_position,
                 });
                 self.cs_arg_exprs.push(args.clone());
             }
@@ -2466,5 +2467,53 @@ pub fn ir_routine_kind(routine: &RoutineDecl) -> &'static str {
         "trigger"
     } else {
         "procedure"
+    }
+}
+
+#[cfg(test)]
+mod stmt_position_tests {
+    use crate::engine::l2::l2_workspace::ir_features_for_named_routine;
+
+    const SRC: &str = r#"
+codeunit 50001 T
+{
+    procedure Caller()
+    var
+        Ok: Boolean;
+    begin
+        DoThing();
+        if DoThing() then
+            Ok := true;
+        Ok := DoThing();
+    end;
+
+    procedure DoThing(): Boolean
+    begin
+        exit(true);
+    end;
+}
+"#;
+
+    #[test]
+    fn statement_position_set_only_for_bare_call_statements() {
+        let (features, _, _) =
+            ir_features_for_named_routine(SRC, "Caller", "g", "m", "u").expect("routine");
+        let sites: Vec<(&str, bool)> = features
+            .call_sites
+            .iter()
+            .map(|cs| (cs.callee_text.as_str(), cs.in_statement_position))
+            .collect();
+        // Exactly one DoThing call is a bare statement; the if-condition and the
+        // assignment RHS are expression-position (result consumed).
+        let stmt_count = sites
+            .iter()
+            .filter(|(t, p)| t.contains("DoThing") && *p)
+            .count();
+        let expr_count = sites
+            .iter()
+            .filter(|(t, p)| t.contains("DoThing") && !*p)
+            .count();
+        assert_eq!(stmt_count, 1, "sites: {sites:?}");
+        assert_eq!(expr_count, 2, "sites: {sites:?}");
     }
 }

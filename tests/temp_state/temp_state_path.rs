@@ -126,6 +126,7 @@ fn call_site(id: &str, parameter_index: u32, source_temp_state: Option<PTempStat
         under_asserterror: None,
         control_context: None,
         order: None,
+        in_statement_position: false,
     }
 }
 

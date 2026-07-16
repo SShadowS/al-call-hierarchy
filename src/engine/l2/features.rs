@@ -127,7 +127,7 @@ pub struct PCallArgumentBinding {
     pub argument_anchor: PAnchor,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PCallSite {
     pub id: String,
     #[serde(rename = "operationId")]
@@ -164,7 +164,42 @@ pub struct PCallSite {
     /// "assign only when defined" convention.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<OperationOrder>,
+    /// True iff this call is the OUTERMOST expression of a bare call statement
+    /// (`StmtKind::Call`) — the result is discarded. Expression-position calls
+    /// (if-conditions, assignment RHS, arguments) are `false`. Consumed by d53
+    /// (ignored TryFunction result).
+    ///
+    /// INTERNAL-ONLY (`serde(skip)`): never serialized, so every feature-level
+    /// golden stays byte-identical; deserialized goldens default it to `false`.
+    /// Excluded from PartialEq for the same reason `PVarAssignment.rhs_identifier`
+    /// is (baseline vectors deserialize the default and would compare unequal).
+    #[serde(skip)]
+    pub in_statement_position: bool,
 }
+
+/// MANUAL PartialEq: compares exactly the SERIALIZED L2 contract surface.
+/// `in_statement_position` is EXCLUDED — derived, serde-skipped internal data
+/// (an L5 input, not part of the L2 shape); baseline vectors deserialize it to
+/// the default `false`.
+impl PartialEq for PCallSite {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.operation_id == other.operation_id
+            && self.callee_text == other.callee_text
+            && self.callee == other.callee
+            && self.argument_texts == other.argument_texts
+            && self.argument_infos == other.argument_infos
+            && self.argument_bindings == other.argument_bindings
+            && self.loop_stack == other.loop_stack
+            && self.source_anchor == other.source_anchor
+            && self.result_consumed == other.result_consumed
+            && self.object_run_return_used == other.object_run_return_used
+            && self.under_asserterror == other.under_asserterror
+            && self.control_context == other.control_context
+            && self.order == other.order
+    }
+}
+impl Eq for PCallSite {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct POperationSite {
