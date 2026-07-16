@@ -87,8 +87,26 @@ pub const PRESET_TRANSACTION_INTEGRITY: &[&str] = &[
     "d49-uncommitted-write-before-ui",
 ];
 
+/// The `bcquality` preset — the full BCQuality wave (d52–d64), including its
+/// opt-in members (the preset IS the explicit opt-in for them).
+pub const PRESET_BCQUALITY: &[&str] = &[
+    "d52-bulk-write-param-no-temp-guard",
+    "d53-ignored-tryfunction-result",
+    "d54-publish-in-tryfunction-cone",
+    "d55-event-publish-in-loop",
+    "d56-clone-before-write-in-loop",
+    "d57-singleinstance-growing-state",
+    "d58-query-filter-after-open",
+    "d59-integrationevent-var-boolean-guard",
+    "d60-upgrade-loop-should-be-datatransfer",
+    "d61-ishandled-bypasses-critical-write",
+    "d62-telemetry-before-success",
+    "d63-html-concat-injection",
+    "d64-api-page-write-surface",
+];
+
 /// Known preset names (for the CLI surface + error messages).
-pub const PRESET_NAMES_LIST: &[&str] = &["transaction-integrity"];
+pub const PRESET_NAMES_LIST: &[&str] = &["transaction-integrity", "bcquality"];
 
 /// Resolve a preset name to its detector-name list. `Err` on an unknown preset
 /// (mirrors al-sem `resolvePreset` throwing).
@@ -98,6 +116,7 @@ pub fn resolve_preset(name: &str) -> Result<Vec<String>, String> {
             .iter()
             .map(|s| s.to_string())
             .collect()),
+        "bcquality" => Ok(PRESET_BCQUALITY.iter().map(|s| s.to_string()).collect()),
         other => Err(format!(
             "Unknown preset '{other}'. Known: {}",
             PRESET_NAMES_LIST.join(", ")
@@ -211,5 +230,19 @@ mod tests {
             resolve_analyze_detectors(Some("transaction-integrity"), Some("d1-db-op-in-loop"))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn preset_resolves_bcquality() {
+        let names = resolve_preset("bcquality").unwrap();
+        assert_eq!(names, PRESET_BCQUALITY);
+        assert_eq!(names.len(), 13);
+        // every member must be registered
+        let all = registered_detectors();
+        let registered: std::collections::HashSet<&str> =
+            all.iter().map(|d| d.name.as_str()).collect();
+        for n in &names {
+            assert!(registered.contains(n.as_str()), "{n} not registered");
+        }
     }
 }

@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d62-telemetry-before-success detector (opt-in; BCQuality feature-usage-only-after-success).
 - d63-html-concat-injection detector (opt-in heuristic; BCQuality al-has-no-built-in-htmlencode).
 - d64-api-page-write-surface detector (opt-in; BCQuality disable-write-operations-on-read-only-api-pages).
+- `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
 - Object-anchored findings (d64 introduces the engine's first: a declarative
