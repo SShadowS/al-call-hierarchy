@@ -1058,15 +1058,14 @@ impl ProgramContext {
     }
 }
 
-#[must_use]
-pub fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
+pub fn build_context_res(workspace_root: &Path) -> Result<ProgramContext, String> {
     // ── Step 1: Build snapshot ────────────────────────────────────────────────
     let snap = (SnapshotBuilder {
         workspace_root: workspace_root.to_path_buf(),
         local_providers: vec![],
     })
     .build()
-    .ok()?;
+    .map_err(|e| format!("snapshot build failed: {e:#}"))?;
 
     // ws_file_set: the true workspace source virtual paths (first AppUnit).
     // Excludes embedded dep apps whose AppId matches the workspace AppId.
@@ -1111,9 +1110,14 @@ pub fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
     let graph = assemble_program_graph(&dep_layer, ws_unit, &snap);
 
     // ── Step 3: Locate primary (workspace) app ────────────────────────────────
-    let primary_app_ref = graph.apps.find(&snap.workspace_app)?;
+    let primary_app_ref = graph.apps.find(&snap.workspace_app).ok_or_else(|| {
+        format!(
+            "workspace app '{}' not present in the assembled program graph",
+            snap.workspace_app.name
+        )
+    })?;
 
-    Some(ProgramContext {
+    Ok(ProgramContext {
         snap,
         graph,
         parsed,
@@ -1121,6 +1125,11 @@ pub fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
         ws_file_set,
         dep_layer,
     })
+}
+
+#[must_use]
+pub fn build_context(workspace_root: &Path) -> Option<ProgramContext> {
+    build_context_res(workspace_root).ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -1665,5 +1674,28 @@ mod tests {
             assert_eq!(&got.obligation_id, &want.obligation_id);
             assert_eq!(&got.edge, &want.edge);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 1: build_context_res — Result-returning context builder
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_context_res_preserves_error_text_for_missing_workspace() {
+        let result = build_context_res(std::path::Path::new("Z:/definitely/not/a/workspace/xyzzy"));
+        match result {
+            Err(err) => {
+                assert!(!err.is_empty(), "error text must be non-empty");
+            }
+            Ok(_) => panic!("nonexistent workspace must return Err"),
+        }
+    }
+
+    #[test]
+    fn build_context_matches_res_variant_on_success() {
+        // Any committed small fixture workspace works; ws-d2 is suitable.
+        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ws-d2");
+        assert!(build_context_res(&ws).is_ok());
+        assert!(build_context(&ws).is_some());
     }
 }
