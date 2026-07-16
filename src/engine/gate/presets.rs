@@ -55,6 +55,7 @@ pub const DEFAULT_DETECTOR_NAMES: &[&str] = &[
     "d56-clone-before-write-in-loop",
     "d57-singleinstance-growing-state",
     "d58-query-filter-after-open",
+    "d59-integrationevent-var-boolean-guard",
 ];
 
 /// al-sem `OPT_IN_DETECTORS` names — not in the default registry. Surfaced only by

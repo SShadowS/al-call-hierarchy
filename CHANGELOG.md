@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - d56-clone-before-write-in-loop detector (BCQuality avoid-cloning-records-before-modify-delete-in-loops).
 - d57-singleinstance-growing-state detector: unbounded global collection/temp-record growth in SingleInstance subscribers.
 - d58-query-filter-after-open detector (BCQuality set-query-filters-before-open).
+- d59-integrationevent-var-boolean-guard detector (BCQuality integrationevent-var-parameter-bypasses-security-guards).
 
 ### Changed
 - Shared one CDO program substrate across the read-only

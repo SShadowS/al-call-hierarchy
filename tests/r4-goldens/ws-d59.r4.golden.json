@@ -1,0 +1,121 @@
+{
+  "fixtureName": "ws-d59",
+  "detectors": [
+    "d59-integrationevent-var-boolean-guard"
+  ],
+  "findingCount": 2,
+  "findings": [
+    {
+      "detector": "d59-integrationevent-var-boolean-guard",
+      "id": "d59/11111111-0000-0000-0000-00000000d590:Codeunit:50933#b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e/0",
+      "rootCauseKey": "d59/11111111-0000-0000-0000-00000000d590:Codeunit:50933#b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e/0",
+      "title": "Writable security-guard parameter on integration event",
+      "rootCause": "Integration event OnBeforeValidate exposes `var SkipValidation: Boolean` — any subscriber (including third-party extensions) can flip this guard and bypass the security decision it feeds.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 10,
+          "startColumn": 4,
+          "endLine": 12,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 10,
+              "startColumn": 4,
+              "endLine": 12,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#b3bec89022d922ec72959d53f80dd2d00ac559b3a855e9d3e96fda69e472de8e",
+            "syntaxKind": "procedure"
+          },
+          "note": "[IntegrationEvent] OnBeforeValidate (var SkipValidation: Boolean)"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d590:Codeunit:50933"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Make SkipValidation non-var (informational), or replace the writable guard with an explicit, audited decision API the publisher controls.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "fea6b6c48100cd35"
+    },
+    {
+      "detector": "d59-integrationevent-var-boolean-guard",
+      "id": "d59/11111111-0000-0000-0000-00000000d590:Codeunit:50933#d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6/1",
+      "rootCauseKey": "d59/11111111-0000-0000-0000-00000000d590:Codeunit:50933#d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6/1",
+      "title": "Writable security-guard parameter on integration event",
+      "rootCause": "Integration event OnCheckAccess exposes `var HasAccess: Boolean` — any subscriber (including third-party extensions) can flip this guard and bypass the security decision it feeds.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": []
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 4,
+          "startColumn": 4,
+          "endLine": 6,
+          "endColumn": 8
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6",
+        "syntaxKind": "procedure"
+      },
+      "evidencePath": [
+        {
+          "routineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6",
+          "sourceAnchor": {
+            "sourceUnitId": "ws:src/Codeunit.al",
+            "range": {
+              "startLine": 4,
+              "startColumn": 4,
+              "endLine": 6,
+              "endColumn": 8
+            },
+            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d590:Codeunit:50933#d9ebea79cedcc2247ced57135ff5b04c8e5313a646084eebccf61dcc51ed65d6",
+            "syntaxKind": "procedure"
+          },
+          "note": "[IntegrationEvent] OnCheckAccess (var HasAccess: Boolean)"
+        }
+      ],
+      "affectedObjects": [
+        "11111111-0000-0000-0000-00000000d590:Codeunit:50933"
+      ],
+      "affectedTables": [],
+      "fixOptions": [
+        {
+          "description": "Make HasAccess non-var (informational), or replace the writable guard with an explicit, audited decision API the publisher controls.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "fingerprint": "4562ac94b0845065"
+    }
+  ]
+}
