@@ -179,7 +179,8 @@ pub fn run_analyze(args: &AnalyzeArgs, default_version: &str) -> Result<String, 
 /// Errors: detector/preset resolution failures (e.g. unknown preset, `--preset` +
 /// `--detector` together). A workspace that fails to assemble (fail-closed / unreadable)
 /// yields EMPTY findings (engine-never-throws) — empty SARIF / "no findings" PR-summary,
-/// a clean preflight, and exit CLEAN.
+/// a could-not-verify preflight WARNING (never a fabricated clean — spec §3), and exit
+/// CLEAN unless `--require-dependencies` is set, in which case exit PREFLIGHT_FAILED (4).
 pub fn run_analyze_with_exit(
     args: &AnalyzeArgs,
     default_version: &str,
@@ -436,7 +437,6 @@ pub fn run_analyze_with_exit(
     // "no silent clean" contract — al-sem index.ts:263-264). The warn is INDEPENDENT
     // of --require-dependencies; only the FAILED→exit-4 path needs that flag.
     // We return the warning message as the 3rd tuple field; the bin emits it.
-    // NOTE: `coverage` was already computed above for the Json formatter.
     let pf = evaluate_preflight(&fresh, args.require_dependencies);
 
     // The degraded warning message — None when coverage is complete (pf.degraded false).
@@ -466,10 +466,12 @@ pub fn run_analyze_with_exit(
 /// is a can't-analyze state, not a verified-empty one, so this now evaluates
 /// preflight as could-not-verify (`evaluate_preflight(&Err(reason), ...)`) — the
 /// reason is the fresh resolver's OWN error text when `fresh` itself failed too,
-/// else a fallback string for the (also fail-closed, but fresh-resolver-clean)
-/// case where the workspace legitimately has zero readable AL source units. See
-/// `evaluate_preflight`'s could-not-verify doc for why this state is first-class
-/// and never silently folded into "clean".
+/// else the real provider diagnostic's message (the SAME `compute_workspace_diagnostics`
+/// call this function threads into the Json/Terminal output, hoisted once and reused
+/// here) when one is available, else a fallback string for the (also fail-closed, but
+/// diagnostic-free) case where the workspace legitimately has zero readable AL source
+/// units. See `evaluate_preflight`'s could-not-verify doc for why this state is
+/// first-class and never silently folded into "clean".
 ///
 /// `ws` is the workspace root: the JSON envelope's `diagnostics` array is populated
 /// with the real PROVIDER (fail-closed, remapped to `stage:"discover"`) + index
@@ -479,13 +481,23 @@ pub fn run_analyze_with_exit(
 /// WHY the model is empty. SARIF / PR-summary carry no diagnostics array, so they
 /// are unaffected (parity with al-sem, whose SARIF/pr-summary likewise omit them).
 ///
-/// `Err` is returned for stub formats (Terminal/Html) so `run_analyze` /
-/// `run_analyze_with_exit` surface an obvious error — no silent pass.
+/// Terminal and Html are NOT stubs: they render a genuine empty-workspace report
+/// (zero findings, zero coverage), the same shape Sarif/PrSummary/Json produce here —
+/// every arm returns `Ok`, never `Err`.
 pub(crate) fn empty_output_result(
     args: &AnalyzeArgs,
     version: &str,
     fresh: &Result<crate::program::resolve::full::FreshCoverage, String>,
 ) -> Result<(String, u8, Option<String>), String> {
+    let ws_path = Path::new(&args.workspace);
+    // Computed ONCE and reused by every arm below (Json/Terminal) AND by the
+    // could-not-verify `reason` derivation past the format switch — these are the
+    // real provider/index diagnostics for this workspace (spec §3: the fail-closed
+    // reason should be the actual diagnostic text, not a generic fallback, whenever
+    // one is available).
+    let diagnostics =
+        crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
+
     let out = match args.format {
         OutputFormat::Sarif => format_sarif(&[], &[], version),
         OutputFormat::PrSummary => format_pr_summary(&[], &[], &[]),
@@ -502,9 +514,6 @@ pub(crate) fn empty_output_result(
                 unresolved_callsites: vec![],
                 dynamic_dispatch_sites: vec![],
             };
-            let ws_path = Path::new(&args.workspace);
-            let diagnostics =
-                crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
             // Fail-closed path has zero findings; --with-evidence still bumps the
             // schemaVersion to "1.1.0" (an empty evidence slice carries no per-finding
             // keys), keeping the flag's schema signal consistent.
@@ -535,9 +544,6 @@ pub(crate) fn empty_output_result(
                 unresolved_callsites: vec![],
                 dynamic_dispatch_sites: vec![],
             };
-            let ws_path = Path::new(&args.workspace);
-            let diagnostics =
-                crate::engine::gate::workspace_diagnostics::compute_workspace_diagnostics(ws_path);
             format_terminal(&[], &empty_coverage, &diagnostics)
         }
         OutputFormat::Html => {
@@ -554,7 +560,6 @@ pub(crate) fn empty_output_result(
             };
             // For fail-closed HTML, we need an empty resolved model.
             // The assemble_and_resolve_workspace failed, so build a minimal one.
-            let ws_path = Path::new(&args.workspace);
             let primary_app = read_workspace_apps(ws_path).into_iter().next();
             // Build an empty L3Resolved for the HTML formatter.
             let empty_resolved = crate::engine::l3::l3_workspace::L3Resolved {
@@ -577,12 +582,19 @@ pub(crate) fn empty_output_result(
     };
 
     // Fail-closed is a can't-analyze state: preflight must say so, never
-    // fabricate clean (spec §3). Reason precedence: the fresh resolver's own
-    // error when it failed too; else the defined fallback (some fail-closed
-    // paths produce ZERO diagnostics — e.g. valid app.json, no readable .al).
+    // fabricate clean (spec §3). Reason precedence: (1) the fresh resolver's own
+    // error text when `fresh` itself failed too; (2) else the real provider
+    // diagnostic's message — the SAME `diagnostics` computed above, so e.g. an
+    // id-less root `app.json` surfaces its actual "root app.json at {root} has no
+    // string `id`…" text instead of a generic string; (3) else the fallback (some
+    // fail-closed paths produce ZERO diagnostics — e.g. a valid app.json with no
+    // readable .al at all).
     let reason = match fresh {
         Err(e) => e.clone(),
-        Ok(_) => "workspace contained no readable AL source units".to_string(),
+        Ok(_) => diagnostics
+            .first()
+            .map(|d| d.message.clone())
+            .unwrap_or_else(|| "workspace contained no readable AL source units".to_string()),
     };
     let pf = evaluate_preflight(&Err(reason), args.require_dependencies);
     let exit = if pf.failed {

@@ -1813,7 +1813,10 @@ mod tests {
         let result = build_context_res(std::path::Path::new("Z:/definitely/not/a/workspace/xyzzy"));
         match result {
             Err(err) => {
-                assert!(!err.is_empty(), "error text must be non-empty");
+                assert!(
+                    err.contains("snapshot build failed"),
+                    "error text must preserve the real snapshot-build failure, got: {err}"
+                );
             }
             Ok(_) => panic!("nonexistent workspace must return Err"),
         }
@@ -1881,5 +1884,57 @@ mod tests {
     #[test]
     fn fresh_coverage_err_on_missing_workspace() {
         assert!(fresh_coverage(std::path::Path::new("Z:/no/such/ws")).is_err());
+    }
+
+    /// Spec §5 pin: a dependency with EMBEDDED SOURCE must never be reported
+    /// opaque — distinguishing "not opaque because source-bearing" from "no
+    /// deps at all" (`fresh_coverage_matches_direct_resolve_on_neutral_fixture`
+    /// above only proves the latter: ws-e2e has zero declared deps, so its
+    /// empty `opaque_apps` is vacuous for THIS claim).
+    ///
+    /// `tests/r3a4-fixtures/ws`'s sole dependency ("Dep Chain",
+    /// `cccccccc-…`) embeds `DepChain.Codeunit.al` directly inside the `.app`
+    /// package (see `tests/r3/r3a4_differential.rs`'s fixture doc) and is the
+    /// workspace's ONLY declared dependency, so any non-empty `opaque_apps`
+    /// would be unambiguously attributable to it — verified directly against
+    /// `AppUnit::source` below rather than assumed from the fixture's name.
+    ///
+    /// The sibling `tests/r3a5-fixtures/ws` fixture (which a prior review pass
+    /// suggested) does NOT qualify for this pin: it declares a SECOND,
+    /// symbol-only dep ("Symbol Only Util") whose `SymbolReference.json`
+    /// carries a real Codeunit object, so it legitimately DOES land in
+    /// `opaque_apps` — an `is_empty()` assertion against that fixture would
+    /// fail for a reason unrelated to the source-bearing dep this test pins.
+    #[test]
+    fn fresh_coverage_source_bearing_dep_not_opaque() {
+        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/r3a4-fixtures/ws");
+
+        // Verify the dep is genuinely source-bearing BEFORE trusting the
+        // opaque_apps assertion below — never assume from the fixture name.
+        let snap = (SnapshotBuilder {
+            workspace_root: ws.clone(),
+            local_providers: vec![],
+        })
+        .build()
+        .expect("r3a4 fixture snapshot builds");
+        let chain_dep = snap
+            .apps
+            .iter()
+            .find(|u| {
+                u.id.guid
+                    .eq_ignore_ascii_case("cccccccc-0001-0000-0000-000000000001")
+            })
+            .expect("Dep Chain app present in snapshot");
+        assert!(
+            chain_dep.source.is_some(),
+            "Dep Chain must be genuinely source-bearing for this pin to be meaningful"
+        );
+
+        let fc = fresh_coverage(&ws).expect("r3a4 fixture resolves");
+        assert!(
+            fc.opaque_apps.is_empty(),
+            "a source-bearing dep must never be reported opaque: {:?}",
+            fc.opaque_apps
+        );
     }
 }

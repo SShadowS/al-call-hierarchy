@@ -71,8 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never resident together). Symbol-only dependencies with an EMPTY ABI surface
   (zero objects — e.g. Microsoft's "Application" umbrella app) are exempt from
   the opaque-apps clause: they provably hide nothing.
-
-### Changed
 - Shared one CDO program substrate across the read-only
   `program_resolve_harness` CDO tests. `src/program/resolve/full.rs` now
   exposes `ProgramContext` (opaque — fields stay `pub(crate)`, with `graph()`/

@@ -876,6 +876,12 @@ fn fail_closed_workspace_could_not_verify() {
 
     let w = warning.expect("fail-closed must warn, not silent-clean");
     assert!(w.contains("coverage could not be verified"), "got: {w}");
+    // The reason must be the REAL provider diagnostic for this workspace (spec §3),
+    // not a generic fallback — this fixture's root `app.json` is readable but has no
+    // string `id`, so `compute_workspace_diagnostics` emits that exact fail-closed
+    // reason (`src/engine/gate/workspace_diagnostics.rs`); a stable fragment of it
+    // must survive into the preflight message end to end.
+    assert!(w.contains("has no string"), "got: {w}");
     assert_ne!(exit_open, 4, "fail-open without --require-dependencies");
     assert_eq!(exit_required, 4);
 }

@@ -11,12 +11,13 @@ Ordering within a tier is the suggested attack order.
 - [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is local-only today — force-add `.claude/commands/triage-wave.md` or leave personal
 - [ ] ws-interface-dispatch.golden.json IEmpty signatureFingerprint is HashMap-seed-flaky under REGEN (found during preflight arc; regen twice and diff to reproduce)
 - [ ] gate_sarif_differential.rs regen path has a latent self-check bug (found during preflight arc — see .superpowers/sdd/task-4-report.md for details)
+- [ ] MERGE-TIME (preflight branch): master's working tree holds CRLF copies of wave-era tests/r0-corpus .al files — after merging feat/preflight-fresh-coverage, delete + git restore them or master's l2_ir stays red (see commit 9199c4a's message for the full story)
 
 ## BCQuality wave follow-ups (doc `2026-07-16-scanner-validation…` §6)
 
 - [x] **§1 preflight fix:** `alsem analyze` preflight consumes legacy L3 coverage → misleading `analysis coverage degraded — 1045 unresolved callsite(s)` warning on DO. Spec approved: `docs/superpowers/specs/2026-07-17-preflight-fresh-coverage-design.md` (FreshCoverage status struct from the fresh resolver + could-not-verify preflight state + fail-closed hole fix). Landed `07512b2..af12890` on `feat/preflight-fresh-coverage` (capstone DO smoke clean: no warning, totalFindings 2307, north-star SHA `0a3b85bc…` unchanged)
 - [ ] Preflight follow-up — shared parse: L3 assembly consuming `ProgramContext::parsed()` (halves the added analyze cost, kills the L3↔fresh TOCTOU)
-- [ ] Preflight follow-up — report dependency ABI-ingestion errors + declared-but-missing deps in `FreshCoverage`; then re-strengthen the clean message
+- [ ] Preflight follow-up — report dependency ABI-ingestion errors + declared-but-missing deps in `FreshCoverage`; then re-strengthen the clean message; also harden the empty-ABI exemption against serde-default-empty parses of unrecognized SymbolReference shapes (a future emitter change could silently exempt a real dep)
 - [ ] **d56 re-promotion:** add primary-key-field-reassignment analysis (clone whose PK/current-key field is reassigned before the write targets a DIFFERENT row — the MoveEmailLog shape), exclude those, re-promote d56 OPT-IN → DEFAULT
 - [ ] **Validate d61/d62/d64 on real code:** emitted 0 on DO (fixture-proven only). Run `/triage-wave` on a corpus that exercises them before considering promotion
 - [ ] Audit other `condition_references` consumers (e.g. d43 IsHandled-guard) for the paren/quoted-condition blind spot that bit d60; migrate to `statement_tree` where bitten
