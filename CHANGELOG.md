@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-18
+
+First release. Highlights of the state this version locks in: whole-program
+call-graph resolution at 0.0000% real-unknown on the reference BC workspace
+(honest taxonomy, instrument-hardened); a 54-detector code-quality analyzer
+false-positive-triaged against real Microsoft Base/System Application source;
+the LSP surface migrated onto the program engine (immutable Arc-swapped
+snapshots, two-rung incremental updates, multi-root workspaces, Unicode-correct
+identifier folding); and the analyze preflight re-keyed to the fresh resolver.
+Everything below this heading is the cumulative pre-1.0 history.
+
 ### Added
 - **Real multi-root LSP workspace support.** The server now builds one
   independent `ServerState` (`LspSnapshot`/updater thread/file watcher/
