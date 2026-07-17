@@ -557,12 +557,12 @@ impl Updater {
             // here; now it re-parses none.
             parsed_files.insert(
                 pf.virtual_path.clone(),
-                Arc::new(ParsedFileEntry {
-                    file: Arc::clone(&pf.file),
-                    text: Arc::clone(&pf.text),
-                    virtual_path: pf.virtual_path.clone(),
-                    surface: def_surface,
-                }),
+                Arc::new(ParsedFileEntry::new(
+                    Arc::clone(&pf.file),
+                    Arc::clone(&pf.text),
+                    pf.virtual_path.clone(),
+                    def_surface,
+                )),
             );
         }
 
@@ -898,12 +898,12 @@ fn apply_rung1_core(
         // `pending` below.
         parsed_files.insert(
             vp.clone(),
-            Arc::new(ParsedFileEntry {
-                file: Arc::clone(&pf.file),
-                text: Arc::clone(&pf.text),
-                virtual_path: vp.clone(),
+            Arc::new(ParsedFileEntry::new(
+                Arc::clone(&pf.file),
+                Arc::clone(&pf.text),
+                vp.clone(),
                 surface,
-            }),
+            )),
         );
 
         pending.insert(vp, pf);

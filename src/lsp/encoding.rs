@@ -6,6 +6,9 @@
 //! is opt-in via `general.positionEncodings`). This module bridges the two
 //! without depending on `lsp_types`, so it stays trivially unit-testable.
 
+use std::ops::Range;
+use std::sync::Arc;
+
 /// Which column encoding an LSP session negotiated with the client.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PositionEncoding {
@@ -31,28 +34,57 @@ pub fn negotiate(client_encodings: Option<&[String]>) -> PositionEncoding {
 
 /// Lazy per-line byte<->UTF-16 conversion table for one file's text.
 ///
-/// Lines are split once at construction (cheap: no per-line work happens
-/// yet); the actual byte<->UTF-16 unit walk happens on demand inside
+/// Owns its source text (`Arc<str>`, a cheap refcount-bump clone whenever
+/// the caller already holds one — `ParsedFileEntry::text`/`dep_texts`
+/// values both do) rather than borrowing it, so a `LineTable` is
+/// lifetime-free and can be memoized behind a `OnceLock` on the very struct
+/// that owns the text it was built from (`ParsedFileEntry::line_table`,
+/// `src/lsp/snapshot.rs`) — a borrowed `LineTable<'t>` could never be
+/// stored that way (self-referential). Line boundaries (byte ranges,
+/// `\r`-stripped — see `new`'s doc) are computed once at construction;
+/// the actual byte<->UTF-16 unit walk still happens on demand inside
 /// `col_out`/`col_in`. AL source lines are short, so a per-call
-/// `char_indices()` walk is plenty fast — memoize nothing fancier unless
-/// profiling ever says otherwise.
-pub struct LineTable<'t> {
-    lines: Vec<&'t str>,
+/// `char_indices()` walk over one line is plenty fast — memoize nothing
+/// fancier unless profiling ever says otherwise.
+pub struct LineTable {
+    text: Arc<str>,
+    lines: Vec<Range<usize>>,
 }
 
-impl<'t> LineTable<'t> {
-    pub fn new(text: &'t str) -> Self {
-        let lines = text
-            .split('\n')
-            .map(|l| l.strip_suffix('\r').unwrap_or(l))
-            .collect();
-        LineTable { lines }
+impl LineTable {
+    /// Accepts anything cheaply convertible to `Arc<str>` — an `Arc<str>`
+    /// the caller already holds (`Arc::clone`, no allocation, the common
+    /// production path) or a borrowed `&str`/`String` (`Arc<str>: From<&str>`
+    /// allocates a fresh copy — only ever hit by this module's own literal-
+    /// constant unit tests below).
+    pub fn new(text: impl Into<Arc<str>>) -> Self {
+        let text: Arc<str> = text.into();
+        let mut lines = Vec::new();
+        let mut start = 0usize;
+        for part in text.split('\n') {
+            let raw_end = start + part.len();
+            // Mirrors the old `part.strip_suffix('\r').unwrap_or(part)`
+            // exactly: `\r` is always exactly 1 UTF-8 byte, so trimming it
+            // off the END of this line's byte range is byte-for-byte
+            // equivalent to the old borrowed-slice version.
+            let end = if part.ends_with('\r') {
+                raw_end - 1
+            } else {
+                raw_end
+            };
+            lines.push(start..end);
+            start = raw_end + 1; // +1 skips the consumed '\n' delimiter.
+        }
+        LineTable { text, lines }
     }
 
     /// Out-of-range `line` (or a file with no trailing newline) resolves to
     /// an empty line rather than panicking — fail-closed clamp.
-    fn line_text(&self, line: u32) -> &'t str {
-        self.lines.get(line as usize).copied().unwrap_or("")
+    fn line_text(&self, line: u32) -> &str {
+        self.lines
+            .get(line as usize)
+            .map(|r| &self.text[r.clone()])
+            .unwrap_or("")
     }
 
     /// UTF-8 byte column (engine-native) -> column in `enc` for LSP output.
@@ -231,5 +263,38 @@ mod tests {
             negotiate(Some(&["utf-16".to_string(), "utf-8".to_string()])),
             PositionEncoding::Utf8
         );
+    }
+
+    // ── snapshot-scoped cache enabler: LineTable owns its text ─────────────
+
+    #[test]
+    fn line_table_owns_its_text_and_outlives_the_original_string() {
+        // The OLD `LineTable<'t> { lines: Vec<&'t str> }` borrowed its
+        // source — a `LineTable` could never outlive the `&str` it was
+        // built from. The refactor that enables the snapshot-scoped cache
+        // (`ParsedFileEntry::line_table`, `src/lsp/snapshot.rs`) requires
+        // `LineTable` to be lifetime-free (own an `Arc<str>` clone instead)
+        // so it can be memoized behind a `OnceLock` on the struct that also
+        // owns the text. This test locks that property in: the table is
+        // built from a short-lived owned `String`, which is then DROPPED,
+        // and the table is still used successfully afterward.
+        let table = {
+            let owned = String::from("hello\nworld\n");
+            LineTable::new(owned.as_str())
+            // `owned` drops here.
+        };
+        assert_eq!(table.col_out(0, 5, PositionEncoding::Utf8), 5);
+        assert_eq!(table.col_out(1, 5, PositionEncoding::Utf8), 5);
+    }
+
+    #[test]
+    fn line_table_new_accepts_an_arc_str_directly_without_reallocating() {
+        // The production path (`ParsedFileEntry::line_table`) passes an
+        // `Arc::clone` of already-held text — verify that path compiles and
+        // behaves identically to the `&str`-literal construction other
+        // tests in this module use.
+        let arc_text: Arc<str> = Arc::from("abc\ndef\n");
+        let table = LineTable::new(Arc::clone(&arc_text));
+        assert_eq!(table.col_out(1, 3, PositionEncoding::Utf8), 3);
     }
 }

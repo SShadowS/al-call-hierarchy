@@ -99,12 +99,12 @@ pub fn prepare(
 ) -> Option<Vec<CallHierarchyItem>> {
     let virtual_path = resolve_virtual_path(snap, uri)?;
     let entry = snap.parsed.get(&virtual_path)?;
-    let table = LineTable::new(&entry.text);
+    let table = entry.line_table();
     let byte_col = table.col_in(line, character, enc);
 
     let decl = snap.decl_at(&virtual_path, line, byte_col)?;
     let view = DeclView::from_entry(decl);
-    let item = build_item(snap, enc, view, &table, decl_uri(snap, view), None);
+    let item = build_item(snap, enc, view, table, decl_uri(snap, view), None);
     Some(vec![item])
 }
 
@@ -183,13 +183,18 @@ pub fn incoming(
     let mut out = Vec::new();
     for caller_id in callers {
         let (has_event_flow, edges) = &groups[&caller_id];
-        let Some((decl, text)) = snap.decl_and_text(&caller_id) else {
+        let Some((decl, dline_table)) = snap.decl_and_line_table(&caller_id) else {
             // The caller's own decl vanished from the current snapshot —
             // fail closed by dropping this group rather than guessing at a
             // position for an item we can no longer locate.
             continue;
         };
-        let table = LineTable::new(text);
+        // Snapshot-scoped cache (`docs/OUTSTANDING.md`'s "Snapshot-scoped
+        // LineTable cache" item): for a workspace caller this is the SAME
+        // `LineTable` every other distinct caller sharing this file, and
+        // every OTHER handler querying this file this generation, already
+        // built — never re-scanned per call.
+        let table = dline_table.table();
 
         let mut from_ranges: Vec<Range> = Vec::new();
         for ce in edges {
@@ -197,9 +202,9 @@ pub fn incoming(
                 // Rule 2: an EventFlow edge's own site span is stale-prone;
                 // re-derive from the PUBLISHER's (== this caller's) fresh
                 // name_origin instead.
-                origin_to_range(decl.name_origin, &table, enc)
+                origin_to_range(decl.name_origin, table, enc)
             } else {
-                canonical_span_to_range(&ce.edge.site.span, &table, enc)
+                canonical_span_to_range(&ce.edge.site.span, table, enc)
             };
             from_ranges.push(range);
         }
@@ -207,7 +212,7 @@ pub fn incoming(
         from_ranges.dedup();
 
         let tag = (*has_event_flow).then_some("[EventPublisher]");
-        let item = build_item(snap, enc, decl, &table, decl_uri(snap, decl), tag);
+        let item = build_item(snap, enc, decl, table, decl_uri(snap, decl), tag);
 
         out.push(CallHierarchyIncomingCall {
             from: item,
@@ -258,7 +263,7 @@ pub fn outgoing(
     let Some(caller_entry) = snap.parsed.get(&caller_decl.virtual_path) else {
         return Vec::new();
     };
-    let caller_table = LineTable::new(&caller_entry.text);
+    let caller_table = caller_entry.line_table();
 
     let mut out = Vec::new();
 
@@ -266,7 +271,7 @@ pub fn outgoing(
         for ce in edges.iter().filter(|ce| ce.edge.from == data.node) {
             let from_ranges = vec![canonical_span_to_range(
                 &ce.edge.site.span,
-                &caller_table,
+                caller_table,
                 enc,
             )];
             push_route_items(snap, enc, &ce.edge.routes, &from_ranges, &mut out);
@@ -280,11 +285,7 @@ pub fn outgoing(
     {
         // Rule 2: re-derive from THIS routine's (the publisher's) own fresh
         // name_origin — never `ce.edge.site.span`.
-        let from_ranges = vec![origin_to_range(
-            &caller_decl.name_origin,
-            &caller_table,
-            enc,
-        )];
+        let from_ranges = vec![origin_to_range(&caller_decl.name_origin, caller_table, enc)];
         push_route_items(snap, enc, &ce.edge.routes, &from_ranges, &mut out);
     }
 
@@ -303,11 +304,15 @@ fn push_route_items(
 ) {
     for route in routes {
         let item = match &route.target {
-            RouteTarget::Routine(rid) => match snap.decl_and_text(rid) {
-                Some((decl, text)) => {
-                    let table = LineTable::new(text);
-                    build_item(snap, enc, decl, &table, decl_uri(snap, decl), None)
-                }
+            RouteTarget::Routine(rid) => match snap.decl_and_line_table(rid) {
+                Some((decl, dline_table)) => build_item(
+                    snap,
+                    enc,
+                    decl,
+                    dline_table.table(),
+                    decl_uri(snap, decl),
+                    None,
+                ),
                 // Structurally shouldn't happen (a `Routine(id)` route is
                 // only ever constructed when the SAME body_map lookup this
                 // snapshot's decl indexes were built from just succeeded —
@@ -376,7 +381,7 @@ fn build_item(
     snap: &LspSnapshot,
     enc: PositionEncoding,
     decl: DeclView<'_>,
-    table: &LineTable<'_>,
+    table: &LineTable,
     uri: Uri,
     tag: Option<&str>,
 ) -> CallHierarchyItem {
@@ -539,7 +544,7 @@ fn symbol_kind_for(snap: &LspSnapshot, id: &RoutineNodeId) -> SymbolKind {
 
 pub(crate) fn origin_to_range(
     origin: &al_syntax::ir::Origin,
-    table: &LineTable<'_>,
+    table: &LineTable,
     enc: PositionEncoding,
 ) -> Range {
     Range {
@@ -556,7 +561,7 @@ pub(crate) fn origin_to_range(
 
 fn canonical_span_to_range(
     span: &crate::program::resolve::edge::CanonicalSpan,
-    table: &LineTable<'_>,
+    table: &LineTable,
     enc: PositionEncoding,
 ) -> Range {
     Range {
@@ -741,7 +746,7 @@ mod tests {
         let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
         let uri = uri_string(dir.path(), "Alpha.al");
         let entry = snap.parsed.get("Alpha.al").expect("Alpha.al parsed entry");
-        let table = LineTable::new(&entry.text);
+        let table = entry.line_table();
 
         let lobenr = snap.decls_by_file["Alpha.al"]
             .iter()
@@ -863,9 +868,8 @@ mod tests {
             .iter()
             .find(|d| d.name == "OnAfterProcess")
             .expect("Beta.OnAfterProcess decl");
-        let table = LineTable::new(&snap.parsed["Beta.al"].text);
-        let expected_range =
-            origin_to_range(&pub_decl.name_origin, &table, PositionEncoding::Utf16);
+        let table = snap.parsed["Beta.al"].line_table();
+        let expected_range = origin_to_range(&pub_decl.name_origin, table, PositionEncoding::Utf16);
         assert_eq!(calls[0].from_ranges, vec![expected_range]);
     }
 
@@ -984,12 +988,12 @@ mod tests {
             .find(|c| c.to.name == "Process")
             .expect("Process outgoing call");
 
-        let fresh_table = LineTable::new(&fresh.parsed["Beta.al"].text);
+        let fresh_table = fresh.parsed["Beta.al"].line_table();
         let expected_range =
-            origin_to_range(&fresh_process.origin, &fresh_table, PositionEncoding::Utf16);
+            origin_to_range(&fresh_process.origin, fresh_table, PositionEncoding::Utf16);
         let expected_selection = origin_to_range(
             &fresh_process.name_origin,
-            &fresh_table,
+            fresh_table,
             PositionEncoding::Utf16,
         );
 
@@ -1052,14 +1056,11 @@ mod tests {
         );
         assert_eq!(calls.len(), 1, "{calls:#?}");
 
-        let fresh_table = LineTable::new(&fresh.parsed["Beta.al"].text);
-        let expected_from_range = origin_to_range(
-            &fresh_pub.name_origin,
-            &fresh_table,
-            PositionEncoding::Utf16,
-        );
+        let fresh_table = fresh.parsed["Beta.al"].line_table();
+        let expected_from_range =
+            origin_to_range(&fresh_pub.name_origin, fresh_table, PositionEncoding::Utf16);
         let expected_item_range =
-            origin_to_range(&fresh_pub.origin, &fresh_table, PositionEncoding::Utf16);
+            origin_to_range(&fresh_pub.origin, fresh_table, PositionEncoding::Utf16);
 
         assert_eq!(
             calls[0].from_ranges,
@@ -1301,5 +1302,132 @@ mod tests {
         )
         .expect("case-insensitive virtual_path match must still hit");
         assert_eq!(items[0].name, "DoWork");
+    }
+
+    // ── snapshot-scoped LineTable cache (docs/OUTSTANDING.md item) ─────────
+
+    /// Reuse test: two `incoming` calls against the SAME snapshot generation
+    /// for the SAME target must return identical results — the cache must
+    /// be purely an internal memoization, invisible to callers.
+    #[test]
+    fn incoming_repeated_query_against_same_snapshot_returns_identical_results() {
+        let dir = fixture_dir();
+        let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
+
+        let process_decl = snap.decls_by_file["Beta.al"]
+            .iter()
+            .find(|d| d.name == "Process")
+            .expect("Beta.Process decl");
+        let data = item_data_of(process_decl);
+
+        let first = incoming(&snap, PositionEncoding::Utf16, &data);
+        let second = incoming(&snap, PositionEncoding::Utf16, &data);
+
+        assert_eq!(first.len(), 2, "{first:#?}");
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "repeated query against the same snapshot must return the same \
+             number of incoming calls"
+        );
+        for (a, b) in first.iter().zip(second.iter()) {
+            assert_eq!(a.from.name, b.from.name);
+            assert_eq!(a.from.uri, b.from.uri);
+            assert_eq!(a.from.range, b.from.range);
+            assert_eq!(a.from.selection_range, b.from.selection_range);
+            assert_eq!(a.from_ranges, b.from_ranges);
+        }
+    }
+
+    /// Belt-and-suspenders on top of
+    /// `outgoing_target_span_is_re_derived_live_after_a_rung1_edit_to_the_target_file`/
+    /// `incoming_on_subscriber_uses_fresh_publisher_position_after_rung1_edit_above_it`
+    /// (which prove the NEW generation sees the fresh post-edit position):
+    /// this test keeps the OLD, pre-edit `LspSnapshot` alive across a rung-1
+    /// apply and re-queries IT — proving the new generation's rebuilt cache
+    /// (and rebuilt text) never leaks backward into an old, still-referenced
+    /// snapshot. With the `ParsedFileEntry`-embedded `OnceLock` cache design,
+    /// this holds by construction (a rung-1 edit builds a brand-new
+    /// `Arc<ParsedFileEntry>` for the touched file rather than mutating the
+    /// old one in place) — this test locks that property in explicitly.
+    #[test]
+    fn old_snapshot_generation_is_unaffected_by_a_later_rung1_edit_and_swap() {
+        let dir = fixture_dir();
+        let (base, parsed) =
+            LspSnapshot::build_full_with_parsed(dir.path()).expect("build_full_with_parsed");
+        let mut updater = Updater::new(dir.path().to_path_buf(), parsed);
+
+        let dowork = base.decls_by_file["Alpha.al"]
+            .iter()
+            .find(|d| d.name == "DoWork")
+            .expect("Alpha.DoWork decl")
+            .id
+            .clone();
+
+        // Warm the OLD snapshot's cache BEFORE the edit — the interesting
+        // case is a cache that was already populated, not one that happens
+        // to be empty.
+        let pre_edit_calls = outgoing(
+            &base,
+            PositionEncoding::Utf16,
+            &ItemData {
+                node: dowork.clone(),
+            },
+        );
+        let pre_edit_process = pre_edit_calls
+            .iter()
+            .find(|c| c.to.name == "Process")
+            .expect("Process outgoing call")
+            .to
+            .range;
+
+        // Body-only edit to Beta.al (the TARGET file) — pushes every
+        // declaration down, staying rung-1 eligible (mirrors the existing
+        // live-span audit tests above).
+        let edited_beta = format!("// pad\n// pad\n// pad\n// pad\n// pad\n{BETA_SRC}");
+        std::fs::write(dir.path().join("Beta.al"), &edited_beta).expect("rewrite Beta.al");
+        let (new_snap, rung) = updater
+            .apply_batch(&base, &[ChangeEvent::FileSaved(dir.path().join("Beta.al"))])
+            .expect("apply_batch");
+        assert_eq!(rung, Rung::One);
+
+        // The NEW snapshot must see the shifted position (sanity — already
+        // covered by the audit tests, re-asserted here to anchor the
+        // contrast below).
+        let post_edit_calls = outgoing(
+            &new_snap,
+            PositionEncoding::Utf16,
+            &ItemData {
+                node: dowork.clone(),
+            },
+        );
+        let post_edit_process = post_edit_calls
+            .iter()
+            .find(|c| c.to.name == "Process")
+            .expect("Process outgoing call")
+            .to
+            .range;
+        assert_ne!(
+            pre_edit_process, post_edit_process,
+            "fixture assumption: the edit must actually shift Process()'s line"
+        );
+
+        // The OLD snapshot, queried AGAIN after the swap, must report the
+        // EXACT SAME (pre-edit) position it did before — its cache and text
+        // must not have been mutated by the later rung-1 apply.
+        let re_query_calls = outgoing(&base, PositionEncoding::Utf16, &ItemData { node: dowork });
+        let re_query_process = re_query_calls
+            .iter()
+            .find(|c| c.to.name == "Process")
+            .expect("Process outgoing call")
+            .to
+            .range;
+        assert_eq!(
+            re_query_process, pre_edit_process,
+            "an OLD, still-alive snapshot must report the SAME position on \
+             re-query after a LATER generation's rung-1 edit+swap — the new \
+             generation's fresh ParsedFileEntry/cache must never leak \
+             backward into an old one"
+        );
     }
 }
