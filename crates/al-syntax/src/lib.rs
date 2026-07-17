@@ -5,6 +5,7 @@
 //! and the owned AL syntax IR that the rest of the workspace consumes. Raw
 //! grammar details never leave this crate; consumers see only the IR.
 
+pub mod casing;
 pub mod ir;
 pub mod language;
 pub mod lower;
@@ -13,6 +14,7 @@ pub mod raw;
 pub mod schema;
 pub mod symbol_props;
 
+pub use casing::{IdentifierFoldExt, eq_fold_identifier, fold_identifier};
 pub use parse::parse;
 pub use symbol_props::{
     SymbolDeclKind, SymbolProperties, SymbolProperty, lookup_symbol_properties,
