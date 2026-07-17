@@ -24,9 +24,12 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
-- [ ] **tree-sitter-al quirks list** (low priority — engine is insulated by the
-  lowerer, workarounds in place): spurious `left`/`operator`/`right` field pollution,
-  `case_else_branch` inconsistency (see memory `tree-sitter-al-grammar-issues`)
+- [x] **tree-sitter-al quirks list** — WAS ALREADY DONE, stale item (live-verified
+  2026-07-17 against pinned v3.2.0 `14bd55c`): `statement_block`/`argument_list`/
+  `parenthesized_expression` carry ZERO fields (left/operator/right pollution gone,
+  fixed 2026-06-27/28 grammar arcs), `case_else_branch` HAS the `body` field
+  (asymmetry fixed), member_trigger_name landed, spaced-preproc closed at v3.2.0.
+  The grammar has no documented open limitations
 - [x] **Multi-root LSP workspaces** — DONE 2026-07-17 (`6470e3e`). Per-root
   `ServerState` map (`Workspace`/`RootState`, each root gets its own `LspSnapshot`/
   updater/watcher/`DiagnosticsState`) + URI→root routing (`route_uri`, longest-prefix)
