@@ -84,6 +84,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already missed).
 
 ### Changed
+- d56-clone-before-write-in-loop re-promoted DEFAULT (was opt-in): a new
+  `keyRemappedClone` skip excludes a persisted-source clone that reassigns a
+  key field (the target table's PRIMARY KEY, or a field named in a
+  `SetCurrentKey` call on the source cursor in the same routine) on the clone
+  between the copy and the write — the write then targets a DIFFERENT
+  physical row, so the clone is functionally required, not the redundant
+  re-write the rule targets. The write signal is derived structurally (a
+  `field_accesses` entry counts as a write only when it exactly matches a
+  recorded `var_assignments` LHS position — never a plain read). Closes the
+  residual that kept d56 opt-in; cleared both known DO false positives
+  (Continia's `MoveEmailLog` current-key remap and the `.dependencies`
+  `CopyLines` primary-key remap) — d56 emits zero findings on DO in both the
+  default and `bcquality` detector sets.
 - `alsem analyze` preflight re-keyed from the legacy L3 coverage to the fresh
   resolver (`FreshCoverage`): the degraded warning counts fresh primaryScoped
   `unknown` resolution edges (was an inflated L3 no-deps multiset that included

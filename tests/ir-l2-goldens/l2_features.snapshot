@@ -375,6 +375,8 @@ ws-d56/src/Codeunit.al::0::DirectModify	e632993316ef6dd0
 ws-d56/src/Codeunit.al::0::CopyOutsideLoop	987a2bb13d6fe206
 ws-d56/src/Codeunit.al::0::CloneReadOnly	5b2f932243ec76ee
 ws-d56/src/Codeunit.al::0::MaterializeBuffer	9ec6a89fc3daf459
+ws-d56/src/Codeunit.al::0::CloneAndRemapPrimaryKey	11c4bc4ae7d773ac
+ws-d56/src/Codeunit.al::0::CloneAndRemapCurrentKey	258d63a6990958b7
 ws-d57/src/Codeunit.al::0::OnThing	3717eb495bbe3894
 ws-d57/src/Codeunit.al::1::OnThingSub	d37b4669ebbafe15
 ws-d57/src/Codeunit.al::2::OnThingSub	ab811c276a0a9390

@@ -932,7 +932,7 @@ where
 /// OPT_IN order (11):  d40, d46, d47, d48, d49, d50, d51, d61, d62, d63, d64.
 pub fn registered_detectors() -> Vec<Detector> {
     vec![
-        // --- DEFAULT_DETECTORS (42: al-sem registry order, then the BCQuality-wave defaults) ---
+        // --- DEFAULT_DETECTORS (43: al-sem registry order, then the BCQuality-wave defaults) ---
         Detector {
             name: "d1-db-op-in-loop".to_string(),
             run: d1::detect_d1,
@@ -1089,6 +1089,14 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d55-event-publish-in-loop".to_string(),
             run: d55::detect_d55,
         },
+        // d56: BCQuality wave (clone-before-write-in-loop). Re-promoted from
+        // opt-in: the keyRemappedClone skip (PK / SetCurrentKey field
+        // reassignment on the clone) excludes the residual key-remap shape. See
+        // d56.rs module doc.
+        Detector {
+            name: "d56-clone-before-write-in-loop".to_string(),
+            run: d56::detect_d56,
+        },
         // d57: BCQuality wave (singleinstance-growing-state).
         Detector {
             name: "d57-singleinstance-growing-state".to_string(),
@@ -1109,7 +1117,7 @@ pub fn registered_detectors() -> Vec<Detector> {
             name: "d60-upgrade-loop-should-be-datatransfer".to_string(),
             run: d60::detect_d60,
         },
-        // --- OPT_IN_DETECTORS (12: al-sem opt-in order, then the BCQuality-wave opt-ins incl. demoted d56) ---
+        // --- OPT_IN_DETECTORS (11: al-sem opt-in order, then the BCQuality-wave opt-ins) ---
         // d40: OPT-IN in al-sem (transitive-load-missing).
         Detector {
             name: "d40-transitive-load-missing".to_string(),
@@ -1144,14 +1152,6 @@ pub fn registered_detectors() -> Vec<Detector> {
         Detector {
             name: "d51-retry-side-effect-duplication".to_string(),
             run: d51::detect_d51,
-        },
-        // d56: OPT-IN (BCQuality wave, clone-before-write-in-loop). Demoted from
-        // default: precise after the temp-source guard, but a persisted-source
-        // key-remap clone residual (needs primary-key-reassignment analysis) keeps
-        // it opt-in. See d56.rs module doc.
-        Detector {
-            name: "d56-clone-before-write-in-loop".to_string(),
-            run: d56::detect_d56,
         },
         // d61: OPT-IN (BCQuality wave, ishandled-bypasses-critical-write).
         Detector {

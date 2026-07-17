@@ -15,12 +15,23 @@
 //!    Insert()/Modify()`) — a genuinely different row, not the redundant re-write
 //!    the premise describes; the `Copy := Cursor` struct copy is itself SQL-free.
 //!
-//! Known residual (opt-in tier): a PERSISTED-source clone that reassigns the
-//! clone's PRIMARY-KEY / current-key fields before the write targets a DIFFERENT
-//! physical row (so the clone is functionally required, e.g. a key-remap loop) —
-//! the premise's "cursor already holds the row" is false there too, but proving it
-//! needs per-field primary-key-reassignment analysis this detector does not yet
-//! carry. That residual is why d56 ships OPT-IN.
+//! Key-field-reassignment skip (closes the prior opt-in residual): a
+//! PERSISTED-source clone is NOT flagged when, between the clone assignment and
+//! the write, a field WRITE on the clone targets a KEY field — the target
+//! table's PRIMARY KEY (`L3Table.keys` first entry) or a field named in a
+//! `SetCurrentKey` call on the SOURCE cursor in the SAME routine (the current
+//! key, which need not be the PK). Such a write retargets the clone at a
+//! DIFFERENT physical row, so the clone is functionally required — the
+//! real-world case: Continia's MoveEmailLog (`EmailLog2 := EmailLog;
+//! EmailLog2."Record ID" := ...; EmailLog2.Modify()` inside a loop where
+//! "Record ID" is the SetCurrentKey field, not the table's declared PK). The
+//! write signal is derived structurally (never a raw field read): a
+//! `field_accesses` entry counts as a write only when its exact
+//! `(start_line, start_column, field_name)` matches a recorded
+//! `var_assignments` LHS — the same G-15(a) proof d3 uses (a plain read of a
+//! key field, e.g. in a condition, never matches an assignment LHS position
+//! and so never triggers the skip). This closes the residual that kept d56
+//! OPT-IN; it now ships DEFAULT.
 //!
 //! Severity: medium. Confidence: likely.
 
@@ -29,7 +40,10 @@ use std::collections::HashSet;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::{anchor_of, anchor_within, before_anchor, is_known_temp_var};
+use crate::engine::l5::detectors::{
+    anchor_of, anchor_within, before_anchor, is_known_temp_var, normalize_load_field_arg,
+    primary_key_field_names_lc,
+};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -41,7 +55,7 @@ const WRITE_BACK_OPS: &[&str] = &["Modify", "Delete"];
 
 pub fn detect_d56(
     resolved: &L3Resolved,
-    _ctx: &DetectorContext,
+    ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
     let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
@@ -50,6 +64,7 @@ pub fn detect_d56(
     let mut skipped_no_write_back = 0u64;
     let mut skipped_source_not_cursor = 0u64;
     let mut skipped_source_temp = 0u64;
+    let mut skipped_key_remapped_clone = 0u64;
 
     for routine in &ws.routines {
         if !routine.body_available || routine.parse_incomplete {
@@ -62,6 +77,23 @@ pub fn detect_d56(
             .record_variables
             .iter()
             .map(|rv| rv.name.to_lowercase())
+            .collect();
+
+        // G-15(a) write-target proof (shared with d3): a `field_accesses` entry
+        // is a WRITE iff its exact (start_line, start_column, field_name) matches
+        // a recorded `var_assignments` LHS — the assignment statement's anchor IS
+        // the LHS member expression's start. A plain read of the same field
+        // elsewhere in the routine sits at a different position and never matches.
+        let write_targets: HashSet<(u32, u32, String)> = routine
+            .var_assignments
+            .iter()
+            .map(|va| {
+                (
+                    va.source_anchor.start_line,
+                    va.source_anchor.start_column,
+                    normalize_load_field_arg(&va.lhs_name),
+                )
+            })
             .collect();
 
         for asg in &routine.var_assignments {
@@ -116,6 +148,46 @@ pub fn detect_d56(
                 .any(|rv| rv.name.to_lowercase() == rhs_lc && is_known_temp_var(rv));
             if src_is_temp {
                 skipped_source_temp += 1;
+                continue;
+            }
+
+            // Key-field-reassignment skip: the clone is functionally required
+            // (targets a DIFFERENT physical row) when, between the clone and the
+            // write, a field WRITE on the CLONE targets a key field — the
+            // target table's PRIMARY KEY (first `keys` entry) or a field named
+            // in a `SetCurrentKey` call on the SOURCE cursor in this routine
+            // (the current key, which need not be the PK).
+            let pk_fields: HashSet<String> = write
+                .table_id
+                .as_deref()
+                .and_then(|tid| ctx.table_by_id.get(tid))
+                .copied()
+                .map(primary_key_field_names_lc)
+                .unwrap_or_default();
+            let current_key_fields: HashSet<String> = routine
+                .record_operations
+                .iter()
+                .filter(|op| {
+                    op.op == "SetCurrentKey" && op.record_variable_name.to_lowercase() == rhs_lc
+                })
+                .filter_map(|op| op.field_arguments.as_ref())
+                .flatten()
+                .map(|f| normalize_load_field_arg(f))
+                .collect();
+            let key_field_reassigned = routine.field_accesses.iter().any(|fa| {
+                fa.record_variable_name.to_lowercase() == asg.lhs_name
+                    && before_anchor(&asg.source_anchor, &fa.source_anchor)
+                    && before_anchor(&fa.source_anchor, &write.source_anchor)
+                    && write_targets.contains(&(
+                        fa.source_anchor.start_line,
+                        fa.source_anchor.start_column,
+                        fa.field_name.to_lowercase(),
+                    ))
+                    && (pk_fields.contains(&fa.field_name.to_lowercase())
+                        || current_key_fields.contains(&fa.field_name.to_lowercase()))
+            });
+            if key_field_reassigned {
+                skipped_key_remapped_clone += 1;
                 continue;
             }
 
@@ -187,5 +259,6 @@ pub fn detect_d56(
     stats.add_skip("noWriteBack", skipped_no_write_back);
     stats.add_skip("sourceNotCursor", skipped_source_not_cursor);
     stats.add_skip("sourceTemp", skipped_source_temp);
+    stats.add_skip("keyRemappedClone", skipped_key_remapped_clone);
     Ok(DetectorOutput::no_diag(findings, stats))
 }
