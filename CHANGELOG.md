@@ -24,6 +24,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
+- R0 differential harness (`tests/differential.rs`'s `diff_snapshots`): the
+  objects comparison keyed solely on `stableObjectId`, which is NOT unique —
+  `Interface`/`ControlAddIn` objects carry no grammar-level object number, so
+  `engine::snapshot::extract_from_ir` synthesizes `objectNumber = 0` for EVERY
+  such object in an app, and any two of them collide on the exact same
+  `stableObjectId`. Collecting into a `BTreeMap<&str, &ObjectIdentity>` keyed
+  by that id silently dropped every colliding entry but the last
+  (`BTreeMap::insert` overwrites a repeated key), so
+  `ws-interface-dispatch.golden.json`'s two interfaces (`IEmpty`,
+  `IProcessor`) were never both compared — only whichever sorted last
+  (`IProcessor`) was actually checked, letting the committed golden's
+  `IEmpty` row sit silently wrong (a stale copy of `IProcessor`'s
+  `signatureFingerprint`) while the harness reported green. This had been
+  characterized as a process-random `HashMap`-seed determinism bug in an
+  `IEmpty` signature fingerprint; root-cause investigation (6 fresh-process
+  regen loops, before and after the fix) instead proved the engine's own
+  computation (`engine::ids::object_signature_fingerprint`) is fully
+  deterministic — the bug was entirely in the test's non-unique join key.
+  Fixed by keying on `(stableObjectId, name)` — AL forbids two same-kind
+  objects sharing both an id and a name — so every object is now compared
+  independently regardless of a shared id. `IEmpty`'s golden fingerprint is
+  rebaselined to its correct, always-computed value; no other golden family
+  moved (`scripts/check-goldens --regen` touched only this one file/field).
 - `FreshCoverage::opaque_apps` (the fresh-resolver preflight's symbol-only-dependency
   closure) no longer reports a symbol-only dep whose ABI surface (`AppUnit::abi`'s
   parsed `SymbolReference.json`) declares ZERO objects — it provably hides no bodies,
