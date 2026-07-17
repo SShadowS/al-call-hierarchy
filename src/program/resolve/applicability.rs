@@ -16,6 +16,7 @@
 //!
 //! Clean-room: this module does NOT import from L3 logic.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
@@ -121,7 +122,7 @@ pub fn interface_route_applicable(
     let implements_iface = obj_node
         .implements
         .iter()
-        .any(|s| s.to_ascii_lowercase() == iface_lc);
+        .any(|s| s.fold_identifier() == iface_lc);
     if !implements_iface {
         return false;
     }
@@ -211,7 +212,7 @@ pub fn implicit_trigger_route_applicable(
                 .objects
                 .iter()
                 .find(|o| o.id == ctx.table)
-                .map(|n| n.name.to_ascii_lowercase())
+                .map(|n| n.name.fold_identifier())
                 .unwrap_or_default()
         }
     };
@@ -306,7 +307,7 @@ mod tests {
             id: ObjectNodeId {
                 app,
                 kind,
-                key: ObjKey::Name(name.to_ascii_lowercase()),
+                key: ObjKey::Name(name.fold_identifier()),
             },
             name: name.to_string(),
             declared_id: None,
@@ -332,15 +333,15 @@ mod tests {
         RoutineNode {
             id: RoutineNodeId {
                 object: obj_id.clone(),
-                name_lc: name.to_ascii_lowercase(),
-                enclosing_member_lc: enclosing.map(|s| s.to_ascii_lowercase()),
+                name_lc: name.fold_identifier(),
+                enclosing_member_lc: enclosing.map(|s| s.fold_identifier()),
                 params_count: params,
                 sig_fp: 0,
             },
             name: name.to_string(),
             is_trigger: enclosing.is_some()
                 || matches!(
-                    name.to_ascii_lowercase().as_str(),
+                    name.fold_identifier().as_str(),
                     "oninsert" | "onmodify" | "ondelete" | "onrename" | "onvalidate"
                 ),
             access: Access::Public,

@@ -31,6 +31,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 use serde::Serialize;
 
@@ -314,13 +315,13 @@ fn build_hyperedges(
         .objects
         .iter()
         .filter(|o| o.id.kind == ObjectKind::Interface)
-        .map(|o| (o.name.to_ascii_lowercase(), o))
+        .map(|o| (o.name.fold_identifier(), o))
         .collect();
     let mut impls: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for o in &graph.objects {
         for iface in &o.implements {
             impls
-                .entry(iface.to_ascii_lowercase())
+                .entry(iface.fold_identifier())
                 .or_default()
                 .push(object_id_str(&o.id, &graph.apps));
         }
@@ -1090,7 +1091,7 @@ mod tests {
                     kind: ObjectKind::Codeunit,
                     key: ObjKey::Id(obj_id),
                 },
-                name_lc: name.to_ascii_lowercase(),
+                name_lc: name.fold_identifier(),
                 enclosing_member_lc: None,
                 params_count: params,
                 sig_fp: 0,
@@ -1121,7 +1122,7 @@ mod tests {
                 kind: ObjectKind::Codeunit,
                 key: ObjKey::Id(obj_id),
             },
-            name_lc: name.to_ascii_lowercase(),
+            name_lc: name.fold_identifier(),
             enclosing_member_lc: None,
             params_count: params,
             sig_fp: 0,

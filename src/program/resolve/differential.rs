@@ -39,6 +39,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 
 use crate::program::node::{AppRef, AppRegistry, ObjKey, RoutineNodeId};
@@ -610,13 +611,13 @@ pub fn verify_event_subscriber_route(
             }
             let key_matches = match &sub_rid.object.key {
                 ObjKey::Id(n) => obj.id == Some(*n),
-                ObjKey::Name(name_lc) => obj.name.to_ascii_lowercase() == *name_lc,
+                ObjKey::Name(name_lc) => obj.name.fold_identifier() == *name_lc,
             };
             if !key_matches {
                 continue;
             }
             for r in &obj.routines {
-                if r.name.to_ascii_lowercase() != sub_rid.name_lc {
+                if r.name.fold_identifier() != sub_rid.name_lc {
                     continue;
                 }
                 if r.params.len() != sub_rid.params_count {

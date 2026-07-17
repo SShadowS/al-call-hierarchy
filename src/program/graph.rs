@@ -1,5 +1,6 @@
 //! The whole-program node graph: app-qualified nodes + topology-scoped lookup.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 use std::collections::{BTreeSet, HashMap};
 
@@ -21,7 +22,7 @@ impl ObjectIndex {
     pub fn build(objects: &[ObjectNode]) -> Self {
         let mut idx = ObjectIndex::default();
         for (i, obj) in objects.iter().enumerate() {
-            let key = (obj.id.app, obj.id.kind, obj.name.to_ascii_lowercase());
+            let key = (obj.id.app, obj.id.kind, obj.name.fold_identifier());
             idx.by_app_kind_name.entry(key).or_insert(i);
         }
         idx
@@ -89,7 +90,7 @@ impl ProgramGraph {
         kind: ObjectKind,
         name: &str,
     ) -> Option<&ObjectNode> {
-        let name_lc = name.to_ascii_lowercase();
+        let name_lc = name.fold_identifier();
 
         // Prefer `from` itself — short-circuit before building the full closure.
         if let Some(&idx) = self
