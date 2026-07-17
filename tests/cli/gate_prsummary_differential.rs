@@ -582,6 +582,19 @@ fn anti_degenerate_exit_zero_to_one_transition() {
 /// reclassification (its residual unresolved callsite is a real non-builtin gap).
 /// ws-txn-d47-pos-http-nocommit is no longer degraded — its only unresolved call
 /// was `HttpClient.Send`, now correctly classified `builtin` (exit 4→0).
+///
+/// preflight-fresh-coverage Task 4 investigation: this test was expected (by the
+/// task's plan doc) to need repointing at `ws-baseapp-closure` (a symbol-only-dep
+/// fixture) once `evaluate_preflight` switched from the legacy L3
+/// `unresolved_callsites`/`opaque_apps` pair to `FreshCoverage`. It does NOT need
+/// repointing: `ws-txn-d47-pos-file` has zero dependencies (`app.json` `"dependencies":
+/// []`), so it was never a symbol-only-dep case — its degradation was ALREADY the
+/// `unknown`-edge kind under L3, and `aldump --program-call-graph-stats` on this
+/// fixture confirms the FRESH resolver independently finds the SAME real gap:
+/// `unknown: 1, unknownByReason: {"catalogMiss": 1}` (the `File.WriteAllText` call
+/// referenced in the doc comment above). The anti-degenerate property ("exit 4 is
+/// reachable") survives the re-key by coincidence of the fixture already being a
+/// genuine non-builtin resolution gap on BOTH engines, not by any code change here.
 #[test]
 fn anti_degenerate_preflight_exit_four() {
     let rd = run_exit_require_deps("ws-txn-d47-pos-file", Some("transaction-integrity"), None);
@@ -598,7 +611,9 @@ fn anti_degenerate_preflight_exit_four() {
 /// Oracle 4 — F2: preflight degraded stderr warning (the "no silent clean" contract).
 ///
 /// `run_analyze_with_exit` on a degraded fixture (ws-txn-d47-pos-file has a real
-/// unresolved callsite per the exit-codes golden: require-dependencies → 4) WITHOUT
+/// FRESH-resolver unknown edge — `aldump --program-call-graph-stats` on this fixture
+/// reports `unknown: 1, unknownByReason: {"catalogMiss": 1}` for `File.WriteAllText`,
+/// independent of the exit-codes golden's own require-dependencies cell) WITHOUT
 /// `--require-dependencies` must:
 ///   - return exit NOT 4 (0 since no --fail-on)
 ///   - return `stderr_warning = Some(msg)` with the al-sem warning string format
@@ -625,16 +640,18 @@ fn oracle_f2_preflight_degraded_warning_without_require_deps() {
         "F2: degraded fixture must return Some(warning) from run_analyze_with_exit, \
          even without --require-dependencies",
     );
-    // The warning text must match al-sem's preflight.ts message format.
+    // The warning text must match the fresh-keyed preflight.rs message format
+    // (evaluate_preflight's clause-joined "analysis coverage degraded — <clauses>").
     assert!(
         warning_msg.starts_with("analysis coverage degraded"),
         "F2: warning message must start with 'analysis coverage degraded', got: {warning_msg:?}"
     );
     // The bin emits: `al-sem: warning: {msg}` — verify the message content (not the prefix,
-    // which is the bin's responsibility) matches the preflight.rs format.
+    // which is the bin's responsibility) matches the fresh-keyed clause vocabulary
+    // (`{n} unknown resolution edge(s)`), not the RETIRED L3 "unresolved callsite" wording.
     assert!(
-        warning_msg.contains("unresolved callsite"),
-        "F2: warning must mention 'unresolved callsite', got: {warning_msg:?}"
+        warning_msg.contains("unknown resolution edge"),
+        "F2: warning must mention 'unknown resolution edge', got: {warning_msg:?}"
     );
 }
 
@@ -649,6 +666,12 @@ fn oracle_f2_preflight_degraded_warning_without_require_deps() {
 ///     (the bin maps this to CONFIG_ERROR (3)).
 ///
 /// These cells are invisible to the exit-code matrix, which tests flags in isolation.
+///
+/// preflight-fresh-coverage Task 4 investigation: same finding as
+/// `anti_degenerate_preflight_exit_four` above — `ws-txn-d47-pos-file` is
+/// independently confirmed genuinely fresh-degraded (a real `catalogMiss` unknown
+/// edge, not a symbol-only dependency), so no repoint to `ws-baseapp-closure` is
+/// needed; the precedence property (PREFLIGHT_FAILED beats FINDINGS) is unchanged.
 #[test]
 fn oracle_exit_precedence_preflight_wins_over_findings() {
     // (a) --require-dependencies + --fail-on critical on a degraded fixture

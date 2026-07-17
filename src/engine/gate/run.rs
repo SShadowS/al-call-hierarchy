@@ -361,7 +361,14 @@ pub fn run_analyze_with_exit(
     // --- dependency-coverage preflight (al-sem Task 2) ---
     // NOTE: coverage is computed HERE (before the format switch) so it is available
     // to the Json formatter. The preflight evaluation + exit-code gate follow below.
-    let coverage = resolved.project_coverage_disk(ws_path);
+    let mut coverage = resolved.project_coverage_disk(ws_path);
+    // One dependency universe (spec §3): the formatter-visible opaqueApps follows
+    // the FRESH snapshot. The L3 gate path resolves source-only with empty deps
+    // (src/engine/l3/coverage.rs:239) — its opaque list is structurally empty, and
+    // leaving it would let stderr say "N symbol-only apps" while JSON says [].
+    if let Ok(fc) = &fresh {
+        coverage.opaque_apps = fc.opaque_apps.clone();
+    }
 
     // --- format ---
     let output = match args.format {
