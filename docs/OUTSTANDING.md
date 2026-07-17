@@ -6,12 +6,12 @@ Ordering within a tier is the suggested attack order.
 
 ## Housekeeping (this week)
 
-- [ ] Push `master` to origin (~30 commits ahead: wave merge + dev-setup commits)
+- [ ] Push `master` to origin (~45 commits ahead: BCQuality wave + dev-setup + preflight-fresh-coverage merges)
 - [ ] `git stash drop stash@{0}` (accidental frozen-fixture renormalize; harmless, user runs it — safety net blocks the agent)
 - [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is local-only today — force-add `.claude/commands/triage-wave.md` or leave personal
 - [ ] ws-interface-dispatch.golden.json IEmpty signatureFingerprint is HashMap-seed-flaky under REGEN (found during preflight arc; regen twice and diff to reproduce)
 - [ ] gate_sarif_differential.rs regen path has a latent self-check bug (found during preflight arc — see .superpowers/sdd/task-4-report.md for details)
-- [ ] MERGE-TIME (preflight branch): master's working tree holds CRLF copies of wave-era tests/r0-corpus .al files — after merging feat/preflight-fresh-coverage, delete + git restore them or master's l2_ir stays red (see commit 9199c4a's message for the full story)
+- [x] MERGE-TIME (preflight branch): master's working tree held CRLF copies of wave-era tests/r0-corpus .al files — DONE at merge d14cf84 (all 552 re-materialized via rm + git checkout-index; index renormalize settled status; master l2_ir + check-goldens green). Detection note: use `file`/`od` for CR checks, never grep (MSYS grep strips CR)
 
 ## BCQuality wave follow-ups (doc `2026-07-16-scanner-validation…` §6)
 
