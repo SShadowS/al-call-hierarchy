@@ -121,6 +121,16 @@ the bottom, CHANGELOG, and git log.
 - [ ] Preproc-symbol fidelity — wake: a real consumer
 - [ ] Sender param-TYPE drift analysis — wake: a version-drifted-closure corpus
 
+## Product direction (post-1.0 — needs a brainstorm session, not a dispatch)
+
+- [ ] **Change-impact wedge** — the charter's headline product feature ("what breaks
+  if I change X" over the zero-unknown whole-program graph). Brainstorm input +
+  substrate map + the 8 open design forks:
+  `docs/superpowers/notes/2026-07-18-change-impact-wedge-brainstorm-input.md`
+  (its file:line substrate map is a `b7da82d` snapshot — re-verify after any refactor;
+  the product framing is refactor-independent). Biggest architecture fork: effects-on-
+  fresh vs re-consuming the advisory L4 layer
+
 ## Separate track
 
 - BC-Brain — its own product backlog (`SShadowS/bc-brain`), never mixed into this list.

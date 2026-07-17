@@ -5,6 +5,16 @@ This is NOT a spec — it frames the product conversation the charter calls for.
 brainstorm session decides; this doc just makes sure it starts from the engine's
 real capabilities and the honest open questions.
 
+> **STALENESS WARNING (read first if picking this up after a refactor).** The
+> "What already exists to build on" table and the file:line references below are a
+> point-in-time snapshot of the engine at commit `b7da82d` (master, 2026-07-18). A
+> major refactor between then and the brainstorm can move or rename any of them —
+> re-verify each cited path/symbol against current code before treating it as fact,
+> and re-answer the Q1/Q2 architecture forks against the refactored shape (a refactor
+> that ports effects onto the fresh graph may already have decided the biggest fork).
+> The PRODUCT framing (why-now, cone semantics, tiering, the eight forks) is
+> refactor-independent and stays valid regardless.
+
 ## Why this, why now
 
 The semantic-intelligence charter names the **change-impact wedge** as the product
