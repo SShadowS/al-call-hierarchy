@@ -146,6 +146,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already missed).
 
 ### Changed
+- **Identifier case-folding is now simple-Unicode, not ASCII-only (Unicode-fold
+  moat arc).** AL identifiers are case-insensitive, but the engine's fold
+  choke point (`to_ascii_lowercase`) left non-ASCII letters (Æ Ø Å Ä Ö Ü ß …)
+  unfolded, so e.g. a codeunit declared `"Løbenr Mgt."` and a reference
+  spelled `"LØBENR MGT."` (differing only in the non-ASCII `Ø`/`ø`'s case)
+  would fold to two DIFFERENT keys and fail to resolve — where the real AL
+  compiler (best-evidence a simple, culture-invariant 1:1 Unicode fold;
+  `.superpowers/sdd/unicode-fold-investigation.md`) treats them as the same
+  identifier. New choke point: `al_syntax::{fold_identifier, eq_fold_identifier,
+  IdentifierFoldExt}` (`crates/al-syntax/src/casing.rs`) — `is_ascii()`-guarded,
+  so behavior is **byte-identical to today's `to_ascii_lowercase` for every
+  all-ASCII identifier** (measured: DO's entire primary source tree is 100%
+  ASCII, so the frozen CDO north-star SHA is unchanged — verified,
+  `0a3b85bc832ff…`); the non-ASCII branch is a per-char simple 1:1 fold
+  (`char::to_lowercase(c).next()`, empirically the sole Unicode codepoint
+  with a multi-char `to_lowercase()` result is Turkish `İ`, U+0130 — so this
+  is a true 1:1 fold everywhere, deliberately never `str::to_lowercase()`'s
+  2-char `İ`→`i̇`; `ß` stays `ß`, `ẞ`/`ß` fold together as a genuine case
+  pair). Mechanically swapped every SEMANTIC identifier fold (object/routine/
+  field/variable/dataitem/interface/enum-value/event/attribute names,
+  receiver/member/callee text, ABI param/subtype names, signature-fingerprint
+  type text) across `crates/al-syntax`'s lowerer, the whole-program resolver
+  (`src/program/`), the L3/L5 advisory engine, and the LSP surface — left
+  grammar/type keywords, access modifiers, attribute/property-name checks
+  against AL's closed platform vocabulary, GUIDs/paths/file-extensions, and
+  app.json name/publisher dependency matching (a different, unverified
+  casing domain) deliberately on ASCII folding. New fixture
+  `tests/r0-corpus/ws-unicode-fold/` proves the behavior change end-to-end: a
+  Danish object-name cross-case pair and a German routine-name cross-case
+  pair both now resolve via `Evidence::Source` — verified they would NOT
+  under the old ASCII-only fold (`"lØbenr mgt." != "løbenr mgt."` under
+  `to_ascii_lowercase`).
 - Snapshot-scoped `LineTable` cache (deep-review T3 follow-up, `docs/OUTSTANDING.md`):
   `lsp::handlers::incoming`'s per-distinct-caller position re-derivation (and
   `prepare`/`outgoing`/codeLens/diagnostics — every LSP handler that converts a

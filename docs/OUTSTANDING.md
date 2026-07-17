@@ -50,9 +50,21 @@ the bottom, CHANGELOG, and git log.
   machine — see `.superpowers/sdd/linetable-cache-report.md`); `dep_texts`
   (dependency-embedded-source) deliberately left uncached (smaller, rarer
   population). All perf_bounds gates still pass.
-- [ ] **Unicode-fold moat task** — 212 `to_ascii_lowercase` sites in `src/program/`;
-  the one legitimate future north-star-SHA-mover (case-folding correctness for
-  non-ASCII identifiers)
+- [x] **Unicode-fold moat task** — DONE 2026-07-18. New choke point
+  `al_syntax::{fold_identifier, eq_fold_identifier, IdentifierFoldExt}`
+  (`crates/al-syntax/src/casing.rs`, `is_ascii()`-guarded simple 1:1 Unicode
+  fold — byte-identical to `to_ascii_lowercase` for all-ASCII input, never
+  `str::to_lowercase()`'s 1:n `İ`→`i̇`). Mechanically swapped every SEMANTIC
+  identifier fold across `crates/al-syntax`'s lowerer, `src/program/`
+  (production+lookup sides together, one commit), and `src/engine`+`src/lsp`
+  — 3 commits, one per layer, each landing green. New fixture
+  `tests/r0-corpus/ws-unicode-fold/` proves cross-case non-ASCII identifiers
+  (Danish `Løbenr Mgt.`/`LØBENR MGT.`, German `Prüfung`/`PRÜFUNG`) now
+  resolve via `Evidence::Source` — verified they would NOT under the old
+  ASCII-only fold. North-star SHA guard: **unchanged**
+  (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`, exactly
+  as the investigation predicted — DO's primary source is 100% ASCII).
+  Report: `.superpowers/sdd/unicode-fold-report.md`
 - [x] **r3a4 source-bearing-dep pin hardening** — DONE 2026-07-17 (`8b5b4ec`):
   closure-membership assert added; the pin can no longer be vacated by a fixture edit
 
