@@ -165,7 +165,7 @@ use lsp_types::Position;
 use serde::{Deserialize, Serialize};
 
 use crate::app_package::{ExternalMethodKind, ExternalObject};
-use crate::lsp::encoding::{LineTable, PositionEncoding};
+use crate::lsp::encoding::PositionEncoding;
 use crate::lsp::handlers::{origin_to_range, resolve_virtual_path};
 use crate::lsp::snapshot::LspSnapshot;
 use crate::program::resolve::event::{PublisherKind, is_event_publisher};
@@ -431,7 +431,7 @@ pub fn event_publishers_in_file(
     let Some(entry) = snap.parsed.get(&virtual_path) else {
         return Vec::new();
     };
-    let table = LineTable::new(&entry.text);
+    let table = entry.line_table();
 
     let mut out = Vec::new();
     for obj in &entry.file.objects {
@@ -456,10 +456,10 @@ pub fn event_publishers_in_file(
                 detail: format!("{tag} {signature}"),
                 kind: 24,
                 tags: Vec::new(),
-                range: lsp_range_to_dep_range(origin_to_range(&routine.origin, &table, enc)),
+                range: lsp_range_to_dep_range(origin_to_range(&routine.origin, table, enc)),
                 selection_range: lsp_range_to_dep_range(origin_to_range(
                     &routine.name_origin,
-                    &table,
+                    table,
                     enc,
                 )),
             });
@@ -508,7 +508,7 @@ pub fn event_reference_at_position(
 ) -> Option<EventReferenceMatch> {
     let virtual_path = resolve_virtual_path(snap, uri)?;
     let entry = snap.parsed.get(&virtual_path)?;
-    let table = LineTable::new(&entry.text);
+    let table = entry.line_table();
     let byte_col = table.col_in(pos.line, pos.character, enc);
     let target = (pos.line, byte_col);
 

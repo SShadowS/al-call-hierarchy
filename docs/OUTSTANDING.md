@@ -30,8 +30,14 @@ the bottom, CHANGELOG, and git log.
 - [ ] **Multi-root LSP workspaces** (user decision 2026-07-13: shipped single-root +
   tracked follow-up): per-root ServerState map + URI→root routing; design recorded in
   `server.rs`'s `primary_workspace_root` doc
-- [ ] **Snapshot-scoped LineTable cache** — the remaining linear per-save cost on the
-  LSP hot path (deep-review T3 follow-up)
+- [x] **Snapshot-scoped LineTable cache** — DONE 2026-07-17. `ParsedFileEntry` gained
+  a `OnceLock<LineTable>`-backed cache (rides the existing Arc-forwarding
+  invalidation architecture, no new bookkeeping); `LineTable` moved from
+  borrowing `&'t str` to owning `Arc<str>` so it can be stored. `incoming`
+  ~5.82ms → ~4.30ms median on the 999-way-fan-in synthetic corpus (noisy
+  machine — see `.superpowers/sdd/linetable-cache-report.md`); `dep_texts`
+  (dependency-embedded-source) deliberately left uncached (smaller, rarer
+  population). All perf_bounds gates still pass.
 - [ ] **Unicode-fold moat task** — 212 `to_ascii_lowercase` sites in `src/program/`;
   the one legitimate future north-star-SHA-mover (case-folding correctness for
   non-ASCII identifiers)

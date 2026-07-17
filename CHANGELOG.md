@@ -115,6 +115,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already missed).
 
 ### Changed
+- Snapshot-scoped `LineTable` cache (deep-review T3 follow-up, `docs/OUTSTANDING.md`):
+  `lsp::handlers::incoming`'s per-distinct-caller position re-derivation (and
+  `prepare`/`outgoing`/codeLens/diagnostics — every LSP handler that converts a
+  byte-native `Origin`/`CanonicalSpan` to an LSP `Range`) now memoizes each
+  workspace file's `LineTable` on `ParsedFileEntry` (`OnceLock`-backed, thread-safe
+  under the main request loop + the updater thread's concurrent post-swap
+  diagnostics recompute) instead of rebuilding it from scratch on every call.
+  `LineTable` itself moved from borrowing `&'t str` to owning an `Arc<str>` clone
+  (a refcount bump, not a copy, for every caller that already holds one) so it can
+  be stored behind the cache rather than tied to a per-call lifetime. Semantics
+  are preserved by construction, not by new invalidation logic: a `ParsedFileEntry`
+  is immutable once built, and a file's text can only change by way of a BRAND-NEW
+  `ParsedFileEntry` (rung 1's touched-file insert, rung 2's per-file rebuild,
+  `LspSnapshot::from_context`'s full build) — which always starts with an empty
+  cache — while every file rung 1 did NOT touch keeps forwarding the SAME
+  `Arc<ParsedFileEntry>` (hence its already-warmed cache) across the snapshot
+  swap, riding the Arc-forwarding architecture `src/lsp/updater.rs` already uses
+  for every other derived index. Dependency-embedded-source text (`dep_texts`) is
+  deliberately NOT cached in this pass — a much smaller, rarer population
+  (cross-app event-flow only) with its own existing byte-sharing tests; see
+  `.superpowers/sdd/linetable-cache-report.md` for the full investigation.
+  Measured (`cargo bench --bench lsp_pipeline`, 1000-file synthetic corpus,
+  999-way real fan-in, Criterion, this machine — high run-to-run variance
+  observed, medians over 5-6 repeated invocations each): `incoming` ~5.82ms →
+  ~4.30ms (~26% faster); `tests/perf_bounds.rs`'s release-build gate
+  (`incoming_within_bound`) stays comfortably inside its 75ms bound
+  (~5.7-6.0ms either side of the change on this run).
 - d56-clone-before-write-in-loop re-promoted DEFAULT (was opt-in): a new
   `keyRemappedClone` skip excludes a persisted-source clone that reassigns a
   key field (the target table's PRIMARY KEY, or a field named in a

@@ -21,7 +21,7 @@ use al_syntax::ir::{AlFile, RoutineDecl, RoutineKind};
 use lsp_types::{CodeLens, Command};
 
 use crate::config::DiagnosticConfig;
-use crate::lsp::encoding::{LineTable, PositionEncoding};
+use crate::lsp::encoding::PositionEncoding;
 use crate::lsp::handlers::{object_name_for, origin_to_range, resolve_virtual_path};
 use crate::lsp::snapshot::LspSnapshot;
 use crate::program::RoutineNodeId;
@@ -45,7 +45,7 @@ pub fn code_lenses(
     let Some(decls) = snap.decls_by_file.get(&virtual_path) else {
         return Vec::new();
     };
-    let table = LineTable::new(&entry.text);
+    let table = entry.line_table();
 
     let mut out = Vec::with_capacity(decls.len());
     for decl in decls.iter() {
@@ -64,7 +64,7 @@ pub fn code_lenses(
         let object_name = object_name_for(&snap.graph, &decl.id.object).unwrap_or("Unknown");
 
         out.push(CodeLens {
-            range: origin_to_range(&decl.origin, &table, enc),
+            range: origin_to_range(&decl.origin, table, enc),
             command: Some(Command {
                 title,
                 command: "al-call-hierarchy.showReferences".to_string(),

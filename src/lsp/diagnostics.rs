@@ -222,11 +222,14 @@ fn compute_file(
         return;
     };
     let uri = workspace_uri(snap, virtual_path);
-    // A single `LineTable` per call — this function runs at most once per
-    // `virtual_path` per `compute_all`/`compute_for_files` pass (both
-    // callers loop over a set of DISTINCT virtual paths), so no per-file
-    // memoization is needed here.
-    let table = LineTable::new(&entry.text);
+    // Snapshot-scoped cache (`ParsedFileEntry::line_table`,
+    // `docs/OUTSTANDING.md`'s "Snapshot-scoped LineTable cache" item): this
+    // function runs at most once per `virtual_path` per `compute_all`/
+    // `compute_for_files` pass, but the SAME `LineTable` is shared with
+    // every OTHER handler (`prepare`/`incoming`/`outgoing`/codeLens)
+    // querying this file within the same snapshot generation — never
+    // rebuilt here if one of them already warmed it (or vice versa).
+    let table = entry.line_table();
 
     for decl in decls.iter() {
         let Some(routine) = find_routine_by_origin(&entry.file, decl.origin.byte.start) else {
@@ -248,7 +251,7 @@ fn compute_file(
         if cfg.unused_procedures && is_unused_procedure(decl, routine, incoming_count) {
             out.entry(uri.clone())
                 .or_default()
-                .push(unused_procedure_diagnostic(snap, decl, &table, enc));
+                .push(unused_procedure_diagnostic(snap, decl, table, enc));
         }
 
         let complexity = crate::analysis::routine_complexity_ir(&entry.file.ir, routine);
@@ -259,7 +262,7 @@ fn compute_file(
             out.entry(uri.clone()).or_default(),
             snap,
             decl,
-            &table,
+            table,
             enc,
             complexity,
             parameter_count,
@@ -348,7 +351,7 @@ fn is_unused_procedure(
 fn unused_procedure_diagnostic(
     snap: &LspSnapshot,
     decl: &DeclEntry,
-    table: &LineTable<'_>,
+    table: &LineTable,
     enc: PositionEncoding,
 ) -> Diagnostic {
     let object_name = object_name_for(&snap.graph, &decl.id.object).unwrap_or("Unknown");
@@ -375,7 +378,7 @@ fn push_quality_diagnostics(
     out: &mut Vec<Diagnostic>,
     snap: &LspSnapshot,
     decl: &DeclEntry,
-    table: &LineTable<'_>,
+    table: &LineTable,
     enc: PositionEncoding,
     complexity: u32,
     parameter_count: u32,
