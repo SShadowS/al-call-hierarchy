@@ -71,3 +71,25 @@ page 50944 "D64 Card"
         }
     }
 }
+
+// NOT FLAGGED: temp-sourced API page. Shares shape A's trigger condition
+// (Editable = false, no InsertAllowed/ModifyAllowed/DeleteAllowed) but
+// SourceTableTemporary = true means Rec is a per-session TEMPORARY buffer —
+// accepted OData writes persist nothing, so the write-surface hazard is
+// materially void. Measured on Microsoft Base Application 28.0: `page 5462
+// "API Routes"` and `page 5460 "Webhook Supported Resources"`.
+page 50945 "D64 Temp Buffer"
+{
+    PageType = API;
+    SourceTable = "D64 Item";
+    SourceTableTemporary = true;
+    Editable = false;
+
+    layout
+    {
+        area(Content)
+        {
+            field(No; Rec."No.") { }
+        }
+    }
+}
