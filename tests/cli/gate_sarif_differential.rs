@@ -262,9 +262,21 @@ fn gate_sarif_goldens_byte_match() {
         };
         let txn_rust = run_gate(gf.fixture, preset, detector);
         if maybe_regen(&format!("{}.txn.sarif.json", gf.fixture), &txn_rust) {
-            // also regen the default slot, then skip the asserts for this fixture
+            // Regen mode: no golden to byte-match against, but the freshly-written
+            // content still counts toward the anti-degenerate codeFlows check —
+            // otherwise this assertion would ALWAYS fail under REGEN_TEMP_GOLDENS=1
+            // regardless of code changes, since every fixture takes this branch.
+            let (_, _, _, cf) = parse_results(&txn_rust);
+            if cf {
+                any_code_flows_matched = true;
+            }
+            // also regen the default slot, then skip the byte-match asserts for this fixture
             let default_rust = run_gate(gf.fixture, None, None);
             maybe_regen(&format!("{}.default.sarif.json", gf.fixture), &default_rust);
+            let (_, _, _, cf) = parse_results(&default_rust);
+            if cf {
+                any_code_flows_matched = true;
+            }
             continue;
         }
         let txn_golden = read_golden(&format!("{}.txn.sarif.json", gf.fixture));
