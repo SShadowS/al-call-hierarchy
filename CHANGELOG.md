@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
+- `gate_sarif_differential`'s regen mode (`REGEN_TEMP_GOLDENS=1`) no longer
+  bypasses its own code-flows anti-degenerate assertion: each fixture's
+  `continue` after `maybe_regen()` skipped the `any_code_flows_matched`
+  tracking, so the regen invocation ALWAYS failed regardless of code state.
+  The check now evaluates the freshly-written SARIF content before continuing —
+  the anti-degenerate property holds in both verify and regen modes.
 - R0 differential harness (`tests/differential.rs`'s `diff_snapshots`): the
   objects comparison keyed solely on `stableObjectId`, which is NOT unique —
   `Interface`/`ControlAddIn` objects carry no grammar-level object number, so

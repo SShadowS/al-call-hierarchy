@@ -200,8 +200,8 @@ fn diff_snapshots(
         .map(|o| ((o.stable_object_id.as_str(), o.name.as_str()), o))
         .collect();
 
-    for ((id, _name), g) in &golden_objs {
-        match rust_objs.get(&(*id, *_name)) {
+    for ((id, name), g) in &golden_objs {
+        match rust_objs.get(&(*id, *name)) {
             None => out.push(Divergence {
                 fixture: fixture.to_string(),
                 path: format!("objects[{:?}]:MISSING_IN_RUST", id),
@@ -209,7 +209,8 @@ fn diff_snapshots(
                 rust_value: "<absent>".to_string(),
             }),
             Some(r) => {
-                push_field(&mut out, fixture, &obj_path(id, "name"), &g.name, &r.name);
+                // (name is part of the map key, so a hit guarantees name equality —
+                // no per-field name comparison needed.)
                 push_field(&mut out, fixture, &obj_path(id, "kind"), &g.kind, &r.kind);
                 push_field(
                     &mut out,

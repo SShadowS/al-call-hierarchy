@@ -6,11 +6,11 @@ Ordering within a tier is the suggested attack order.
 
 ## Housekeeping (this week)
 
-- [ ] Push `master` to origin (~45 commits ahead: BCQuality wave + dev-setup + preflight-fresh-coverage merges)
+- [x] Push `master` to origin — DONE 2026-07-17 (`e6b1283..d695392`, 113 commits; secrets scan clean; Continia refs consistent with what origin already exposes)
 - [ ] `git stash drop stash@{0}` (accidental frozen-fixture renormalize; harmless, user runs it — safety net blocks the agent)
 - [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is local-only today — force-add `.claude/commands/triage-wave.md` or leave personal
 - [x] ws-interface-dispatch.golden.json IEmpty signatureFingerprint "flaky under REGEN" — FALSIFIED as HashMap-seed flakiness (6 fresh-process regen loops, before AND after the fix, were 100% deterministic both times). Root cause was `tests/differential.rs`'s `diff_snapshots` keying objects by `stableObjectId` alone, which collides for any two `Interface`/`ControlAddIn` objects in one app (both synthesize `objectNumber = 0`) — silently dropping all but the last-sorted colliding entry, so `IEmpty`'s stale/wrong golden fingerprint (a copy of `IProcessor`'s) was never actually compared. Fixed by keying on `(stableObjectId, name)`; golden rebaselined (only that one field moved) — DONE (fix/outstanding-test-bugs)
-- [ ] gate_sarif_differential.rs regen path has a latent self-check bug (found during preflight arc — see .superpowers/sdd/task-4-report.md for details)
+- [x] gate_sarif_differential.rs regen path had a latent self-check bug (regen mode bypassed the code-flows anti-degenerate assertion via `continue`) — DONE 819790d (fix/outstanding-test-bugs); both modes green, regen byte-identical
 - [x] MERGE-TIME (preflight branch): master's working tree held CRLF copies of wave-era tests/r0-corpus .al files — DONE at merge d14cf84 (all 552 re-materialized via rm + git checkout-index; index renormalize settled status; master l2_ir + check-goldens green). Detection note: use `file`/`od` for CR checks, never grep (MSYS grep strips CR)
 
 ## BCQuality wave follow-ups (doc `2026-07-16-scanner-validation…` §6)
@@ -21,6 +21,7 @@ Ordering within a tier is the suggested attack order.
 - [ ] **d56 re-promotion:** add primary-key-field-reassignment analysis (clone whose PK/current-key field is reassigned before the write targets a DIFFERENT row — the MoveEmailLog shape), exclude those, re-promote d56 OPT-IN → DEFAULT
 - [ ] **Validate d61/d62/d64 on real code:** emitted 0 on DO (fixture-proven only). Run `/triage-wave` on a corpus that exercises them before considering promotion
 - [ ] Audit other `condition_references` consumers (e.g. d43 IsHandled-guard) for the paren/quoted-condition blind spot that bit d60; migrate to `statement_tree` where bitten
+- [ ] **Number-less object identity collision (engine-wide):** `o.id.unwrap_or(0)` (`src/engine/l2/l2_workspace.rs:355/414/593`) gives EVERY Interface/ControlAddIn in an app the same internal object id `{guid}/{type}/0` — the harness-side symptom was fixed (differential keying, fix/outstanding-test-bugs), but any BY-ID lookup in L2/L3/L5/gate (FingerprintIndex, `to_location`, d64's object-id fallback) can attribute to the wrong object wherever 2+ number-less objects of one type coexist. Needs its own arc: name-qualified id component for number-less objects + golden rebaseline sweep. Population: interfaces are common in real BC apps (CDO has several)
 
 ## Deep-review remediation arcs (standing arc, pre-wave)
 
