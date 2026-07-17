@@ -1,0 +1,16 @@
+{
+	"id": "cccc3003-0000-0000-0000-000000000003",
+	"name": "EmptyAbiDep Probe",
+	"publisher": "probe",
+	"version": "1.0.0.0",
+	"runtime": "11.0",
+	"idRanges": [{ "from": 50980, "to": 50999 }],
+	"dependencies": [
+		{
+			"id": "dddd9999-0000-0000-0000-00000000dddd",
+			"name": "Application",
+			"publisher": "Microsoft",
+			"version": "24.0.0.0"
+		}
+	]
+}

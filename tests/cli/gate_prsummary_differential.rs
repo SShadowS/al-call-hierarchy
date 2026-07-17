@@ -20,7 +20,7 @@
 //!     (ws-d8-commit-in-tx: fail-on high → 1, critical → 0).
 //!   - the preflight exit-4 (ws-txn-d47-pos-http-nocommit --require-dependencies → 4).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
@@ -582,6 +582,19 @@ fn anti_degenerate_exit_zero_to_one_transition() {
 /// reclassification (its residual unresolved callsite is a real non-builtin gap).
 /// ws-txn-d47-pos-http-nocommit is no longer degraded — its only unresolved call
 /// was `HttpClient.Send`, now correctly classified `builtin` (exit 4→0).
+///
+/// preflight-fresh-coverage Task 4 investigation: this test was expected (by the
+/// task's plan doc) to need repointing at `ws-baseapp-closure` (a symbol-only-dep
+/// fixture) once `evaluate_preflight` switched from the legacy L3
+/// `unresolved_callsites`/`opaque_apps` pair to `FreshCoverage`. It does NOT need
+/// repointing: `ws-txn-d47-pos-file` has zero dependencies (`app.json` `"dependencies":
+/// []`), so it was never a symbol-only-dep case — its degradation was ALREADY the
+/// `unknown`-edge kind under L3, and `aldump --program-call-graph-stats` on this
+/// fixture confirms the FRESH resolver independently finds the SAME real gap:
+/// `unknown: 1, unknownByReason: {"catalogMiss": 1}` (the `File.WriteAllText` call
+/// referenced in the doc comment above). The anti-degenerate property ("exit 4 is
+/// reachable") survives the re-key by coincidence of the fixture already being a
+/// genuine non-builtin resolution gap on BOTH engines, not by any code change here.
 #[test]
 fn anti_degenerate_preflight_exit_four() {
     let rd = run_exit_require_deps("ws-txn-d47-pos-file", Some("transaction-integrity"), None);
@@ -598,7 +611,9 @@ fn anti_degenerate_preflight_exit_four() {
 /// Oracle 4 — F2: preflight degraded stderr warning (the "no silent clean" contract).
 ///
 /// `run_analyze_with_exit` on a degraded fixture (ws-txn-d47-pos-file has a real
-/// unresolved callsite per the exit-codes golden: require-dependencies → 4) WITHOUT
+/// FRESH-resolver unknown edge — `aldump --program-call-graph-stats` on this fixture
+/// reports `unknown: 1, unknownByReason: {"catalogMiss": 1}` for `File.WriteAllText`,
+/// independent of the exit-codes golden's own require-dependencies cell) WITHOUT
 /// `--require-dependencies` must:
 ///   - return exit NOT 4 (0 since no --fail-on)
 ///   - return `stderr_warning = Some(msg)` with the al-sem warning string format
@@ -625,16 +640,18 @@ fn oracle_f2_preflight_degraded_warning_without_require_deps() {
         "F2: degraded fixture must return Some(warning) from run_analyze_with_exit, \
          even without --require-dependencies",
     );
-    // The warning text must match al-sem's preflight.ts message format.
+    // The warning text must match the fresh-keyed preflight.rs message format
+    // (evaluate_preflight's clause-joined "analysis coverage degraded — <clauses>").
     assert!(
         warning_msg.starts_with("analysis coverage degraded"),
         "F2: warning message must start with 'analysis coverage degraded', got: {warning_msg:?}"
     );
     // The bin emits: `al-sem: warning: {msg}` — verify the message content (not the prefix,
-    // which is the bin's responsibility) matches the preflight.rs format.
+    // which is the bin's responsibility) matches the fresh-keyed clause vocabulary
+    // (`{n} unknown resolution edge(s)`), not the RETIRED L3 "unresolved callsite" wording.
     assert!(
-        warning_msg.contains("unresolved callsite"),
-        "F2: warning must mention 'unresolved callsite', got: {warning_msg:?}"
+        warning_msg.contains("unknown resolution edge"),
+        "F2: warning must mention 'unknown resolution edge', got: {warning_msg:?}"
     );
 }
 
@@ -649,6 +666,12 @@ fn oracle_f2_preflight_degraded_warning_without_require_deps() {
 ///     (the bin maps this to CONFIG_ERROR (3)).
 ///
 /// These cells are invisible to the exit-code matrix, which tests flags in isolation.
+///
+/// preflight-fresh-coverage Task 4 investigation: same finding as
+/// `anti_degenerate_preflight_exit_four` above — `ws-txn-d47-pos-file` is
+/// independently confirmed genuinely fresh-degraded (a real `catalogMiss` unknown
+/// edge, not a symbol-only dependency), so no repoint to `ws-baseapp-closure` is
+/// needed; the precedence property (PREFLIGHT_FAILED beats FINDINGS) is unchanged.
 #[test]
 fn oracle_exit_precedence_preflight_wins_over_findings() {
     // (a) --require-dependencies + --fail-on critical on a degraded fixture
@@ -710,4 +733,155 @@ fn oracle_parse_fail_on_error_is_err() {
         exit_code, 3,
         "pipeline exit must not be CONFIG_ERROR (3) — that is the bin's domain"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 (preflight-fresh-coverage) — fresh-resolver preflight integration.
+// ---------------------------------------------------------------------------
+
+/// Run the analyze pipeline for one on-disk corpus fixture with the default
+/// preset/detector selection and no `--fail-on` (mirrors `run_prsummary_full` —
+/// the format is irrelevant to the preflight/exit-code behaviour these tests
+/// assert, so PR-summary is used, matching this file's other helpers).
+fn run_analyze_fixture(fixture: &str, require_dependencies: bool) -> (String, u8, Option<String>) {
+    run_prsummary_full(fixture, None, None, None, require_dependencies)
+}
+
+/// Same as `run_analyze_fixture`, but with `--format json` — used ONLY to pin the
+/// formatter's `payload.summary.opaqueApps` propagation end-to-end. No committed
+/// gate-JSON golden exercises a symbol-only-dependency fixture, so this is the
+/// only place the fresh-keyed opaque override (Task 4) is proven to reach the
+/// JSON formatter, not just the stderr warning string.
+fn run_analyze_fixture_json(
+    fixture: &str,
+    require_dependencies: bool,
+) -> (String, u8, Option<String>) {
+    let args = make_args(
+        fixture,
+        None,
+        None,
+        OutputFormat::Json,
+        None,
+        require_dependencies,
+    );
+    run_analyze_with_exit(&args, "engine-default").expect("run_analyze_with_exit")
+}
+
+/// Fresh-clean workspace (no deps, resolves fully) → NO warning, exit driven by
+/// findings only. The DO-shaped false-positive case this whole change kills.
+#[test]
+fn fresh_clean_workspace_emits_no_coverage_warning() {
+    let (_out, _exit, warning) = run_analyze_fixture("ws-e2e", /*require_deps=*/ false);
+    assert!(
+        warning.is_none(),
+        "clean fixture must not warn: {warning:?}"
+    );
+}
+
+/// Symbol-only dep → opaque clause warning; exit 4 only under --require-dependencies.
+///
+/// Also asserts (controller addition closing a Task-4 review finding) that the
+/// JSON output's `payload.summary.opaqueApps` carries the Base Application name
+/// for this fixture — the end-to-end pin that no current golden exercises: the
+/// stderr warning string and the JSON formatter's opaque list are populated from
+/// the SAME `fresh.opaque_apps` (one dependency universe, spec §3), but nothing
+/// before this test proved the JSON side specifically.
+#[test]
+fn symbol_only_dep_warns_opaque_and_gates_exit_four() {
+    let (_o, exit, warning) = run_analyze_fixture("ws-baseapp-closure", false);
+    let w = warning.expect("must warn");
+    assert!(w.contains("symbol-only dependency app"), "got: {w}");
+    assert_ne!(exit, 4, "fail-open without --require-dependencies");
+    let (_o, exit, _w) = run_analyze_fixture("ws-baseapp-closure", true);
+    assert_eq!(exit, 4);
+
+    let (json_out, _exit, _w) = run_analyze_fixture_json("ws-baseapp-closure", false);
+    let v: Value = serde_json::from_str(&json_out).expect("valid JSON");
+    let opaque = v["payload"]["summary"]["opaqueApps"]
+        .as_array()
+        .expect("payload.summary.opaqueApps must be an array");
+    assert!(
+        opaque
+            .iter()
+            .any(|n| n.as_str().is_some_and(|s| s.contains("Base Application"))),
+        "expected payload.summary.opaqueApps to contain the Base Application name, got: {opaque:?}"
+    );
+}
+
+/// Create a unique scratch dir for a fail-closed workspace probe: a root
+/// `app.json` with NO `id` field (readable JSON, id-less — the same fail-closed
+/// trigger `tests/cli/cli_a_json_differential.rs`'s
+/// `fail_closed_idless_app_json_emits_discover_diagnostic` exercises) plus one
+/// trivial `.al` file so the workspace "looks real".
+///
+/// This mirrors that file's `scratch_ws` helper rather than minting a
+/// committed fixture under `tests/r0-corpus/`: this repo's pre-commit hook
+/// (`scripts/git-hooks/pre-commit`) requires the FULL `scripts/check-goldens`
+/// suite to pass for any commit touching `tests/r0-corpus/`, and a fail-closed
+/// probe has no golden of its own to keep in sync (its output is empty, by
+/// definition) — a throwaway temp workspace gets the same coverage without
+/// entangling this task with the OTHER golden families that path triggers.
+fn scratch_failclosed_ws() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "alsem-gate-prsummary-failclosed-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create scratch ws dir");
+    std::fs::write(
+        dir.join("app.json"),
+        r#"{"name":"Fail Closed Probe","publisher":"probe","version":"1.0.0.0"}"#,
+    )
+    .expect("write app.json");
+    std::fs::write(dir.join("Foo.al"), "codeunit 50100 Foo { }").expect("write Foo.al");
+    dir
+}
+
+/// Run the analyze pipeline directly over an arbitrary workspace `Path` (not a
+/// named `tests/r0-corpus/` fixture) — used only by the fail-closed probe below.
+fn run_analyze_path(ws: &Path, require_dependencies: bool) -> (String, u8, Option<String>) {
+    let args = AnalyzeArgs {
+        workspace: ws.to_string_lossy().to_string(),
+        min_severity: None,
+        detector: None,
+        preset: None,
+        scope: Scope::Primary,
+        limit: None,
+        format: OutputFormat::PrSummary,
+        sarif_version_override: None,
+        fail_on: None,
+        require_dependencies,
+        baseline: None,
+        update_baseline: false,
+        disable_inline_suppression: false,
+        group_by: None,
+        deterministic: false,
+        with_evidence: false,
+    };
+    run_analyze_with_exit(&args, "engine-default").expect("run_analyze_with_exit")
+}
+
+/// Fail-closed workspace (unanalyzable — root `app.json` missing `id`) →
+/// could-not-verify warning, never silent clean; exit 4 under
+/// `--require-dependencies`.
+#[test]
+fn fail_closed_workspace_could_not_verify() {
+    let ws = scratch_failclosed_ws();
+    let (_o1, exit_open, warning) = run_analyze_path(&ws, false);
+    let (_o2, exit_required, _w2) = run_analyze_path(&ws, true);
+    let _ = std::fs::remove_dir_all(&ws);
+
+    let w = warning.expect("fail-closed must warn, not silent-clean");
+    assert!(w.contains("coverage could not be verified"), "got: {w}");
+    // The reason must be the REAL provider diagnostic for this workspace (spec §3),
+    // not a generic fallback — this fixture's root `app.json` is readable but has no
+    // string `id`, so `compute_workspace_diagnostics` emits that exact fail-closed
+    // reason (`src/engine/gate/workspace_diagnostics.rs`); a stable fragment of it
+    // must survive into the preflight message end to end.
+    assert!(w.contains("has no string"), "got: {w}");
+    assert_ne!(exit_open, 4, "fail-open without --require-dependencies");
+    assert_eq!(exit_required, 4);
 }
