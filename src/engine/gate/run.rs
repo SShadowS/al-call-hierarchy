@@ -203,13 +203,14 @@ pub fn run_analyze_with_exit(
     let fresh = crate::program::resolve::full::fresh_coverage(ws_path);
     let model_instance_id = match compute_gate_model_instance_id(ws_path) {
         Some(id) => id,
-        // Fail-closed layout → empty output, clean preflight, clean exit.
-        None => return empty_output_result(args, &version),
+        // Fail-closed layout → empty output; preflight now says could-not-verify
+        // (never a fabricated clean — spec §3), gated on `fresh` above.
+        None => return empty_output_result(args, &version, &fresh),
     };
     let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id, false) {
         Some(r) => r,
-        // Fail-closed / unreadable workspace → empty output.
-        None => return empty_output_result(args, &version),
+        // Fail-closed / unreadable workspace → empty output, same could-not-verify rule.
+        None => return empty_output_result(args, &version, &fresh),
     };
 
     // L4 + L5: run the selected detectors. Findings come pre-sorted by
@@ -459,8 +460,16 @@ pub fn run_analyze_with_exit(
 }
 
 /// The empty-output path for a fail-closed / unreadable workspace: empty findings ⇒
-/// empty SARIF or the "no findings" PR-summary or a zero-findings Json envelope;
-/// a clean preflight ⇒ exit CLEAN.
+/// empty SARIF or the "no findings" PR-summary or a zero-findings Json envelope.
+///
+/// The preflight is NEVER a fabricated clean here (spec §3): a fail-closed layout
+/// is a can't-analyze state, not a verified-empty one, so this now evaluates
+/// preflight as could-not-verify (`evaluate_preflight(&Err(reason), ...)`) — the
+/// reason is the fresh resolver's OWN error text when `fresh` itself failed too,
+/// else a fallback string for the (also fail-closed, but fresh-resolver-clean)
+/// case where the workspace legitimately has zero readable AL source units. See
+/// `evaluate_preflight`'s could-not-verify doc for why this state is first-class
+/// and never silently folded into "clean".
 ///
 /// `ws` is the workspace root: the JSON envelope's `diagnostics` array is populated
 /// with the real PROVIDER (fail-closed, remapped to `stage:"discover"`) + index
@@ -475,6 +484,7 @@ pub fn run_analyze_with_exit(
 pub(crate) fn empty_output_result(
     args: &AnalyzeArgs,
     version: &str,
+    fresh: &Result<crate::program::resolve::full::FreshCoverage, String>,
 ) -> Result<(String, u8, Option<String>), String> {
     let out = match args.format {
         OutputFormat::Sarif => format_sarif(&[], &[], version),
@@ -565,7 +575,22 @@ pub(crate) fn empty_output_result(
             })
         }
     };
-    Ok((out, exit::CLEAN, None))
+
+    // Fail-closed is a can't-analyze state: preflight must say so, never
+    // fabricate clean (spec §3). Reason precedence: the fresh resolver's own
+    // error when it failed too; else the defined fallback (some fail-closed
+    // paths produce ZERO diagnostics — e.g. valid app.json, no readable .al).
+    let reason = match fresh {
+        Err(e) => e.clone(),
+        Ok(_) => "workspace contained no readable AL source units".to_string(),
+    };
+    let pf = evaluate_preflight(&Err(reason), args.require_dependencies);
+    let exit = if pf.failed {
+        exit::PREFLIGHT_FAILED
+    } else {
+        exit::CLEAN
+    };
+    Ok((out, exit, Some(pf.message)))
 }
 
 /// Build the opt-in `--with-evidence` augmentation for the kept findings, aligned BY

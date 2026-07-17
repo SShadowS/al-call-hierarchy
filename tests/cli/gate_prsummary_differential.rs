@@ -20,7 +20,7 @@
 //!     (ws-d8-commit-in-tx: fail-on high → 1, critical → 0).
 //!   - the preflight exit-4 (ws-txn-d47-pos-http-nocommit --require-dependencies → 4).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
@@ -733,4 +733,149 @@ fn oracle_parse_fail_on_error_is_err() {
         exit_code, 3,
         "pipeline exit must not be CONFIG_ERROR (3) — that is the bin's domain"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 (preflight-fresh-coverage) — fresh-resolver preflight integration.
+// ---------------------------------------------------------------------------
+
+/// Run the analyze pipeline for one on-disk corpus fixture with the default
+/// preset/detector selection and no `--fail-on` (mirrors `run_prsummary_full` —
+/// the format is irrelevant to the preflight/exit-code behaviour these tests
+/// assert, so PR-summary is used, matching this file's other helpers).
+fn run_analyze_fixture(fixture: &str, require_dependencies: bool) -> (String, u8, Option<String>) {
+    run_prsummary_full(fixture, None, None, None, require_dependencies)
+}
+
+/// Same as `run_analyze_fixture`, but with `--format json` — used ONLY to pin the
+/// formatter's `payload.summary.opaqueApps` propagation end-to-end. No committed
+/// gate-JSON golden exercises a symbol-only-dependency fixture, so this is the
+/// only place the fresh-keyed opaque override (Task 4) is proven to reach the
+/// JSON formatter, not just the stderr warning string.
+fn run_analyze_fixture_json(
+    fixture: &str,
+    require_dependencies: bool,
+) -> (String, u8, Option<String>) {
+    let args = make_args(
+        fixture,
+        None,
+        None,
+        OutputFormat::Json,
+        None,
+        require_dependencies,
+    );
+    run_analyze_with_exit(&args, "engine-default").expect("run_analyze_with_exit")
+}
+
+/// Fresh-clean workspace (no deps, resolves fully) → NO warning, exit driven by
+/// findings only. The DO-shaped false-positive case this whole change kills.
+#[test]
+fn fresh_clean_workspace_emits_no_coverage_warning() {
+    let (_out, _exit, warning) = run_analyze_fixture("ws-e2e", /*require_deps=*/ false);
+    assert!(
+        warning.is_none(),
+        "clean fixture must not warn: {warning:?}"
+    );
+}
+
+/// Symbol-only dep → opaque clause warning; exit 4 only under --require-dependencies.
+///
+/// Also asserts (controller addition closing a Task-4 review finding) that the
+/// JSON output's `payload.summary.opaqueApps` carries the Base Application name
+/// for this fixture — the end-to-end pin that no current golden exercises: the
+/// stderr warning string and the JSON formatter's opaque list are populated from
+/// the SAME `fresh.opaque_apps` (one dependency universe, spec §3), but nothing
+/// before this test proved the JSON side specifically.
+#[test]
+fn symbol_only_dep_warns_opaque_and_gates_exit_four() {
+    let (_o, exit, warning) = run_analyze_fixture("ws-baseapp-closure", false);
+    let w = warning.expect("must warn");
+    assert!(w.contains("symbol-only dependency app"), "got: {w}");
+    assert_ne!(exit, 4, "fail-open without --require-dependencies");
+    let (_o, exit, _w) = run_analyze_fixture("ws-baseapp-closure", true);
+    assert_eq!(exit, 4);
+
+    let (json_out, _exit, _w) = run_analyze_fixture_json("ws-baseapp-closure", false);
+    let v: Value = serde_json::from_str(&json_out).expect("valid JSON");
+    let opaque = v["payload"]["summary"]["opaqueApps"]
+        .as_array()
+        .expect("payload.summary.opaqueApps must be an array");
+    assert!(
+        opaque
+            .iter()
+            .any(|n| n.as_str().is_some_and(|s| s.contains("Base Application"))),
+        "expected payload.summary.opaqueApps to contain the Base Application name, got: {opaque:?}"
+    );
+}
+
+/// Create a unique scratch dir for a fail-closed workspace probe: a root
+/// `app.json` with NO `id` field (readable JSON, id-less — the same fail-closed
+/// trigger `tests/cli/cli_a_json_differential.rs`'s
+/// `fail_closed_idless_app_json_emits_discover_diagnostic` exercises) plus one
+/// trivial `.al` file so the workspace "looks real".
+///
+/// This mirrors that file's `scratch_ws` helper rather than minting a
+/// committed fixture under `tests/r0-corpus/`: this repo's pre-commit hook
+/// (`scripts/git-hooks/pre-commit`) requires the FULL `scripts/check-goldens`
+/// suite to pass for any commit touching `tests/r0-corpus/`, and a fail-closed
+/// probe has no golden of its own to keep in sync (its output is empty, by
+/// definition) — a throwaway temp workspace gets the same coverage without
+/// entangling this task with the OTHER golden families that path triggers.
+fn scratch_failclosed_ws() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "alsem-gate-prsummary-failclosed-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create scratch ws dir");
+    std::fs::write(
+        dir.join("app.json"),
+        r#"{"name":"Fail Closed Probe","publisher":"probe","version":"1.0.0.0"}"#,
+    )
+    .expect("write app.json");
+    std::fs::write(dir.join("Foo.al"), "codeunit 50100 Foo { }").expect("write Foo.al");
+    dir
+}
+
+/// Run the analyze pipeline directly over an arbitrary workspace `Path` (not a
+/// named `tests/r0-corpus/` fixture) — used only by the fail-closed probe below.
+fn run_analyze_path(ws: &Path, require_dependencies: bool) -> (String, u8, Option<String>) {
+    let args = AnalyzeArgs {
+        workspace: ws.to_string_lossy().to_string(),
+        min_severity: None,
+        detector: None,
+        preset: None,
+        scope: Scope::Primary,
+        limit: None,
+        format: OutputFormat::PrSummary,
+        sarif_version_override: None,
+        fail_on: None,
+        require_dependencies,
+        baseline: None,
+        update_baseline: false,
+        disable_inline_suppression: false,
+        group_by: None,
+        deterministic: false,
+        with_evidence: false,
+    };
+    run_analyze_with_exit(&args, "engine-default").expect("run_analyze_with_exit")
+}
+
+/// Fail-closed workspace (unanalyzable — root `app.json` missing `id`) →
+/// could-not-verify warning, never silent clean; exit 4 under
+/// `--require-dependencies`.
+#[test]
+fn fail_closed_workspace_could_not_verify() {
+    let ws = scratch_failclosed_ws();
+    let (_o1, exit_open, warning) = run_analyze_path(&ws, false);
+    let (_o2, exit_required, _w2) = run_analyze_path(&ws, true);
+    let _ = std::fs::remove_dir_all(&ws);
+
+    let w = warning.expect("fail-closed must warn, not silent-clean");
+    assert!(w.contains("coverage could not be verified"), "got: {w}");
+    assert_ne!(exit_open, 4, "fail-open without --require-dependencies");
+    assert_eq!(exit_required, 4);
 }
