@@ -84,6 +84,12 @@ the bottom, CHANGELOG, and git log.
   today. Migrate to `eq_fold_identifier`/`fold_identifier` layer-by-layer for
   consistency (low priority; advisory engine only)
 
+- [ ] **perf_bounds `compute_all_within_bound` CI flake** (seen once, 2026-07-18,
+  docs-only push; adjacent runs of the same code passed): magnitude bound lost to
+  shared-runner load variance — the exact class the T3 arc fixed for rung bounds via
+  interleaved complexity-class assertions. Give compute_all the same load-stable
+  treatment if it flakes again
+
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
