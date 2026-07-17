@@ -130,6 +130,11 @@ the entire problem.
 
 ## 3. Hypothesis verdicts (Phase 2)
 
+Method: direct source reads + three read-only investigator agents (string-id
+sweep; L2/L3 + FingerprintIndex; pipeline/ownership map) + the two external
+models of §6. Items marked "investigator" carry their file:line evidence;
+load-bearing claims were re-verified before adoption.
+
 ### H-1 string-id explosion — CONFIRMED (with one correction)
 - Internal ids are long heap Strings: RoutineId =
   `"{modelInstanceId}/{sha256hex}"` = 81 bytes in production analyze (the gate
@@ -143,16 +148,41 @@ the entire problem.
   (`PAnchor.source_unit_id` + `syntax_kind` Strings per anchor —
   `l2/features.rs:33-45`; anchors sit on every call site, operation site,
   statement-tree node, condition ref, var assignment).
+- Child ids EMBED the full routine id as a literal prefix: op/callsite/loop
+  ids are `"{routine_id}/op{N}"`/`"/cs{N}"` (`l2/ir_walk.rs:836/908/1135`), so
+  the 64-hex hash is re-copied into every child id; each callsite id then
+  lives ~3× in L2 alone (id→expr maps + statement-tree CFN leaves,
+  `ir_walk.rs:840/851/910/1290/1343`) before `features.call_sites.clone()`
+  re-allocates it into L3. `CallEdge::base` mints 3-4 fresh id Strings per
+  edge (`call_resolver.rs:135-140`). Investigator estimate: ~90-110 heap id
+  Strings of 60-110 B for ONE 10-callsite routine through L2+L3 alone; L5
+  adds 1,233 `.clone()` sites across 84 files. Per-callsite retained weight
+  ≈ 1.5-2.5 KB, dominated by per-argument-binding `PAnchor`s (each owning a
+  `source_unit_id` String).
 - CORRECTION to the prompt's premise: `string-interner` is a DEAD dependency —
   declared (`Cargo.toml:29`) but zero `string_interner::` imports repo-wide
   (leftover of the deleted legacy LSP pipeline). The fresh program engine does
   its own interning of APPS only (`AppRegistry` → `AppRef(u32)`,
-  `src/program/node.rs:10-23`) and uses structured `RoutineNodeId` keys instead
-  of hash-strings. The L2/L3/L4/L5 engine interns NOTHING.
+  `src/program/node.rs:10-23`) and avoids the blowup via COMPACT STRUCTURED
+  identity (`ObjectNodeId` = AppRef + enum + i64, `RoutineNodeId` adds one
+  short name String + numeric sig_fp — `node.rs:117/174`), not interning. The
+  L2/L3/L4/L5 engine interns NOTHING. CLAUDE.md's "Core Patterns: String
+  interning (string-interner): All symbol names deduplicated" is STALE —
+  follow-up: correct it.
 
 ### H-2 per-detector FingerprintIndex rebuild — CONFIRMED but NOT the blowup
 - `FingerprintIndex::build` (`l5/fingerprint.rs:64-85`): 2 borrow maps + a
-  String-cloning stable map per detector; 54 detector call sites.
+  stable map cloning `r.id` AND `r.stable_routine_id` per routine. ALL 54
+  registered detectors call it at the top of their `detect_dNN` (plus
+  `gate/policy/policy_engine.rs:155`); `DetectorContext` carries NO
+  fingerprint index (`detector_context.rs:55-175`), so nothing shares it —
+  on CDO-scale (~18k routines) a full-detector run makes ~1.9M avoidable
+  String allocations. Fix is a one-liner-shaped hoist (build once in ctx).
+- Investigator sweep also confirmed this is the ONLY whole-workspace
+  per-detector rebuild (no detector re-runs event/reverse/symbol/summary
+  builds; remaining per-detector maps are routine-local). One sibling waste:
+  `build_cross_extension_subscribers` is recomputed 3× per run (d43.rs:382,
+  d44.rs:59, d45.rs:51 — all DEFAULT detectors) instead of living in ctx.
 - With 3 selected detectors the loop cost is negligible (0.3-0.8 s total).
   O(detectors × workspace) is real waste for 40+ detector runs but irrelevant
   to the Base-App DNF.
@@ -166,6 +196,13 @@ the entire problem.
   …: `l3_workspace.rs:317-440`).
 - Resident L3 model: ~640 MB at 2,674 files, ~4.5 GB at 8,020 — linear,
   dominated by per-site Strings + anchors.
+- Nuance (investigator-verified): the per-routine L2 `features` value is a
+  TRANSIENT local dropped each loop iteration (`l3_workspace.rs:762-785`) —
+  there is no persisted parallel L2 workspace, so the body-walk data lives
+  ONCE (in L3Routine), not twice. But the assembly `.clone()`s
+  (`:894/:925/:1021-1031`) are avoidable outright: `features` is owned and
+  the only post-clone read is a DIFFERENT field (`features.variables`,
+  `:969`), so disjoint partial MOVES are legal — free allocation win.
 - The assembly parse loop is SEQUENTIAL on one big-stack thread
   (`l3_workspace.rs:1185-1198`) — 5.7 s/11.0 s accum parse at 2.7k/5.4k while
   the fresh engine parses the same files with rayon `par_iter`
@@ -190,6 +227,16 @@ the entire problem.
   pull, not a full-graph walk (external-review correction adopted).
 - `FullRoutineSummary` then CLONES every cone's inherited facts + direct facts
   again (`l5/detector_context.rs:237-251`) — +5.4 GB more.
+- Per-fact String/JSON churn inside cone merging: `rep_key` builds a
+  `§`-joined String with `serde_json::to_string` of ValueSource + extra on
+  every merge tie-break and direct-dedup comparison
+  (`capability_cone.rs:1188/:1223/:1318`), and `inherited_output_sort_key`
+  allocates a String per fact for sorting (`:1372`).
+- Scope clarification (investigator): L4 is already flow-insensitive — cones
+  and summaries operate on the SCC condensation with deduped fact SETS; there
+  is no per-witness path enumeration here. The witness-perf arc's deferred
+  "§7 flow-insensitive" residual is an L5 path-walker concern, distinct from
+  these L4 costs.
 - `compute_summaries` (the SECOND Tarjan + Jacobi pass — recomputed for
   uncertainties, `parameter_roles_by_routine` (d3/d17/d37/d39/d40/…), and the
   cap-hit diagnostics — `detector_context.rs:363-426`,
@@ -213,13 +260,23 @@ the entire problem.
   OPERATION and stores `routines_in_span: Vec<String>` per span
   (`:204-221`) — O(commit-sites × graph) time and memory. 198 s at 8k.
 
-### H-6 double substrate — CONFIRMED but SEQUENTIAL and minor
+### H-6 double substrate — CONFIRMED but SEQUENTIAL; actually a TRIPLE parse
 - `run_analyze_with_exit` runs `fresh_coverage` first (`gate/run.rs:204`);
   the fresh ctx (snapshot + parsed IR + graph) peaks 1.8 GB at 8k and drops
   to ~37 MB before L3 assembly starts (`resolve/full.rs:1249-1261` — spec §3
-  sequencing holds). Cost: one extra full parse (~60 s at 8k), zero resident
-  overlap. Not a memory bomb; a wall-time tax that a shared substrate would
-  refund.
+  sequencing holds). Zero resident overlap. Not a memory bomb; a wall-time
+  tax that a shared substrate would refund.
+- Investigator sweep sharpened the count: the workspace is parsed THREE times
+  per analyze — #1 `parse_snapshot` (whole program incl. dependency source,
+  `full.rs:1096`), #2 L3 `project_file` (`l3_workspace.rs:561`), #3
+  `compute_workspace_diagnostics` re-parses every workspace file just to test
+  `.objects.is_empty()` (`gate/workspace_diagnostics.rs:119`) — plus two more
+  non-parse disk passes (inline suppression re-reads finding-bearing files,
+  `gate/inline_suppression.rs:187`; `project_coverage_disk`). And
+  `SymbolTable::build` runs TWICE (`l3_workspace.rs:1402` in `resolve()`,
+  again in `detector_context.rs:203`). The whole fresh model — including a
+  full dependency-source resolve — survives only as ~4 scalars + an
+  opaque-apps list (`FreshCoverage`).
 
 ## 4. What is actually resident at peak (structural)
 
@@ -228,6 +285,18 @@ cones + ~5.4 GB summary clones + ~6+ GB compute_summaries working set
 + spans/indexes — i.e. >75 % of peak RSS is the L4 inherited-cone/summary
 substrate, all of it String-keyed and clone-multiplied, none of it consumed by
 the 3 selected detectors beyond map lookups.
+
+Ownership map (investigator-verified): `DetectorContext` BORROWS `&L3Resolved`
+(`routine_by_id`/`table_by_id`/`call_site_by_id` hold references into
+`resolved.workspace`, `detector_context.rs:254-262`), so the full L3 model
+cannot be freed for the whole L4+L5 phase. The derived layers are CLONED
+rather than moved at every hand-off — cone→`summaries`
+(`c.inherited.clone()`), `calls`→edge-index + bindings clones,
+`core_summaries`→`parameter_roles`/`uncertainties_by_node` clones with the
+full `core_summaries` materialized just to copy two fields out — and during
+the build the source AND its cloned subset are transiently co-resident
+(`calls` + its clones; `cones` + `summaries`), which is the RSS spike between
+the cone mark and ctx return.
 
 ## 5. Design evaluation (Phase 3)
 
@@ -302,7 +371,24 @@ sorted order. Expected: 36 s → ~8-10 s at 8k.
 (`l5/fingerprint.rs:64`, 54 call sites): move into `DetectorContext`. Matters
 for 40-detector runs, not for the DNF.
 
-**A6 — drop the dead `string-interner` dependency** (`Cargo.toml:29`) — hygiene.
+**A6 — drop the dead `string-interner` dependency** (`Cargo.toml:29`) — hygiene
+(and correct CLAUDE.md's stale "string interning" Core Patterns claim).
+
+**A7 — L3 assembly: partial moves instead of clones.** The per-routine L2
+`features` local is owned and dropped at iteration end; the `.clone()`s at
+`l3_workspace.rs:894/925/1021-1031` can be disjoint field moves (only
+`features.variables` is read afterwards, `:969`). Pure allocation win, zero
+behavior change.
+
+**A8 — hoist `build_cross_extension_subscribers` into `DetectorContext`** —
+recomputed 3× per run by default detectors d43/d44/d45 (d43.rs:382, d44.rs:59,
+d45.rs:51), same pattern as the existing shared `event_flow_indexes`.
+
+**A9 — eliminate parse #3 + redundant disk passes.** `compute_workspace_
+diagnostics` re-parses every workspace file to test emptiness
+(`workspace_diagnostics.rs:119`); share the L3 assembly's parse products (or a
+per-file object-count byproduct) instead. Similarly reuse discovery results
+across the ≥4 disk passes.
 
 Track A ceiling: A1-A5 plausibly turn the 8k DNF into a finishing run (the
 regime-change terms are A1+A2's constants) and cut several GB (A3), but the
@@ -518,7 +604,13 @@ name-sorted order. Determinism preserved by the merge order; `project_file`
 touches only its own file's state. Expected: 36 s → ~10 s at 8k.
 
 **W1.5 FingerprintIndex once per run** (`l5/fingerprint.rs:64`): build in
-`DetectorContext`, pass by ref. Matters at 40+ detectors.
+`DetectorContext`, pass by ref. Matters at 40+ detectors (~1.9M avoidable
+String allocations on CDO-scale full runs; also cover
+`gate/policy/policy_engine.rs:155`).
+
+**W1.6 small-waste bundle**: A7 assembly partial moves, A8
+`build_cross_extension_subscribers` hoist, A9 parse-#3/disk-pass
+elimination — each independently byte-stable and mechanical.
 
 Combined Wave-1 expectation at 8020: the motivating 3-detector run DNF →
 ~2-3 min / ~5 GB (W1.0 alone); a FULL-detector run DNF → single-digit
