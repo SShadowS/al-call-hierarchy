@@ -7,8 +7,8 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — needs the user
 
-- [ ] `git stash drop` the leftover stashes (2: wave-era fixture renormalize, stray
-  task-1 draft) — safety net blocks the agent; run `git stash list` then drop
+- [x] `git stash drop` leftover stashes — DONE 2026-07-17: user ran `git stash clear`
+  (26 accumulated scratch stashes from merged arcs, all superseded; verified 0 remain)
 - [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is
   local-only today — force-add `.claude/commands/triage-wave.md` to share, or keep personal
 - [ ] **d61/d62/d64 validation corpus:** the three opt-in BCQuality detectors emitted 0
