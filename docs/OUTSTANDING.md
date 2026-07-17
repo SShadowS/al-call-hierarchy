@@ -9,8 +9,8 @@ the bottom, CHANGELOG, and git log.
 
 - [x] `git stash drop` leftover stashes — DONE 2026-07-17: user ran `git stash clear`
   (26 accumulated scratch stashes from merged arcs, all superseded; verified 0 remain)
-- [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is
-  local-only today — force-add `.claude/commands/triage-wave.md` to share, or keep personal
+- [x] `/triage-wave` sharing — DONE 2026-07-17 (`79bf189`): `.claude/commands/`
+  un-ignored and versioned (project doctrine as tooling); CLAUDE.md worktree note updated
 - [x] **d61/d62/d64 validation** — DONE 2026-07-17 (`f3f5c85`). Corpus: Microsoft
   System App + Base App 28.0 embedded source extracted from DO's `.alpackages`
   (9.3k real files). d62: 9 findings triaged (1 real, 8 FP) → structural
@@ -41,10 +41,8 @@ the bottom, CHANGELOG, and git log.
 - [ ] **Unicode-fold moat task** — 212 `to_ascii_lowercase` sites in `src/program/`;
   the one legitimate future north-star-SHA-mover (case-folding correctness for
   non-ASCII identifiers)
-- [ ] **r3a4 source-bearing-dep pin hardening** (final-review nit, one line): assert the
-  primary's `declared_deps` contains the dep GUID in
-  `fresh_coverage_source_bearing_dep_not_opaque`, so a future fixture edit can't
-  silently vacate the pin
+- [x] **r3a4 source-bearing-dep pin hardening** — DONE 2026-07-17 (`8b5b4ec`):
+  closure-membership assert added; the pin can no longer be vacated by a fixture edit
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
