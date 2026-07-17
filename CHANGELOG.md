@@ -24,6 +24,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
+- d62-telemetry-before-success: a later fallible site (record write / `Error`
+  call) only counts against a `LogUsage` call now if it can ACTUALLY execute
+  in the same run — `before_anchor` alone tested SOURCE-TEXT order, so
+  `if Success then FeatureTelemetry.LogUsage(...) else Error(...)` (and the
+  `case` analog) was flagged every time despite the two arms being mutually
+  exclusive (measured 5/8 false positives, 88.9% overall, triaging Microsoft
+  System Application 28.0). Added a `mutually_exclusive` check over the
+  routine's structural statement tree (`L3Routine.statement_tree`): locates
+  both sites by callsite/operation id (falling back to `source_range` for an
+  `error-call` operation site, whose synthetic op id never appears in the
+  tree — the paired call site's id does), builds each site's root-to-target
+  arm trail, and compares the two trails to find the nearest common `if`/
+  `case` ancestor — a fork there (different `then`/`else`/case-branch arm)
+  makes the log and the fallible site provably non-concurrent. A call inside
+  the if/case's own CONDITION (e.g. `if TryX() then`) is correctly treated as
+  ancestor-level, not "in" either arm. New skip bucket `exclusiveBranch`
+  (distinct from the existing `terminalLog`) counts sites suppressed this
+  way. `LogUsage` followed sequentially by a fallible write in the SAME arm
+  still fires (added as an explicit regression control in `ws-d62`).
 - `gate_sarif_differential`'s regen mode (`REGEN_TEMP_GOLDENS=1`) no longer
   bypasses its own code-flows anti-degenerate assertion: each fixture's
   `continue` after `maybe_regen()` skipped the `any_code_flows_matched`
