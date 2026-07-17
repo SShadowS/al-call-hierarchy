@@ -23,12 +23,12 @@ Ordering within a tier is the suggested attack order.
 - [x] Audit other `condition_references` consumers (e.g. d43 IsHandled-guard) for the paren/quoted-condition blind spot that bit d60; migrate to `statement_tree` where bitten — AUDITED CLEAN 2026-07-17: ground truth is narrower than described (`Parenthesized` recurses fine and always has; the real gap is only a quoted-member-field leaf, e.g. `Rec."E-Mail"`). Of d17/d43/d61/cfg_walker/receiver_type, only d43/d61 read the field in production, and both seek a grammatically plain-identifier IsHandled actual (never a table field) — not bitten. d17/cfg_walker/receiver_type only reference it in test-scaffolding struct literals. No fix needed; see `.superpowers/sdd/condref-audit-report.md`
 - [ ] **Number-less object identity collision (engine-wide):** `o.id.unwrap_or(0)` (`src/engine/l2/l2_workspace.rs:355/414/593`) gives EVERY Interface/ControlAddIn in an app the same internal object id `{guid}/{type}/0` — the harness-side symptom was fixed (differential keying, fix/outstanding-test-bugs), but any BY-ID lookup in L2/L3/L5/gate (FingerprintIndex, `to_location`, d64's object-id fallback) can attribute to the wrong object wherever 2+ number-less objects of one type coexist. Needs its own arc: name-qualified id component for number-less objects + golden rebaseline sweep. Population: interfaces are common in real BC apps (CDO has several)
 
-## Deep-review remediation arcs (standing arc, pre-wave)
+## Deep-review remediation arcs — COMPLETE (section was stale; corrected 2026-07-17)
 
-- [ ] **T2** (next per plan; commit-before-gate law applies)
-- [ ] **T3** — needs a brainstorm session BEFORE implementation
-- [ ] **T4** (next per plan)
-- T0+T1 merged; frozen CDO SHA `0a3b85bc…` re-verified 2026-07-16 ✓
+- [x] **T0+T1** merged (`f171d0f`); frozen CDO SHA `0a3b85bc…` re-verified 2026-07-16 ✓
+- [x] **T2** crash/DoS hardening — merged `542740e`
+- [x] **T3** legacy-LSP migrate-don't-patch — became the T3 LSP-migration arc (spec `2026-07-12-t3-lsp-migration-design.md`); legacy pipeline DELETED at its capstone (see CHANGELOG Removed)
+- [x] **T4** hygiene — merged `d99c65e`
 
 ## Grammar (tree-sitter-al — we own it)
 
