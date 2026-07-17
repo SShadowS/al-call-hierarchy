@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Real multi-root LSP workspace support.** The server now builds one
+  independent `ServerState` (`LspSnapshot`/updater thread/file watcher/
+  `DiagnosticsState`) PER configured workspace folder instead of narrowing
+  to the first and warning about the rest — the "tracked follow-up" the
+  T3 Task 15 single-root decision (`server.rs`'s `primary_workspace_root`
+  doc) called for. Every root is fully isolated: a broken root (bad/missing
+  `app.json`) degrades only its OWN files to an empty result and is logged,
+  never taking down any other configured root. An inbound request routes to
+  whichever root its `textDocument` uri falls under (longest-prefix match,
+  `route_uri`) — the multi-root generalization of `lsp::handlers::
+  resolve_virtual_path`'s single-root lookup; a uri outside every configured
+  root degrades to the same graceful-empty result the server already gives
+  for "no workspace at all," now with a clear warning. `callHierarchy/
+  {incoming,outgoing}Calls` route via a root marker this server stamps into
+  every `CallHierarchyItem.data` it mints instead, which is REQUIRED for
+  correctness, not just a convenience: `RoutineNodeId`'s `AppRef` is a raw
+  index into that snapshot's OWN independent `AppRegistry`
+  (`src/program/node.rs`), so the exact same `RoutineNodeId` value can
+  legitimately name two different routines in two different roots' graphs —
+  URI-based routing alone can't even be attempted for a
+  dependency-embedded-source or ABI-boundary item either (their `uri` is a
+  synthetic non-`file://` scheme). A single configured root behaves
+  byte-identically to the pre-multi-root server (no marker is ever stamped,
+  no extra warnings are ever logged, every pre-existing test passes
+  unmodified). `workspace/didChangeWorkspaceFolders` (dynamic add/remove of
+  a root after `initialize`) is deliberately NOT implemented this round —
+  safe removal needs a cancellation signal `AlFileWatcher`'s loop doesn't
+  have today (leaking a watcher/updater thread for a removed root would be a
+  real resource leak, unlike full-process shutdown's "leak until exit" —
+  see the module doc); the notification is now logged loudly instead of
+  silently swallowed, and the gap is tracked in `docs/OUTSTANDING.md`.
 - d52-bulk-write-param-no-temp-guard detector (BCQuality guard-bulk-operations-with-istemporary): DeleteAll/ModifyAll on a var record parameter without temp proof or local filter.
 - d53-ignored-tryfunction-result detector: statement-position TryFunction calls silently swallow errors. Skips a callee that is ALSO consumed elsewhere in the same routine — a deliberate best-effort fallback (`if not TryX(a) then TryX(b);`), not an accidental swallow (cleared the 1 DO false positive).
 - d54-publish-in-tryfunction-cone detector: events published under a [TryFunction] silence subscriber errors (call-graph transitive).
