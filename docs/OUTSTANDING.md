@@ -24,6 +24,20 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
+- [ ] **Engine memory/speed Wave 1 (Track A)** — from the 2026-07-17 design review
+  (`docs/superpowers/specs/2026-07-17-engine-memory-speed-findings.md`; Base App 8k
+  files = DNF at 90 min / 35.8 GB, root causes measured + externally reviewed).
+  Ranked, ready for `superpowers:writing-plans`:
+  W1.0 demand-driven detector substrate (the 3-detector DNF never needed
+  cones/summaries/spans — d62/d64 use ctx zero times); W1.1 Jacobi
+  uncertainty-edge index + cheap change test + dirty-frontier (>66 min of the DNF
+  lives here); W1.2 per-routine SpanTemplate; W1.3 move-don't-clone cone/summary
+  results; W1.4 parallel L3 parse; W1.5 FingerprintIndex once per run.
+  First acceptance gate: eager-vs-ablated byte-compare on the 5400 slice
+- [ ] **Engine memory/speed Wave 2/3 (Track B)** — same findings doc §7: B1 interned
+  id universe + bitsets (output-stable), B2 SCC-shared lazy cones, B3
+  single-substrate unification (needs detector-feature parity harness first).
+  Follow-ups §8: 846-SCC anatomy (which edge kind fused it), Jacobi telemetry
 - [ ] **tree-sitter-al quirks list** (low priority — engine is insulated by the
   lowerer, workarounds in place): spurious `left`/`operator`/`right` field pollution,
   `case_else_branch` inconsistency (see memory `tree-sitter-al-grammar-issues`)
