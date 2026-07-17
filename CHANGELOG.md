@@ -55,6 +55,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already missed).
 
 ### Changed
+- `alsem analyze` preflight re-keyed from the legacy L3 coverage to the fresh
+  resolver (`FreshCoverage`): the degraded warning counts fresh primaryScoped
+  `unknown` resolution edges (was an inflated L3 no-deps multiset that included
+  Ambiguous/MemberNotFound/ExternalTarget), adds coverage-contract / recovered-file
+  / symbol-only-dependency clauses, and gains a first-class "coverage could not be
+  verified" state. CI-visible: `--require-dependencies` exit-4 semantics moved —
+  previously-degraded workspaces (e.g. DO's false "1045 unresolved callsite(s)")
+  now pass clean; fail-closed workspaces newly warn and exit 4 under the flag
+  (was silent clean, exit 0); formatter `opaqueApps` now reports the fresh
+  snapshot's closure-scoped symbol-only deps. Wording: "unresolved callsite(s)"
+  → "unknown resolution edge(s)"; clean message "dependency coverage complete"
+  → "resolution coverage verified". Costs one fresh resolve per analyze
+  (~+3.8 s on the largest real workspace, sequenced so both engines' models are
+  never resident together). Symbol-only dependencies with an EMPTY ABI surface
+  (zero objects — e.g. Microsoft's "Application" umbrella app) are exempt from
+  the opaque-apps clause: they provably hide nothing.
+
+### Changed
 - Shared one CDO program substrate across the read-only
   `program_resolve_harness` CDO tests. `src/program/resolve/full.rs` now
   exposes `ProgramContext` (opaque — fields stay `pub(crate)`, with `graph()`/

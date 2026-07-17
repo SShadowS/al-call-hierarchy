@@ -9,10 +9,12 @@ Ordering within a tier is the suggested attack order.
 - [ ] Push `master` to origin (~30 commits ahead: wave merge + dev-setup commits)
 - [ ] `git stash drop stash@{0}` (accidental frozen-fixture renormalize; harmless, user runs it — safety net blocks the agent)
 - [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is local-only today — force-add `.claude/commands/triage-wave.md` or leave personal
+- [ ] ws-interface-dispatch.golden.json IEmpty signatureFingerprint is HashMap-seed-flaky under REGEN (found during preflight arc; regen twice and diff to reproduce)
+- [ ] gate_sarif_differential.rs regen path has a latent self-check bug (found during preflight arc — see .superpowers/sdd/task-4-report.md for details)
 
 ## BCQuality wave follow-ups (doc `2026-07-16-scanner-validation…` §6)
 
-- [ ] **§1 preflight fix:** `alsem analyze` preflight consumes legacy L3 coverage → misleading `analysis coverage degraded — 1045 unresolved callsite(s)` warning on DO. Spec approved: `docs/superpowers/specs/2026-07-17-preflight-fresh-coverage-design.md` (FreshCoverage status struct from the fresh resolver + could-not-verify preflight state + fail-closed hole fix)
+- [x] **§1 preflight fix:** `alsem analyze` preflight consumes legacy L3 coverage → misleading `analysis coverage degraded — 1045 unresolved callsite(s)` warning on DO. Spec approved: `docs/superpowers/specs/2026-07-17-preflight-fresh-coverage-design.md` (FreshCoverage status struct from the fresh resolver + could-not-verify preflight state + fail-closed hole fix). Landed `07512b2..af12890` on `feat/preflight-fresh-coverage` (capstone DO smoke clean: no warning, totalFindings 2307, north-star SHA `0a3b85bc…` unchanged)
 - [ ] Preflight follow-up — shared parse: L3 assembly consuming `ProgramContext::parsed()` (halves the added analyze cost, kills the L3↔fresh TOCTOU)
 - [ ] Preflight follow-up — report dependency ABI-ingestion errors + declared-but-missing deps in `FreshCoverage`; then re-strengthen the clean message
 - [ ] **d56 re-promotion:** add primary-key-field-reassignment analysis (clone whose PK/current-key field is reassigned before the write targets a DIFFERENT row — the MoveEmailLog shape), exclude those, re-promote d56 OPT-IN → DEFAULT
