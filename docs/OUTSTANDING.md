@@ -76,6 +76,14 @@ the bottom, CHANGELOG, and git log.
   the publish side lacks URI-ownership arbitration. Both narrow; build when a real
   client hits them
 
+- [ ] **`str::to_lowercase()` census in the advisory engine** (surfaced by the
+  unicode-fold arc): ~364 sites across `src/engine/l2`-`l5` use full Unicode
+  `to_lowercase()` (the 1:n-hazard primitive) as their own pre-existing convention —
+  inconsistent with the new `fold_identifier` simple-fold choke point. One live
+  interaction traced neutral-to-improving; population of divergent inputs is empty
+  today. Migrate to `eq_fold_identifier`/`fold_identifier` layer-by-layer for
+  consistency (low priority; advisory engine only)
+
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
