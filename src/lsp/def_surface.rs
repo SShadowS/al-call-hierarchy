@@ -75,7 +75,7 @@
 //! The audit's own §2.2 read-table lists `ObjectNode::name` as a field
 //! `graph.resolve_object`'s underlying index consults
 //! (`src/program/graph.rs`'s `ObjectIndex::build` keys its by-name lookup on
-//! `obj.name.to_ascii_lowercase()` for EVERY object, numbered or not) — but
+//! `obj.name.fold_identifier()` for EVERY object, numbered or not) — but
 //! §4's derived per-object field list, as first drafted, omitted it (item 1's
 //! identity key only covers `declared_id`-or-name-key, which for a NUMBERED
 //! object is `ObjKey::Id`, never the display name). Renaming a numbered
@@ -123,6 +123,7 @@
 //! case-only object rename — both rare edits — is more than paid for by
 //! closing this display-correctness gap.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 use blake3::Hasher;
 
@@ -218,7 +219,7 @@ pub fn def_surface_fingerprint(pf: &ParsedFile) -> DefSurface {
     let mut h = Hasher::new();
     write_list(&mut h, &objects, |h, (obj, routines)| {
         write_object_identity(h, &obj.id); // 1
-        write_str(h, &obj.name.to_ascii_lowercase()); // 2 (see module doc's "object name" section)
+        write_str(h, &obj.name.fold_identifier()); // 2 (see module doc's "object name" section)
         write_opt_i64(h, obj.declared_id); // 3
         write_opt_str(h, &obj.extends_target); // 4
         write_list(h, &obj.implements, |h, s| write_str(h, s)); // 5

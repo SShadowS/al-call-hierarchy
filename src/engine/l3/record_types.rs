@@ -20,6 +20,8 @@
 
 use super::l3_workspace::{L3Object, L3Routine};
 use super::symbol_table::SymbolTable;
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::node_util::strip_quotes;
 
 /// Extract the TABLE NAME from a record variable's `declaredType` string.
@@ -401,12 +403,12 @@ pub fn resolve_routine_record_types(
     if let Some(guard_receiver) = routine.entry_temp_guard_receiver.clone() {
         let guard_receiver = guard_receiver.as_str();
         for op in routine.record_operations.iter_mut() {
-            if op.record_variable_name.eq_ignore_ascii_case(guard_receiver) {
+            if op.record_variable_name.eq_fold_identifier(guard_receiver) {
                 op.temp_state = Some(crate::engine::l2::scope::ts_known(true));
             }
         }
         for variable in routine.record_variables.iter_mut() {
-            if variable.name.eq_ignore_ascii_case(guard_receiver) {
+            if variable.name.eq_fold_identifier(guard_receiver) {
                 variable.temp_state = crate::engine::l2::scope::ts_known(true);
             }
         }

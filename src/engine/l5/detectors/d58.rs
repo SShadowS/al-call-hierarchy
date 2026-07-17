@@ -7,6 +7,8 @@
 //! member calls in anchor order tracking open-state; flag each
 //! SetFilter/SetRange while open. Severity: medium. Confidence: likely.
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::features::PCallee;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
@@ -59,12 +61,12 @@ pub fn detect_d58(
                 if receiver.to_lowercase() != *qv {
                     continue;
                 }
-                let ev = if method.eq_ignore_ascii_case("Open") {
+                let ev = if method.eq_fold_identifier("Open") {
                     "open"
-                } else if method.eq_ignore_ascii_case("Close") {
+                } else if method.eq_fold_identifier("Close") {
                     "close"
-                } else if method.eq_ignore_ascii_case("SetFilter")
-                    || method.eq_ignore_ascii_case("SetRange")
+                } else if method.eq_fold_identifier("SetFilter")
+                    || method.eq_fold_identifier("SetRange")
                 {
                     "filter"
                 } else {

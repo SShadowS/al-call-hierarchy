@@ -9,6 +9,8 @@
 //! operation site strictly AFTER it in the same routine (straight-line source
 //! order). Severity: low. Confidence: possible.
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::features::{PAnchor, PCFNNode, PCallee};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
@@ -213,7 +215,7 @@ pub fn detect_d62(
             let PCallee::Member { receiver, method } = &cs.callee else {
                 continue;
             };
-            if !method.eq_ignore_ascii_case("LogUsage") {
+            if !method.eq_fold_identifier("LogUsage") {
                 continue;
             }
             if !ft_vars.contains(&receiver.to_lowercase()) {

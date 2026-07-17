@@ -16,6 +16,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::features::{PAnchor, PCallSite, PCallee};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
@@ -47,7 +49,7 @@ const WINDOW_CLOSING_OPS: &[&str] = &["Reset", "Copy", "TransferFields", "Init"]
 /// variable entirely. Same buffer-reset semantics as `Init`: it closes the
 /// post-retrieval access window for that variable.
 fn is_clear_call_on(cs: &PCallSite, var_key: &str) -> bool {
-    matches!(&cs.callee, PCallee::Bare { name } if name.eq_ignore_ascii_case("Clear"))
+    matches!(&cs.callee, PCallee::Bare { name } if name.eq_fold_identifier("Clear"))
         && cs.argument_texts.len() == 1
         && cs.argument_texts[0].trim().to_lowercase() == var_key
 }

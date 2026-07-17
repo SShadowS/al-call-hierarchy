@@ -49,6 +49,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::AlFile;
 use rayon::prelude::*;
 
@@ -868,7 +869,7 @@ pub(crate) fn recompute_file(
     for obj in &pf.file.objects {
         let obj_key = match obj.id {
             Some(n) => ObjKey::Id(n),
-            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+            None => ObjKey::Name(obj.name.fold_identifier()),
         };
         let obj_node_id = ObjectNodeId {
             app: primary_app_ref,

@@ -3407,12 +3407,18 @@ mod tests {
         // whitespace) used to panic mid-char on the old byte-length-mismatch
         // slice. `\s+temporary` shouldn't strip here regardless — the point is
         // reaching that decision must not panic.
+        //
+        // `normalized_lc` is `ßtemporary` (not `ẞtemporary`) since the
+        // Unicode-fold arc: `ẞ` (U+1E9E, LATIN CAPITAL LETTER SHARP S) has a
+        // genuine 1:1 simple lowercase mapping to `ß` (U+00DF) — `fold_identifier`
+        // folds it like any other cased letter, unlike the old ASCII-only fold,
+        // which left every non-ASCII byte (including `ẞ`) untouched.
         assert_eq!(
             classify_type_text("Record ẞTemporary"),
             ParsedType::Record {
                 table_ref: ObjectRef::Name {
                     raw: "ẞTemporary".into(),
-                    normalized_lc: "ẞtemporary".into()
+                    normalized_lc: "ßtemporary".into()
                 }
             }
         );
@@ -3424,12 +3430,18 @@ mod tests {
         // byte-math bug silently failed to recognize " temporary" as the
         // modifier here, leaving the table name mis-parsed as
         // "İ temporary" instead of "İ".
+        //
+        // `normalized_lc` is `i` (not `İ`): `fold_identifier`'s simple 1:1 fold
+        // takes `char::to_lowercase('İ').next()` (see crates/al-syntax/src/casing.rs's
+        // doc) — plain `i`, deliberately never the 2-char `i̇` `to_lowercase()`
+        // would produce. The RAW name (`table_ref.raw`) stays `İ`, unfolded — only
+        // the fold key changes.
         assert_eq!(
             classify_type_text("Record İ temporary"),
             ParsedType::Record {
                 table_ref: ObjectRef::Name {
                     raw: "İ".into(),
-                    normalized_lc: "İ".into()
+                    normalized_lc: "i".into()
                 }
             }
         );
