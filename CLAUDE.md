@@ -62,9 +62,10 @@ See `src/main.rs`'s `Args` (clap derive) for the authoritative flag list.
   - Removing a worktree: `git worktree remove` FAILS here ("working trees containing
     submodules cannot be moved or removed") — verify the tree is clean/merged, then
     `rm -rf <worktree-dir> && git worktree prune`.
-  - `.claude/` (skills, commands) is gitignored and exists only in the MAIN checkout —
-    from a worktree, reference skill scripts by absolute main-checkout path
-    (e.g. `U:/Git/al-call-hierarchy/.claude/skills/...`).
+  - `.claude/` is gitignored EXCEPT `.claude/commands/` (project slash commands are
+    versioned — they encode project doctrine, e.g. `/triage-wave`). Skills still exist
+    only in the MAIN checkout — from a worktree, reference skill scripts by absolute
+    main-checkout path (e.g. `U:/Git/al-call-hierarchy/.claude/skills/...`).
 
 ## Architecture
 
