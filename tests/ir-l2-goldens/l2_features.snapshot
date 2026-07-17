@@ -906,6 +906,10 @@ ws-txn-d49-neg-run-boundary/src/Sender.Codeunit.al::1::OnRun	1c581bfa00a0d975
 ws-txn-d49-neg-temp-write/src/Sender.Codeunit.al::0::TempInsertThenMessage	f007f8ba1785eec6
 ws-txn-d49-pos-modify-message/src/Sender.Codeunit.al::0::ModifyThenMessage	9e6e673978002e0e
 ws-txn-d49-pos-modify-runmodal/src/Sender.Codeunit.al::0::ModifyThenRunModal	c94da51425262603
+ws-unicode-fold/LobenrMgt.Codeunit.al::0::Beregn	b31d2a5b3e173e36
+ws-unicode-fold/LobenrMgt.Codeunit.al::0::Prüfung	8aafbefaccda4416
+ws-unicode-fold/UnicodeFoldCaller.Codeunit.al::0::CallCrossCaseObjectName	4e08ad75c651705d
+ws-unicode-fold/UnicodeFoldCaller.Codeunit.al::0::CallCrossCaseMemberName	fa4adcbf172a9c8a
 ws-unresolved/src/caller.al::0::DoWork	b87188d07869b2eb
 ws-upgrade-codeunit/src/upgrade.al::0::OnUpgradePerCompany	0bd71f511b2b413c
 ws-upgrade-codeunit/src/upgrade.al::0::DoUpgradeWork	b31d2a5b3e173e36

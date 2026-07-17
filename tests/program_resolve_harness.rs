@@ -10984,3 +10984,93 @@ fn cdo_builtin_dispatch_audit_flagged_count_is_pinned() {
         audit.flagged,
     );
 }
+
+// ---------------------------------------------------------------------------
+// Unicode-fold arc: cross-case non-ASCII identifier resolution — the moat
+// claim made executable.
+//
+// `tests/r0-corpus/ws-unicode-fold/` pairs a Danish object-name cross-case
+// spelling (`Løbenr Mgt.` declared / `LØBENR MGT.` referenced — differing
+// only in the case of the non-ASCII `Ø`/`ø`) with a German routine-name
+// cross-case spelling (`Prüfung` declared / `PRÜFUNG` called — differing
+// only in the case of the non-ASCII `Ü`/`ü`). Under the OLD
+// `to_ascii_lowercase`-only fold neither pair is the same key: an ASCII-only
+// fold leaves `Ø`/`ø` and `Ü`/`ü` byte-for-byte untouched, so e.g. `Ø`
+// (U+00D8) and `ø` (U+00F8) fold to two DIFFERENT strings and the call would
+// land `Unknown`, not `Source`. Under `fold_identifier`'s simple 1:1 Unicode
+// fold (`crates/al-syntax/src/casing.rs`) both spellings fold to the SAME
+// key, so both calls resolve. See `.superpowers/sdd/unicode-fold-investigation.md`.
+// ---------------------------------------------------------------------------
+
+fn ws_unicode_fold_report() -> ProgramReport {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/r0-corpus/ws-unicode-fold");
+    resolve_full_program(&fixture).expect("resolve_full_program must succeed on ws-unicode-fold")
+}
+
+/// Axis 1 — OBJECT NAME fold: `CallCrossCaseObjectName` declares its
+/// receiver `Codeunit "LØBENR MGT."` (all-caps, non-ASCII `Ø`) against a
+/// codeunit declared `"Løbenr Mgt."` (title case, `ø`) and calls `Beregn()`
+/// (same-case, isolating this axis from axis 2 below). This must resolve via
+/// `Evidence::Source` to `Løbenr Mgt.::Beregn` — it would NOT under
+/// ASCII-only folding (see module doc above).
+#[test]
+fn ws_unicode_fold_cross_case_object_name_resolves_to_source() {
+    let report = ws_unicode_fold_report();
+    let edges = edges_for_caller(&report, "callcrosscaseobjectname");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallCrossCaseObjectName must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(routes.len(), 1, "single-dispatch call site");
+    let route = &routes[0];
+
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "Codeunit \"LØBENR MGT.\" must resolve to the same object as declared \
+         \"Løbenr Mgt.\" under a Unicode-aware fold (Ø/ø are the SAME letter, \
+         different case only) — got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "beregn");
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+}
+
+/// Axis 2 — MEMBER (routine) NAME fold: `CallCrossCaseMemberName` declares
+/// its receiver `Codeunit "Løbenr Mgt."` (same-case, isolating this axis
+/// from axis 1 above) and calls `PRÜFUNG()` (all-caps, non-ASCII `Ü`)
+/// against a procedure declared `Prüfung` (`ü`). This must resolve via
+/// `Evidence::Source` to `Løbenr Mgt.::Prüfung` (`name_lc` folds to
+/// `"prüfung"`, NOT the two-char `str::to_lowercase()`-style form) — it
+/// would NOT under ASCII-only folding (see module doc above).
+#[test]
+fn ws_unicode_fold_cross_case_member_name_resolves_to_source() {
+    let report = ws_unicode_fold_report();
+    let edges = edges_for_caller(&report, "callcrosscasemembername");
+    assert_eq!(
+        edges.len(),
+        1,
+        "CallCrossCaseMemberName must have exactly one call obligation"
+    );
+    let routes = &edges[0].edge.routes;
+    assert_eq!(routes.len(), 1, "single-dispatch call site");
+    let route = &routes[0];
+
+    assert_eq!(
+        route.evidence,
+        Evidence::Source,
+        "PRÜFUNG() must resolve to the same routine as declared Prüfung under \
+         a Unicode-aware fold (Ü/ü are the SAME letter, different case only) \
+         — got {route:?}"
+    );
+    let RouteTarget::Routine(ref rid) = route.target else {
+        panic!("expected RouteTarget::Routine, got {:?}", route.target);
+    };
+    assert_eq!(rid.name_lc, "prüfung");
+    assert_eq!(rid.object.kind, ObjectKind::Codeunit);
+}

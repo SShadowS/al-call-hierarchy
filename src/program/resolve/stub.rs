@@ -12,6 +12,8 @@
 //! Phase 1 resolvers will re-extract sites per-object, eliminating this
 //! ambiguity.
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{ObjKey, ObjectNodeId};
 use crate::program::resolve::decl_surface::DeclSurface;
@@ -48,7 +50,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
             for obj in &pf.file.objects {
                 let key = match obj.id {
                     Some(n) => ObjKey::Id(n),
-                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                    None => ObjKey::Name(obj.name.fold_identifier()),
                 };
                 let obj_id = ObjectNodeId {
                     app: app_ref,
@@ -57,7 +59,7 @@ pub fn resolve_program(graph: &ProgramGraph, parsed: &[ParsedUnit]) -> Vec<Edge>
                 };
 
                 for routine in &obj.routines {
-                    let name_lc = routine.name.to_ascii_lowercase();
+                    let name_lc = routine.name.fold_identifier();
                     let caller = source_routine_node_id(obj_id.clone(), routine);
 
                     for site in sites.iter().filter(|s| s.caller_routine == name_lc) {

@@ -32,6 +32,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::program::resolve::differential::{
     CanonicalEdge, CanonicalEventRow, CanonicalKey, CanonicalSiteKey, CanonicalTarget,
     make_canonical_key, object_kind_str_to_tag,
@@ -112,7 +114,7 @@ pub fn project_l3(workspace_root: &Path) -> Vec<CanonicalEdge> {
                 from_r.app_guid.clone(),
                 from_r.object_type.to_ascii_lowercase(),
                 format!("{}", from_r.object_number),
-                from_r.name.to_ascii_lowercase(),
+                from_r.name.fold_identifier(),
             );
 
             // Resolve the callsite → span + callee fingerprint.
@@ -155,7 +157,7 @@ pub fn project_l3(workspace_root: &Path) -> Vec<CanonicalEdge> {
                         kind: object_kind_str_to_tag(&to_r.object_type.to_ascii_lowercase()),
                         app: Some(to_r.app_guid.clone()),
                         object_lc: format!("{}", to_r.object_number),
-                        routine_lc: Some(to_r.name.to_ascii_lowercase()),
+                        routine_lc: Some(to_r.name.fold_identifier()),
                     });
                     set
                 } else {
@@ -240,7 +242,7 @@ pub fn project_l3_implicit_trigger_in_scope(workspace_root: &Path) -> Vec<Canoni
                 from_r.app_guid.clone(),
                 from_r.object_type.to_ascii_lowercase(),
                 format!("{}", from_r.object_number),
-                from_r.name.to_ascii_lowercase(),
+                from_r.name.fold_identifier(),
             );
 
             // ImplicitTrigger edges use PRecordOperation.id as callsite_id;
@@ -281,7 +283,7 @@ pub fn project_l3_implicit_trigger_in_scope(workspace_root: &Path) -> Vec<Canoni
                         kind: object_kind_str_to_tag(&to_r.object_type.to_ascii_lowercase()),
                         app: Some(to_r.app_guid.clone()),
                         object_lc: format!("{}", to_r.object_number),
-                        routine_lc: Some(to_r.name.to_ascii_lowercase()),
+                        routine_lc: Some(to_r.name.fold_identifier()),
                     });
                     set
                 } else {
@@ -348,7 +350,7 @@ pub fn project_l3_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow> {
             r.app_guid.clone(),
             r.object_type.to_ascii_lowercase(),
             format!("{}", r.object_number),
-            r.name.to_ascii_lowercase(),
+            r.name.fold_identifier(),
         )
     };
 
@@ -363,7 +365,7 @@ pub fn project_l3_event_rows(workspace_root: &Path) -> Vec<CanonicalEventRow> {
             let sub_r = routine_by_stable_id.get(edge.subscriber_routine_id.as_str())?;
             Some(CanonicalEventRow {
                 publisher: key_of(pub_r),
-                event_name_lc: sym.event_name.to_ascii_lowercase(),
+                event_name_lc: sym.event_name.fold_identifier(),
                 subscriber: key_of(sub_r),
                 publisher_arity: Some(sym.parameters.len()),
             })

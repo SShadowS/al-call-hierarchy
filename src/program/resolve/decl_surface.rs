@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{Origin, RoutineDecl};
 
 use crate::program::graph::ProgramGraph;
@@ -81,7 +82,7 @@ impl DeclSurface {
                 for obj in &pf.file.objects {
                     let key = match obj.id {
                         Some(n) => ObjKey::Id(n),
-                        None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                        None => ObjKey::Name(obj.name.fold_identifier()),
                     };
                     let obj_id = ObjectNodeId {
                         app: app_ref,
@@ -130,7 +131,7 @@ impl DeclSurface {
                 for obj in &pf.file.objects {
                     let key = match obj.id {
                         Some(n) => ObjKey::Id(n),
-                        None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                        None => ObjKey::Name(obj.name.fold_identifier()),
                     };
                     let obj_id = ObjectNodeId {
                         app: app_ref,

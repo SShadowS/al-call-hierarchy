@@ -1,5 +1,6 @@
 //! Extract object + routine nodes from one parsed `AlFile`.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, ObjectKind, Param, ParseStatus, RoutineKind};
 
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
@@ -378,7 +379,7 @@ pub struct RoutineNode {
 fn param_sig_key(params: &[Param]) -> String {
     params
         .iter()
-        .map(|p| p.ty.as_deref().unwrap_or("").trim().to_ascii_lowercase())
+        .map(|p| p.ty.as_deref().unwrap_or("").trim().fold_identifier())
         .collect::<Vec<_>>()
         .join("|")
 }
@@ -396,7 +397,7 @@ fn parse_object_ref_value(value: &str) -> (ObjectRef, bool) {
         (ObjectRef::Id(n), is_temporary)
     } else {
         let raw = unquote_identifier(base);
-        let normalized_lc = raw.to_ascii_lowercase();
+        let normalized_lc = raw.fold_identifier();
         (ObjectRef::Name { raw, normalized_lc }, is_temporary)
     }
 }
@@ -529,7 +530,7 @@ pub fn extract_nodes(
     for obj in &file.objects {
         let key = match obj.id {
             Some(n) => ObjKey::Id(n),
-            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+            None => ObjKey::Name(obj.name.fold_identifier()),
         };
         let obj_id = ObjectNodeId {
             app,
@@ -570,7 +571,7 @@ pub fn extract_nodes(
                 .iter()
                 .filter_map(|pc| {
                     Some(PageControlNode {
-                        name_lc: pc.name.to_ascii_lowercase(),
+                        name_lc: pc.name.fold_identifier(),
                         kind: page_control_kind(&pc.kind)?,
                         target: parse_object_ref_value(&pc.target).0,
                     })
@@ -588,7 +589,7 @@ pub fn extract_nodes(
             obj.fields
                 .iter()
                 .map(|f| FieldNode {
-                    name_lc: f.name.to_ascii_lowercase(),
+                    name_lc: f.name.fold_identifier(),
                     type_text: f.data_type.clone(),
                 })
                 .collect()
@@ -605,7 +606,7 @@ pub fn extract_nodes(
             obj.report_dataitems
                 .iter()
                 .map(|(name, table)| DataitemNode {
-                    name_lc: name.to_ascii_lowercase(),
+                    name_lc: name.fold_identifier(),
                     name: name.clone(),
                     source_table: parse_object_ref_value(table).0,
                 })

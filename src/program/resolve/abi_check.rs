@@ -19,6 +19,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::deps::symbol_reference::{
     AbiEventKind as SrAbiEventKind, AbiRoutine, SymbolReferenceAbi,
 };
@@ -100,7 +102,7 @@ impl RawAbiIndex {
                 let (object_number, object_name_lc) = if obj.object_number != 0 {
                     (obj.object_number, String::new())
                 } else {
-                    (0i64, obj.name.to_ascii_lowercase())
+                    (0i64, obj.name.fold_identifier())
                 };
 
                 for routine in &obj.routines {
@@ -109,7 +111,7 @@ impl RawAbiIndex {
                         object_type_lc: object_type_lc.clone(),
                         object_number,
                         object_name_lc: object_name_lc.clone(),
-                        routine_name_lc: routine.name.to_ascii_lowercase(),
+                        routine_name_lc: routine.name.fold_identifier(),
                         params_count: routine.parameters.len(),
                         routine_kind,
                         event_kind,

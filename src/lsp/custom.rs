@@ -172,6 +172,7 @@ use crate::program::resolve::event::{PublisherKind, is_event_publisher};
 use crate::protocol::uri_to_path;
 use crate::snapshot::{AppSetSnapshot, AppUnit};
 use crate::types::ObjectType;
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, AttributeIr, Ir};
 
 // ---------------------------------------------------------------------------
@@ -373,7 +374,7 @@ fn find_external_object<'a>(
         && let Some(obj) = abi
             .objects
             .iter()
-            .find(|o| o.object_type == ty && o.name.eq_ignore_ascii_case(name))
+            .find(|o| o.object_type == ty && o.name.eq_fold_identifier(name))
     {
         return Some(obj);
     }
@@ -528,7 +529,7 @@ pub fn event_reference_at_position(
             let obj = abi
                 .objects
                 .iter()
-                .find(|o| o.object_type == ty && o.name.eq_ignore_ascii_case(&object_name))?;
+                .find(|o| o.object_type == ty && o.name.eq_fold_identifier(&object_name))?;
             Some((unit, obj))
         })
     });
@@ -537,7 +538,7 @@ pub fn event_reference_at_position(
         Some((unit, obj)) => match obj
             .methods
             .iter()
-            .find(|m| m.name.eq_ignore_ascii_case(&event_name))
+            .find(|m| m.name.eq_fold_identifier(&event_name))
         {
             Some(m) => {
                 let tag = m.kind.tag();

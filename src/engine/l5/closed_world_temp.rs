@@ -40,6 +40,8 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::features::{PCallee, PTempState};
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::CombinedGraph;
@@ -77,7 +79,7 @@ fn strip_quotes(s: &str) -> &str {
 }
 
 fn name_matches(callee_name: &str, routine_name: &str) -> bool {
-    strip_quotes(callee_name).eq_ignore_ascii_case(strip_quotes(routine_name))
+    strip_quotes(callee_name).eq_fold_identifier(strip_quotes(routine_name))
 }
 
 struct ProofEnv<'a> {

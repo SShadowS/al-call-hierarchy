@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 
 use crate::program::graph::ProgramGraph;
@@ -235,7 +236,7 @@ impl ResolveIndex {
                     .push(obj.id.clone());
             }
             objects_by_name
-                .entry((obj.id.kind, obj.name.to_ascii_lowercase()))
+                .entry((obj.id.kind, obj.name.fold_identifier()))
                 .or_default()
                 .push(obj.id.clone());
 
@@ -244,7 +245,7 @@ impl ResolveIndex {
                 && let Some(ref target) = obj.extends_target
             {
                 table_extensions
-                    .entry(target.to_ascii_lowercase())
+                    .entry(target.fold_identifier())
                     .or_default()
                     .push(obj.id.clone());
             }
@@ -255,7 +256,7 @@ impl ResolveIndex {
                 && let Some(ref target) = obj.extends_target
             {
                 page_extensions
-                    .entry(target.to_ascii_lowercase())
+                    .entry(target.fold_identifier())
                     .or_default()
                     .push(obj.id.clone());
             }
@@ -267,7 +268,7 @@ impl ResolveIndex {
                 && let Some(ref target) = obj.extends_target
             {
                 report_extensions
-                    .entry(target.to_ascii_lowercase())
+                    .entry(target.fold_identifier())
                     .or_default()
                     .push(obj.id.clone());
             }
@@ -275,7 +276,7 @@ impl ResolveIndex {
             // Interface implementers.
             for iface in &obj.implements {
                 implementers
-                    .entry(iface.to_ascii_lowercase())
+                    .entry(iface.fold_identifier())
                     .or_default()
                     .push(obj.id.clone());
             }
@@ -305,7 +306,7 @@ impl ResolveIndex {
                     continue;
                 };
                 let pub_obj_id = pub_obj.id.clone();
-                let event_name_lc = args.event_name.to_ascii_lowercase();
+                let event_name_lc = args.event_name.fold_identifier();
 
                 // (c) Candidates: PHYSICAL routines (by index, not id — see
                 //     the comment on `routine_indices_by_obj_name` above) in
@@ -695,7 +696,7 @@ impl ResolveIndex {
             .map(|f| (base, f))
             .collect();
 
-        let base_name_lc = base_obj.name.to_ascii_lowercase();
+        let base_name_lc = base_obj.name.fold_identifier();
         for ext_id in self.table_extensions_of(&base_name_lc) {
             if !closure.contains(&ext_id.app) {
                 // Outside from_object's dependency closure: invisible, not a
@@ -800,7 +801,7 @@ impl ResolveIndex {
         let Some(base_obj) = Self::find_object(graph, base) else {
             return false;
         };
-        let base_name_lc = base_obj.name.to_ascii_lowercase();
+        let base_name_lc = base_obj.name.fold_identifier();
         for ext_id in self.table_extensions_of(&base_name_lc) {
             if !closure.contains(&ext_id.app) {
                 // Outside from_object's dependency closure: invisible, not a
@@ -884,7 +885,7 @@ impl ResolveIndex {
         };
         let base_ref = ObjectRef::Name {
             raw: extends.to_string(),
-            normalized_lc: extends.to_ascii_lowercase(),
+            normalized_lc: extends.fold_identifier(),
         };
         matches!(
             self.resolve_object_ref(graph, from.clone(), target.kind, &base_ref),
@@ -1006,7 +1007,7 @@ pub fn count_unknown_include_sender_plus1_subscribers(graph: &ProgramGraph) -> u
             let Some(pub_obj) = graph.resolve_object(sub_app, kind, &args.publisher_name) else {
                 continue;
             };
-            let event_name_lc = args.event_name.to_ascii_lowercase();
+            let event_name_lc = args.event_name.fold_identifier();
 
             for pr in &graph.routines {
                 if pr.id.object == pub_obj.id

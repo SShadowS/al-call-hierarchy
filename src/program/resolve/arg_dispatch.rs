@@ -92,6 +92,7 @@
 //! [`DeclSurface`]: crate::program::resolve::decl_surface::DeclSurface
 //! [`resolver::resolve_in_object`]: crate::program::resolve::resolver
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{
     AlFile, BinaryOp, Expr, ExprId, ExprKind, Literal, ObjectKind, RoutineDecl, VarDecl,
 };
@@ -737,7 +738,7 @@ fn type_one_arg(
             let Some(from_object) = object_by_id(graph, from) else {
                 return ArgDispatchInfo::untyped();
             };
-            let field_lc = unquote_identifier(member).to_ascii_lowercase();
+            let field_lc = unquote_identifier(member).fold_identifier();
             if index.table_scope_has_routine(graph, from_object, &table_id, &field_lc) {
                 return ArgDispatchInfo::untyped();
             }
@@ -897,18 +898,18 @@ fn type_call_result_arg_bare(
     surface: &DeclSurface,
     with_state: WithState,
 ) -> ArgDispatchInfo {
-    let fname_lc = fname.to_ascii_lowercase();
+    let fname_lc = fname.fold_identifier();
     let shadowed = routine
         .params
         .iter()
-        .any(|p| p.name.to_ascii_lowercase() == fname_lc)
+        .any(|p| p.name.fold_identifier() == fname_lc)
         || routine
             .locals
             .iter()
-            .any(|v| v.name.to_ascii_lowercase() == fname_lc)
+            .any(|v| v.name.fold_identifier() == fname_lc)
         || object_globals
             .iter()
-            .any(|v| v.name.to_ascii_lowercase() == fname_lc);
+            .any(|v| v.name.fold_identifier() == fname_lc);
     if shadowed {
         return ArgDispatchInfo::untyped();
     }
@@ -1000,7 +1001,7 @@ fn type_call_result_arg_member(
     };
     let base_receiver =
         parsed_type_to_receiver(classify_type_text(base_ty_text), from_object, graph, index);
-    let member_lc = unquote_identifier(member).to_ascii_lowercase();
+    let member_lc = unquote_identifier(member).fold_identifier();
     let (_shape, routes) = resolve_member(
         &base_receiver,
         &member_lc,
@@ -1274,7 +1275,7 @@ fn abi_param_canonical(
     let tuple_ref = if let Some(name) = &p.subtype_raw_name {
         Some(ObjectRef::Name {
             raw: name.clone(),
-            normalized_lc: name.to_ascii_lowercase(),
+            normalized_lc: name.fold_identifier(),
         })
     } else {
         p.subtype_id.map(ObjectRef::Id)

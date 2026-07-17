@@ -10,6 +10,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::features::PCallee;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
@@ -67,7 +69,7 @@ pub fn detect_d57(
         for cs in &r.call_sites {
             match &cs.callee {
                 PCallee::Member { receiver, method }
-                    if CLEAR_METHODS.iter().any(|m| m.eq_ignore_ascii_case(method)) =>
+                    if CLEAR_METHODS.iter().any(|m| m.eq_fold_identifier(method)) =>
                 {
                     set.insert(receiver.to_lowercase());
                 }
@@ -79,7 +81,7 @@ pub fn detect_d57(
                 // the same structural pattern d3's `is_clear_call_on` uses for
                 // `Clear(<var>)` on a record variable.
                 PCallee::Bare { name }
-                    if name.eq_ignore_ascii_case("Clear") && cs.argument_texts.len() == 1 =>
+                    if name.eq_fold_identifier("Clear") && cs.argument_texts.len() == 1 =>
                 {
                     set.insert(cs.argument_texts[0].trim().to_lowercase());
                 }
@@ -111,7 +113,7 @@ pub fn detect_d57(
             let PCallee::Member { receiver, method } = &cs.callee else {
                 continue;
             };
-            if !GROW_METHODS.iter().any(|m| m.eq_ignore_ascii_case(method)) {
+            if !GROW_METHODS.iter().any(|m| m.eq_fold_identifier(method)) {
                 continue;
             }
             let recv_lc = receiver.to_lowercase();

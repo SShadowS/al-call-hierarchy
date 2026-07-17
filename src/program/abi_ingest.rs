@@ -18,6 +18,7 @@ use crate::program::resolve::edge::{AbiEventKind, AbiRoutineKind};
 use crate::program::resolve::event::PublisherKind;
 use crate::program::sig_fp::{fnv1a, write_len_prefixed};
 use crate::snapshot::{AppUnit, TrustTier};
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 
 // ---------------------------------------------------------------------------
@@ -39,7 +40,7 @@ fn fold_param_discriminator(
     buf: &mut String,
     p: &crate::engine::deps::symbol_reference::AbiParameter,
 ) {
-    write_len_prefixed(buf, &p.type_text.to_ascii_lowercase());
+    write_len_prefixed(buf, &p.type_text.fold_identifier());
     write_len_prefixed(
         buf,
         &p.subtype_id.map(|id| id.to_string()).unwrap_or_default(),
@@ -49,7 +50,7 @@ fn fold_param_discriminator(
         &p.subtype_raw_name
             .as_deref()
             .unwrap_or("")
-            .to_ascii_lowercase(),
+            .fold_identifier(),
     );
     write_len_prefixed(buf, p.subtype_tag);
 }
@@ -302,14 +303,14 @@ fn abi_table_fields(tables: &[AbiTable], object_number: i64, name: &str) -> Vec<
             if object_number != 0 {
                 t.object_number == object_number
             } else {
-                t.name.eq_ignore_ascii_case(name)
+                t.name.eq_fold_identifier(name)
             }
         })
         .map(|t| {
             t.fields
                 .iter()
                 .map(|f| FieldNode {
-                    name_lc: f.name.to_ascii_lowercase(),
+                    name_lc: f.name.fold_identifier(),
                     type_text: f.data_type.clone(),
                 })
                 .collect()
@@ -424,7 +425,7 @@ pub fn ingest_abi(unit: &AppUnit, app: AppRef, cache: &AbiCache) -> AbiIngestRes
         let key = if abi_obj.object_number != 0 {
             ObjKey::Id(abi_obj.object_number)
         } else {
-            ObjKey::Name(abi_obj.name.to_ascii_lowercase())
+            ObjKey::Name(abi_obj.name.fold_identifier())
         };
         let obj_id = ObjectNodeId { app, kind, key };
 
@@ -489,7 +490,7 @@ pub fn ingest_abi(unit: &AppUnit, app: AppRef, cache: &AbiCache) -> AbiIngestRes
             // (`resolver::object_access_visible_from` /
             // `internal_visible_across`) enforces call-time visibility —
             // ingestion no longer makes that decision by deletion.
-            let name_lc = routine.name.to_ascii_lowercase();
+            let name_lc = routine.name.fold_identifier();
             // Tri-state arity (Task 1): a genuinely-parsed `Parameters` array
             // (even empty) carries its real `len()`; an absent/unparseable one
             // maps to `UNKNOWN_ARITY`, a sentinel that can never arity-match a
