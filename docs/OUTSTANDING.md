@@ -27,9 +27,18 @@ the bottom, CHANGELOG, and git log.
 - [ ] **tree-sitter-al quirks list** (low priority — engine is insulated by the
   lowerer, workarounds in place): spurious `left`/`operator`/`right` field pollution,
   `case_else_branch` inconsistency (see memory `tree-sitter-al-grammar-issues`)
-- [ ] **Multi-root LSP workspaces** (user decision 2026-07-13: shipped single-root +
-  tracked follow-up): per-root ServerState map + URI→root routing; design recorded in
-  `server.rs`'s `primary_workspace_root` doc
+- [x] **Multi-root LSP workspaces** — DONE 2026-07-17 (`6470e3e`). Per-root
+  `ServerState` map (`Workspace`/`RootState`, each root gets its own `LspSnapshot`/
+  updater/watcher/`DiagnosticsState`) + URI→root routing (`route_uri`, longest-prefix)
+  for `dispatch_request`/`handle_notification`; `incomingCalls`/`outgoingCalls` route
+  via a stamped `CallHierarchyItem.data` root marker instead (required, not cosmetic —
+  `RoutineNodeId.AppRef` is a raw per-snapshot index, so the same id value can name a
+  different routine in a different root). Single-root byte-identical (no marker/
+  warnings ever emitted; the pre-existing dispatch test's assertions untouched). New
+  follow-up surfaced by this work: `workspace/didChangeWorkspaceFolders` is NOT
+  implemented — safe root removal needs an `AlFileWatcher` cancellation signal that
+  doesn't exist yet (see `server.rs`'s module doc); the notification now warns loudly
+  instead of being silently swallowed. Report: `.superpowers/sdd/multiroot-report.md`
 - [x] **Snapshot-scoped LineTable cache** — DONE 2026-07-17. `ParsedFileEntry` gained
   a `OnceLock<LineTable>`-backed cache (rides the existing Arc-forwarding
   invalidation architecture, no new bookkeeping); `LineTable` moved from
