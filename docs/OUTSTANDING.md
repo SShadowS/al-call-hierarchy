@@ -53,6 +53,14 @@ the bottom, CHANGELOG, and git log.
 - [x] **r3a4 source-bearing-dep pin hardening** — DONE 2026-07-17 (`8b5b4ec`):
   closure-membership assert added; the pin can no longer be vacated by a fixture edit
 
+- [ ] **Multi-root follow-ups** (from the 6470e3e review): (a)
+  `workspace/didChangeWorkspaceFolders` deferred — safe root REMOVAL needs an
+  `AlFileWatcher` cancellation signal that doesn't exist (warns loudly today); (b)
+  nested-root diagnostics overlap — two nested AL app roots can both publish
+  diagnostics for the same URI (last-write-wins clobber); routing handles nesting,
+  the publish side lacks URI-ownership arbitration. Both narrow; build when a real
+  client hits them
+
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY

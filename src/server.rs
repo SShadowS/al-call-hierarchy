@@ -1500,6 +1500,16 @@ mod tests {
             .find(|d| d.name == "DoWork")
             .expect("root B DoWork decl")
             .clone();
+        // Pin the collision PRECONDITION: both roots must mint byte-identical
+        // RoutineNodeIds for their Alpha.DoWork — that identity collision is
+        // exactly what makes the `__root` marker necessary. If fixture drift
+        // ever breaks this, the test would silently stop exercising the
+        // marker's reason for existing.
+        assert_eq!(
+            do_work_a.id, do_work_b.id,
+            "fixture drift: the two roots no longer collide on RoutineNodeId — \
+             re-align the fixtures so this test keeps proving marker-based routing"
+        );
 
         let prepare_req_a = Request::new(
             RequestId::from(1),
