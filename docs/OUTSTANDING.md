@@ -11,9 +11,16 @@ the bottom, CHANGELOG, and git log.
   (26 accumulated scratch stashes from merged arcs, all superseded; verified 0 remain)
 - [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is
   local-only today — force-add `.claude/commands/triage-wave.md` to share, or keep personal
-- [ ] **d61/d62/d64 validation corpus:** the three opt-in BCQuality detectors emitted 0
-  on DO (fixture-proven only). Pick a corpus that exercises them (another Continia
-  workspace?), then run `/triage-wave` before considering promotion
+- [x] **d61/d62/d64 validation** — DONE 2026-07-17 (`f3f5c85`). Corpus: Microsoft
+  System App + Base App 28.0 embedded source extracted from DO's `.alpackages`
+  (9.3k real files). d62: 9 findings triaged (1 real, 8 FP) → structural
+  branch-exclusivity class ROOT-CAUSE FIXED via statement_tree (9→4; the
+  `if Success then Log else Error` idiom no longer flags); 3 residual semantic FP
+  classes documented → stays opt-in. d64: first population (8 API pages) → only FP
+  class (SourceTableTemporary) fixed, 2→0 with honest skips → stays opt-in (no TP
+  yet). d61: 7,367 real candidates, 0 emissions, guards hold (caveat: sliced corpus
+  may hide cross-slice event pairs) → stays opt-in. Promotion wake for all three:
+  a triaged true-positive population
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
