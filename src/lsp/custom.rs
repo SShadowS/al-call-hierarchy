@@ -247,7 +247,13 @@ fn external_kind_to_lsp_kind(kind: ExternalMethodKind) -> u32 {
 
 /// Request params — mirrors legacy's `DependencyDocumentSymbolParams`
 /// (`src/handlers.rs:1370-1385`) field-for-field (camelCase wire names).
-#[derive(Debug, Deserialize)]
+///
+/// `Clone` (multi-root routing, `server.rs`'s
+/// `dispatch_dependency_document_symbol`): this request's `uri` can be a
+/// root-agnostic synthetic scheme with no per-root discriminator, so a
+/// multi-root session may need to probe more than one configured root's
+/// snapshot with the SAME params before finding a non-empty answer.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyDocumentSymbolParams {
     #[serde(default)]
