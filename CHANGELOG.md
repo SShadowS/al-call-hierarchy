@@ -24,6 +24,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
+- d64-api-page-write-surface: an API page whose `SourceTable` is declared
+  `SourceTableTemporary = true` no longer flags — its `Rec` sources from a
+  per-SESSION temporary buffer, so an accepted OData write persists nothing
+  and the detector's stated hazard ("the OData surface still accepts those
+  writes") is materially void regardless of which write-surface properties
+  are left undeclared. Measured on Microsoft Base Application 28.0 (the
+  first real-workspace d64 population): of 8 API-page candidates, 6 were
+  correctly skipped `declaredClosed` and the 2 EMITTED findings
+  (`page 5462 "API Routes"`, `page 5460 "Webhook Supported Resources"`) were
+  both this ONE false-positive class — 2/2 of the survivors. New skip bucket
+  `sourceTableTemporary`, checked before the write-surface shape
+  classification so it wins over shape A/B either way.
+- d62-telemetry-before-success: a later fallible site (record write / `Error`
+  call) only counts against a `LogUsage` call now if it can ACTUALLY execute
+  in the same run — `before_anchor` alone tested SOURCE-TEXT order, so
+  `if Success then FeatureTelemetry.LogUsage(...) else Error(...)` (and the
+  `case` analog) was flagged every time despite the two arms being mutually
+  exclusive (measured 5/8 false positives, 88.9% overall, triaging Microsoft
+  System Application 28.0). Added a `mutually_exclusive` check over the
+  routine's structural statement tree (`L3Routine.statement_tree`): locates
+  both sites by callsite/operation id (falling back to `source_range` for an
+  `error-call` operation site, whose synthetic op id never appears in the
+  tree — the paired call site's id does), builds each site's root-to-target
+  arm trail, and compares the two trails to find the nearest common `if`/
+  `case` ancestor — a fork there (different `then`/`else`/case-branch arm)
+  makes the log and the fallible site provably non-concurrent. A call inside
+  the if/case's own CONDITION (e.g. `if TryX() then`) is correctly treated as
+  ancestor-level, not "in" either arm. New skip bucket `exclusiveBranch`
+  (distinct from the existing `terminalLog`) counts sites suppressed this
+  way. `LogUsage` followed sequentially by a fallible write in the SAME arm
+  still fires (added as an explicit regression control in `ws-d62`).
 - `gate_sarif_differential`'s regen mode (`REGEN_TEMP_GOLDENS=1`) no longer
   bypasses its own code-flows anti-degenerate assertion: each fixture's
   `continue` after `maybe_regen()` skipped the `any_code_flows_matched`

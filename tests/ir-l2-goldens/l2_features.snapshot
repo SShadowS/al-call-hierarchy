@@ -405,6 +405,9 @@ ws-d61/src/Codeunit.al::2::HandlePost	3b5237de11d8a443
 ws-d61/src/Codeunit.al::2::HandleLog	a37fef78b703db98
 ws-d62/src/Codeunit.al::0::LogThenWork	2010f579238c5f79
 ws-d62/src/Codeunit.al::0::WorkThenLog	6d5665189064e933
+ws-d62/src/Codeunit.al::0::IfSuccessLogElseError	ab1a1c81accd6e6c
+ws-d62/src/Codeunit.al::0::CaseLogElseError	e5ad3ed96a925709
+ws-d62/src/Codeunit.al::0::LogThenWriteSameArm	f6613ce80ca55629
 ws-d63/src/Codeunit.al::0::BuildUnsafe	c0bfc4c66052d7f9
 ws-d63/src/Codeunit.al::0::BuildStatic	22a075da5870b257
 ws-d63/src/Codeunit.al::0::BuildPlain	54a22e6f44de624e

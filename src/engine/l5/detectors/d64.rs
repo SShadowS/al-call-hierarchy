@@ -26,6 +26,20 @@
 //! `to_location` (`src/engine/gate/projection.rs`) — so the production
 //! SARIF/JSON/HTML/terminal output still shows the owning object's id/name
 //! instead of a blank location.
+//!
+//! FALSE-POSITIVE CLASS (measured on Microsoft Base Application 28.0, the
+//! first real-workspace d64 population): an API page whose `SourceTable` is
+//! declared `SourceTableTemporary = true` sources its `Rec` from a
+//! per-SESSION temporary buffer, not a persisted table — an accepted OData
+//! write on such a page persists nothing, so the detector's stated hazard
+//! ("the OData surface still accepts those writes") is materially void
+//! regardless of which write-surface properties are left undeclared. `page
+//! 5462 "API Routes"` and `page 5460 "Webhook Supported Resources"` were both
+//! wrongly flagged (shape A) for exactly this reason — the only FP class in
+//! that measurement (8 candidates, 6 correctly `declaredClosed`, both
+//! survivors this class). Skipped via a new `sourceTableTemporary` bucket,
+//! checked before the write-surface shape classification so it wins over
+//! shape A/B either way.
 
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
@@ -76,6 +90,7 @@ pub fn detect_d64(
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_declared_closed = 0u64;
+    let mut skipped_source_table_temporary = 0u64;
 
     for o in &ws.objects {
         if o.object_type != "Page" {
@@ -89,6 +104,14 @@ pub fn detect_d64(
             continue;
         }
         candidates_considered += 1;
+
+        // A temp-sourced API page persists nothing on write — no hazard
+        // regardless of which write-surface properties are declared (see
+        // module doc's FALSE-POSITIVE CLASS note).
+        if o.source_table_temporary == Some(true) {
+            skipped_source_table_temporary += 1;
+            continue;
+        }
 
         let writes_closed = o.insert_allowed == Some(false)
             && o.modify_allowed == Some(false)
@@ -182,5 +205,6 @@ pub fn detect_d64(
     let emitted = findings.len();
     let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
     stats.add_skip("declaredClosed", skipped_declared_closed);
+    stats.add_skip("sourceTableTemporary", skipped_source_table_temporary);
     Ok(DetectorOutput::no_diag(findings, stats))
 }
