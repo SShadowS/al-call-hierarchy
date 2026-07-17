@@ -1064,7 +1064,9 @@ pub fn run_one_scc(
         iterations += 1;
 
         // JACOBI: freeze the prior-pass snapshot (deep copy).
+        let __probe_t = std::time::Instant::now();
         let snapshot: HashMap<String, RoutineSummary> = in_progress.clone();
+        crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_CLONE, __probe_t.elapsed());
 
         // Accumulate this pass's new summaries separately so we don't read
         // our own writes during this pass (JACOBI, not Gauss-Seidel).
@@ -1078,6 +1080,7 @@ pub fn run_one_scc(
                 Some(r) => r,
                 None => continue,
             };
+            let __probe_t = std::time::Instant::now();
             let next = compose_routine(
                 routine,
                 &snapshot,             // FROZEN: all reads from the prior pass
@@ -1087,7 +1090,9 @@ pub fn run_one_scc(
                 ctx.graph,
                 ctx.body_avail_by_id,
             );
+            crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_COMPOSE, __probe_t.elapsed());
 
+            let __probe_t = std::time::Instant::now();
             let prev_proj = snapshot
                 .get(id)
                 .map(|s| project_summary_to_stable(id, s, ctx.stable_map));
@@ -1095,6 +1100,7 @@ pub fn run_one_scc(
 
             let fp_prev = prev_proj.as_ref().map(summary_fingerprint);
             let fp_next = summary_fingerprint(&next_proj);
+            crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_FP, __probe_t.elapsed());
 
             if fp_prev.as_deref() != Some(&fp_next) {
                 changed = true;

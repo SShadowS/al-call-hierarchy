@@ -201,11 +201,15 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
     let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    crate::stage_probe::stage("l4:symbol_table:end");
     let no_deps: Vec<DeclaredDependency> = Vec::new();
     let no_fetched: Vec<String> = Vec::new();
     let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    crate::stage_probe::stage("l4:resolve_calls:end");
     let event_graph = build_event_graph(&ws.routines, &symbols);
+    crate::stage_probe::stage("l4:event_graph:end");
     let graph = build_combined_graph(ws, &calls, &event_graph);
+    crate::stage_probe::stage("l4:combined_graph:end");
 
     // Per-routine direct facts + direct coverage, then the inherited cone over
     // the combined graph — the same assembly project_r3a3 does inline, here via
@@ -232,6 +236,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         direct_full.insert(r.id.clone(), facts);
     }
     let cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
+    crate::stage_probe::stage("l4:cones:end");
 
     let empty_facts: Vec<CapabilityFact> = Vec::new();
     let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
@@ -302,6 +307,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // G-19 — closed-world proven-temp params for `local` procedures (consumed
     // by the d1/d3/d10 temp gates). Pure lookup-table build over the routines +
     // combined graph + reverse graph; entry points are proof-disqualifying.
+    crate::stage_probe::stage("l4:summaries_indexes:end");
     let closed_world_temp_params =
         crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
             &ws.routines,
@@ -309,6 +315,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
             &reverse_call_graph,
             &entry_points,
         );
+    crate::stage_probe::stage("l4:closed_world_temp:end");
 
     let transaction_spans = compute_transaction_spans(
         &ws.routines,
@@ -316,6 +323,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         &reverse_call_graph,
         &summaries,
     );
+    crate::stage_probe::stage("l4:transaction_spans:end");
 
     // Event-flow indexes — built eagerly from the L3 event graph + routine set +
     // dep set (source-only ⇒ empty dep set ⇒ every routine primary). Consumes
@@ -360,6 +368,27 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         nodes: &graph.nodes,
         edges_by_from: &scc_adjacency,
     });
+    if std::env::var("ALSEM_STAGE_TIMING").as_deref() == Ok("1") {
+        let max_scc = scc.sccs.iter().map(|s| s.members.len()).max().unwrap_or(0);
+        let rec = scc.sccs.iter().filter(|s| s.recursive).count();
+        let rec_members: usize = scc
+            .sccs
+            .iter()
+            .filter(|s| s.recursive)
+            .map(|s| s.members.len())
+            .sum();
+        eprintln!(
+            "SCCSTATS nodes={} sccs={} recursive_sccs={} recursive_members={} max_scc={}",
+            graph.nodes.len(),
+            scc.sccs.len(),
+            rec,
+            rec_members,
+            max_scc
+        );
+        if std::env::var("ALSEM_EXIT_AFTER_SCCSTATS").as_deref() == Ok("1") {
+            std::process::exit(0);
+        }
+    }
     // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
     // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
     // but `compute_summaries` takes it.
@@ -379,6 +408,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         &field_index,
         false,
     );
+    crate::stage_probe::stage("l4:compute_summaries:end");
 
     // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
     // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary

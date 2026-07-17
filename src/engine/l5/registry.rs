@@ -236,6 +236,7 @@ fn primary_location_key(f: &Finding) -> String {
 /// guarantee.
 pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput {
     let ctx = build_detector_context(resolved);
+    crate::stage_probe::stage("l4_detector_context:end");
     let summarize_diagnostics: Vec<Diagnostic> = ctx
         .summarize_diagnostics
         .iter()
@@ -347,6 +348,7 @@ fn run_each(
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             (detector.run)(resolved, ctx)
         }));
+        crate::stage_probe::stage(&format!("detector:{}:end", detector.name));
         match outcome {
             Ok(Ok(output)) => {
                 findings.extend(output.findings);

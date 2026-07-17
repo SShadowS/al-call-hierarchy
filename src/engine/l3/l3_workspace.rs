@@ -558,7 +558,10 @@ fn project_file(
     cols: &Utf16Cols,
     workspace: &mut L3Workspace,
 ) {
+    let __probe_t = std::time::Instant::now();
     let ir_file = al_syntax::parse(source);
+    crate::stage_probe::accum(crate::stage_probe::ACC_PARSE, __probe_t.elapsed());
+    let __probe_t = std::time::Instant::now();
 
     for (oi, o) in ir_file.objects.iter().enumerate() {
         let Some(object_type) = crate::engine::l2::ir_walk::ir_object_type(&o.kind) else {
@@ -1128,6 +1131,7 @@ fn project_file(
             });
         }
     }
+    crate::stage_probe::accum(crate::stage_probe::ACC_PROJECT, __probe_t.elapsed());
 }
 
 // ---------------------------------------------------------------------------
@@ -1185,7 +1189,9 @@ pub fn assemble_workspace(
     crate::big_stack::run_with_big_stack(|| {
         for (fname, source) in sorted {
             let source_unit_id = format!("ws:{fname}");
+            let __probe_t = std::time::Instant::now();
             let cols = Utf16Cols::new(source);
+            crate::stage_probe::accum(crate::stage_probe::ACC_UTF16, __probe_t.elapsed());
             project_file(
                 source,
                 app_guid,
@@ -1270,7 +1276,9 @@ pub fn assemble_and_resolve_workspace(
 ) -> Option<L3Resolved> {
     let resolved = {
         let mut ws = assemble_l3_workspace_from_disk(workspace, model_instance_id)?;
+        crate::stage_probe::stage("l3_assemble_from_disk:end");
         resolve(&mut ws);
+        crate::stage_probe::stage("l3_resolve:end");
         // R4-F: classify AST roots, then overlay `<workspace>/roots.config.json`.
         // `workspace` is the root where the config lives (mirrors al-sem's
         // index.ts: `loadRootsConfig(workspaceRoot)`).

@@ -203,7 +203,9 @@ pub fn compute_transaction_spans(
     // --- explicit-commit seeds ---
     for (commit_routine_id, commit_ops) in &commits_by_routine {
         for commit_operation_id in commit_ops {
+            let __probe_t = std::time::Instant::now();
             let visited = backward_cone(commit_routine_id, &commits_by_routine, reverse);
+            crate::stage_probe::accum(crate::stage_probe::ACC_SPAN_BFS, __probe_t.elapsed());
             let (writes_tables, publishes_events, coverage_complete) =
                 aggregate_span(&visited, summaries);
             let span_roots = span_roots_of(&visited, reverse);
