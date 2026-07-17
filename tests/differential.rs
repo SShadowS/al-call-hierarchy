@@ -17,7 +17,12 @@
 //!
 //! ## Comparison rules
 //!
-//! - Objects are matched by `stableObjectId`, routines by `stableRoutineId`.
+//! - Objects are matched by `(stableObjectId, name)`, routines by
+//!   `stableRoutineId`. `stableObjectId` alone is not unique: `Interface`/
+//!   `ControlAddIn` objects carry no grammar-level object number, so every
+//!   such object in an app synthesizes the SAME `stableObjectId`
+//!   (`objectNumber = 0`) — `name` disambiguates (AL forbids two same-kind
+//!   objects sharing both an id and a name).
 //! - Every field is compared for equality: objects compare `name`, `kind`,
 //!   `signatureFingerprint`; routines compare those plus `normalizedSignatureHash`
 //!   and `canonicalSignatureText`.
@@ -162,20 +167,41 @@ fn diff_snapshots(
 ) -> Vec<Divergence> {
     let mut out = Vec::new();
 
-    // --- Objects, keyed by stableObjectId. ---
-    let golden_objs: BTreeMap<&str, &ObjectIdentity> = golden
+    // --- Objects, keyed by (stableObjectId, name). ---
+    //
+    // `stableObjectId` alone is NOT a safe join key: `Interface`/`ControlAddIn`
+    // objects carry no grammar-level object number (AL never assigns one), so
+    // `engine::snapshot::extract_from_ir` synthesizes `objectNumber = 0` for
+    // EVERY interface/control-add-in in an app — any two such objects in the
+    // same app collide on the exact same `stableObjectId`
+    // (`"{appGuid}:Interface:0"`). Collecting straight into a
+    // `BTreeMap<&str, &ObjectIdentity>` keyed by that non-unique id used to
+    // silently drop every colliding entry but the last (`BTreeMap::insert`
+    // overwrites on a repeated key), so `ws-interface-dispatch`'s two
+    // interfaces (`IEmpty`, `IProcessor`) were never both compared — only
+    // whichever sorted last (`IProcessor`) was ever checked, letting the
+    // committed golden's `IEmpty` row sit silently wrong (it held a stale
+    // copy of `IProcessor`'s `signatureFingerprint`) while `cargo test --test
+    // differential` reported green. Regenerating exposed this: the freshly
+    // computed snapshot is fully deterministic (verified across repeated
+    // fresh-process regens) and simply differs from the stale golden — this
+    // was never engine nondeterminism, only a masked comparison. Keying by
+    // `(stableObjectId, name)` — AL forbids two same-kind objects sharing both
+    // an id AND a name — disambiguates every collision case and lets each
+    // object be compared independently.
+    let golden_objs: BTreeMap<(&str, &str), &ObjectIdentity> = golden
         .objects
         .iter()
-        .map(|o| (o.stable_object_id.as_str(), o))
+        .map(|o| ((o.stable_object_id.as_str(), o.name.as_str()), o))
         .collect();
-    let rust_objs: BTreeMap<&str, &ObjectIdentity> = rust
+    let rust_objs: BTreeMap<(&str, &str), &ObjectIdentity> = rust
         .objects
         .iter()
-        .map(|o| (o.stable_object_id.as_str(), o))
+        .map(|o| ((o.stable_object_id.as_str(), o.name.as_str()), o))
         .collect();
 
-    for (id, g) in &golden_objs {
-        match rust_objs.get(id) {
+    for ((id, name), g) in &golden_objs {
+        match rust_objs.get(&(*id, *name)) {
             None => out.push(Divergence {
                 fixture: fixture.to_string(),
                 path: format!("objects[{:?}]:MISSING_IN_RUST", id),
@@ -183,7 +209,8 @@ fn diff_snapshots(
                 rust_value: "<absent>".to_string(),
             }),
             Some(r) => {
-                push_field(&mut out, fixture, &obj_path(id, "name"), &g.name, &r.name);
+                // (name is part of the map key, so a hit guarantees name equality —
+                // no per-field name comparison needed.)
                 push_field(&mut out, fixture, &obj_path(id, "kind"), &g.kind, &r.kind);
                 push_field(
                     &mut out,
@@ -195,8 +222,8 @@ fn diff_snapshots(
             }
         }
     }
-    for (id, r) in &rust_objs {
-        if !golden_objs.contains_key(id) {
+    for ((id, name), r) in &rust_objs {
+        if !golden_objs.contains_key(&(*id, *name)) {
             out.push(Divergence {
                 fixture: fixture.to_string(),
                 path: format!("objects[{:?}]:EXTRA_IN_RUST", id),
