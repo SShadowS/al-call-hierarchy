@@ -21,6 +21,8 @@
 use super::extension_fields::merge_extension_fields;
 use super::record_types::resolve_routine_record_types;
 use super::symbol_table::SymbolTable;
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
 use crate::engine::l2::node_util::{Utf16Cols, strip_quotes};
 
@@ -874,7 +876,7 @@ fn project_file(
                             || receiver == "xrec"
                             || record_variables
                                 .iter()
-                                .any(|rv| rv.name.eq_ignore_ascii_case(receiver))
+                                .any(|rv| rv.name.eq_fold_identifier(receiver))
                     });
             let record_operations = features
                 .record_operations

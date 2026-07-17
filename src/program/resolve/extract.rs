@@ -16,6 +16,7 @@
 
 use std::collections::HashSet;
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, BlockId, BlockItem, ExprId, ExprKind, RoutineDecl, StmtKind};
 
 use crate::program::resolve::edge::{CanonicalSpan, SourcePos};
@@ -266,12 +267,12 @@ pub fn routine_rvars(routine: &RoutineDecl) -> HashSet<String> {
     rvars.insert("xrec".to_string());
     for p in &routine.params {
         if p.ty.as_deref().map(is_record_ty).unwrap_or(false) {
-            rvars.insert(p.name.to_ascii_lowercase());
+            rvars.insert(p.name.fold_identifier());
         }
     }
     for v in &routine.locals {
         if v.ty.as_deref().map(is_record_ty).unwrap_or(false) {
-            rvars.insert(v.name.to_ascii_lowercase());
+            rvars.insert(v.name.fold_identifier());
         }
     }
     rvars
@@ -376,14 +377,14 @@ fn classify_call(
         ExprKind::Member { object, member, .. } => {
             let obj = file.ir.expr(*object);
             // Strip quotes + lowercase for matching.
-            let method_lc = strip_quote_chars(member).to_ascii_lowercase();
+            let method_lc = strip_quote_chars(member).fold_identifier();
 
             // --- Check 1: RecordOp ------------------------------------------------
             // Receiver must be a simple Identifier/QuotedIdentifier in rvars AND
             // method must be in record_op_names (mirrors L2 record-op filter).
             let recv_lc = match &obj.kind {
                 ExprKind::Identifier(r) | ExprKind::QuotedIdentifier(r) => {
-                    Some(r.to_ascii_lowercase())
+                    Some(r.fold_identifier())
                 }
                 _ => None,
             };
@@ -439,7 +440,7 @@ fn classify_call(
         }
 
         ExprKind::Identifier(name) => {
-            if name.eq_ignore_ascii_case("commit") {
+            if name.eq_fold_identifier("commit") {
                 CalleeShape::Commit
             } else {
                 CalleeShape::Bare { name: name.clone() }
@@ -447,7 +448,7 @@ fn classify_call(
         }
         ExprKind::QuotedIdentifier(name) => {
             // QuotedIdentifier stores the already-unquoted name (lowerer strips quotes).
-            if name.eq_ignore_ascii_case("commit") {
+            if name.eq_fold_identifier("commit") {
                 CalleeShape::Commit
             } else {
                 CalleeShape::Bare { name: name.clone() }
@@ -871,7 +872,7 @@ pub fn extract_sites(
     for obj in &file.objects {
         for routine in &obj.routines {
             if let Some(body) = routine.body {
-                let caller = routine.name.to_ascii_lowercase();
+                let caller = routine.name.fold_identifier();
                 let mut rvars = routine_rvars(routine);
                 rvars.extend(object_globals.iter().cloned());
                 let ctx = WithCtx {
@@ -916,7 +917,7 @@ pub fn extract_sites_for_object(
     let mut out = Vec::new();
     for routine in &obj.routines {
         if let Some(body) = routine.body {
-            let caller = routine.name.to_ascii_lowercase();
+            let caller = routine.name.fold_identifier();
             let mut rvars = routine_rvars(routine);
             rvars.extend(object_globals.iter().cloned());
             let ctx = WithCtx {
@@ -965,7 +966,7 @@ pub fn extract_sites_for_routine(
     let Some(body) = routine.body else {
         return Vec::new();
     };
-    let caller = routine.name.to_ascii_lowercase();
+    let caller = routine.name.fold_identifier();
     let mut rvars = routine_rvars(routine);
     rvars.extend(object_globals.iter().cloned());
     let ctx = WithCtx {

@@ -33,6 +33,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 use rayon::prelude::*;
 
@@ -338,7 +339,7 @@ fn builtin_dispatch_finding(
             };
             match static_database_reference_target(file, call_args) {
                 Some((target, _target_is_name)) => Some(BuiltinDispatchFinding::Flagged {
-                    object: format!("{kind_str}::{}", target.to_ascii_lowercase()),
+                    object: format!("{kind_str}::{}", target.fold_identifier()),
                     method: method_lc.to_string(),
                 }),
                 None => Some(BuiltinDispatchFinding::Indeterminate {
@@ -413,7 +414,7 @@ fn resolve_call_site_obligation(
 
     match shape {
         CalleeShape::Bare { name } => {
-            let name_lc = name.to_ascii_lowercase();
+            let name_lc = name.fold_identifier();
             // Task 4 (sigfp-and-ambiguous-reclassification plan): thread the
             // REAL shape `resolve_bare` determined through — a bare call is
             // `DispatchShape::Exact` in every case except a genuine
@@ -448,8 +449,8 @@ fn resolve_call_site_obligation(
             method,
             receiver,
         } => {
-            let receiver_lc = receiver_text.to_ascii_lowercase();
-            let method_lc = method.to_ascii_lowercase();
+            let receiver_lc = receiver_text.fold_identifier();
+            let method_lc = method.fold_identifier();
             let mut finding: Option<BuiltinDispatchFinding> = None;
             let (member_shape, mut routes) = if let Some(obj_node) = obj_node_opt {
                 let recv = infer_receiver_type(
@@ -539,8 +540,8 @@ fn resolve_call_site_obligation(
         }
 
         CalleeShape::RecordOp { receiver_text, op } => {
-            let receiver_lc = receiver_text.to_ascii_lowercase();
-            let op_lc = op.to_ascii_lowercase();
+            let receiver_lc = receiver_text.fold_identifier();
+            let op_lc = op.fold_identifier();
 
             // Infer the record type from the receiver and look up its table
             // ObjectNode.  Falls back to honest-empty when the table is not found.
@@ -653,7 +654,7 @@ pub(crate) fn resolve_file_obligations(
     for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
         let obj_key = match obj.id {
             Some(n) => ObjKey::Id(n),
-            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+            None => ObjKey::Name(obj.name.fold_identifier()),
         };
         let obj_node_id = ObjectNodeId {
             app: primary_app_ref,
@@ -671,7 +672,7 @@ pub(crate) fn resolve_file_obligations(
                     .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
                     .unwrap_or(false)
             })
-            .map(|v| v.name.to_ascii_lowercase())
+            .map(|v| v.name.fold_identifier())
             .collect();
 
         for (routine_idx, routine) in obj.routines.iter().enumerate() {
@@ -1933,6 +1934,16 @@ mod tests {
         assert!(
             chain_dep.source.is_some(),
             "Dep Chain must be genuinely source-bearing for this pin to be meaningful"
+        );
+        // Non-vacuity guard: the dep must be IN the primary's declared closure —
+        // if a future fixture edit dropped it from app.json while the .app stayed
+        // in .alpackages, the BFS would skip it and the empty-opaque assertion
+        // below would pass for the wrong reason.
+        assert!(
+            snap.apps[0].declared_deps.iter().any(|d| d
+                .app_id
+                .eq_ignore_ascii_case("cccccccc-0001-0000-0000-000000000001")),
+            "Dep Chain must be DECLARED by the primary app.json (closure membership)"
         );
 
         let fc = fresh_coverage(&ws).expect("r3a4 fixture resolves");

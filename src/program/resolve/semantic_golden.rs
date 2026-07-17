@@ -75,6 +75,8 @@ use sha2::{Digest, Sha256};
 
 use crate::program::graph::ProgramGraph;
 use crate::program::l3_mint::{project_l3, project_l3_implicit_trigger_in_scope};
+use al_syntax::IdentifierFoldExt;
+
 use crate::program::node::{AppRef, ObjKey, ObjectKind, ObjectNodeId};
 use crate::program::node_extract::{AbiParams, ObjectNode};
 use crate::program::resolve::abi_check::{
@@ -1382,7 +1384,7 @@ fn is_fresh_ahead_dispatch_anon(
             // Cannot find the interface object in the live graph → cannot verify → genuine_wrong.
             return false;
         };
-        let iface_name_lc = l3_obj.name.to_ascii_lowercase();
+        let iface_name_lc = l3_obj.name.fold_identifier();
 
         for fresh_target in fresh {
             // Routine names should agree for a valid interface dispatch.
@@ -1396,7 +1398,7 @@ fn is_fresh_ahead_dispatch_anon(
             if !fresh_obj
                 .implements
                 .iter()
-                .any(|i| i.to_ascii_lowercase() == iface_name_lc)
+                .any(|i| i.fold_identifier() == iface_name_lc)
             {
                 return false;
             }
@@ -1681,7 +1683,7 @@ fn build_fan_out_site_context(
             for (obj_idx, obj) in pf.file.objects.iter().enumerate() {
                 let obj_key = match obj.id {
                     Some(n) => ObjKey::Id(n),
-                    None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+                    None => ObjKey::Name(obj.name.fold_identifier()),
                 };
                 let obj_node_id = ObjectNodeId {
                     app: primary_app_ref,
@@ -1700,7 +1702,7 @@ fn build_fan_out_site_context(
                             .map(|ty| ty.trim().to_ascii_lowercase().starts_with("record"))
                             .unwrap_or(false)
                     })
-                    .map(|v| v.name.to_ascii_lowercase())
+                    .map(|v| v.name.fold_identifier())
                     .collect();
 
                 for (routine_idx, routine) in obj.routines.iter().enumerate() {
@@ -1729,7 +1731,7 @@ fn build_fan_out_site_context(
                                 method,
                                 ..
                             } => {
-                                let receiver_lc = receiver_text.to_ascii_lowercase();
+                                let receiver_lc = receiver_text.fold_identifier();
                                 let recv = infer_receiver_type(
                                     &receiver_lc,
                                     routine,
@@ -1745,15 +1747,15 @@ fn build_fan_out_site_context(
                                         site_id,
                                         FanOutSiteContext::Interface {
                                             iface_lc: name_lc,
-                                            called_member_lc: method.to_ascii_lowercase(),
+                                            called_member_lc: method.fold_identifier(),
                                             arity: site.arity,
                                         },
                                     );
                                 }
                             }
                             CalleeShape::RecordOp { receiver_text, op } => {
-                                let receiver_lc = receiver_text.to_ascii_lowercase();
-                                let op_lc = op.to_ascii_lowercase();
+                                let receiver_lc = receiver_text.fold_identifier();
+                                let op_lc = op.fold_identifier();
                                 let Some(op_kind) = record_op_kind_for_method(&op_lc) else {
                                     continue;
                                 };
@@ -1839,7 +1841,7 @@ fn target_is_on_table_or_extension(
             .objects
             .iter()
             .find(|o| &o.id == table_id)
-            .map(|n| n.name.to_ascii_lowercase())
+            .map(|n| n.name.fold_identifier())
             .unwrap_or_default(),
     };
     if table_name_lc.is_empty() {
@@ -1991,7 +1993,7 @@ pub fn route_applicability(
                 // fell back to "" via `unwrap_or_default()` would be a
                 // meaningless check, not a sound one.
                 if let Some(pub_obj) = graph.objects.iter().find(|o| o.id == edge.from.object) {
-                    let pub_name_lc = pub_obj.name.to_ascii_lowercase();
+                    let pub_name_lc = pub_obj.name.fold_identifier();
                     let pub_type_lc = format!("{:?}", edge.from.object.kind).to_ascii_lowercase();
                     // Look up the publisher ROUTINE's `include_sender` (Task 1) — the
                     // conditional Sender-tolerant bound needs it, and it is NOT

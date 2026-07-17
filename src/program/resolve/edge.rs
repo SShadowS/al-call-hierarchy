@@ -24,6 +24,8 @@
 //! The `routes` field itself is kept `pub` to allow struct-literal construction
 //! across the crate.  The named accessors are the enforced API for consumers.
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::program::node::{AppRef, RoutineNodeId};
 use crate::snapshot::TrustTier;
 
@@ -656,7 +658,7 @@ pub fn real_unknown_rate(edges: &[Edge]) -> f64 {
 pub(crate) fn callee_fp(text: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    text.to_ascii_lowercase().hash(&mut h);
+    text.fold_identifier().hash(&mut h);
     h.finish()
 }
 

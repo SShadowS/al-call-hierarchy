@@ -6,6 +6,7 @@
 //!
 //! Clean-room: no L3 `event_graph` imports.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AttributeIr, ExprId, ExprKind, Ir, Literal, ObjectDecl, RoutineDecl};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ pub fn parse_event_subscriber_ir(attr: &AttributeIr, ir: &Ir) -> Option<ParsedSu
 
     // Arg 2: `'OnAfterX'` → Literal::Text (raw text, single-quoted in AL).
     let event_name = match &ir.expr(attr.args[2]).kind {
-        ExprKind::Literal(Literal::Text(s)) => strip_al_string(s).to_ascii_lowercase(),
+        ExprKind::Literal(Literal::Text(s)) => strip_al_string(s).fold_identifier(),
         _ => return None,
     };
     if event_name.is_empty() {
@@ -68,7 +69,7 @@ pub fn parse_event_subscriber_ir(attr: &AttributeIr, ir: &Ir) -> Option<ParsedSu
     // Arg 3 (optional): element filter — absent or empty string literal → None.
     let element = attr.args.get(3).and_then(|&id| match &ir.expr(id).kind {
         ExprKind::Literal(Literal::Text(s)) => {
-            let v = strip_al_string(s).to_ascii_lowercase();
+            let v = strip_al_string(s).fold_identifier();
             if v.is_empty() { None } else { Some(v) }
         }
         _ => None,
@@ -111,12 +112,12 @@ fn resolve_publisher_name(ir: &Ir, id: ExprId) -> Option<String> {
                 Some((_, n)) => n,
                 None => t.as_str(),
             };
-            Some(strip_al_string(name_part).to_ascii_lowercase())
+            Some(strip_al_string(name_part).fold_identifier())
         }
-        ExprKind::Member { member, .. } => Some(strip_al_string(member).to_ascii_lowercase()),
-        ExprKind::QualifiedEnum { value, .. } => Some(value.to_ascii_lowercase()),
+        ExprKind::Member { member, .. } => Some(strip_al_string(member).fold_identifier()),
+        ExprKind::QualifiedEnum { value, .. } => Some(value.fold_identifier()),
         ExprKind::Identifier(s) | ExprKind::QuotedIdentifier(s) => {
-            Some(strip_al_string(s).to_ascii_lowercase())
+            Some(strip_al_string(s).fold_identifier())
         }
         _ => None,
     }

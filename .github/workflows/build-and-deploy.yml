@@ -136,8 +136,26 @@ jobs:
           name: al-call-hierarchy-macos
           path: al-call-hierarchy
 
-  deploy:
+  # The deploy target is a SEPARATE repo (SShadowS/claude-code-lsps) and needs a
+  # PAT with write access there, stored as the CLAUDE_CODE_LSPS_TOKEN secret.
+  # When the secret is absent, deploy SKIPS (builds above still gate every push)
+  # instead of failing the workflow at the checkout step — add the secret and
+  # deployment resumes with no workflow change. The presence check lives in its
+  # own job because the `secrets` context is NOT available in job-level `if`
+  # (it would silently evaluate empty and skip even with the secret set); step
+  # expressions CAN read it, and `needs` outputs CAN gate a job.
+  deploy-gate:
     needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    outputs:
+      have_token: ${{ steps.chk.outputs.have }}
+    steps:
+      - id: chk
+        run: echo "have=${{ secrets.CLAUDE_CODE_LSPS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: [deploy-gate]
+    if: needs.deploy-gate.outputs.have_token == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download Windows binary
@@ -166,29 +184,23 @@ jobs:
           path: claude-code-lsps
 
       - name: Copy binaries to plugin directories
+        # The copy map mirrors claude-code-lsps' ACTUAL layout (verified 2026-07-18):
+        # al-call-hierarchy ships in exactly three places — the Windows and Linux Go
+        # wrappers plus the generic al-language-server-go plugin (Windows flavor).
+        # The repo has NO python wrapper and NO darwin plugin; the macOS universal
+        # binary is still built and kept as a workflow artifact above, but there is
+        # nowhere to deploy it until such a plugin exists. If the layout grows, add
+        # the target here — a cp to a nonexistent dir fails the job loudly by design.
         run: |
-          # Windows - Go wrapper
+          set -euo pipefail
+
+          # Windows — Go wrapper + generic go plugin
           cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-go-windows/bin/
+          cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-go/bin/
 
-          # Windows - Python wrapper
-          cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-python/bin/windows/
-          cp binaries/windows/al-call-hierarchy.exe claude-code-lsps/al-language-server-python/bin/win32/
-
-          # Linux - Go wrapper
+          # Linux — Go wrapper
           cp binaries/linux/al-call-hierarchy claude-code-lsps/al-language-server-go-linux/bin/
           chmod +x claude-code-lsps/al-language-server-go-linux/bin/al-call-hierarchy
-
-          # Linux - Python wrapper
-          cp binaries/linux/al-call-hierarchy claude-code-lsps/al-language-server-python/bin/linux/
-          chmod +x claude-code-lsps/al-language-server-python/bin/linux/al-call-hierarchy
-
-          # macOS - Go wrapper
-          cp binaries/macos/al-call-hierarchy claude-code-lsps/al-language-server-go-darwin/bin/
-          chmod +x claude-code-lsps/al-language-server-go-darwin/bin/al-call-hierarchy
-
-          # macOS - Python wrapper
-          cp binaries/macos/al-call-hierarchy claude-code-lsps/al-language-server-python/bin/darwin/
-          chmod +x claude-code-lsps/al-language-server-python/bin/darwin/al-call-hierarchy
 
       - name: Commit and push
         working-directory: claude-code-lsps

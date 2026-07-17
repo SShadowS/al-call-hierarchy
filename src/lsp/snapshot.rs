@@ -47,12 +47,14 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::AlFile;
 use rayon::prelude::*;
 
 use crate::lsp::def_surface::{DefSurface, def_surface_fingerprint};
+use crate::lsp::encoding::LineTable;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
 use crate::program::resolve::decl_surface::{DeclSurface, DepMetaMap};
@@ -139,6 +141,29 @@ impl<'a> DeclView<'a> {
     }
 }
 
+/// The [`LspSnapshot::decl_and_line_table`] return shape: either a CACHED
+/// workspace [`LineTable`] (borrowed from a [`ParsedFileEntry`], reused
+/// across every call against the same snapshot generation) or a freshly
+/// built one for a dependency-embedded-source decl (`dep_texts` is not
+/// cache-scoped — see `decl_and_line_table`'s own doc for why). Call
+/// [`Self::table`] to get a plain `&LineTable` regardless of which variant
+/// a given `id` resolved to — callers never need to branch on this
+/// themselves.
+pub enum DeclLineTable<'a> {
+    Cached(&'a LineTable),
+    Owned(LineTable),
+}
+
+impl<'a> DeclLineTable<'a> {
+    #[must_use]
+    pub fn table(&self) -> &LineTable {
+        match self {
+            DeclLineTable::Cached(t) => t,
+            DeclLineTable::Owned(t) => t,
+        }
+    }
+}
+
 /// One parsed file's owned data: the `AlFile` IR, its source text, and its
 /// definition-surface fingerprint (Task 7) — everything a query needs
 /// without re-reading disk or re-parsing.
@@ -150,6 +175,71 @@ pub struct ParsedFileEntry {
     pub text: Arc<str>,
     pub virtual_path: String,
     pub surface: DefSurface,
+    /// Snapshot-scoped [`LineTable`] cache (Tier-2 latency wave follow-up,
+    /// `docs/OUTSTANDING.md`'s "Snapshot-scoped LineTable cache" item) — see
+    /// [`Self::line_table`]. Populated lazily on first access via
+    /// `OnceLock::get_or_init`, never eagerly: most files in a workspace are
+    /// never queried in a given session, so building every file's
+    /// `LineTable` up front at snapshot-construction time would waste the
+    /// exact O(workspace-bytes) cost this cache exists to avoid paying more
+    /// than once per file.
+    ///
+    /// Sound to memoize here (rather than needing separate invalidation
+    /// bookkeeping) because `ParsedFileEntry` is immutable once constructed
+    /// and a NEW one (with a fresh, empty `OnceLock`) is built only when
+    /// `text` actually changes: `LspSnapshot::from_context`, rung 2
+    /// (`Updater::apply_rung2`, rebuilds every file), and rung 1's
+    /// touched-file insert (`apply_rung1_core`) all construct a brand-new
+    /// `ParsedFileEntry` exactly when a file's text is recomputed. Every
+    /// file rung 1 did NOT touch is instead forwarded by `Arc::clone` (`let
+    /// mut parsed_files = cur.parsed.clone();`) — the SAME `Arc
+    /// <ParsedFileEntry>`, hence the SAME `OnceLock`, survives the swap, so
+    /// an unrelated save doesn't even cost that file's cache — it stays
+    /// warm across generations for as long as the file itself is untouched.
+    /// `OnceLock` (rather than a `Mutex<Option<LineTable>>`) also means two
+    /// threads racing to warm the SAME file's cache (the main request loop
+    /// and the updater thread's post-swap diagnostics recompute run
+    /// concurrently — see `server.rs`'s module doc) never contend on an
+    /// unrelated file's slot, and a losing racer's redundant build is simply
+    /// discarded, never a panic or a stale write.
+    line_table: OnceLock<LineTable>,
+}
+
+impl ParsedFileEntry {
+    /// Construct a fresh entry — ALWAYS with an empty `line_table` cache
+    /// slot. The one constructor `LspSnapshot::from_context` and both of
+    /// `Updater`'s rung-1/rung-2 rebuild paths (`src/lsp/updater.rs`) go
+    /// through, so "a brand-new `ParsedFileEntry` always starts with a
+    /// fresh cache" can never accidentally drift at one of the three
+    /// call sites (the field itself is private specifically to force this).
+    #[must_use]
+    pub fn new(
+        file: Arc<AlFile>,
+        text: Arc<str>,
+        virtual_path: String,
+        surface: DefSurface,
+    ) -> Self {
+        ParsedFileEntry {
+            file,
+            text,
+            virtual_path,
+            surface,
+            line_table: OnceLock::new(),
+        }
+    }
+
+    /// The cached [`LineTable`] for this file's CURRENT text — built once
+    /// (lazily, on first access) and reused by every subsequent handler call
+    /// against the SAME snapshot generation. See [`Self::line_table`]
+    /// field's doc for the invalidation argument (a new generation that
+    /// changes this file's text always gets a brand-new `ParsedFileEntry`,
+    /// hence a fresh empty cache; an untouched file's `Arc<ParsedFileEntry>`
+    /// — and its warmed cache — is forwarded unchanged).
+    #[must_use]
+    pub fn line_table(&self) -> &LineTable {
+        self.line_table
+            .get_or_init(|| LineTable::new(Arc::clone(&self.text)))
+    }
 }
 
 /// The immutable, batch-built LSP snapshot: a whole-program resolve pass
@@ -463,12 +553,12 @@ impl LspSnapshot {
                     .expect("a surface was computed for every ws_file_set member above");
                 parsed_files.insert(
                     pf.virtual_path.clone(),
-                    Arc::new(ParsedFileEntry {
-                        file: Arc::clone(&pf.file),
-                        text: Arc::clone(&pf.text),
-                        virtual_path: pf.virtual_path.clone(),
+                    Arc::new(ParsedFileEntry::new(
+                        Arc::clone(&pf.file),
+                        Arc::clone(&pf.text),
+                        pf.virtual_path.clone(),
                         surface,
-                    }),
+                    )),
                 );
             }
         }
@@ -579,6 +669,49 @@ impl LspSnapshot {
                 virtual_path: &m.virtual_path,
             },
             text.as_ref(),
+        ))
+    }
+
+    /// The [`Self::decl_and_text`] counterpart that hands back a
+    /// [`LineTable`] instead of raw text — the snapshot-scoped cache entry
+    /// point (`docs/OUTSTANDING.md`'s "Snapshot-scoped LineTable cache"
+    /// item). Mirrors `decl_and_text`'s EXACT workspace-vs-dependency branch
+    /// (both methods must agree on which tier resolves `id` — see that
+    /// method's own doc): a workspace decl's table comes from
+    /// [`ParsedFileEntry::line_table`] (memoized — repeat callers against
+    /// the SAME snapshot generation, e.g. `incoming`'s per-distinct-caller
+    /// loop, reuse the identical cached `LineTable`), a dependency decl's
+    /// table is built fresh every call (`dep_texts` isn't cache-scoped —
+    /// deliberately out of this task's scope, see the phase-1 report at
+    /// `.superpowers/sdd/linetable-cache-report.md`: a much smaller, rarer
+    /// population than per-call workspace fan-in, and `dep_texts`'
+    /// `Arc<str>`-valued shape has existing byte-sharing tests in
+    /// `tests/lsp/lsp_incremental_parity.rs` this task chose not to disturb).
+    #[must_use]
+    pub fn decl_and_line_table(
+        &self,
+        id: &RoutineNodeId,
+    ) -> Option<(DeclView<'_>, DeclLineTable<'_>)> {
+        if let Some(d) = self.decl_by_id.get(id) {
+            let entry = self.parsed.get(&d.virtual_path)?;
+            return Some((
+                DeclView::from_entry(d),
+                DeclLineTable::Cached(entry.line_table()),
+            ));
+        }
+        let (key, m) = self.dep_meta.get_key_value(id)?;
+        let text = self
+            .dep_texts
+            .get(&(id.object.app, m.virtual_path.clone()))?;
+        Some((
+            DeclView {
+                id: key,
+                name: &m.name,
+                origin: &m.origin,
+                name_origin: &m.name_origin,
+                virtual_path: &m.virtual_path,
+            },
+            DeclLineTable::Owned(LineTable::new(Arc::clone(text))),
         ))
     }
 }
@@ -736,7 +869,7 @@ pub(crate) fn recompute_file(
     for obj in &pf.file.objects {
         let obj_key = match obj.id {
             Some(n) => ObjKey::Id(n),
-            None => ObjKey::Name(obj.name.to_ascii_lowercase()),
+            None => ObjKey::Name(obj.name.fold_identifier()),
         };
         let obj_node_id = ObjectNodeId {
             app: primary_app_ref,
@@ -1425,5 +1558,56 @@ mod tests {
             refs[0].idx, refs[1].idx,
             "the two EdgeRefs must point at two distinct edge indices"
         );
+    }
+
+    // ── snapshot-scoped LineTable cache (docs/OUTSTANDING.md item) ─────────
+
+    #[test]
+    fn parsed_file_entry_line_table_is_memoized() {
+        let dir = fixture_dir();
+        let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
+        let entry = snap.parsed.get("Alpha.al").expect("Alpha.al entry");
+
+        let first: *const LineTable = entry.line_table();
+        let second: *const LineTable = entry.line_table();
+        assert!(
+            std::ptr::eq(first, second),
+            "two calls to `line_table()` against the SAME `ParsedFileEntry` \
+             must return the identical cached instance, not rebuild it — \
+             this is the whole point of the snapshot-scoped cache"
+        );
+    }
+
+    #[test]
+    fn parsed_file_entry_line_table_matches_fresh_construction() {
+        use crate::lsp::encoding::PositionEncoding;
+
+        let dir = fixture_dir();
+        let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
+        let entry = snap.parsed.get("Alpha.al").expect("Alpha.al entry");
+
+        let cached = entry.line_table();
+        let fresh = LineTable::new(Arc::clone(&entry.text));
+
+        let lobenr = snap.decls_by_file["Alpha.al"]
+            .iter()
+            .find(|d| d.name == "Løbenr")
+            .expect("Løbenr decl — a non-ASCII name exercises real utf-16 math");
+
+        for enc in [PositionEncoding::Utf8, PositionEncoding::Utf16] {
+            assert_eq!(
+                cached.col_out(
+                    lobenr.name_origin.start.row,
+                    lobenr.name_origin.start.column,
+                    enc
+                ),
+                fresh.col_out(
+                    lobenr.name_origin.start.row,
+                    lobenr.name_origin.start.column,
+                    enc
+                ),
+                "the cached table must agree with an independently-built one ({enc:?})"
+            );
+        }
     }
 }

@@ -1,198 +1,139 @@
 # AL Call Hierarchy
 
-Blazing-fast call hierarchy server for AL (Business Central) using tree-sitter.
+Whole-program semantic analysis engine for AL (Microsoft Dynamics 365 Business Central): a precise call-graph resolver with an LSP server and a code-quality analyzer built on top of it.
+
+[![Rust](https://img.shields.io/badge/rust-1.75+-orange)](https://rust-lang.org)
+[![GitHub release](https://img.shields.io/github/v/release/SShadowS/al-call-hierarchy)](https://github.com/SShadowS/al-call-hierarchy/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
+## Overview
+
+| Metric | Value |
+|--------|-------|
+| Language | Rust (1.75+, grammar via [`SShadowS/tree-sitter-al`](https://github.com/SShadowS/tree-sitter-al)) |
+| Resolution precision | 0.0000% unresolved call edges on a real ~18k-edge BC workspace ([honest taxonomy](#resolution-coverage) — the residual is provably dynamic, never "unknown") |
+| Analyzer | 43 default + 11 opt-in detectors, false-positive-triaged against real Microsoft Base/System Application source |
+| Query latency | prepare <8µs · outgoing <7µs · incoming ~4ms warm (999-way fan-in) · body-edit save ~13ms |
+| Binaries | `al-call-hierarchy` (LSP server) · `alsem` (analyzer CLI) · `aldump` (engine inspection) |
 
 ## Features
 
-- **Sub-millisecond queries** - Pre-computed call graph with O(1) lookups
-- **Parallel indexing** - Uses all CPU cores for initial index
-- **Incremental updates** - Re-parse only changed files
-- **External dependency support** - Resolves calls to .app packages in `.alpackages`
-- **Event subscriber integration** - Shows `[EventSubscriber]` procedures in call hierarchy
-- **Code Lens** - Reference counts above each procedure
-- **Diagnostics** - Unused procedure detection and code quality warnings
-- **LSP integration** - Works with any LSP-compatible client
+| Feature | Description |
+|---------|-------------|
+| **Whole-program call graph** | Every call edge resolved with app-qualified, overload-aware identity across the workspace and its `.alpackages` dependencies (embedded source and symbol-only ABI) |
+| **Honest resolution taxonomy** | Edges classify as resolved (source/catalog/ABI), conditionally resolved, provably dynamic, or provably empty — an `unknown` bucket that is actually zero, not defined away |
+| **Call hierarchy LSP** | prepare/incoming/outgoing over the resolved graph; multi-root workspaces; incremental two-rung updates on save; UTF-8/UTF-16 position negotiation |
+| **Code lens + diagnostics** | Reference counts, unused-procedure detection, code-quality thresholds, published live on every snapshot swap |
+| **`alsem analyze`** | 54-detector code-quality analyzer (db-ops-in-loop, commit discipline, event hygiene, TryFunction misuse, …) with SARIF/JSON/HTML/terminal output, baseline diffing, inline suppression, presets |
+| **Preflight coverage gate** | Every analyze run verifies resolution coverage with the fresh resolver — degraded analysis is warned loudly, never silent (`--require-dependencies` gates CI) |
+| **Unicode-correct identity** | Identifier folding is simple-Unicode (`Løbenr` ≡ `LØBENR`), matching the AL compiler's case-insensitivity beyond ASCII |
+| **Event-flow modeling** | IntegrationEvent/BusinessEvent publishers, subscribers, and cross-extension fan-out are first-class graph edges |
 
-## Telemetry
+## Installation
 
-`al-call-hierarchy` ships with **anonymous, opt-out failure-diagnostics telemetry** so the maintainer can find resolution gaps that real-world AL projects hit. **No raw identifiers, file paths, or source code leave your machine.** All AL identifier names are hashed with a per-installation random 32-byte salt that stays on your machine; the maintainer sees only structural fingerprints (object types, failure categories, tree-sitter shapes) plus salted hashes.
+Prebuilt binaries for each release are on the [releases page](https://github.com/SShadowS/al-call-hierarchy/releases).
 
-**What's collected:** see [docs/telemetry.md](docs/telemetry.md). **Source code:** [src/telemetry/](src/telemetry/) — auditable in one directory.
-
-**Telemetry is OFF by default in:**
-- Debug builds (`cargo build` without `--release`)
-- Test runs (`cargo test`)
-- CI environments (CI, GITHUB_ACTIONS, GITLAB_CI, etc.)
-
-**Three ways to disable** (any wins):
-
-1. Environment variable: `AL_CH_TELEMETRY=0` or `DO_NOT_TRACK=1`
-2. CLI flag: `al-call-hierarchy --no-telemetry`
-3. Config file `~/.al-call-hierarchy/config.json`:
-   ```json
-   { "telemetry": { "enabled": false } }
-   ```
-
-To inspect what telemetry has been sent in the current session, send the LSP request `al-call-hierarchy/telemetryStatus` (also logged at startup).
-
-## Building
-
-Prerequisites:
-- Rust 1.75+
-- tree-sitter-al grammar: included as a git submodule at `tree-sitter-al/` — clone with
-  `git clone --recurse-submodules`, or run `git submodule update --init` afterwards.
-  Override the location with the `TREE_SITTER_AL_PATH` env var if it lives elsewhere.
+From source (clones the grammar submodule):
 
 ```bash
+git clone --recurse-submodules https://github.com/SShadowS/al-call-hierarchy
+cd al-call-hierarchy
 cargo build --release
 ```
 
-## Usage
-
-### LSP Mode (default)
+## Quick Start
 
 ```bash
+# LSP server (stdio) — point any LSP client at it
 al-call-hierarchy
+
+# Code-quality analysis of an AL workspace
+alsem analyze path/to/workspace --format terminal
+alsem analyze path/to/workspace --format sarif > findings.sarif
+alsem analyze path/to/workspace --preset transaction-integrity
+
+# Engine inspection: the north-star resolution metric
+aldump --program-call-graph-stats path/to/workspace
 ```
 
-Communicates via stdio using the LSP protocol. Handles:
-- `textDocument/prepareCallHierarchy`
-- `callHierarchy/incomingCalls`
-- `callHierarchy/outgoingCalls`
-- `textDocument/codeLens`
-- `textDocument/publishDiagnostics` (server push)
+The workspace root is the directory containing `app.json`; dependencies are read from `.alpackages/` (embedded source preferred, `SymbolReference.json` ABI otherwise, highest compatible version wins).
 
-### CLI Mode (testing)
+The LSP server handles `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`, `textDocument/codeLens`, and pushes `textDocument/publishDiagnostics`; see [LSP.md](LSP.md) for wrapper integration.
 
-```bash
-al-call-hierarchy --project /path/to/al-project
+## Architecture
+
+One engine, two consumers:
+
 ```
-
-LSP mode is the default when `--project` is omitted; passing `--project` alone switches
-to CLI mode (index the project and report definition/call-site counts). Add `--analyze`
-for a code-quality report (`--format text|json|csv`). There is no `--no-lsp` flag.
-
-## Integration
-
-### With AL LSP Wrapper
-
-The Go/Python wrapper spawns this server and routes requests. See [LSP.md](LSP.md) for detailed integration guide.
-
-```go
-case "textDocument/prepareCallHierarchy",
-     "callHierarchy/incomingCalls",
-     "callHierarchy/outgoingCalls",
-     "textDocument/codeLens":
-    return callHierarchyServer.Request(method, params)
+AL source + .alpackages
+        |
+        v
+  snapshot (app-set ingestion, identity-verified roots)
+        |
+        v
+  program graph (app-qualified nodes, overload-aware identity)
+        |
+        v
+  fresh resolver ────────────► Histogram + per-edge routes   (aldump / alsem gate)
+        |
+        v
+  LspSnapshot (O(1) query surface, Arc-swapped, incremental updater)
+        |
+        v
+  LSP server: call hierarchy · code lens · diagnostics · custom requests
 ```
-
-## Performance Targets
-
-| Operation | Target |
-|-----------|--------|
-| Initial index (100 files) | < 500ms |
-| Initial index (1000 files) | < 2s |
-| prepareCallHierarchy | < 1ms |
-| incomingCalls | ~25ms for a 999-way fan-in (architectural — see CLAUDE.md) |
-| outgoingCalls | < 1ms |
-| Incremental update (rung 1 / rung 2) | 100ms / ~1.5s |
-
-Enforced on every PR by a release-mode CI gate (3x tolerance); see CLAUDE.md for
-currently-measured numbers and the bench command.
 
 ## Resolution Coverage
 
-| Call Pattern | Resolvable |
-|--------------|------------|
-| Local procedures | Yes |
-| Qualified calls (Object.Method) | Yes |
-| Record methods | Yes |
-| Event subscribers | Yes |
-| External .app dependencies | Yes |
+`aldump --program-call-graph-stats` emits the full honest taxonomy per workspace — both whole-program and workspace-scoped:
 
-A genuinely dynamic (runtime-typed) call target is honestly reported as such rather than
-guessed — it is never silently dropped or misclassified as resolved. See CLAUDE.md's
-Resolution Coverage section for the full resolution taxonomy and current measured rates.
+| Bucket | Meaning |
+|--------|---------|
+| `resolvedSource` | Target found in workspace/first-party source |
+| `resolvedCatalog` | Platform intrinsic (cataloged builtin) |
+| `resolvedAbiExternal` | Target found via a dependency's ABI |
+| `conditionalResolved` | Resolved under a stated precondition (e.g. interface dispatch) |
+| `honestDynamic` | Provably runtime-typed — no static target exists |
+| `honestEmpty` | Provably no callee (e.g. unsubscribed event) |
+| `unknown` | A true resolution failure — held at **0** on the reference workspace |
 
-## External Dependencies
+A genuinely dynamic call target is reported as such rather than guessed — never silently dropped or misclassified as resolved.
 
-The server automatically resolves calls to procedures defined in external .app packages:
+## Performance
 
-1. Reads `app.json` in the project root for declared dependencies
-2. Finds matching .app files in the `.alpackages` folder
-3. Extracts procedure definitions from `SymbolReference.json` inside each .app
-4. Shows "(from AppName)" in call hierarchy for resolved external calls
-
-### Version Matching
-
-When multiple versions of the same app exist in `.alpackages`, the server selects the highest compatible version based on the dependency declaration in `app.json`.
-
-### Supported .app Structure
-
-The server parses .app files with the standard BC format:
-- 40-byte NAVX header (skipped)
-- ZIP archive containing:
-  - `NavxManifest.xml` - App metadata
-  - `SymbolReference.json` - Symbol definitions
+| Operation | Target | Enforced |
+|-----------|--------|----------|
+| Initial index (1000 files) | < 2s | release-mode CI gate, 3× tolerance, every PR |
+| prepareCallHierarchy / outgoingCalls | < 1ms | same |
+| incomingCalls (999-way fan-in) | ~25ms budget (~4ms warm measured) | same |
+| Incremental save (body edit / signature change) | 100ms / ~1.5s budget | same |
 
 ## Configuration
 
-Diagnostic thresholds are configurable at two levels. Workspace config overrides global config per field (deep merge). All values are optional — missing values use defaults.
+| Location | Purpose |
+|----------|---------|
+| `~/.al-call-hierarchy/config.json` | Global diagnostic thresholds, telemetry opt-out |
+| `<workspace>/.al-call-hierarchy.json` | Per-workspace overrides |
+| `--no-watcher`, `--no-telemetry`, `--verbose` | Runtime flags (see `--help`) |
 
-### Global Config
+## Telemetry
 
-Set defaults for all projects in `~/.al-call-hierarchy/config.json`:
+Anonymous, opt-out failure-diagnostics telemetry helps find resolution gaps hit by real projects. **No raw identifiers, paths, or source leave your machine** — identifier names are salted-hashed per installation. Off by default in debug builds, tests, and CI. Disable via `AL_CH_TELEMETRY=0` / `DO_NOT_TRACK=1`, `--no-telemetry`, or the config file. Details: [docs/telemetry.md](docs/telemetry.md); auditable source: [src/telemetry/](src/telemetry/).
 
-```json
-{
-  "diagnostics": {
-    "complexity": { "warning": 8, "critical": 15 },
-    "unusedProcedures": false
-  }
-}
-```
+## Key Files
 
-### Workspace Config
+| File | Purpose |
+|------|---------|
+| `src/program/resolve/` | The fresh call/behaviour-edge resolver (the core) |
+| `src/snapshot/` | App-set ingestion and dependency identity |
+| `src/lsp/` | LSP query surface, incremental updater, diagnostics |
+| `src/engine/l5/detectors/` | The analyzer's detector suite |
+| `src/bin/alsem.rs` | Analyzer CLI |
+| `src/bin/aldump.rs` | Engine inspection CLI |
+| `crates/al-syntax/` | Grammar binding, CST→IR lowering, owned AL syntax IR |
+| `CHANGELOG.md` | Full history (Keep a Changelog) |
 
-Override per project in `{workspace}/.al-call-hierarchy.json`:
+---
 
-```json
-{
-  "diagnostics": {
-    "complexity": { "enabled": true, "warning": 5, "critical": 10 },
-    "parameters": { "enabled": true, "warning": 4, "critical": 7 },
-    "lineCount": { "enabled": true, "warning": 20, "critical": 50 },
-    "fanIn": { "enabled": true, "warning": 20 },
-    "unusedProcedures": true
-  }
-}
-```
-
-### Resolution Order
-
-1. Built-in defaults
-2. Global config (`~/.al-call-hierarchy/config.json`)
-3. Workspace config (`{workspace}/.al-call-hierarchy.json`)
-
-Each field merges independently — a workspace config only needs to specify fields it wants to override.
-
-Each category can be disabled entirely by setting `"enabled": false`.
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `complexity.enabled` | true | Enable/disable complexity diagnostics |
-| `complexity.warning` | 5 | Cyclomatic complexity information threshold |
-| `complexity.critical` | 10 | Cyclomatic complexity warning threshold |
-| `parameters.enabled` | true | Enable/disable parameter count diagnostics |
-| `parameters.warning` | 4 | Parameter count information threshold |
-| `parameters.critical` | 7 | Parameter count warning threshold |
-| `lineCount.enabled` | true | Enable/disable method length diagnostics |
-| `lineCount.warning` | 20 | Method length information threshold |
-| `lineCount.critical` | 50 | Method length warning threshold |
-| `fanIn.enabled` | true | Enable/disable fan-in diagnostics |
-| `fanIn.warning` | 20 | Incoming call count information threshold |
-| `unusedProcedures` | true | Enable/disable unused procedure detection |
-
-## License
-
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+**Author**: Torben Leth
+**License**: GPL-3.0 (see [LICENSE](LICENSE))

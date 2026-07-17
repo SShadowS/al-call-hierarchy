@@ -3,8 +3,16 @@ name: CI
 on:
   push:
     branches: [main, master]
+    # Docs-only pushes skip the ~16-min suite. paths-ignore only skips when EVERY
+    # changed file matches, so any commit touching code still runs the full gate.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   pull_request:
     branches: [main, master]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
 
 env:
   CARGO_TERM_COLOR: always

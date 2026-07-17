@@ -9,8 +9,8 @@ the bottom, CHANGELOG, and git log.
 
 - [x] `git stash drop` leftover stashes — DONE 2026-07-17: user ran `git stash clear`
   (26 accumulated scratch stashes from merged arcs, all superseded; verified 0 remain)
-- [ ] Decide `/triage-wave` command sharing: `.claude/` is gitignored so it is
-  local-only today — force-add `.claude/commands/triage-wave.md` to share, or keep personal
+- [x] `/triage-wave` sharing — DONE 2026-07-17 (`79bf189`): `.claude/commands/`
+  un-ignored and versioned (project doctrine as tooling); CLAUDE.md worktree note updated
 - [x] **d61/d62/d64 validation** — DONE 2026-07-17 (`f3f5c85`). Corpus: Microsoft
   System App + Base App 28.0 embedded source extracted from DO's `.alpackages`
   (9.3k real files). d62: 9 findings triaged (1 real, 8 FP) → structural
@@ -37,22 +37,78 @@ the bottom, CHANGELOG, and git log.
 - [ ] **Engine memory/speed Wave 2/3 (Track B)** — same findings doc §7: B1 interned
   id universe + bitsets (output-stable), B2 SCC-shared lazy cones, B3
   single-substrate unification (needs detector-feature parity harness first).
-  Follow-ups §8: 846-SCC anatomy (which edge kind fused it), Jacobi telemetry
-- [ ] **tree-sitter-al quirks list** (low priority — engine is insulated by the
-  lowerer, workarounds in place): spurious `left`/`operator`/`right` field pollution,
-  `case_else_branch` inconsistency (see memory `tree-sitter-al-grammar-issues`)
-- [ ] **Multi-root LSP workspaces** (user decision 2026-07-13: shipped single-root +
-  tracked follow-up): per-root ServerState map + URI→root routing; design recorded in
-  `server.rs`'s `primary_workspace_root` doc
-- [ ] **Snapshot-scoped LineTable cache** — the remaining linear per-save cost on the
-  LSP hot path (deep-review T3 follow-up)
-- [ ] **Unicode-fold moat task** — 212 `to_ascii_lowercase` sites in `src/program/`;
-  the one legitimate future north-star-SHA-mover (case-folding correctness for
-  non-ASCII identifiers)
-- [ ] **r3a4 source-bearing-dep pin hardening** (final-review nit, one line): assert the
-  primary's `declared_deps` contains the dep GUID in
-  `fresh_coverage_source_bearing_dep_not_opaque`, so a future fixture edit can't
-  silently vacate the pin
+  Follow-ups §8: 846-SCC anatomy (which edge kind fused it), Jacobi telemetry.
+  SEQUENCE with the `to_lowercase()` census below — B1 rewrites the same
+  `src/engine/l2`-`l5` call sites; do the fold-primitive swap as part of (or
+  immediately before) B1's interning pass, never as separate churn. Also feeds
+  the change-impact wedge's Q1/Q2 fork (effects-on-fresh): the wedge's cone
+  substrate should be B1/B2's bitset cones, and the findings doc is the
+  evidence AGAINST making L3 load-bearing again
+- [x] **tree-sitter-al quirks list** — WAS ALREADY DONE, stale item (live-verified
+  2026-07-17 against pinned v3.2.0 `14bd55c`): `statement_block`/`argument_list`/
+  `parenthesized_expression` carry ZERO fields (left/operator/right pollution gone,
+  fixed 2026-06-27/28 grammar arcs), `case_else_branch` HAS the `body` field
+  (asymmetry fixed), member_trigger_name landed, spaced-preproc closed at v3.2.0.
+  The grammar has no documented open limitations
+- [x] **Multi-root LSP workspaces** — DONE 2026-07-17 (`6470e3e`). Per-root
+  `ServerState` map (`Workspace`/`RootState`, each root gets its own `LspSnapshot`/
+  updater/watcher/`DiagnosticsState`) + URI→root routing (`route_uri`, longest-prefix)
+  for `dispatch_request`/`handle_notification`; `incomingCalls`/`outgoingCalls` route
+  via a stamped `CallHierarchyItem.data` root marker instead (required, not cosmetic —
+  `RoutineNodeId.AppRef` is a raw per-snapshot index, so the same id value can name a
+  different routine in a different root). Single-root byte-identical (no marker/
+  warnings ever emitted; the pre-existing dispatch test's assertions untouched). New
+  follow-up surfaced by this work: `workspace/didChangeWorkspaceFolders` is NOT
+  implemented — safe root removal needs an `AlFileWatcher` cancellation signal that
+  doesn't exist yet (see `server.rs`'s module doc); the notification now warns loudly
+  instead of being silently swallowed. Report: `.superpowers/sdd/multiroot-report.md`
+- [x] **Snapshot-scoped LineTable cache** — DONE 2026-07-17. `ParsedFileEntry` gained
+  a `OnceLock<LineTable>`-backed cache (rides the existing Arc-forwarding
+  invalidation architecture, no new bookkeeping); `LineTable` moved from
+  borrowing `&'t str` to owning `Arc<str>` so it can be stored. `incoming`
+  ~5.82ms → ~4.30ms median on the 999-way-fan-in synthetic corpus (noisy
+  machine — see `.superpowers/sdd/linetable-cache-report.md`); `dep_texts`
+  (dependency-embedded-source) deliberately left uncached (smaller, rarer
+  population). All perf_bounds gates still pass.
+- [x] **Unicode-fold moat task** — DONE 2026-07-18. New choke point
+  `al_syntax::{fold_identifier, eq_fold_identifier, IdentifierFoldExt}`
+  (`crates/al-syntax/src/casing.rs`, `is_ascii()`-guarded simple 1:1 Unicode
+  fold — byte-identical to `to_ascii_lowercase` for all-ASCII input, never
+  `str::to_lowercase()`'s 1:n `İ`→`i̇`). Mechanically swapped every SEMANTIC
+  identifier fold across `crates/al-syntax`'s lowerer, `src/program/`
+  (production+lookup sides together, one commit), and `src/engine`+`src/lsp`
+  — 3 commits, one per layer, each landing green. New fixture
+  `tests/r0-corpus/ws-unicode-fold/` proves cross-case non-ASCII identifiers
+  (Danish `Løbenr Mgt.`/`LØBENR MGT.`, German `Prüfung`/`PRÜFUNG`) now
+  resolve via `Evidence::Source` — verified they would NOT under the old
+  ASCII-only fold. North-star SHA guard: **unchanged**
+  (`0a3b85bc832ff0a3e77acee118d203edbf62827dc37617c8d9315fe52d5cb7d0`, exactly
+  as the investigation predicted — DO's primary source is 100% ASCII).
+  Report: `.superpowers/sdd/unicode-fold-report.md`
+- [x] **r3a4 source-bearing-dep pin hardening** — DONE 2026-07-17 (`8b5b4ec`):
+  closure-membership assert added; the pin can no longer be vacated by a fixture edit
+
+- [ ] **Multi-root follow-ups** (from the 6470e3e review): (a)
+  `workspace/didChangeWorkspaceFolders` deferred — safe root REMOVAL needs an
+  `AlFileWatcher` cancellation signal that doesn't exist (warns loudly today); (b)
+  nested-root diagnostics overlap — two nested AL app roots can both publish
+  diagnostics for the same URI (last-write-wins clobber); routing handles nesting,
+  the publish side lacks URI-ownership arbitration. Both narrow; build when a real
+  client hits them
+
+- [ ] **`str::to_lowercase()` census in the advisory engine** (surfaced by the
+  unicode-fold arc): ~364 sites across `src/engine/l2`-`l5` use full Unicode
+  `to_lowercase()` (the 1:n-hazard primitive) as their own pre-existing convention —
+  inconsistent with the new `fold_identifier` simple-fold choke point. One live
+  interaction traced neutral-to-improving; population of divergent inputs is empty
+  today. Migrate to `eq_fold_identifier`/`fold_identifier` layer-by-layer for
+  consistency (low priority; advisory engine only)
+
+- [ ] **perf_bounds `compute_all_within_bound` CI flake** (seen once, 2026-07-18,
+  docs-only push; adjacent runs of the same code passed): magnitude bound lost to
+  shared-runner load variance — the exact class the T3 arc fixed for rung bounds via
+  interleaved complexity-class assertions. Give compute_all the same load-stable
+  treatment if it flakes again
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 

@@ -7,7 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-18
+
+First release. Highlights of the state this version locks in: whole-program
+call-graph resolution at 0.0000% real-unknown on the reference BC workspace
+(honest taxonomy, instrument-hardened); a 54-detector code-quality analyzer
+false-positive-triaged against real Microsoft Base/System Application source;
+the LSP surface migrated onto the program engine (immutable Arc-swapped
+snapshots, two-rung incremental updates, multi-root workspaces, Unicode-correct
+identifier folding); and the analyze preflight re-keyed to the fresh resolver.
+Everything below this heading is the cumulative pre-1.0 history.
+
 ### Added
+- **Real multi-root LSP workspace support.** The server now builds one
+  independent `ServerState` (`LspSnapshot`/updater thread/file watcher/
+  `DiagnosticsState`) PER configured workspace folder instead of narrowing
+  to the first and warning about the rest — the "tracked follow-up" the
+  T3 Task 15 single-root decision (`server.rs`'s `primary_workspace_root`
+  doc) called for. Every root is fully isolated: a broken root (bad/missing
+  `app.json`) degrades only its OWN files to an empty result and is logged,
+  never taking down any other configured root. An inbound request routes to
+  whichever root its `textDocument` uri falls under (longest-prefix match,
+  `route_uri`) — the multi-root generalization of `lsp::handlers::
+  resolve_virtual_path`'s single-root lookup; a uri outside every configured
+  root degrades to the same graceful-empty result the server already gives
+  for "no workspace at all," now with a clear warning. `callHierarchy/
+  {incoming,outgoing}Calls` route via a root marker this server stamps into
+  every `CallHierarchyItem.data` it mints instead, which is REQUIRED for
+  correctness, not just a convenience: `RoutineNodeId`'s `AppRef` is a raw
+  index into that snapshot's OWN independent `AppRegistry`
+  (`src/program/node.rs`), so the exact same `RoutineNodeId` value can
+  legitimately name two different routines in two different roots' graphs —
+  URI-based routing alone can't even be attempted for a
+  dependency-embedded-source or ABI-boundary item either (their `uri` is a
+  synthetic non-`file://` scheme). A single configured root behaves
+  byte-identically to the pre-multi-root server (no marker is ever stamped,
+  no extra warnings are ever logged, every pre-existing test passes
+  unmodified). `workspace/didChangeWorkspaceFolders` (dynamic add/remove of
+  a root after `initialize`) is deliberately NOT implemented this round —
+  safe removal needs a cancellation signal `AlFileWatcher`'s loop doesn't
+  have today (leaking a watcher/updater thread for a removed root would be a
+  real resource leak, unlike full-process shutdown's "leak until exit" —
+  see the module doc); the notification is now logged loudly instead of
+  silently swallowed, and the gap is tracked in `docs/OUTSTANDING.md`.
 - d52-bulk-write-param-no-temp-guard detector (BCQuality guard-bulk-operations-with-istemporary): DeleteAll/ModifyAll on a var record parameter without temp proof or local filter.
 - d53-ignored-tryfunction-result detector: statement-position TryFunction calls silently swallow errors. Skips a callee that is ALSO consumed elsewhere in the same routine — a deliberate best-effort fallback (`if not TryX(a) then TryX(b);`), not an accidental swallow (cleared the 1 DO false positive).
 - d54-publish-in-tryfunction-cone detector: events published under a [TryFunction] silence subscriber errors (call-graph transitive).
@@ -115,6 +157,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already missed).
 
 ### Changed
+- **Identifier case-folding is now simple-Unicode, not ASCII-only (Unicode-fold
+  moat arc).** AL identifiers are case-insensitive, but the engine's fold
+  choke point (`to_ascii_lowercase`) left non-ASCII letters (Æ Ø Å Ä Ö Ü ß …)
+  unfolded, so e.g. a codeunit declared `"Løbenr Mgt."` and a reference
+  spelled `"LØBENR MGT."` (differing only in the non-ASCII `Ø`/`ø`'s case)
+  would fold to two DIFFERENT keys and fail to resolve — where the real AL
+  compiler (best-evidence a simple, culture-invariant 1:1 Unicode fold;
+  `.superpowers/sdd/unicode-fold-investigation.md`) treats them as the same
+  identifier. New choke point: `al_syntax::{fold_identifier, eq_fold_identifier,
+  IdentifierFoldExt}` (`crates/al-syntax/src/casing.rs`) — `is_ascii()`-guarded,
+  so behavior is **byte-identical to today's `to_ascii_lowercase` for every
+  all-ASCII identifier** (measured: DO's entire primary source tree is 100%
+  ASCII, so the frozen CDO north-star SHA is unchanged — verified,
+  `0a3b85bc832ff…`); the non-ASCII branch is a per-char simple 1:1 fold
+  (`char::to_lowercase(c).next()`, empirically the sole Unicode codepoint
+  with a multi-char `to_lowercase()` result is Turkish `İ`, U+0130 — so this
+  is a true 1:1 fold everywhere, deliberately never `str::to_lowercase()`'s
+  2-char `İ`→`i̇`; `ß` stays `ß`, `ẞ`/`ß` fold together as a genuine case
+  pair). Mechanically swapped every SEMANTIC identifier fold (object/routine/
+  field/variable/dataitem/interface/enum-value/event/attribute names,
+  receiver/member/callee text, ABI param/subtype names, signature-fingerprint
+  type text) across `crates/al-syntax`'s lowerer, the whole-program resolver
+  (`src/program/`), the L3/L5 advisory engine, and the LSP surface — left
+  grammar/type keywords, access modifiers, attribute/property-name checks
+  against AL's closed platform vocabulary, GUIDs/paths/file-extensions, and
+  app.json name/publisher dependency matching (a different, unverified
+  casing domain) deliberately on ASCII folding. New fixture
+  `tests/r0-corpus/ws-unicode-fold/` proves the behavior change end-to-end: a
+  Danish object-name cross-case pair and a German routine-name cross-case
+  pair both now resolve via `Evidence::Source` — verified they would NOT
+  under the old ASCII-only fold (`"lØbenr mgt." != "løbenr mgt."` under
+  `to_ascii_lowercase`).
+- Snapshot-scoped `LineTable` cache (deep-review T3 follow-up, `docs/OUTSTANDING.md`):
+  `lsp::handlers::incoming`'s per-distinct-caller position re-derivation (and
+  `prepare`/`outgoing`/codeLens/diagnostics — every LSP handler that converts a
+  byte-native `Origin`/`CanonicalSpan` to an LSP `Range`) now memoizes each
+  workspace file's `LineTable` on `ParsedFileEntry` (`OnceLock`-backed, thread-safe
+  under the main request loop + the updater thread's concurrent post-swap
+  diagnostics recompute) instead of rebuilding it from scratch on every call.
+  `LineTable` itself moved from borrowing `&'t str` to owning an `Arc<str>` clone
+  (a refcount bump, not a copy, for every caller that already holds one) so it can
+  be stored behind the cache rather than tied to a per-call lifetime. Semantics
+  are preserved by construction, not by new invalidation logic: a `ParsedFileEntry`
+  is immutable once built, and a file's text can only change by way of a BRAND-NEW
+  `ParsedFileEntry` (rung 1's touched-file insert, rung 2's per-file rebuild,
+  `LspSnapshot::from_context`'s full build) — which always starts with an empty
+  cache — while every file rung 1 did NOT touch keeps forwarding the SAME
+  `Arc<ParsedFileEntry>` (hence its already-warmed cache) across the snapshot
+  swap, riding the Arc-forwarding architecture `src/lsp/updater.rs` already uses
+  for every other derived index. Dependency-embedded-source text (`dep_texts`) is
+  deliberately NOT cached in this pass — a much smaller, rarer population
+  (cross-app event-flow only) with its own existing byte-sharing tests; see
+  `.superpowers/sdd/linetable-cache-report.md` for the full investigation.
+  Measured (`cargo bench --bench lsp_pipeline`, 1000-file synthetic corpus,
+  999-way real fan-in, Criterion, this machine — high run-to-run variance
+  observed, medians over 5-6 repeated invocations each): `incoming` ~5.82ms →
+  ~4.30ms (~26% faster); `tests/perf_bounds.rs`'s release-build gate
+  (`incoming_within_bound`) stays comfortably inside its 75ms bound
+  (~5.7-6.0ms either side of the change on this run).
 - d56-clone-before-write-in-loop re-promoted DEFAULT (was opt-in): a new
   `keyRemappedClone` skip excludes a persisted-source clone that reassigns a
   key field (the target table's PRIMARY KEY, or a field named in a

@@ -153,6 +153,7 @@
 //! (`RoutineDecl`/`VarDecl`/`Param`) and `ProgramGraph`/`ResolveIndex`, carrying
 //! `ObjectNodeId`s instead of L3 string IDs.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, ExprId, ExprKind, ObjectKind, RoutineDecl, VarDecl};
 
 use crate::program::graph::ProgramGraph;
@@ -512,7 +513,7 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
                 ObjectRef::Id(n)
             } else {
                 let raw = unquote_identifier(stripped);
-                let normalized_lc = raw.to_ascii_lowercase();
+                let normalized_lc = raw.fold_identifier();
                 ObjectRef::Name { raw, normalized_lc }
             };
             ParsedType::Record { table_ref }
@@ -523,10 +524,10 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
         "query" => parse_object_kind_type(ObjectKind::Query, rest),
         "xmlport" => parse_object_kind_type(ObjectKind::XmlPort, rest),
         "interface" => ParsedType::Interface {
-            name: unquote_identifier(rest).to_ascii_lowercase(),
+            name: unquote_identifier(rest).fold_identifier(),
         },
         "enum" => ParsedType::EnumType {
-            name: unquote_identifier(rest).to_ascii_lowercase(),
+            name: unquote_identifier(rest).fold_identifier(),
         },
         // Ref types
         "recordref" => ParsedType::RecordRef,
@@ -582,7 +583,7 @@ pub fn classify_type_text(ty: &str) -> ParsedType {
         "numbersequence" => ParsedType::Framework(FrameworkKind::NumberSequence),
         "version" => ParsedType::Framework(FrameworkKind::Version),
         "controladdin" => ParsedType::ControlAddIn {
-            name: unquote_identifier(rest).to_ascii_lowercase(),
+            name: unquote_identifier(rest).fold_identifier(),
         },
         // Variant — runtime-typed, genuinely dynamic
         "variant" => ParsedType::Dynamic,
@@ -691,7 +692,7 @@ pub fn infer_receiver_type(
     {
         return ReceiverType::Object {
             kind: ObjectKind::Page,
-            name_lc: page_obj.name.to_ascii_lowercase(),
+            name_lc: page_obj.name.fold_identifier(),
             id: Some(page_id),
         };
     }
@@ -742,7 +743,7 @@ pub fn infer_receiver_type(
     //
     // QUOTE-PARITY FIX (record-field chains plan, Task 4 round-2 addendum):
     // `receiver_lc` is sliced from RAW SOURCE TEXT (`full.rs`'s
-    // `receiver_text.to_ascii_lowercase()`) and so RETAINS AL quote
+    // `receiver_text.fold_identifier()`) and so RETAINS AL quote
     // characters for a quoted identifier (e.g. `"\"file blob\""`), while
     // `Param`/`VarDecl` names are stored ALREADY UNQUOTED — `ident_text`
     // (`al_syntax::lower`) strips the wrapping quotes at lowering time.
@@ -1113,7 +1114,7 @@ pub fn infer_receiver_type(
         && with_state == WithState::NoWithProven
     {
         let name_raw = unquote_identifier(receiver_lc);
-        let name_lc = name_raw.to_ascii_lowercase();
+        let name_lc = name_raw.fold_identifier();
         let object_ref = ObjectRef::Name {
             raw: name_raw,
             normalized_lc: name_lc.clone(),
@@ -1208,7 +1209,7 @@ fn enum_type_name_collision_free(name_lc: &str, graph: &ProgramGraph) -> bool {
     !graph
         .objects
         .iter()
-        .any(|o| o.id.kind != ObjectKind::Enum && o.name.eq_ignore_ascii_case(name_lc))
+        .any(|o| o.id.kind != ObjectKind::Enum && o.name.eq_fold_identifier(name_lc))
 }
 
 /// Whether a same-named ROUTINE is reachable from `from_object` via a
@@ -1288,7 +1289,7 @@ fn object_scope_has_bare_routine_shadow(
 ///   Step-4 framework-name lookup a quoted field/var name could spuriously
 ///   collide with, not only the now-resolved Blob-field case. So a
 ///   `QuotedIdentifier` is RE-QUOTED before the recursive call, exactly
-///   reproducing what `receiver_text.to_ascii_lowercase()` would have
+///   reproducing what `receiver_text.fold_identifier()` would have
 ///   produced for the same source site — restoring BYTE-FOR-BYTE parity
 ///   with Steps 0-4's existing (conservative) quoted-name behavior, never
 ///   granting quoted names new resolving power Task 4 doesn't intend to add.
@@ -1328,7 +1329,7 @@ fn infer_receiver_type_for_expr(
 ) -> ReceiverType {
     match &file.ir.expr(expr_id).kind {
         ExprKind::Identifier(name) => {
-            let name_lc = name.to_ascii_lowercase();
+            let name_lc = name.fold_identifier();
             infer_receiver_type(
                 &name_lc,
                 routine,
@@ -1346,7 +1347,7 @@ fn infer_receiver_type_for_expr(
             // (sliced from raw source text) would have carried for the same
             // site, never a bare unquoted name a quoted field/var reference
             // never actually is.
-            let requoted_lc = format!("\"{}\"", name.to_ascii_lowercase());
+            let requoted_lc = format!("\"{}\"", name.fold_identifier());
             infer_receiver_type(
                 &requoted_lc,
                 routine,
@@ -1440,7 +1441,7 @@ fn infer_receiver_type_for_expr(
                 // itself already validated), so a typo'd/renamed enum name
                 // must decline here, never be trusted blind.
                 let name_raw = unquote_identifier(value);
-                let name_lc = name_raw.to_ascii_lowercase();
+                let name_lc = name_raw.fold_identifier();
                 let object_ref = ObjectRef::Name {
                     raw: name_raw,
                     normalized_lc: name_lc.clone(),
@@ -1564,7 +1565,7 @@ fn infer_compound_member_receiver(
     // quoted member name (`Response."Content"()`, however rare in practice)
     // normalizes the same way an unquoted one does, rather than silently
     // missing the table via a stray embedded quote character.
-    let member_lc = unquote_identifier(member).to_ascii_lowercase();
+    let member_lc = unquote_identifier(member).fold_identifier();
 
     if is_this_identifier(file, object_expr_id) {
         if is_method {
@@ -2024,7 +2025,7 @@ fn infer_this_member(
 ) -> ReceiverType {
     let Some(ty) = object_globals
         .iter()
-        .find(|v| v.name.to_ascii_lowercase() == member_lc)
+        .find(|v| v.name.fold_identifier() == member_lc)
         .and_then(|v| v.ty.as_deref())
     else {
         return ReceiverType::Unknown;
@@ -2095,7 +2096,7 @@ fn infer_call_result_receiver(
         return None;
     };
     let function_lc = match &file.ir.expr(*function).kind {
-        ExprKind::Identifier(name) | ExprKind::QuotedIdentifier(name) => name.to_ascii_lowercase(),
+        ExprKind::Identifier(name) | ExprKind::QuotedIdentifier(name) => name.fold_identifier(),
         _ => return None,
     };
 
@@ -2103,14 +2104,14 @@ fn infer_call_result_receiver(
     let shadowed = routine
         .params
         .iter()
-        .any(|p| p.name.to_ascii_lowercase() == function_lc)
+        .any(|p| p.name.fold_identifier() == function_lc)
         || routine
             .locals
             .iter()
-            .any(|v| v.name.to_ascii_lowercase() == function_lc)
+            .any(|v| v.name.fold_identifier() == function_lc)
         || object_globals
             .iter()
-            .any(|v| v.name.to_ascii_lowercase() == function_lc);
+            .any(|v| v.name.fold_identifier() == function_lc);
     if shadowed {
         return None;
     }
@@ -2298,14 +2299,14 @@ fn resolve_report_implicit_rec_table(
     if let Some(table_name) = routine.dataitem_source_table.as_deref() {
         let table_ref = ObjectRef::Name {
             raw: table_name.to_string(),
-            normalized_lc: table_name.to_ascii_lowercase(),
+            normalized_lc: table_name.fold_identifier(),
         };
         return resolve_source_table_ref(from_object.id.clone(), &table_ref, graph, index);
     }
     if routine.in_dataset_modify_context
         && let Some((member_name, _)) = routine.enclosing_member.as_ref()
     {
-        let name_lc = member_name.to_ascii_lowercase();
+        let name_lc = member_name.fold_identifier();
         return resolve_dataitem_source_table(&name_lc, from_object, graph, index);
     }
     None
@@ -2417,7 +2418,7 @@ fn resolve_reportext_base_report(
     let extends = from_object.extends_target.as_deref()?;
     let base_ref = ObjectRef::Name {
         raw: extends.to_string(),
-        normalized_lc: extends.to_ascii_lowercase(),
+        normalized_lc: extends.fold_identifier(),
     };
     match index.resolve_object_ref(graph, from_object.id.clone(), ObjectKind::Report, &base_ref) {
         ObjectRefResolution::Unique(id) => Some(id),
@@ -2473,7 +2474,7 @@ pub(crate) fn resolve_tableext_base_table(
     let extends = from_object.extends_target.as_deref()?;
     let base_ref = ObjectRef::Name {
         raw: extends.to_string(),
-        normalized_lc: extends.to_ascii_lowercase(),
+        normalized_lc: extends.fold_identifier(),
     };
     resolve_source_table_ref(from_object.id.clone(), &base_ref, graph, index)
 }
@@ -2493,7 +2494,7 @@ fn resolve_pageext_base_page(
     let extends = from_object.extends_target.as_deref()?;
     let base_ref = ObjectRef::Name {
         raw: extends.to_string(),
-        normalized_lc: extends.to_ascii_lowercase(),
+        normalized_lc: extends.fold_identifier(),
     };
     match index.resolve_object_ref(graph, from_object.id.clone(), ObjectKind::Page, &base_ref) {
         ObjectRefResolution::Unique(id) => Some(id),
@@ -2833,7 +2834,7 @@ fn resolve_object_ref_lc(
                 .objects
                 .iter()
                 .find(|o| o.id == id)
-                .map(|o| o.name.to_ascii_lowercase())
+                .map(|o| o.name.fold_identifier())
                 .unwrap_or_else(|| object_ref_fallback_lc(object_ref));
             (Some(id), name_lc)
         }
@@ -2870,7 +2871,7 @@ fn parse_object_kind_type(kind: ObjectKind, name_rest: &str) -> ParsedType {
         ObjectRef::Id(n)
     } else {
         let raw = unquote_identifier(trimmed);
-        let normalized_lc = raw.to_ascii_lowercase();
+        let normalized_lc = raw.fold_identifier();
         ObjectRef::Name { raw, normalized_lc }
     };
     ParsedType::Object { kind, object_ref }
@@ -3053,18 +3054,18 @@ pub(crate) fn caller_scope_symbol<'a>(
     let param_types: Vec<Option<&'a str>> = routine
         .params
         .iter()
-        .filter(|p| p.name.eq_ignore_ascii_case(name))
+        .filter(|p| p.name.eq_fold_identifier(name))
         .map(|p| p.ty.as_deref())
         .collect();
     let local_types: Vec<Option<&'a str>> = routine
         .locals
         .iter()
-        .filter(|v| v.name.eq_ignore_ascii_case(name))
+        .filter(|v| v.name.eq_fold_identifier(name))
         .map(|v| v.ty.as_deref())
         .collect();
     let global_types: Vec<Option<&'a str>> = object_globals
         .iter()
-        .filter(|v| v.name.eq_ignore_ascii_case(name))
+        .filter(|v| v.name.eq_fold_identifier(name))
         .map(|v| v.ty.as_deref())
         .collect();
     let (Ok(param_hit), Ok(local_hit), Ok(global_hit)) = (
@@ -3081,7 +3082,7 @@ pub(crate) fn caller_scope_symbol<'a>(
     let return_hit = routine
         .return_name
         .as_deref()
-        .is_some_and(|rn| rn.eq_ignore_ascii_case(name));
+        .is_some_and(|rn| rn.eq_fold_identifier(name));
 
     if return_hit && (param_hit.is_some() || local_hit.is_some()) {
         return CallerScopeSymbol::MalformedDuplicate;
@@ -3406,12 +3407,18 @@ mod tests {
         // whitespace) used to panic mid-char on the old byte-length-mismatch
         // slice. `\s+temporary` shouldn't strip here regardless — the point is
         // reaching that decision must not panic.
+        //
+        // `normalized_lc` is `ßtemporary` (not `ẞtemporary`) since the
+        // Unicode-fold arc: `ẞ` (U+1E9E, LATIN CAPITAL LETTER SHARP S) has a
+        // genuine 1:1 simple lowercase mapping to `ß` (U+00DF) — `fold_identifier`
+        // folds it like any other cased letter, unlike the old ASCII-only fold,
+        // which left every non-ASCII byte (including `ẞ`) untouched.
         assert_eq!(
             classify_type_text("Record ẞTemporary"),
             ParsedType::Record {
                 table_ref: ObjectRef::Name {
                     raw: "ẞTemporary".into(),
-                    normalized_lc: "ẞtemporary".into()
+                    normalized_lc: "ßtemporary".into()
                 }
             }
         );
@@ -3423,12 +3430,18 @@ mod tests {
         // byte-math bug silently failed to recognize " temporary" as the
         // modifier here, leaving the table name mis-parsed as
         // "İ temporary" instead of "İ".
+        //
+        // `normalized_lc` is `i` (not `İ`): `fold_identifier`'s simple 1:1 fold
+        // takes `char::to_lowercase('İ').next()` (see crates/al-syntax/src/casing.rs's
+        // doc) — plain `i`, deliberately never the 2-char `i̇` `to_lowercase()`
+        // would produce. The RAW name (`table_ref.raw`) stays `İ`, unfolded — only
+        // the fold key changes.
         assert_eq!(
             classify_type_text("Record İ temporary"),
             ParsedType::Record {
                 table_ref: ObjectRef::Name {
                     raw: "İ".into(),
-                    normalized_lc: "İ".into()
+                    normalized_lc: "i".into()
                 }
             }
         );

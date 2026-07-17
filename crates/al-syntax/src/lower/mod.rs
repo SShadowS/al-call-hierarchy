@@ -6,6 +6,7 @@
 //! the legacy walk under dual-run (spec §5). Unmodelled-but-present nodes are never
 //! silently dropped — they surface as `SyntaxIssue` / IR `Unknown`.
 
+use crate::casing::IdentifierFoldExt;
 use crate::ir::{
     AlFile, BinaryOp, Block, BlockId, BlockItem, CaseBranch, Expr, ExprId, ExprKind, Ir, Literal,
     ObjectDecl, ObjectKind, Origin, Param, ParseStatus, Point, RoutineDecl, RoutineKind, Stmt,
@@ -382,7 +383,7 @@ fn collect_table_fields_keys(
                 if let Some(list) = child.field(FieldName::Fields) {
                     for m in list.named_children() {
                         if matches!(m.kind(), RawKind::Identifier | RawKind::QuotedIdentifier) {
-                            members.push(ident_text(m, source).to_ascii_lowercase());
+                            members.push(ident_text(m, source).fold_identifier());
                         }
                     }
                 }
@@ -423,7 +424,7 @@ fn lower_field(node: RawNode, source: &str) -> crate::ir::FieldDecl {
             }
             let v = member
                 .field(FieldName::Value)
-                .map(|n| n.text(source).to_ascii_lowercase())
+                .map(|n| n.text(source).fold_identifier())
                 .unwrap_or_default();
             if v.contains("flowfield") {
                 field_class = "FlowField".to_string();
@@ -471,7 +472,7 @@ fn lower_property(node: RawNode, source: &str) -> Option<crate::ir::ObjectProper
         .field(FieldName::Name)?
         .text(source)
         .trim()
-        .to_ascii_lowercase();
+        .fold_identifier();
     let value = node
         .field(FieldName::Value)
         .map(|v| v.text(source).trim().to_string())
@@ -735,7 +736,7 @@ fn lower_routine<'t>(
             continue;
         };
         let raw_name = name_node.text(source).trim().to_string();
-        attributes.push(raw_name.to_ascii_lowercase());
+        attributes.push(raw_name.fold_identifier());
         let mut args = Vec::new();
         if let Some(args_node) = content.field(FieldName::Arguments) {
             for list in args_node.named_children() {

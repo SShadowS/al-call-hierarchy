@@ -33,11 +33,48 @@
 //! The program engine's snapshot model fundamentally requires a single
 //! AL-app workspace root with a readable `app.json` (see `SnapshotBuilder`'s
 //! own doc) — unlike the legacy `Indexer`, which happily ran with zero
-//! indexed files. When no workspace folder is given at `initialize`, or the
+//! indexed files. When no workspace folder is given at `initialize`, or a
 //! given root fails to build a snapshot (missing/invalid `app.json`), the
-//! server still completes the LSP handshake and answers every request with
-//! an empty result (`None`/`[]`) rather than refusing to start — see
-//! [`ServerState`]'s `Option` wrapping in [`run_server`].
+//! server still completes the LSP handshake and answers every request under
+//! THAT root with an empty result (`None`/`[]`) rather than refusing to
+//! start — see [`RootState`]'s `Option` wrapping (one PER configured root
+//! since the multi-root refactor below; a broken root degrades only its OWN
+//! files, never any other configured root).
+//!
+//! # Multi-root: per-root `ServerState`, never a merged snapshot
+//!
+//! [`Workspace`] holds one [`RootState`] per `workspace_folders` entry the
+//! client offered at `initialize` ([`configured_roots`]) — each with its OWN
+//! [`LspSnapshot`], updater thread, file watcher, and
+//! [`DiagnosticsState`](crate::lsp::diagnostics::DiagnosticsState). An
+//! inbound request routes to whichever root its `textDocument` URI falls
+//! under (longest-prefix match, [`route_uri`]) — mirroring
+//! [`lsp::handlers::resolve_virtual_path`](crate::lsp::handlers::resolve_virtual_path)'s
+//! single-root version of the same lookup. `incomingCalls`/`outgoingCalls`
+//! route via `item.uri` too, EXCEPT that a dependency-embedded-source or
+//! ABI-boundary item's `uri` is a synthetic non-`file://` scheme with no
+//! path to prefix-match at all — those instead route via a root marker this
+//! server stamps into every `CallHierarchyItem.data` it mints
+//! ([`route_item`]/[`tag_item_root`]), which is REQUIRED for correctness,
+//! not just a fallback: `RoutineNodeId`'s `AppRef` is a raw index into that
+//! snapshot's OWN independent `AppRegistry` (`src/program/node.rs`), so the
+//! exact same `RoutineNodeId` VALUE can legitimately name two DIFFERENT
+//! routines in two different roots' graphs. A single configured root
+//! behaves byte-identically to the pre-multi-root server (no marker is ever
+//! stamped, no extra warnings are ever logged) — see each routing
+//! function's own doc for the exact single-vs-multi-root gate.
+//!
+//! `workspace/didChangeWorkspaceFolders` (dynamic add/remove of a root after
+//! `initialize`) is NOT implemented — see [`handle_notification`]'s arm for
+//! that method for why (a real blocker, not laziness: safe REMOVAL needs a
+//! cancellation signal `AlFileWatcher`'s loop doesn't have today) and
+//! `docs/OUTSTANDING.md` for the tracked follow-up. `al-call-hierarchy/
+//! dependencyDocumentSymbol`'s synthetic `al-preview://` uri also has no
+//! per-root discriminator yet (see [`dispatch_dependency_document_symbol`]'s
+//! doc for the best-effort fallback this uses instead) — a smaller, lower-
+//! stakes gap than routing proper, tracked here rather than in
+//! `docs/OUTSTANDING.md` since it has no correctness impact (browsing a
+//! dependency's symbols, not call-hierarchy identity).
 
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
@@ -57,9 +94,10 @@ use std::time::Duration;
 
 use crate::config::DiagnosticConfig;
 use crate::lsp::custom::{
-    DependencyDocumentSymbolParams, EventPublishersInFileParams, EventReferenceAtPositionParams,
-    SymbolPropertiesParams, action_properties, dependency_document_symbol,
-    event_publishers_in_file, event_reference_at_position, field_properties,
+    DependencyDocumentSymbol, DependencyDocumentSymbolParams, EventPublishersInFileParams,
+    EventReferenceAtPositionParams, SymbolPropertiesParams, action_properties,
+    dependency_document_symbol, event_publishers_in_file, event_reference_at_position,
+    field_properties,
 };
 use crate::lsp::diagnostics::{DiagnosticsState, compute_all, compute_for_files, rung1_cover};
 use crate::lsp::encoding::{PositionEncoding, negotiate};
@@ -70,9 +108,9 @@ use crate::lsp::updater::{ChangeEvent, Rung1Delta, SharedSnapshot, SwapScope, sp
 use crate::protocol::uri_to_path;
 use crate::watcher::{AlFileWatcher, FileChange};
 
-/// Everything the server needs once a valid workspace snapshot exists.
-/// `None` at the `run_server` call site means "no usable workspace" — see
-/// the module doc.
+/// Everything the server needs once a valid workspace snapshot exists for
+/// ONE root. Wrapped in `Option` by [`RootState`] — `None` there means "no
+/// usable workspace at this root" — see the module doc.
 struct ServerState {
     shared: Arc<SharedSnapshot>,
     tx: mpsc::Sender<ChangeEvent>,
@@ -88,6 +126,41 @@ struct ServerState {
     config: DiagnosticConfig,
 }
 
+/// One configured workspace root plus whatever `ServerState` its OWN
+/// snapshot build produced. `state` is `None` exactly when THIS root's
+/// build failed (see the module doc's "no valid workspace" section, now
+/// applied per root) — [`build_workspace`] logs why and moves on; a broken
+/// root never stops any other root from building.
+struct RootState {
+    /// Always normalized ([`crate::protocol::normalize_path`] — case-folded
+    /// on Windows), so it compares directly against a `uri_to_path`'d
+    /// inbound URI with no further munging — see [`build_workspace`], the
+    /// ONLY place a `RootState` is constructed.
+    root: PathBuf,
+    state: Option<ServerState>,
+}
+
+/// The whole multi-root session: one [`RootState`] per root
+/// [`configured_roots`] extracted from `initialize`. See the module doc's
+/// "Multi-root" section for the routing/isolation design this implements.
+///
+/// Never mutated after [`run_server`] builds it — `workspace/
+/// didChangeWorkspaceFolders` is not implemented (see [`handle_notification`]).
+struct Workspace {
+    roots: Vec<RootState>,
+}
+
+impl Workspace {
+    /// `true` whenever more than one root is configured — the single gate
+    /// every root-marker-stamping/consuming function below checks, so a
+    /// single-folder session's wire format and logging stay byte-identical
+    /// to the pre-multi-root server (scope discipline: the common case must
+    /// never pay for or notice this refactor).
+    fn is_multi_root(&self) -> bool {
+        self.roots.len() > 1
+    }
+}
+
 /// Run the LSP server
 pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     info!("Starting AL Call Hierarchy LSP server (program-engine backend)");
@@ -98,7 +171,7 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     let (id, params) = connection.initialize_start()?;
     let init_params: InitializeParams = serde_json::from_value(params)?;
 
-    let workspace_root = primary_workspace_root(&init_params);
+    let roots = configured_roots(&init_params);
 
     let init_option_telemetry = init_params
         .initialization_options
@@ -109,7 +182,10 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     let telemetry_handle = crate::telemetry::init(crate::telemetry::TelemetryInputs {
         cli_no_telemetry: no_telemetry,
         init_option: init_option_telemetry,
-        workspace_root: workspace_root.clone(),
+        // Telemetry is a single session-level counter, not a per-app one —
+        // deliberately kept on the FIRST configured root only, exactly like
+        // the pre-multi-root server (see `primary_workspace_root`'s doc).
+        workspace_root: primary_workspace_root(&init_params),
         connection_string: option_env!("AL_CH_TELEMETRY_CONNECTION_STRING").map(String::from),
     });
 
@@ -162,37 +238,18 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     connection.initialize_finish(id, serde_json::to_value(result)?)?;
     info!("Server initialized");
 
-    let config = workspace_root
-        .as_deref()
-        .map(DiagnosticConfig::load)
-        .unwrap_or_default();
-
-    let state = match &workspace_root {
-        Some(root) => {
-            let st = build_server_state(root, position_encoding, config.clone(), &connection);
-            if st.is_none() {
-                warn!(
-                    "Failed to build the program snapshot for workspace root {} \
-                     (missing/invalid app.json?) — every request will return an \
-                     empty result until a valid single-app AL workspace is opened.",
-                    root.display()
-                );
-            }
-            st
-        }
-        None => {
-            warn!(
-                "No workspace folder given at initialize — every request will \
-                 return an empty result until a workspace is opened."
-            );
-            None
-        }
-    };
+    // Build one `RootState` per configured root — see `build_workspace`'s
+    // doc for the per-root fail-loud-but-isolated build semantics.
+    let workspace = build_workspace(&roots, position_encoding, &connection);
 
     #[cfg(feature = "telemetry")]
     {
-        let (workspace_file_count, dep_app_count) = state
-            .as_ref()
+        // Session-level counter, first root only — same rationale as the
+        // `TelemetryInputs::workspace_root` note above.
+        let (workspace_file_count, dep_app_count) = workspace
+            .roots
+            .first()
+            .and_then(|r| r.state.as_ref())
             .map(|st| {
                 let snap = st.shared.get();
                 let definitions: usize = snap.decls_by_file.values().map(|v| v.len()).sum();
@@ -210,22 +267,28 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
         );
     }
 
-    // Start file watcher thread for incremental updates (unless disabled).
-    // `watcher_started` feeds the shutdown-sequence log decision below.
+    // Start file watcher thread(s) for incremental updates (unless
+    // disabled) — one PER root that built a valid snapshot, each with its
+    // OWN tx clone/root path (see `RootState`'s per-root isolation doc).
+    // `watcher_started` feeds the shutdown-sequence log decision below —
+    // true iff AT LEAST one watcher started.
     let watcher_started = if no_watcher {
         info!("File watcher disabled (--no-watcher). Using LSP notifications for changes.");
         false
     } else {
-        match (&workspace_root, &state) {
-            (Some(root), Some(st)) => {
-                start_file_watcher(st.tx.clone(), root.clone());
-                true
-            }
-            _ => {
-                info!("File watcher not started (no active workspace snapshot).");
-                false
+        let mut any_started = false;
+        for root_state in &workspace.roots {
+            if let Some(st) = &root_state.state {
+                start_file_watcher(st.tx.clone(), root_state.root.clone());
+                any_started = true;
             }
         }
+        if !any_started {
+            info!(
+                "File watcher not started (no active workspace snapshot in any configured root)."
+            );
+        }
+        any_started
     };
 
     // Main loop. Takes OWNERSHIP of `connection` (not `&connection`) —
@@ -243,24 +306,25 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     // passed by value). This bug predates this cutover (the legacy
     // `main_loop(connection: &Connection, ...)` had the identical shape) but
     // was never exercised end to end until this task's own verification.
-    main_loop(connection, state.as_ref())?;
+    main_loop(connection, &workspace)?;
 
-    if let Some(st) = state {
-        // Dropping `tx` is a best-effort shutdown signal to the updater
-        // thread — but we deliberately do NOT `st.updater_handle.join()`
-        // here: when the file watcher is running, it holds its OWN clone of
-        // `tx` (`start_file_watcher`) for as long as ITS OWN infinite loop
-        // runs — which has no stop signal of its own (matching legacy's
-        // watcher thread, which also never exits early; out of Task 15's
-        // "event forwarding only" scope for `watcher.rs` to add one). The
-        // updater's `rx` therefore never sees every sender dropped, so it
-        // never returns from `gather_batch`, so joining it would block this
-        // function forever. Dropping `tx` here is still worthwhile — in the
-        // `--no-watcher` case (`watcher_started == false`) it's the ONLY
-        // signal the updater thread gets, and lets it (and the
-        // `sender_bg`-held `Message` sender clone it carries — see below)
-        // exit promptly.
-        drop(st.tx);
+    // Dropping each root's `tx` is a best-effort shutdown signal to ITS
+    // updater thread — but we deliberately do NOT `st.updater_handle.join()`
+    // here: when that root's file watcher is running, it holds its OWN
+    // clone of `tx` (`start_file_watcher`) for as long as ITS OWN infinite
+    // loop runs — which has no stop signal of its own (matching legacy's
+    // watcher thread, which also never exits early; out of Task 15's
+    // "event forwarding only" scope for `watcher.rs` to add one). That
+    // updater's `rx` therefore never sees every sender dropped, so it never
+    // returns from `gather_batch`, so joining it would block this function
+    // forever. Dropping `tx` here is still worthwhile — in the
+    // `--no-watcher` case (`watcher_started == false`) it's the ONLY signal
+    // each updater thread gets, and lets it (and the `sender_bg`-held
+    // `Message` sender clone it carries — see below) exit promptly.
+    for root_state in workspace.roots {
+        if let Some(st) = root_state.state {
+            drop(st.tx);
+        }
     }
 
     // `io_threads.join()` blocks on `lsp_server`'s writer thread, which
@@ -299,9 +363,55 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
     Ok(())
 }
 
-/// The one workspace root this session serves.
+/// Every workspace root this session serves — one entry per
+/// `workspace_folders` item (LSP 3.6+, the common case), falling back to the
+/// deprecated single `root_uri` for older clients when `workspace_folders`
+/// is absent or empty. Each returned path is ALREADY normalized
+/// (`uri_to_path` → `protocol::normalize_path`, case-folded on Windows) —
+/// every downstream root-matching comparison (`route_uri`/`route_item`/
+/// [`build_workspace`]) relies on that. Duplicate folders (a client
+/// offering the same path twice, or two URIs that normalize to the same
+/// path) are deduplicated — spinning up two independent watchers/updaters
+/// over the SAME files would just race them against each other.
 ///
-/// # Decision (T3 Task 15, confirmed in review): single-root is the
+/// This is the REAL multi-root entry point; [`primary_workspace_root`]
+/// (below) is a thin convenience over it for the one caller that
+/// deliberately still wants just the first root.
+#[allow(deprecated)] // root_uri is deprecated but kept for older LSP clients
+fn configured_roots(params: &InitializeParams) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(folders) = &params.workspace_folders {
+        for folder in folders {
+            if let Some(path) = uri_to_path(&folder.uri)
+                && !roots.contains(&path)
+            {
+                roots.push(path);
+            }
+        }
+    }
+    if roots.is_empty()
+        && let Some(path) = params.root_uri.as_ref().and_then(uri_to_path)
+    {
+        roots.push(path);
+    }
+    roots
+}
+
+/// The FIRST configured workspace root — for the one remaining
+/// session-scoped (not per-root) caller: `TelemetryInputs::workspace_root`
+/// (see `run_server`), deliberately kept on the first root rather than
+/// aggregated across roots (telemetry is a single session-level counter,
+/// not a per-app one). Implemented as `configured_roots(params).into_iter().
+/// next()` — see that function for the real multi-root list.
+///
+/// # History: the single-root decision this function ORIGINALLY encoded
+///
+/// The paragraphs below are the T3 Task 15 decision record, kept VERBATIM
+/// as the permanent history — do not delete it. Its "tracked follow-up" is
+/// now DONE: see [`Workspace`]/[`RootState`]/[`route_uri`]/[`route_item`]
+/// for the per-root `ServerState` map and URI→root routing it called for.
+///
+/// ## Decision (T3 Task 15, confirmed in review): single-root is the
 /// supported model, not a stopgap
 ///
 /// The program engine's `SnapshotBuilder` models a workspace as exactly one
@@ -325,31 +435,17 @@ pub fn run_server(no_watcher: bool, no_telemetry: bool) -> Result<()> {
 /// rather than an attempt to merge multiple app.json-rooted trees into one
 /// snapshot the way legacy did.
 ///
-/// **Tracked follow-up (not this arc's scope):** real multi-root support
-/// needs a per-root `ServerState` map (each root gets its OWN `LspSnapshot`/
-/// updater/watcher/`DiagnosticsState` — never one shared snapshot merging
-/// distinct apps) plus URI→root routing in `dispatch_request`/
-/// `handle_notification` (map an inbound `textDocument` URI to whichever
-/// root's `workspace_root` it falls under, mirroring how `resolve_virtual_path`
-/// already does the single-root version of this lookup). Out of scope here;
-/// this doc comment is the permanent record of the decision and the design
-/// a future task should follow, not a TODO to silently forget.
+/// **Tracked follow-up (not that arc's scope) — DONE by this one
+/// (`feat/multi-root-lsp`):** real multi-root support needs a per-root
+/// `ServerState` map (each root gets its OWN `LspSnapshot`/updater/watcher/
+/// `DiagnosticsState` — never one shared snapshot merging distinct apps)
+/// plus URI→root routing in `dispatch_request`/`handle_notification` (map
+/// an inbound `textDocument` URI to whichever root's `workspace_root` it
+/// falls under, mirroring how `resolve_virtual_path` already does the
+/// single-root version of this lookup).
 #[allow(deprecated)] // root_uri is deprecated but kept for older LSP clients
 fn primary_workspace_root(params: &InitializeParams) -> Option<PathBuf> {
-    if let Some(folders) = &params.workspace_folders {
-        if folders.len() > 1 {
-            warn!(
-                "{} workspace folders given; the program-engine backend serves exactly \
-                 one AL app per session — using {} and ignoring the rest",
-                folders.len(),
-                folders[0].uri.as_str()
-            );
-        }
-        if let Some(first) = folders.first() {
-            return uri_to_path(&first.uri);
-        }
-    }
-    params.root_uri.as_ref().and_then(uri_to_path)
+    configured_roots(params).into_iter().next()
 }
 
 /// Build the initial snapshot, publish its diagnostics, and spawn the
@@ -423,6 +519,55 @@ fn build_server_state(
         encoding,
         config,
     })
+}
+
+/// Build one [`RootState`] per configured root — the multi-root
+/// generalization of a single `build_server_state` call. Logs the
+/// zero-roots case ONCE, session-level (mirrors the pre-multi-root server's
+/// "no workspace folder given" warning exactly); a root whose OWN snapshot
+/// build fails (bad/missing `app.json`) degrades to `RootState { state:
+/// None, .. }` — this root's own files answer empty (the single-root "no
+/// valid workspace" fail path, see module doc), logged individually, but
+/// NEVER stops any other root from building — the fail-loud, per-root
+/// isolated failure mode the design calls for.
+///
+/// Each `root` is re-normalized here (`protocol::normalize_path`) even
+/// though [`configured_roots`] already normalizes its own output — cheap
+/// and idempotent for that caller, but load-bearing for any OTHER caller
+/// (e.g. a test) that hands this function a raw, un-normalized path: EVERY
+/// `RootState.root` this function produces must be normalized, unconditionally,
+/// because `route_uri`/`route_item` compare against it directly.
+fn build_workspace(
+    roots: &[PathBuf],
+    encoding: PositionEncoding,
+    connection: &Connection,
+) -> Workspace {
+    if roots.is_empty() {
+        warn!(
+            "No workspace folder given at initialize — every request will \
+             return an empty result until a workspace is opened."
+        );
+    }
+    let roots = roots
+        .iter()
+        .map(|raw_root| {
+            let root = crate::protocol::normalize_path(raw_root);
+            let config = DiagnosticConfig::load(&root);
+            let state = build_server_state(&root, encoding, config, connection);
+            if state.is_none() {
+                warn!(
+                    "Failed to build the program snapshot for workspace root {} \
+                     (missing/invalid app.json?) — every request under this root \
+                     will return an empty result until a valid single-app AL \
+                     workspace is opened there; other configured roots are \
+                     unaffected.",
+                    root.display()
+                );
+            }
+            RootState { root, state }
+        })
+        .collect();
+    Workspace { roots }
 }
 
 /// Recompute-diff-publish: run [`compute_all`] over `snap`, diff it through
@@ -573,7 +718,7 @@ fn path_is_dependency_source(path: &Path) -> bool {
 /// Main message processing loop. Takes `connection` BY VALUE — see
 /// `run_server`'s call site for why that (not `&Connection`) is required for
 /// a clean process exit.
-fn main_loop(connection: Connection, state: Option<&ServerState>) -> Result<()> {
+fn main_loop(connection: Connection, workspace: &Workspace) -> Result<()> {
     for msg in &connection.receiver {
         match msg {
             Message::Request(req) => {
@@ -581,7 +726,7 @@ fn main_loop(connection: Connection, state: Option<&ServerState>) -> Result<()> 
                     break;
                 }
 
-                let result = dispatch_request(&req, state);
+                let result = dispatch_request(&req, workspace);
                 let response = match result {
                     Ok(value) => Response::new_ok(req.id, value),
                     Err(e) => Response::new_err(
@@ -598,12 +743,193 @@ fn main_loop(connection: Connection, state: Option<&ServerState>) -> Result<()> 
             }
             Message::Response(_) => {}
             Message::Notification(notif) => {
-                handle_notification(state, &notif);
+                handle_notification(workspace, &notif);
             }
         }
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Multi-root routing
+// ---------------------------------------------------------------------------
+
+/// Map an inbound `textDocument` URI to whichever configured root its path
+/// falls under — the multi-root generalization of
+/// [`lsp::handlers::resolve_virtual_path`](crate::lsp::handlers::resolve_virtual_path)'s
+/// single-root `strip_prefix`. Longest-prefix match: a client CAN offer
+/// nested roots (a workspace folder plus a sub-folder that's its own AL
+/// app), and the more specific one must win. `None` for an unparsable/
+/// non-`file://` uri, or one that falls under NO configured root at all.
+fn route_uri<'a>(workspace: &'a Workspace, uri: &str) -> Option<&'a RootState> {
+    let parsed: Uri = uri.parse().ok()?;
+    let path = uri_to_path(&parsed)?;
+    workspace
+        .roots
+        .iter()
+        .filter(|r| path.starts_with(&r.root))
+        .max_by_key(|r| r.root.as_os_str().len())
+}
+
+/// [`route_uri`] plus the "outside every configured root" warning the
+/// fail-loud doctrine calls for — every uri-based request-routing call site
+/// below funnels through this (never `route_uri` directly) so the warning
+/// can't drift between handlers. Silent (no log) when `workspace.roots` is
+/// EMPTY — that case already gets its own ONE-TIME startup warning
+/// ([`build_workspace`]), and warning again on every request would just be
+/// noise for a session that never had a workspace at all (matches the
+/// pre-multi-root server exactly: no per-request log for the `state: None`
+/// case).
+fn route_uri_or_warn<'a>(
+    workspace: &'a Workspace,
+    method: &str,
+    uri: &str,
+) -> Option<&'a RootState> {
+    let found = route_uri(workspace, uri);
+    if found.is_none() && !workspace.roots.is_empty() {
+        warn!(
+            "{method}: {uri} is outside every configured workspace root ({} \
+             configured) — returning an empty result",
+            workspace.roots.len()
+        );
+    }
+    found
+}
+
+/// JSON key this server stamps into every `CallHierarchyItem.data` it
+/// mints, identifying which configured root produced it — see the module
+/// doc's "Multi-root" section for why this is load-bearing, not cosmetic.
+/// Only ever stamped when `workspace.is_multi_root()` — a single-folder
+/// client's wire format stays byte-identical to the pre-multi-root server.
+const ROOT_MARKER_KEY: &str = "__root";
+
+/// Stamp `item.data` with [`ROOT_MARKER_KEY`] = `root` — a no-op if `data`
+/// isn't a JSON object (every item this server mints sets `data` to an
+/// object; see `lsp::handlers::build_item`/`abi_symbol_item`, so this is
+/// purely defensive). Call sites gate this on `workspace.is_multi_root()`
+/// via [`tag_item_root_gated`] — never call this directly.
+fn tag_item_root(item: &mut CallHierarchyItem, root: &Path) {
+    let Some(Value::Object(map)) = item.data.as_mut() else {
+        return;
+    };
+    map.insert(
+        ROOT_MARKER_KEY.to_string(),
+        Value::String(root.to_string_lossy().into_owned()),
+    );
+}
+
+/// [`tag_item_root`], gated on `workspace.is_multi_root()` — the single
+/// call shape every response-minting arm in `dispatch_request` uses.
+fn tag_item_root_gated(workspace: &Workspace, root: &Path, item: &mut CallHierarchyItem) {
+    if workspace.is_multi_root() {
+        tag_item_root(item, root);
+    }
+}
+
+/// Route an `incomingCalls`/`outgoingCalls` request's `item` to the root
+/// that minted it. Single-root: always that one root (matches pre-multi-root
+/// behavior exactly — no marker is ever stamped, so this never even LOOKS
+/// at `item.data`). Multi-root: prefers the [`ROOT_MARKER_KEY`] this server
+/// stamps into every `CallHierarchyItem.data` it mints — REQUIRED for
+/// correctness, not just a convenience: `RoutineNodeId`'s `AppRef`
+/// (`src/program/node.rs`) is a raw index into that ROOT's OWN independent
+/// `AppRegistry`, so the SAME `RoutineNodeId` VALUE can legitimately name a
+/// DIFFERENT routine in a different root's snapshot (two roots each
+/// interning their own primary app at index 0) — comparing `data.node`
+/// against every root's `decl_by_id` to see which one "has it" would be
+/// UNSOUND, capable of silently answering from the wrong app. URI-based
+/// routing alone isn't even available for a dependency-embedded-source or
+/// ABI-boundary item either: `lsp::handlers::decl_uri`/`abi_symbol_uri` mint
+/// a synthetic `al-dep-source://`/`al-preview://` scheme, not `file://`, so
+/// [`route_uri`] structurally can't resolve those. Falls back to
+/// `route_uri(item.uri)` only when the marker is absent/unparsable (a
+/// pre-multi-root client's replayed item, or one that doesn't round-trip
+/// `data` verbatim — LSP requires it to, but fail soft here rather than
+/// hard-erroring on a technically non-conformant client).
+fn route_item<'a>(workspace: &'a Workspace, item: &CallHierarchyItem) -> Option<&'a RootState> {
+    if !workspace.is_multi_root() {
+        return workspace.roots.first();
+    }
+    if let Some(Value::Object(map)) = item.data.as_ref()
+        && let Some(Value::String(root_str)) = map.get(ROOT_MARKER_KEY)
+    {
+        let root_path = PathBuf::from(root_str);
+        if let Some(rs) = workspace.roots.iter().find(|r| r.root == root_path) {
+            return Some(rs);
+        }
+    }
+    route_uri(workspace, item.uri.as_str())
+}
+
+/// [`route_item`] plus the same "outside every configured root" warning
+/// [`route_uri_or_warn`] gives uri-routed requests.
+fn route_item_or_warn<'a>(
+    workspace: &'a Workspace,
+    method: &str,
+    item: &CallHierarchyItem,
+) -> Option<&'a RootState> {
+    let found = route_item(workspace, item);
+    if found.is_none() && !workspace.roots.is_empty() {
+        warn!(
+            "{method}: item '{}' (uri {}) doesn't match any configured workspace \
+             root ({} configured) — returning an empty result",
+            item.name,
+            item.uri.as_str(),
+            workspace.roots.len()
+        );
+    }
+    found
+}
+
+/// `dependencyDocumentSymbol` is the one custom request whose `uri` (when
+/// given at all — it also accepts bare `app`/`objectType`/`objectName`
+/// fields, see `DependencyDocumentSymbolParams`) is a SYNTHETIC
+/// `al-preview://` scheme identifying a DEPENDENCY object, never a
+/// `file://` workspace document — [`route_uri`]'s path-prefix match
+/// structurally cannot apply (`uri_to_path` returns `None` for any
+/// non-`file://` scheme), and there is no per-root discriminator anywhere
+/// in that scheme today. Single-root: unconditionally that one root,
+/// unchanged. Multi-root: try `route_uri` first (handles the rare case of a
+/// real `file://` uri); otherwise try every root's snapshot IN ORDER and
+/// answer from the first NON-EMPTY result — correct whenever at most one
+/// open root actually has a same-named dependency (the overwhelmingly
+/// common case: distinct AL app roots rarely share a dependency 1:1), and a
+/// graceful best-effort rather than an empty refusal in the rare case they
+/// do. A future task closing this gap for real (embedding a root
+/// discriminator in the `al-preview://` scheme itself) is tracked in the
+/// module doc.
+fn dispatch_dependency_document_symbol(
+    workspace: &Workspace,
+    params: DependencyDocumentSymbolParams,
+) -> Vec<DependencyDocumentSymbol> {
+    if !workspace.is_multi_root() {
+        let Some(state) = workspace.roots.first().and_then(|r| r.state.as_ref()) else {
+            return Vec::new();
+        };
+        return dependency_document_symbol(&state.shared.get(), params);
+    }
+    if let Some(uri) = params.uri.as_deref()
+        && let Some(rs) = route_uri(workspace, uri)
+        && let Some(state) = rs.state.as_ref()
+    {
+        return dependency_document_symbol(&state.shared.get(), params);
+    }
+    for root_state in &workspace.roots {
+        let Some(state) = root_state.state.as_ref() else {
+            continue;
+        };
+        let result = dependency_document_symbol(&state.shared.get(), params.clone());
+        if !result.is_empty() {
+            return result;
+        }
+    }
+    debug!(
+        "dependencyDocumentSymbol: no configured root's snapshot has a matching \
+         dependency object (uri {:?}, app {:?}) — returning an empty result",
+        params.uri, params.app
+    );
+    Vec::new()
 }
 
 /// Extract a `CallHierarchyItem`'s `data` payload as an [`ItemData`] —
@@ -617,69 +943,87 @@ fn item_data(item: &CallHierarchyItem) -> Result<ItemData> {
     Ok(serde_json::from_value(data)?)
 }
 
-/// Dispatch one LSP request to its handler. `state` is `None` exactly when
-/// no valid workspace snapshot exists (see the module doc) — every
-/// snapshot-backed method degrades to an empty result in that case;
-/// `fieldProperties`/`actionProperties`/`telemetryStatus` are
-/// graph-independent and answer unconditionally.
-fn dispatch_request(req: &Request, state: Option<&ServerState>) -> Result<Value> {
+/// Dispatch one LSP request to its handler. Every snapshot-backed method
+/// first routes `req`'s uri (or, for `incomingCalls`/`outgoingCalls`, its
+/// `item`) to a [`RootState`] via [`route_uri_or_warn`]/[`route_item_or_warn`]
+/// — a miss (no configured root matches) OR that root's own `state: None`
+/// (no valid workspace snapshot there — see the module doc) both degrade to
+/// an empty result, exactly the single-root "no valid workspace" fail path
+/// generalized per root. `fieldProperties`/`actionProperties`/
+/// `telemetryStatus` are graph-independent and answer unconditionally, with
+/// no routing at all.
+fn dispatch_request(req: &Request, workspace: &Workspace) -> Result<Value> {
     debug!("Request: {} - {:?}", req.method, req.params);
 
     match req.method.as_str() {
         "textDocument/prepareCallHierarchy" => {
             let params: CallHierarchyPrepareParams = serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
+            let uri = params
+                .text_document_position_params
+                .text_document
+                .uri
+                .as_str();
+            let Some(root_state) = route_uri_or_warn(workspace, &req.method, uri) else {
+                return Ok(Value::Null);
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return Ok(Value::Null);
             };
             let snap = state.shared.get();
             let pos = params.text_document_position_params.position;
-            let result = prepare(
-                &snap,
-                state.encoding,
-                params
-                    .text_document_position_params
-                    .text_document
-                    .uri
-                    .as_str(),
-                pos.line,
-                pos.character,
-            );
+            let mut result = prepare(&snap, state.encoding, uri, pos.line, pos.character);
+            if let Some(items) = result.as_mut() {
+                for item in items {
+                    tag_item_root_gated(workspace, &root_state.root, item);
+                }
+            }
             Ok(serde_json::to_value(result)?)
         }
         "callHierarchy/incomingCalls" => {
             let params: CallHierarchyIncomingCallsParams =
                 serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
+            let Some(root_state) = route_item_or_warn(workspace, &req.method, &params.item) else {
+                return Ok(Value::Array(Vec::new()));
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return Ok(Value::Array(Vec::new()));
             };
             let snap = state.shared.get();
             let data = item_data(&params.item)?;
-            let result = incoming(&snap, state.encoding, &data);
+            let mut result = incoming(&snap, state.encoding, &data);
+            for call in &mut result {
+                tag_item_root_gated(workspace, &root_state.root, &mut call.from);
+            }
             Ok(serde_json::to_value(result)?)
         }
         "callHierarchy/outgoingCalls" => {
             let params: CallHierarchyOutgoingCallsParams =
                 serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
+            let Some(root_state) = route_item_or_warn(workspace, &req.method, &params.item) else {
+                return Ok(Value::Array(Vec::new()));
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return Ok(Value::Array(Vec::new()));
             };
             let snap = state.shared.get();
             let data = item_data(&params.item)?;
-            let result = outgoing(&snap, state.encoding, &data);
+            let mut result = outgoing(&snap, state.encoding, &data);
+            for call in &mut result {
+                tag_item_root_gated(workspace, &root_state.root, &mut call.to);
+            }
             Ok(serde_json::to_value(result)?)
         }
         "textDocument/codeLens" => {
             let params: CodeLensParams = serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
+            let uri = params.text_document.uri.as_str();
+            let Some(root_state) = route_uri_or_warn(workspace, &req.method, uri) else {
+                return Ok(Value::Array(Vec::new()));
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return Ok(Value::Array(Vec::new()));
             };
             let snap = state.shared.get();
-            let result = code_lenses(
-                &snap,
-                state.encoding,
-                params.text_document.uri.as_str(),
-                &state.config,
-            );
+            let result = code_lenses(&snap, state.encoding, uri, &state.config);
             Ok(serde_json::to_value(result)?)
         }
         "al-call-hierarchy/fieldProperties" => {
@@ -696,17 +1040,15 @@ fn dispatch_request(req: &Request, state: Option<&ServerState>) -> Result<Value>
         "al-call-hierarchy/dependencyDocumentSymbol" => {
             let params: DependencyDocumentSymbolParams =
                 serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
-                return Ok(Value::Array(Vec::new()));
-            };
-            let snap = state.shared.get();
-            Ok(serde_json::to_value(dependency_document_symbol(
-                &snap, params,
-            ))?)
+            let result = dispatch_dependency_document_symbol(workspace, params);
+            Ok(serde_json::to_value(result)?)
         }
         "al-call-hierarchy/eventPublishersInFile" => {
             let params: EventPublishersInFileParams = serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
+            let Some(root_state) = route_uri_or_warn(workspace, &req.method, &params.uri) else {
+                return Ok(Value::Array(Vec::new()));
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return Ok(Value::Array(Vec::new()));
             };
             let snap = state.shared.get();
@@ -716,7 +1058,10 @@ fn dispatch_request(req: &Request, state: Option<&ServerState>) -> Result<Value>
         "al-call-hierarchy/eventReferenceAtPosition" => {
             let params: EventReferenceAtPositionParams =
                 serde_json::from_value(req.params.clone())?;
-            let Some(state) = state else {
+            let Some(root_state) = route_uri_or_warn(workspace, &req.method, &params.uri) else {
+                return Ok(Value::Null);
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return Ok(Value::Null);
             };
             let snap = state.shared.get();
@@ -731,22 +1076,32 @@ fn dispatch_request(req: &Request, state: Option<&ServerState>) -> Result<Value>
     }
 }
 
-/// Handle an LSP notification. Only `didSave` does anything: it queues a
-/// [`ChangeEvent::FileSaved`] onto the SAME channel the file watcher feeds
-/// (see [`start_file_watcher`]'s doc). `didOpen`/`didClose`/`didChange` are
-/// no-ops, mirroring legacy — `text_document_sync.change` is negotiated as
-/// `NONE`, so the server never relies on editor-buffer content anyway.
-fn handle_notification(state: Option<&ServerState>, notif: &lsp_server::Notification) {
+/// Handle an LSP notification. Only `didSave` does anything: it routes the
+/// saved document's uri to its owning root ([`route_uri_or_warn`]) and
+/// queues a [`ChangeEvent::FileSaved`] onto the SAME channel that root's
+/// file watcher feeds (see [`start_file_watcher`]'s doc) —
+/// `didOpen`/`didClose`/`didChange` are no-ops, mirroring legacy
+/// (`text_document_sync.change` is negotiated as `NONE`, so the server never
+/// relies on editor-buffer content anyway). `workspace/
+/// didChangeWorkspaceFolders` is NOT implemented (see the module doc's
+/// multi-root section for the real blocker) — logged loudly rather than
+/// silently swallowed by the catch-all arm, so a dynamic add/remove is never
+/// mistaken for having worked.
+fn handle_notification(workspace: &Workspace, notif: &lsp_server::Notification) {
     debug!("Notification: {}", notif.method);
 
     match notif.method.as_str() {
         "textDocument/didSave" => {
-            let Some(state) = state else {
-                return;
-            };
             let Ok(params) =
                 serde_json::from_value::<DidSaveTextDocumentParams>(notif.params.clone())
             else {
+                return;
+            };
+            let uri = params.text_document.uri.as_str();
+            let Some(root_state) = route_uri_or_warn(workspace, &notif.method, uri) else {
+                return;
+            };
+            let Some(state) = root_state.state.as_ref() else {
                 return;
             };
             let Some(path) = uri_to_path(&params.text_document.uri) else {
@@ -766,6 +1121,16 @@ fn handle_notification(state: Option<&ServerState>, notif: &lsp_server::Notifica
         "textDocument/didClose" => {}
         "textDocument/didOpen" => {}
         "textDocument/didChange" => {}
+        "workspace/didChangeWorkspaceFolders" => {
+            warn!(
+                "workspace/didChangeWorkspaceFolders received but NOT implemented — \
+                 dynamic add/remove of a workspace root requires a stop signal for \
+                 AlFileWatcher's loop that doesn't exist yet (see the module doc's \
+                 multi-root section and docs/OUTSTANDING.md); configured roots are \
+                 fixed for the life of this session. Restart the server to pick up \
+                 folder changes."
+            );
+        }
         _ => {}
     }
 }
@@ -873,6 +1238,26 @@ mod tests {
             &server_conn,
         )
         .expect("build_server_state must succeed for a valid fixture workspace");
+        let root = state.shared.get().workspace_root.as_path().to_path_buf();
+        // Wrap the single built `ServerState` in a one-root `Workspace` — the
+        // shape `dispatch_request`/`handle_notification` now require after
+        // the multi-root refactor (see the module doc's multi-root section).
+        // Rebinding `state` to a REFERENCE into `workspace.roots[0]`
+        // immediately below means every `state.foo` access below this line
+        // keeps working completely unchanged — this test's fixture,
+        // requests, and assertions are otherwise byte-identical to the
+        // pre-multi-root version; only this construction and the final
+        // shutdown teardown actually differ.
+        let workspace = Workspace {
+            roots: vec![RootState {
+                root,
+                state: Some(state),
+            }],
+        };
+        let state = workspace.roots[0]
+            .state
+            .as_ref()
+            .expect("just inserted above");
         assert_eq!(
             state.shared.get().generation,
             0,
@@ -941,7 +1326,7 @@ mod tests {
             }),
         );
         let prepare_result =
-            dispatch_request(&prepare_req, Some(&state)).expect("prepare dispatch must not error");
+            dispatch_request(&prepare_req, &workspace).expect("prepare dispatch must not error");
         let items: Vec<CallHierarchyItem> =
             serde_json::from_value(prepare_result).expect("prepare result deserializes");
         assert_eq!(items.len(), 1, "must resolve exactly Alpha.DoWork");
@@ -953,8 +1338,8 @@ mod tests {
             "callHierarchy/outgoingCalls".to_string(),
             serde_json::json!({ "item": items[0] }),
         );
-        let outgoing_result = dispatch_request(&outgoing_req, Some(&state))
-            .expect("outgoing dispatch must not error");
+        let outgoing_result =
+            dispatch_request(&outgoing_req, &workspace).expect("outgoing dispatch must not error");
         let outgoing: Vec<CallHierarchyOutgoingCall> =
             serde_json::from_value(outgoing_result).expect("outgoing result deserializes");
         assert!(
@@ -988,7 +1373,7 @@ mod tests {
             "textDocument/didSave".to_string(),
             serde_json::json!({ "textDocument": {"uri": alpha_uri.as_str()} }),
         );
-        handle_notification(Some(&state), &did_save);
+        handle_notification(&workspace, &did_save);
 
         let mut alpha_after: Option<Vec<Diagnostic>> = None;
         let deadline = Instant::now() + Duration::from_millis(1000);
@@ -1023,12 +1408,468 @@ mod tests {
             "a didSave must bump the published generation"
         );
 
+        let RootState {
+            state: root_state, ..
+        } = workspace
+            .roots
+            .into_iter()
+            .next()
+            .expect("exactly one configured root");
         let ServerState {
             tx, updater_handle, ..
-        } = state;
+        } = root_state.expect("this root's snapshot build succeeded above");
         drop(tx);
         updater_handle
             .join()
             .expect("updater thread must exit cleanly");
+    }
+
+    // ── Multi-root tests (feat/multi-root-lsp) ─────────────────────────────
+    //
+    // Mirror the mechanism above: `Connection::memory()` stands in for
+    // stdio, `dispatch_request`/`handle_notification` are called exactly as
+    // `main_loop` calls them — but via `build_workspace` (the multi-root
+    // entry point) rather than a single `build_server_state` call.
+
+    fn join_all_roots(workspace: Workspace) {
+        for root_state in workspace.roots {
+            if let Some(st) = root_state.state {
+                drop(st.tx);
+                st.updater_handle
+                    .join()
+                    .expect("updater thread must exit cleanly");
+            }
+        }
+    }
+
+    /// (a) Two fixture roots, each answering from its OWN app — and,
+    /// crucially, never cross-talking even though they share an object
+    /// number, object name, AND routine name (see the fixture-choice
+    /// comment below for exactly why that's the load-bearing part of this
+    /// test, not an incidental detail).
+    #[test]
+    fn multi_root_prepare_and_outgoing_route_to_the_correct_root_and_never_cross_talk() {
+        // Root A: the existing inline fixture — Codeunit 50100 "Alpha" /
+        // DoWork calling ONLY Beta.Process.
+        let dir_a = tempfile::tempdir().expect("tempdir a");
+        write_fixture_workspace(dir_a.path());
+
+        // Root B: the COMMITTED `tests/fixtures/lsp-incr/` fixture, read
+        // directly — copy-free, never mutated (`tests/lsp_incremental_parity.rs`
+        // copies it elsewhere before editing; this test only ever reads it).
+        // It ALSO declares `codeunit 50100 "Alpha"` with a `DoWork`
+        // procedure — the EXACT same object number + object name + routine
+        // name as root A, but calling Beta.Process/Calc(Integer)/
+        // Calc(Text)/Løbenr instead. This is DELIBERATE: `RoutineNodeId.
+        // object.app` is an `AppRef`, a raw index into EACH root's own
+        // independent `AppRegistry` (`src/program/node.rs`) — two roots
+        // whose primary app is each interned at index 0 can produce
+        // BYTE-IDENTICAL `RoutineNodeId` values despite naming completely
+        // different routines (see `route_item`'s doc). If routing ever
+        // regressed to "search every root's snapshot for this id" instead
+        // of using the stamped root marker, this fixture pair turns that
+        // into a silent WRONG-ROOT answer instead of a loud failure.
+        let dir_b = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lsp-incr");
+
+        let (server_conn, _client_conn) = Connection::memory();
+        let workspace = build_workspace(
+            &[dir_a.path().to_path_buf(), dir_b],
+            PositionEncoding::Utf8,
+            &server_conn,
+        );
+        assert_eq!(workspace.roots.len(), 2);
+        assert!(workspace.roots[0].state.is_some(), "root A must build");
+        assert!(
+            workspace.roots[1].state.is_some(),
+            "root B (tests/fixtures/lsp-incr) must build"
+        );
+        assert!(workspace.is_multi_root());
+
+        let state_a = workspace.roots[0].state.as_ref().unwrap();
+        let state_b = workspace.roots[1].state.as_ref().unwrap();
+        let alpha_a_uri = path_to_uri(&state_a.shared.get().workspace_root.join("Alpha.al"));
+        let alpha_b_uri = path_to_uri(&state_b.shared.get().workspace_root.join("Alpha.al"));
+
+        let do_work_a = state_a.shared.get().decls_by_file["Alpha.al"]
+            .iter()
+            .find(|d| d.name == "DoWork")
+            .expect("root A DoWork decl")
+            .clone();
+        let do_work_b = state_b.shared.get().decls_by_file["Alpha.al"]
+            .iter()
+            .find(|d| d.name == "DoWork")
+            .expect("root B DoWork decl")
+            .clone();
+        // Pin the collision PRECONDITION: both roots must mint byte-identical
+        // RoutineNodeIds for their Alpha.DoWork — that identity collision is
+        // exactly what makes the `__root` marker necessary. If fixture drift
+        // ever breaks this, the test would silently stop exercising the
+        // marker's reason for existing.
+        assert_eq!(
+            do_work_a.id, do_work_b.id,
+            "fixture drift: the two roots no longer collide on RoutineNodeId — \
+             re-align the fixtures so this test keeps proving marker-based routing"
+        );
+
+        let prepare_req_a = Request::new(
+            RequestId::from(1),
+            "textDocument/prepareCallHierarchy".to_string(),
+            serde_json::json!({
+                "textDocument": {"uri": alpha_a_uri.as_str()},
+                "position": {
+                    "line": do_work_a.name_origin.start.row,
+                    "character": do_work_a.name_origin.start.column,
+                },
+            }),
+        );
+        let items_a: Vec<CallHierarchyItem> = serde_json::from_value(
+            dispatch_request(&prepare_req_a, &workspace).expect("root A prepare must not error"),
+        )
+        .expect("prepare result deserializes");
+        assert_eq!(items_a.len(), 1, "must resolve exactly root A's DoWork");
+        assert_eq!(items_a[0].uri.as_str(), alpha_a_uri.as_str());
+
+        let prepare_req_b = Request::new(
+            RequestId::from(2),
+            "textDocument/prepareCallHierarchy".to_string(),
+            serde_json::json!({
+                "textDocument": {"uri": alpha_b_uri.as_str()},
+                "position": {
+                    "line": do_work_b.name_origin.start.row,
+                    "character": do_work_b.name_origin.start.column,
+                },
+            }),
+        );
+        let items_b: Vec<CallHierarchyItem> = serde_json::from_value(
+            dispatch_request(&prepare_req_b, &workspace).expect("root B prepare must not error"),
+        )
+        .expect("prepare result deserializes");
+        assert_eq!(items_b.len(), 1, "must resolve exactly root B's DoWork");
+        assert_eq!(items_b[0].uri.as_str(), alpha_b_uri.as_str());
+
+        // The stamped root marker is what makes routing sound here (see
+        // `route_item`'s doc) — assert it's present and DISTINCT across
+        // roots, not just that the end-to-end behavior happens to come out
+        // right.
+        let marker = |item: &CallHierarchyItem| -> String {
+            item.data
+                .as_ref()
+                .and_then(|d| d.get(ROOT_MARKER_KEY))
+                .and_then(|v| v.as_str())
+                .expect("a multi-root item must carry the root marker")
+                .to_string()
+        };
+        assert_ne!(
+            marker(&items_a[0]),
+            marker(&items_b[0]),
+            "two roots' same-shaped DoWork items must carry DISTINCT root markers"
+        );
+
+        // ── outgoingCalls must reflect ONLY each root's own edges ─────────
+        let outgoing_a: Vec<CallHierarchyOutgoingCall> = serde_json::from_value(
+            dispatch_request(
+                &Request::new(
+                    RequestId::from(3),
+                    "callHierarchy/outgoingCalls".to_string(),
+                    serde_json::json!({ "item": items_a[0] }),
+                ),
+                &workspace,
+            )
+            .expect("root A outgoing must not error"),
+        )
+        .expect("outgoing result deserializes");
+        let mut names_a: Vec<&str> = outgoing_a.iter().map(|c| c.to.name.as_str()).collect();
+        names_a.sort_unstable();
+        assert_eq!(
+            names_a,
+            vec!["Process"],
+            "root A's DoWork must resolve ONLY root A's own Beta.Process — got {outgoing_a:#?}"
+        );
+
+        let outgoing_b: Vec<CallHierarchyOutgoingCall> = serde_json::from_value(
+            dispatch_request(
+                &Request::new(
+                    RequestId::from(4),
+                    "callHierarchy/outgoingCalls".to_string(),
+                    serde_json::json!({ "item": items_b[0] }),
+                ),
+                &workspace,
+            )
+            .expect("root B outgoing must not error"),
+        )
+        .expect("outgoing result deserializes");
+        let mut names_b: Vec<&str> = outgoing_b.iter().map(|c| c.to.name.as_str()).collect();
+        names_b.sort_unstable();
+        assert_eq!(
+            names_b,
+            vec!["Calc", "Calc", "Løbenr", "Process"],
+            "root B's DoWork must resolve its OWN full call set — got {outgoing_b:#?}"
+        );
+        assert!(
+            !names_b.contains(&"Extra"),
+            "root B must never see root A's Extra() — cross-talk"
+        );
+
+        // ── incomingCalls on root A's Beta.Process must show root A's
+        // DoWork as its ONLY caller — exercises the `.from`-tagging path
+        // (outgoingCalls above only exercised `.to`).
+        let process_item_a = &outgoing_a
+            .iter()
+            .find(|c| c.to.name == "Process")
+            .expect("root A outgoing includes Process")
+            .to;
+        let incoming_calls: Vec<lsp_types::CallHierarchyIncomingCall> = serde_json::from_value(
+            dispatch_request(
+                &Request::new(
+                    RequestId::from(5),
+                    "callHierarchy/incomingCalls".to_string(),
+                    serde_json::json!({ "item": process_item_a }),
+                ),
+                &workspace,
+            )
+            .expect("root A incoming must not error"),
+        )
+        .expect("incoming result deserializes");
+        assert_eq!(
+            incoming_calls.len(),
+            1,
+            "root A's Process has exactly ONE caller (DoWork)"
+        );
+        assert_eq!(incoming_calls[0].from.name, "DoWork");
+        assert_eq!(incoming_calls[0].from.uri.as_str(), alpha_a_uri.as_str());
+
+        join_all_roots(workspace);
+    }
+
+    /// (b) A `textDocument` uri that falls under NO configured root must
+    /// degrade to the same graceful-empty result the server gives for "no
+    /// workspace at all" — never an error, never a panic.
+    #[test]
+    fn multi_root_uri_outside_every_configured_root_degrades_to_graceful_empty() {
+        let dir_a = tempfile::tempdir().expect("tempdir a");
+        write_fixture_workspace(dir_a.path());
+        let dir_b = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lsp-incr");
+
+        let (server_conn, _client_conn) = Connection::memory();
+        let workspace = build_workspace(
+            &[dir_a.path().to_path_buf(), dir_b],
+            PositionEncoding::Utf8,
+            &server_conn,
+        );
+        assert_eq!(workspace.roots.len(), 2);
+
+        // A directory that is genuinely NOT one of the two configured roots
+        // — standing in for "a file the editor has open that isn't part of
+        // any workspace folder."
+        let dir_outside = tempfile::tempdir().expect("tempdir outside");
+        let outside_uri = path_to_uri(&dir_outside.path().join("Somewhere.al"));
+
+        let prepare_req = Request::new(
+            RequestId::from(1),
+            "textDocument/prepareCallHierarchy".to_string(),
+            serde_json::json!({
+                "textDocument": {"uri": outside_uri.as_str()},
+                "position": {"line": 0, "character": 0},
+            }),
+        );
+        let prepare_result =
+            dispatch_request(&prepare_req, &workspace).expect("must degrade, never error");
+        assert_eq!(
+            prepare_result,
+            Value::Null,
+            "a uri outside every configured root must degrade to the same graceful-empty \
+             result as no workspace at all"
+        );
+
+        let lens_req = Request::new(
+            RequestId::from(2),
+            "textDocument/codeLens".to_string(),
+            serde_json::json!({ "textDocument": {"uri": outside_uri.as_str()} }),
+        );
+        let lens_result =
+            dispatch_request(&lens_req, &workspace).expect("must degrade, never error");
+        assert_eq!(lens_result, Value::Array(Vec::new()));
+
+        // A didSave for the same out-of-root uri must be a silent no-op.
+        let did_save = Notification::new(
+            "textDocument/didSave".to_string(),
+            serde_json::json!({ "textDocument": {"uri": outside_uri.as_str()} }),
+        );
+        handle_notification(&workspace, &did_save);
+
+        join_all_roots(workspace);
+    }
+
+    /// (c) A second root that fails to build (no `app.json` at all — see
+    /// the fixture comment below for why this, not a merely-incomplete
+    /// `app.json`, is the real failure trigger) must NOT take down the
+    /// first, good root.
+    #[test]
+    fn multi_root_broken_second_root_does_not_take_down_the_first_root() {
+        let dir_a = tempfile::tempdir().expect("tempdir a");
+        write_fixture_workspace(dir_a.path());
+
+        let dir_broken = tempfile::tempdir().expect("tempdir broken");
+        // Deliberately NO app.json at all: `SnapshotBuilder::build`'s
+        // `std::fs::read_to_string(app.json)` fails outright — a real,
+        // unambiguous build failure. NOT a merely-incomplete app.json (e.g.
+        // one literally missing the "id" field): `SnapshotBuilder::build`'s
+        // `get_str` helper falls back to an empty string for any missing
+        // field, so THAT is not actually a build failure at all (verified
+        // against the source before choosing this fixture shape).
+        std::fs::write(dir_broken.path().join("Stray.al"), "// not an al app\n")
+            .expect("write stray file");
+
+        let (server_conn, _client_conn) = Connection::memory();
+        let workspace = build_workspace(
+            &[dir_a.path().to_path_buf(), dir_broken.path().to_path_buf()],
+            PositionEncoding::Utf8,
+            &server_conn,
+        );
+        assert_eq!(workspace.roots.len(), 2);
+        assert!(
+            workspace.roots[0].state.is_some(),
+            "the good root must build"
+        );
+        assert!(
+            workspace.roots[1].state.is_none(),
+            "the broken root (no app.json) must fail to build, not panic"
+        );
+
+        // Root A must still fully serve prepareCallHierarchy exactly as
+        // single-root.
+        let alpha_uri = path_to_uri(
+            &workspace.roots[0]
+                .state
+                .as_ref()
+                .unwrap()
+                .shared
+                .get()
+                .workspace_root
+                .join("Alpha.al"),
+        );
+        let do_work = workspace.roots[0]
+            .state
+            .as_ref()
+            .unwrap()
+            .shared
+            .get()
+            .decls_by_file["Alpha.al"]
+            .iter()
+            .find(|d| d.name == "DoWork")
+            .expect("DoWork decl")
+            .clone();
+        let prepare_req = Request::new(
+            RequestId::from(1),
+            "textDocument/prepareCallHierarchy".to_string(),
+            serde_json::json!({
+                "textDocument": {"uri": alpha_uri.as_str()},
+                "position": {
+                    "line": do_work.name_origin.start.row,
+                    "character": do_work.name_origin.start.column,
+                },
+            }),
+        );
+        let items: Vec<CallHierarchyItem> = serde_json::from_value(
+            dispatch_request(&prepare_req, &workspace).expect("root A prepare must not error"),
+        )
+        .expect("prepare result deserializes");
+        assert_eq!(
+            items.len(),
+            1,
+            "the good root must still serve prepareCallHierarchy normally"
+        );
+        assert_eq!(items[0].name, "DoWork");
+
+        // A request for a file under the BROKEN root degrades gracefully
+        // (empty, no panic) — it's a KNOWN root (routing finds it), just one
+        // with no snapshot.
+        let broken_uri = path_to_uri(&dir_broken.path().join("Stray.al"));
+        let broken_req = Request::new(
+            RequestId::from(2),
+            "textDocument/prepareCallHierarchy".to_string(),
+            serde_json::json!({
+                "textDocument": {"uri": broken_uri.as_str()},
+                "position": {"line": 0, "character": 0},
+            }),
+        );
+        let broken_result = dispatch_request(&broken_req, &workspace)
+            .expect("the broken root must degrade, not error");
+        assert_eq!(broken_result, Value::Null);
+
+        join_all_roots(workspace);
+    }
+
+    /// `configured_roots` is the behavior change from the pre-multi-root
+    /// server: every folder is returned, in order, not just the first (the
+    /// old `primary_workspace_root` used to warn-and-truncate here — see
+    /// its doc's "History" section).
+    #[test]
+    fn configured_roots_returns_every_folder_not_just_the_first() {
+        let dir_a = tempfile::tempdir().expect("tempdir a");
+        let dir_b = tempfile::tempdir().expect("tempdir b");
+        let params = InitializeParams {
+            workspace_folders: Some(vec![
+                lsp_types::WorkspaceFolder {
+                    uri: path_to_uri(dir_a.path()),
+                    name: "a".to_string(),
+                },
+                lsp_types::WorkspaceFolder {
+                    uri: path_to_uri(dir_b.path()),
+                    name: "b".to_string(),
+                },
+            ]),
+            ..Default::default()
+        };
+        let roots = configured_roots(&params);
+        assert_eq!(
+            roots,
+            vec![
+                crate::protocol::normalize_path(dir_a.path()),
+                crate::protocol::normalize_path(dir_b.path()),
+            ],
+            "every configured folder must be returned, in order — no longer just the first"
+        );
+        assert_eq!(primary_workspace_root(&params), Some(roots[0].clone()));
+    }
+
+    /// `configured_roots` dedupes a folder offered twice, and still falls
+    /// back to the deprecated single `root_uri` when `workspace_folders` is
+    /// absent (a pre-3.6 client) — both unchanged corners of the original
+    /// single-root logic, now exercised directly as a pure function.
+    #[test]
+    #[allow(deprecated)] // exercising the deprecated `root_uri` fallback path
+    fn configured_roots_dedupes_and_falls_back_to_root_uri() {
+        let dir_a = tempfile::tempdir().expect("tempdir a");
+
+        let dup_params = InitializeParams {
+            workspace_folders: Some(vec![
+                lsp_types::WorkspaceFolder {
+                    uri: path_to_uri(dir_a.path()),
+                    name: "a".to_string(),
+                },
+                lsp_types::WorkspaceFolder {
+                    uri: path_to_uri(dir_a.path()),
+                    name: "a-again".to_string(),
+                },
+            ]),
+            ..Default::default()
+        };
+        assert_eq!(
+            configured_roots(&dup_params).len(),
+            1,
+            "the same folder offered twice must not spin up two roots"
+        );
+
+        let legacy_params = InitializeParams {
+            workspace_folders: None,
+            root_uri: Some(path_to_uri(dir_a.path())),
+            ..Default::default()
+        };
+        assert_eq!(
+            configured_roots(&legacy_params),
+            vec![crate::protocol::normalize_path(dir_a.path())],
+            "a pre-3.6 client's root_uri must still work when workspace_folders is absent"
+        );
     }
 }

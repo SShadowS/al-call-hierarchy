@@ -165,13 +165,14 @@ use lsp_types::Position;
 use serde::{Deserialize, Serialize};
 
 use crate::app_package::{ExternalMethodKind, ExternalObject};
-use crate::lsp::encoding::{LineTable, PositionEncoding};
+use crate::lsp::encoding::PositionEncoding;
 use crate::lsp::handlers::{origin_to_range, resolve_virtual_path};
 use crate::lsp::snapshot::LspSnapshot;
 use crate::program::resolve::event::{PublisherKind, is_event_publisher};
 use crate::protocol::uri_to_path;
 use crate::snapshot::{AppSetSnapshot, AppUnit};
 use crate::types::ObjectType;
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, AttributeIr, Ir};
 
 // ---------------------------------------------------------------------------
@@ -247,7 +248,13 @@ fn external_kind_to_lsp_kind(kind: ExternalMethodKind) -> u32 {
 
 /// Request params — mirrors legacy's `DependencyDocumentSymbolParams`
 /// (`src/handlers.rs:1370-1385`) field-for-field (camelCase wire names).
-#[derive(Debug, Deserialize)]
+///
+/// `Clone` (multi-root routing, `server.rs`'s
+/// `dispatch_dependency_document_symbol`): this request's `uri` can be a
+/// root-agnostic synthetic scheme with no per-root discriminator, so a
+/// multi-root session may need to probe more than one configured root's
+/// snapshot with the SAME params before finding a non-empty answer.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyDocumentSymbolParams {
     #[serde(default)]
@@ -367,7 +374,7 @@ fn find_external_object<'a>(
         && let Some(obj) = abi
             .objects
             .iter()
-            .find(|o| o.object_type == ty && o.name.eq_ignore_ascii_case(name))
+            .find(|o| o.object_type == ty && o.name.eq_fold_identifier(name))
     {
         return Some(obj);
     }
@@ -431,7 +438,7 @@ pub fn event_publishers_in_file(
     let Some(entry) = snap.parsed.get(&virtual_path) else {
         return Vec::new();
     };
-    let table = LineTable::new(&entry.text);
+    let table = entry.line_table();
 
     let mut out = Vec::new();
     for obj in &entry.file.objects {
@@ -456,10 +463,10 @@ pub fn event_publishers_in_file(
                 detail: format!("{tag} {signature}"),
                 kind: 24,
                 tags: Vec::new(),
-                range: lsp_range_to_dep_range(origin_to_range(&routine.origin, &table, enc)),
+                range: lsp_range_to_dep_range(origin_to_range(&routine.origin, table, enc)),
                 selection_range: lsp_range_to_dep_range(origin_to_range(
                     &routine.name_origin,
-                    &table,
+                    table,
                     enc,
                 )),
             });
@@ -508,7 +515,7 @@ pub fn event_reference_at_position(
 ) -> Option<EventReferenceMatch> {
     let virtual_path = resolve_virtual_path(snap, uri)?;
     let entry = snap.parsed.get(&virtual_path)?;
-    let table = LineTable::new(&entry.text);
+    let table = entry.line_table();
     let byte_col = table.col_in(pos.line, pos.character, enc);
     let target = (pos.line, byte_col);
 
@@ -522,7 +529,7 @@ pub fn event_reference_at_position(
             let obj = abi
                 .objects
                 .iter()
-                .find(|o| o.object_type == ty && o.name.eq_ignore_ascii_case(&object_name))?;
+                .find(|o| o.object_type == ty && o.name.eq_fold_identifier(&object_name))?;
             Some((unit, obj))
         })
     });
@@ -531,7 +538,7 @@ pub fn event_reference_at_position(
         Some((unit, obj)) => match obj
             .methods
             .iter()
-            .find(|m| m.name.eq_ignore_ascii_case(&event_name))
+            .find(|m| m.name.eq_fold_identifier(&event_name))
         {
             Some(m) => {
                 let tag = m.kind.tag();

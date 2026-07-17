@@ -58,6 +58,7 @@
 //! `Evidence::Catalog`⇒ `Witness::CatalogEntry`
 //! `Evidence::Unknown`⇒ `Witness::None`
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 use phf::phf_set;
 
@@ -1073,7 +1074,7 @@ fn resolve_in_extendable_scope(
         .objects
         .iter()
         .find(|o| o.id == base_id)
-        .map(|o| (o.tier, o.name.to_ascii_lowercase()))
+        .map(|o| (o.tier, o.name.fold_identifier()))
     else {
         return TableScopeOutcome::NotVisible {
             access_excluded: None,
@@ -2012,7 +2013,7 @@ pub fn resolve_implicit_trigger(
     index: &ResolveIndex,
     surface: &DeclSurface,
 ) -> (DispatchShape, SetCompleteness, Vec<Route>) {
-    let trigger_name: &str = match op.to_ascii_lowercase().as_str() {
+    let trigger_name: &str = match op.fold_identifier().as_str() {
         "insert" => "oninsert",
         "modify" => "onmodify",
         "delete" => "ondelete",
@@ -2051,7 +2052,7 @@ pub fn resolve_implicit_trigger(
     }
 
     // Triggers on every TableExtension of this table (reverse-dep; whole-snapshot).
-    let table_name_lc = table_object.name.to_ascii_lowercase();
+    let table_name_lc = table_object.name.fold_identifier();
     for ext_id in index.table_extensions_of(&table_name_lc) {
         let ext_tier = graph
             .objects

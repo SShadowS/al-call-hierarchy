@@ -9,8 +9,12 @@ Cargo.lock
 *.swp
 *.swo
 
-# Claude Code
-.claude/
+# Claude Code — local state stays ignored, but project slash COMMANDS are
+# versioned (they encode project doctrine, e.g. /triage-wave's >30%-FP gate).
+# NOTE: `.claude/*` (not `.claude/`) so the negation below can re-include the
+# commands dir — git never descends into a fully-ignored directory.
+.claude/*
+!.claude/commands/
 tmpclaude-*
 
 # OS

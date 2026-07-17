@@ -17,6 +17,7 @@
 //! clause's first and last token), so a single normalized-text field plus the
 //! `var` (by-ref) modifier flag is sufficient — see [`source_param_sig_fp`].
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{Param, RoutineDecl};
 
 use crate::program::node::{ObjectNodeId, RoutineNodeId};
@@ -54,7 +55,8 @@ pub(crate) fn write_len_prefixed(buf: &mut String, s: &str) {
 // ---------------------------------------------------------------------------
 
 /// Conservative, LEXER-INSENSITIVE-ONLY normalization of a parameter type
-/// TEXT: ASCII-lowercase, then collapse leading/trailing/internal whitespace
+/// TEXT: case-fold (`fold_identifier` — simple 1:1 Unicode fold, ASCII-lowercase
+/// for ASCII input), then collapse leading/trailing/internal whitespace
 /// runs to nothing/a single space (`split_whitespace` + re-join). Deliberately
 /// does NOT strip quotes or resolve ID-vs-Name synonyms (`Codeunit "My Cu"`
 /// vs `Codeunit 50100` naming the SAME object) — that would need
@@ -68,7 +70,7 @@ pub(crate) fn normalize_type_text(s: &str) -> String {
     s.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .to_ascii_lowercase()
+        .fold_identifier()
 }
 
 /// The SOURCE-tier overload-identity fingerprint (`RoutineNodeId::sig_fp`) —
@@ -153,11 +155,11 @@ pub(crate) fn source_param_sig_fp(params: &[Param]) -> u64 {
 pub fn source_routine_node_id(object: ObjectNodeId, decl: &RoutineDecl) -> RoutineNodeId {
     RoutineNodeId {
         object,
-        name_lc: decl.name.to_ascii_lowercase(),
+        name_lc: decl.name.fold_identifier(),
         enclosing_member_lc: decl
             .enclosing_member
             .as_ref()
-            .map(|(n, _)| n.to_ascii_lowercase()),
+            .map(|(n, _)| n.fold_identifier()),
         params_count: decl.params.len(),
         sig_fp: source_param_sig_fp(&decl.params),
     }

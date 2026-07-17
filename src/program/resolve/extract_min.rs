@@ -10,6 +10,7 @@
 //! ranges that must be sliced into `src` to recover callee text. The test
 //! call is updated accordingly.
 
+use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::{AlFile, BlockId, BlockItem, ExprId, ExprKind, StmtKind};
 
 use crate::program::resolve::edge::{CanonicalSpan, SourcePos};
@@ -244,7 +245,7 @@ pub fn extract_raw_sites(file: &AlFile, src: &str, unit: &str) -> Vec<RawSite> {
     for obj in &file.objects {
         for routine in &obj.routines {
             if let Some(body) = routine.body {
-                let caller = routine.name.to_ascii_lowercase();
+                let caller = routine.name.fold_identifier();
                 walk_block(file, src, body, unit, &caller, &mut out);
             }
         }

@@ -67,6 +67,8 @@ pub mod d9;
 
 use std::collections::{HashMap, HashSet};
 
+use al_syntax::IdentifierFoldExt;
+
 use crate::engine::l2::features::{PAnchor, PCallSite, PCallee, PExpressionInfo};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 use crate::engine::l5::detector_context::DetectorContext;
@@ -175,7 +177,7 @@ pub(crate) fn is_platform_loaded_trigger_rec(
     routine: &L3Routine,
     record_variable_name: &str,
 ) -> bool {
-    if !record_variable_name.eq_ignore_ascii_case("rec") {
+    if !record_variable_name.eq_fold_identifier("rec") {
         return false;
     }
     if routine.kind != "trigger" {
@@ -207,7 +209,7 @@ pub(crate) fn is_platform_loaded_trigger_rec(
 /// trigger for "never persists after the call". When unsure returns `false` —
 /// the detector keeps firing.
 pub(crate) fn is_auto_persist_trigger_rec(routine: &L3Routine, record_variable_name: &str) -> bool {
-    if !record_variable_name.eq_ignore_ascii_case("rec") {
+    if !record_variable_name.eq_fold_identifier("rec") {
         return false;
     }
     if routine.kind != "trigger" {
@@ -277,7 +279,7 @@ pub(crate) fn record_loaded_by_call_before(
             && receiver.to_lowercase() == var_lc
             && PLATFORM_LOADER_METHODS
                 .iter()
-                .any(|m| m.eq_ignore_ascii_case(method))
+                .any(|m| m.eq_fold_identifier(method))
         {
             return true;
         }
@@ -338,7 +340,7 @@ fn callee_loads_param(
             && receiver.to_lowercase() == param_lc
             && PLATFORM_LOADER_METHODS
                 .iter()
-                .any(|m| m.eq_ignore_ascii_case(method))
+                .any(|m| m.eq_fold_identifier(method))
         {
             return true;
         }
@@ -487,13 +489,13 @@ fn variable_proven_loaded_before(
     if routine
         .record_variables
         .iter()
-        .any(|rv| rv.is_parameter && rv.name.eq_ignore_ascii_case(var_lc))
+        .any(|rv| rv.is_parameter && rv.name.eq_fold_identifier(var_lc))
     {
         return true;
     }
     if routine.record_operations.iter().any(|op| {
         RECORD_LOAD_OPS.contains(&op.op.as_str())
-            && op.record_variable_name.eq_ignore_ascii_case(var_lc)
+            && op.record_variable_name.eq_fold_identifier(var_lc)
             && before_anchor(&op.source_anchor, anchor)
     }) {
         return true;
@@ -589,7 +591,7 @@ fn call_is_set_selection_filter_on(cs: &PCallSite, var_lc: &str) -> bool {
     let PCallee::Member { method, .. } = &cs.callee else {
         return false;
     };
-    if !method.eq_ignore_ascii_case("SetSelectionFilter") {
+    if !method.eq_fold_identifier("SetSelectionFilter") {
         return false;
     }
     cs.argument_bindings
@@ -629,9 +631,9 @@ fn receiver_table_method_net_filters_self(
     };
     let mut found = false;
     for callee in ctx.routine_by_id.values() {
-        if !callee.object_id.eq_ignore_ascii_case(table_id)
+        if !callee.object_id.eq_fold_identifier(table_id)
             || callee.kind != "procedure"
-            || !callee.name.eq_ignore_ascii_case(method)
+            || !callee.name.eq_fold_identifier(method)
         {
             continue;
         }
@@ -658,12 +660,9 @@ fn receiver_table_method_net_filters_self(
 fn callee_net_filters_implicit_self(callee: &L3Routine) -> bool {
     /// `Some(true)` = filter, `Some(false)` = Reset, `None` = not filter-relevant.
     fn filter_event(name: &str) -> Option<bool> {
-        if RECORD_FILTER_OPS
-            .iter()
-            .any(|m| m.eq_ignore_ascii_case(name))
-        {
+        if RECORD_FILTER_OPS.iter().any(|m| m.eq_fold_identifier(name)) {
             Some(true)
-        } else if name.eq_ignore_ascii_case("Reset") {
+        } else if name.eq_fold_identifier("Reset") {
             Some(false)
         } else {
             None
@@ -681,7 +680,7 @@ fn callee_net_filters_implicit_self(callee: &L3Routine) -> bool {
     }
     let mut last: Option<(&PAnchor, bool)> = None;
     for op in &callee.record_operations {
-        if !op.record_variable_name.eq_ignore_ascii_case("rec") {
+        if !op.record_variable_name.eq_fold_identifier("rec") {
             continue;
         }
         if let Some(is_filter) = filter_event(&op.op) {
@@ -691,7 +690,7 @@ fn callee_net_filters_implicit_self(callee: &L3Routine) -> bool {
     for cs in &callee.call_sites {
         let name = match &cs.callee {
             PCallee::Bare { name } => Some(name.as_str()),
-            PCallee::Member { receiver, method } if receiver.eq_ignore_ascii_case("rec") => {
+            PCallee::Member { receiver, method } if receiver.eq_fold_identifier("rec") => {
                 Some(method.as_str())
             }
             _ => None,
@@ -784,7 +783,7 @@ const VIRTUAL_SYSTEM_TABLES: &[&str] = &[
 pub(crate) fn is_virtual_system_table(name: &str) -> bool {
     VIRTUAL_SYSTEM_TABLES
         .iter()
-        .any(|t| t.eq_ignore_ascii_case(name))
+        .any(|t| t.eq_fold_identifier(name))
 }
 
 /// G-6 suppression signal (exact, structural): true iff this record op targets a
