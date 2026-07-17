@@ -1169,6 +1169,17 @@ pub struct FreshCoverage {
     /// unrelated cached packages as noise — and under `--require-dependencies`
     /// flip exit 4 on a package the primary app never actually depends on.
     ///
+    /// EXEMPT: a symbol-only dep whose ABI surface (`AppUnit::abi`'s parsed
+    /// `SymbolReference.json`) declares ZERO objects. No bodies exist to be
+    /// opaque about — this mirrors the project's `honest_empty` doctrine
+    /// (`src/program/resolve/edge.rs`'s `Histogram`). The motivating case is
+    /// Microsoft's "Application" umbrella app (`Microsoft_Application_*.app`,
+    /// present in ~every BC 24+ workspace): symbol-only with an empty
+    /// `SymbolReference.json`, so the un-refined clause warned on every real
+    /// workspace forever, devaluing the preflight. A symbol-only dep with
+    /// ≥1 ABI object still counts (e.g. Base Application, which declares
+    /// real tables/codeunits).
+    ///
     /// Display identity = `AppId.name`; deduped, sorted (name, then guid) for
     /// deterministic messages.
     pub opaque_apps: Vec<String>,
@@ -1179,6 +1190,14 @@ pub struct FreshCoverage {
 /// the snapshot may contain UNRELATED cached packages (`load_all_apps` loads every
 /// `.app` in ancestor `.alpackages` without app.json filtering), so an unscoped
 /// scan would report noise — and under `--require-dependencies` flip exit 4 on it.
+///
+/// A symbol-only dep whose ABI surface declares zero objects is EXEMPT (see
+/// [`FreshCoverage::opaque_apps`]'s doc for the full rationale) — checked
+/// directly against `AppUnit::abi`'s parsed object list, the ABI/SymbolReference
+/// layer itself, rather than the assembled `ProgramGraph`'s downstream node
+/// population (which could apply unrelated filtering/collapsing and would
+/// answer a different question than "does this app's ABI declare anything at
+/// all").
 fn opaque_dependency_closure(snap: &AppSetSnapshot) -> Vec<String> {
     use std::collections::{HashMap, HashSet, VecDeque};
     let by_guid: HashMap<String, &AppUnit> = snap
@@ -1201,7 +1220,8 @@ fn opaque_dependency_closure(snap: &AppSetSnapshot) -> Vec<String> {
                 continue;
             }
             if let Some(u) = by_guid.get(&guid) {
-                if u.source.is_none() {
+                let has_abi_objects = u.abi.as_ref().is_some_and(|abi| !abi.objects.is_empty());
+                if u.source.is_none() && has_abi_objects {
                     opaque.push((u.id.name.clone(), u.id.guid.clone()));
                 }
                 queue.push_back(u);
@@ -1838,6 +1858,24 @@ mod tests {
         );
         // The primary app itself must never be listed.
         assert!(!fc.opaque_apps.iter().any(|n| n.is_empty()));
+    }
+
+    /// A symbol-only dep whose `SymbolReference.json` declares ZERO objects
+    /// provably hides nothing (no bodies exist to be opaque about) — the
+    /// Microsoft "Application" umbrella app's real-world shape (present in
+    /// ~every BC 24+ workspace). It must be EXEMPT from `opaque_apps`, unlike
+    /// `fresh_coverage_reports_symbol_only_dep_in_closure`'s Base Application
+    /// fixture, which declares a real table and stays reported.
+    #[test]
+    fn fresh_coverage_exempts_empty_abi_symbol_only_dep() {
+        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/r0-corpus/ws-empty-abi-dep");
+        let fc = fresh_coverage(&ws).expect("fixture resolves");
+        assert!(
+            fc.opaque_apps.is_empty(),
+            "an empty-ABI symbol-only dep must not be reported opaque: {:?}",
+            fc.opaque_apps
+        );
     }
 
     #[test]

@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bcquality` analyze preset (d52–d64) — the full BCQuality wave, including its opt-in members (the preset is the explicit opt-in for them).
 
 ### Fixed
+- `FreshCoverage::opaque_apps` (the fresh-resolver preflight's symbol-only-dependency
+  closure) no longer reports a symbol-only dep whose ABI surface (`AppUnit::abi`'s
+  parsed `SymbolReference.json`) declares ZERO objects — it provably hides no bodies,
+  mirroring the project's `honest_empty` doctrine. The motivating case is Microsoft's
+  "Application" umbrella app (`Microsoft_Application_*.app`, present in ~every BC 24+
+  workspace): symbol-only with an empty `SymbolReference.json`, so the un-refined
+  clause warned on every real workspace forever and would exit-4 all of them under
+  `--require-dependencies`, devaluing the preflight. A symbol-only dep with ≥1 ABI
+  object (e.g. Base Application, which declares real tables/codeunits) still counts.
+  New fixture `tests/r0-corpus/ws-empty-abi-dep/` (a minted zero-object symbol-only
+  `.app`) pins the exemption; `ws-baseapp-closure`'s existing non-empty-ABI case is
+  unchanged.
 - d63-html-concat-injection no longer flags a purely-static multi-line HTML
   template joined with `+` (the shape of a `StrSubstNo` template whose dynamic
   values enter via `%n` placeholders, not via concatenation). `looks_like_html_concat`
