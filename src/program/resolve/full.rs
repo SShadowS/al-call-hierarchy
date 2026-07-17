@@ -1929,6 +1929,16 @@ mod tests {
             chain_dep.source.is_some(),
             "Dep Chain must be genuinely source-bearing for this pin to be meaningful"
         );
+        // Non-vacuity guard: the dep must be IN the primary's declared closure —
+        // if a future fixture edit dropped it from app.json while the .app stayed
+        // in .alpackages, the BFS would skip it and the empty-opaque assertion
+        // below would pass for the wrong reason.
+        assert!(
+            snap.apps[0].declared_deps.iter().any(|d| d
+                .app_id
+                .eq_ignore_ascii_case("cccccccc-0001-0000-0000-000000000001")),
+            "Dep Chain must be DECLARED by the primary app.json (closure membership)"
+        );
 
         let fc = fresh_coverage(&ws).expect("r3a4 fixture resolves");
         assert!(
