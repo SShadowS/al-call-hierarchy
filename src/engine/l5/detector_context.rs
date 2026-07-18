@@ -423,6 +423,58 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             nodes: &graph.nodes,
             edges_by_from: &scc_adjacency,
         });
+        // WIP(probes) — Wave-2b payoff measurement. DROP before merge.
+        if std::env::var("ALSEM_STAGE_TIMING").as_deref() == Ok("1") {
+            let max_scc = scc.sccs.iter().map(|s| s.members.len()).max().unwrap_or(0);
+            let rec = scc.sccs.iter().filter(|s| s.recursive).count();
+            let rec_members: usize = scc
+                .sccs
+                .iter()
+                .filter(|s| s.recursive)
+                .map(|s| s.members.len())
+                .sum();
+            eprintln!(
+                "SCCSTATS nodes={} sccs={} recursive_sccs={} recursive_members={} max_scc={}",
+                graph.nodes.len(),
+                scc.sccs.len(),
+                rec,
+                rec_members,
+                max_scc
+            );
+            // Wave-2 M1: anatomy of the LARGEST SCC — intra-SCC edge count by
+            // edge kind (which kind fuses the component?), member degree stats.
+            if let Some(big) = scc.sccs.iter().max_by_key(|s| s.members.len()) {
+                let member_set: std::collections::HashSet<&str> =
+                    big.members.iter().map(|s| s.as_str()).collect();
+                let mut kind_counts: std::collections::BTreeMap<&str, usize> =
+                    std::collections::BTreeMap::new();
+                let mut intra_edges = 0usize;
+                let mut max_out = 0usize;
+                for m in &big.members {
+                    let mut out_here = 0usize;
+                    if let Some(edges) = graph.edges_by_from.get(m) {
+                        for e in edges {
+                            if member_set.contains(e.to.as_str()) {
+                                intra_edges += 1;
+                                out_here += 1;
+                                *kind_counts.entry(e.kind.as_str()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                    max_out = max_out.max(out_here);
+                }
+                eprintln!(
+                    "SCCANATOMY members={} intra_edges={} max_intra_outdegree={} kinds={:?}",
+                    big.members.len(),
+                    intra_edges,
+                    max_out,
+                    kind_counts
+                );
+            }
+            if std::env::var("ALSEM_EXIT_AFTER_SCCSTATS").as_deref() == Ok("1") {
+                std::process::exit(0);
+            }
+        }
         // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
         // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
         // but `compute_summaries` takes it.
