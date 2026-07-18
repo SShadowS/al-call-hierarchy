@@ -13,9 +13,9 @@
 //! pass. This is JACOBI, NOT Gauss-Seidel. The trace oracle (R3a-2 Rev 2 #3)
 //! captures the per-pass fingerprint sequence — it diverges under Gauss-Seidel
 //! because the trajectory differs (different iteration count, different per-pass
-//! `changed`). The `snapshot` clone inside the loop MUST be a true deep copy of
-//! the PRIOR pass; the `in_progress` accumulator must ONLY be written, never
-//! read, during a pass.
+//! `changed`). The `snapshot` inside the loop MUST be the frozen PRIOR-pass
+//! state (taken by `mem::take`, so reads cannot see this pass's writes); the
+//! next-pass accumulator must ONLY be written, never read, during a pass.
 
 use std::collections::{BTreeMap, HashMap};
 
