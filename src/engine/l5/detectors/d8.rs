@@ -16,7 +16,6 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::transaction_spans::SeedKind;
 
@@ -53,11 +52,10 @@ fn posting_name_matches(name: &str) -> bool {
 }
 
 pub fn detect_d8(
-    resolved: &L3Resolved,
+    _resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
-    let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_other = 0u64;

@@ -162,7 +162,7 @@ pub fn detect_d51(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp = &ctx.fingerprint_index;
     let ordering_facts = ctx.get_ordering_facts();
 
     let mut findings: Vec<Finding> = Vec::new();
@@ -189,7 +189,7 @@ pub fn detect_d51(
                 continue;
             };
             findings.push(build_d51_finding(
-                &fp,
+                fp,
                 routine,
                 of,
                 fact,

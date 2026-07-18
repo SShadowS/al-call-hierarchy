@@ -72,10 +72,10 @@ fn is_modify_event(name: Option<&str>) -> bool {
 
 pub fn detect_d29(
     resolved: &L3Resolved,
-    _ctx: &DetectorContext,
+    ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_non_modify_event = 0u64;
@@ -141,7 +141,7 @@ pub fn detect_d29(
                 skipped_temp_record += 1;
                 continue;
             }
-            emit(routine, op, evt_lc, &mut findings, &fp_index);
+            emit(routine, op, evt_lc, &mut findings, fp_index);
         }
     }
 

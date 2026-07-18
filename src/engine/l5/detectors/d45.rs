@@ -18,11 +18,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::capability_query::{reachable_coverage, writes_physical_tables_of};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::event_flow::{
-    RelayWalkOptions, build_cross_extension_subscribers, collect_relay_subscribers, event_kind_of,
-};
+use crate::engine::l5::event_flow::{RelayWalkOptions, collect_relay_subscribers, event_kind_of};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::{anchor_of, group_and_cap};
@@ -33,11 +30,10 @@ const D45_MAX_NODES: usize = 256;
 const D45_MAX_PER_PUBLISHER: usize = 16;
 
 pub fn detect_d45(
-    resolved: &L3Resolved,
+    _resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
-    let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let ix = &ctx.event_flow_indexes;
 
     let mut findings: Vec<Finding> = Vec::new();
@@ -48,7 +44,8 @@ pub fn detect_d45(
     for ev in &ctx.event_graph.events {
         event_kind_by_id.insert(ev.id.as_str(), event_kind_of(&ev.event_kind));
     }
-    let cross_ext_by_event = build_cross_extension_subscribers(&ctx.event_graph, &ws.objects);
+    // Cross-extension subscriber lookup per event — shared, built once in ctx.
+    let cross_ext_by_event = &ctx.cross_extension_subscribers;
 
     // events_by_publisher keys iterate in byte order (BTreeMap) — deterministic.
     for publisher in ix.events_by_publisher.keys() {

@@ -24,6 +24,28 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
+- [x] **Engine memory/speed Wave 1 (Track A)** — DONE 2026-07-18 (branch
+  `worktree-design-engine-memory-speed`, commits `9c0ee77..708f000`, 10 tasks
+  SDD-executed + per-task reviewed, goldens byte-stable throughout). Base App
+  8k 3-detector: DNF@90min/35.8GB → **90 s / 6.1 GB**; slice-5400 236s/9.8GB →
+  58s/3.4GB; DO unchanged (10.7s, byte-identical). W1.0 demand-driven substrate
+  (per-detector requires + full-vs-minimal parity test), W1.1 Jacobi
+  (uncertainty index, serde-free change keys w/ equivalence proof, take-based
+  snapshot, dirty frontier), W1.2 SpanTemplate, W1.3+A7 move-don't-clone,
+  W1.4 parallel L3 parse, W1.5 FingerprintIndex-once, A8 cross-ext hoist,
+  A9' parallel diagnostics re-parse. Decision (a): substrate-skipping runs omit
+  summarize cap-hit diagnostics (only permitted output change). Wave-1 outcome
+  table: findings doc §7b
+- [ ] **Engine memory/speed Wave 2/3 (Track B)** — same findings doc §7: B1 interned
+  id universe + bitsets (output-stable), B2 SCC-shared lazy cones, B3
+  single-substrate unification (needs detector-feature parity harness first).
+  Follow-ups §8: 846-SCC anatomy (which edge kind fused it), Jacobi telemetry.
+  SEQUENCE with the `to_lowercase()` census below — B1 rewrites the same
+  `src/engine/l2`-`l5` call sites; do the fold-primitive swap as part of (or
+  immediately before) B1's interning pass, never as separate churn. Also feeds
+  the change-impact wedge's Q1/Q2 fork (effects-on-fresh): the wedge's cone
+  substrate should be B1/B2's bitset cones, and the findings doc is the
+  evidence AGAINST making L3 load-bearing again
 - [x] **tree-sitter-al quirks list** — WAS ALREADY DONE, stale item (live-verified
   2026-07-17 against pinned v3.2.0 `14bd55c`): `statement_block`/`argument_list`/
   `parenthesized_expression` carry ZERO fields (left/operator/right pollution gone,

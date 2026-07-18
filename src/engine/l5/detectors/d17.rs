@@ -16,7 +16,6 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
@@ -69,11 +68,10 @@ struct Sample {
 }
 
 pub fn detect_d17(
-    resolved: &L3Resolved,
+    _resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
-    let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
 
     let declared = &ctx.declared_dependencies;
@@ -480,6 +478,10 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
+                routines, objects,
+            ),
+            cross_extension_subscribers: std::collections::BTreeMap::new(),
         }
     }
 

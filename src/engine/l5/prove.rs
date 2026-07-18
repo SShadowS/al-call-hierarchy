@@ -831,7 +831,7 @@ pub fn format_prove_human(
 // ---------------------------------------------------------------------------
 
 fn compute_tx_context_map(resolved: &L3Resolved) -> HashMap<String, &'static str> {
-    let ctx = build_detector_context(resolved);
+    let ctx = build_detector_context(resolved, crate::engine::l5::registry::substrate::ALL);
     let mut map: HashMap<String, &'static str> = HashMap::new();
     for span in &ctx.transaction_spans {
         if span.seed_kind != SeedKind::ExplicitCommit {

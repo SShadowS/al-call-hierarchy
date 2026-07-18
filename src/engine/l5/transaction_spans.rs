@@ -162,6 +162,47 @@ fn span_roots_of(visited: &BTreeSet<String>, reverse: &ReverseCallGraph) -> Vec<
     roots
 }
 
+/// Everything about a span that depends only on the seed ROUTINE.
+struct SpanTemplate {
+    routines_in_span: Vec<String>,
+    writes_tables: Vec<String>,
+    publishes_events: Vec<String>,
+    span_roots: Vec<String>,
+    coverage_complete: bool,
+}
+
+/// Compute-or-lookup the per-seed-routine template: `backward_cone` +
+/// `aggregate_span` + `span_roots_of` depend only on `(seed,
+/// commits_by_routine, reverse, summaries)` — identical for every commit op on
+/// the same routine AND for §B seeds of the same routine (see the CRITICAL
+/// semantics note at both call sites), so compute it at most once per distinct
+/// seed routine id and cache it.
+fn span_template<'c>(
+    seed: &str,
+    commits_by_routine: &BTreeMap<String, Vec<String>>,
+    reverse: &ReverseCallGraph,
+    summaries: &HashMap<String, FullRoutineSummary>,
+    cache: &'c mut HashMap<String, SpanTemplate>,
+) -> &'c SpanTemplate {
+    if !cache.contains_key(seed) {
+        let visited = backward_cone(seed, commits_by_routine, reverse);
+        let (writes_tables, publishes_events, coverage_complete) =
+            aggregate_span(&visited, summaries);
+        let span_roots = span_roots_of(&visited, reverse);
+        cache.insert(
+            seed.to_string(),
+            SpanTemplate {
+                routines_in_span: visited.iter().cloned().collect(),
+                writes_tables,
+                publishes_events,
+                span_roots,
+                coverage_complete,
+            },
+        );
+    }
+    &cache[seed]
+}
+
 /// Compute transaction spans. For each primary-app routine that contains a Commit
 /// (and each checked Codeunit.Run implicit commit), walk callers backward to find
 /// every routine that participates in the transaction. Each Commit operation
@@ -200,23 +241,32 @@ pub fn compute_transaction_spans(
         }
     }
 
+    // Everything about a span that depends only on the seed ROUTINE — cached
+    // per distinct seed routine id (see `span_template` above `compute_transaction_spans`).
+    let mut template_cache: HashMap<String, SpanTemplate> = HashMap::new();
+
     // --- explicit-commit seeds ---
     for (commit_routine_id, commit_ops) in &commits_by_routine {
+        let t = span_template(
+            commit_routine_id,
+            &commits_by_routine,
+            reverse,
+            summaries,
+            &mut template_cache,
+        );
+        // clone the template fields once per OP (same values every op — was a
+        // full recompute per op before)
         for commit_operation_id in commit_ops {
-            let visited = backward_cone(commit_routine_id, &commits_by_routine, reverse);
-            let (writes_tables, publishes_events, coverage_complete) =
-                aggregate_span(&visited, summaries);
-            let span_roots = span_roots_of(&visited, reverse);
             spans.push(TransactionSpan {
                 seed_kind: SeedKind::ExplicitCommit,
                 commit_operation_id: commit_operation_id.clone(),
                 seed_callsite_id: None,
                 commit_routine_id: commit_routine_id.clone(),
-                routines_in_span: visited.iter().cloned().collect(),
-                writes_tables,
-                publishes_events,
-                span_roots,
-                coverage_complete,
+                routines_in_span: t.routines_in_span.clone(),
+                writes_tables: t.writes_tables.clone(),
+                publishes_events: t.publishes_events.clone(),
+                span_roots: t.span_roots.clone(),
+                coverage_complete: t.coverage_complete,
             });
         }
     }
@@ -238,10 +288,13 @@ pub fn compute_transaction_spans(
             if cs.object_run_return_used != Some(true) {
                 continue;
             }
-            let visited = backward_cone(&r.id, &commits_by_routine, reverse);
-            let (writes_tables, publishes_events, coverage_complete) =
-                aggregate_span(&visited, summaries);
-            let span_roots = span_roots_of(&visited, reverse);
+            let t = span_template(
+                &r.id,
+                &commits_by_routine,
+                reverse,
+                summaries,
+                &mut template_cache,
+            );
             // commitOperationId uses the callsite id (same opaque-string type at
             // runtime); seed_callsite_id provides the typed accessor.
             spans.push(TransactionSpan {
@@ -249,11 +302,11 @@ pub fn compute_transaction_spans(
                 commit_operation_id: cs.id.clone(),
                 seed_callsite_id: Some(cs.id.clone()),
                 commit_routine_id: r.id.clone(),
-                routines_in_span: visited.iter().cloned().collect(),
-                writes_tables,
-                publishes_events,
-                span_roots,
-                coverage_complete,
+                routines_in_span: t.routines_in_span.clone(),
+                writes_tables: t.writes_tables.clone(),
+                publishes_events: t.publishes_events.clone(),
+                span_roots: t.span_roots.clone(),
+                coverage_complete: t.coverage_complete,
             });
         }
     }
@@ -478,5 +531,25 @@ mod tests {
         let deps: BTreeSet<String> = ["c".to_string()].into_iter().collect();
         let spans = compute_transaction_spans(&routines, &deps, &reverse, &summaries);
         assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn multi_commit_routine_ops_share_identical_span_shape() {
+        // Routine with TWO commit ops: both spans must have identical
+        // routines_in_span/writes/events/roots (the template), differing only
+        // in commit_operation_id.
+        let routines = vec![
+            routine("root", "trigger"),
+            op_commit_routine("committer", "procedure", &["c/op1", "c/op2"]),
+        ];
+        let graph = graph_from_edges(&["root", "committer"], &[edge("root", "committer", "cs1")]);
+        let reverse = build_reverse_call_graph(&graph);
+        let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+        let no_deps = BTreeSet::new();
+        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].routines_in_span, spans[1].routines_in_span);
+        assert_eq!(spans[0].span_roots, spans[1].span_roots);
+        assert_ne!(spans[0].commit_operation_id, spans[1].commit_operation_id);
     }
 }

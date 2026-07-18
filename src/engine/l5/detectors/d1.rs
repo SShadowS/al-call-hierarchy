@@ -44,7 +44,6 @@ use crate::engine::l5::detectors::{
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{merge_by_terminal, sev_rank};
 use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
@@ -730,7 +729,7 @@ pub fn detect_d1(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     // Source-only role map (every routine primary) — used by pick_actionable_anchor.
     let role_by_routine: HashMap<&str, &str> = ws

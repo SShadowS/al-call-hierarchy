@@ -22,7 +22,6 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::transaction_spans::SeedKind;
 
@@ -164,7 +163,7 @@ pub fn detect_d50(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     // Build objects_by_id for CommitBehavior lookup (cap 4).
     let objects_by_id: HashMap<&str, &L3Object> =
@@ -561,6 +560,11 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
+                routines,
+                &[],
+            ),
+            cross_extension_subscribers: std::collections::BTreeMap::new(),
         }
     }
 
@@ -707,15 +711,24 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            // Borrows routines_slice/ws_objects (not yet moved — resolved.workspace
+            // below is built from CLONES of both so this borrow stays valid for the
+            // ctx's lifetime through the detect_d50 call).
+            fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
+                &routines_slice,
+                &ws_objects,
+            ),
+            cross_extension_subscribers: std::collections::BTreeMap::new(),
         };
 
         // Build a minimal L3Resolved for detect_d50 (it uses ws.routines and ws.objects
-        // to build its fp_index and objects_by_id map internally).
+        // to build its objects_by_id map internally). Clones of routines_slice/ws_objects
+        // — the originals stay borrowed by ctx.fingerprint_index above.
         let resolved = L3Resolved {
             workspace: L3Workspace {
-                objects: ws_objects,
+                objects: ws_objects.clone(),
                 tables: vec![],
-                routines: routines_slice,
+                routines: routines_slice.clone(),
             },
             root_classifications: vec![],
             primary_app: None,

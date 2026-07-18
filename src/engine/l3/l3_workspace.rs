@@ -893,7 +893,7 @@ fn project_file(
                     run_trigger: op.run_trigger,
                 })
                 .collect();
-            let field_accesses = features.field_accesses.clone();
+            let field_accesses = std::mem::take(&mut features.field_accesses);
             let variables = features
                 .variables
                 .iter()
@@ -924,7 +924,7 @@ fn project_file(
                 })
                 .collect();
             let return_type = ir_routine.return_type.clone();
-            let mut call_sites = features.call_sites.clone();
+            let mut call_sites = std::mem::take(&mut features.call_sites);
             // RV-8 (Task 8): scope-honest `sourceKind`. The L2 binding builder
             // labels ANY non-parameter record-var arg `"local"` because scope is
             // not yet known at L2 (object globals are only PROMOTED into
@@ -1020,17 +1020,17 @@ fn project_file(
                     }
                 }
             }
-            let operation_sites = features.operation_sites.clone();
-            let statement_tree = features.statement_tree.clone();
-            let loops = features.loops.clone();
+            let operation_sites = std::mem::take(&mut features.operation_sites);
+            let statement_tree = features.statement_tree.take();
+            let loops = std::mem::take(&mut features.loops);
             // d19 reads the L2 identifier-reference set (lowercased / sorted /
             // deduped exactly as L2 produced it); d20 reads the unreachable list.
-            let identifier_references = features.identifier_references.clone();
-            let unreachable_statements = features.unreachable_statements.clone();
+            let identifier_references = std::mem::take(&mut features.identifier_references);
+            let unreachable_statements = std::mem::take(&mut features.unreachable_statements);
             // d43 branch-slice surface: hasBranching + varAssignments + conditionReferences.
             let has_branching = features.has_branching;
-            let var_assignments = features.var_assignments.clone();
-            let condition_references = features.condition_references.clone();
+            let var_assignments = std::mem::take(&mut features.var_assignments);
+            let condition_references = std::mem::take(&mut features.condition_references);
             // The routine's OWN declaration anchor (al-sem routine-indexer.ts:419):
             // `syntax_kind` = node.type = "procedure" / "trigger_declaration".
             let source_anchor = anchor_from_origin(&ir_routine.origin, source_unit_id, cols);
@@ -1175,30 +1175,50 @@ pub fn assemble_workspace(
     let mut sorted: Vec<&(String, String)> = files.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // Parallel per-file parse+project into PRIVATE fragments on the big-stack
+    // pool (the same generous stack the fresh engine parses on), then fold the
+    // fragments in the SAME sorted order the old sequential loop appended in —
+    // byte-identical Vec order. Object/routine ids are content-derived (no
+    // ordinals) and `project_file` only APPENDS into its own `workspace` arg
+    // (no cross-file reads), so per-file fragments are independent; the sorted
+    // fold reproduces today's exact order. The per-file `ws:<name>` unit id and
+    // `Utf16Cols` move inside the closure (atomic counters, so they remain
+    // thread-safe when the closures run concurrently).
+    use rayon::prelude::*;
+    let fragments: Vec<L3Workspace> = crate::big_stack::big_stack_pool().install(|| {
+        sorted
+            .par_iter()
+            .map(|(fname, source)| {
+                let source_unit_id = format!("ws:{fname}");
+                let cols = Utf16Cols::new(source);
+                let mut ws = L3Workspace {
+                    objects: Vec::new(),
+                    tables: Vec::new(),
+                    routines: Vec::new(),
+                };
+                project_file(
+                    source,
+                    app_guid,
+                    model_instance_id,
+                    &source_unit_id,
+                    &cols,
+                    &mut ws,
+                );
+                ws
+            })
+            .collect()
+    });
+
     let mut workspace = L3Workspace {
         objects: Vec::new(),
         tables: Vec::new(),
         routines: Vec::new(),
     };
-
-    // Sequential parse loop, run on a big-stack thread (T2.1): callers include
-    // the CLI main thread (`aldump`/`alsem`), which has no guaranteed-generous
-    // stack — see `big_stack`'s doc. One big-stack thread for the WHOLE loop.
-    crate::big_stack::run_with_big_stack(|| {
-        for (fname, source) in sorted {
-            let source_unit_id = format!("ws:{fname}");
-            let cols = Utf16Cols::new(source);
-            project_file(
-                source,
-                app_guid,
-                model_instance_id,
-                &source_unit_id,
-                &cols,
-                &mut workspace,
-            );
-        }
-    });
-
+    for mut frag in fragments {
+        workspace.objects.append(&mut frag.objects);
+        workspace.tables.append(&mut frag.tables);
+        workspace.routines.append(&mut frag.routines);
+    }
     workspace
 }
 
@@ -1221,28 +1241,44 @@ pub fn assemble_workspace_units(
     let mut sorted: Vec<&(String, String)> = units.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // Parallel per-file parse+project into PRIVATE fragments on the big-stack
+    // pool, then fold in the SAME sorted order — byte-identical Vec order (see
+    // the sibling `assemble_workspace` for the full rationale). Uses each unit's
+    // `source_unit_id` verbatim for anchors (no `ws:<name>` synthesis here).
+    use rayon::prelude::*;
+    let fragments: Vec<L3Workspace> = crate::big_stack::big_stack_pool().install(|| {
+        sorted
+            .par_iter()
+            .map(|(source_unit_id, source)| {
+                let cols = Utf16Cols::new(source);
+                let mut ws = L3Workspace {
+                    objects: Vec::new(),
+                    tables: Vec::new(),
+                    routines: Vec::new(),
+                };
+                project_file(
+                    source,
+                    app_guid,
+                    model_instance_id,
+                    source_unit_id,
+                    &cols,
+                    &mut ws,
+                );
+                ws
+            })
+            .collect()
+    });
+
     let mut workspace = L3Workspace {
         objects: Vec::new(),
         tables: Vec::new(),
         routines: Vec::new(),
     };
-
-    // Sequential parse loop, run on a big-stack thread (T2.1) — see the sibling
-    // `assemble_workspace`'s comment above.
-    crate::big_stack::run_with_big_stack(|| {
-        for (source_unit_id, source) in sorted {
-            let cols = Utf16Cols::new(source);
-            project_file(
-                source,
-                app_guid,
-                model_instance_id,
-                source_unit_id,
-                &cols,
-                &mut workspace,
-            );
-        }
-    });
-
+    for mut frag in fragments {
+        workspace.objects.append(&mut frag.objects);
+        workspace.tables.append(&mut frag.tables);
+        workspace.routines.append(&mut frag.routines);
+    }
     workspace
 }
 

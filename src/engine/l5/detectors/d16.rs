@@ -14,7 +14,6 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
@@ -22,15 +21,14 @@ use super::anchor_of;
 const DETECTOR: &str = "d16-obsolete-routine-call";
 
 pub fn detect_d16(
-    resolved: &L3Resolved,
+    _resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
-    let ws = &resolved.workspace;
     // Unified build: maps EVERY routine's internal id (source AND dep) → stable id,
     // so any routine id embedded in the rootCauseKey is replaced with its stable id
     // before hashing (mirrors al-sem's stabilizing substitution). The prior dep-only
     // build is subsumed — dep routines are already in the all-routines map.
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_other = 0u64;

@@ -23,7 +23,6 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor, is_auto_persist_trigger_rec};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d39-record-left-dirty-across-chain";
@@ -35,7 +34,7 @@ pub fn detect_d39(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_caller_persists = 0u64;

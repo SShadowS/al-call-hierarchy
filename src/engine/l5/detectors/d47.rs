@@ -373,7 +373,7 @@ pub fn detect_d47(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp = &ctx.fingerprint_index;
     let ordering_facts = ctx.get_ordering_facts();
 
     let mut findings: Vec<Finding> = Vec::new();
@@ -419,7 +419,7 @@ pub fn detect_d47(
                 };
                 let event_ctx = build_event_hop_context(ctx, &routine.id);
                 findings.push(build_d47_event_advisory_finding(
-                    &fp,
+                    fp,
                     ctx,
                     routine,
                     of,
@@ -441,7 +441,7 @@ pub fn detect_d47(
                     continue;
                 }
             }
-            findings.push(build_d47_finding(&fp, routine, of, fact, sev));
+            findings.push(build_d47_finding(fp, routine, of, fact, sev));
         }
     }
 

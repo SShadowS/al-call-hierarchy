@@ -19,6 +19,44 @@ use crate::engine::l5::detector_context::{
 };
 use crate::engine::l5::finding::Finding;
 
+/// Substrate demand bits (W1.0 demand-driven detector substrate).
+///
+/// `build_detector_context` ALWAYS builds the cheap, many-consumer CORE surface —
+/// symbol table, `resolve_calls`, event graph, combined graph, reverse graph, entry
+/// points, reachable roots, all borrowed indexes (routine/object/table/call-site
+/// maps), `resolved_call_edge_by_callsite`, `uncertainty_edges_by_from`,
+/// `upgraded_bindings_by_callsite`, `event_flow_indexes`, `cross_extension_subscribers`
+/// (T3), `fingerprint_index` (T1), and `root_classifications_by_routine`. The four
+/// EXPENSIVE substrates below are built only when some selected detector demands them;
+/// `run_detectors` folds every detector's `requires` into the union it passes here.
+///
+/// Skipped substrates leave their ctx fields EMPTY (`HashMap::new()`/`Vec::new()`/
+/// `Default::default()`) — the field TYPES are unchanged, so no detector needs to
+/// change. The per-detector full-vs-minimal parity test is the enforcement: an
+/// under-declared `requires` produces a finding divergence and fails the test.
+///
+/// A full/preset/all-detector run demands `ALL`, so the whole context — and thus the
+/// entire report — is byte-identical to the pre-W1.0 eager build. The ONLY permitted
+/// output change (decision (a), user-approved) is that a selection NOT demanding
+/// `CORE_SUMMARIES` emits no summarize cap-hit diagnostics (they are harvested from
+/// the same `compute_summaries` call this substrate gates).
+pub mod substrate {
+    /// Capability cones + the per-routine `FullRoutineSummary` map (`ctx.summaries`).
+    pub const SUMMARIES: u32 = 1 << 0;
+    /// The second Tarjan SCC + Jacobi CORE summaries → `ctx.uncertainties_by_node`,
+    /// `ctx.parameter_roles_by_routine`, and the `summarize_diagnostics` cap-hit set.
+    pub const CORE_SUMMARIES: u32 = 1 << 1;
+    /// Transaction spans (`ctx.transaction_spans`). Requires SUMMARIES internally —
+    /// `compute_transaction_spans` folds over the summaries map — so the summaries
+    /// block is built whenever this bit is set (see `build_detector_context`).
+    pub const TRANSACTION_SPANS: u32 = 1 << 2;
+    /// Closed-world proven-temp params (`ctx.closed_world_temp_params`).
+    pub const CLOSED_WORLD_TEMP: u32 = 1 << 3;
+    /// Every substrate — the eager, pre-W1.0 behavior. Full/preset/all-detector runs
+    /// and every non-registry `build_detector_context` caller pass this.
+    pub const ALL: u32 = SUMMARIES | CORE_SUMMARIES | TRANSACTION_SPANS | CLOSED_WORLD_TEMP;
+}
+
 /// A diagnostic emitted when a detector fails — returns `Err`, or (debug builds
 /// only) panics — (stage = "detect").
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +224,12 @@ impl std::error::Error for DetectorError {}
 pub struct Detector {
     pub name: String,
     pub run: fn(&L3Resolved, &DetectorContext) -> Result<DetectorOutput, DetectorError>,
+    /// The substrate bits (see `substrate`) this detector reads from the context.
+    /// `run_detectors` folds every selected detector's `requires` into the union it
+    /// hands to `build_detector_context`, so a substrate is built iff some selected
+    /// detector demands it. Over-inclusive is SAFE (just less skipping);
+    /// under-inclusive is caught by the full-vs-minimal parity test.
+    pub requires: u32,
 }
 
 /// The combined output of `run_detectors`.
@@ -235,7 +279,11 @@ fn primary_location_key(f: &Finding) -> String {
 /// never catches anything there — so it must never be relied on as the real
 /// guarantee.
 pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput {
-    let ctx = build_detector_context(resolved);
+    // W1.0 demand-driven substrate: build only the expensive substrates some selected
+    // detector actually reads. A full/preset/all-detector selection unions to
+    // `substrate::ALL`, so the context — and the whole report — stays byte-identical.
+    let demanded = detectors.iter().fold(0u32, |acc, d| acc | d.requires);
+    let ctx = build_detector_context(resolved, demanded);
     let summarize_diagnostics: Vec<Diagnostic> = ctx
         .summarize_diagnostics
         .iter()
@@ -572,10 +620,12 @@ mod tests {
             Detector {
                 name: "d-ok".to_string(),
                 run: ok_detector,
+                requires: substrate::ALL,
             },
             Detector {
                 name: "d-err".to_string(),
                 run: err_detector,
+                requires: substrate::ALL,
             },
         ];
         let out = run_detectors(&resolved, &detectors);
@@ -609,10 +659,12 @@ mod tests {
             Detector {
                 name: "d-ok".to_string(),
                 run: ok_detector,
+                requires: substrate::ALL,
             },
             Detector {
                 name: "d-panic".to_string(),
                 run: panic_detector,
+                requires: substrate::ALL,
             },
         ];
         let out = run_detectors(&resolved, &detectors);

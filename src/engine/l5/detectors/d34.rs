@@ -25,7 +25,6 @@ use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d34-commit-in-loop";
@@ -35,7 +34,7 @@ pub fn detect_d34(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_parse_incomplete = 0u64;
@@ -77,7 +76,7 @@ pub fn detect_d34(
                 routine.object_id.as_str(),
                 loop_info,
                 site,
-                &fp_index,
+                fp_index,
                 &mut findings,
             );
         }
@@ -142,7 +141,7 @@ pub fn detect_d34(
                 cs.id.as_str(),
                 anchor_of(&cs.source_anchor, routine),
                 callee_name,
-                &fp_index,
+                fp_index,
                 &mut findings,
                 resolved,
             );

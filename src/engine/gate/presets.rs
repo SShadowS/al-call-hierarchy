@@ -135,6 +135,7 @@ pub fn select_detectors(names: &[String]) -> Result<Vec<Detector>, String> {
             Some(d) => out.push(Detector {
                 name: d.name.clone(),
                 run: d.run,
+                requires: d.requires,
             }),
             None => return Err(format!("Unknown detector: {name}")),
         }

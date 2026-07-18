@@ -25,7 +25,6 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d14-dead-routine";
@@ -158,7 +157,7 @@ pub fn detect_d14(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     // Forward BFS from the reachable roots over graph.edges_by_from (follow edge.to).
     let reachable = compute_reachable_set(ctx);

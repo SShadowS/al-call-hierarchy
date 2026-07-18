@@ -33,7 +33,6 @@ use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::path_walker::{
     PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
@@ -275,7 +274,7 @@ pub fn detect_d48(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     // Pre-build the LOCAL/DIRECT IoTerminal table (NOT inherited).
     let mut io_terminals_by_routine: HashMap<String, Vec<IoTerminal>> = HashMap::new();

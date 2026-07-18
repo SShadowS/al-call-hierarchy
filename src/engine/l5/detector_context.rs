@@ -172,6 +172,15 @@ pub struct DetectorContext<'a> {
     /// common case (additive: `run_detectors` folds this into the "summarize"
     /// slot of the analyze/detect diagnostics envelope).
     pub summarize_diagnostics: Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
+    /// The shared finding-fingerprint index (routine/object id maps + the
+    /// internal→stable routine-id substitution map). Built ONCE per run —
+    /// previously every detector rebuilt it (54 × ~2 String clones per routine).
+    pub fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex<'a>,
+    /// event id → cross-extension subscriber routine ids (subscribers living in a
+    /// DIFFERENT app than the publisher object). Previously rebuilt identically by
+    /// d43, d44 AND d45 each run; built once here (same sharing pattern as
+    /// `event_flow_indexes`).
+    pub cross_extension_subscribers: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl DetectorContext<'_> {
@@ -194,61 +203,86 @@ impl DetectorContext<'_> {
 
 /// Build the shared context. Runs the SOURCE-ONLY L3→L4 substrate (symbols →
 /// resolve_calls → event_graph → combined_graph → cone) to assemble the combined
-/// graph + per-routine `FullRoutineSummary`, then the eager indexes + transaction
-/// spans (which consume the reverse graph + summaries).
-pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
+/// graph + the always-built eager indexes, then builds ONLY the expensive substrates
+/// named in `demanded` (see `registry::substrate`).
+///
+/// `demanded` is the union of every selected detector's `requires` bits (folded by
+/// `run_detectors`). Skipped substrates leave their ctx fields EMPTY — the field types
+/// are unchanged. Passing `substrate::ALL` reproduces the pre-W1.0 eager build exactly
+/// (byte-identical context), which every non-registry caller does. The four gated
+/// substrates are:
+///   - `SUMMARIES` — capability cones + `summaries` (also built for `TRANSACTION_SPANS`,
+///     which folds over the summaries map internally).
+///   - `CORE_SUMMARIES` — second Tarjan + Jacobi core summaries →
+///     `uncertainties_by_node` / `parameter_roles_by_routine` / `summarize_diagnostics`.
+///   - `TRANSACTION_SPANS` — `transaction_spans`.
+///   - `CLOSED_WORLD_TEMP` — `closed_world_temp_params`.
+pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorContext<'_> {
+    use crate::engine::l5::registry::substrate;
     let ws = &resolved.workspace;
+    // TRANSACTION_SPANS folds over the summaries map, so demand summaries whenever
+    // either bit is set (see `compute_transaction_spans`).
+    let need_summaries = demanded & (substrate::SUMMARIES | substrate::TRANSACTION_SPANS) != 0;
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
     let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
     let no_deps: Vec<DeclaredDependency> = Vec::new();
     let no_fetched: Vec<String> = Vec::new();
-    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    let mut calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
     let event_graph = build_event_graph(&ws.routines, &symbols);
     let graph = build_combined_graph(ws, &calls, &event_graph);
 
     // Per-routine direct facts + direct coverage, then the inherited cone over
     // the combined graph — the same assembly project_r3a3 does inline, here via
-    // the reusable `compose_cone_over_graph` seam.
-    let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
-    for evt in &event_graph.events {
-        if let Some(pr) = &evt.publisher_routine_id {
-            publisher_events_by_routine
-                .entry(pr.clone())
-                .or_default()
-                .push(evt);
+    // the reusable `compose_cone_over_graph` seam. SUBSTRATE-GATED: built only when
+    // some selected detector demands SUMMARIES (or TRANSACTION_SPANS, which folds
+    // over the summaries map). Skipped ⇒ empty `summaries` map.
+    let summaries: HashMap<String, FullRoutineSummary> = if need_summaries {
+        let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
+        for evt in &event_graph.events {
+            if let Some(pr) = &evt.publisher_routine_id {
+                publisher_events_by_routine
+                    .entry(pr.clone())
+                    .or_default()
+                    .push(evt);
+            }
         }
-    }
-    let empty_pub: Vec<&EventSymbol> = Vec::new();
-    let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
-    let mut direct_in: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
-    let mut coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
-    let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
-    for r in &ws.routines {
-        let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
-        let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
-        direct_in.insert(r.id.clone(), facts.clone());
-        coverage_in.insert(r.id.clone(), (status, reasons));
-        direct_full.insert(r.id.clone(), facts);
-    }
-    let cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
+        let empty_pub: Vec<&EventSymbol> = Vec::new();
+        let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
+        let mut direct_in: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
+        let mut coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
+        let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
+        for r in &ws.routines {
+            let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
+            let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
+            direct_in.insert(r.id.clone(), facts.clone());
+            coverage_in.insert(r.id.clone(), (status, reasons));
+            direct_full.insert(r.id.clone(), facts);
+        }
+        let mut cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
 
-    let empty_facts: Vec<CapabilityFact> = Vec::new();
-    let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
-    for r in &ws.routines {
-        let cone = cones.get(&r.id);
-        let inherited = cone.map(|c| c.inherited.clone()).unwrap_or_default();
-        let coverage = cone.map(|c| c.coverage.clone());
-        summaries.insert(
-            r.id.clone(),
-            FullRoutineSummary {
-                routine_id: r.id.clone(),
-                capability_facts_direct: direct_full.get(&r.id).unwrap_or(&empty_facts).clone(),
-                capability_facts_inherited: inherited,
-                coverage,
-            },
-        );
-    }
+        // `cones` and `direct_full` are locally owned and dead after this loop, so
+        // move their payloads into the summaries instead of cloning them out.
+        let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+        for r in &ws.routines {
+            let (inherited, coverage) = match cones.remove(&r.id) {
+                Some(c) => (c.inherited, Some(c.coverage)),
+                None => (Vec::new(), None),
+            };
+            summaries.insert(
+                r.id.clone(),
+                FullRoutineSummary {
+                    routine_id: r.id.clone(),
+                    capability_facts_direct: direct_full.remove(&r.id).unwrap_or_default(),
+                    capability_facts_inherited: inherited,
+                    coverage,
+                },
+            );
+        }
+        summaries
+    } else {
+        HashMap::new()
+    };
 
     // --- Eager indexes -----------------------------------------------------
     let routine_by_id: HashMap<&str, &L3Routine> =
@@ -302,34 +336,53 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // G-19 — closed-world proven-temp params for `local` procedures (consumed
     // by the d1/d3/d10 temp gates). Pure lookup-table build over the routines +
     // combined graph + reverse graph; entry points are proof-disqualifying.
-    let closed_world_temp_params =
-        crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
+    // SUBSTRATE-GATED on CLOSED_WORLD_TEMP.
+    let closed_world_temp_params = if demanded & substrate::CLOSED_WORLD_TEMP != 0 {
+        let p = crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
             &ws.routines,
             &graph,
             &reverse_call_graph,
             &entry_points,
         );
+        p
+    } else {
+        Default::default()
+    };
 
-    let transaction_spans = compute_transaction_spans(
-        &ws.routines,
-        &dep_routine_ids,
-        &reverse_call_graph,
-        &summaries,
-    );
+    // Transaction spans — SUBSTRATE-GATED on TRANSACTION_SPANS (which also forced
+    // `need_summaries`, so the `summaries` map above is populated here).
+    let transaction_spans = if demanded & substrate::TRANSACTION_SPANS != 0 {
+        let ts = compute_transaction_spans(
+            &ws.routines,
+            &dep_routine_ids,
+            &reverse_call_graph,
+            &summaries,
+        );
+        ts
+    } else {
+        Vec::new()
+    };
 
     // Event-flow indexes — built eagerly from the L3 event graph + routine set +
     // dep set (source-only ⇒ empty dep set ⇒ every routine primary). Consumes
     // `event_graph` by reference before it is moved into the struct.
     let event_flow_indexes = build_event_flow_indexes(&event_graph, &ws.routines, &dep_routine_ids);
 
+    // Cross-extension subscriber lookup, shared by d43/d44/d45 — previously each
+    // rebuilt this identically from `ctx.event_graph` + `ws.objects` per run.
+    let cross_extension_subscribers =
+        crate::engine::l5::event_flow::build_cross_extension_subscribers(&event_graph, &ws.objects);
+
+    // `calls.edges` is not read after this point (`calls.upgraded_bindings` still
+    // is), so take the edges by value instead of cloning each retained one.
     let mut resolved_call_edge_by_callsite: HashMap<String, CallEdge> = HashMap::new();
-    for ce in &calls.edges {
+    for ce in std::mem::take(&mut calls.edges) {
         if ce.to.is_none() {
             continue;
         }
         resolved_call_edge_by_callsite
             .entry(ce.callsite_id.clone())
-            .or_insert_with(|| ce.clone());
+            .or_insert(ce);
     }
 
     let mut uncertainty_edges_by_from: HashMap<
@@ -352,67 +405,92 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // `graph.edges_by_from`, then the Jacobi fixed point (`compute_summaries`).
     // This is the only place that needs the core uncertainties; the union is
     // assembled once and exposed on `uncertainties_by_node`.
-    let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
-    for (from, list) in &graph.edges_by_from {
-        scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
-    }
-    let scc = tarjan_scc(&SccInputGraph {
-        nodes: &graph.nodes,
-        edges_by_from: &scc_adjacency,
-    });
-    // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
-    // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
-    // but `compute_summaries` takes it.
-    let mut field_index: FieldIndex = HashMap::new();
-    for table in &ws.tables {
-        for field in &table.fields {
-            field_index
-                .entry((table.id.clone(), field.name.to_lowercase()))
-                .or_insert_with(|| field.id.clone());
+    //
+    // SUBSTRATE-GATED on CORE_SUMMARIES. This is the second Tarjan + Jacobi pass —
+    // the most expensive substrate. Skipped ⇒ `uncertainties_by_node` /
+    // `parameter_roles_by_routine` / `summarize_diagnostics` are all empty, which by
+    // decision (a) means a substrate-skipping run emits no summarize cap-hit
+    // diagnostics (they are only ever produced by this `compute_summaries` call).
+    #[allow(clippy::type_complexity)]
+    let (uncertainties_by_node, parameter_roles_by_routine, summarize_diagnostics): (
+        HashMap<String, Vec<Uncertainty>>,
+        HashMap<String, Vec<RecordRoleSummary>>,
+        Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
+    ) = if demanded & substrate::CORE_SUMMARIES != 0 {
+        let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+        for (from, list) in &graph.edges_by_from {
+            scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
         }
-    }
-    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries(
-        &ws.routines,
-        &graph,
-        &scc,
-        &calls.upgraded_bindings,
-        &field_index,
-        false,
-    );
+        let scc = tarjan_scc(&SccInputGraph {
+            nodes: &graph.nodes,
+            edges_by_from: &scc_adjacency,
+        });
+        // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
+        // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
+        // but `compute_summaries` takes it.
+        let mut field_index: FieldIndex = HashMap::new();
+        for table in &ws.tables {
+            for field in &table.fields {
+                field_index
+                    .entry((table.id.clone(), field.name.to_lowercase()))
+                    .or_insert_with(|| field.id.clone());
+            }
+        }
+        let (core_summaries, _trace, summarize_diagnostics) = compute_summaries(
+            &ws.routines,
+            &graph,
+            &scc,
+            &calls.upgraded_bindings,
+            &field_index,
+            false,
+        );
 
-    // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
-    // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
-    // uncertainties FIRST, then the combined-graph edge uncertainties (converted
-    // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
-    // then sorts by key, matching al-sem's `dedupeUncertainties`.
-    // Harvest the CORE parameter_roles per routine from the SAME recomputed core
-    // summaries (d37/d39 read these as `routine.summary.parameterRoles`). Done in
-    // the same pass so we never recompute the core summaries.
-    let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
-    for r in &ws.routines {
-        if let Some(s) = core_summaries.get(&r.id)
-            && !s.parameter_roles.is_empty()
-        {
-            parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
+        // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
+        // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
+        // uncertainties FIRST, then the combined-graph edge uncertainties (converted
+        // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
+        // then sorts by key, matching al-sem's `dedupeUncertainties`. This pass only
+        // BORROWS `core_summaries` (cloning the uncertainty entries — the union needs
+        // both sources), so `core_summaries` can then be drained for parameter_roles.
+        let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+        for r in &ws.routines {
+            let from_summary: &[Uncertainty] = core_summaries
+                .get(&r.id)
+                .map(|s| s.uncertainties.as_slice())
+                .unwrap_or(&[]);
+            let from_edges: Vec<Uncertainty> = uncertainty_edges_by_from
+                .get(&r.id)
+                .map(|edges| edges.iter().map(Uncertainty::from).collect())
+                .unwrap_or_default();
+            if from_summary.is_empty() && from_edges.is_empty() {
+                continue;
+            }
+            let combined: Vec<Uncertainty> =
+                from_summary.iter().cloned().chain(from_edges).collect();
+            uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
         }
-    }
 
-    let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
-    for r in &ws.routines {
-        let from_summary: &[Uncertainty] = core_summaries
-            .get(&r.id)
-            .map(|s| s.uncertainties.as_slice())
-            .unwrap_or(&[]);
-        let from_edges: Vec<Uncertainty> = uncertainty_edges_by_from
-            .get(&r.id)
-            .map(|edges| edges.iter().map(Uncertainty::from).collect())
-            .unwrap_or_default();
-        if from_summary.is_empty() && from_edges.is_empty() {
-            continue;
+        // Harvest the CORE parameter_roles per routine from the SAME recomputed core
+        // summaries (d37/d39 read these as `routine.summary.parameterRoles`) — draining
+        // `core_summaries` (now dead) by value so each non-empty role vec is MOVED, not
+        // cloned. Membership matches the prior `ws.routines`+lookup form exactly: only
+        // routines present in `core_summaries` with non-empty roles are inserted, and
+        // the result is an order-independent HashMap.
+        let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> =
+            HashMap::new();
+        for (rid, s) in core_summaries {
+            if !s.parameter_roles.is_empty() {
+                parameter_roles_by_routine.insert(rid, s.parameter_roles);
+            }
         }
-        let combined: Vec<Uncertainty> = from_summary.iter().cloned().chain(from_edges).collect();
-        uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
-    }
+        (
+            uncertainties_by_node,
+            parameter_roles_by_routine,
+            summarize_diagnostics,
+        )
+    } else {
+        (HashMap::new(), HashMap::new(), Vec::new())
+    };
 
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
     for r in &ws.routines {
@@ -423,9 +501,10 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
 
     // Expose the resolver's post-upgrade bindings (the `upgradeBindings` side
     // table) keyed by callsite id — the join target for d37/d39 which read
-    // `binding.bindingResolution` / `binding.calleeParameterIsVar`.
+    // `binding.bindingResolution` / `binding.calleeParameterIsVar`. `compute_summaries`
+    // above was the last reader of `calls.upgraded_bindings`, so move it out here.
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
-        calls.upgraded_bindings.clone();
+        std::mem::take(&mut calls.upgraded_bindings);
 
     // R4-F root classifications — keyed by internal RoutineId for d50/d51 lookup.
     let root_classifications_by_routine: HashMap<
@@ -440,6 +519,9 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // R4-F Stage-5b ordering facts — computed lazily on first
     // `get_ordering_facts()` access (see field doc). Keyed by StableRoutineId;
     // d47/d49/d51 read it via `get_ordering_facts()`.
+
+    let fingerprint_index =
+        crate::engine::l5::fingerprint::FingerprintIndex::build(&ws.routines, &ws.objects);
 
     DetectorContext {
         graph,
@@ -469,6 +551,8 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         ordering_source: Some(resolved),
         closed_world_temp_params,
         summarize_diagnostics,
+        fingerprint_index,
+        cross_extension_subscribers,
     }
 }
 
@@ -579,6 +663,15 @@ pub(crate) fn build_detector_context_cross_app(
     let event_flow_indexes =
         build_event_flow_indexes(&base.event_graph, ws_routines, dep_routine_ids);
 
+    // Cross-extension subscriber lookup, from the SAME inputs as `event_flow_indexes`
+    // above — `base.event_graph` + `base.objects` (the merged cross-app event graph
+    // + object set), consistent with how `fingerprint_index` below anchors to `base`.
+    let cross_extension_subscribers =
+        crate::engine::l5::event_flow::build_cross_extension_subscribers(
+            &base.event_graph,
+            &base.objects,
+        );
+
     // Resolved-call-edge-by-callsite index: EMPTY for the cross-app context. The
     // cross-app build does not retain the raw resolver `calls.edges`, and d13/d16/d17
     // read edges directly off `ctx.graph` (the combined graph). Future cross-app
@@ -647,6 +740,16 @@ pub(crate) fn build_detector_context_cross_app(
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
         base.upgraded_bindings.clone();
 
+    // Build the fingerprint index from `base.ws_routines`/`base.objects` — NOT from
+    // the throwaway `merged_workspace_view` (registry.rs's `run_detectors_cross_app`
+    // clones the merged sets into a local `L3Resolved` it builds AFTER calling this
+    // function, so that clone doesn't exist yet at this point and can't be borrowed
+    // from here anyway). `base: &'a R3a5CrossAppBase` is already the ctx's own
+    // borrow source for every other eager index above, so anchoring the fingerprint
+    // index to it too keeps the lifetime honest — the same 'a the whole ctx uses.
+    let fingerprint_index =
+        crate::engine::l5::fingerprint::FingerprintIndex::build(&base.ws_routines, &base.objects);
+
     let app_versions: HashMap<String, String> = base.resolved_app_versions.clone();
     let declared_dependencies: Vec<DeclaredDep> = base
         .declared_dependencies
@@ -685,6 +788,8 @@ pub(crate) fn build_detector_context_cross_app(
         ordering_source: None,
         closed_world_temp_params,
         summarize_diagnostics,
+        fingerprint_index,
+        cross_extension_subscribers,
     }
 }
 
@@ -708,7 +813,7 @@ mod tests {
             primary_app: None,
             infra_diagnostics: Vec::new(),
         };
-        let ctx = build_detector_context(&resolved);
+        let ctx = build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
         assert!(
             ctx.ordering_facts.get().is_none(),
             "ordering facts must not be computed eagerly"

@@ -47,7 +47,6 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d64-api-page-write-surface";
@@ -83,10 +82,10 @@ fn object_anchor(o: &crate::engine::l3::l3_workspace::L3Object) -> SourceAnchor 
 
 pub fn detect_d64(
     resolved: &L3Resolved,
-    _ctx: &DetectorContext,
+    ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_declared_closed = 0u64;

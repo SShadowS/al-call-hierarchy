@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Engine memory/speed Wave 1** — ten byte-stable performance fixes to the
+  analyze substrate, from the 2026-07-17 design review
+  (`docs/superpowers/specs/2026-07-17-engine-memory-speed-findings.md` §7;
+  plan `docs/superpowers/plans/2026-07-18-engine-memory-speed-wave1.md`).
+  Base App 28.0 (8,020 files), 3-detector selection: **DNF at 90 min /
+  35.8 GB peak → 90 s / 6.1 GB**; slice-5400: 236 s / 9.8 GB → 58 s /
+  3.4 GB; DO default run unchanged (~10.7 s, byte-identical output). The
+  pieces: demand-driven detector substrate (detectors declare required
+  substrates — cones/core-summaries/spans/closed-world-temp built only when
+  a selected detector demands them, enforced by a per-detector
+  full-vs-minimal parity test); Jacobi fixed-point overhaul (per-source
+  uncertainty-edge index replacing the per-compose global scan, serde-free
+  structural change keys with an all-pairs fingerprint-equivalence test,
+  `mem::take` snapshots instead of per-iteration deep clones, a
+  round-preserving dirty frontier); transaction spans computed once per
+  seed routine (SpanTemplate); cone/summary/edge payloads moved instead of
+  cloned at the L4→L5 hand-offs; parallel L3 assembly parse (per-file
+  fragments folded in sorted order); parallel workspace-diagnostics
+  re-parse; FingerprintIndex and the cross-extension-subscribers map built
+  once per run in `DetectorContext`; L2→L3 feature payloads moved, not
+  cloned. Golden fixtures byte-stable across every task. (The full-54-detector
+  run at Base-App scale still exceeds an hour — but the bottleneck measurably
+  MOVED out of the substrate into the L5 detector loop itself, a separate
+  follow-up; see the findings doc §7b for the honest full-default row.)
+- **Output-contract note (user-approved decision):** a detector selection
+  that does not demand core summaries no longer emits the L4 summarize
+  cap-hit diagnostics (they are harvested from the gated
+  `compute_summaries` pass). Full/preset/default runs are byte-identical
+  to before.
+
 ## [1.0.0] - 2026-07-18
 
 First release. Highlights of the state this version locks in: whole-program

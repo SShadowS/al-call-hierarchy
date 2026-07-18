@@ -22,7 +22,6 @@ use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::path_walker::{
     PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
 };
@@ -199,7 +198,7 @@ pub fn detect_d46(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     // Pre-build RoutineId → commit operation sites for O(1) terminal lookup.
     let mut commit_sites_by_routine: HashMap<String, Vec<&POperationSite>> = HashMap::new();

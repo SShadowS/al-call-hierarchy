@@ -22,7 +22,6 @@ use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, is_known_temp, op_targets_virtual_system_table};
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d4-repeated-lookup-in-loop";
@@ -42,7 +41,7 @@ pub fn detect_d4(
     let ws = &resolved.workspace;
     // The fingerprint index (routine-by-id + object-by-id) over INTERNAL ids —
     // the fingerprint hashes the internal rootCauseKey + affectedTables.
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_other = 0u64;
