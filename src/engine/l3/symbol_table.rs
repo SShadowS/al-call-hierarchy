@@ -16,6 +16,7 @@
 //! this exact key + sort — locked here in R2a.
 
 use super::l3_workspace::{L3Object, L3PageControl, L3Routine, L3Table};
+use al_syntax::IdentifierFoldExt;
 use std::collections::HashMap;
 
 /// Strip surrounding double-quotes from an interface name for case/quote-
@@ -270,6 +271,40 @@ impl SymbolTable {
     pub fn routine_in_object(&self, object_id: &str, routine_name: &str) -> Option<&L3Routine> {
         let key = format!("{}::{}", object_id, routine_name.to_lowercase());
         self.routine_by_key.get(&key).map(|&i| &self.routines[i])
+    }
+
+    /// Field-aware trigger lookup — the parity counterpart to
+    /// `implicit_trigger_route_applicable` (`program/resolve/applicability.rs`).
+    ///
+    /// Unlike [`routine_in_object`] (name-only, LAST-wins on `${object}::${name}`),
+    /// this enumerates ALL overloads with that name and selects by
+    /// `enclosing_member`:
+    /// - `enclosing_member_lc == None` → an OBJECT-LEVEL trigger only (the routine's
+    ///   own `enclosing_member` must be `None`) — OnInsert / OnModify / OnDelete.
+    /// - `enclosing_member_lc == Some(field_lc)` → the SPECIFIC field's own trigger
+    ///   (a field's OnValidate); the routine's `enclosing_member` must fold-equal
+    ///   `field_lc`. A table declares one `OnValidate` routine PER field, all keyed
+    ///   on the same `${object}::onvalidate` string — so the name-only lookup
+    ///   collapses them to one arbitrary survivor; this selects the right one.
+    ///
+    /// Case-insensitive on both the trigger name and the field name (the caller
+    /// passes `enclosing_member_lc` already stripped/unescaped/folded to match how
+    /// `L3Routine.enclosing_member` is stored — RE-3/RE-4 in `l3_workspace.rs`).
+    pub fn trigger_in_object(
+        &self,
+        object_id: &str,
+        trigger_name: &str,
+        enclosing_member_lc: Option<&str>,
+    ) -> Option<&L3Routine> {
+        self.routines_in_object_by_name(object_id, trigger_name)
+            .into_iter()
+            .find(
+                |r| match (enclosing_member_lc, r.enclosing_member.as_deref()) {
+                    (None, None) => true,
+                    (Some(want), Some(have)) => have.eq_fold_identifier(want),
+                    _ => false,
+                },
+            )
     }
 
     pub fn routines_in_object(&self, object_id: &str) -> Vec<&L3Routine> {
