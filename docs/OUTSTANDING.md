@@ -54,20 +54,27 @@ the bottom, CHANGELOG, and git log.
   `docs/superpowers/specs/2026-07-18-wave2-measurements.md` §2/§3/§3a/§4/
   §4a/§6.
 
-  **Measured Wave-2b queue** (replaces the prior speculative B1/B2/B3
-  ordering): (1) trigger-edge builder parity —
-  `build_implicit_trigger_edges` (`src/engine/l3/implicit_edges.rs:29-70`)
-  needs field-specific OnValidate targeting + the RunTrigger gate, bringing
-  it to parity with the fresh resolver's already-correct
-  `implicit_trigger_route_applicable` (`src/program/resolve/
-  applicability.rs:159-227`) — expected to shatter the 846-member SCC
-  toward ~84-member scale, shrinking BOTH d1's walk graph and the Jacobi
-  block at the root; gated on goldens + a d43/d44/d45 event-detector FP
-  review (advisory-graph semantics change); (2) §7 flow-insensitive
-  d1-walker redesign, only if d1 remains hot after (1) lands and is
-  re-measured; (3) B1 interned id universe + bitsets (output-stable) / B2
-  SCC-shared lazy cones, for the remaining summary mass (8.34M cardinalities
-  measured on one SCC alone). B3 single-substrate unification still needs a
+  **Wave-2b (trigger-edge builder parity) DONE 2026-07-18** — `a640815` +
+  `f9ff427` (field-specific OnValidate targeting + RunTrigger gate in
+  `build_implicit_trigger_edges`, mirroring `implicit_trigger_route_applicable`;
+  TDD incl. quoted-field normalization guards; zero golden movement — the
+  committed corpus never exercised the pathology; DO findings byte-identical
+  with 65 over-approximated edges pruned, telemetry-only). **The performance
+  hypothesis was FALSIFIED**: 8020 max_scc 846→797 (-5.8%), timings flat —
+  the SCC is fused by direct(1067)/method(262) call cycles, and retargeted
+  per-field OnValidate edges stay inside the component. The fix STANDS on
+  precision/parity grounds; its perf claim is dead. Full honest numbers:
+  measurements doc §7 (Wave-2b outcome).
+
+  **Perf queue after Wave-2b** (re-ranked by the falsification): (1) §7
+  flow-insensitive d1-walker redesign — NOW THE TOP LEVER (d1 = the sole
+  full-default blocker at 8020, ~93 min alone; its 500-node DFS per in-loop
+  callsite over the dense 797-SCC is the measured cost; the fix shape is a
+  precomputed per-routine reachability/effect answer instead of per-candidate
+  path walking — needs its own design pass, witness-fidelity is the risk);
+  (2) B1 interned id universe + bitsets (output-stable) / B2 SCC-shared lazy
+  cones, for the summary mass (8.34M cardinalities on one SCC) and the
+  Jacobi plateau. B3 single-substrate unification still needs a
   detector-feature parity harness first. SEQUENCE with the `to_lowercase()`
   census below — B1 rewrites the same `src/engine/l2`-`l5` call sites; do
   the fold-primitive swap as part of (or immediately before) B1's interning

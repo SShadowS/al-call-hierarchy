@@ -37,6 +37,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cap-hit diagnostics (they are harvested from the gated
   `compute_summaries` pass). Full/preset/default runs are byte-identical
   to before.
+- **Advisory implicit-trigger edges: fresh-resolver applicability parity
+  (Wave 2b).** `build_implicit_trigger_edges` now targets the validated
+  FIELD's own OnValidate trigger (never an arbitrary per-table one; no edge
+  when the field has no trigger) and gates Insert/Modify/Delete edges on an
+  explicit `RunTrigger=false`, mirroring
+  `implicit_trigger_route_applicable` (`src/program/resolve/
+  applicability.rs`) with data the L2 walk already captures. Advisory-graph
+  precision fix: zero golden movement (committed fixtures never exercised
+  the field-collapse), DO findings byte-identical with 65 over-approximated
+  edges pruned (telemetry-only). The hoped-for SCC/perf win did NOT
+  materialize (8020 max-SCC 846→797; timings flat) — honestly recorded in
+  the measurements doc §7; the fix ships on precision grounds. Fresh
+  resolver untouched (north-star SHA unaffected).
 - **Engine memory/speed Wave 2a** — two byte-stable detector-loop fixes,
   from the measured root-cause analysis in
   `docs/superpowers/specs/2026-07-18-wave2-measurements.md` §4a/§6 (plan

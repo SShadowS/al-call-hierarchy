@@ -749,3 +749,36 @@ the limiter: T2 made each step cheaper without changing how many steps a
   8020 run (§6's substrate timeline, RSS peak, and byte-identical-JACOBI
   confirmation source from this). Same scratchpad directory as the
   pre-fix log above, same ephemeral-file caveat.
+
+## 7. Wave-2b outcome (trigger-edge builder parity — measured 2026-07-18)
+
+Landed: `a640815` (field-specific OnValidate targeting + RunTrigger gate in
+`build_implicit_trigger_edges`, mirroring `implicit_trigger_route_applicable`
+exactly — the discovered fresh-side mapping gates only explicit
+`RunTrigger=false`; absent maps to Guarded and keeps the edge) + `f9ff427`
+(quoted-field normalization guard tests). Zero golden movement (independently
+triaged: the committed fixture corpus contains only well-formed trigger
+patterns — the pathology is Base-App-density-only). DO findings
+byte-identical; d13/d16 `candidatesConsidered` dropped 7361→7296 (65
+over-approximated edges pruned; telemetry-only).
+
+**The §2 performance hypothesis is FALSIFIED.** 8020 anatomy before→after:
+max_scc 846→797 (−5.8%), intra_edges 2610→2378, implicit-trigger intra
+1077→954. Timings flat: slice-5400 full-default 304.2→292.6 s (noise), 8020
+3-detector 40.9→45.3 s (noise), DO 9.0→9.5 s (noise). The long 8020
+full-default confirmation run was deliberately skipped — with d1's walk graph
+essentially unchanged there is no mechanism for a different outcome.
+
+Why the estimate was wrong: the §2 verdict assumed retargeted per-field
+OnValidate edges would leave the component. They do not — a hub table's field
+triggers live in the same call neighborhoods, so edges RETARGET within the
+SCC rather than exit it, and the component is anyway held together by
+direct (1067) and method (262) call cycles. The field-collapse fix splits the
+per-table super-hub NODE but not the component.
+
+Disposition: the fix STANDS on precision/parity grounds (honest advisory
+graph; per-field witness targeting; 65 pruned even on DO). Its performance
+claim is retired. The perf queue re-ranks: (1) the §7 flow-insensitive
+d1-walker redesign is now the top lever — d1 remains the sole full-default
+blocker at 8020 scale; (2) B1/B2 for summary mass and the Jacobi plateau.
+See OUTSTANDING.md for the re-ranked queue.
