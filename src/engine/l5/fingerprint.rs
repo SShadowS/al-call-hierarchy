@@ -53,6 +53,13 @@ pub struct FingerprintIndex<'a> {
     /// hashing, making the fingerprint edit-/cache-independent. EMPTY only for an
     /// empty model → `fingerprint_of` is then a no-op.
     stable_by_id: HashMap<String, String>,
+    /// The distinct `"{modelInstanceId}/"` prefixes present in `stable_by_id`'s
+    /// keys (each key up to and including its first `/`), longest-first. Internal
+    /// RoutineIds have the fixed shape `"{modelInstanceId}/{64 lowercase hex}"`
+    /// (`engine/ids.rs:192`), so `substitute_stable_ids` finds candidate id
+    /// occurrences by scanning for these prefixes instead of trying every id at
+    /// every byte — turning the per-finding O(F·(R log R + L·R)) scan into O(L).
+    model_instance_prefixes: Vec<String>,
 }
 
 impl<'a> FingerprintIndex<'a> {
@@ -77,10 +84,27 @@ impl<'a> FingerprintIndex<'a> {
             .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
             .collect();
 
+        // Distinct `"{modelInstanceId}/"` prefixes (key up to and including its
+        // first `/`). Deduplicated via BTreeSet, then sorted longest-first so a
+        // longer prefix shadows a shorter one that is its own prefix (mirrors the
+        // old scan's longest-key-first shadowing). In a real run every id shares
+        // one modelInstanceId so this is a single-element vec.
+        let model_instance_prefixes: Vec<String> = {
+            let mut v: Vec<String> = stable_by_id
+                .keys()
+                .filter_map(|k| k.find('/').map(|i| k[..=i].to_string()))
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            v.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+            v
+        };
+
         FingerprintIndex {
             routines_by_id,
             objects_by_id,
             stable_by_id,
+            model_instance_prefixes,
         }
     }
 
@@ -115,41 +139,11 @@ impl<'a> FingerprintIndex<'a> {
         let stable_root_cause_key = if self.stable_by_id.is_empty() {
             finding.root_cause_key.clone()
         } else {
-            // Single left-to-right pass: try each routine id at each position. Sort
-            // by key-length desc so longer keys shadow shorter prefixes (same
-            // invariant as make_stable_finding_id_fn). Internal RoutineIds are
-            // fixed-structure (no id is a substring of another), so non-overlapping
-            // longest-first replacement is deterministic.
-            let mut sorted_entries: Vec<(&String, &String)> = self.stable_by_id.iter().collect();
-            sorted_entries.sort_by(|a, b| {
-                b.0.len()
-                    .cmp(&a.0.len())
-                    .then_with(|| a.0.as_str().cmp(b.0.as_str()))
-            });
-
-            let key = finding.root_cause_key.as_str();
-            let len = key.len(); // byte length
-            let mut out = String::with_capacity(len);
-            let mut pos = 0usize;
-            'outer: while pos < len {
-                for (k, v) in &sorted_entries {
-                    if key[pos..].starts_with(k.as_str()) {
-                        out.push_str(v.as_str());
-                        pos += k.len();
-                        continue 'outer;
-                    }
-                }
-                // Advance by one Unicode scalar value (char-boundary-safe).
-                // Routine ids are ASCII so this is always 1 byte in practice; the
-                // &str slice approach is safe even for non-ASCII rootCauseKeys.
-                let ch = key[pos..]
-                    .chars()
-                    .next()
-                    .expect("valid UTF-8 non-empty slice");
-                out.push(ch);
-                pos += ch.len_utf8();
-            }
-            out
+            substitute_stable_ids(
+                finding.root_cause_key.as_str(),
+                &self.stable_by_id,
+                &self.model_instance_prefixes,
+            )
         };
 
         let parts = [
@@ -162,6 +156,60 @@ impl<'a> FingerprintIndex<'a> {
         let joined = parts.join("|");
         sha256_hex(&joined)[..16].to_string()
     }
+}
+
+/// Replace every stable_by_id KEY occurring in `key` with its value, scanning
+/// structurally instead of trying every id at every byte. Ids have the fixed
+/// shape "{modelInstanceId}/{64 lowercase hex}" (engine/ids.rs:192), so we find
+/// candidate occurrences by scanning for each known "{mid}/" prefix and
+/// checking the following 64 bytes for lowercase-hex; the candidate substring
+/// is then a single HashMap probe. A candidate that misses the map is copied
+/// verbatim (identical to the old scan's behavior for empty-hash routines).
+///
+/// This is byte-for-byte equivalent to the original try-every-id scan for every
+/// id the engine emits (all ids share one modelInstanceId, so all keys have the
+/// same length and at most one can match at any position) — pinned by the
+/// `structural_substitution_matches_scan_oracle` equivalence test.
+fn substitute_stable_ids(
+    key: &str,
+    stable_by_id: &HashMap<String, String>,
+    prefixes: &[String],
+) -> String {
+    let bytes = key.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len);
+    let mut pos = 0usize;
+    'outer: while pos < len {
+        for p in prefixes {
+            let plen = p.len();
+            // Bounds check (`pos + plen + 64 <= len`) short-circuits BEFORE the hex
+            // slice, so the slice below never panics. Only lowercase a-f is hex here
+            // (real ids are lowercase — `is_ascii_hexdigit` would wrongly accept A-F).
+            if key[pos..].starts_with(p.as_str())
+                && pos + plen + 64 <= len
+                && bytes[pos + plen..pos + plen + 64]
+                    .iter()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
+            {
+                let candidate = &key[pos..pos + plen + 64];
+                if let Some(stable) = stable_by_id.get(candidate) {
+                    out.push_str(stable);
+                    pos += plen + 64;
+                    continue 'outer;
+                }
+            }
+        }
+        // No id starts here — copy one Unicode scalar value (char-boundary-safe;
+        // ids are ASCII, so this is 1 byte in practice, but rootCauseKeys may
+        // carry non-ASCII object names).
+        let ch = key[pos..]
+            .chars()
+            .next()
+            .expect("valid UTF-8 non-empty slice");
+        out.push(ch);
+        pos += ch.len_utf8();
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -333,11 +381,15 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn dep_id_in_root_cause_key_is_substituted_with_stable_id() {
-        let internal_dep_id = "r0/dep:abc123/sig456hash";
+        // Internal RoutineIds have the fixed shape "{modelInstanceId}/{64 hex}"
+        // (engine/ids.rs:192) — the structural substitution keys on exactly that
+        // shape, so the fixture id must be real-shaped (a bare "r0/dep:..." would
+        // never be a real key and so would never be substituted, old scan or new).
+        let internal_dep_id = format!("r0/{}", "0123456789abcdef".repeat(4));
         let stable_dep_id =
             "app:Codeunit:99#aabbccdd0011223344556677889900aabbccdd0011223344556677889900aabb";
 
-        let mut r_dep = minimal_routine(internal_dep_id, "dep/Codeunit/99", "DepProc");
+        let mut r_dep = minimal_routine(&internal_dep_id, "dep/Codeunit/99", "DepProc");
         r_dep.stable_routine_id = stable_dep_id.to_string();
         let o = minimal_object("dep/Codeunit/99", "Codeunit", 99);
 
@@ -371,14 +423,16 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn source_id_in_root_cause_key_is_substituted_with_stable_id() {
-        let source_id = "r0/ws:src/caller.al/hash123";
+        // Real-shaped ids ("{modelInstanceId}/{64 hex}", engine/ids.rs:192) — the
+        // structural substitution keys on that shape (see oracle 2's note).
+        let source_id = format!("r0/{}", "fedcba9876543210".repeat(4));
         let source_stable = "app:Codeunit:1#ws_stable_hash";
-        let dep_id = "r0/dep:abc/hash456";
+        let dep_id = format!("r0/{}", "0011223344556677".repeat(4));
 
-        let mut r_dep = minimal_routine(dep_id, "dep/Codeunit/99", "DepProc");
+        let mut r_dep = minimal_routine(&dep_id, "dep/Codeunit/99", "DepProc");
         r_dep.stable_routine_id = "dep_stable_id".to_string();
 
-        let mut r_ws = minimal_routine(source_id, "ws/Codeunit/1", "WsProc");
+        let mut r_ws = minimal_routine(&source_id, "ws/Codeunit/1", "WsProc");
         r_ws.stable_routine_id = source_stable.to_string();
         let o_ws = minimal_object("ws/Codeunit/1", "Codeunit", 1);
         let o_dep = minimal_object("dep/Codeunit/99", "Codeunit", 99);
@@ -389,7 +443,7 @@ mod tests {
 
         // rootCauseKey embeds a SOURCE id → now stabilized (edit-survival fix).
         let root_cause_key = format!("d16/{source_id}");
-        let finding = dummy_finding("d16-obsolete-routine-call", &root_cause_key, source_id);
+        let finding = dummy_finding("d16-obsolete-routine-call", &root_cause_key, &source_id);
         let fp = idx.fingerprint_of(&finding);
 
         // The source id is replaced with its stable form before hashing.
@@ -429,5 +483,99 @@ mod tests {
             fp, expected,
             "routine with empty sig hash must not be substituted"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Equivalence oracle — the structural `substitute_stable_ids` must produce
+    // byte-identical output to the ORIGINAL try-every-id-at-every-byte scan for
+    // every id shape the real engine emits. `oracle_substitute` is a verbatim
+    // copy of the pre-change scan (fingerprint.rs :118-152, the old `else`
+    // branch body) so this test pins the new fast path to the old slow one.
+    // -----------------------------------------------------------------------
+
+    /// The ORIGINAL substitution scan (pre-change), extracted verbatim as a
+    /// free oracle: sort ids longest-first, then at each byte try every id via
+    /// `starts_with`. Kept ONLY as the equivalence reference for the test below.
+    fn oracle_substitute(key: &str, stable_by_id: &HashMap<String, String>) -> String {
+        let mut sorted_entries: Vec<(&String, &String)> = stable_by_id.iter().collect();
+        sorted_entries.sort_by(|a, b| {
+            b.0.len()
+                .cmp(&a.0.len())
+                .then_with(|| a.0.as_str().cmp(b.0.as_str()))
+        });
+
+        let len = key.len(); // byte length
+        let mut out = String::with_capacity(len);
+        let mut pos = 0usize;
+        'outer: while pos < len {
+            for (k, v) in &sorted_entries {
+                if key[pos..].starts_with(k.as_str()) {
+                    out.push_str(v.as_str());
+                    pos += k.len();
+                    continue 'outer;
+                }
+            }
+            let ch = key[pos..]
+                .chars()
+                .next()
+                .expect("valid UTF-8 non-empty slice");
+            out.push(ch);
+            pos += ch.len_utf8();
+        }
+        out
+    }
+
+    #[test]
+    fn structural_substitution_matches_scan_oracle() {
+        // Build a stable_by_id with ids of the REAL shape: "{mid}/{64-hex}".
+        let mid = "r0"; // also test a 16-char mid in a second map
+        let mk = |h: &str| format!("{mid}/{}", h.repeat(64)); // "{mid}/{64 hex}"
+        let id_a = mk("a");
+        let id_b = mk("b");
+        let id_absent = mk("c"); // id-shaped but NOT in the map (empty-hash routine)
+        let mut map: HashMap<String, String> = HashMap::new();
+        map.insert(id_a.clone(), "STABLE_A".to_string());
+        map.insert(id_b.clone(), "STABLE_B".to_string());
+
+        let keys = [
+            format!("op/{id_a}/cs1"),                // embedded with suffix
+            format!("{id_a}|{id_b}"),                // two ids
+            format!("{id_absent}/op3"),              // id-shaped, absent -> verbatim
+            format!("prefix {id_a}{id_b} adjacent"), // adjacent ids
+            "no ids at all".to_string(),
+            format!("{mid}/short-not-hex"), // prefix but not 64-hex
+            id_a.clone(),                   // exact
+        ];
+        for k in &keys {
+            assert_eq!(
+                substitute_stable_ids(k, &map, &["r0/".to_string()]),
+                oracle_substitute(k, &map),
+                "divergence on key: {k}"
+            );
+        }
+
+        // Second map with a REAL 16-hex modelInstanceId (production shape) to
+        // exercise a longer prefix than "r0/".
+        let mid16 = "a764b56fa105f014";
+        let mk16 = |h: &str| format!("{mid16}/{}", h.repeat(64));
+        let id_p = mk16("d");
+        let id_q = mk16("e");
+        let mut map16: HashMap<String, String> = HashMap::new();
+        map16.insert(id_p.clone(), "STABLE_P".to_string());
+        map16.insert(id_q.clone(), "STABLE_Q".to_string());
+        let prefixes16 = [format!("{mid16}/")];
+        let keys16 = [
+            format!("d19/{id_p}/loop2"),
+            format!("{id_p}{id_q}"),
+            format!("{mid16}/short"),
+            "plain".to_string(),
+        ];
+        for k in &keys16 {
+            assert_eq!(
+                substitute_stable_ids(k, &map16, &prefixes16),
+                oracle_substitute(k, &map16),
+                "divergence (16-hex mid) on key: {k}"
+            );
+        }
     }
 }
