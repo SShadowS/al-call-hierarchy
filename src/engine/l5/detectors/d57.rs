@@ -37,10 +37,10 @@ const CLEAR_METHODS: &[&str] = &[
 
 pub fn detect_d57(
     resolved: &L3Resolved,
-    _ctx: &DetectorContext,
+    ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_cleared_in_object = 0u64;
@@ -135,7 +135,7 @@ pub fn detect_d57(
                 continue;
             }
             findings.push(build_finding(
-                &fp_index,
+                fp_index,
                 routine,
                 &cs.id,
                 anchor_of(&cs.source_anchor, routine),
@@ -176,7 +176,7 @@ pub fn detect_d57(
                 continue;
             }
             findings.push(build_finding(
-                &fp_index,
+                fp_index,
                 routine,
                 &op.id,
                 anchor_of(&op.source_anchor, routine),

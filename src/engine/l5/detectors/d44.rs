@@ -22,7 +22,6 @@ use crate::engine::l5::event_flow::{build_cross_extension_subscribers, event_kin
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::{anchor_of, group_and_cap};
@@ -45,7 +44,7 @@ pub fn detect_d44(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let ix = &ctx.event_flow_indexes;
 
     let mut findings: Vec<Finding> = Vec::new();

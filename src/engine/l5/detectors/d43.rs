@@ -37,7 +37,6 @@ use crate::engine::l5::event_flow::{
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 
 use super::anchor_of;
 
@@ -338,7 +337,7 @@ pub fn detect_d43(
     use crate::engine::l5::registry::{DetectorOutput, DetectorStats};
 
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates = 0usize;

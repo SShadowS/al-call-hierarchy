@@ -42,7 +42,6 @@ use crate::engine::l5::detectors::{
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::merge_by_terminal;
 use crate::engine::l5::path_walker::{
@@ -246,7 +245,7 @@ pub fn detect_d2(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     // model.routines.filter(r.kind === "event-publisher").map(r.id).
     let publisher_routine_ids: HashSet<&str> = ws

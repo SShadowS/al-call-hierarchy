@@ -26,7 +26,6 @@ use crate::engine::l5::detectors::{
     anchor_of, is_platform_loaded_trigger_rec, normalize_load_field_arg, primary_key_field_names_lc,
 };
 use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d3-missing-setloadfields";
@@ -155,7 +154,7 @@ pub fn detect_d3(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
     let mut findings: Vec<Finding> = Vec::new();
     let mut candidates_considered = 0usize;
     let mut skipped_parse_incomplete = 0u64;

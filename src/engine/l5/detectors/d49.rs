@@ -118,7 +118,7 @@ pub fn detect_d49(
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let ws = &resolved.workspace;
-    let fp = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp = &ctx.fingerprint_index;
     let ordering_facts = ctx.get_ordering_facts();
 
     let mut findings: Vec<Finding> = Vec::new();
@@ -141,7 +141,7 @@ pub fn detect_d49(
             let Some(sev) = to_severity(graded.grade) else {
                 continue;
             };
-            findings.push(build_d49_finding(&fp, routine, of, fact, sev));
+            findings.push(build_d49_finding(fp, routine, of, fact, sev));
         }
     }
 

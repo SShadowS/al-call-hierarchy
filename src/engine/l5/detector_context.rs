@@ -172,6 +172,10 @@ pub struct DetectorContext<'a> {
     /// common case (additive: `run_detectors` folds this into the "summarize"
     /// slot of the analyze/detect diagnostics envelope).
     pub summarize_diagnostics: Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
+    /// The shared finding-fingerprint index (routine/object id maps + the
+    /// internal→stable routine-id substitution map). Built ONCE per run —
+    /// previously every detector rebuilt it (54 × ~2 String clones per routine).
+    pub fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex<'a>,
 }
 
 impl DetectorContext<'_> {
@@ -471,6 +475,9 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // `get_ordering_facts()` access (see field doc). Keyed by StableRoutineId;
     // d47/d49/d51 read it via `get_ordering_facts()`.
 
+    let fingerprint_index =
+        crate::engine::l5::fingerprint::FingerprintIndex::build(&ws.routines, &ws.objects);
+
     DetectorContext {
         graph,
         event_graph,
@@ -499,6 +506,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         ordering_source: Some(resolved),
         closed_world_temp_params,
         summarize_diagnostics,
+        fingerprint_index,
     }
 }
 
@@ -677,6 +685,16 @@ pub(crate) fn build_detector_context_cross_app(
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
         base.upgraded_bindings.clone();
 
+    // Build the fingerprint index from `base.ws_routines`/`base.objects` — NOT from
+    // the throwaway `merged_workspace_view` (registry.rs's `run_detectors_cross_app`
+    // clones the merged sets into a local `L3Resolved` it builds AFTER calling this
+    // function, so that clone doesn't exist yet at this point and can't be borrowed
+    // from here anyway). `base: &'a R3a5CrossAppBase` is already the ctx's own
+    // borrow source for every other eager index above, so anchoring the fingerprint
+    // index to it too keeps the lifetime honest — the same 'a the whole ctx uses.
+    let fingerprint_index =
+        crate::engine::l5::fingerprint::FingerprintIndex::build(&base.ws_routines, &base.objects);
+
     let app_versions: HashMap<String, String> = base.resolved_app_versions.clone();
     let declared_dependencies: Vec<DeclaredDep> = base
         .declared_dependencies
@@ -715,6 +733,7 @@ pub(crate) fn build_detector_context_cross_app(
         ordering_source: None,
         closed_world_temp_params,
         summarize_diagnostics,
+        fingerprint_index,
     }
 }
 

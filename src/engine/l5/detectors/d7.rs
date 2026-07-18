@@ -29,7 +29,6 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
-use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d7-recursive-event-expansion";
@@ -136,11 +135,10 @@ fn routine_anchor(a: &PAnchor, routine: &L3Routine) -> SourceAnchor {
 }
 
 pub fn detect_d7(
-    resolved: &L3Resolved,
+    _resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
-    let ws = &resolved.workspace;
-    let fp_index = FingerprintIndex::build(&ws.routines, &ws.objects);
+    let fp_index = &ctx.fingerprint_index;
 
     let graph = &ctx.graph;
     let sccs: Vec<Vec<String>> = tarjan_scc(&graph.nodes, &graph.edges_by_from)
