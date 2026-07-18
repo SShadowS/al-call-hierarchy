@@ -644,6 +644,86 @@ pub fn stable_summary_fingerprint(s: &PRoutineSummaryCore) -> String {
     serde_json::to_string(&arr).unwrap_or_default()
 }
 
+/// The EXACT information [`stable_summary_fingerprint`] encodes, as a comparable
+/// struct instead of a serde_json string. Equality of two `SummaryChangeKey`s is
+/// equivalent to equality of the two fingerprint strings: the fingerprint is
+/// `JSON.stringify` over these same components in the same order, and JSON
+/// serialization of (arrays of strings + bool + numbers) is injective. This lets
+/// the JACOBI fixed-point compare change keys directly instead of allocating and
+/// comparing a whole-summary JSON string per member per round, WITHOUT changing
+/// the iteration trajectory. The equivalence is unit-tested exhaustively in
+/// `change_key_equality_iff_fingerprint_equality`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryChangeKey {
+    /// "{effect_key}:{via}" per db effect, in order.
+    pub db_effects: Vec<String>,
+    pub has_unresolved_calls: bool,
+    /// `p_uncertainty_key` per uncertainty, in order.
+    pub uncertainties: Vec<String>,
+    /// The same 14 per-role fields the fingerprint encodes, stringified in the
+    /// fingerprint's exact order (the two FieldList fields via `field_list_key`).
+    pub parameter_roles: Vec<Vec<String>>,
+}
+
+/// Build the [`SummaryChangeKey`] for a projected summary. Its equality relation
+/// is byte-identical to [`stable_summary_fingerprint`]'s.
+pub fn summary_change_key(s: &PRoutineSummaryCore) -> SummaryChangeKey {
+    // Mirror `stable_summary_fingerprint`'s `field_list_fp` EXACTLY, then
+    // serialize the folded value the way the fingerprint's `serde_json::to_string`
+    // does. Emitting the SERIALIZED form (a quoted JSON string) rather than a bare
+    // join is load-bearing: `field_list_fp` folds an array to `Value::String(join)`
+    // and serde quotes ALL strings, so the fingerprint does NOT distinguish
+    // `Array(["unknown"])` from `String("unknown")` (both serialize to `"unknown"`).
+    // The change key must reproduce that collision — a stricter key would flag a
+    // phantom change and lengthen a recursive SCC's fixed-point trajectory (the
+    // cap-hit path is load-bearing), so the two can NEVER be allowed to diverge.
+    fn field_list_key(v: &serde_json::Value) -> String {
+        let folded = if let serde_json::Value::Array(arr) = v {
+            let joined: String = arr
+                .iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
+            serde_json::Value::String(joined)
+        } else {
+            v.clone()
+        };
+        serde_json::to_string(&folded).unwrap_or_default()
+    }
+
+    SummaryChangeKey {
+        db_effects: s
+            .db_effects
+            .iter()
+            .map(|e| format!("{}:{}", e.effect_key, e.via))
+            .collect(),
+        has_unresolved_calls: s.has_unresolved_calls,
+        uncertainties: s.uncertainties.iter().map(p_uncertainty_key).collect(),
+        parameter_roles: s
+            .parameter_roles
+            .iter()
+            .map(|r| {
+                vec![
+                    r.parameter_index.to_string(),
+                    r.loads_from_db_param.clone(),
+                    r.initialises_param.clone(),
+                    r.persists_current_record.clone(),
+                    r.set_based_db_writes.clone(),
+                    r.validates_param.clone(),
+                    r.copies_into_param.clone(),
+                    r.resets_filters_on_param.clone(),
+                    r.mutates_param.clone(),
+                    r.requires_loaded_at_entry.clone(),
+                    r.mutates_before_load.clone(),
+                    field_list_key(&r.required_loaded_fields_at_entry),
+                    r.dirty_at_exit.clone(),
+                    field_list_key(&r.current_loaded_fields_at_exit),
+                ]
+            })
+            .collect(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Top-level projection entry points.
 // ---------------------------------------------------------------------------
@@ -797,4 +877,211 @@ pub fn project_raw_scc_traces(
         .collect();
     t.sort_by(|a, b| a.scc_id.cmp(&b.scc_id));
     t
+}
+
+#[cfg(test)]
+mod change_key_tests {
+    use super::*;
+
+    fn empty_core() -> PRoutineSummaryCore {
+        PRoutineSummaryCore {
+            routine_id: "r".to_string(),
+            db_effects: Vec::new(),
+            uncertainties: Vec::new(),
+            parameter_roles: Vec::new(),
+            in_recursive_cycle: false,
+            has_unresolved_calls: false,
+        }
+    }
+
+    fn effect(effect_key: &str, via: &str) -> PDbEffect {
+        PDbEffect {
+            effect_key: effect_key.to_string(),
+            op: "read".to_string(),
+            table_id: "t".to_string(),
+            operation_id: "o".to_string(),
+            temp_state: PDbEffectTempState::Unknown,
+            via: via.to_string(),
+        }
+    }
+
+    fn uncertainty(kind: &str, callsite: &str) -> PUncertainty {
+        PUncertainty {
+            kind: kind.to_string(),
+            callsite_id: Some(callsite.to_string()),
+            operation_id: None,
+            routine_id: None,
+            interface_name: None,
+        }
+    }
+
+    fn arr(items: &[&str]) -> serde_json::Value {
+        serde_json::Value::Array(
+            items
+                .iter()
+                .map(|s| serde_json::Value::String(s.to_string()))
+                .collect(),
+        )
+    }
+
+    fn default_role() -> PRecordRoleSummary {
+        PRecordRoleSummary {
+            parameter_index: 0,
+            table_id: "t".to_string(),
+            reads_fields: serde_json::Value::String("unknown".to_string()),
+            writes_fields: serde_json::Value::String("unknown".to_string()),
+            may_reset_filters: false,
+            may_change_load_fields: false,
+            may_assign_record: false,
+            may_use_record_ref: false,
+            requires_loaded_at_entry: "no".to_string(),
+            required_loaded_fields_at_entry: serde_json::Value::String("unknown".to_string()),
+            mutates_before_load: "no".to_string(),
+            persists_current_record: "no".to_string(),
+            set_based_db_writes: "no".to_string(),
+            validates_param: "no".to_string(),
+            copies_into_param: "no".to_string(),
+            resets_filters_on_param: "no".to_string(),
+            dirty_at_exit: "no".to_string(),
+            current_loaded_fields_at_exit: serde_json::Value::String("unknown".to_string()),
+            mutates_param: "no".to_string(),
+            loads_from_db_param: "no".to_string(),
+            initialises_param: "no".to_string(),
+        }
+    }
+
+    fn role_with_entry(v: serde_json::Value) -> PRecordRoleSummary {
+        PRecordRoleSummary {
+            required_loaded_fields_at_entry: v,
+            ..default_role()
+        }
+    }
+
+    /// The binding contract: `SummaryChangeKey` equality IFF stable-fingerprint
+    /// string equality, over a fixture set exercising every component. Proves the
+    /// struct key is a faithful drop-in for the JSON fingerprint in the JACOBI
+    /// change test — same equality relation, INCLUDING the fingerprint's own
+    /// Array/String fold collisions (a stricter key would change the trajectory).
+    #[test]
+    fn change_key_equality_iff_fingerprint_equality() {
+        let mut fixtures: Vec<PRoutineSummaryCore> = Vec::new();
+
+        // 1. empty / default core.
+        fixtures.push(empty_core());
+
+        // 2. one effect `k1:direct`.
+        let mut c = empty_core();
+        c.db_effects = vec![effect("k1", "direct")];
+        fixtures.push(c);
+
+        // 3. same effect key, different `via`.
+        let mut c = empty_core();
+        c.db_effects = vec![effect("k1", "indirect")];
+        fixtures.push(c);
+
+        // 4. `has_unresolved_calls` flipped.
+        let mut c = empty_core();
+        c.has_unresolved_calls = true;
+        fixtures.push(c);
+
+        // 5. one uncertainty.
+        let mut c = empty_core();
+        c.uncertainties = vec![uncertainty("opaque-callee", "cs1")];
+        fixtures.push(c);
+
+        // 6. two uncertainties in order [cs1, cs2].
+        let mut c = empty_core();
+        c.uncertainties = vec![
+            uncertainty("opaque-callee", "cs1"),
+            uncertainty("opaque-callee", "cs2"),
+        ];
+        fixtures.push(c);
+
+        // 7. two uncertainties swapped [cs2, cs1] — fingerprint order matters, so
+        //    the key must too.
+        let mut c = empty_core();
+        c.uncertainties = vec![
+            uncertainty("opaque-callee", "cs2"),
+            uncertainty("opaque-callee", "cs1"),
+        ];
+        fixtures.push(c);
+
+        // 8. param role, required_loaded_fields_at_entry = Array(["a","b"]).
+        let mut c = empty_core();
+        c.parameter_roles = vec![role_with_entry(arr(&["a", "b"]))];
+        fixtures.push(c);
+
+        // 9. param role, required_loaded_fields_at_entry = String("a,b"). The
+        //    fingerprint folds BOTH #8 and #9 to Value::String("a,b") and treats
+        //    them as EQUAL; the change key MUST preserve that collision (a stricter
+        //    key would change the JACOBI trajectory).
+        let mut c = empty_core();
+        c.parameter_roles = vec![role_with_entry(serde_json::Value::String(
+            "a,b".to_string(),
+        ))];
+        fixtures.push(c);
+
+        // 10. exact clone of #2 (identical → equal both ways).
+        let c10 = fixtures[1].clone();
+        fixtures.push(c10);
+
+        // 11. collision probe: Array(["unknown"]) ...
+        let mut c = empty_core();
+        c.parameter_roles = vec![role_with_entry(arr(&["unknown"]))];
+        fixtures.push(c);
+
+        // 12. ... vs String("unknown") — the fingerprint collides them; key must too.
+        let mut c = empty_core();
+        c.parameter_roles = vec![role_with_entry(serde_json::Value::String(
+            "unknown".to_string(),
+        ))];
+        fixtures.push(c);
+
+        // 13. routine_id differs only — excluded from both fingerprint AND key.
+        let mut c = empty_core();
+        c.routine_id = "different-id".to_string();
+        fixtures.push(c);
+
+        // 14. in_recursive_cycle differs only — excluded from both.
+        let mut c = empty_core();
+        c.in_recursive_cycle = true;
+        fixtures.push(c);
+
+        // The contract, over every ordered pair (reflexive + cross).
+        for (i, a) in fixtures.iter().enumerate() {
+            for (j, b) in fixtures.iter().enumerate() {
+                let key_eq = summary_change_key(a) == summary_change_key(b);
+                let fp_eq = stable_summary_fingerprint(a) == stable_summary_fingerprint(b);
+                assert_eq!(
+                    key_eq, fp_eq,
+                    "equivalence broken at ({i},{j}): key_eq={key_eq} fp_eq={fp_eq}\n a={a:?}\n b={b:?}"
+                );
+            }
+        }
+
+        // Pin the specific fold collisions the correct `field_list_key` protects:
+        // the Array/String pairs compare EQUAL both ways (NOT unequal).
+        assert_eq!(
+            summary_change_key(&fixtures[7]),
+            summary_change_key(&fixtures[8])
+        );
+        assert_eq!(
+            stable_summary_fingerprint(&fixtures[7]),
+            stable_summary_fingerprint(&fixtures[8])
+        );
+        assert_eq!(
+            summary_change_key(&fixtures[10]),
+            summary_change_key(&fixtures[11])
+        );
+        assert_eq!(
+            stable_summary_fingerprint(&fixtures[10]),
+            stable_summary_fingerprint(&fixtures[11])
+        );
+
+        // ... and a genuine difference IS detected (swapped uncertainty order).
+        assert_ne!(
+            summary_change_key(&fixtures[5]),
+            summary_change_key(&fixtures[6])
+        );
+    }
 }

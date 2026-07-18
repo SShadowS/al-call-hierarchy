@@ -25,8 +25,8 @@ use super::effect_lattice::{
 };
 use super::scc::SccResult;
 use super::summary::{
-    DbEffect, FieldList, PRoutineSummaryCore, RecordRoleSummary, RoutineSummary, TempState,
-    Uncertainty, project_routine_summary_core_internal, stable_summary_fingerprint,
+    DbEffect, FieldList, PRoutineSummaryCore, RecordRoleSummary, RoutineSummary, SummaryChangeKey,
+    TempState, Uncertainty, project_routine_summary_core_internal, summary_change_key,
 };
 use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
@@ -793,18 +793,6 @@ fn uncertainty_key(u: &Uncertainty) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Summary fingerprint (internal ids, used for fixed-point change detection).
-// ---------------------------------------------------------------------------
-
-/// Internal-id fingerprint for change detection inside the JACOBI loop.
-/// Uses the PROJECTED summary's stable-fingerprint function because the
-/// routine ids in `PRoutineSummaryCore` are already stable (the stable map
-/// is fixed across iterations).
-fn summary_fingerprint(s: &PRoutineSummaryCore) -> String {
-    stable_summary_fingerprint(s)
-}
-
-// ---------------------------------------------------------------------------
 // compute_summaries — the main entry point.
 // ---------------------------------------------------------------------------
 
@@ -1076,6 +1064,51 @@ pub fn run_one_scc(
         }
     }
 
+    // Per-member cached change key of the CURRENT in_progress value (the stable-id
+    // projection — the SAME comparison surface the JSON fingerprint used). Seeded
+    // from the base summaries so the first round compares composed-vs-base exactly
+    // as the old code's `fp(snapshot == base)` did; refreshed only when a member's
+    // recomputed key differs, so a member's cached key is always the key of its
+    // value in the current `in_progress`.
+    let mut key_cache: HashMap<String, SummaryChangeKey> = HashMap::new();
+    for id in &scc_entry.members {
+        if leaf_summaries.contains_key(id) {
+            continue;
+        }
+        if let Some(s) = in_progress.get(id) {
+            let proj = project_summary_to_stable(id, s, ctx.stable_map);
+            key_cache.insert(id.clone(), summary_change_key(&proj));
+        }
+    }
+
+    // Intra-SCC dependents: for each member m, the members that CALL it — so when
+    // m's summary changes in a round, its callers are dirtied for the next round.
+    // `compose_routine` reads callee summaries EXCLUSIVELY through
+    // `edges_by_from[from].to` (the main fold, the cross-call parameterRoles pass,
+    // AND the cfg walker all resolve callees that way), so these edges capture
+    // every intra-SCC data dependency the transfer function has.
+    let member_set: std::collections::HashSet<&String> = scc_entry.members.iter().collect();
+    let mut dependents: HashMap<&String, Vec<&String>> = HashMap::new();
+    for m in &scc_entry.members {
+        if let Some(edges) = ctx.graph.edges_by_from.get(m) {
+            for e in edges {
+                if member_set.contains(&e.to) {
+                    dependents.entry(&e.to).or_default().push(m);
+                }
+            }
+        }
+    }
+
+    // Dirty frontier. First round: every non-leaf member is dirty ⇒ identical to
+    // the old full first pass. Thereafter only the callers of a member that
+    // actually changed are dirty (see the round loop).
+    let mut dirty: std::collections::BTreeSet<String> = scc_entry
+        .members
+        .iter()
+        .filter(|m| !leaf_summaries.contains_key(*m))
+        .cloned()
+        .collect();
+
     let mut iterations = 0usize;
     let mut changed = true;
     let mut scc_passes: Vec<RawSccTracePass> = Vec::new();
@@ -1088,17 +1121,31 @@ pub fn run_one_scc(
         changed = false;
         iterations += 1;
 
-        // JACOBI: freeze the prior-pass snapshot (deep copy).
+        // JACOBI: freeze the prior-pass state WITHOUT a deep clone. `mem::take`
+        // moves the settled map out as the frozen read snapshot; recomputed members
+        // accumulate in `next_pass`; unchanged members are carried back by move
+        // after the pass. (ACC_JACOBI_CLONE now measures this take + the carry-over
+        // merge below — the work the per-round deep clone used to do.)
         let __probe_t = std::time::Instant::now();
-        let snapshot: HashMap<String, RoutineSummary> = in_progress.clone();
+        let snapshot: HashMap<String, RoutineSummary> = std::mem::take(&mut in_progress);
         crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_CLONE, __probe_t.elapsed());
 
         // Accumulate this pass's new summaries separately so we don't read
         // our own writes during this pass (JACOBI, not Gauss-Seidel).
         let mut next_pass: HashMap<String, RoutineSummary> = HashMap::new();
+        // Members to recompute NEXT round: the callers of every member that
+        // changes THIS round.
+        let mut next_dirty: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
         for id in &scc_entry.members {
             if leaf_summaries.contains_key(id) {
+                continue;
+            }
+            if !dirty.contains(id) {
+                // None of this member's callees changed in the prior round, so
+                // `compose_routine(m, snapshot)` is a deterministic function of the
+                // same inputs it saw last round ⇒ its output is bit-identical.
+                // Skip the recompute; the value is carried over in the merge below.
                 continue;
             }
             let routine = match ctx.routines_by_id.get(id) {
@@ -1119,23 +1166,38 @@ pub fn run_one_scc(
             crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_COMPOSE, __probe_t.elapsed());
 
             let __probe_t = std::time::Instant::now();
-            let prev_proj = snapshot
-                .get(id)
-                .map(|s| project_summary_to_stable(id, s, ctx.stable_map));
             let next_proj = project_summary_to_stable(id, &next, ctx.stable_map);
-
-            let fp_prev = prev_proj.as_ref().map(summary_fingerprint);
-            let fp_next = summary_fingerprint(&next_proj);
+            let next_key = summary_change_key(&next_proj);
             crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_FP, __probe_t.elapsed());
 
-            if fp_prev.as_deref() != Some(&fp_next) {
+            // The cached key holds this member's prior-round value (== `snapshot`'s,
+            // by the invariant), so this comparison is identical to the old
+            // `fp(snapshot[id]) != fp(next)`.
+            let member_changed = key_cache.get(id) != Some(&next_key);
+            if member_changed {
                 changed = true;
+                key_cache.insert(id.clone(), next_key);
+                if let Some(deps) = dependents.get(id) {
+                    for dep in deps {
+                        next_dirty.insert((*dep).clone());
+                    }
+                }
             }
             next_pass.insert(id.clone(), next);
         }
 
-        // Swap: in_progress becomes the new-pass map.
-        in_progress = next_pass;
+        // Carry over members not recomputed this round (move from the frozen
+        // snapshot); recomputed members overwrite their prior value. The result is
+        // bit-identical to the old full-Jacobi `in_progress = next_pass`: a skipped
+        // member's recompute would have produced exactly the value carried here.
+        let __probe_t = std::time::Instant::now();
+        let mut merged = snapshot;
+        for (k, v) in next_pass {
+            merged.insert(k, v);
+        }
+        in_progress = merged;
+        dirty = next_dirty;
+        crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_CLONE, __probe_t.elapsed());
 
         // Trace hook (opt-in).
         if collect_trace {
