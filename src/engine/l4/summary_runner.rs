@@ -1196,6 +1196,24 @@ pub fn run_one_scc(
             merged.insert(k, v);
         }
         in_progress = merged;
+        // Wave-2 M1 telemetry: per-pass frontier sizes for big SCCs (env-gated).
+        if scc_entry.members.len() >= 100
+            && std::env::var("ALSEM_STAGE_TIMING").as_deref() == Ok("1")
+        {
+            let total_summary_bytes: usize = in_progress
+                .values()
+                .map(|s| s.db_effects.len() + s.uncertainties.len() + s.parameter_roles.len())
+                .sum();
+            eprintln!(
+                "JACOBI scc_members={} pass={} dirty_in={} dirty_out={} changed={} sum_cardinalities={}",
+                scc_entry.members.len(),
+                iterations,
+                dirty.len(),
+                next_dirty.len(),
+                changed,
+                total_summary_bytes
+            );
+        }
         dirty = next_dirty;
         crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_CLONE, __probe_t.elapsed());
 
