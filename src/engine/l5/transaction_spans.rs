@@ -185,9 +185,7 @@ fn span_template<'c>(
     cache: &'c mut HashMap<String, SpanTemplate>,
 ) -> &'c SpanTemplate {
     if !cache.contains_key(seed) {
-        let __probe_t = std::time::Instant::now();
         let visited = backward_cone(seed, commits_by_routine, reverse);
-        crate::stage_probe::accum(crate::stage_probe::ACC_SPAN_BFS, __probe_t.elapsed());
         let (writes_tables, publishes_events, coverage_complete) =
             aggregate_span(&visited, summaries);
         let span_roots = span_roots_of(&visited, reverse);

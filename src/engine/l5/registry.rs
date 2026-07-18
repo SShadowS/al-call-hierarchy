@@ -284,7 +284,6 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
     // `substrate::ALL`, so the context — and the whole report — stays byte-identical.
     let demanded = detectors.iter().fold(0u32, |acc, d| acc | d.requires);
     let ctx = build_detector_context(resolved, demanded);
-    crate::stage_probe::stage("l4_detector_context:end");
     let summarize_diagnostics: Vec<Diagnostic> = ctx
         .summarize_diagnostics
         .iter()
@@ -396,7 +395,6 @@ fn run_each(
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             (detector.run)(resolved, ctx)
         }));
-        crate::stage_probe::stage(&format!("detector:{}:end", detector.name));
         match outcome {
             Ok(Ok(output)) => {
                 findings.extend(output.findings);
