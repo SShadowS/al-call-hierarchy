@@ -50,10 +50,13 @@ use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{merge_by_terminal, sev_rank};
 use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
 use crate::engine::l5::path_walker::{
-    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop, walk_evidence,
+    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop, WalkTraceStats,
+    walk_evidence,
 };
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::table_display::{DescribeOp, describe_table};
+use crate::engine::perf_trace as pt;
+use serde_json::json;
 
 const DETECTOR: &str = "d1-db-op-in-loop";
 
@@ -855,6 +858,76 @@ pub fn detect_d1(
         walk_memo: RefCell::new(HashMap::new()),
     };
 
+    // Hot-tier tracing (`Detail::Hot`). Tested ONCE here (outside every walk) so
+    // the interprocedural walk stays branch-free on the disabled path: `trace_hot`
+    // gates whether `walk_evidence` receives `Some(&mut walk_stats)` or `None`, and
+    // whether the d1-side memo/retention counters accumulate. All of it is
+    // measurement-only — no counter, span, or census reads or mutates a finding, so
+    // OFF and ON produce byte-identical analysis output.
+    let trace_hot = pt::enabled(pt::Detail::Hot);
+    // Aggregate walk stats across every CANONICAL callee walk (one per memo miss);
+    // its result-by-stop-kind totals ARE the retained population (d1 stores every
+    // canonical vec and consumes only `Complete`), so the decisive
+    // `unused_cut / all_retained` ratio is derivable from `d1.walk_stats` alone.
+    let mut walk_stats = WalkTraceStats::default();
+    let mut memo_hits = 0u64;
+    let mut memo_misses = 0u64;
+    // Retained WalkResult + evidence-step totals across all memo entries
+    // (aggregate + single-entry max) — the memo-RSS blow-up signal.
+    let mut retained_results = 0u64;
+    let mut retained_steps = 0u64;
+    let mut max_entry_results = 0u64;
+    let mut max_entry_steps = 0u64;
+
+    if trace_hot {
+        // Pre-walk census, emitted BEFORE the first walk: the in-loop call-site
+        // population and the DISTINCT db-touching callee roots that will each seed
+        // one canonical walk (≈ the eventual memo-miss count). Reads only; it
+        // pre-warms the pure `touches_db` memo, which cannot change any finding.
+        let mut in_loop_callsites = 0u64;
+        let mut walk_candidates = 0u64;
+        let mut distinct_roots: HashSet<&str> = HashSet::new();
+        for routine in &ws.routines {
+            if !routine.body_available || routine.parse_incomplete {
+                continue;
+            }
+            for cs in &routine.call_sites {
+                if cs.loop_stack.is_empty() {
+                    continue;
+                }
+                in_loop_callsites += 1;
+                let edge = ctx.graph.edges_by_from.get(&routine.id).and_then(|edges| {
+                    edges.iter().find(|e| {
+                        e.callsite_id.as_deref() == Some(cs.id.as_str())
+                            && edge_target_matches_callsite_callee(e, cs, &ctx.routine_by_id)
+                    })
+                });
+                let Some(edge) = edge else {
+                    continue;
+                };
+                if edge.kind == "interface" || edge.kind == "dynamic" {
+                    continue;
+                }
+                let Some(callee_summary) = ctx.summaries.get(&edge.to) else {
+                    continue;
+                };
+                if policy.touches_db_memoized(callee_summary) == EffectPresence::No {
+                    continue;
+                }
+                walk_candidates += 1;
+                distinct_roots.insert(edge.to.as_str());
+            }
+        }
+        let distinct = distinct_roots.len() as u64;
+        pt::instant_lazy("d1", "walk_census", || {
+            json!({
+                "in_loop_callsites": in_loop_callsites,
+                "walk_candidates": walk_candidates,
+                "distinct_callee_roots": distinct,
+            })
+        });
+    }
+
     for routine in &ws.routines {
         // roleOf(routine) === "primary": source-only ⇒ always true, so the
         // `roleOf(r) !== "primary"` candidate gate was dropped. TRACKED LATENT GAP
@@ -1049,8 +1122,15 @@ pub fn detect_d1(
             // re-walks of the same dense subgraph into O(distinct callees).
             let canonical = {
                 let mut memo = policy.walk_memo.borrow_mut();
-                Rc::clone(memo.entry(edge.to.clone()).or_insert_with(|| {
-                    Rc::new(walk_evidence(
+                if memo.contains_key(&edge.to) {
+                    if trace_hot {
+                        memo_hits += 1;
+                    }
+                    Rc::clone(memo.get(&edge.to).expect("contains_key just succeeded"))
+                } else {
+                    // Memo MISS → one canonical walk. Feed `walk_stats` only when
+                    // Hot is on (else `None` = zero walk overhead).
+                    let results = walk_evidence(
                         &edge.to,
                         &policy,
                         BOUNDS,
@@ -1059,8 +1139,32 @@ pub fn detect_d1(
                             initial_steps: Vec::new(),
                         },
                         &ctx.uncertainties_by_node,
-                    ))
-                }))
+                        if trace_hot {
+                            Some(&mut walk_stats)
+                        } else {
+                            None
+                        },
+                    );
+                    if trace_hot {
+                        memo_misses += 1;
+                        let n = results.len() as u64;
+                        let steps: u64 = results.iter().map(|r| r.path.len() as u64).sum();
+                        retained_results += n;
+                        retained_steps += steps;
+                        max_entry_results = max_entry_results.max(n);
+                        max_entry_steps = max_entry_steps.max(steps);
+                        // RSS checkpoint every 1000 misses: the tiny span's close
+                        // snapshots working-set / peak / private RSS; the counter
+                        // carries the running miss number alongside on the timeline.
+                        if memo_misses.is_multiple_of(1000) {
+                            pt::counter("d1.memo_misses", memo_misses);
+                            drop(pt::span("d1", "memo_checkpoint"));
+                        }
+                    }
+                    let rc = Rc::new(results);
+                    memo.insert(edge.to.clone(), Rc::clone(&rc));
+                    rc
+                }
             };
             let results = apply_seed_transform(
                 canonical.as_slice(),
@@ -1113,6 +1217,35 @@ pub fn detect_d1(
                 });
             }
         }
+    }
+
+    // Hot-tier flush (`Detail::Hot`): one `d1.walk_stats` counter carrying the
+    // aggregate walk + retained-by-stop-kind totals (from which
+    // `all_retained = complete + cycle_cut + depth_cut + node_budget_cut +
+    // dead_end` and `unused_cut = all_retained - complete` give the decisive
+    // ratio), and one `d1.memo` counter carrying the memo hit/miss + retained-size
+    // totals. Only when Hot is on.
+    if trace_hot {
+        let mut walk_lc = pt::LocalCounters::new();
+        walk_lc.set("nodes_visited", walk_stats.nodes_visited);
+        walk_lc.set("edges_examined", walk_stats.edges_examined);
+        walk_lc.set("complete", walk_stats.complete);
+        walk_lc.set("cycle_cut", walk_stats.cycle_cut);
+        walk_lc.set("depth_cut", walk_stats.depth_cut);
+        walk_lc.set("node_budget_cut", walk_stats.node_budget_cut);
+        walk_lc.set("dead_end", walk_stats.dead_end);
+        walk_lc.set("walks", walk_stats.walks);
+        walk_lc.set("walks_hit_node_bound", walk_stats.walks_hit_node_bound);
+        walk_lc.flush("d1.walk_stats");
+
+        let mut memo_lc = pt::LocalCounters::new();
+        memo_lc.set("memo_hits", memo_hits);
+        memo_lc.set("memo_misses", memo_misses);
+        memo_lc.set("retained_results", retained_results);
+        memo_lc.set("retained_steps", retained_steps);
+        memo_lc.set("max_entry_results", max_entry_results);
+        memo_lc.set("max_entry_steps", max_entry_steps);
+        memo_lc.flush("d1.memo");
     }
 
     // Two-stage collapse:
@@ -1604,6 +1737,7 @@ mod memo_tests {
                 initial_steps: prefix1.clone(),
             },
             &uncertainties_by_node,
+            None,
         );
         let fresh_2 = walk_evidence(
             "C",
@@ -1614,6 +1748,7 @@ mod memo_tests {
                 initial_steps: prefix2.clone(),
             },
             &uncertainties_by_node,
+            None,
         );
 
         // The CANONICAL walk (empty prefix, zero initial depth) — computed ONCE.
@@ -1626,6 +1761,7 @@ mod memo_tests {
                 initial_steps: Vec::new(),
             },
             &uncertainties_by_node,
+            None,
         );
 
         // Fixture guards: the walk actually reaches the db op, and the two

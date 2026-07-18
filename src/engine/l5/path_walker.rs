@@ -61,6 +61,39 @@ pub struct WalkResult {
     pub stop: WalkStop,
 }
 
+/// Hot-tier (`Detail::Hot`) aggregate counters for a run of [`walk_evidence`]
+/// calls — a plain-`u64`, `LocalCounters`-style struct threaded as
+/// `Option<&mut WalkTraceStats>`. The caller tests `perf_trace::enabled(Hot)`
+/// ONCE (outside every walk) and passes `Some(&mut stats)`; `None` = zero
+/// overhead (a single moved-`Option` check per walk / per `visit`, no
+/// `enabled()` call and no allocation inside the walk). See the Hot-loop rule in
+/// the tracing spec.
+///
+/// The result-by-stop-kind counts (`complete` .. `dead_end`) are the population
+/// the d1 memo RETAINS — d1 stores every canonical walk's whole result vec and
+/// only ever consumes the `Complete` ones — so
+/// `unused_cut = (all - complete)` and `all = complete + cycle_cut + depth_cut +
+/// node_budget_cut + dead_end` make the decisive
+/// `unused_cut_results / all_retained_results` ratio computable from the trace
+/// alone.
+#[derive(Debug, Default, Clone)]
+pub struct WalkTraceStats {
+    /// Total `visit` invocations across all walks (nodes touched, incl. revisits
+    /// of distinct paths — the walk's own budget metric, summed per walk).
+    pub nodes_visited: u64,
+    /// Total outgoing edges enumerated across all `visit`s (fan-out cost).
+    pub edges_examined: u64,
+    pub complete: u64,
+    pub cycle_cut: u64,
+    pub depth_cut: u64,
+    pub node_budget_cut: u64,
+    pub dead_end: u64,
+    /// Number of [`walk_evidence`] invocations counted.
+    pub walks: u64,
+    /// Walks whose `nodes_visited` reached the node budget (`max_nodes`).
+    pub walks_hit_node_bound: u64,
+}
+
 /// The mutable context threaded through one walk branch.
 #[derive(Debug, Clone)]
 pub struct PathCtx {
@@ -122,6 +155,7 @@ pub fn walk_evidence<P: WalkPolicy>(
     bounds: WalkBounds,
     opts: WalkOpts,
     uncertainties_by_node: &HashMap<String, Vec<Uncertainty>>,
+    mut stats: Option<&mut WalkTraceStats>,
 ) -> Vec<WalkResult> {
     let mut results: Vec<WalkResult> = Vec::new();
     let mut nodes_visited: usize = 0;
@@ -139,7 +173,30 @@ pub fn walk_evidence<P: WalkPolicy>(
         &mut nodes_visited,
         &mut results,
         uncertainties_by_node,
+        stats.as_deref_mut(),
     );
+
+    // Hot-tier aggregate tally (`Detail::Hot`). `stats` is `Some` only when the
+    // caller opted in (tested `enabled(Hot)` ONCE, outside the walk). Node,
+    // walk, and stop-kind totals are derived HERE from the finished walk (no
+    // per-node threading needed); `edges_examined` is the one inline count
+    // `visit` accumulates. `None` callers skip the whole block.
+    if let Some(s) = stats {
+        s.walks += 1;
+        s.nodes_visited += nodes_visited as u64;
+        if nodes_visited >= bounds.max_nodes {
+            s.walks_hit_node_bound += 1;
+        }
+        for r in &results {
+            match r.stop {
+                WalkStop::Complete => s.complete += 1,
+                WalkStop::CycleCut => s.cycle_cut += 1,
+                WalkStop::DepthCut => s.depth_cut += 1,
+                WalkStop::NodeBudgetCut => s.node_budget_cut += 1,
+                WalkStop::DeadEnd => s.dead_end += 1,
+            }
+        }
+    }
 
     results
 }
@@ -153,6 +210,7 @@ fn visit<P: WalkPolicy>(
     nodes_visited: &mut usize,
     results: &mut Vec<WalkResult>,
     uncertainties_by_node: &HashMap<String, Vec<Uncertainty>>,
+    mut stats: Option<&mut WalkTraceStats>,
 ) {
     *nodes_visited += 1;
 
@@ -188,6 +246,9 @@ fn visit<P: WalkPolicy>(
     }
 
     let edges = policy.expand(node, &ctx_here);
+    if let Some(s) = stats.as_deref_mut() {
+        s.edges_examined += edges.len() as u64;
+    }
     if edges.is_empty() && terminals.is_empty() {
         results.push(WalkResult {
             path: ctx_here.steps,
@@ -244,6 +305,7 @@ fn visit<P: WalkPolicy>(
             nodes_visited,
             results,
             uncertainties_by_node,
+            stats.as_deref_mut(),
         );
     }
 }
@@ -376,6 +438,7 @@ mod tests {
                 initial_steps: vec![],
             },
             &no_uncertainties(),
+            None,
         );
         let complete: Vec<&WalkResult> = results
             .iter()
@@ -397,6 +460,7 @@ mod tests {
             WalkBounds::default(),
             WalkOpts::default(),
             &no_uncertainties(),
+            None,
         );
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].stop, WalkStop::DeadEnd);
@@ -412,6 +476,7 @@ mod tests {
             WalkBounds::default(),
             WalkOpts::default(),
             &no_uncertainties(),
+            None,
         );
         assert!(results.iter().any(|r| r.stop == WalkStop::CycleCut));
         // No result should revisit `a` (per-path cycle detection).
@@ -432,6 +497,7 @@ mod tests {
             },
             WalkOpts::default(),
             &no_uncertainties(),
+            None,
         );
         assert!(results.iter().any(|r| r.stop == WalkStop::DepthCut));
     }
@@ -449,6 +515,7 @@ mod tests {
             },
             WalkOpts::default(),
             &no_uncertainties(),
+            None,
         );
         assert!(results.iter().any(|r| r.stop == WalkStop::NodeBudgetCut));
     }
@@ -480,7 +547,14 @@ mod tests {
         ubn.insert("b".to_string(), vec![ub1.clone(), ua1_dup]);
         // node c contributes nothing
 
-        let results = walk_evidence("a", &p, WalkBounds::default(), WalkOpts::default(), &ubn);
+        let results = walk_evidence(
+            "a",
+            &p,
+            WalkBounds::default(),
+            WalkOpts::default(),
+            &ubn,
+            None,
+        );
 
         // Find the Complete result (a→b→c).
         let complete: Vec<&WalkResult> = results
@@ -543,7 +617,14 @@ mod tests {
         let mut ubn: HashMap<String, Vec<Uncertainty>> = HashMap::new();
         ubn.insert("a".to_string(), vec![u.clone()]);
 
-        let results = walk_evidence("a", &p, WalkBounds::default(), WalkOpts::default(), &ubn);
+        let results = walk_evidence(
+            "a",
+            &p,
+            WalkBounds::default(),
+            WalkOpts::default(),
+            &ubn,
+            None,
+        );
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].stop, WalkStop::DeadEnd);
         assert_eq!(results[0].uncertainties.len(), 1);

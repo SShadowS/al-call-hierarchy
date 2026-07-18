@@ -30,6 +30,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_EXIT_AFTER`. No new dependencies (reuses `serde_json`).
   Instrumentation call sites are wired in follow-up tasks; this lands the module
   only.
+- **perf_trace Jacobi + Hot detail tiers** (`ALSEM_TRACE_DETAIL=jacobi|hot`) —
+  the instrumentation that makes the decisive d1-only cut-explosion experiment
+  measurable (spec `docs/superpowers/specs/2026-07-18-tracing-infra.md`).
+  *Jacobi* (`src/engine/l4/summary_runner.rs`): one `jacobi.scc.<stable_rep>.<N>m`
+  span per recursive SCC at or above `ALSEM_TRACE_SCC_MIN` (never per-singleton),
+  a per-pass `jacobi.pass` multi-series counter (pass index, dirty in/out,
+  recomputed count, and domain-split cardinality — db_effects vs uncertainties vs
+  parameter_roles kept separate), and one final `largest_scc_effect_universe`
+  instant for the largest SCC (unique effect-key universe vs total memberships +
+  a sampled 10-pair member Jaccard — the B1-narrow interning-wedge decision
+  input). *Hot* (`src/engine/l5/detectors/d1.rs` + `path_walker.rs`): a
+  `walk_census` instant emitted BEFORE the first walk (in-loop callsites, walk
+  candidates, distinct callee roots); a new `WalkTraceStats` plain-`u64` struct
+  threaded as `Option<&mut>` through `walk_evidence` (nodes visited, edges
+  examined, results by stop kind Complete/CycleCut/DepthCut/NodeBudgetCut/DeadEnd,
+  walks that hit the node bound) — `None` = zero overhead, tested `enabled(Hot)`
+  ONCE outside every walk; and d1-side `d1.walk_stats` + `d1.memo` counters (memo
+  hits/misses, retained WalkResult + evidence-step totals per memo entry aggregate
+  and max, RSS checkpoint via a tiny `d1.memo_checkpoint` span every 1000 memo
+  misses). The decisive `unused_cut_results / all_retained_results` ratio is
+  computable from the trace alone (`all_retained = complete + cycle_cut +
+  depth_cut + node_budget_cut + dead_end`; `unused_cut = all_retained − complete`).
+  `walk_evidence` grew an optional stats parameter; non-d1 callers (d2/d46/d48)
+  pass `None`. All measurement-only: OFF and ON produce byte-identical analysis
+  output (verified on a real `alsem analyze` run, modulo the wall-clock
+  `generatedAt` stamp).
 
 ### Changed
 - **Engine memory/speed Wave 1** — ten byte-stable performance fixes to the

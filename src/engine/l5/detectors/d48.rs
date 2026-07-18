@@ -460,6 +460,8 @@ pub fn detect_d48(
                     initial_steps: vec![loop_step, call_step],
                 },
                 &ctx.uncertainties_by_node,
+                // Hot-tier walk stats are a d1-only concern for now.
+                None,
             );
 
             for result in &results {

@@ -30,6 +30,8 @@ use super::summary::{
 };
 use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
+use crate::engine::perf_trace as pt;
+use serde_json::json;
 
 const MAX_FIXED_POINT_ITERATIONS: usize = 1000;
 
@@ -934,6 +936,73 @@ pub fn compute_summaries_with_leaves(
         cap_diagnostics.extend(out.cap_diagnostics);
     }
 
+    // Jacobi tier: after every SCC settles, emit ONE effect-key universe +
+    // member-overlap dump for the single largest SCC — the B1-narrow decision
+    // input. `unique_effect_keys` vs `total_memberships` sizes the core-summary
+    // interning wedge (universe << memberships ⇒ interning pays); the sampled
+    // member-pair Jaccard sizes the bitset-overlap payoff. Guarded on >= 2
+    // members so it is never a per-singleton event; the closure (hence all the
+    // set work) runs only when tracing is on.
+    if pt::enabled(pt::Detail::Jacobi)
+        && let Some(big) = scc.sccs.iter().max_by_key(|s| s.members.len())
+        && big.members.len() >= 2
+    {
+        pt::instant_lazy("jacobi", "largest_scc_effect_universe", || {
+            // Per-member effect-key sets over the SETTLED summaries.
+            let sets: Vec<std::collections::HashSet<&str>> = big
+                .members
+                .iter()
+                .map(|m| {
+                    final_map
+                        .get(m)
+                        .map(|s| s.db_effects.iter().map(|e| e.effect_key.as_str()).collect())
+                        .unwrap_or_default()
+                })
+                .collect();
+            let mut universe: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            let mut total_memberships = 0usize;
+            for s in &sets {
+                universe.extend(s.iter().copied());
+                total_memberships += s.len();
+            }
+            // Jaccard over up to 10 spread member pairs (member i vs its
+            // half-list-away partner) — a cheap, deterministic overlap probe.
+            let n = sets.len();
+            let sample = 10.min(n);
+            let mut jaccards: Vec<f64> = Vec::new();
+            for k in 0..sample {
+                let i = (k * n) / sample;
+                let j = (i + n / 2) % n;
+                if i == j {
+                    continue;
+                }
+                let a = &sets[i];
+                let b = &sets[j];
+                let inter = a.intersection(b).count();
+                let uni = a.len() + b.len() - inter;
+                let jac = if uni == 0 {
+                    0.0
+                } else {
+                    inter as f64 / uni as f64
+                };
+                jaccards.push(jac);
+            }
+            let mean_jaccard = if jaccards.is_empty() {
+                0.0
+            } else {
+                jaccards.iter().sum::<f64>() / jaccards.len() as f64
+            };
+            json!({
+                "members": big.members.len(),
+                "unique_effect_keys": universe.len(),
+                "total_memberships": total_memberships,
+                "sampled_pairs": jaccards.len(),
+                "mean_jaccard": mean_jaccard,
+                "jaccards": jaccards,
+            })
+        });
+    }
+
     (final_map, raw_traces, cap_diagnostics)
 }
 
@@ -1052,6 +1121,30 @@ pub fn run_one_scc(
     }
 
     // Recursive SCC — JACOBI fixed-point.
+    //
+    // Jacobi tier (`Detail::Jacobi`): open ONE span per recursive SCC at or above
+    // `ALSEM_TRACE_SCC_MIN`, and emit per-pass domain-split cardinality counters
+    // inside the loop below. Tested ONCE here (never per member); the dynamic span
+    // name is built only when the SCC clears the threshold, so the disabled path
+    // and every sub-threshold SCC allocate nothing. Never a per-singleton event.
+    let trace_jacobi =
+        pt::enabled(pt::Detail::Jacobi) && scc_entry.members.len() >= pt::scc_min() as usize;
+    let _scc_span = trace_jacobi.then(|| {
+        // A deterministic, model-instance-independent label: the smallest stable
+        // member id + the member count.
+        let rep = scc_entry
+            .members
+            .iter()
+            .filter_map(|m| ctx.stable_map.get(m))
+            .map(|s| s.as_str())
+            .min()
+            .unwrap_or("?");
+        pt::span(
+            "jacobi",
+            format!("jacobi.scc.{rep}.{}m", scc_entry.members.len()),
+        )
+    });
+
     // Seed in_progress with base summaries (leaves are excluded: they have no
     // base entry and are read from the predecessor map).
     let mut in_progress: HashMap<String, RoutineSummary> = HashMap::new();
@@ -1121,6 +1214,12 @@ pub fn run_one_scc(
         changed = false;
         iterations += 1;
 
+        // Jacobi per-pass counters (emitted below, gated on `trace_jacobi`):
+        // `dirty_in` = frontier size entering this pass; `recomputed` = members
+        // actually re-composed. Both are plain stack `u64`s — no cost off-path.
+        let dirty_in = if trace_jacobi { dirty.len() as u64 } else { 0 };
+        let mut recomputed = 0u64;
+
         // JACOBI: freeze the prior-pass state WITHOUT a deep clone. `mem::take`
         // moves the settled map out as the frozen read snapshot; recomputed members
         // accumulate in `next_pass`; unchanged members are carried back by move
@@ -1149,6 +1248,7 @@ pub fn run_one_scc(
                 Some(r) => r,
                 None => continue,
             };
+            recomputed += 1;
             let next = compose_routine(
                 routine,
                 &snapshot,             // FROZEN: all reads from the prior pass
@@ -1189,6 +1289,33 @@ pub fn run_one_scc(
         }
         in_progress = merged;
         dirty = next_dirty;
+
+        // Jacobi per-pass counters: pass index, dirty in/out, recomputed count,
+        // and the domain-split cardinality of the CURRENT settled map — db_effects
+        // vs uncertainties vs parameter_roles kept separate (the domain-
+        // decomposition lever). One multi-series `C` event per pass; the whole
+        // block is skipped off-path.
+        if trace_jacobi {
+            let mut card_db_effects = 0u64;
+            let mut card_uncertainties = 0u64;
+            let mut card_parameter_roles = 0u64;
+            for id in &scc_entry.members {
+                if let Some(s) = in_progress.get(id) {
+                    card_db_effects += s.db_effects.len() as u64;
+                    card_uncertainties += s.uncertainties.len() as u64;
+                    card_parameter_roles += s.parameter_roles.len() as u64;
+                }
+            }
+            let mut lc = pt::LocalCounters::new();
+            lc.set("pass", iterations as u64);
+            lc.set("dirty_in", dirty_in);
+            lc.set("dirty_out", dirty.len() as u64);
+            lc.set("recomputed", recomputed);
+            lc.set("card_db_effects", card_db_effects);
+            lc.set("card_uncertainties", card_uncertainties);
+            lc.set("card_parameter_roles", card_parameter_roles);
+            lc.flush("jacobi.pass");
+        }
 
         // Trace hook (opt-in).
         if collect_trace {

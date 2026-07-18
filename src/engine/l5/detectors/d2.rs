@@ -420,6 +420,8 @@ pub fn detect_d2(
                         initial_steps: Vec::new(),
                     },
                     &ctx.uncertainties_by_node,
+                    // Hot-tier walk stats are a d1-only concern for now.
+                    None,
                 );
                 let Some(complete) = results.iter().find(|r| r.stop == WalkStop::Complete) else {
                     continue;
