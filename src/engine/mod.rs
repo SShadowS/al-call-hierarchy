@@ -11,6 +11,10 @@ pub mod l2;
 pub mod l3;
 pub mod l4;
 pub mod l5;
+/// Permanent, env-gated performance tracing (spec 2026-07-18). Zero-cost when
+/// `ALSEM_TRACE` is unset; emits a Chrome-Trace side file otherwise. See the
+/// module doc for the disabled-path / crash-safety / threading contracts.
+pub mod perf_trace;
 pub mod return_summary;
 pub mod root_classification;
 pub mod snapshot;

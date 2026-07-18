@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Permanent env-gated perf-tracing module** (`src/engine/perf_trace.rs`, spec
+  `docs/superpowers/specs/2026-07-18-tracing-infra.md`) — a bespoke tracer (NOT
+  the `tracing` crate) making the three measurement waves' throwaway
+  instrumentation permanent and zero-cost when off. Off by default; enabled via
+  `ALSEM_TRACE=1|chrome`. Emits a Chrome-Trace Event JSON side file
+  (chrome://tracing / Perfetto) with `B`/`E` spans, `i` instants, `C` counters,
+  `M` metadata, µs monotonic timestamps and a stable synthetic tid so a span
+  opened on one rayon thread and closed on another still pairs. Crash-safe: the
+  file is kept as an always-closed JSON array (immediate `B` write + flush per
+  event), so a cap-killed run still parses with the active span visible;
+  trace-write failures fail OPEN. Primitives: `enabled(Detail)` (cumulative
+  Stages/Jacobi/Hot tiers, one `OnceLock` load), `run`/`span`,
+  `counter`/`counter_delta`, `instant_lazy`, `LocalCounters` (plain-`u64`
+  hot-loop accumulator flushed once), `maybe_exit_after`. Windows RSS via direct
+  `K32GetProcessMemoryInfo` FFI with `PROCESS_MEMORY_COUNTERS_EX`
+  (WorkingSetSize/PeakWorkingSetSize/PrivateUsage); `None` off-Windows. Env
+  contract: `ALSEM_TRACE_FILE`, `ALSEM_TRACE_DETAIL` (default stages),
+  `ALSEM_TRACE_SAMPLE_EVERY` (default 64), `ALSEM_TRACE_SCC_MIN` (default 100),
+  `ALSEM_TRACE_STDERR` (opt-in Wave-1 `STAGE …` stderr mirror),
+  `ALSEM_TRACE_EXIT_AFTER`. No new dependencies (reuses `serde_json`).
+  Instrumentation call sites are wired in follow-up tasks; this lands the module
+  only.
+
 ### Changed
 - **Engine memory/speed Wave 1** — ten byte-stable performance fixes to the
   analyze substrate, from the 2026-07-17 design review
