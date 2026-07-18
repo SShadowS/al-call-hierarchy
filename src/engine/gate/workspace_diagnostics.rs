@@ -111,20 +111,30 @@ pub fn compute_workspace_diagnostics(workspace: &Path) -> Vec<Diagnostic> {
     // <rel>" — al-sem `indexer.ts:56-63`. Uses the same `al_syntax::parse` the engine
     // indexes with, so the diagnostic reflects exactly what L3 sees (incl. objects
     // nested under a `namespace`, which the former direct-root-children check missed).
-    // Sequential parse loop, run on a big-stack thread (T2.1): this CLI path
-    // runs on the process main thread, which has no guaranteed-generous stack
-    // — see `big_stack`'s doc. One big-stack thread for the WHOLE loop.
-    crate::big_stack::run_with_big_stack(|| {
-        for (rel, source) in &units {
-            if al_syntax::parse(source).objects.is_empty() {
-                out.push(Diagnostic {
-                    severity: "info".to_string(),
-                    stage: "index".to_string(),
-                    message: format!("No object declaration found in {rel}"),
-                });
-            }
-        }
+    // Parallel parse, order-preserving: par_iter keeps index order in collect,
+    // so the emitted diagnostics stay in rel-posix-sorted unit order. The rayon
+    // pool threads get the big stack via big_stack_pool (same pool the fresh
+    // engine's parse_snapshot uses — see src/snapshot/parse.rs:85-87).
+    use rayon::prelude::*;
+    let empties: Vec<Option<&String>> = crate::big_stack::big_stack_pool().install(|| {
+        units
+            .par_iter()
+            .map(|(rel, source)| {
+                if al_syntax::parse(source).objects.is_empty() {
+                    Some(rel)
+                } else {
+                    None
+                }
+            })
+            .collect()
     });
+    for rel in empties.into_iter().flatten() {
+        out.push(Diagnostic {
+            severity: "info".to_string(),
+            stage: "index".to_string(),
+            message: format!("No object declaration found in {rel}"),
+        });
+    }
 
     out
 }
