@@ -55,6 +55,16 @@ impl FullRoutineSummary {
         out
     }
 
+    /// Iterator form of [`reachable`](Self::reachable) — same order (direct
+    /// first, then inherited), zero allocation. Prefer this in hot paths that
+    /// early-exit or scan once: it yields exactly the sequence
+    /// `reachable()` collects, without materializing the intermediate `Vec`.
+    pub fn reachable_iter(&self) -> impl Iterator<Item = &CapabilityFact> {
+        self.capability_facts_direct
+            .iter()
+            .chain(self.capability_facts_inherited.iter())
+    }
+
     /// The inherited coverage status (`coverage.inherited_status`), or "unknown"
     /// when there is no coverage record. Mirrors al-sem
     /// `s.coverage?.inheritedStatus ?? "unknown"`.
@@ -63,5 +73,55 @@ impl FullRoutineSummary {
             .as_ref()
             .map(|c| c.inherited_status.as_str())
             .unwrap_or("unknown")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::l5::test_support::{fact, summary};
+
+    /// `reachable_iter` must yield EXACTLY the sequence `reachable` collects —
+    /// same items, same order (direct first, then inherited). Zip-compare on a
+    /// summary carrying both direct AND inherited facts (the case that exercises
+    /// the chain boundary).
+    #[test]
+    fn reachable_iter_matches_reachable_sequence() {
+        let s = summary(
+            "r",
+            vec![
+                fact("insert", "table", Some("t/D1")),
+                fact("read", "table", Some("t/D2")),
+            ],
+            vec![
+                fact("modify", "table", Some("t/I1")),
+                fact("commit", "transaction", None),
+                fact("publish", "event", Some("e/I3")),
+            ],
+            None,
+        );
+
+        let vec_form = s.reachable();
+        let iter_form: Vec<&CapabilityFact> = s.reachable_iter().collect();
+
+        // Same length (5 = 2 direct + 3 inherited) and pointer-identical items in
+        // the same positions — not merely value-equal.
+        assert_eq!(vec_form.len(), 5);
+        assert_eq!(iter_form.len(), vec_form.len());
+        for (a, b) in vec_form.iter().zip(iter_form.iter()) {
+            assert!(
+                std::ptr::eq(*a, *b),
+                "reachable_iter diverged from reachable"
+            );
+        }
+    }
+
+    /// Both empty ⇒ `reachable_iter` is empty (matches `reachable`'s early
+    /// `return []`).
+    #[test]
+    fn reachable_iter_empty_when_no_facts() {
+        let s = summary("r", vec![], vec![], None);
+        assert_eq!(s.reachable_iter().count(), 0);
+        assert_eq!(s.reachable().len(), 0);
     }
 }

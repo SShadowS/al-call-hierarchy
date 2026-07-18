@@ -25,6 +25,7 @@
 //! SOURCE-ONLY Rust pipeline every routine is primary, so that fallback never
 //! engages; it is documented inline but not implemented (mirrors `run_detectors`).
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use crate::engine::l3::l3_workspace::L3Table;
@@ -583,6 +584,30 @@ struct D1Policy<'a> {
     summaries: &'a HashMap<String, crate::engine::l5::full_summary::FullRoutineSummary>,
     edges_by_from: &'a HashMap<String, Vec<CombinedEdge>>,
     call_site_by_id: &'a HashMap<&'a str, &'a crate::engine::l2::features::PCallSite>,
+    /// Per-run memo of `touches_db_of`, keyed by callee routine id. `expand`
+    /// probes the same callee's cone once per INCOMING edge across the whole
+    /// `walk_evidence` DFS — and cones reach thousands of facts at high graph
+    /// density — so the first probe walks the chain iterator (early-exiting on
+    /// the first `"table"` fact) and every later probe of that routine is an
+    /// O(1) memo hit. `expand` only has `&self`, hence `RefCell` for the lazy
+    /// fill. Keys borrow from `summaries` (owned by `ctx`), which outlives the
+    /// walk. `touches_db_of` is a pure function of the (immutable) summary, so
+    /// the answer is stable for the run.
+    touches_db_memo: RefCell<HashMap<&'a str, EffectPresence>>,
+}
+
+impl<'a> D1Policy<'a> {
+    /// `touches_db_of(s)`, memoized once-per-run by the summary's routine id.
+    fn touches_db_memoized(
+        &self,
+        s: &'a crate::engine::l5::full_summary::FullRoutineSummary,
+    ) -> EffectPresence {
+        *self
+            .touches_db_memo
+            .borrow_mut()
+            .entry(s.routine_id.as_str())
+            .or_insert_with(|| touches_db_of(s))
+    }
 }
 
 impl<'a> WalkPolicy for D1Policy<'a> {
@@ -623,7 +648,7 @@ impl<'a> WalkPolicy for D1Policy<'a> {
                     return false;
                 }
                 match self.summaries.get(&e.to) {
-                    Some(s) => touches_db_of(s) != EffectPresence::No,
+                    Some(s) => self.touches_db_memoized(s) != EffectPresence::No,
                     None => false,
                 }
             })
@@ -777,6 +802,7 @@ pub fn detect_d1(
         summaries: &ctx.summaries,
         edges_by_from: &ctx.graph.edges_by_from,
         call_site_by_id: &ctx.call_site_by_id,
+        touches_db_memo: RefCell::new(HashMap::new()),
     };
 
     for routine in &ws.routines {
@@ -939,7 +965,7 @@ pub fn detect_d1(
             let Some(callee_summary) = ctx.summaries.get(&edge.to) else {
                 continue;
             };
-            if touches_db_of(callee_summary) == EffectPresence::No {
+            if policy.touches_db_memoized(callee_summary) == EffectPresence::No {
                 continue;
             }
 
@@ -1288,4 +1314,107 @@ fn build_finding_internal(
         edge_kind_by_callsite,
         closed_world_temp_params,
     )
+}
+
+#[cfg(test)]
+mod memo_tests {
+    use super::*;
+    use crate::engine::l5::full_summary::FullRoutineSummary;
+    use crate::engine::l5::test_support::{coverage, fact, summary};
+
+    /// `D1Policy::touches_db_memoized` must return exactly what a direct
+    /// `touches_db_of` returns, for EVERY routine — across all three
+    /// `EffectPresence` outcomes — and the cached (second) probe must equal the
+    /// first. This is the soundness contract for the per-run memo that replaces
+    /// the old per-edge `touches_db_of` call in the `walk_evidence` DFS.
+    #[test]
+    fn touches_db_memo_matches_direct_for_every_routine() {
+        // Spread covering every EffectPresence branch:
+        //   Yes  — a `table` fact reachable (direct OR inherited);
+        //   No   — no `table` fact AND inherited coverage "complete";
+        //   Unk. — no `table` fact AND partial/absent coverage.
+        let seed = vec![
+            summary(
+                "r_yes_direct",
+                vec![fact("read", "table", Some("t/A"))],
+                vec![],
+                Some(coverage("complete")),
+            ),
+            summary(
+                "r_yes_inherited",
+                vec![fact("send", "http", None)],
+                vec![fact("modify", "table", Some("t/B"))],
+                Some(coverage("partial")),
+            ),
+            summary(
+                "r_no",
+                vec![fact("commit", "transaction", None)],
+                vec![],
+                Some(coverage("complete")),
+            ),
+            summary(
+                "r_unknown_partial",
+                vec![],
+                vec![],
+                Some(coverage("partial")),
+            ),
+            summary(
+                "r_unknown_nocov",
+                vec![fact("send", "http", None)],
+                vec![],
+                None,
+            ),
+        ];
+        let summaries: HashMap<String, FullRoutineSummary> = seed
+            .into_iter()
+            .map(|s| (s.routine_id.clone(), s))
+            .collect();
+
+        // Otherwise-empty indexes — the memo path reads only `summaries`.
+        let routine_by_id: HashMap<&str, &L3Routine> = HashMap::new();
+        let table_by_id: HashMap<&str, &L3Table> = HashMap::new();
+        let edges_by_from: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        let call_site_by_id: HashMap<&str, &crate::engine::l2::features::PCallSite> =
+            HashMap::new();
+
+        let policy = D1Policy {
+            routine_by_id: &routine_by_id,
+            table_by_id: &table_by_id,
+            summaries: &summaries,
+            edges_by_from: &edges_by_from,
+            call_site_by_id: &call_site_by_id,
+            touches_db_memo: RefCell::new(HashMap::new()),
+        };
+
+        // At least one of each outcome is present (guards the fixture itself).
+        let mut saw_yes = false;
+        let mut saw_no = false;
+        let mut saw_unknown = false;
+
+        for (id, s) in &summaries {
+            let direct = touches_db_of(s);
+            let first = policy.touches_db_memoized(s);
+            let second = policy.touches_db_memoized(s); // cached hit
+            assert_eq!(
+                direct, first,
+                "first memo probe of {id} diverged from touches_db_of"
+            );
+            assert_eq!(
+                first, second,
+                "cached memo probe of {id} diverged from first"
+            );
+            match direct {
+                EffectPresence::Yes => saw_yes = true,
+                EffectPresence::No => saw_no = true,
+                EffectPresence::Unknown => saw_unknown = true,
+            }
+        }
+        assert!(
+            saw_yes && saw_no && saw_unknown,
+            "fixture must cover all three outcomes"
+        );
+
+        // Exactly one cached entry per distinct routine probed.
+        assert_eq!(policy.touches_db_memo.borrow().len(), summaries.len());
+    }
 }

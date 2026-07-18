@@ -53,15 +53,14 @@ pub fn find_capabilities<P>(s: &FullRoutineSummary, predicate: P) -> Vec<&Capabi
 where
     P: Fn(&CapabilityFact) -> bool,
 {
-    s.reachable().into_iter().filter(|f| predicate(f)).collect()
+    s.reachable_iter().filter(|f| predicate(f)).collect()
 }
 
 /// True when at least one reachable fact has the given `(op, resource_kind)`.
 /// Strict discrimination — no fuzzy / substring matching. Mirrors al-sem
 /// `hasCapability`.
 pub fn has_capability(s: &FullRoutineSummary, op: &str, kind: &str) -> bool {
-    s.reachable()
-        .iter()
+    s.reachable_iter()
         .any(|f| f.op == op && f.resource_kind == kind)
 }
 
@@ -71,7 +70,7 @@ pub fn has_capability(s: &FullRoutineSummary, op: &str, kind: &str) -> bool {
 /// included. Mirrors al-sem `writesTablesOf`.
 pub fn writes_tables_of(s: &FullRoutineSummary) -> Vec<String> {
     let mut ids: BTreeSet<String> = BTreeSet::new();
-    for f in s.reachable() {
+    for f in s.reachable_iter() {
         if f.resource_kind != "table" {
             continue;
         }
@@ -93,7 +92,7 @@ pub fn writes_tables_of(s: &FullRoutineSummary) -> Vec<String> {
 /// Unknown / parameter-dependent writes are retained (suppression-direction safe).
 pub fn writes_physical_tables_of(s: &FullRoutineSummary) -> Vec<String> {
     let mut ids: BTreeSet<String> = BTreeSet::new();
-    for f in s.reachable() {
+    for f in s.reachable_iter() {
         if f.resource_kind != "table" {
             continue;
         }
@@ -115,7 +114,7 @@ pub fn writes_physical_tables_of(s: &FullRoutineSummary) -> Vec<String> {
 /// resource; `No` when no commit fact AND the inherited cone is "complete";
 /// `Unknown` otherwise (G6 honesty). Mirrors al-sem `mayCommit`.
 pub fn may_commit(s: &FullRoutineSummary) -> EffectPresence {
-    for f in s.reachable() {
+    for f in s.reachable_iter() {
         if f.op == "commit" && f.resource_kind == "transaction" {
             return EffectPresence::Yes;
         }
@@ -131,7 +130,7 @@ pub fn may_commit(s: &FullRoutineSummary) -> EffectPresence {
 /// (regardless of op — read or write); `No` when no such fact AND the inherited
 /// cone is "complete"; `Unknown` otherwise. Mirrors al-sem `touchesDbOf`.
 pub fn touches_db_of(s: &FullRoutineSummary) -> EffectPresence {
-    for f in s.reachable() {
+    for f in s.reachable_iter() {
         if f.resource_kind == "table" {
             return EffectPresence::Yes;
         }
@@ -148,7 +147,7 @@ pub fn touches_db_of(s: &FullRoutineSummary) -> EffectPresence {
 /// event identity is unresolved are DROPPED. Mirrors al-sem `publishesEventsOf`.
 pub fn publishes_events_of(s: &FullRoutineSummary) -> Vec<String> {
     let mut ids: BTreeSet<String> = BTreeSet::new();
-    for f in s.reachable() {
+    for f in s.reachable_iter() {
         if f.op != "publish" {
             continue;
         }
