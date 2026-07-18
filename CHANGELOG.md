@@ -57,6 +57,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output (verified on a real `alsem analyze` run, modulo the wall-clock
   `generatedAt` stamp).
 
+### Fixed
+- **perf_trace Jacobi-tier per-pass counters were silently coupled to the
+  per-SCC span's `ALSEM_TRACE_SCC_MIN` size gate** (`src/engine/l4/summary_runner.rs`
+  `run_one_scc`) — found running Task 4's real-DO `ALSEM_TRACE_DETAIL=jacobi`
+  acceptance run: DO's largest SCC has exactly 1 member (self-recursion; 8 such
+  recursive singletons), so at the default `SCC_MIN=100` BOTH the span AND the
+  `jacobi.pass` per-pass counters were absent, not just the span — contradicting
+  the spec's stated guarantee that Jacobi-tier population data ("the population
+  instrumentation already lands with Detail::Jacobi") is available from any
+  analysis run. Root cause: a single `trace_jacobi` bool ANDed tier-enabled with
+  the size check and gated both the span AND the counters. Fix: split into
+  `trace_jacobi` (tier-enabled only, gates the cheap per-pass `LocalCounters`
+  for every genuinely recursive SCC regardless of size) and `trace_scc_span`
+  (tier-enabled AND size >= SCC_MIN, gates ONLY the span's per-SCC verbosity).
+  Byte-stable (trace-only; DO OFF-vs-ON analysis JSON diff still empty).
+  Regression-tested against `ws-recursive`'s real 2-member mutually-recursive
+  SCC (`tests/cli/perf_trace_jacobi_gate.rs`, spawns the real `alsem` binary):
+  `ALSEM_TRACE_SCC_MIN=3` now emits `jacobi.pass` while the span stays absent;
+  `ALSEM_TRACE_SCC_MIN=1` emits both.
+
 ### Changed
 - **Engine memory/speed Wave 1** — ten byte-stable performance fixes to the
   analyze substrate, from the 2026-07-17 design review

@@ -44,3 +44,4 @@ mod d1_downgraded_to_info_oracle;
 mod gate_prsummary_differential;
 mod gate_sarif_differential;
 mod gate_suppress_baseline_differential;
+mod perf_trace_jacobi_gate;

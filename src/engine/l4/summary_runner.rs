@@ -1123,13 +1123,22 @@ pub fn run_one_scc(
     // Recursive SCC — JACOBI fixed-point.
     //
     // Jacobi tier (`Detail::Jacobi`): open ONE span per recursive SCC at or above
-    // `ALSEM_TRACE_SCC_MIN`, and emit per-pass domain-split cardinality counters
-    // inside the loop below. Tested ONCE here (never per member); the dynamic span
-    // name is built only when the SCC clears the threshold, so the disabled path
-    // and every sub-threshold SCC allocate nothing. Never a per-singleton event.
-    let trace_jacobi =
-        pt::enabled(pt::Detail::Jacobi) && scc_entry.members.len() >= pt::scc_min() as usize;
-    let _scc_span = trace_jacobi.then(|| {
+    // `ALSEM_TRACE_SCC_MIN` (verbosity control for the SPAN only — real corpora
+    // can have thousands of small recursive SCCs, e.g. plain self-recursion,
+    // and opening a span per one would bloat the trace), and emit per-pass
+    // domain-split cardinality counters inside the loop below for EVERY
+    // recursive SCC regardless of size — a self-recursive 1-member SCC still
+    // runs a real Jacobi fixed point, and `LocalCounters` are cheap (no dynamic
+    // span-name alloc), so this is the population data the decisive-experiment
+    // plan reads (`docs/superpowers/specs/2026-07-18-tracing-infra.md`'s "the
+    // population instrumentation already lands with Detail::Jacobi"). A
+    // trivial NON-recursive SCC never reaches this function body at all (see
+    // the early return above) — THAT is the "never a per-singleton event"
+    // guarantee, not a size floor on genuinely recursive SCCs. Both gates are
+    // tested ONCE here (never per member/per pass).
+    let trace_jacobi = pt::enabled(pt::Detail::Jacobi);
+    let trace_scc_span = trace_jacobi && scc_entry.members.len() >= pt::scc_min() as usize;
+    let _scc_span = trace_scc_span.then(|| {
         // A deterministic, model-instance-independent label: the smallest stable
         // member id + the member count.
         let rep = scc_entry

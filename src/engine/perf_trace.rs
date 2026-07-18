@@ -872,4 +872,55 @@ mod tests {
         let o: TraceName = String::from("owned").into();
         assert_eq!(o.into_string(), "owned");
     }
+
+    // --- Group (e): Windows RSS smoke (task 4 acceptance gate) -------------
+
+    /// Direct FFI smoke test: `read_rss` must return real, nonzero counters with
+    /// peak >= current on Windows (the platform the K32 probe targets; `None`
+    /// off-Windows is covered structurally by the `#[cfg(not(windows))]` stub
+    /// above and isn't a "smoke" claim to test).
+    #[cfg(windows)]
+    #[test]
+    fn rss_probe_returns_nonzero_values_with_peak_at_least_current() {
+        // Touch real memory first so the working set is unambiguously nonzero
+        // even on a freshly-started test process.
+        let keep_alive: Vec<u8> = vec![7u8; 8 * 1024 * 1024];
+        let r = read_rss().expect("K32GetProcessMemoryInfo must succeed on Windows");
+        assert!(r.working_set > 0, "working_set must be nonzero: {r:?}");
+        assert!(
+            r.peak_working_set > 0,
+            "peak_working_set must be nonzero: {r:?}"
+        );
+        assert!(
+            r.peak_working_set >= r.working_set,
+            "peak_working_set must be >= working_set (two-instant OS snapshot): {r:?}"
+        );
+        assert!(r.private_usage > 0, "private_usage must be nonzero: {r:?}");
+        std::hint::black_box(&keep_alive);
+    }
+
+    /// Integration-shaped smoke test: a real span's `E` event (the shape every
+    /// production span actually emits) carries nonzero `rss_mb`/`peak_mb` with
+    /// `peak_mb >= rss_mb`, proving the FFI reading is correctly wired through
+    /// `Tracer::open`/`close`/`emit_end`, not just callable in isolation.
+    #[cfg(windows)]
+    #[test]
+    fn span_close_embeds_nonzero_rss_args_with_peak_at_least_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rss.json");
+        let t = Tracer::init(test_cfg(path.clone(), Detail::Stages));
+        let s = t.open("stage", "rss.smoke".to_string());
+        t.close(&s);
+
+        let evs = events(&path);
+        let e = evs.iter().find(|e| e["ph"] == "E").unwrap();
+        let rss_mb = e["args"]["rss_mb"]
+            .as_u64()
+            .expect("rss_mb must be present");
+        let peak_mb = e["args"]["peak_mb"]
+            .as_u64()
+            .expect("peak_mb must be present");
+        assert!(rss_mb > 0, "rss_mb must be nonzero: {e:?}");
+        assert!(peak_mb >= rss_mb, "peak_mb must be >= rss_mb: {e:?}");
+    }
 }
