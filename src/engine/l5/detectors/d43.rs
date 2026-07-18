@@ -31,9 +31,7 @@ use crate::engine::l2::features::{PAnchor, PCFNNode, PConditionReference};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::capability_query::writes_physical_tables_of;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::event_flow::{
-    build_cross_extension_subscribers, event_kind_of, is_handled_re,
-};
+use crate::engine::l5::event_flow::{event_kind_of, is_handled_re};
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
@@ -377,8 +375,8 @@ pub fn detect_d43(
         event_kind_by_id.insert(ev.id.as_str(), event_kind_of(&ev.event_kind));
     }
 
-    // Cross-extension subscriber lookup per event.
-    let cross_ext_by_event = build_cross_extension_subscribers(&ctx.event_graph, &ws.objects);
+    // Cross-extension subscriber lookup per event — shared, built once in ctx.
+    let cross_ext_by_event = &ctx.cross_extension_subscribers;
 
     let sites = enumerate_dispatch_sites(ctx, &ctx.routine_by_id);
     for site in &sites {

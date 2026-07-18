@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::capability_query::{fact_is_known_temp, find_capabilities};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::event_flow::{build_cross_extension_subscribers, event_kind_of};
+use crate::engine::l5::event_flow::event_kind_of;
 use crate::engine::l5::finding::{
     Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
 };
@@ -40,10 +40,9 @@ struct SubWrite {
 }
 
 pub fn detect_d44(
-    resolved: &L3Resolved,
+    _resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
-    let ws = &resolved.workspace;
     let fp_index = &ctx.fingerprint_index;
     let ix = &ctx.event_flow_indexes;
 
@@ -55,7 +54,8 @@ pub fn detect_d44(
     for ev in &ctx.event_graph.events {
         event_kind_by_id.insert(ev.id.as_str(), event_kind_of(&ev.event_kind));
     }
-    let cross_ext_by_event = build_cross_extension_subscribers(&ctx.event_graph, &ws.objects);
+    // Cross-extension subscriber lookup per event — shared, built once in ctx.
+    let cross_ext_by_event = &ctx.cross_extension_subscribers;
 
     // anchor lookup helper.
     let anchor_for = |routine_id: &str, fallback: &SourceAnchor| -> SourceAnchor {

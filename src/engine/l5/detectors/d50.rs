@@ -564,6 +564,7 @@ mod tests {
                 routines,
                 &[],
             ),
+            cross_extension_subscribers: std::collections::BTreeMap::new(),
         }
     }
 
@@ -717,6 +718,7 @@ mod tests {
                 &routines_slice,
                 &ws_objects,
             ),
+            cross_extension_subscribers: std::collections::BTreeMap::new(),
         };
 
         // Build a minimal L3Resolved for detect_d50 (it uses ws.routines and ws.objects

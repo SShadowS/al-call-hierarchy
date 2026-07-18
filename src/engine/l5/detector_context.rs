@@ -176,6 +176,11 @@ pub struct DetectorContext<'a> {
     /// internal→stable routine-id substitution map). Built ONCE per run —
     /// previously every detector rebuilt it (54 × ~2 String clones per routine).
     pub fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex<'a>,
+    /// event id → cross-extension subscriber routine ids (subscribers living in a
+    /// DIFFERENT app than the publisher object). Previously rebuilt identically by
+    /// d43, d44 AND d45 each run; built once here (same sharing pattern as
+    /// `event_flow_indexes`).
+    pub cross_extension_subscribers: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl DetectorContext<'_> {
@@ -333,6 +338,11 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // dep set (source-only ⇒ empty dep set ⇒ every routine primary). Consumes
     // `event_graph` by reference before it is moved into the struct.
     let event_flow_indexes = build_event_flow_indexes(&event_graph, &ws.routines, &dep_routine_ids);
+
+    // Cross-extension subscriber lookup, shared by d43/d44/d45 — previously each
+    // rebuilt this identically from `ctx.event_graph` + `ws.objects` per run.
+    let cross_extension_subscribers =
+        crate::engine::l5::event_flow::build_cross_extension_subscribers(&event_graph, &ws.objects);
 
     let mut resolved_call_edge_by_callsite: HashMap<String, CallEdge> = HashMap::new();
     for ce in &calls.edges {
@@ -507,6 +517,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         closed_world_temp_params,
         summarize_diagnostics,
         fingerprint_index,
+        cross_extension_subscribers,
     }
 }
 
@@ -616,6 +627,15 @@ pub(crate) fn build_detector_context_cross_app(
 
     let event_flow_indexes =
         build_event_flow_indexes(&base.event_graph, ws_routines, dep_routine_ids);
+
+    // Cross-extension subscriber lookup, from the SAME inputs as `event_flow_indexes`
+    // above — `base.event_graph` + `base.objects` (the merged cross-app event graph
+    // + object set), consistent with how `fingerprint_index` below anchors to `base`.
+    let cross_extension_subscribers =
+        crate::engine::l5::event_flow::build_cross_extension_subscribers(
+            &base.event_graph,
+            &base.objects,
+        );
 
     // Resolved-call-edge-by-callsite index: EMPTY for the cross-app context. The
     // cross-app build does not retain the raw resolver `calls.edges`, and d13/d16/d17
@@ -734,6 +754,7 @@ pub(crate) fn build_detector_context_cross_app(
         closed_world_temp_params,
         summarize_diagnostics,
         fingerprint_index,
+        cross_extension_subscribers,
     }
 }
 

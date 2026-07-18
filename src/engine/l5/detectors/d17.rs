@@ -481,6 +481,7 @@ mod tests {
             fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
                 routines, objects,
             ),
+            cross_extension_subscribers: std::collections::BTreeMap::new(),
         }
     }
 
