@@ -593,11 +593,23 @@ fn compute_one_scc<'db>(
             mini_uncertainty.push(ue.clone());
         }
     }
-    // `compose_routine` filters `graph.uncertainty_edges` by `from == member`, so
-    // the per-SCC list (members' own slices) is exactly what it consumes; the
-    // global uncertaintySortKey sort is irrelevant under that filter, but keep a
-    // deterministic order for stability.
+    // `compose_routine` looks up `graph.uncertainty_edges` by `from == member` via
+    // the `uncertainty_edges_by_from` index (below), so the per-SCC list (members'
+    // own slices) is exactly what it consumes; the global uncertaintySortKey sort
+    // is irrelevant under that lookup, but keep a deterministic order for stability.
     mini_uncertainty.sort_by_key(uncertainty_sort_key);
+
+    // Index the per-SCC uncertainty-edge list by source routine (indices into the
+    // eventual `mini_graph.uncertainty_edges`, pushed in the list's own order) —
+    // mirrors the from-scratch path's `uncertainty_edges_by_from` build in
+    // `compute_summaries_with_leaves`, over this query's smaller per-SCC slice.
+    let mut uncertainty_edges_by_from: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, ue) in mini_uncertainty.iter().enumerate() {
+        uncertainty_edges_by_from
+            .entry(ue.from.clone())
+            .or_default()
+            .push(i);
+    }
 
     // The mini-graph `nodes` list only needs to cover the members + their targets
     // for any `nodes`-based read; `compose_routine` reads only `edges_by_from` and
@@ -710,6 +722,7 @@ fn compute_one_scc<'db>(
         body_avail_by_id: &body_avail_by_id,
         stable_map: stable_map_arc,
         leaf_summaries: &leaf_summaries,
+        uncertainty_edges_by_from: &uncertainty_edges_by_from,
     };
 
     run_one_scc(&scc_entry, &predecessor_final_map, &sctx, collect_trace)

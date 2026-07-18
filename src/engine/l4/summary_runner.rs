@@ -354,6 +354,7 @@ fn compose_routine(
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     graph: &CombinedGraph,
     body_avail_by_id: &HashMap<String, bool>,
+    uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
 ) -> RoutineSummary {
     // For non-recursive SCCs `snapshot` is empty; reads fall through to `final_map`.
     let lookup =
@@ -479,21 +480,23 @@ fn compose_routine(
         }
     }
 
-    // Uncertainty edges (to-less call sites) — walk the global list for this routine.
-    for ue in &graph.uncertainty_edges {
-        if ue.from != routine.id {
-            continue;
+    // Uncertainty edges (to-less call sites) — indexed lookup by source routine
+    // (indices into `graph.uncertainty_edges`, pushed in global order), NOT a
+    // linear scan of the whole workspace's uncertainty-edge list per routine.
+    if let Some(idxs) = uncertainty_edges_by_from.get(&routine.id) {
+        for &i in idxs {
+            let ue = &graph.uncertainty_edges[i];
+            let u = Uncertainty {
+                kind: ue.uncertainty.kind.clone(),
+                callsite_id: ue.uncertainty.callsite_id.clone(),
+                operation_id: ue.uncertainty.operation_id.clone(),
+                routine_id: ue.uncertainty.routine_id.clone(),
+                interface_name: ue.uncertainty.interface_name.clone(),
+            };
+            let k = uncertainty_key(&u);
+            uncertainties_by_key.entry(k).or_insert(u);
+            has_unresolved_calls = true;
         }
-        let u = Uncertainty {
-            kind: ue.uncertainty.kind.clone(),
-            callsite_id: ue.uncertainty.callsite_id.clone(),
-            operation_id: ue.uncertainty.operation_id.clone(),
-            routine_id: ue.uncertainty.routine_id.clone(),
-            interface_name: ue.uncertainty.interface_name.clone(),
-        };
-        let k = uncertainty_key(&u);
-        uncertainties_by_key.entry(k).or_insert(u);
-        has_unresolved_calls = true;
     }
 
     // Materialize sorted arrays.
@@ -619,6 +622,9 @@ fn compose_routine(
     // Only runs when the body is available + parsed (opaque/parse-incomplete stay
     // "unknown" as set by the base summary).
     if routine.body_available && !routine.parse_incomplete {
+        // Built ONCE per routine, not once per parameter: the op/call/fa index is
+        // identical across every parameter's walk of the SAME routine.
+        let walk_indexes = crate::engine::l4::cfg_walker::build_indexes(routine);
         for param_role in &mut parameter_roles {
             let rec_var = routine.record_variables.iter().find(|rv| {
                 rv.is_parameter && rv.parameter_index == Some(param_role.parameter_index)
@@ -636,6 +642,7 @@ fn compose_routine(
                 upgraded_bindings,
                 graph,
                 body_avail_by_id,
+                &walk_indexes,
             );
             param_role.requires_loaded_at_entry = f.requires_loaded_at_entry;
             param_role.mutates_before_load = f.mutates_before_load;
@@ -892,6 +899,17 @@ pub fn compute_summaries_with_leaves(
         .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
         .collect();
 
+    // Index the global uncertainty-edge list by source routine, preserving the
+    // GLOBAL list order per source (indices into graph.uncertainty_edges) so the
+    // per-routine iteration below sees the same sequence the linear scan saw.
+    let mut uncertainty_edges_by_from: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, ue) in graph.uncertainty_edges.iter().enumerate() {
+        uncertainty_edges_by_from
+            .entry(ue.from.clone())
+            .or_default()
+            .push(i);
+    }
+
     let mut final_map: HashMap<String, RoutineSummary> = HashMap::new();
     let mut raw_traces: Vec<RawSccTrace> = Vec::new();
     let mut cap_diagnostics: Vec<SummarizeDiagnostic> = Vec::new();
@@ -915,6 +933,7 @@ pub fn compute_summaries_with_leaves(
                 body_avail_by_id: &body_avail_by_id,
                 stable_map: &stable_map,
                 leaf_summaries,
+                uncertainty_edges_by_from: &uncertainty_edges_by_from,
             },
             collect_trace,
         );
@@ -944,6 +963,11 @@ pub struct SccComputeCtx<'a> {
     pub body_avail_by_id: &'a HashMap<String, bool>,
     pub stable_map: &'a HashMap<String, String>,
     pub leaf_summaries: &'a HashMap<String, RoutineSummary>,
+    /// `graph.uncertainty_edges` indexed by source routine id (indices into
+    /// `graph.uncertainty_edges`, pushed in GLOBAL order) — lets `compose_routine`
+    /// look up "this routine's uncertainty edges" in O(1) instead of scanning the
+    /// whole workspace list per routine. Same edges, same order, byte-identical.
+    pub uncertainty_edges_by_from: &'a HashMap<String, Vec<usize>>,
 }
 
 /// A diagnostic surfaced by the L4 summarize stage — presently just the JACOBI
@@ -1030,6 +1054,7 @@ pub fn run_one_scc(
             ctx.upgraded_bindings,
             ctx.graph,
             ctx.body_avail_by_id,
+            ctx.uncertainty_edges_by_from,
         );
         return SccComputeOut {
             summaries: vec![(id.clone(), summary)],
@@ -1089,6 +1114,7 @@ pub fn run_one_scc(
                 ctx.upgraded_bindings,
                 ctx.graph,
                 ctx.body_avail_by_id,
+                ctx.uncertainty_edges_by_from,
             );
             crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_COMPOSE, __probe_t.elapsed());
 

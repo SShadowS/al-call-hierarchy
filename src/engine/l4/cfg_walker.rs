@@ -200,7 +200,7 @@ struct ParamCtx<'a> {
 }
 
 /// Indexes for O(1) op/call/fa lookup during the walk.
-struct WalkIndexes<'a> {
+pub struct WalkIndexes<'a> {
     op_by_id: HashMap<&'a str, &'a L3RecordOperation>,
     call_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Field accesses keyed by `(startLine, startColumn)` — al-sem `indexFieldAccesses`.
@@ -222,6 +222,11 @@ pub struct PathAwareFacts {
 /// `snapshot` / `final_map` are the JACOBI maps for callee lookup.
 /// `body_avail_by_id` maps an internal RoutineId → its `body_available` flag (the
 /// `callee.bodyAvailable === false` opaque guard al-sem applies in `applyCall`).
+/// `indexes` is the routine's `WalkIndexes` (built once via [`build_indexes`] by
+/// the CALLER, hoisted above the per-parameter loop — every parameter's walk over
+/// the SAME routine reused the identical op/call/fa index, so building it once per
+/// routine instead of once per parameter is behaviour-preserving, not a semantic
+/// change).
 #[allow(clippy::too_many_arguments)]
 pub fn walk_param(
     routine: &L3Routine,
@@ -232,13 +237,13 @@ pub fn walk_param(
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     graph: &CombinedGraph,
     body_avail_by_id: &HashMap<String, bool>,
+    indexes: &WalkIndexes,
 ) -> PathAwareFacts {
     let param = ParamCtx {
         name_lc: rec_var_name_lc,
         rec_var_id,
     };
 
-    let indexes = build_indexes(routine);
     let mut exit_states: Vec<PerParamState> = Vec::new();
     let mut loop_stack: Vec<LoopFrame> = Vec::new();
 
@@ -256,7 +261,7 @@ pub fn walk_param(
             upgraded_bindings,
             graph,
             body_avail_by_id,
-            &indexes,
+            indexes,
             &mut exit_states,
             &mut loop_stack,
             0,
@@ -309,7 +314,7 @@ pub fn walk_param(
     }
 }
 
-fn build_indexes(routine: &L3Routine) -> WalkIndexes<'_> {
+pub fn build_indexes(routine: &L3Routine) -> WalkIndexes<'_> {
     let mut op_by_id: HashMap<&str, &L3RecordOperation> = HashMap::new();
     for op in &routine.record_operations {
         op_by_id.insert(op.id.as_str(), op);
@@ -1812,6 +1817,7 @@ mod tests {
             typed_edges: Vec::new(),
         };
         let body_avail_by_id: HashMap<String, bool> = HashMap::new();
+        let indexes = build_indexes(&routine);
 
         // Scoped thread (not `Builder::spawn`): the deeply-nested `PCFNNode` chain
         // must be BUILT and DROPPED on this (outer) thread's normal stack.
@@ -1834,6 +1840,7 @@ mod tests {
                         &upgraded_bindings,
                         &graph,
                         &body_avail_by_id,
+                        &indexes,
                     )
                 })
                 .expect("spawn small-stack worker")
