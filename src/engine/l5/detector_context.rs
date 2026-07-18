@@ -213,7 +213,7 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     crate::stage_probe::stage("l4:symbol_table:end");
     let no_deps: Vec<DeclaredDependency> = Vec::new();
     let no_fetched: Vec<String> = Vec::new();
-    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    let mut calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
     crate::stage_probe::stage("l4:resolve_calls:end");
     let event_graph = build_event_graph(&ws.routines, &symbols);
     crate::stage_probe::stage("l4:event_graph:end");
@@ -244,20 +244,22 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         coverage_in.insert(r.id.clone(), (status, reasons));
         direct_full.insert(r.id.clone(), facts);
     }
-    let cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
+    let mut cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
     crate::stage_probe::stage("l4:cones:end");
 
-    let empty_facts: Vec<CapabilityFact> = Vec::new();
+    // `cones` and `direct_full` are locally owned and dead after this loop, so
+    // move their payloads into the summaries instead of cloning them out.
     let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
     for r in &ws.routines {
-        let cone = cones.get(&r.id);
-        let inherited = cone.map(|c| c.inherited.clone()).unwrap_or_default();
-        let coverage = cone.map(|c| c.coverage.clone());
+        let (inherited, coverage) = match cones.remove(&r.id) {
+            Some(c) => (c.inherited, Some(c.coverage)),
+            None => (Vec::new(), None),
+        };
         summaries.insert(
             r.id.clone(),
             FullRoutineSummary {
                 routine_id: r.id.clone(),
-                capability_facts_direct: direct_full.get(&r.id).unwrap_or(&empty_facts).clone(),
+                capability_facts_direct: direct_full.remove(&r.id).unwrap_or_default(),
                 capability_facts_inherited: inherited,
                 coverage,
             },
@@ -344,14 +346,16 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     let cross_extension_subscribers =
         crate::engine::l5::event_flow::build_cross_extension_subscribers(&event_graph, &ws.objects);
 
+    // `calls.edges` is not read after this point (`calls.upgraded_bindings` still
+    // is), so take the edges by value instead of cloning each retained one.
     let mut resolved_call_edge_by_callsite: HashMap<String, CallEdge> = HashMap::new();
-    for ce in &calls.edges {
+    for ce in std::mem::take(&mut calls.edges) {
         if ce.to.is_none() {
             continue;
         }
         resolved_call_edge_by_callsite
             .entry(ce.callsite_id.clone())
-            .or_insert_with(|| ce.clone());
+            .or_insert(ce);
     }
 
     let mut uncertainty_edges_by_from: HashMap<
@@ -428,19 +432,9 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
     // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
     // uncertainties FIRST, then the combined-graph edge uncertainties (converted
     // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
-    // then sorts by key, matching al-sem's `dedupeUncertainties`.
-    // Harvest the CORE parameter_roles per routine from the SAME recomputed core
-    // summaries (d37/d39 read these as `routine.summary.parameterRoles`). Done in
-    // the same pass so we never recompute the core summaries.
-    let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
-    for r in &ws.routines {
-        if let Some(s) = core_summaries.get(&r.id)
-            && !s.parameter_roles.is_empty()
-        {
-            parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
-        }
-    }
-
+    // then sorts by key, matching al-sem's `dedupeUncertainties`. This pass only
+    // BORROWS `core_summaries` (cloning the uncertainty entries — the union needs
+    // both sources), so `core_summaries` can then be drained for parameter_roles.
     let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
     for r in &ws.routines {
         let from_summary: &[Uncertainty] = core_summaries
@@ -458,6 +452,19 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
         uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
     }
 
+    // Harvest the CORE parameter_roles per routine from the SAME recomputed core
+    // summaries (d37/d39 read these as `routine.summary.parameterRoles`) — draining
+    // `core_summaries` (now dead) by value so each non-empty role vec is MOVED, not
+    // cloned. Membership matches the prior `ws.routines`+lookup form exactly: only
+    // routines present in `core_summaries` with non-empty roles are inserted, and
+    // the result is an order-independent HashMap.
+    let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
+    for (rid, s) in core_summaries {
+        if !s.parameter_roles.is_empty() {
+            parameter_roles_by_routine.insert(rid, s.parameter_roles);
+        }
+    }
+
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
     for r in &ws.routines {
         for cs in &r.call_sites {
@@ -467,9 +474,10 @@ pub fn build_detector_context(resolved: &L3Resolved) -> DetectorContext<'_> {
 
     // Expose the resolver's post-upgrade bindings (the `upgradeBindings` side
     // table) keyed by callsite id — the join target for d37/d39 which read
-    // `binding.bindingResolution` / `binding.calleeParameterIsVar`.
+    // `binding.bindingResolution` / `binding.calleeParameterIsVar`. `compute_summaries`
+    // above was the last reader of `calls.upgraded_bindings`, so move it out here.
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
-        calls.upgraded_bindings.clone();
+        std::mem::take(&mut calls.upgraded_bindings);
 
     // R4-F root classifications — keyed by internal RoutineId for d50/d51 lookup.
     let root_classifications_by_routine: HashMap<
