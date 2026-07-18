@@ -25,6 +25,7 @@ use al_syntax::IdentifierFoldExt;
 
 use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
 use crate::engine::l2::node_util::{Utf16Cols, strip_quotes};
+use crate::engine::perf_trace as pt;
 
 // ---------------------------------------------------------------------------
 // L3 model types — workspace-level, in-memory (NOT the serde projection shape).
@@ -560,7 +561,19 @@ fn project_file(
     cols: &Utf16Cols,
     workspace: &mut L3Workspace,
 ) {
+    // Stages-tier parse-vs-projection split (spec 2026-07-18-tracing-infra.md).
+    // `project_file` is the per-file unit of work inside the parallel rayon `.map`
+    // closure in `assemble_workspace`/`assemble_workspace_units` — one call here IS
+    // one rayon closure invocation, so a `LocalCounters` built and flushed entirely
+    // within this function (no threading through the call sites) already satisfies
+    // "one LocalCounters per rayon closure, flush each" without a signature change
+    // at either caller. Cheapest-on-disabled shape: a single `enabled()` bool read
+    // gates every `Instant::now()` call, so tracing-off pays zero clock reads and
+    // zero allocation.
+    let hot = pt::enabled(pt::Detail::Stages);
+    let t_start = hot.then(std::time::Instant::now);
     let ir_file = al_syntax::parse(source);
+    let t_parsed = hot.then(std::time::Instant::now);
 
     for (oi, o) in ir_file.objects.iter().enumerate() {
         let Some(object_type) = crate::engine::l2::ir_walk::ir_object_type(&o.kind) else {
@@ -1130,6 +1143,13 @@ fn project_file(
             });
         }
     }
+
+    if let (Some(t0), Some(t1)) = (t_start, t_parsed) {
+        let mut lc = pt::LocalCounters::new();
+        lc.add("parse_us", t1.duration_since(t0).as_micros() as u64);
+        lc.add("projection_us", t1.elapsed().as_micros() as u64);
+        lc.flush("l3.parse_project");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1170,6 +1190,7 @@ pub fn assemble_workspace(
     app_guid: &str,
     model_instance_id: &str,
 ) -> L3Workspace {
+    let _s = pt::span("l3", "l3.parse_project_parallel");
     // Deterministic ingestion order: sort files by name (the `ws:<name>` unit id
     // total order), then walk each file's objects in document order.
     let mut sorted: Vec<&(String, String)> = files.iter().collect();
@@ -1237,6 +1258,7 @@ pub fn assemble_workspace_units(
     app_guid: &str,
     model_instance_id: &str,
 ) -> L3Workspace {
+    let _s = pt::span("l3", "l3.parse_project_parallel");
     let mut sorted: Vec<&(String, String)> = units.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -1352,27 +1374,31 @@ pub fn assemble_l3_workspace_from_disk(
         discover_al_files_app_scoped, read_al_source, read_root_app_guid,
     };
 
-    // Fail-closed: need a readable root app.json with a string `id`. The single-app
-    // guard is gone — a nested `app.json` is a SEPARATE project, so discovery is
-    // scoped to THIS app (nested sub-apps are excluded). A monorepo / `Modules/`
-    // layout (root app + nested apps) thus analyzes the root app; each nested app is
-    // analyzed by pointing the workspace at its own root. (The gate keeps its own
-    // multi-app provider check in `workspace_diagnostics` — this only relaxes the L3
-    // analysis path that `aldump` / cross-app stats use.)
-    let app_guid = read_root_app_guid(workspace)?;
-    let discovered = discover_al_files_app_scoped(workspace).ok()?;
+    let (app_guid, files): (String, Vec<(String, String)>) = {
+        let _s = pt::span("l3", "l3.discover_read");
+        // Fail-closed: need a readable root app.json with a string `id`. The single-app
+        // guard is gone — a nested `app.json` is a SEPARATE project, so discovery is
+        // scoped to THIS app (nested sub-apps are excluded). A monorepo / `Modules/`
+        // layout (root app + nested apps) thus analyzes the root app; each nested app is
+        // analyzed by pointing the workspace at its own root. (The gate keeps its own
+        // multi-app provider check in `workspace_diagnostics` — this only relaxes the L3
+        // analysis path that `aldump` / cross-app stats use.)
+        let app_guid = read_root_app_guid(workspace)?;
+        let discovered = discover_al_files_app_scoped(workspace).ok()?;
 
-    // Build (relPosix, source) pairs in discovery (rel-posix-sorted) order; the
-    // inline assembler re-sorts by name, which is the same total order.
-    let mut files: Vec<(String, String)> = Vec::new();
-    for f in &discovered {
-        match read_al_source(&f.abs_path) {
-            Ok(src) => files.push((f.rel_posix.clone(), src)),
-            Err(e) => {
-                eprintln!("warning: skipping {} (read error: {e})", f.rel_posix);
+        // Build (relPosix, source) pairs in discovery (rel-posix-sorted) order; the
+        // inline assembler re-sorts by name, which is the same total order.
+        let mut files: Vec<(String, String)> = Vec::new();
+        for f in &discovered {
+            match read_al_source(&f.abs_path) {
+                Ok(src) => files.push((f.rel_posix.clone(), src)),
+                Err(e) => {
+                    eprintln!("warning: skipping {} (read error: {e})", f.rel_posix);
+                }
             }
         }
-    }
+        (app_guid, files)
+    };
 
     if files.is_empty() {
         return None;
@@ -1436,6 +1462,7 @@ fn read_primary_app_from_disk(
 /// DO NOT add an L4 field to these entity structs (it would breach the boundary the
 /// `cross_app_l3_poison` test guards). NOTHING in `resolve` reads beyond them.
 pub fn resolve(workspace: &mut L3Workspace) {
+    let _s = pt::span("l3", "l3.resolve");
     let symbols = SymbolTable::build(&workspace.objects, &workspace.tables, &workspace.routines);
 
     // objectId → object, so a routine maps back to its owning object.

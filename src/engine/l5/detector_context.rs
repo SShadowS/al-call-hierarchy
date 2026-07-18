@@ -40,6 +40,8 @@ use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::{ReverseCallGraph, build_reverse_call_graph};
 use crate::engine::l5::transaction_spans::{TransactionSpan, compute_transaction_spans};
+use crate::engine::perf_trace as pt;
+use serde_json::json;
 
 /// A declared workspace dependency (`model.identity.primaryDependencies[]`): the
 /// `appGuid` / `name` / `minVersion` triple d17 iterates. Mirrors al-sem's
@@ -225,18 +227,29 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     let need_summaries = demanded & (substrate::SUMMARIES | substrate::TRANSACTION_SPANS) != 0;
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
+    // `symbols` feeds BOTH spans below (resolve_calls here, build_event_graph in
+    // the next stage), so it is built at this outer scope instead of inside either
+    // span's own block — the two spans are closed explicitly (`drop`) at their
+    // semantic stage ends rather than by a block boundary (same pattern as
+    // `gate/run.rs`'s `gate.project_filter_scope_baseline_suppress`).
+    let _symbols_span = pt::span("context", "context.symbols_resolve_calls");
     let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
     let no_deps: Vec<DeclaredDependency> = Vec::new();
     let no_fetched: Vec<String> = Vec::new();
     let mut calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    drop(_symbols_span);
+
+    let _graph_span = pt::span("context", "context.event_combined_graph");
     let event_graph = build_event_graph(&ws.routines, &symbols);
     let graph = build_combined_graph(ws, &calls, &event_graph);
+    drop(_graph_span);
 
     // Per-routine direct facts + direct coverage, then the inherited cone over
     // the combined graph — the same assembly project_r3a3 does inline, here via
     // the reusable `compose_cone_over_graph` seam. SUBSTRATE-GATED: built only when
     // some selected detector demands SUMMARIES (or TRANSACTION_SPANS, which folds
     // over the summaries map). Skipped ⇒ empty `summaries` map.
+    let _cones_span = pt::span("context", "context.capability_cones");
     let summaries: HashMap<String, FullRoutineSummary> = if need_summaries {
         let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
         for evt in &event_graph.events {
@@ -283,6 +296,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     } else {
         HashMap::new()
     };
+    drop(_cones_span);
 
     // --- Eager indexes -----------------------------------------------------
     let routine_by_id: HashMap<&str, &L3Routine> =
@@ -350,15 +364,18 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 
     // Transaction spans — SUBSTRATE-GATED on TRANSACTION_SPANS (which also forced
     // `need_summaries`, so the `summaries` map above is populated here).
-    let transaction_spans = if demanded & substrate::TRANSACTION_SPANS != 0 {
-        compute_transaction_spans(
-            &ws.routines,
-            &dep_routine_ids,
-            &reverse_call_graph,
-            &summaries,
-        )
-    } else {
-        Vec::new()
+    let transaction_spans = {
+        let _s = pt::span("context", "context.transaction_spans");
+        if demanded & substrate::TRANSACTION_SPANS != 0 {
+            compute_transaction_spans(
+                &ws.routines,
+                &dep_routine_ids,
+                &reverse_call_graph,
+                &summaries,
+            )
+        } else {
+            Vec::new()
+        }
     };
 
     // Event-flow indexes — built eagerly from the L3 event graph + routine set +
@@ -415,14 +432,70 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         HashMap<String, Vec<RecordRoleSummary>>,
         Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
     ) = if demanded & substrate::CORE_SUMMARIES != 0 {
-        let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
-        for (from, list) in &graph.edges_by_from {
-            scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
-        }
-        let scc = tarjan_scc(&SccInputGraph {
-            nodes: &graph.nodes,
-            edges_by_from: &scc_adjacency,
+        let scc = {
+            let _s = pt::span("context", "context.core_scc_tarjan");
+            let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+            for (from, list) in &graph.edges_by_from {
+                scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+            }
+            tarjan_scc(&SccInputGraph {
+                nodes: &graph.nodes,
+                edges_by_from: &scc_adjacency,
+            })
+        };
+
+        // STRUCTS one-shot: SCC population stats + the largest-SCC's intra-edge
+        // anatomy (which edge KIND fuses the biggest component, member outdegree).
+        // Reimplements the historical `SCCSTATS`/`SCCANATOMY` eprintln probe
+        // (`git show c8836e7^:src/engine/l5/detector_context.rs`) as one lazy JSON
+        // payload — `build` below only runs when tracing is actually enabled.
+        pt::instant_lazy("l4", "scc_stats", || {
+            let max_scc = scc.sccs.iter().map(|s| s.members.len()).max().unwrap_or(0);
+            let recursive_sccs = scc.sccs.iter().filter(|s| s.recursive).count();
+            let recursive_members: usize = scc
+                .sccs
+                .iter()
+                .filter(|s| s.recursive)
+                .map(|s| s.members.len())
+                .sum();
+            let largest_scc = scc.sccs.iter().max_by_key(|s| s.members.len()).map(|big| {
+                let member_set: std::collections::HashSet<&str> =
+                    big.members.iter().map(|s| s.as_str()).collect();
+                let mut kind_counts: std::collections::BTreeMap<&str, usize> =
+                    std::collections::BTreeMap::new();
+                let mut intra_edges = 0usize;
+                let mut max_intra_outdegree = 0usize;
+                for m in &big.members {
+                    let mut out_here = 0usize;
+                    if let Some(edges) = graph.edges_by_from.get(m) {
+                        for e in edges {
+                            if member_set.contains(e.to.as_str()) {
+                                intra_edges += 1;
+                                out_here += 1;
+                                *kind_counts.entry(e.kind.as_str()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                    max_intra_outdegree = max_intra_outdegree.max(out_here);
+                }
+                json!({
+                    "members": big.members.len(),
+                    "intra_edges": intra_edges,
+                    "max_intra_outdegree": max_intra_outdegree,
+                    "kinds": kind_counts,
+                })
+            });
+            json!({
+                "nodes": graph.nodes.len(),
+                "sccs": scc.sccs.len(),
+                "recursive_sccs": recursive_sccs,
+                "recursive_members": recursive_members,
+                "max_scc": max_scc,
+                "largest_scc": largest_scc,
+            })
         });
+
+        let _summaries_span = pt::span("context", "context.compute_summaries");
         // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
         // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
         // but `compute_summaries` takes it.
@@ -442,6 +515,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             &field_index,
             false,
         );
+        drop(_summaries_span);
 
         // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
         // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
@@ -490,6 +564,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         (HashMap::new(), HashMap::new(), Vec::new())
     };
 
+    let _final_indexes_span = pt::span("context", "context.final_indexes");
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
     for r in &ws.routines {
         for cs in &r.call_sites {
@@ -520,6 +595,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 
     let fingerprint_index =
         crate::engine::l5::fingerprint::FingerprintIndex::build(&ws.routines, &ws.objects);
+    drop(_final_indexes_span);
 
     DetectorContext {
         graph,

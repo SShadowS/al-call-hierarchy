@@ -40,6 +40,7 @@ use crate::engine::gate::projection::{ProjectionIndex, project_finding};
 use crate::engine::gate::version::driver_version;
 use crate::engine::l3::l3_workspace::assemble_and_resolve_workspace;
 use crate::engine::l5::registry::run_detectors;
+use crate::engine::perf_trace as pt;
 
 /// Output format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +186,7 @@ pub fn run_analyze_with_exit(
     args: &AnalyzeArgs,
     default_version: &str,
 ) -> Result<(String, u8, Option<String>), String> {
+    let _analyze_span = pt::span("analyze", "analyze.total");
     let detectors = resolve_analyze_detectors(args.preset.as_deref(), args.detector.as_deref())?;
 
     let version = args
@@ -201,23 +203,32 @@ pub fn run_analyze_with_exit(
     // takes; the fresh pipeline's own local `ctx` is dropped inside `fresh_coverage`
     // before this function ever touches the separate L3 model (spec §3 memory
     // sequencing — see `FreshCoverage`'s doc).
-    let fresh = crate::program::resolve::full::fresh_coverage(ws_path);
+    let fresh = {
+        let _s = pt::span("preflight", "preflight.fresh_coverage");
+        crate::program::resolve::full::fresh_coverage(ws_path)
+    };
     let model_instance_id = match compute_gate_model_instance_id(ws_path) {
         Some(id) => id,
         // Fail-closed layout → empty output; preflight now says could-not-verify
         // (never a fabricated clean — spec §3), gated on `fresh` above.
         None => return empty_output_result(args, &version, &fresh),
     };
-    let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id, false) {
-        Some(r) => r,
-        // Fail-closed / unreadable workspace → empty output, same could-not-verify rule.
-        None => return empty_output_result(args, &version, &fresh),
+    let resolved = {
+        let _s = pt::span("l3", "l3.assemble_resolve");
+        match assemble_and_resolve_workspace(ws_path, &model_instance_id, false) {
+            Some(r) => r,
+            // Fail-closed / unreadable workspace → empty output, same could-not-verify rule.
+            None => return empty_output_result(args, &version, &fresh),
+        }
     };
 
     // L4 + L5: run the selected detectors. Findings come pre-sorted by
     // (detector, primaryLocationKey, rootCauseKey) with dep-anchored findings already
     // role-scoped out (source-only ⇒ no-op).
-    let run = run_detectors(&resolved, &detectors);
+    let run = {
+        let _s = pt::span("l4_l5", "l4_l5.run_detectors");
+        run_detectors(&resolved, &detectors)
+    };
     // Capture diagnostics + detector stats for the Json formatter (consumed after filtering).
     //
     // al-sem `analyzeWorkspace` (src/index.ts:287-297) concatenates SIX diagnostic
@@ -235,6 +246,7 @@ pub fn run_analyze_with_exit(
     // contract). `infra_diagnostics` is the OVERLAY source (5); `run.diagnostics`
     // is DETECT (6). The TS-order #1 (workspace) goes FIRST so it precedes overlay.
     let run_diagnostics: Vec<crate::engine::l5::registry::Diagnostic> = {
+        let _s = pt::span("gate", "gate.workspace_diagnostics");
         let mut all: Vec<crate::engine::l5::registry::Diagnostic> = Vec::new();
         // (1) workspace.diagnostics — provider (discover) + index, computed from disk.
         all.extend(
@@ -267,6 +279,11 @@ pub fn run_analyze_with_exit(
     let run_detector_stats = run.detector_stats.clone();
 
     // Project each finding (display names + 1-based location), preserving order.
+    // Span covers projection + filter + scope + limit + baseline + inline-suppression
+    // (they share one lexical stretch through `paired`'s successive `retain` passes);
+    // the local outlives the natural block boundary, so it is closed explicitly below
+    // rather than by the enclosing scope.
+    let _project_filter_span = pt::span("gate", "gate.project_filter_scope_baseline_suppress");
     let idx = ProjectionIndex::build(&resolved.workspace.objects, &resolved.workspace.routines);
     let mut paired: Vec<(
         crate::engine::gate::projection::FindingSummary,
@@ -359,76 +376,84 @@ pub fn run_analyze_with_exit(
             k
         });
     }
+    drop(_project_filter_span);
 
     // --- dependency-coverage preflight (al-sem Task 2) ---
     // NOTE: coverage is computed HERE (before the format switch) so it is available
     // to the Json formatter. The preflight evaluation + exit-code gate follow below.
-    let mut coverage = resolved.project_coverage_disk(ws_path);
-    // One dependency universe (spec §3): the formatter-visible opaqueApps follows
-    // the FRESH snapshot. The L3 gate path resolves source-only with empty deps
-    // (src/engine/l3/coverage.rs:239) — its opaque list is structurally empty, and
-    // leaving it would let stderr say "N symbol-only apps" while JSON says [].
-    if let Ok(fc) = &fresh {
-        coverage.opaque_apps = fc.opaque_apps.clone();
-    }
+    let coverage = {
+        let _s = pt::span("gate", "gate.coverage");
+        let mut c = resolved.project_coverage_disk(ws_path);
+        // One dependency universe (spec §3): the formatter-visible opaqueApps follows
+        // the FRESH snapshot. The L3 gate path resolves source-only with empty deps
+        // (src/engine/l3/coverage.rs:239) — its opaque list is structurally empty, and
+        // leaving it would let stderr say "N symbol-only apps" while JSON says [].
+        if let Ok(fc) = &fresh {
+            c.opaque_apps = fc.opaque_apps.clone();
+        }
+        c
+    };
 
     // --- format ---
-    let output = match args.format {
-        OutputFormat::Sarif => {
-            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
-            let raws: Vec<&crate::engine::l5::finding::Finding> =
-                paired.iter().map(|(_, r)| *r).collect();
-            format_sarif(&summaries, &raws, &version)
-        }
-        OutputFormat::PrSummary => {
-            let apps = read_workspace_apps(ws_path);
-            format_pr_summary(&paired, &resolved.workspace.routines, &apps)
-        }
-        OutputFormat::Json => {
-            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
-            // Opt-in evidence augmentation (aligned BY INDEX with `summaries`, which is
-            // built from `paired` in the same order). None on the default path ⇒ output
-            // byte-identical to today + schemaVersion "1.0.0".
-            let evidence: Option<Vec<FindingEvidence>> = if args.with_evidence {
-                Some(build_finding_evidence(
-                    &paired,
-                    &resolved.workspace.routines,
-                ))
-            } else {
-                None
-            };
-            build_analyze_json(&JsonFormatInputs {
-                findings: &summaries,
-                diagnostics: &run_diagnostics,
-                detector_stats: &run_detector_stats,
-                coverage: &coverage,
-                deterministic: args.deterministic,
-                driver_version: driver_version(),
-                evidence: evidence.as_deref(),
-            })
-        }
-        OutputFormat::Terminal => {
-            let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
-            // group-by path: only when format==terminal AND group_by is set.
-            if let Some(ref by_str) = args.group_by {
-                if let Some(by) = GroupBy::parse(by_str) {
-                    format_terminal_grouped(&summaries, &coverage, by)
+    let output = {
+        let _s = pt::span("gate", "gate.format");
+        match args.format {
+            OutputFormat::Sarif => {
+                let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+                let raws: Vec<&crate::engine::l5::finding::Finding> =
+                    paired.iter().map(|(_, r)| *r).collect();
+                format_sarif(&summaries, &raws, &version)
+            }
+            OutputFormat::PrSummary => {
+                let apps = read_workspace_apps(ws_path);
+                format_pr_summary(&paired, &resolved.workspace.routines, &apps)
+            }
+            OutputFormat::Json => {
+                let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+                // Opt-in evidence augmentation (aligned BY INDEX with `summaries`, which is
+                // built from `paired` in the same order). None on the default path ⇒ output
+                // byte-identical to today + schemaVersion "1.0.0".
+                let evidence: Option<Vec<FindingEvidence>> = if args.with_evidence {
+                    Some(build_finding_evidence(
+                        &paired,
+                        &resolved.workspace.routines,
+                    ))
                 } else {
-                    // Invalid group_by — the CLI validates this, so treat as plain.
+                    None
+                };
+                build_analyze_json(&JsonFormatInputs {
+                    findings: &summaries,
+                    diagnostics: &run_diagnostics,
+                    detector_stats: &run_detector_stats,
+                    coverage: &coverage,
+                    deterministic: args.deterministic,
+                    driver_version: driver_version(),
+                    evidence: evidence.as_deref(),
+                })
+            }
+            OutputFormat::Terminal => {
+                let summaries: Vec<_> = paired.iter().map(|(s, _)| s.clone()).collect();
+                // group-by path: only when format==terminal AND group_by is set.
+                if let Some(ref by_str) = args.group_by {
+                    if let Some(by) = GroupBy::parse(by_str) {
+                        format_terminal_grouped(&summaries, &coverage, by)
+                    } else {
+                        // Invalid group_by — the CLI validates this, so treat as plain.
+                        format_terminal(&summaries, &coverage, &run_diagnostics)
+                    }
+                } else {
                     format_terminal(&summaries, &coverage, &run_diagnostics)
                 }
-            } else {
-                format_terminal(&summaries, &coverage, &run_diagnostics)
             }
-        }
-        OutputFormat::Html => {
-            let primary_app = resolved.primary_app.as_ref();
-            format_html(&HtmlFormatInputs {
-                findings: &paired,
-                resolved: &resolved,
-                coverage: &coverage,
-                primary_app,
-            })
+            OutputFormat::Html => {
+                let primary_app = resolved.primary_app.as_ref();
+                format_html(&HtmlFormatInputs {
+                    findings: &paired,
+                    resolved: &resolved,
+                    coverage: &coverage,
+                    primary_app,
+                })
+            }
         }
     };
 

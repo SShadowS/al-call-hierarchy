@@ -18,6 +18,7 @@ use crate::engine::l5::detector_context::{
     DetectorContext, build_detector_context, build_detector_context_cross_app,
 };
 use crate::engine::l5::finding::Finding;
+use crate::engine::perf_trace as pt;
 
 /// Substrate demand bits (W1.0 demand-driven detector substrate).
 ///
@@ -382,11 +383,24 @@ fn run_each(
     ctx: &DetectorContext,
     detectors: &[Detector],
 ) -> (Vec<Finding>, Vec<Diagnostic>, Vec<DetectorStats>) {
+    let _total_span = pt::span("detector", "detectors.total");
     let mut findings: Vec<Finding> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     let mut detector_stats: Vec<DetectorStats> = Vec::new();
 
     for detector in detectors {
+        // Dynamic per-detector span name (`detector.<name>`) — the `TraceName::Owned`
+        // `String` variant. Built ONLY when Stages tracing is enabled: `pt::span`'s
+        // `name: impl Into<TraceName>` argument is evaluated by the CALLER before the
+        // function's own internal `tracer()` gate runs, so an unconditional
+        // `format!(...)` call site would allocate on every detector even with tracing
+        // off. Guarding the allocation behind `enabled()` here (T1 review advisory)
+        // keeps the disabled path at a single bool read.
+        let _detector_span = if pt::enabled(pt::Detail::Stages) {
+            Some(pt::span("detector", format!("detector.{}", detector.name)))
+        } else {
+            None
+        };
         // `catch_unwind` here is debug-build-only defense-in-depth (see the
         // `run_detectors` doc comment) — it is INERT under `panic = "abort"`. The
         // real, abort-safe isolation is the `Result` returned by `detector.run`
@@ -397,6 +411,15 @@ fn run_each(
         }));
         match outcome {
             Ok(Ok(output)) => {
+                // STRUCTS: findings count alongside the span's own RSS delta (emitted
+                // by `_detector_span`'s `Drop` at loop-iteration end) — the module has
+                // no per-span custom-args hook, so this rides an instant event instead.
+                pt::instant_lazy("detector", "detector.result", || {
+                    serde_json::json!({
+                        "detector": detector.name.as_str(),
+                        "findings": output.findings.len(),
+                    })
+                });
                 findings.extend(output.findings);
                 // Collect detector-emitted diagnostics (non-error; d43 substrate guard etc.)
                 diagnostics.extend(output.diagnostics);
