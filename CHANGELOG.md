@@ -37,6 +37,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cap-hit diagnostics (they are harvested from the gated
   `compute_summaries` pass). Full/preset/default runs are byte-identical
   to before.
+- **Engine memory/speed Wave 2a** — two byte-stable detector-loop fixes,
+  from the measured root-cause analysis in
+  `docs/superpowers/specs/2026-07-18-wave2-measurements.md` §4a/§6 (plan
+  `docs/superpowers/plans/2026-07-18-engine-memory-speed-wave2a.md`).
+  `fingerprint_of` (`src/engine/l5/fingerprint.rs`) replaced its per-finding
+  re-sort of all ~100k routine stable-ids plus a per-byte all-ids
+  `starts_with` scan with an O(key_len) structural stable-id substitution
+  (ids are fixed-shape `{mid}/{64-hex}`; equivalence pinned by a
+  scan-oracle unit test) — this eliminated the quadratic tail dominating
+  `d19-unused-parameter` and `d12-dead-integration-event`. `reachable()`
+  and `touches_db_of` (`src/engine/l5/capability_query.rs`,
+  `full_summary.rs`) stopped allocating a fresh direct+inherited `Vec` per
+  probe in favor of a zero-alloc chained-iterator early-exit, and
+  `d1-db-op-in-loop` now memoizes its per-routine touches-db answer across
+  its bounded evidence walk instead of re-probing every edge. Slice-5400
+  full-default: 2,608 s → 304.2 s (**8.6×**; `d19` 988 s → 0.23 s, `d12`
+  425 s → 0.07 s, `d1` 448 s → 157.9 s). Base App 28.0 3-detector
+  (d61/d62/d64): 90.3 s → 40.9 s (**2.2×**). DO default run unchanged
+  (9.0 s, no regression). Golden fixtures and the DO differential byte-
+  stable throughout. (The full-54-detector Base-App run still does not
+  finish within a 2-hour cap — `d1`'s bounded evidence walk over the
+  846-member SCC is now measurably limited by the walk GRAPH's size, not
+  per-step allocation cost; the next lever is a call-graph precision fix,
+  not a further constant-factor optimization — see the measurements doc
+  §6 for the full analysis and the Wave-2b queue.)
 
 ## [1.0.0] - 2026-07-18
 

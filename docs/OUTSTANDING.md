@@ -36,16 +36,45 @@ the bottom, CHANGELOG, and git log.
   A9' parallel diagnostics re-parse. Decision (a): substrate-skipping runs omit
   summarize cap-hit diagnostics (only permitted output change). Wave-1 outcome
   table: findings doc §7b
-- [ ] **Engine memory/speed Wave 2/3 (Track B)** — same findings doc §7: B1 interned
-  id universe + bitsets (output-stable), B2 SCC-shared lazy cones, B3
-  single-substrate unification (needs detector-feature parity harness first).
-  Follow-ups §8: 846-SCC anatomy (which edge kind fused it), Jacobi telemetry.
-  SEQUENCE with the `to_lowercase()` census below — B1 rewrites the same
-  `src/engine/l2`-`l5` call sites; do the fold-primitive swap as part of (or
-  immediately before) B1's interning pass, never as separate churn. Also feeds
-  the change-impact wedge's Q1/Q2 fork (effects-on-fresh): the wedge's cone
-  substrate should be B1/B2's bitset cones, and the findings doc is the
-  evidence AGAINST making L3 load-bearing again
+- [ ] **Engine memory/speed Wave 2/3 (Track B)** — Wave-2a (measure-first
+  root-cause + mechanical fixes) DONE 2026-07-18 (`e2e34fc` structural
+  stable-id substitution in `fingerprint_of`; `136c4e2` zero-alloc
+  `reachable()` iteration + memoized `touches_db` in d1; both byte-stable,
+  goldens + DO diff clean). Slice-5400 full-default 2,608s→304.2s (8.6×;
+  d19 988→0.23s and d12 425→0.07s effectively eliminated, d1 448→157.9s —
+  2.8× but still 87.7% of the loop); 8020 3-detector 90.3s→40.9s (2.2×); DO
+  unchanged (9.0s). **8020 full-default STILL DNF** (2h cap, 45.2 GB peak;
+  d1 alone runs ~93 min and never finishes) — walk-graph SIZE at 846-SCC
+  density, not per-step allocation cost, is now the measured limiter. The
+  846-SCC's trigger-edge over-approximation hypothesis (the fusion driver)
+  is source-sampling VERIFIED: 20/20 sampled intra-SCC implicit-trigger
+  edges over-approximated, 97.1% (1,046/1,077) a field-collapsed OnValidate
+  target-collision (Sales Header alone collapses 93 distinct field triggers
+  onto one graph node). Full numbers + derivation:
+  `docs/superpowers/specs/2026-07-18-wave2-measurements.md` §2/§3/§3a/§4/
+  §4a/§6.
+
+  **Measured Wave-2b queue** (replaces the prior speculative B1/B2/B3
+  ordering): (1) trigger-edge builder parity —
+  `build_implicit_trigger_edges` (`src/engine/l3/implicit_edges.rs:29-70`)
+  needs field-specific OnValidate targeting + the RunTrigger gate, bringing
+  it to parity with the fresh resolver's already-correct
+  `implicit_trigger_route_applicable` (`src/program/resolve/
+  applicability.rs:159-227`) — expected to shatter the 846-member SCC
+  toward ~84-member scale, shrinking BOTH d1's walk graph and the Jacobi
+  block at the root; gated on goldens + a d43/d44/d45 event-detector FP
+  review (advisory-graph semantics change); (2) §7 flow-insensitive
+  d1-walker redesign, only if d1 remains hot after (1) lands and is
+  re-measured; (3) B1 interned id universe + bitsets (output-stable) / B2
+  SCC-shared lazy cones, for the remaining summary mass (8.34M cardinalities
+  measured on one SCC alone). B3 single-substrate unification still needs a
+  detector-feature parity harness first. SEQUENCE with the `to_lowercase()`
+  census below — B1 rewrites the same `src/engine/l2`-`l5` call sites; do
+  the fold-primitive swap as part of (or immediately before) B1's interning
+  pass, never as separate churn. Also feeds the change-impact wedge's Q1/Q2
+  fork (effects-on-fresh): the wedge's cone substrate should be B1/B2's
+  bitset cones, and the findings doc is the evidence AGAINST making L3
+  load-bearing again
 - [x] **tree-sitter-al quirks list** — WAS ALREADY DONE, stale item (live-verified
   2026-07-17 against pinned v3.2.0 `14bd55c`): `statement_block`/`argument_list`/
   `parenthesized_expression` carry ZERO fields (left/operator/right pollution gone,
