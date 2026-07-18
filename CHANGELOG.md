@@ -29,7 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_STDERR` (opt-in Wave-1 `STAGE …` stderr mirror),
   `ALSEM_TRACE_EXIT_AFTER`. No new dependencies (reuses `serde_json`).
   Instrumentation call sites are wired in follow-up tasks; this lands the module
-  only.
+  only. **Disabled-path pipeline overhead validated against the true
+  pre-branch baseline** (the `f1e29e2` binary — zero perf_trace code compiled
+  in at all — vs. the current disabled-path binary; NOT env-off vs. env-absent
+  on the SAME binary, which both hit the identical `Config::from_reader` ⇒
+  `None` branch and would only measure process noise): 5 interleaved real
+  `alsem analyze` runs each on the DO workspace gave medians 10.283 s
+  (current, disabled) vs. 10.380 s (pre-branch baseline) — a **-0.93%** delta
+  (current trends faster, well under the 1% pipeline-level guard and inside
+  the historical 9.0-10.7 s DO band).
 - **perf_trace Jacobi + Hot detail tiers** (`ALSEM_TRACE_DETAIL=jacobi|hot`) —
   the instrumentation that makes the decisive d1-only cut-explosion experiment
   measurable (spec `docs/superpowers/specs/2026-07-18-tracing-infra.md`).
