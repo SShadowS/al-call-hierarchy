@@ -1179,32 +1179,53 @@ pub fn assemble_workspace(
     let mut sorted: Vec<&(String, String)> = files.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // Parallel per-file parse+project into PRIVATE fragments on the big-stack
+    // pool (the same generous stack the fresh engine parses on), then fold the
+    // fragments in the SAME sorted order the old sequential loop appended in —
+    // byte-identical Vec order. Object/routine ids are content-derived (no
+    // ordinals) and `project_file` only APPENDS into its own `workspace` arg
+    // (no cross-file reads), so per-file fragments are independent; the sorted
+    // fold reproduces today's exact order. The per-file `ws:<name>` unit id and
+    // `Utf16Cols` (+ its ACC_UTF16 probe) move inside the closure; the ACC_PARSE
+    // / ACC_PROJECT probes stay inside `project_file` (atomic counters, so they
+    // remain thread-safe when the closures run concurrently).
+    use rayon::prelude::*;
+    let fragments: Vec<L3Workspace> = crate::big_stack::big_stack_pool().install(|| {
+        sorted
+            .par_iter()
+            .map(|(fname, source)| {
+                let source_unit_id = format!("ws:{fname}");
+                let __probe_t = std::time::Instant::now();
+                let cols = Utf16Cols::new(source);
+                crate::stage_probe::accum(crate::stage_probe::ACC_UTF16, __probe_t.elapsed());
+                let mut ws = L3Workspace {
+                    objects: Vec::new(),
+                    tables: Vec::new(),
+                    routines: Vec::new(),
+                };
+                project_file(
+                    source,
+                    app_guid,
+                    model_instance_id,
+                    &source_unit_id,
+                    &cols,
+                    &mut ws,
+                );
+                ws
+            })
+            .collect()
+    });
+
     let mut workspace = L3Workspace {
         objects: Vec::new(),
         tables: Vec::new(),
         routines: Vec::new(),
     };
-
-    // Sequential parse loop, run on a big-stack thread (T2.1): callers include
-    // the CLI main thread (`aldump`/`alsem`), which has no guaranteed-generous
-    // stack — see `big_stack`'s doc. One big-stack thread for the WHOLE loop.
-    crate::big_stack::run_with_big_stack(|| {
-        for (fname, source) in sorted {
-            let source_unit_id = format!("ws:{fname}");
-            let __probe_t = std::time::Instant::now();
-            let cols = Utf16Cols::new(source);
-            crate::stage_probe::accum(crate::stage_probe::ACC_UTF16, __probe_t.elapsed());
-            project_file(
-                source,
-                app_guid,
-                model_instance_id,
-                &source_unit_id,
-                &cols,
-                &mut workspace,
-            );
-        }
-    });
-
+    for mut frag in fragments {
+        workspace.objects.append(&mut frag.objects);
+        workspace.tables.append(&mut frag.tables);
+        workspace.routines.append(&mut frag.routines);
+    }
     workspace
 }
 
@@ -1227,28 +1248,44 @@ pub fn assemble_workspace_units(
     let mut sorted: Vec<&(String, String)> = units.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // Parallel per-file parse+project into PRIVATE fragments on the big-stack
+    // pool, then fold in the SAME sorted order — byte-identical Vec order (see
+    // the sibling `assemble_workspace` for the full rationale). Uses each unit's
+    // `source_unit_id` verbatim for anchors (no `ws:<name>` synthesis here).
+    use rayon::prelude::*;
+    let fragments: Vec<L3Workspace> = crate::big_stack::big_stack_pool().install(|| {
+        sorted
+            .par_iter()
+            .map(|(source_unit_id, source)| {
+                let cols = Utf16Cols::new(source);
+                let mut ws = L3Workspace {
+                    objects: Vec::new(),
+                    tables: Vec::new(),
+                    routines: Vec::new(),
+                };
+                project_file(
+                    source,
+                    app_guid,
+                    model_instance_id,
+                    source_unit_id,
+                    &cols,
+                    &mut ws,
+                );
+                ws
+            })
+            .collect()
+    });
+
     let mut workspace = L3Workspace {
         objects: Vec::new(),
         tables: Vec::new(),
         routines: Vec::new(),
     };
-
-    // Sequential parse loop, run on a big-stack thread (T2.1) — see the sibling
-    // `assemble_workspace`'s comment above.
-    crate::big_stack::run_with_big_stack(|| {
-        for (source_unit_id, source) in sorted {
-            let cols = Utf16Cols::new(source);
-            project_file(
-                source,
-                app_guid,
-                model_instance_id,
-                source_unit_id,
-                &cols,
-                &mut workspace,
-            );
-        }
-    });
-
+    for mut frag in fragments {
+        workspace.objects.append(&mut frag.objects);
+        workspace.tables.append(&mut frag.tables);
+        workspace.routines.append(&mut frag.routines);
+    }
     workspace
 }
 
