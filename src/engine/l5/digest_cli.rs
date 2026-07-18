@@ -400,7 +400,7 @@ const TX_UNKNOWN: TransactionContext = "unknown";
 /// Uses the full detector-context substrate (combined graph → summaries → spans).
 /// Mirrors TS: `computeTransactionSpans` + `transactionContextByOperationId` build.
 fn compute_tx_context_map(resolved: &L3Resolved) -> HashMap<String, TransactionContext> {
-    let ctx = build_detector_context(resolved);
+    let ctx = build_detector_context(resolved, crate::engine::l5::registry::substrate::ALL);
     let mut map: HashMap<String, TransactionContext> = HashMap::new();
     for span in &ctx.transaction_spans {
         if span.seed_kind != SeedKind::ExplicitCommit {

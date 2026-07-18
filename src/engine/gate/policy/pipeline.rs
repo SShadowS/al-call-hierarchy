@@ -242,7 +242,8 @@ pub fn run_policy_check(opts: &PolicyCheckOptions) -> PolicyCheckOutcome {
             diagnostics: Vec::new(),
         },
         Some(policy) => {
-            let ctx = build_detector_context(&resolved);
+            let ctx =
+                build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
             let root_classifications = classify_roots(&resolved.workspace);
             let ws = &resolved.workspace;
             let model = PolicyModel::new(

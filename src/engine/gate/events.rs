@@ -388,7 +388,7 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
     }
 
     // Build detector context to get event_flow_indexes + summaries + event_graph.
-    let ctx = build_detector_context(&resolved);
+    let ctx = build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
     let ix = &ctx.event_flow_indexes;
 
     let mut report = compute_fanout_report(&ctx.event_graph, ix, &ctx.summaries, opts.scope);
@@ -529,7 +529,7 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
     // NOTE: `opts.coverage_policy` is intentionally UNUSED here — al-sem
     // `events-chains.ts` validates it but never applies it to the chain report.
 
-    let ctx = build_detector_context(&resolved);
+    let ctx = build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
     let ix = &ctx.event_flow_indexes;
 
     let walk_opts = ChainWalkOptions {
