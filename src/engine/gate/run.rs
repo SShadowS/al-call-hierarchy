@@ -201,23 +201,28 @@ pub fn run_analyze_with_exit(
     // takes; the fresh pipeline's own local `ctx` is dropped inside `fresh_coverage`
     // before this function ever touches the separate L3 model (spec §3 memory
     // sequencing — see `FreshCoverage`'s doc).
+    crate::stage_probe::stage("fresh_coverage:begin");
     let fresh = crate::program::resolve::full::fresh_coverage(ws_path);
+    crate::stage_probe::stage("fresh_coverage:end");
     let model_instance_id = match compute_gate_model_instance_id(ws_path) {
         Some(id) => id,
         // Fail-closed layout → empty output; preflight now says could-not-verify
         // (never a fabricated clean — spec §3), gated on `fresh` above.
         None => return empty_output_result(args, &version, &fresh),
     };
+    crate::stage_probe::stage("model_instance_id:end");
     let resolved = match assemble_and_resolve_workspace(ws_path, &model_instance_id, false) {
         Some(r) => r,
         // Fail-closed / unreadable workspace → empty output, same could-not-verify rule.
         None => return empty_output_result(args, &version, &fresh),
     };
+    crate::stage_probe::stage("l3_assemble_resolve:end");
 
     // L4 + L5: run the selected detectors. Findings come pre-sorted by
     // (detector, primaryLocationKey, rootCauseKey) with dep-anchored findings already
     // role-scoped out (source-only ⇒ no-op).
     let run = run_detectors(&resolved, &detectors);
+    crate::stage_probe::stage("run_detectors:end");
     // Capture diagnostics + detector stats for the Json formatter (consumed after filtering).
     //
     // al-sem `analyzeWorkspace` (src/index.ts:287-297) concatenates SIX diagnostic
@@ -431,6 +436,8 @@ pub fn run_analyze_with_exit(
             })
         }
     };
+    crate::stage_probe::stage("format:end");
+    crate::stage_probe::dump_accums();
 
     // --- dependency-coverage preflight (al-sem Task 2) ---
     // F2 FIX: always evaluate AND surface pf.degraded as a stderr warning (the

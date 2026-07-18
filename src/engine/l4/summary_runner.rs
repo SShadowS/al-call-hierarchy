@@ -1124,8 +1124,11 @@ pub fn run_one_scc(
         // JACOBI: freeze the prior-pass state WITHOUT a deep clone. `mem::take`
         // moves the settled map out as the frozen read snapshot; recomputed members
         // accumulate in `next_pass`; unchanged members are carried back by move
-        // after the pass.
+        // after the pass. (ACC_JACOBI_CLONE now measures this take + the carry-over
+        // merge below — the work the per-round deep clone used to do.)
+        let __probe_t = std::time::Instant::now();
         let snapshot: HashMap<String, RoutineSummary> = std::mem::take(&mut in_progress);
+        crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_CLONE, __probe_t.elapsed());
 
         // Accumulate this pass's new summaries separately so we don't read
         // our own writes during this pass (JACOBI, not Gauss-Seidel).
@@ -1149,6 +1152,7 @@ pub fn run_one_scc(
                 Some(r) => r,
                 None => continue,
             };
+            let __probe_t = std::time::Instant::now();
             let next = compose_routine(
                 routine,
                 &snapshot,             // FROZEN: all reads from the prior pass
@@ -1159,9 +1163,12 @@ pub fn run_one_scc(
                 ctx.body_avail_by_id,
                 ctx.uncertainty_edges_by_from,
             );
+            crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_COMPOSE, __probe_t.elapsed());
 
+            let __probe_t = std::time::Instant::now();
             let next_proj = project_summary_to_stable(id, &next, ctx.stable_map);
             let next_key = summary_change_key(&next_proj);
+            crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_FP, __probe_t.elapsed());
 
             // The cached key holds this member's prior-round value (== `snapshot`'s,
             // by the invariant), so this comparison is identical to the old
@@ -1183,12 +1190,14 @@ pub fn run_one_scc(
         // snapshot); recomputed members overwrite their prior value. The result is
         // bit-identical to the old full-Jacobi `in_progress = next_pass`: a skipped
         // member's recompute would have produced exactly the value carried here.
+        let __probe_t = std::time::Instant::now();
         let mut merged = snapshot;
         for (k, v) in next_pass {
             merged.insert(k, v);
         }
         in_progress = merged;
         dirty = next_dirty;
+        crate::stage_probe::accum(crate::stage_probe::ACC_JACOBI_CLONE, __probe_t.elapsed());
 
         // Trace hook (opt-in).
         if collect_trace {
