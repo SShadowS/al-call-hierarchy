@@ -27,6 +27,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::engine::l3::l3_workspace::L3Table;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
@@ -594,6 +595,20 @@ struct D1Policy<'a> {
     /// walk. `touches_db_of` is a pure function of the (immutable) summary, so
     /// the answer is stable for the run.
     touches_db_memo: RefCell<HashMap<&'a str, EffectPresence>>,
+    /// Per-run memo of the CANONICAL interprocedural walk from a callee entry
+    /// (`initial_loop_depth: 0`, empty prefix), keyed by callee routine id.
+    /// `detect_d1` re-seeds one `walk_evidence` per IN-LOOP CALLSITE into a
+    /// db-touching callee; at Base-App density many callsites share the same hot
+    /// callee, so each was re-walking the same ≤500-node dense subgraph. The walk
+    /// from a callee is a PURE FUNCTION of the callee (`D1Policy` reads only
+    /// run-global indexes; no method reads the calling routine — see the Wave-2c
+    /// §3 proof), so the caller-specific result is recovered by the mechanical
+    /// `apply_seed_transform` (prepend the `[loopStep, callStep]` prefix, ADD the
+    /// callsite's loop depth) — byte-identical. `Rc` so a lookup hands back the
+    /// shared canonical vec without re-cloning it. `detect_d1` is the sole
+    /// accessor; `walk_evidence` fills `touches_db_memo` (a DISTINCT cell) while
+    /// this one is borrowed, so the two never alias.
+    walk_memo: RefCell<HashMap<String, Rc<Vec<WalkResult>>>>,
 }
 
 impl<'a> D1Policy<'a> {
@@ -749,6 +764,40 @@ impl<'a> WalkPolicy for D1Policy<'a> {
     }
 }
 
+/// Derive a caller-specific `WalkResult` set from the CANONICAL callee walk
+/// (`initial_loop_depth: 0`, empty `initial_steps`) by the mechanical seed
+/// transform `walk_evidence` itself applies: prepend `prefix` to every result
+/// path and ADD `initial_loop_depth` to every `effective_loop_depth`. Everything
+/// else — the path SUFFIX, terminal ops, uncertainties, stop kind, and result
+/// ORDER — is caller-independent, so this reproduces `walk_evidence(C, …,
+/// WalkOpts { initial_loop_depth, initial_steps: prefix })` BYTE-FOR-BYTE.
+///
+/// Sound because in `path_walker::visit` `initial_steps` is only ever pushed
+/// (never read for a branch/terminal/cut decision) and `initial_loop_depth`
+/// seeds `inherited_loop_depth`, which flows ONLY into `effective_loop_depth`
+/// additively — never into a cut (cycle/depth/budget use `routine_path` +
+/// `nodes_visited` alone). See Wave-2c design §3.
+fn apply_seed_transform(
+    canonical: &[WalkResult],
+    initial_loop_depth: i64,
+    prefix: &[EvidenceStep],
+) -> Vec<WalkResult> {
+    canonical
+        .iter()
+        .map(|r| {
+            let mut path = Vec::with_capacity(prefix.len() + r.path.len());
+            path.extend(prefix.iter().cloned());
+            path.extend(r.path.iter().cloned());
+            WalkResult {
+                path,
+                effective_loop_depth: r.effective_loop_depth + initial_loop_depth,
+                uncertainties: r.uncertainties.clone(),
+                stop: r.stop,
+            }
+        })
+        .collect()
+}
+
 pub fn detect_d1(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
@@ -803,6 +852,7 @@ pub fn detect_d1(
         edges_by_from: &ctx.graph.edges_by_from,
         call_site_by_id: &ctx.call_site_by_id,
         touches_db_memo: RefCell::new(HashMap::new()),
+        walk_memo: RefCell::new(HashMap::new()),
     };
 
     for routine in &ws.routines {
@@ -991,15 +1041,31 @@ pub fn detect_d1(
                 note: format!("calls {to_name}"),
             };
 
-            let results = walk_evidence(
-                &edge.to,
-                &policy,
-                BOUNDS,
-                WalkOpts {
-                    initial_loop_depth: cs.loop_stack.len() as i64,
-                    initial_steps: vec![loop_step, call_step],
-                },
-                &ctx.uncertainties_by_node,
+            // Wave-2c: the walk from a callee is caller-independent (design §3),
+            // so compute the CANONICAL walk (empty prefix, zero initial depth)
+            // ONCE per callee and derive THIS callsite's result by the mechanical
+            // prefix+depth transform. At Base-App density many in-loop callsites
+            // share the same hot callee, so this collapses O(in-loop callsites)
+            // re-walks of the same dense subgraph into O(distinct callees).
+            let canonical = {
+                let mut memo = policy.walk_memo.borrow_mut();
+                Rc::clone(memo.entry(edge.to.clone()).or_insert_with(|| {
+                    Rc::new(walk_evidence(
+                        &edge.to,
+                        &policy,
+                        BOUNDS,
+                        WalkOpts {
+                            initial_loop_depth: 0,
+                            initial_steps: Vec::new(),
+                        },
+                        &ctx.uncertainties_by_node,
+                    ))
+                }))
+            };
+            let results = apply_seed_transform(
+                canonical.as_slice(),
+                cs.loop_stack.len() as i64,
+                &[loop_step, call_step],
             );
 
             for result in &results {
@@ -1320,7 +1386,7 @@ fn build_finding_internal(
 mod memo_tests {
     use super::*;
     use crate::engine::l5::full_summary::FullRoutineSummary;
-    use crate::engine::l5::test_support::{coverage, fact, summary};
+    use crate::engine::l5::test_support::{coverage, edge, fact, routine, summary};
 
     /// `D1Policy::touches_db_memoized` must return exactly what a direct
     /// `touches_db_of` returns, for EVERY routine — across all three
@@ -1384,6 +1450,7 @@ mod memo_tests {
             edges_by_from: &edges_by_from,
             call_site_by_id: &call_site_by_id,
             touches_db_memo: RefCell::new(HashMap::new()),
+            walk_memo: RefCell::new(HashMap::new()),
         };
 
         // At least one of each outcome is present (guards the fixture itself).
@@ -1416,5 +1483,169 @@ mod memo_tests {
 
         // Exactly one cached entry per distinct routine probed.
         assert_eq!(policy.touches_db_memo.borrow().len(), summaries.len());
+    }
+
+    /// An `EvidenceStep` with the given routine id + note (positions irrelevant).
+    fn estep(rid: &str, note: &str) -> EvidenceStep {
+        EvidenceStep {
+            routine_id: rid.to_string(),
+            operation_id: None,
+            callsite_id: None,
+            loop_id: None,
+            source_anchor: SourceAnchor {
+                source_unit_id: String::new(),
+                start_line: 0,
+                start_column: 0,
+                end_line: 0,
+                end_column: 0,
+                enclosing_routine_id: rid.to_string(),
+                syntax_kind: "call".to_string(),
+                normalized_text_hash: None,
+                leading_context_hash: None,
+                trailing_context_hash: None,
+            },
+            note: note.to_string(),
+        }
+    }
+
+    /// Soundness contract for the per-callee walk memo (Wave-2c): the CANONICAL
+    /// walk from a callee (`initial_loop_depth: 0`, empty prefix) reused across
+    /// callsites, then run through `apply_seed_transform`, must be BYTE-IDENTICAL
+    /// to a fresh caller-specific `walk_evidence` for every callsite — same paths
+    /// (incl. prepended prefixes), same `effective_loop_depth` (initial depth
+    /// added), same uncertainties, same stop kind, same order. Callee `C → D`;
+    /// `D` performs an in-loop `Modify` (a db-write terminal at local depth 1);
+    /// two in-loop callsites reach `C` at DIFFERENT depths (1 and 2) with
+    /// DIFFERENT evidence prefixes.
+    #[test]
+    fn memoized_walk_matches_fresh_walk_for_two_callsites() {
+        // D's in-loop `Modify` op (db-write; not a terminator-Next; table_id None
+        // and no matching record var ⇒ never a virtual-system-table op).
+        let modify_op = L3RecordOperation {
+            id: "D/op0".to_string(),
+            op: "Modify".to_string(),
+            record_variable_name: "Rec".to_string(),
+            record_variable_id: None,
+            table_id: None,
+            temp_state: None,
+            field_arguments: None,
+            source_anchor: crate::engine::l2::features::PAnchor {
+                source_unit_id: "ws:test".to_string(),
+                start_line: 0,
+                start_column: 0,
+                end_line: 0,
+                end_column: 0,
+                syntax_kind: "test".to_string(),
+            },
+            loop_stack: vec!["D/loop0".to_string()], // local_loop_depth = 1
+            field_argument_infos: None,
+            in_until_condition: false,
+            run_trigger: None,
+        };
+
+        let c = routine("C", "procedure");
+        let mut d = routine("D", "procedure");
+        d.record_operations = vec![modify_op];
+
+        let routine_by_id: HashMap<&str, &L3Routine> = [("C", &c), ("D", &d)].into_iter().collect();
+        let table_by_id: HashMap<&str, &L3Table> = HashMap::new();
+        // Only D's summary is probed by `expand("C")`; a `table` fact makes
+        // `touches_db_of(D) == Yes`, so the C→D edge is followed.
+        let summaries: HashMap<String, FullRoutineSummary> = [(
+            "D".to_string(),
+            summary(
+                "D",
+                vec![fact("modify", "table", Some("t/X"))],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        )]
+        .into_iter()
+        .collect();
+        let mut edges_by_from: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        edges_by_from.insert("C".to_string(), vec![edge("C", "D", "C/cs0")]);
+        // Empty ⇒ `loop_depth_of_edge` returns 0 for the C→D edge (deterministic).
+        let call_site_by_id: HashMap<&str, &crate::engine::l2::features::PCallSite> =
+            HashMap::new();
+
+        // A per-node uncertainty on D so the transform's uncertainty passthrough
+        // is exercised on a NON-empty set.
+        let unc = Uncertainty {
+            kind: "dynamic-call".to_string(),
+            callsite_id: Some("D/cs1".to_string()),
+            operation_id: None,
+            routine_id: None,
+            interface_name: None,
+        };
+        let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+        uncertainties_by_node.insert("D".to_string(), vec![unc]);
+
+        let policy = D1Policy {
+            routine_by_id: &routine_by_id,
+            table_by_id: &table_by_id,
+            summaries: &summaries,
+            edges_by_from: &edges_by_from,
+            call_site_by_id: &call_site_by_id,
+            touches_db_memo: RefCell::new(HashMap::new()),
+            walk_memo: RefCell::new(HashMap::new()),
+        };
+
+        // Callsite 1: loop depth 1, a 2-step prefix. Callsite 2: loop depth 2, a
+        // 1-step prefix — genuinely different seeds.
+        let prefix1 = vec![estep("A", "OnRun loop"), estep("A", "calls C")];
+        let prefix2 = vec![estep("B", "foreach loop")];
+
+        let fresh_1 = walk_evidence(
+            "C",
+            &policy,
+            BOUNDS,
+            WalkOpts {
+                initial_loop_depth: 1,
+                initial_steps: prefix1.clone(),
+            },
+            &uncertainties_by_node,
+        );
+        let fresh_2 = walk_evidence(
+            "C",
+            &policy,
+            BOUNDS,
+            WalkOpts {
+                initial_loop_depth: 2,
+                initial_steps: prefix2.clone(),
+            },
+            &uncertainties_by_node,
+        );
+
+        // The CANONICAL walk (empty prefix, zero initial depth) — computed ONCE.
+        let canonical = walk_evidence(
+            "C",
+            &policy,
+            BOUNDS,
+            WalkOpts {
+                initial_loop_depth: 0,
+                initial_steps: Vec::new(),
+            },
+            &uncertainties_by_node,
+        );
+
+        // Fixture guards: the walk actually reaches the db op, and the two
+        // callsites genuinely differ (so the assertion has teeth).
+        assert!(
+            canonical.iter().any(|r| r.stop == WalkStop::Complete),
+            "canonical walk must reach a Complete terminal"
+        );
+        assert_ne!(fresh_1, fresh_2, "the two callsite seeds must differ");
+
+        // The load-bearing claim: memoized (canonical + transform) ≡ fresh.
+        assert_eq!(
+            apply_seed_transform(&canonical, 1, &prefix1),
+            fresh_1,
+            "memoized callsite-1 result diverged from a fresh walk"
+        );
+        assert_eq!(
+            apply_seed_transform(&canonical, 2, &prefix2),
+            fresh_2,
+            "memoized callsite-2 result diverged from a fresh walk"
+        );
     }
 }
