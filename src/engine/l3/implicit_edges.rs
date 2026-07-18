@@ -387,4 +387,72 @@ mod tests {
             "an object-level OnValidate is never a Validate target",
         );
     }
+
+    // 6. Quoted-field normalization guard. `L3Routine.enclosing_member` stores the
+    //    UNESCAPED logical name (`E-Mail`, no outer quotes); the L2 walk captures the
+    //    Validate field argument as RAW source text (`"E-Mail"`, WITH quotes). The
+    //    edge only lands if `normalize_field_name` strips the quotes on the arg side
+    //    so both fold-match — this exercises that path (all prior tests used bare
+    //    identifiers that skip it). A distractor field proves it stays specific.
+    #[test]
+    fn validate_targets_quoted_field_specific_trigger() {
+        let email = trigger_routine(
+            "app/table/50000::onvalidate::email",
+            "OnValidate",
+            Some("E-Mail"),
+        );
+        let phone = trigger_routine(
+            "app/table/50000::onvalidate::phone",
+            "OnValidate",
+            Some("Phone No."),
+        );
+        let caller = caller_routine(
+            "c/r0",
+            vec![record_op(
+                "c/r0/op0",
+                "Validate",
+                // Raw arg text as the L2 walk stores it for a quoted identifier.
+                Some(vec!["\"E-Mail\"".to_string()]),
+                None,
+            )],
+        );
+        let (ws, symbols) = setup(vec![email, phone], vec![caller]);
+        let edges = build_implicit_trigger_edges(&ws, &symbols);
+        assert_eq!(edges.len(), 1, "exactly one validate edge");
+        assert_eq!(
+            edges[0].to.as_deref(),
+            Some("app/table/50000::onvalidate::email"),
+            "quoted \"E-Mail\" arg must strip-and-fold to match the E-Mail trigger",
+        );
+    }
+
+    // 6b. Inner-`\"\"`-escape guard: a field named with an embedded quote,
+    //     `field(...; \"A\"\"B\"; ...)`, stores enclosing_member as the unescaped
+    //     `A\"B`; the raw arg is `\"A\"\"B\"`. `normalize_field_name` must strip the
+    //     outer quotes AND collapse the inner `\"\"`→`\"` for the two to fold-match.
+    #[test]
+    fn validate_matches_inner_escaped_quote_field() {
+        let weird = trigger_routine(
+            "app/table/50000::onvalidate::weird",
+            "OnValidate",
+            Some("A\"B"),
+        );
+        let caller = caller_routine(
+            "c/r0",
+            vec![record_op(
+                "c/r0/op0",
+                "Validate",
+                Some(vec!["\"A\"\"B\"".to_string()]),
+                None,
+            )],
+        );
+        let (ws, symbols) = setup(vec![weird], vec![caller]);
+        let edges = build_implicit_trigger_edges(&ws, &symbols);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(
+            edges[0].to.as_deref(),
+            Some("app/table/50000::onvalidate::weird"),
+            "inner \"\" must collapse so the raw arg matches the stored logical name",
+        );
+    }
 }
