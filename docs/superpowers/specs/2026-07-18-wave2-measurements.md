@@ -782,3 +782,28 @@ claim is retired. The perf queue re-ranks: (1) the §7 flow-insensitive
 d1-walker redesign is now the top lever — d1 remains the sole full-default
 blocker at 8020 scale; (2) B1/B2 for summary mass and the Jacobi plateau.
 See OUTSTANDING.md for the re-ranked queue.
+
+## 8. Wave-2c outcome (d1 walk_evidence memoization — measured 2026-07-18)
+
+Landed: `511845c` — d1's `walk_evidence` memoized per callee (the walk from a
+callee is caller-independent; each callsite derives its result by a
+prefix + additive-depth transform, proven in the design doc §3 and pinned by
+a full-field memoized≡fresh unit test). Byte-identical: goldens clean, DO
+diff empty modulo `generatedAt`, two Opus reviews. Collapses d1's walk count
+from O(in-loop-callsites) to O(distinct callees).
+
+**The 8020 full-default finish bar is STILL UNMET.** The decisive run was
+killed at the 2 h cap (peak 51.9 GB). Attribution is honest-blind: the
+instrumentation was swept pre-merge, and this measurement batch ran under
+~55% ambient machine load (Defender/WMI/WSL) that inflated even non-d1
+control runs (8020 3-det 41→92 s, DO 9.0→10.3 s) — the short-run numbers
+from this batch are NOT usable as evidence in either direction.
+
+Open follow-up (needs a quiet machine + a probed build): re-run the 8020
+full-default with stage marks to attribute the remaining wall — candidates:
+(a) d1's distinct-callee count × 500-node walks is still enormous at 797-SCC
+density (the memo removes REDUNDANCY, not the walk itself); (b) the
+substrate's Jacobi block under load; (c) a later detector never before
+reached. Until that attribution exists, no further perf work is licensed
+(measure-before-build doctrine — this arc has now falsified two magnitude
+estimates and will not risk a third).

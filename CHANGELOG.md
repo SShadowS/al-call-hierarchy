@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cap-hit diagnostics (they are harvested from the gated
   `compute_summaries` pass). Full/preset/default runs are byte-identical
   to before.
+- **d1's evidence walk memoized per callee (Wave 2c).** `walk_evidence` from
+  a callee is caller-independent (the callsite contributes only a pure
+  2-step prefix and an additive loop-depth offset — proven against the
+  walker's `visit` and pinned by a full-field memoized≡fresh unit test), so
+  d1 now walks each distinct in-loop callee ONCE per run instead of once per
+  callsite. Byte-identical output (goldens clean, DO analyze JSON
+  byte-identical). The Base-App-scale full-default run remains over the 2 h
+  measurement cap — attribution of the remaining wall is gated on a probed
+  quiet-machine re-run (measurements doc §8); no further perf work licensed
+  until then.
 - **Advisory implicit-trigger edges: fresh-resolver applicability parity
   (Wave 2b).** `build_implicit_trigger_edges` now targets the validated
   FIELD's own OnValidate trigger (never an arbitrary per-table one; no edge

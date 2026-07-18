@@ -66,22 +66,30 @@ the bottom, CHANGELOG, and git log.
   precision/parity grounds; its perf claim is dead. Full honest numbers:
   measurements doc §7 (Wave-2b outcome).
 
-  **Perf queue after Wave-2b** (re-ranked by the falsification): (1) §7
-  flow-insensitive d1-walker redesign — NOW THE TOP LEVER (d1 = the sole
-  full-default blocker at 8020, ~93 min alone; its 500-node DFS per in-loop
-  callsite over the dense 797-SCC is the measured cost; the fix shape is a
-  precomputed per-routine reachability/effect answer instead of per-candidate
-  path walking — needs its own design pass, witness-fidelity is the risk);
-  (2) B1 interned id universe + bitsets (output-stable) / B2 SCC-shared lazy
-  cones, for the summary mass (8.34M cardinalities on one SCC) and the
-  Jacobi plateau. B3 single-substrate unification still needs a
-  detector-feature parity harness first. SEQUENCE with the `to_lowercase()`
-  census below — B1 rewrites the same `src/engine/l2`-`l5` call sites; do
-  the fold-primitive swap as part of (or immediately before) B1's interning
-  pass, never as separate churn. Also feeds the change-impact wedge's Q1/Q2
-  fork (effects-on-fresh): the wedge's cone substrate should be B1/B2's
-  bitset cones, and the findings doc is the evidence AGAINST making L3
-  load-bearing again
+  **Wave-2c (d1 walk_evidence memoization) DONE 2026-07-18** — `511845c`:
+  per-callee memo (caller-independence proven — prefix + additive-depth
+  transform; full-field memoized≡fresh test), byte-identical (goldens + DO
+  clean), O(in-loop-callsites)→O(distinct callees) walk count. **The 8020
+  full-default finish bar is STILL UNMET** (2h cap, 51.9 GB peak) — but this
+  measurement batch is HONEST-BLIND: probes were swept and ~55% ambient
+  machine load inflated even non-d1 control runs, so the batch's numbers are
+  unusable in either direction (measurements doc §8).
+
+  **Perf queue after Wave-2c — GATED ON ATTRIBUTION.** Next perf step is a
+  MEASUREMENT, not a build: probed 8020 full-default re-run on a QUIET
+  machine (re-arm the stage/SCC probes from git history) to attribute the
+  remaining wall — (a) d1's distinct-callee walk count at 797-SCC density,
+  (b) the Jacobi substrate block, or (c) a later detector never before
+  reached. This arc falsified two magnitude estimates (SCC-shatter,
+  d1-redundancy-dominance); no further perf work is licensed without that
+  attribution. Downstream candidates once attributed: d1 typed-receiver-§7
+  guard-tag/flow-insensitive redesign; B1 interned ids + bitsets / B2
+  SCC-shared cones (8.34M-cardinality summary mass, Jacobi plateau); B3
+  single-substrate unification (needs detector-feature parity harness).
+  SEQUENCE B1 with the `to_lowercase()` census below (same call sites, one
+  churn). The change-impact wedge's effects-on-fresh fork still consumes
+  B1/B2's bitset cones; the findings doc remains the evidence AGAINST making
+  L3 load-bearing again
 - [x] **tree-sitter-al quirks list** — WAS ALREADY DONE, stale item (live-verified
   2026-07-17 against pinned v3.2.0 `14bd55c`): `statement_block`/`argument_list`/
   `parenthesized_expression` carry ZERO fields (left/operator/right pollution gone,
