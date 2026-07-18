@@ -43,8 +43,6 @@ pub mod lsp;
 pub mod program;
 pub mod protocol;
 pub mod snapshot;
-/// THROWAWAY stage-timing/RSS probe (2026-07-17 design review) — never ship.
-pub mod stage_probe;
 pub mod telemetry;
 /// Core AL object-type enum shared between lib and binary targets.
 pub mod types;

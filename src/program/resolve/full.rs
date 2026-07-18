@@ -1069,7 +1069,6 @@ pub fn build_context_res(workspace_root: &Path) -> Result<ProgramContext, String
     })
     .build()
     .map_err(|e| format!("snapshot build failed: {e:#}"))?;
-    crate::stage_probe::stage("fresh:snapshot:end");
 
     // ws_file_set: the true workspace source virtual paths (first AppUnit).
     // Excludes embedded dep apps whose AppId matches the workspace AppId.
@@ -1096,9 +1095,7 @@ pub fn build_context_res(workspace_root: &Path) -> Result<ProgramContext, String
     // `assemble_program_graph_matches_build_program_graph_field_by_field`
     // characterization test in `program::build`).
     let parsed = parse_snapshot(&snap);
-    crate::stage_probe::stage("fresh:parse:end");
     let dep_layer = build_dep_layer(&snap, &crate::program::abi_ingest::AbiCache::new(), &parsed);
-    crate::stage_probe::stage("fresh:dep_layer:end");
 
     // `snap.apps` is GUID-deduped upstream (H-2), so at most one parsed unit
     // can match the workspace identity.
@@ -1252,9 +1249,7 @@ fn opaque_dependency_closure(snap: &AppSetSnapshot) -> Vec<String> {
 /// semantic models are never resident together).
 pub fn fresh_coverage(workspace_root: &Path) -> Result<FreshCoverage, String> {
     let ctx = build_context_res(workspace_root)?;
-    crate::stage_probe::stage("fresh:build_context:end");
     let report = resolve_full_program_with(&ctx);
-    crate::stage_probe::stage("fresh:resolve:end");
     let opaque_apps = opaque_dependency_closure(&ctx.snap);
     Ok(FreshCoverage {
         unknown: report.primary_histogram.unknown,

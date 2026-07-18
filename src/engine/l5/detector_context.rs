@@ -226,15 +226,11 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
     let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-    crate::stage_probe::stage("l4:symbol_table:end");
     let no_deps: Vec<DeclaredDependency> = Vec::new();
     let no_fetched: Vec<String> = Vec::new();
     let mut calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-    crate::stage_probe::stage("l4:resolve_calls:end");
     let event_graph = build_event_graph(&ws.routines, &symbols);
-    crate::stage_probe::stage("l4:event_graph:end");
     let graph = build_combined_graph(ws, &calls, &event_graph);
-    crate::stage_probe::stage("l4:combined_graph:end");
 
     // Per-routine direct facts + direct coverage, then the inherited cone over
     // the combined graph — the same assembly project_r3a3 does inline, here via
@@ -264,7 +260,6 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             direct_full.insert(r.id.clone(), facts);
         }
         let mut cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
-        crate::stage_probe::stage("l4:cones:end");
 
         // `cones` and `direct_full` are locally owned and dead after this loop, so
         // move their payloads into the summaries instead of cloning them out.
@@ -342,16 +337,13 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // by the d1/d3/d10 temp gates). Pure lookup-table build over the routines +
     // combined graph + reverse graph; entry points are proof-disqualifying.
     // SUBSTRATE-GATED on CLOSED_WORLD_TEMP.
-    crate::stage_probe::stage("l4:summaries_indexes:end");
     let closed_world_temp_params = if demanded & substrate::CLOSED_WORLD_TEMP != 0 {
-        let p = crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
+        crate::engine::l5::closed_world_temp::prove_closed_world_temp_params(
             &ws.routines,
             &graph,
             &reverse_call_graph,
             &entry_points,
-        );
-        crate::stage_probe::stage("l4:closed_world_temp:end");
-        p
+        )
     } else {
         Default::default()
     };
@@ -359,14 +351,12 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // Transaction spans — SUBSTRATE-GATED on TRANSACTION_SPANS (which also forced
     // `need_summaries`, so the `summaries` map above is populated here).
     let transaction_spans = if demanded & substrate::TRANSACTION_SPANS != 0 {
-        let ts = compute_transaction_spans(
+        compute_transaction_spans(
             &ws.routines,
             &dep_routine_ids,
             &reverse_call_graph,
             &summaries,
-        );
-        crate::stage_probe::stage("l4:transaction_spans:end");
-        ts
+        )
     } else {
         Vec::new()
     };
@@ -433,134 +423,6 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             nodes: &graph.nodes,
             edges_by_from: &scc_adjacency,
         });
-        if std::env::var("ALSEM_STAGE_TIMING").as_deref() == Ok("1") {
-            let max_scc = scc.sccs.iter().map(|s| s.members.len()).max().unwrap_or(0);
-            let rec = scc.sccs.iter().filter(|s| s.recursive).count();
-            let rec_members: usize = scc
-                .sccs
-                .iter()
-                .filter(|s| s.recursive)
-                .map(|s| s.members.len())
-                .sum();
-            eprintln!(
-                "SCCSTATS nodes={} sccs={} recursive_sccs={} recursive_members={} max_scc={}",
-                graph.nodes.len(),
-                scc.sccs.len(),
-                rec,
-                rec_members,
-                max_scc
-            );
-            // Wave-2 M1: anatomy of the LARGEST SCC — intra-SCC edge count by
-            // edge kind (which kind fuses the component?), member degree stats.
-            if let Some(big) = scc.sccs.iter().max_by_key(|s| s.members.len()) {
-                let member_set: std::collections::HashSet<&str> =
-                    big.members.iter().map(|s| s.as_str()).collect();
-                let mut kind_counts: std::collections::BTreeMap<&str, usize> =
-                    std::collections::BTreeMap::new();
-                let mut intra_edges = 0usize;
-                let mut max_out = 0usize;
-                for m in &big.members {
-                    let mut out_here = 0usize;
-                    if let Some(edges) = graph.edges_by_from.get(m) {
-                        for e in edges {
-                            if member_set.contains(e.to.as_str()) {
-                                intra_edges += 1;
-                                out_here += 1;
-                                *kind_counts.entry(e.kind.as_str()).or_insert(0) += 1;
-                            }
-                        }
-                    }
-                    max_out = max_out.max(out_here);
-                }
-                eprintln!(
-                    "SCCANATOMY members={} intra_edges={} max_intra_outdegree={} kinds={:?}",
-                    big.members.len(),
-                    intra_edges,
-                    max_out,
-                    kind_counts
-                );
-                // THROWAWAY (Wave-2a Task 4): print up to 20 intra-SCC
-                // implicit-trigger (from,to) pairs as routine names.
-                let rt_by_id: std::collections::HashMap<
-                    &str,
-                    &crate::engine::l3::l3_workspace::L3Routine,
-                > = ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
-                let objname_by_id: std::collections::HashMap<&str, &str> = ws
-                    .objects
-                    .iter()
-                    .map(|o| (o.id.as_str(), o.name.as_str()))
-                    .collect();
-                // THROWAWAY: distribution of ALL implicit-trigger intra edges by
-                // target trigger routine name (OnInsert/OnModify/OnDelete/OnValidate).
-                let mut trig_by_name: std::collections::BTreeMap<String, usize> =
-                    std::collections::BTreeMap::new();
-                for m in &big.members {
-                    if let Some(edges) = graph.edges_by_from.get(m) {
-                        for e in edges {
-                            if e.kind.as_str() == "implicit-trigger"
-                                && member_set.contains(e.to.as_str())
-                            {
-                                let tname = rt_by_id
-                                    .get(e.to.as_str())
-                                    .map(|r| r.name.clone())
-                                    .unwrap_or_else(|| "?".to_string());
-                                *trig_by_name.entry(tname).or_insert(0) += 1;
-                            }
-                        }
-                    }
-                }
-                eprintln!("SCCTRIGDIST {:?}", trig_by_name);
-                let mut printed = 0usize;
-                'outer: for m in &big.members {
-                    if let Some(edges) = graph.edges_by_from.get(m) {
-                        for e in edges {
-                            if e.kind.as_str() != "implicit-trigger" {
-                                continue;
-                            }
-                            if !member_set.contains(e.to.as_str()) {
-                                continue;
-                            }
-                            let (from_desc, from_obj) = match rt_by_id.get(m.as_str()) {
-                                Some(r) => (
-                                    format!(
-                                        "{} {}::{}",
-                                        r.object_type,
-                                        objname_by_id
-                                            .get(r.object_id.as_str())
-                                            .copied()
-                                            .unwrap_or("?"),
-                                        r.name
-                                    ),
-                                    r.object_id.clone(),
-                                ),
-                                None => (m.clone(), String::new()),
-                            };
-                            let _ = from_obj;
-                            let to_desc = match rt_by_id.get(e.to.as_str()) {
-                                Some(r) => format!(
-                                    "{} {}::{}",
-                                    r.object_type,
-                                    objname_by_id
-                                        .get(r.object_id.as_str())
-                                        .copied()
-                                        .unwrap_or("?"),
-                                    r.name
-                                ),
-                                None => e.to.clone(),
-                            };
-                            eprintln!("SCCTRIG from=[{}] to=[{}]", from_desc, to_desc);
-                            printed += 1;
-                            if printed >= 20 {
-                                break 'outer;
-                            }
-                        }
-                    }
-                }
-            }
-            if std::env::var("ALSEM_EXIT_AFTER_SCCSTATS").as_deref() == Ok("1") {
-                std::process::exit(0);
-            }
-        }
         // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
         // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
         // but `compute_summaries` takes it.
@@ -580,7 +442,6 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             &field_index,
             false,
         );
-        crate::stage_probe::stage("l4:compute_summaries:end");
 
         // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
         // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
