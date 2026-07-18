@@ -450,6 +450,113 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 rec_members,
                 max_scc
             );
+            // Wave-2 M1: anatomy of the LARGEST SCC — intra-SCC edge count by
+            // edge kind (which kind fuses the component?), member degree stats.
+            if let Some(big) = scc.sccs.iter().max_by_key(|s| s.members.len()) {
+                let member_set: std::collections::HashSet<&str> =
+                    big.members.iter().map(|s| s.as_str()).collect();
+                let mut kind_counts: std::collections::BTreeMap<&str, usize> =
+                    std::collections::BTreeMap::new();
+                let mut intra_edges = 0usize;
+                let mut max_out = 0usize;
+                for m in &big.members {
+                    let mut out_here = 0usize;
+                    if let Some(edges) = graph.edges_by_from.get(m) {
+                        for e in edges {
+                            if member_set.contains(e.to.as_str()) {
+                                intra_edges += 1;
+                                out_here += 1;
+                                *kind_counts.entry(e.kind.as_str()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                    max_out = max_out.max(out_here);
+                }
+                eprintln!(
+                    "SCCANATOMY members={} intra_edges={} max_intra_outdegree={} kinds={:?}",
+                    big.members.len(),
+                    intra_edges,
+                    max_out,
+                    kind_counts
+                );
+                // THROWAWAY (Wave-2a Task 4): print up to 20 intra-SCC
+                // implicit-trigger (from,to) pairs as routine names.
+                let rt_by_id: std::collections::HashMap<
+                    &str,
+                    &crate::engine::l3::l3_workspace::L3Routine,
+                > = ws.routines.iter().map(|r| (r.id.as_str(), r)).collect();
+                let objname_by_id: std::collections::HashMap<&str, &str> = ws
+                    .objects
+                    .iter()
+                    .map(|o| (o.id.as_str(), o.name.as_str()))
+                    .collect();
+                // THROWAWAY: distribution of ALL implicit-trigger intra edges by
+                // target trigger routine name (OnInsert/OnModify/OnDelete/OnValidate).
+                let mut trig_by_name: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
+                for m in &big.members {
+                    if let Some(edges) = graph.edges_by_from.get(m) {
+                        for e in edges {
+                            if e.kind.as_str() == "implicit-trigger"
+                                && member_set.contains(e.to.as_str())
+                            {
+                                let tname = rt_by_id
+                                    .get(e.to.as_str())
+                                    .map(|r| r.name.clone())
+                                    .unwrap_or_else(|| "?".to_string());
+                                *trig_by_name.entry(tname).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                eprintln!("SCCTRIGDIST {:?}", trig_by_name);
+                let mut printed = 0usize;
+                'outer: for m in &big.members {
+                    if let Some(edges) = graph.edges_by_from.get(m) {
+                        for e in edges {
+                            if e.kind.as_str() != "implicit-trigger" {
+                                continue;
+                            }
+                            if !member_set.contains(e.to.as_str()) {
+                                continue;
+                            }
+                            let (from_desc, from_obj) = match rt_by_id.get(m.as_str()) {
+                                Some(r) => (
+                                    format!(
+                                        "{} {}::{}",
+                                        r.object_type,
+                                        objname_by_id
+                                            .get(r.object_id.as_str())
+                                            .copied()
+                                            .unwrap_or("?"),
+                                        r.name
+                                    ),
+                                    r.object_id.clone(),
+                                ),
+                                None => (m.clone(), String::new()),
+                            };
+                            let _ = from_obj;
+                            let to_desc = match rt_by_id.get(e.to.as_str()) {
+                                Some(r) => format!(
+                                    "{} {}::{}",
+                                    r.object_type,
+                                    objname_by_id
+                                        .get(r.object_id.as_str())
+                                        .copied()
+                                        .unwrap_or("?"),
+                                    r.name
+                                ),
+                                None => e.to.clone(),
+                            };
+                            eprintln!("SCCTRIG from=[{}] to=[{}]", from_desc, to_desc);
+                            printed += 1;
+                            if printed >= 20 {
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+            }
             if std::env::var("ALSEM_EXIT_AFTER_SCCSTATS").as_deref() == Ok("1") {
                 std::process::exit(0);
             }
