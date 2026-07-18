@@ -666,6 +666,40 @@ as the gate.
   measured problem needs; revisit only if interned bitsets prove
   insufficient.
 
+## 7b. Wave 1 outcome (measured 2026-07-18, branch `worktree-design-engine-memory-speed`)
+
+All ten Wave-1 tasks landed (commits `9c0ee77..708f000`), goldens byte-stable
+throughout, every task independently reviewed. Measured on the same corpora,
+same machine, release-fast:
+
+| Run | Before (Wave-1 base) | After Wave 1 |
+|-----|---------------------:|-------------:|
+| slice-5400, 3 detectors | 236 s / 9.8 GB | **57.9 s / 3.4 GB** |
+| 8020, 3 detectors | **DNF (killed 90 min) / 35.8 GB** | **90.3 s / 6.1 GB** |
+| 8020, full default set | DNF (killed 90 min) / 35.8 GB, died INSIDE the Jacobi block | **still DNF (killed at a 60-min cap) / 45.2 GB — but the bottleneck MOVED** |
+| DO default set (regression) | ~7-11 s | 10.7 s / 1.6 GB (byte-identical output) |
+
+The 3-detector production case is ~60× faster than its kill point and finishes
+comfortably; the remaining 90 s at 8020 is dominated by the fresh preflight
+(~60 s) — a Wave-3/B3 refund.
+
+The full-default honest read: the pre-wave run died inside the
+substrate (compute_summaries, RSS flat at 35.7 GB for 60+ min). The Wave-1 run
+CLEARS the substrate — RSS trajectory shows the summaries phase passing
+~23.6 GB at ~12 min, peaking 45.2 GB, then oscillating 30→36 GB — and spends
+its remaining 40+ min inside the 54-detector L5 loop itself (the witness
+path-walker over ~100k routines: the known, explicitly out-of-Wave-1
+"flow-insensitive §7" residual named in H-D's scope clarification, plus
+detector working sets never before reached at this corpus size). The peak
+being HIGHER than pre-wave is survivorship: phases the old run never reached
+now allocate on top of the still-materialized cones/summaries. Wave 2 (B1/B2)
+owns the resident-memory model; the L5 detector-loop wall at Base-App scale is
+its own follow-up (profile the detector loop per-detector before designing —
+same doctrine as this review).
+
+Decision (a) held: the only output change in the wave is the absent summarize
+cap-hit diagnostics on substrate-skipping selections.
+
 ## 8. Measurement caveats + follow-ups
 
 Caveats on the numbers above:

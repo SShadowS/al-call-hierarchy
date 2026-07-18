@@ -24,16 +24,18 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
-- [ ] **Engine memory/speed Wave 1 (Track A)** — from the 2026-07-17 design review
-  (`docs/superpowers/specs/2026-07-17-engine-memory-speed-findings.md`; Base App 8k
-  files = DNF at 90 min / 35.8 GB, root causes measured + externally reviewed).
-  Ranked, ready for `superpowers:writing-plans`:
-  W1.0 demand-driven detector substrate (the 3-detector DNF never needed
-  cones/summaries/spans — d62/d64 use ctx zero times); W1.1 Jacobi
-  uncertainty-edge index + cheap change test + dirty-frontier (>66 min of the DNF
-  lives here); W1.2 per-routine SpanTemplate; W1.3 move-don't-clone cone/summary
-  results; W1.4 parallel L3 parse; W1.5 FingerprintIndex once per run.
-  First acceptance gate: eager-vs-ablated byte-compare on the 5400 slice
+- [x] **Engine memory/speed Wave 1 (Track A)** — DONE 2026-07-18 (branch
+  `worktree-design-engine-memory-speed`, commits `9c0ee77..708f000`, 10 tasks
+  SDD-executed + per-task reviewed, goldens byte-stable throughout). Base App
+  8k 3-detector: DNF@90min/35.8GB → **90 s / 6.1 GB**; slice-5400 236s/9.8GB →
+  58s/3.4GB; DO unchanged (10.7s, byte-identical). W1.0 demand-driven substrate
+  (per-detector requires + full-vs-minimal parity test), W1.1 Jacobi
+  (uncertainty index, serde-free change keys w/ equivalence proof, take-based
+  snapshot, dirty frontier), W1.2 SpanTemplate, W1.3+A7 move-don't-clone,
+  W1.4 parallel L3 parse, W1.5 FingerprintIndex-once, A8 cross-ext hoist,
+  A9' parallel diagnostics re-parse. Decision (a): substrate-skipping runs omit
+  summarize cap-hit diagnostics (only permitted output change). Wave-1 outcome
+  table: findings doc §7b
 - [ ] **Engine memory/speed Wave 2/3 (Track B)** — same findings doc §7: B1 interned
   id universe + bitsets (output-stable), B2 SCC-shared lazy cones, B3
   single-substrate unification (needs detector-feature parity harness first).
