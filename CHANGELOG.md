@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **d1 shadow differential — the old walker as a lower-bound oracle for the
+  new reachability pipeline** (Task 4 of the d1-db-op-in-loop
+  reachability-search redesign; `src/engine/l5/detectors/d1.rs`'s test module
+  only). `detect_d1`'s pre-dedupe/pre-merge walk phase is carved out into a
+  new `pub(crate) detect_d1_premerge` (returning `(Vec<FindingRec>,
+  D1PremergeStats)`); `detect_d1` itself now just calls it and continues from
+  the id-dedupe loop onward — a behaviour-preserving refactor (full suite +
+  `check-goldens` byte-identical). A new `shadow_tests` module runs THREE
+  monotonicity oracles comparing `detect_d1_premerge`'s output against Tasks
+  1-3's `build_d1_graph` + `search_loops` pipeline over the SAME
+  `DetectorContext`, on ten hand-built fixtures (direct op, single-hop
+  transitive call, the budget-buster 600-node star fan-out that exercises the
+  old walker's 500-node-budget starvation, a depth-2-beats-depth-1 severity
+  race, a physical-beats-temp PD race, an A->B->A cycle, a direct+transitive
+  merge onto the same op, the G-1/G-6 terminal filters, an
+  event-dispatch-filtered edge, and two distinct loops in one routine): (1)
+  every old premerge `(loop, terminal routine, terminal op)` key is a subset
+  of the new aggregate key set; (2) the new severity is never worse than the
+  OLD MAX severity among every premerge record sharing a key (the fair
+  comparison, since `merge_by_terminal` itself would pick that max); (3) every
+  old `rootCauseKey` `(terminal routine, terminal op)` pair is a subset of the
+  new `(terminal owner, terminal op)` set. A manual `#[ignore]`d
+  `shadow_do_workspace` test (gated on `DO_WS`) runs the same three oracles
+  against a real Business Central workspace and prints the partitioned diff.
+  Run against Continia's DO workspace: all three oracles PASS (zero
+  divergence) with `oldKeys=6110` / `newKeys=11251` — 5141 keys found ONLY by
+  the new pipeline (`new-coverage`, i.e. terminals the old 500-node budget
+  starved on this dense real workspace), 119 keys where the new severity is a
+  strict upgrade over the old (`severity-upgrade`), and 5991 unchanged;
+  `rootCauseKey` counts old=828 / new=908. Confirms Tasks 1-3 are a strict
+  improvement over the still-live walker with no regressions, on both the
+  fixture corpus and a real workspace.
 - **`d1_reach` — product-state reachability search + per-(loop, terminal-op)
   aggregation + witness selection** (`src/engine/l5/d1_reach.rs`, Task 3 of the
   d1-db-op-in-loop reachability-search redesign). One multi-source FIFO label

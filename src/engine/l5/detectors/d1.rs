@@ -193,8 +193,12 @@ impl TempVerdict {
 /// the PATH-RESOLVED temp verdict and the root caller's display name (the ancestor
 /// the path starts in). `loop_routine.name` is the caller label surfaced in the
 /// dual-verdict note when paths disagree.
-struct FindingRec {
-    finding: Finding,
+///
+/// `pub(crate)` (Task 4, `.superpowers/sdd/task-4-brief.md`): the shadow
+/// differential (`shadow_tests` below) reads `.finding` off the raw pre-merge
+/// population `detect_d1_premerge` returns.
+pub(crate) struct FindingRec {
+    pub(crate) finding: Finding,
     verdict: TempVerdict,
     caller_label: String,
 }
@@ -883,12 +887,35 @@ fn emit_d1_hot_counters(
     memo_lc.flush("d1.memo");
 }
 
-pub fn detect_d1(
+/// Aggregate counters `detect_d1_premerge`'s walk phase accumulates that
+/// `detect_d1`'s `DetectorStats` reports post-merge (Task 4,
+/// `.superpowers/sdd/task-4-brief.md`): carved out alongside `findings` so the
+/// premerge phase is a complete, standalone unit — the shadow differential runs
+/// it directly, on the SAME `DetectorContext` the `build_d1_graph` +
+/// `search_loops` reachability pipeline consumes.
+pub(crate) struct D1PremergeStats {
+    pub(crate) candidates_considered: usize,
+    pub(crate) skipped_parse_incomplete: u64,
+    pub(crate) skipped_opaque_callee: u64,
+    pub(crate) skipped_dynamic_dispatch: u64,
+    pub(crate) skipped_virtual_table: u64,
+    pub(crate) downgraded_to_info: u64,
+}
+
+/// The PW-0 path-walker phase of `detect_d1` — every direct in-loop db op
+/// (branch a) and every in-loop call-chain walk into a db-touching callee
+/// (branch b), PRE-dedupe / PRE-merge. Carved out verbatim (Task 4): `detect_d1`
+/// calls this and continues from the id-dedupe loop onward — behavior-preserving
+/// (the full suite + `check-goldens` prove byte-identical detector output).
+/// `pub(crate)` so the Task 4 shadow differential (`shadow_tests` below, and the
+/// manual `shadow_do_workspace` DO run) can run this SAME pre-merge population
+/// side-by-side with the new `build_d1_graph` + `search_loops` reachability
+/// pipeline on identical `DetectorContext` input.
+pub(crate) fn detect_d1_premerge(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
-) -> Result<DetectorOutput, DetectorError> {
+) -> (Vec<FindingRec>, D1PremergeStats) {
     let ws = &resolved.workspace;
-    let fp_index = &ctx.fingerprint_index;
 
     // Source-only role map (every routine primary) — used by pick_actionable_anchor.
     let role_by_routine: HashMap<&str, &str> = ws
@@ -1362,6 +1389,26 @@ pub fn detect_d1(
         );
     }
 
+    (
+        findings,
+        D1PremergeStats {
+            candidates_considered,
+            skipped_parse_incomplete,
+            skipped_opaque_callee,
+            skipped_dynamic_dispatch,
+            skipped_virtual_table,
+            downgraded_to_info,
+        },
+    )
+}
+
+pub fn detect_d1(
+    resolved: &L3Resolved,
+    ctx: &DetectorContext,
+) -> Result<DetectorOutput, DetectorError> {
+    let fp_index = &ctx.fingerprint_index;
+    let (findings, premerge_stats) = detect_d1_premerge(resolved, ctx);
+
     // Two-stage collapse:
     //   1. Dedupe by id (loop+op pair), first-wins.
     //   1b. RV-6 merge-tie reconciliation (see `reconcile_merge_tie`).
@@ -1447,12 +1494,12 @@ pub fn detect_d1(
     merged.sort_by(|a, b| a.id.cmp(&b.id));
 
     let emitted = merged.len();
-    let mut stats = DetectorStats::new(DETECTOR, candidates_considered, emitted);
-    stats.add_skip("opaqueCallee", skipped_opaque_callee);
-    stats.add_skip("dynamicDispatch", skipped_dynamic_dispatch);
-    stats.add_skip("parseIncomplete", skipped_parse_incomplete);
-    stats.add_skip("virtualTable", skipped_virtual_table);
-    stats.add_skip("downgradedToInfo", downgraded_to_info);
+    let mut stats = DetectorStats::new(DETECTOR, premerge_stats.candidates_considered, emitted);
+    stats.add_skip("opaqueCallee", premerge_stats.skipped_opaque_callee);
+    stats.add_skip("dynamicDispatch", premerge_stats.skipped_dynamic_dispatch);
+    stats.add_skip("parseIncomplete", premerge_stats.skipped_parse_incomplete);
+    stats.add_skip("virtualTable", premerge_stats.skipped_virtual_table);
+    stats.add_skip("downgradedToInfo", premerge_stats.downgraded_to_info);
     stats.add_skip("downgradedSetupSingleton", downgraded_setup_singleton);
     stats.add_skip("downConfidencedDeadRoutine", down_confidenced_dead_routine);
     Ok(DetectorOutput {
@@ -1897,5 +1944,925 @@ mod memo_tests {
             fresh_2,
             "memoized callsite-2 result diverged from a fresh walk"
         );
+    }
+}
+
+/// Task 4 (`.superpowers/sdd/task-4-brief.md`) — shadow differential: the OLD
+/// `detect_d1_premerge` walk (`D1Policy` + `walk_evidence`, the still-live
+/// exhaustive path walker) as a LOWER-BOUND oracle for the NEW
+/// `build_d1_graph` and `search_loops` reachability pipeline (Tasks 1-3).
+/// Nothing here changes `detect_d1`'s own output — this is a read-only
+/// differential over the SAME `DetectorContext`/`L3Workspace` input, run
+/// through both pipelines side by side.
+///
+/// Three oracles (every one a REAL assertion, not vacuous — each is proven to
+/// fire on a non-empty population by the `assert!(... > 0, ...)` guards):
+///   1. `shadow_old_premerge_keys_subset_of_new` — every OLD premerge
+///      `(loop, terminal routine, terminal op)` key is present in the NEW
+///      aggregate key set. The old walker's 500-node budget can UNDER-find (see
+///      `budget_buster_star_fanout` below) — the new pipeline may find MORE,
+///      never fewer.
+///   2. `shadow_severity_non_decreasing` — for every key both pipelines share,
+///      the NEW severity is never WORSE (lower-ranked) than the OLD one. Where
+///      several old premerge records collapse onto the same key (multiple
+///      complete walk routes to the same terminal, or multiple in-loop
+///      callsites into the same PD-terminal callee), the OLD side of the
+///      comparison is the MAX severity among them — `detect_d1`'s own
+///      `merge_by_terminal` would have picked exactly that max as the
+///      post-merge canonical, so this is the fair comparison, not an
+///      approximation.
+///   3. `shadow_root_cause_keys_subset` — every OLD `rootCauseKey`
+///      `(terminal routine, terminal op)` pair (the LOOP-independent identity
+///      `merge_by_terminal` itself groups by) is present in the NEW
+///      `(terminal owner, terminal op)` set.
+///
+/// Key extraction reads STRUCTURAL fields off `Finding`/`LoopTerminalAgg`
+/// (`evidence_path[0].loop_id`, `evidence_path.last().routine_id`/
+/// `.operation_id`, `agg.loop_id`/`agg.terminal.owner.id`/`agg.terminal.op.id`)
+/// rather than parsing the `d1/{loop}/{routine}/{op}` id STRING: a routine or
+/// op internal id can itself contain a `/` (every existing fixture already
+/// shows this — e.g. an op id like `"T/op0"` or `"R/T"`), so a naive
+/// slash-split is ambiguous. `build_finding`'s `loop_step`/`terminal_step`
+/// evidence steps carry the SAME three identity fields the id string is built
+/// from, unambiguously, for every finding (direct AND transitive) — see
+/// `terminal_step`/`hop_step`'s callers above and `d1_reach::loop_step_ev`.
+#[cfg(test)]
+mod shadow_tests {
+    use super::*;
+    use crate::engine::l3::l3_workspace::L3Workspace;
+    use crate::engine::l5::d1_graph::build_d1_graph;
+    use crate::engine::l5::d1_reach::{DirectOp, LoopTerminalAgg, search_loops};
+    use crate::engine::l5::full_summary::FullRoutineSummary;
+    use crate::engine::l5::test_support::{
+        arg_binding, call_site, coverage, edge_kind, fact, loop_def, minimal_ctx, record_op,
+        routine, summary, ts_known, ts_pd,
+    };
+
+    /// A built fixture: the owned routines + the `edges_by_from` map + the
+    /// per-routine summaries `minimal_ctx`/`build_d1_graph`/`detect_d1_premerge`
+    /// all consume — the SAME shape `d1_graph`'s and `d1_reach`'s own test
+    /// modules use.
+    type Fixture = (
+        Vec<L3Routine>,
+        HashMap<String, Vec<CombinedEdge>>,
+        HashMap<String, FullRoutineSummary>,
+    );
+
+    /// `severity_rank`, per the brief: `info=0, low=1, medium=2, high=3,
+    /// critical=4`. Deliberately a FRESH, independent ranking (not a reuse of
+    /// `path_merge::sev_rank`, which the merge/reconciliation logic under test
+    /// itself already depends on) — an oracle should not share its measuring
+    /// stick with the code it is checking.
+    fn severity_rank(sev: &str) -> i32 {
+        match sev {
+            "info" => 0,
+            "low" => 1,
+            "medium" => 2,
+            "high" => 3,
+            "critical" => 4,
+            other => panic!("shadow oracle: unrecognized severity {other:?}"),
+        }
+    }
+
+    /// A summary with a single `read table` fact (`touches_db == Yes`).
+    fn db_read_summary(id: &str, table: &str) -> FullRoutineSummary {
+        summary(
+            id,
+            vec![fact("read", "table", Some(table))],
+            vec![],
+            Some(coverage("complete")),
+        )
+    }
+
+    /// A summary with a single `modify table` fact (`touches_db == Yes`).
+    fn db_write_summary(id: &str, table: &str) -> FullRoutineSummary {
+        summary(
+            id,
+            vec![fact("modify", "table", Some(table))],
+            vec![],
+            Some(coverage("complete")),
+        )
+    }
+
+    // =======================================================================
+    // Fixtures — one scenario per named function, gathered by `fixtures()`.
+    // Recreated locally (not re-exported from `d1_graph`'s/`d1_reach`'s own
+    // `#[cfg(test)]` modules, which are private to those files) but covering
+    // the SAME shapes those modules' own unit tests exercise: a direct in-loop
+    // op, a single-hop transitive call, the budget-buster star fan-out (defect
+    // D-A), the depth-2-beats-depth-1 severity race, the physical-beats-temp PD
+    // race, an A->B->A cycle, a direct+transitive merge onto the same op, the
+    // G-1/G-6 terminal filters, an event-dispatch-filtered edge, and two
+    // distinct loops in one routine.
+    // =======================================================================
+
+    /// Branch (a) only: a direct in-loop `Modify`, no calls at all.
+    fn fixture_direct_op_in_loop() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.record_operations = vec![record_op(
+            "R/op0",
+            "Modify",
+            "Rec",
+            Some("t/R"),
+            vec!["R/loop0".to_string()],
+            false,
+        )];
+        (vec![r], HashMap::new(), HashMap::new())
+    }
+
+    /// Branch (b): one loop, one in-loop call into a callee with its own
+    /// (non-looping) db-touching terminal.
+    fn fixture_transitive_single_hop() -> Fixture {
+        let mut l = routine("L", "procedure");
+        l.loops = vec![loop_def("L/loop0")];
+        l.call_sites = vec![call_site("L/cs0", "B", vec!["L/loop0".to_string()])];
+        let mut b = routine("B", "procedure");
+        b.record_operations = vec![record_op(
+            "B/op0",
+            "Modify",
+            "Rec",
+            Some("t/B"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![l, b];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "L".to_string(),
+            vec![edge_kind("L", "B", "L/cs0", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> =
+            [("B".to_string(), db_write_summary("B", "t/B"))]
+                .into_iter()
+                .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// Defect D-A: a star fan-out of 600 dead-end nodes plus one path to a
+    /// terminal placed AFTER them in edge order — past the OLD walker's
+    /// 500-node budget. OLD premerge finds NOTHING here; NEW finds the
+    /// terminal (label-dedup cycle safety only, no node budget). Proves oracle
+    /// 1 (subset, not equality) actually has teeth.
+    fn fixture_budget_buster_star_fanout() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        let a = routine("A", "procedure");
+
+        let mut routines = vec![r, a];
+        let mut a_edges: Vec<CombinedEdge> = Vec::new();
+        let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+        summaries.insert("A".to_string(), db_read_summary("A", "t/A"));
+
+        for i in 0..600 {
+            let did = format!("D{i}");
+            routines.push(routine(&did, "procedure"));
+            a_edges.push(edge_kind("A", &did, &format!("A/cs{i}"), "direct"));
+            summaries.insert(did.clone(), db_read_summary(&did, &format!("t/{did}")));
+        }
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "Modify",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+        routines.push(t);
+        a_edges.push(edge_kind("A", "T", "A/csT", "direct"));
+        summaries.insert("T".to_string(), db_read_summary("T", "t/T"));
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert("A".to_string(), a_edges);
+        (routines, graph_edges, summaries)
+    }
+
+    /// Two routes to the same op: A->T (1 hop, bucket 1, medium) and
+    /// A->X->Y->T (3 hops, bucket 2, high). Exercises oracle 2's "take the MAX
+    /// old severity across records sharing a key" rule: the OLD walker's DFS
+    /// pushes BOTH complete routes (same id, different severities) into the
+    /// pre-merge population before dedup ever runs.
+    fn fixture_severity_depth2_beats_depth1() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![
+            call_site("A/csT", "T", vec![]),
+            call_site("A/csX", "X", vec!["A/loop0".to_string()]),
+        ];
+        let x = routine("X", "procedure");
+        let y = routine("Y", "procedure");
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![r, a, x, y, t];
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![
+                edge_kind("A", "T", "A/csT", "direct"),
+                edge_kind("A", "X", "A/csX", "direct"),
+            ],
+        );
+        graph_edges.insert(
+            "X".to_string(),
+            vec![edge_kind("X", "Y", "X/csY", "direct")],
+        );
+        graph_edges.insert(
+            "Y".to_string(),
+            vec![edge_kind("Y", "T", "Y/csT", "direct")],
+        );
+
+        let summaries: HashMap<String, FullRoutineSummary> = ["A", "X", "Y", "T"]
+            .iter()
+            .map(|id| (id.to_string(), db_read_summary(id, &format!("t/{id}"))))
+            .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// A PD-terminal op reached by two callsites in the SAME loop: one passing
+    /// a temp record (verdict Temporary, info severity), one passing a
+    /// physical record (verdict Physical, high severity). Exercises the SAME
+    /// "max old severity" rule via a verdict/severity race rather than a
+    /// depth race.
+    fn fixture_physical_beats_temp() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        let mut cs0 = call_site("R/cs0", "H", vec!["R/loop0".to_string()]);
+        cs0.argument_bindings = vec![arg_binding(0, Some(ts_known(true)))]; // temp
+        let mut cs1 = call_site("R/cs1", "H", vec!["R/loop0".to_string()]);
+        cs1.argument_bindings = vec![arg_binding(0, Some(ts_known(false)))]; // physical
+        r.call_sites = vec![cs0, cs1];
+
+        let mut h = routine("H", "procedure");
+        let mut op0 = record_op("H/op0", "Modify", "Rec", Some("t/H"), vec![], false);
+        op0.temp_state = Some(ts_pd(0));
+        h.record_operations = vec![op0];
+
+        let routines = vec![r, h];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![
+                edge_kind("R", "H", "R/cs0", "direct"),
+                edge_kind("R", "H", "R/cs1", "direct"),
+            ],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> =
+            [("H".to_string(), db_write_summary("H", "t/H"))]
+                .into_iter()
+                .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// An A->B->A cycle, terminal on B. Proves both pipelines terminate and
+    /// agree on the single (loop, B/op0) key.
+    fn fixture_cycle_terminates() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        let a = routine("A", "procedure");
+        let mut b = routine("B", "procedure");
+        b.record_operations = vec![record_op(
+            "B/op0",
+            "Modify",
+            "Rec",
+            Some("t/B"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![r, a, b];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![edge_kind("A", "B", "A/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "B".to_string(),
+            vec![edge_kind("B", "A", "B/cs0", "direct")],
+        );
+
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("A".to_string(), db_read_summary("A", "t/A")),
+            ("B".to_string(), db_write_summary("B", "t/B")),
+        ]
+        .into_iter()
+        .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// R's in-loop op T is BOTH a direct op (branch a) AND a transitive
+    /// terminal reached via a cycle back into R (branch b) — the shared
+    /// per-(loop, terminal) aggregation must adjudicate to the same op either
+    /// way.
+    fn fixture_direct_and_transitive_same_op() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        r.record_operations = vec![record_op(
+            "R/T",
+            "FindSet",
+            "Rec",
+            Some("t/R"),
+            vec!["R/loop0".to_string()],
+            false,
+        )];
+
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![call_site("A/csR", "R", vec!["A/loop0".to_string()])];
+
+        let routines = vec![r, a];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![edge_kind("A", "R", "A/csR", "direct")],
+        );
+
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("A".to_string(), db_read_summary("A", "t/A")),
+            ("R".to_string(), db_read_summary("R", "t/R")),
+        ]
+        .into_iter()
+        .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// A terminator-`Next` (G-1) and a virtual/system-table `Get` (G-6) must be
+    /// excluded from the terminal population by BOTH pipelines identically; a
+    /// plain `Get` on the SAME routine survives.
+    fn fixture_g1_g6_filters() -> Fixture {
+        let mut l = routine("L", "procedure");
+        l.loops = vec![loop_def("L/loop0")];
+        l.call_sites = vec![call_site("L/cs0", "B", vec!["L/loop0".to_string()])];
+
+        let mut b = routine("B", "procedure");
+        b.record_variables = vec![crate::engine::l3::l3_workspace::L3RecordVariable {
+            id: "B/rv0".to_string(),
+            name: "F".to_string(),
+            table_name: Some("Field".to_string()),
+            table_id: None,
+            is_parameter: false,
+            parameter_index: None,
+            temp_state: crate::engine::l2::features::PTempState {
+                kind: "unknown".to_string(),
+                value: None,
+                parameter_index: None,
+            },
+            scope: None,
+        }];
+        let op_get = record_op("B/op0", "Get", "Rec", None, vec![], false);
+        let op_next_terminator = record_op("B/op1", "Next", "Rec", None, vec![], true);
+        let op_get_virtual = record_op("B/op2", "Get", "F", None, vec![], false);
+        b.record_operations = vec![op_get, op_next_terminator, op_get_virtual];
+
+        let routines = vec![l, b];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "L".to_string(),
+            vec![edge_kind("L", "B", "L/cs0", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> =
+            [("B".to_string(), db_read_summary("B", "t/B"))]
+                .into_iter()
+                .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// An `event-dispatch` edge out of the in-loop callee must never be
+    /// followed by either pipeline (D2's job, not D1's) — only the `direct`
+    /// sibling edge's target contributes a terminal.
+    fn fixture_event_dispatch_filtered() -> Fixture {
+        let mut l = routine("L", "procedure");
+        l.loops = vec![loop_def("L/loop0")];
+        l.call_sites = vec![call_site("L/cs0", "A", vec!["L/loop0".to_string()])];
+
+        let a = routine("A", "procedure");
+        let mut b = routine("B", "procedure");
+        b.record_operations = vec![record_op(
+            "B/op0",
+            "Modify",
+            "Rec",
+            Some("t/B"),
+            vec![],
+            false,
+        )];
+        let c = routine("C", "procedure");
+
+        let routines = vec![l, a, b, c];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "L".to_string(),
+            vec![edge_kind("L", "A", "L/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![
+                edge_kind("A", "B", "A/cs0", "direct"),
+                edge_kind("A", "C", "A/cs1", "event-dispatch"),
+            ],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("A".to_string(), db_read_summary("A", "t/A")),
+            ("B".to_string(), db_write_summary("B", "t/B")),
+            ("C".to_string(), db_read_summary("C", "t/C")),
+        ]
+        .into_iter()
+        .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// Two DISTINCT loops in one routine, each calling a different db-touching
+    /// callee — checks the loop-keyed identity stays distinct rather than
+    /// collapsing across loops.
+    fn fixture_multi_loop_same_routine() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0"), loop_def("R/loop1")];
+        r.call_sites = vec![
+            call_site("R/cs0", "A", vec!["R/loop0".to_string()]),
+            call_site("R/cs1", "B", vec!["R/loop1".to_string()]),
+        ];
+        let mut a = routine("A", "procedure");
+        a.record_operations = vec![record_op(
+            "A/op0",
+            "Modify",
+            "Rec",
+            Some("t/A"),
+            vec![],
+            false,
+        )];
+        let mut b = routine("B", "procedure");
+        b.record_operations = vec![record_op(
+            "B/op0",
+            "FindSet",
+            "Rec",
+            Some("t/B"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![r, a, b];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![
+                edge_kind("R", "A", "R/cs0", "direct"),
+                edge_kind("R", "B", "R/cs1", "direct"),
+            ],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("A".to_string(), db_write_summary("A", "t/A")),
+            ("B".to_string(), db_read_summary("B", "t/B")),
+        ]
+        .into_iter()
+        .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    fn fixtures() -> Vec<(&'static str, Fixture)> {
+        vec![
+            ("direct_op_in_loop", fixture_direct_op_in_loop()),
+            ("transitive_single_hop", fixture_transitive_single_hop()),
+            (
+                "budget_buster_star_fanout",
+                fixture_budget_buster_star_fanout(),
+            ),
+            (
+                "severity_depth2_beats_depth1",
+                fixture_severity_depth2_beats_depth1(),
+            ),
+            ("physical_beats_temp", fixture_physical_beats_temp()),
+            ("cycle_terminates", fixture_cycle_terminates()),
+            (
+                "direct_and_transitive_same_op",
+                fixture_direct_and_transitive_same_op(),
+            ),
+            ("g1_g6_filters", fixture_g1_g6_filters()),
+            ("event_dispatch_filtered", fixture_event_dispatch_filtered()),
+            ("multi_loop_same_routine", fixture_multi_loop_same_routine()),
+        ]
+    }
+
+    /// Enumerate every DIRECT in-loop db op surviving `detect_d1` branch (a)'s
+    /// EXACT ladder (this file, the `(a) Direct in-loop DB ops` block above:
+    /// `loop_stack` non-empty, db-touching class, the cursor-opener `Next`
+    /// skip, G-1 terminator-`Next`, G-6 virtual-system-table) — the SAME
+    /// population `build_d1_graph`'s Task 5 successor will eventually fold
+    /// in, and the same shape `d1_reach`'s own
+    /// `direct_and_transitive_same_op_adjudicated` test builds by hand.
+    fn enumerate_direct_ops<'a>(
+        ws: &'a L3Workspace,
+        table_by_id: &HashMap<&str, &L3Table>,
+    ) -> Vec<DirectOp<'a>> {
+        let mut out = Vec::new();
+        for routine in &ws.routines {
+            if !routine.body_available || routine.parse_incomplete {
+                continue;
+            }
+            let loop_by_id: HashMap<&str, &crate::engine::l2::features::PLoop> =
+                routine.loops.iter().map(|l| (l.id.as_str(), l)).collect();
+
+            let mut cursor_opened_record_vars: HashSet<String> = HashSet::new();
+            for op in &routine.record_operations {
+                if !op.loop_stack.is_empty() {
+                    continue;
+                }
+                if !CURSOR_OPENER_OPS.contains(&op.op.as_str()) {
+                    continue;
+                }
+                cursor_opened_record_vars.insert(op.record_variable_name.to_lowercase());
+            }
+
+            for op in &routine.record_operations {
+                if op.loop_stack.is_empty() {
+                    continue;
+                }
+                if !is_db_touching_class(classify_op(&op.op)) {
+                    continue;
+                }
+                if op.op == "Next"
+                    && cursor_opened_record_vars.contains(&op.record_variable_name.to_lowercase())
+                {
+                    continue;
+                }
+                if is_terminator_next(op) {
+                    continue;
+                }
+                if op_targets_virtual_system_table(op, routine, table_by_id) {
+                    continue;
+                }
+                let Some(representative_loop) = op.loop_stack.last().map(|s| s.as_str()) else {
+                    continue;
+                };
+                let Some(loop_info) = loop_by_id.get(representative_loop).copied() else {
+                    continue;
+                };
+                out.push(DirectOp {
+                    routine,
+                    loop_id: representative_loop,
+                    loop_info,
+                    op,
+                });
+            }
+        }
+        out
+    }
+
+    /// The OWNED result of running both pipelines over one fixture: every
+    /// field is a plain `String`/`i32` (no borrowed lifetimes), so the three
+    /// oracle tests below can each call this once per fixture without any
+    /// lifetime entanglement between the OLD (`L3Resolved`-based) and NEW
+    /// (`L3Workspace`-based) call paths.
+    struct ShadowCase {
+        /// Every `(loop, terminal routine, terminal op)` key ANY pre-merge OLD
+        /// finding carries.
+        old_keys: HashSet<(String, String, String)>,
+        /// The MAX severity rank across every pre-merge OLD finding sharing a
+        /// key (oracle 2's fair comparison — see the module doc).
+        old_max_sev_by_key: HashMap<(String, String, String), i32>,
+        /// The NEW aggregate's severity rank, by the SAME 3-part key (one
+        /// `LoopTerminalAgg` per key, by construction — see `search_loops`).
+        new_sev_by_key: HashMap<(String, String, String), i32>,
+        /// Every OLD `rootCauseKey`, as its `(terminal routine, terminal op)`
+        /// pair (loop-independent — the identity `merge_by_terminal` groups by).
+        old_root_cause_keys: HashSet<(String, String)>,
+        /// Every NEW `(terminal owner, terminal op)` pair.
+        new_owner_op_keys: HashSet<(String, String)>,
+    }
+
+    /// The three OLD-side key sets, extracted from a `detect_d1_premerge` run
+    /// — shared by `compute_shadow_case` (fixtures) and `shadow_do_workspace`
+    /// (the real-workspace DO run) so the extraction logic exists exactly
+    /// once.
+    #[allow(clippy::type_complexity)]
+    fn extract_old_keys(
+        premerge: &[FindingRec],
+    ) -> (
+        HashSet<(String, String, String)>,
+        HashMap<(String, String, String), i32>,
+        HashSet<(String, String)>,
+    ) {
+        let mut old_keys: HashSet<(String, String, String)> = HashSet::new();
+        let mut old_max_sev_by_key: HashMap<(String, String, String), i32> = HashMap::new();
+        let mut old_root_cause_keys: HashSet<(String, String)> = HashSet::new();
+        for rec in premerge {
+            let f = &rec.finding;
+            let loop_id = f.evidence_path[0]
+                .loop_id
+                .clone()
+                .expect("a d1 finding's first evidence step is always a loop step (build_finding)");
+            let last = f
+                .evidence_path
+                .last()
+                .expect("a d1 finding's evidence_path is never empty");
+            let routine_id = last.routine_id.clone();
+            let op_id = last.operation_id.clone().expect(
+                "a d1 finding's terminal evidence step always carries operation_id \
+                 (terminal_step/direct op_step)",
+            );
+            let key = (loop_id, routine_id.clone(), op_id.clone());
+            old_keys.insert(key.clone());
+            let rank = severity_rank(&f.severity);
+            old_max_sev_by_key
+                .entry(key)
+                .and_modify(|v| *v = (*v).max(rank))
+                .or_insert(rank);
+            old_root_cause_keys.insert((routine_id, op_id));
+        }
+        (old_keys, old_max_sev_by_key, old_root_cause_keys)
+    }
+
+    /// The two NEW-side key maps, extracted from a `search_loops` run —
+    /// shared by `compute_shadow_case` and `shadow_do_workspace` (see
+    /// `extract_old_keys`).
+    #[allow(clippy::type_complexity)]
+    fn extract_new_keys(
+        aggs: &[LoopTerminalAgg],
+    ) -> (
+        HashMap<(String, String, String), i32>,
+        HashSet<(String, String)>,
+    ) {
+        let mut new_sev_by_key: HashMap<(String, String, String), i32> = HashMap::new();
+        let mut new_owner_op_keys: HashSet<(String, String)> = HashSet::new();
+        for agg in aggs {
+            let key = (
+                agg.loop_id.to_string(),
+                agg.terminal.owner.id.clone(),
+                agg.terminal.op.id.clone(),
+            );
+            new_sev_by_key.insert(key, severity_rank(agg.severity));
+            new_owner_op_keys.insert((agg.terminal.owner.id.clone(), agg.terminal.op.id.clone()));
+        }
+        (new_sev_by_key, new_owner_op_keys)
+    }
+
+    /// Run BOTH pipelines over one fixture and extract the oracle keys.
+    fn compute_shadow_case(
+        routines: &[L3Routine],
+        graph_edges: HashMap<String, Vec<CombinedEdge>>,
+        summaries: HashMap<String, FullRoutineSummary>,
+    ) -> ShadowCase {
+        let ctx = minimal_ctx(routines, graph_edges, summaries);
+
+        // OLD: the still-live PW-0 premerge walk, over its OWN (separately
+        // owned) `L3Resolved`/`L3Workspace` clone — `detect_d1_premerge`
+        // returns fully OWNED data (no lifetime tie to `resolved` or `ctx`),
+        // so this is safe even though `resolved.workspace.routines` and
+        // `ctx`'s backing store are different (content-identical) allocations,
+        // exactly like `ctx`/`workspace` already are in `d1_graph`'s and
+        // `d1_reach`'s own test modules.
+        let resolved = L3Resolved {
+            workspace: L3Workspace {
+                objects: vec![],
+                tables: vec![],
+                routines: routines.to_vec(),
+            },
+            root_classifications: vec![],
+            primary_app: None,
+            infra_diagnostics: vec![],
+        };
+        let (premerge, _stats) = detect_d1_premerge(&resolved, &ctx);
+        let (old_keys, old_max_sev_by_key, old_root_cause_keys) = extract_old_keys(&premerge);
+
+        // NEW: build_d1_graph + direct-op enumeration + search_loops, over the
+        // SAME `ctx` (borrowing the original `routines` slice) plus a second,
+        // separately-owned `L3Workspace` clone (mirrors `d1_graph`'s/
+        // `d1_reach`'s own `ws(&routines)` helper).
+        let ws = L3Workspace {
+            objects: vec![],
+            tables: vec![],
+            routines: routines.to_vec(),
+        };
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &ws, &mut memo);
+        let direct_ops = enumerate_direct_ops(&ws, &ctx.table_by_id);
+        let aggs = search_loops(
+            &graph,
+            &seeds,
+            &direct_ops,
+            &ctx,
+            &ctx.closed_world_temp_params,
+        );
+        let (new_sev_by_key, new_owner_op_keys) = extract_new_keys(&aggs);
+
+        ShadowCase {
+            old_keys,
+            old_max_sev_by_key,
+            new_sev_by_key,
+            old_root_cause_keys,
+            new_owner_op_keys,
+        }
+    }
+
+    #[test]
+    fn shadow_old_premerge_keys_subset_of_new() {
+        let mut total_old = 0usize;
+        let mut total_new = 0usize;
+        for (name, (routines, graph_edges, summaries)) in fixtures() {
+            let case = compute_shadow_case(&routines, graph_edges, summaries);
+            total_old += case.old_keys.len();
+            total_new += case.new_sev_by_key.len();
+            for key in &case.old_keys {
+                assert!(
+                    case.new_sev_by_key.contains_key(key),
+                    "fixture {name}: old premerge key {key:?} missing from the new \
+                     search_loops aggregate key set"
+                );
+            }
+        }
+        assert!(
+            total_old > 0,
+            "fixture population must exercise at least one OLD premerge finding"
+        );
+        assert!(
+            total_new > 0,
+            "fixture population must exercise at least one NEW aggregate"
+        );
+    }
+
+    #[test]
+    fn shadow_severity_non_decreasing() {
+        let mut compared = 0usize;
+        for (name, (routines, graph_edges, summaries)) in fixtures() {
+            let case = compute_shadow_case(&routines, graph_edges, summaries);
+            for (key, &old_rank) in &case.old_max_sev_by_key {
+                let Some(&new_rank) = case.new_sev_by_key.get(key) else {
+                    // A key missing from the NEW side is oracle 1's violation to
+                    // report, not this oracle's — skip (nothing to compare).
+                    continue;
+                };
+                compared += 1;
+                assert!(
+                    new_rank >= old_rank,
+                    "fixture {name}: severity regressed for key {key:?}: \
+                     old(max)={old_rank} new={new_rank}"
+                );
+            }
+        }
+        assert!(
+            compared > 0,
+            "fixture population must exercise at least one shared (old, new) key"
+        );
+    }
+
+    #[test]
+    fn shadow_root_cause_keys_subset() {
+        let mut total = 0usize;
+        for (name, (routines, graph_edges, summaries)) in fixtures() {
+            let case = compute_shadow_case(&routines, graph_edges, summaries);
+            total += case.old_root_cause_keys.len();
+            for key in &case.old_root_cause_keys {
+                assert!(
+                    case.new_owner_op_keys.contains(key),
+                    "fixture {name}: old rootCauseKey (routine, op) {key:?} missing from \
+                     the new (owner, op) set"
+                );
+            }
+        }
+        assert!(
+            total > 0,
+            "fixture population must exercise at least one old rootCauseKey"
+        );
+    }
+
+    /// Manual DO shadow run (Task 4, step 3): loads a REAL Business Central
+    /// workspace via the `DO_WS` env var, runs the SAME three oracles above
+    /// over it, and prints the partitioned diff — keys only in the NEW
+    /// aggregate population ("new-coverage") vs. shared keys where the NEW
+    /// severity is STRICTLY better ("severity-upgrade") vs. unchanged.
+    /// `#[ignore]`d: reads a real workspace off disk, which does not exist in
+    /// CI or on most dev machines. Run explicitly:
+    /// ```text
+    /// DO_WS='...' cargo test -p al-call-hierarchy --lib shadow_do_workspace -- --ignored --nocapture
+    /// ```
+    /// FAILS (not just warns) if any of the three oracles is violated — on a
+    /// real workspace that is a genuine Tasks 1-3 divergence bug, never noise.
+    #[test]
+    #[ignore]
+    fn shadow_do_workspace() {
+        let Some(ws_path) = std::env::var_os("DO_WS").map(std::path::PathBuf::from) else {
+            eprintln!(
+                "shadow_do_workspace: DO_WS not set — skipping (see \
+                 .superpowers/sdd/task-4-brief.md step 3)"
+            );
+            return;
+        };
+        assert!(
+            ws_path.exists(),
+            "DO_WS does not point at an existing path: {}",
+            ws_path.display()
+        );
+
+        let resolved =
+            crate::engine::l3::l3_workspace::assemble_and_resolve_workspace_default(&ws_path)
+                .expect("assemble_and_resolve_workspace_default failed for DO_WS");
+        let ctx = crate::engine::l5::detector_context::build_detector_context(
+            &resolved,
+            crate::engine::l5::registry::substrate::SUMMARIES
+                | crate::engine::l5::registry::substrate::CORE_SUMMARIES
+                | crate::engine::l5::registry::substrate::CLOSED_WORLD_TEMP,
+        );
+        let ws = &resolved.workspace;
+
+        let (premerge, _stats) = detect_d1_premerge(&resolved, &ctx);
+        let (old_keys, old_max_sev_by_key, old_root_cause_keys) = extract_old_keys(&premerge);
+
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, ws, &mut memo);
+        let direct_ops = enumerate_direct_ops(ws, &ctx.table_by_id);
+        let aggs = search_loops(
+            &graph,
+            &seeds,
+            &direct_ops,
+            &ctx,
+            &ctx.closed_world_temp_params,
+        );
+        let (new_sev_by_key, new_owner_op_keys) = extract_new_keys(&aggs);
+
+        let mut new_coverage = 0usize;
+        let mut severity_upgrade = 0usize;
+        let mut unchanged = 0usize;
+        for (key, &new_rank) in &new_sev_by_key {
+            match old_max_sev_by_key.get(key) {
+                None => new_coverage += 1,
+                Some(&old_rank) => {
+                    if new_rank > old_rank {
+                        severity_upgrade += 1;
+                    } else {
+                        unchanged += 1;
+                    }
+                }
+            }
+        }
+
+        println!(
+            "SUBSET counts: oldKeys={} newKeys={}",
+            old_keys.len(),
+            new_sev_by_key.len()
+        );
+        println!(
+            "partition: added(new-coverage)={new_coverage} upgraded(severity-upgrade)={severity_upgrade} unchanged={unchanged}"
+        );
+        println!(
+            "rootCauseKey counts: old={} newOwnerOp={}",
+            old_root_cause_keys.len(),
+            new_owner_op_keys.len()
+        );
+
+        for key in &old_keys {
+            assert!(
+                new_sev_by_key.contains_key(key),
+                "DO SUBSET violation: old premerge key {key:?} missing from the new \
+                 aggregate set"
+            );
+        }
+        println!("SUBSET oracle 1 (premerge keys): PASS");
+
+        for (key, &old_rank) in &old_max_sev_by_key {
+            if let Some(&new_rank) = new_sev_by_key.get(key) {
+                assert!(
+                    new_rank >= old_rank,
+                    "SEVERITY regression for key {key:?}: old(max)={old_rank} new={new_rank}"
+                );
+            }
+        }
+        println!("SEVERITY oracle 2 (non-decreasing): PASS");
+
+        for key in &old_root_cause_keys {
+            assert!(
+                new_owner_op_keys.contains(key),
+                "rootCauseKey SUBSET violation: {key:?} missing from the new (owner, op) set"
+            );
+        }
+        println!("SUBSET oracle 3 (rootCauseKeys): PASS");
     }
 }
