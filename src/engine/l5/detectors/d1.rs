@@ -801,6 +801,47 @@ fn apply_seed_transform(
         .collect()
 }
 
+/// Emit the two Hot-tier (`Detail::Hot`) d1 counter groups: the aggregate
+/// `d1.walk_stats` (walk + retained-by-stop-kind totals — the decisive
+/// `unused_cut / all_retained` ratio derives from these) and `d1.memo` (memo
+/// hit/miss + retained-size totals). Called at EVERY 1000-memo-miss checkpoint
+/// AND once at the end. The inputs are cumulative and Chrome `C` counters are
+/// last-value-wins, so periodic re-emission is correct — and it makes the
+/// aggregates KILL-DURABLE: a cap-killed 8020-scale run (the only kind that
+/// matters — the end flush never runs on a kill) still carries the last
+/// checkpoint's decisive stop-kind counters instead of nothing.
+#[allow(clippy::too_many_arguments)]
+fn emit_d1_hot_counters(
+    walk_stats: &WalkTraceStats,
+    memo_hits: u64,
+    memo_misses: u64,
+    retained_results: u64,
+    retained_steps: u64,
+    max_entry_results: u64,
+    max_entry_steps: u64,
+) {
+    let mut walk_lc = pt::LocalCounters::new();
+    walk_lc.set("nodes_visited", walk_stats.nodes_visited);
+    walk_lc.set("edges_examined", walk_stats.edges_examined);
+    walk_lc.set("complete", walk_stats.complete);
+    walk_lc.set("cycle_cut", walk_stats.cycle_cut);
+    walk_lc.set("depth_cut", walk_stats.depth_cut);
+    walk_lc.set("node_budget_cut", walk_stats.node_budget_cut);
+    walk_lc.set("dead_end", walk_stats.dead_end);
+    walk_lc.set("walks", walk_stats.walks);
+    walk_lc.set("walks_hit_node_bound", walk_stats.walks_hit_node_bound);
+    walk_lc.flush("d1.walk_stats");
+
+    let mut memo_lc = pt::LocalCounters::new();
+    memo_lc.set("memo_hits", memo_hits);
+    memo_lc.set("memo_misses", memo_misses);
+    memo_lc.set("retained_results", retained_results);
+    memo_lc.set("retained_steps", retained_steps);
+    memo_lc.set("max_entry_results", max_entry_results);
+    memo_lc.set("max_entry_steps", max_entry_steps);
+    memo_lc.flush("d1.memo");
+}
+
 pub fn detect_d1(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
@@ -1156,8 +1197,23 @@ pub fn detect_d1(
                         // RSS checkpoint every 1000 misses: the tiny span's close
                         // snapshots working-set / peak / private RSS; the counter
                         // carries the running miss number alongside on the timeline.
+                        // ALSO snapshot the cumulative walk/memo aggregates here so
+                        // the decisive stop-kind ratio is KILL-DURABLE — at 8020
+                        // scale the run is cap-killed and the end flush never runs,
+                        // so a checkpoint-only trace would carry census + RSS but
+                        // ZERO stop-kind counters (ratio uncomputable). Cumulative +
+                        // last-value-wins C counters ⇒ re-emission is correct.
                         if memo_misses.is_multiple_of(1000) {
                             pt::counter("d1.memo_misses", memo_misses);
+                            emit_d1_hot_counters(
+                                &walk_stats,
+                                memo_hits,
+                                memo_misses,
+                                retained_results,
+                                retained_steps,
+                                max_entry_results,
+                                max_entry_steps,
+                            );
                             drop(pt::span("d1", "memo_checkpoint"));
                         }
                     }
@@ -1219,33 +1275,23 @@ pub fn detect_d1(
         }
     }
 
-    // Hot-tier flush (`Detail::Hot`): one `d1.walk_stats` counter carrying the
-    // aggregate walk + retained-by-stop-kind totals (from which
-    // `all_retained = complete + cycle_cut + depth_cut + node_budget_cut +
-    // dead_end` and `unused_cut = all_retained - complete` give the decisive
-    // ratio), and one `d1.memo` counter carrying the memo hit/miss + retained-size
-    // totals. Only when Hot is on.
+    // Hot-tier end flush (`Detail::Hot`): the FINAL cumulative `d1.walk_stats`
+    // (aggregate walk + retained-by-stop-kind totals — `all_retained = complete +
+    // cycle_cut + depth_cut + node_budget_cut + dead_end`, `unused_cut =
+    // all_retained - complete` give the decisive ratio) + `d1.memo` (hit/miss +
+    // retained-size totals). Same emission as the per-1000-miss checkpoints above;
+    // on a clean run this is the last (authoritative) value, on a cap-killed run
+    // the last checkpoint's snapshot already carried the ratio.
     if trace_hot {
-        let mut walk_lc = pt::LocalCounters::new();
-        walk_lc.set("nodes_visited", walk_stats.nodes_visited);
-        walk_lc.set("edges_examined", walk_stats.edges_examined);
-        walk_lc.set("complete", walk_stats.complete);
-        walk_lc.set("cycle_cut", walk_stats.cycle_cut);
-        walk_lc.set("depth_cut", walk_stats.depth_cut);
-        walk_lc.set("node_budget_cut", walk_stats.node_budget_cut);
-        walk_lc.set("dead_end", walk_stats.dead_end);
-        walk_lc.set("walks", walk_stats.walks);
-        walk_lc.set("walks_hit_node_bound", walk_stats.walks_hit_node_bound);
-        walk_lc.flush("d1.walk_stats");
-
-        let mut memo_lc = pt::LocalCounters::new();
-        memo_lc.set("memo_hits", memo_hits);
-        memo_lc.set("memo_misses", memo_misses);
-        memo_lc.set("retained_results", retained_results);
-        memo_lc.set("retained_steps", retained_steps);
-        memo_lc.set("max_entry_results", max_entry_results);
-        memo_lc.set("max_entry_steps", max_entry_steps);
-        memo_lc.flush("d1.memo");
+        emit_d1_hot_counters(
+            &walk_stats,
+            memo_hits,
+            memo_misses,
+            retained_results,
+            retained_steps,
+            max_entry_results,
+            max_entry_steps,
+        );
     }
 
     // Two-stage collapse:
