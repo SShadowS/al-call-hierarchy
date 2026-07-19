@@ -75,14 +75,15 @@ the bottom, CHANGELOG, and git log.
   machine load inflated even non-d1 control runs, so the batch's numbers are
   unusable in either direction (measurements doc §8).
 
-  **Perf queue after Wave-2c — GATED ON ATTRIBUTION.** Next perf step is a
-  MEASUREMENT, not a build: probed 8020 full-default re-run on a QUIET
-  machine (re-arm the stage/SCC probes from git history) to attribute the
-  remaining wall — (a) d1's distinct-callee walk count at 797-SCC density,
-  (b) the Jacobi substrate block, or (c) a later detector never before
-  reached. This arc falsified two magnitude estimates (SCC-shatter,
-  d1-redundancy-dominance); no further perf work is licensed without that
-  attribution. Downstream candidates once attributed: d1 typed-receiver-§7
+  **ATTRIBUTION DELIVERED 2026-07-19** (permanent perf_trace layer + three
+  traced d1-only runs; measurements doc §9): d1 is OUTPUT-BOUND on
+  complete-path multiplicity — 69.1% of retained walk results are genuine
+  complete witness paths (~126/walk, ~900k for the full census ≈ 3h),
+  Jacobi/substrate CLEAN at ~24 min / 43.5 GB. **Next d1 step is a USER
+  SEMANTICS DECISION**: cap/summarize additionalPaths per finding with an
+  explicit capped diagnostic (honest-caps doctrine) → expected d1 collapse
+  to minutes; goldens rebaseline + DO/CDO triage gate it. CompleteOnly
+  cut-elision = secondary trim (≤31%) only alongside that decision. Downstream candidates once attributed: d1 typed-receiver-§7
   guard-tag/flow-insensitive redesign; B1 interned ids + bitsets / B2
   SCC-shared cones (8.34M-cardinality summary mass, Jacobi plateau); B3
   single-substrate unification (needs detector-feature parity harness).

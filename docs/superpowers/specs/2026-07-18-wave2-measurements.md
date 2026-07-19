@@ -807,3 +807,39 @@ substrate's Jacobi block under load; (c) a later detector never before
 reached. Until that attribution exists, no further perf work is licensed
 (measure-before-build doctrine — this arc has now falsified two magnitude
 estimates and will not risk a third).
+
+## 9. The decisive d1 attribution (perf_trace runs, 2026-07-19)
+
+Infrastructure: the permanent `perf_trace` layer (spec
+`docs/superpowers/specs/2026-07-18-tracing-infra.md`) replaced the throwaway
+probes; three traced d1-only 8020 runs (quiet machine) nailed the attribution
+the arc had been missing. Full data: `.superpowers/sdd/d1only-verdict.md`.
+
+Facts (run 3, 60s checkpoint series, all cross-checks internally consistent):
+- Substrate incl. the full Jacobi block: ~24 min, CLEAN — ruled out as the
+  wall. Peak RSS 43.5 GB is set by the substrate (cones), not d1.
+- d1 census: 22,169 in-loop callsites → 7,105 walk candidates → 4,116
+  distinct callee roots (the Wave-2c memo works: 623 hits / 823 misses at
+  kill).
+- Walk economics: ~0.3 walks/s (bursty, heavy-tailed; max entry = 2,884
+  results); full census ≈ 3 h for d1 alone.
+- **THE RATIO: 30.9% cut / 69.1% COMPLETE** — stable across all 20
+  checkpoints. 126 complete witness paths per walk on average; retained
+  steps ≈ 1.6M at 823/7105 walks.
+
+Verdict: **complete-path multiplicity — d1 is output-bound.** Its semantics
+enumerate every complete evidence path (additionalPaths are counted in the
+output), so at 797-SCC density the work is bounded below by ~900k witness
+paths. No behavior-preserving algorithm removes that; the three prior
+optimization waves were correct but could never have closed this.
+
+Consequences for the queue:
+1. The next d1 lever is an OUTPUT-SEMANTICS DECISION (user's): cap/summarize
+   additionalPaths per finding with an explicit capped-diagnostic (the
+   honest-caps doctrine), or first-path + count. Goldens rebaseline; DO/CDO
+   triage gates it. Estimated effect: d1 cost collapses to
+   O(candidates × first-path) ≈ minutes.
+2. CompleteOnly streaming (cut-result elision) is licensed only as a
+   SECONDARY trim (≤31%) and only if pursued alongside (1).
+3. B1/B2 remain the substrate levers (24 min / 43.5 GB floor for any
+   full-default run) — unchanged priority, now cleanly separated from d1.
