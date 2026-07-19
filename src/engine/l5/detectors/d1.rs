@@ -919,6 +919,11 @@ pub fn detect_d1(
     let mut retained_steps = 0u64;
     let mut max_entry_results = 0u64;
     let mut max_entry_steps = 0u64;
+    // Wall-clock checkpoint cadence (`Some` only when Hot ⇒ zero cost off). The
+    // 1000-miss stride is too COARSE at 8020 density (~0.25 misses/s ⇒ its first
+    // flush is ~68 min in), so a capped run dies counter-less; re-emit the
+    // cumulative aggregates every 60s too. Reset on each flush.
+    let mut last_flush = trace_hot.then(std::time::Instant::now);
 
     if trace_hot {
         // Pre-walk census, emitted BEFORE the first walk: the in-loop call-site
@@ -1222,6 +1227,28 @@ pub fn detect_d1(
                     rc
                 }
             };
+
+            // Time-based durability checkpoint: runs on EVERY in-loop callsite
+            // (hit or miss), so the decisive aggregates reach the trace within 60s
+            // even during a long miss-sparse phase — the miss-stride alone first
+            // fires ~68 min in at density, after both prior capped runs had died.
+            // `last_flush` is `Some` only when Hot is on; `elapsed()` is the sole
+            // per-iteration cost and only when Hot.
+            if let Some(lf) = &mut last_flush
+                && lf.elapsed() >= std::time::Duration::from_secs(60)
+            {
+                emit_d1_hot_counters(
+                    &walk_stats,
+                    memo_hits,
+                    memo_misses,
+                    retained_results,
+                    retained_steps,
+                    max_entry_results,
+                    max_entry_steps,
+                );
+                *lf = std::time::Instant::now();
+            }
+
             let results = apply_seed_transform(
                 canonical.as_slice(),
                 cs.loop_stack.len() as i64,
