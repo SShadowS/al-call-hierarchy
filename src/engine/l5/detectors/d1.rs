@@ -72,7 +72,7 @@ const HEAVY_READ_OPS: [&str; 2] = ["CalcFields", "CalcSums"];
 /// FlowField calculation queries the (physical) flow-target tables even on a
 /// temporary host record, so the temp ⇒ info downgrade only applies when EVERY
 /// named field argument is a non-FlowField (Blob/Normal → in-memory).
-const FLOWFIELD_GATED_OPS: [&str; 2] = ["CalcFields", "SetAutoCalcFields"];
+pub(crate) const FLOWFIELD_GATED_OPS: [&str; 2] = ["CalcFields", "SetAutoCalcFields"];
 const RETRIEVAL_OPS: [&str; 6] = ["FindSet", "FindFirst", "FindLast", "Find", "Get", "Next"];
 /// Ops that open a recordset cursor BEFORE a `repeat..until` loop. An in-loop
 /// `Next` on the same record-var IS the cursor advance, not an N+1 antipattern.
@@ -104,7 +104,7 @@ fn op_temp_state_kind(op: &L3RecordOperation) -> TempStateKind {
 ///
 /// SOUNDNESS: this only ever PREVENTS a downgrade (keeps firing) when uncertain; it
 /// never suppresses a finding that would otherwise fire.
-fn flowfield_gate_blocks_downgrade(
+pub(crate) fn flowfield_gate_blocks_downgrade(
     op: &L3RecordOperation,
     table_by_id: &HashMap<&str, &L3Table>,
 ) -> bool {
@@ -157,8 +157,8 @@ fn flowfield_gate_blocks_downgrade(
 ///     CalcFormula still queries the physical flow targets. A DEDICATED variant (not a
 ///     faked `Physical`) so the merge-tie reconciliation preserves the FlowField fact
 ///     in the dual-verdict note instead of silently dropping it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TempVerdict {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum TempVerdict {
     Temporary,
     Physical,
     Uncertain,
@@ -229,7 +229,7 @@ fn table_note(
 /// `isSetupSingletonGet`: op is `Get` AND the rendered table name (minus the
 /// `(type not loaded)` suffix) ends in `Setup` (case-insensitive) AND is not a
 /// `var ` / `unknown table` / empty placeholder.
-fn is_setup_singleton_get(
+pub(crate) fn is_setup_singleton_get(
     op: &L3RecordOperation,
     routine: Option<&L3Routine>,
     table_by_id: &HashMap<&str, &L3Table>,
@@ -300,7 +300,7 @@ fn representative_loop_id(loop_stack: &[String]) -> Option<&str> {
 /// terminal op that is already `Known(true)` resolves `Temporary` immediately (no
 /// stepping), so this is BEHAVIOUR-PRESERVING for non-PD ops; only PD-terminal
 /// (by-var param) ops gain per-path precision.
-fn severity_for(
+pub(crate) fn severity_for(
     op: &L3RecordOperation,
     verdict: TempVerdict,
     effective_loop_depth: i64,
@@ -628,6 +628,111 @@ impl<'a> D1Policy<'a> {
     }
 }
 
+/// A HOP evidence step for a `from -> to` call edge. Extracted verbatim from the
+/// old `D1Policy::build_hop_step` (`&self` -> explicit `routine_by_id` +
+/// per-edge params) so the reachability search (`d1_reach`) can build the SAME
+/// hop step off a compact [`crate::engine::l5::d1_graph::D1Edge`] without a live
+/// `D1Policy`. `build_hop_step` now delegates here — behaviour-preserving (the
+/// full suite proves the old walk path is byte-identical).
+pub(crate) fn hop_step(
+    routine_by_id: &HashMap<&str, &L3Routine>,
+    from: &str,
+    to: &str,
+    kind: &str,
+    callsite_id: Option<&str>,
+) -> EvidenceStep {
+    let from_routine = routine_by_id.get(from).copied();
+    let cs = callsite_id.and_then(|cid| {
+        from_routine.and_then(|fr| fr.call_sites.iter().find(|c| c.id.as_str() == cid))
+    });
+    let to_name = routine_by_id
+        .get(to)
+        .map(|r| r.name.clone())
+        .unwrap_or_else(|| to.to_string());
+    let trigger_note = if kind == "implicit-trigger" {
+        format!(" (via implicit {to_name} trigger)")
+    } else {
+        String::new()
+    };
+    let source_anchor = if let Some(cs) = cs {
+        anchor_of(&cs.source_anchor, from_routine.unwrap())
+    } else if let Some(fr) = from_routine {
+        anchor_of(&fr.source_anchor, fr)
+    } else {
+        SourceAnchor {
+            source_unit_id: String::new(),
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
+            enclosing_routine_id: from.to_string(),
+            syntax_kind: "call".to_string(),
+            normalized_text_hash: None,
+            leading_context_hash: None,
+            trailing_context_hash: None,
+        }
+    };
+    EvidenceStep {
+        routine_id: from.to_string(),
+        operation_id: None,
+        callsite_id: callsite_id.map(|s| s.to_string()),
+        loop_id: None,
+        source_anchor,
+        note: format!("calls {to_name}{trigger_note}"),
+    }
+}
+
+/// The TERMINAL evidence step for a db op owned by `terminal_routine_id`.
+/// Extracted verbatim from the old `D1Policy::build_terminal_step` (`&self` ->
+/// explicit `routine_by_id`/`table_by_id` + `(routine_id, op_id)` params) so the
+/// reachability search (`d1_reach`) can build the SAME terminal step off a
+/// compact [`crate::engine::l5::d1_graph::D1Terminal`]. `build_terminal_step` now
+/// delegates here — behaviour-preserving.
+pub(crate) fn terminal_step(
+    routine_by_id: &HashMap<&str, &L3Routine>,
+    table_by_id: &HashMap<&str, &L3Table>,
+    terminal_routine_id: &str,
+    op_id: Option<&str>,
+) -> EvidenceStep {
+    let routine = routine_by_id.get(terminal_routine_id).copied();
+    let op = op_id.and_then(|oid| {
+        routine.and_then(|r| r.record_operations.iter().find(|o| o.id.as_str() == oid))
+    });
+    // op is always Some on the primary path (the op_id was just emitted by
+    // terminals_at over the SAME routine's record_operations).
+    let (op_id_out, anchor, note) = match op {
+        Some(op) => (
+            Some(op.id.clone()),
+            anchor_of(&op.source_anchor, routine.unwrap()),
+            table_note(op, routine, table_by_id),
+        ),
+        None => (
+            op_id.map(|s| s.to_string()),
+            SourceAnchor {
+                source_unit_id: String::new(),
+                start_line: 0,
+                start_column: 0,
+                end_line: 0,
+                end_column: 0,
+                enclosing_routine_id: terminal_routine_id.to_string(),
+                syntax_kind: String::new(),
+                normalized_text_hash: None,
+                leading_context_hash: None,
+                trailing_context_hash: None,
+            },
+            String::new(),
+        ),
+    };
+    EvidenceStep {
+        routine_id: terminal_routine_id.to_string(),
+        operation_id: op_id_out,
+        callsite_id: None,
+        loop_id: None,
+        source_anchor: anchor,
+        note,
+    }
+}
+
 impl<'a> WalkPolicy for D1Policy<'a> {
     fn terminals_at(&self, node: &str, _ctx: &PathCtx) -> Vec<Terminal> {
         let Some(r) = self.routine_by_id.get(node).copied() else {
@@ -675,86 +780,22 @@ impl<'a> WalkPolicy for D1Policy<'a> {
     }
 
     fn build_hop_step(&self, edge: &CombinedEdge, _ctx: &PathCtx) -> EvidenceStep {
-        let from_routine = self.routine_by_id.get(edge.from.as_str()).copied();
-        let cs = edge.callsite_id.as_ref().and_then(|cid| {
-            from_routine.and_then(|fr| fr.call_sites.iter().find(|c| &c.id == cid))
-        });
-        let to_name = self
-            .routine_by_id
-            .get(edge.to.as_str())
-            .map(|r| r.name.clone())
-            .unwrap_or_else(|| edge.to.clone());
-        let trigger_note = if edge.kind == "implicit-trigger" {
-            format!(" (via implicit {to_name} trigger)")
-        } else {
-            String::new()
-        };
-        let source_anchor = if let Some(cs) = cs {
-            anchor_of(&cs.source_anchor, from_routine.unwrap())
-        } else if let Some(fr) = from_routine {
-            anchor_of(&fr.source_anchor, fr)
-        } else {
-            SourceAnchor {
-                source_unit_id: String::new(),
-                start_line: 0,
-                start_column: 0,
-                end_line: 0,
-                end_column: 0,
-                enclosing_routine_id: edge.from.clone(),
-                syntax_kind: "call".to_string(),
-                normalized_text_hash: None,
-                leading_context_hash: None,
-                trailing_context_hash: None,
-            }
-        };
-        EvidenceStep {
-            routine_id: edge.from.clone(),
-            operation_id: None,
-            callsite_id: edge.callsite_id.clone(),
-            loop_id: None,
-            source_anchor,
-            note: format!("calls {to_name}{trigger_note}"),
-        }
+        hop_step(
+            self.routine_by_id,
+            &edge.from,
+            &edge.to,
+            &edge.kind,
+            edge.callsite_id.as_deref(),
+        )
     }
 
     fn build_terminal_step(&self, t: &Terminal, _ctx: &PathCtx) -> EvidenceStep {
-        let routine = self.routine_by_id.get(t.routine_id.as_str()).copied();
-        let op = t.op_id.as_ref().and_then(|oid| {
-            routine.and_then(|r| r.record_operations.iter().find(|o| &o.id == oid))
-        });
-        // op is always Some on the primary path (the op_id was just emitted by
-        // terminals_at over the SAME routine's record_operations).
-        let (op_id, anchor, note) = match op {
-            Some(op) => (
-                Some(op.id.clone()),
-                anchor_of(&op.source_anchor, routine.unwrap()),
-                table_note(op, routine, self.table_by_id),
-            ),
-            None => (
-                t.op_id.clone(),
-                SourceAnchor {
-                    source_unit_id: String::new(),
-                    start_line: 0,
-                    start_column: 0,
-                    end_line: 0,
-                    end_column: 0,
-                    enclosing_routine_id: t.routine_id.clone(),
-                    syntax_kind: String::new(),
-                    normalized_text_hash: None,
-                    leading_context_hash: None,
-                    trailing_context_hash: None,
-                },
-                String::new(),
-            ),
-        };
-        EvidenceStep {
-            routine_id: t.routine_id.clone(),
-            operation_id: op_id,
-            callsite_id: None,
-            loop_id: None,
-            source_anchor: anchor,
-            note,
-        }
+        terminal_step(
+            self.routine_by_id,
+            self.table_by_id,
+            &t.routine_id,
+            t.op_id.as_deref(),
+        )
     }
 
     fn loop_depth_of_edge(&self, edge: &CombinedEdge) -> i64 {

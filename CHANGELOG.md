@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_reach` — product-state reachability search + per-(loop, terminal-op)
+  aggregation + witness selection** (`src/engine/l5/d1_reach.rs`, Task 3 of the
+  d1-db-op-in-loop reachability-search redesign). One multi-source FIFO label
+  search per loop group over Task 1's compact `D1Graph`, threading Task 2's
+  forward param-temp vector (`cross_hop`/`resolve_terminal`) instead of
+  re-walking a `Vec<EvidenceStep>` per terminal. A label is the identity triple
+  `(temp_vec, depth_bucket, unc)`; first discovery wins (FIFO + CSR edge order =
+  shortest-then-lex tie-break) and cycle safety is label dedup ALONE — NO node
+  budget, NO depth cap (fixing the old 500-node-budget starvation, defect D-A).
+  Direct in-loop ops (old branch (a)) and seed-transitive candidates compete in
+  the SAME aggregation; the winner is picked by an explicit comparator (max
+  severity rank -> verdict quality [Physical == FlowFieldGated > Uncertain >
+  Temporary] -> `unc == false` -> fewest hops -> first-discovered), and its
+  witness + uncertainty union are materialized only for the winner. Output is
+  sorted deterministically (loop routine id, loop id, terminal owner id, op id);
+  no `HashMap` iteration reaches output. Pure — nothing consumes it yet (Task 5
+  cuts `detect_d1` over); `detect_d1`'s `D1Policy`/`walk_evidence` pipeline is
+  untouched and byte-identical (full suite + all goldens green). The only
+  changes to existing files are behaviour-preserving: `d1.rs`'s
+  `build_hop_step`/`build_terminal_step` bodies extracted to free `pub(crate)`
+  `hop_step`/`terminal_step` fns (the trait methods now delegate), a handful of
+  d1 helpers made `pub(crate)` (`severity_for`, `is_setup_singleton_get`,
+  `FLOWFIELD_GATED_OPS`, `flowfield_gate_blocks_downgrade`, `TempVerdict` [now
+  also `Ord`]), `d1_graph::edge_kind_binding_ok` made `pub(crate)`, and the
+  `d1_graph` test-module fixture constructors hoisted into
+  `l5::test_support` (shared by both test modules per Task 1's review).
 - **`d1_graph` — compact filtered call graph + terminals + seeds for the d1
   reachability redesign** (`src/engine/l5/d1_graph.rs`, Task 1 of the
   d1-db-op-in-loop reachability-search redesign). Extracts, from a

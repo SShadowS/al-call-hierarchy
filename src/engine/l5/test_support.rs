@@ -10,14 +10,17 @@
 
 use std::collections::HashMap;
 
-use crate::engine::l2::features::{PAnchor, PCallSite, PCallee, POperationSite};
-use crate::engine::l3::l3_workspace::L3Routine;
+use crate::engine::l2::features::{
+    PAnchor, PCallArgumentBinding, PCallSite, PCallee, PLoop, POperationSite, PTempState,
+};
+use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::capability_cone::{CapabilityFact, CoverageRecord};
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
+use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::full_summary::FullRoutineSummary;
 
 /// A throwaway anchor (positions are irrelevant to the L5 query substrate).
-fn dummy_anchor() -> PAnchor {
+pub fn dummy_anchor() -> PAnchor {
     PAnchor {
         source_unit_id: "ws:test".to_string(),
         start_line: 0,
@@ -196,5 +199,177 @@ pub fn summary(
         capability_facts_direct: direct,
         capability_facts_inherited: inherited,
         coverage: cov,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// d1-reachability fixture constructors — shared by `d1_graph`'s and
+// `d1_reach`'s test modules (hoisted here per Task 1's review: a second
+// duplication of `d1_graph`'s local ctors moves to `test_support`).
+// ---------------------------------------------------------------------------
+
+/// A minimal `PLoop` with the given id (type `"for"`).
+pub fn loop_def(id: &str) -> PLoop {
+    PLoop {
+        id: id.to_string(),
+        loop_type: "for".to_string(),
+        source_anchor: dummy_anchor(),
+    }
+}
+
+/// An in-loop bare-call call site: `<callee_name>(...)` inside `loop_stack`.
+pub fn call_site(id: &str, callee_name: &str, loop_stack: Vec<String>) -> PCallSite {
+    PCallSite {
+        id: id.to_string(),
+        operation_id: format!("{id}/op"),
+        callee_text: callee_name.to_string(),
+        callee: PCallee::Bare {
+            name: callee_name.to_string(),
+        },
+        argument_texts: Vec::new(),
+        argument_infos: Vec::new(),
+        argument_bindings: Vec::new(),
+        loop_stack,
+        source_anchor: dummy_anchor(),
+        result_consumed: None,
+        object_run_return_used: None,
+        under_asserterror: None,
+        control_context: None,
+        order: None,
+        in_statement_position: false,
+    }
+}
+
+/// A `known`/`parameter-dependent` `PTempState`.
+pub fn ts_known(value: bool) -> PTempState {
+    PTempState {
+        kind: "known".to_string(),
+        value: Some(value),
+        parameter_index: None,
+    }
+}
+
+pub fn ts_pd(idx: u32) -> PTempState {
+    PTempState {
+        kind: "parameter-dependent".to_string(),
+        value: None,
+        parameter_index: Some(idx),
+    }
+}
+
+/// One argument binding of callee param `parameter_index` to `source_temp_state`.
+pub fn arg_binding(
+    parameter_index: u32,
+    source_temp_state: Option<PTempState>,
+) -> PCallArgumentBinding {
+    PCallArgumentBinding {
+        parameter_index,
+        source_kind: "variable".to_string(),
+        source_variable_name: Some("arg".to_string()),
+        source_record_variable_id: None,
+        source_parameter_index: None,
+        caller_source_parameter_is_var: None,
+        source_temp_state,
+        argument_anchor: dummy_anchor(),
+    }
+}
+
+/// A resolved combined edge `from -> to` with an explicit `kind` (unlike
+/// [`edge`], which hardcodes `"direct"`).
+pub fn edge_kind(from: &str, to: &str, callsite_id: &str, kind: &str) -> CombinedEdge {
+    CombinedEdge {
+        from: from.to_string(),
+        to: to.to_string(),
+        kind: kind.to_string(),
+        callsite_id: Some(callsite_id.to_string()),
+        operation_id: None,
+        event_id: None,
+        subscriber_app_id: None,
+        resolution: "resolved".to_string(),
+    }
+}
+
+/// A minimal `L3RecordOperation` (`temp_state` defaults to `None`; callers
+/// mutate `.temp_state` for the PD/Known cases).
+#[allow(clippy::too_many_arguments)]
+pub fn record_op(
+    id: &str,
+    op: &str,
+    record_variable_name: &str,
+    table_id: Option<&str>,
+    loop_stack: Vec<String>,
+    in_until_condition: bool,
+) -> L3RecordOperation {
+    L3RecordOperation {
+        id: id.to_string(),
+        op: op.to_string(),
+        record_variable_name: record_variable_name.to_string(),
+        record_variable_id: None,
+        table_id: table_id.map(|s| s.to_string()),
+        temp_state: None,
+        field_arguments: None,
+        source_anchor: dummy_anchor(),
+        loop_stack,
+        field_argument_infos: None,
+        in_until_condition,
+        run_trigger: None,
+    }
+}
+
+/// A minimal `DetectorContext` sufficient for `build_d1_graph` / `search_loops`:
+/// `routine_by_id` / `graph.edges_by_from` / `summaries` are populated from the
+/// args, and `call_site_by_id` is built from every routine's own call sites (so
+/// `D1Edge.loop_depth` derives non-zero when an edge's callsite carries a
+/// `loop_stack`). Everything else is empty / default.
+pub fn minimal_ctx<'a>(
+    routines: &'a [L3Routine],
+    graph_edges: HashMap<String, Vec<CombinedEdge>>,
+    summaries: HashMap<String, FullRoutineSummary>,
+) -> DetectorContext<'a> {
+    let routine_by_id: HashMap<&'a str, &'a L3Routine> =
+        routines.iter().map(|r| (r.id.as_str(), r)).collect();
+    let call_site_by_id: HashMap<&'a str, &'a PCallSite> = routines
+        .iter()
+        .flat_map(|r| r.call_sites.iter().map(|cs| (cs.id.as_str(), cs)))
+        .collect();
+    let graph = crate::engine::l4::combined_graph::CombinedGraph {
+        nodes: vec![],
+        edges_by_from: graph_edges,
+        edges_from_order: vec![],
+        uncertainty_edges: vec![],
+        typed_edges: vec![],
+    };
+    DetectorContext {
+        graph,
+        event_graph: crate::engine::l3::event_graph::EventGraph {
+            events: vec![],
+            edges: vec![],
+        },
+        routine_by_id,
+        objects_by_id: HashMap::new(),
+        table_by_id: HashMap::new(),
+        reverse_call_graph: std::collections::BTreeMap::new(),
+        entry_points: std::collections::BTreeSet::new(),
+        transaction_spans: vec![],
+        resolved_call_edge_by_callsite: HashMap::new(),
+        uncertainty_edges_by_from: HashMap::new(),
+        uncertainties_by_node: HashMap::new(),
+        call_site_by_id,
+        summaries,
+        event_flow_indexes: crate::engine::l5::event_flow::EventFlowIndexes::default(),
+        parameter_roles_by_routine: HashMap::new(),
+        upgraded_bindings_by_callsite: HashMap::new(),
+        reachable_roots: std::collections::BTreeSet::new(),
+        internal_reachable_externally: false,
+        dep_routine_ids: std::collections::BTreeSet::new(),
+        declared_dependencies: Vec::new(),
+        app_versions: HashMap::new(),
+        root_classifications_by_routine: HashMap::new(),
+        ordering_facts: std::sync::OnceLock::new(),
+        ordering_source: None,
+        closed_world_temp_params: Default::default(),
+        summarize_diagnostics: Vec::new(),
+        fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(routines, &[]),
+        cross_extension_subscribers: std::collections::BTreeMap::new(),
     }
 }

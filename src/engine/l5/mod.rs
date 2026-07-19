@@ -53,6 +53,11 @@ pub(crate) mod d1_graph;
 // equivalent to the backward `path_temp_resolve` resolver. Nothing consumes
 // it yet; Task 3's reachability search threads it through `d1_graph`.
 pub(crate) mod d1_temp;
+// d1-reachability redesign Task 3 — the multi-source product-state reachability
+// search + per-(loop, terminal-op) aggregation + witness selection over
+// `d1_graph`/`d1_temp`. Nothing consumes it yet; Task 5 cuts `detect_d1` over to
+// it. `detectors::d1::detect_d1` stays fully live and byte-identical.
+pub(crate) mod d1_reach;
 // Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
 // event-flow detectors consume. NO detectors yet — index + query + fan-out +
 // chain-walk substrate only.

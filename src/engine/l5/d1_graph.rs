@@ -96,7 +96,7 @@ pub(crate) struct D1Seed<'a> {
 /// gates a PD-chase hop on (d1.rs's `edge_kind_by_callsite` consult, Component
 /// 3 / RV-6): only `direct | method | implicit-trigger` hops carry usable
 /// binding semantics.
-fn edge_kind_binding_ok(kind: &str) -> bool {
+pub(crate) fn edge_kind_binding_ok(kind: &str) -> bool {
     matches!(kind, "direct" | "method" | "implicit-trigger")
 }
 
@@ -316,150 +316,10 @@ pub(crate) fn build_d1_graph<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::l2::features::{PAnchor, PCallee};
     use crate::engine::l4::combined_graph::CombinedEdge;
-    use crate::engine::l5::event_flow::EventFlowIndexes;
-    use crate::engine::l5::test_support::{coverage, fact, routine, summary};
-
-    fn dummy_anchor() -> PAnchor {
-        PAnchor {
-            source_unit_id: "ws:test".to_string(),
-            start_line: 0,
-            start_column: 0,
-            end_line: 0,
-            end_column: 0,
-            syntax_kind: "test".to_string(),
-        }
-    }
-
-    /// A minimal `PLoop` with the given id.
-    fn loop_def(id: &str) -> PLoop {
-        PLoop {
-            id: id.to_string(),
-            loop_type: "for".to_string(),
-            source_anchor: dummy_anchor(),
-        }
-    }
-
-    /// An in-loop bare-call call site: `<callee_name>(...)` inside `loop_stack`.
-    fn call_site(id: &str, callee_name: &str, loop_stack: Vec<String>) -> PCallSite {
-        PCallSite {
-            id: id.to_string(),
-            operation_id: format!("{id}/op"),
-            callee_text: callee_name.to_string(),
-            callee: PCallee::Bare {
-                name: callee_name.to_string(),
-            },
-            argument_texts: Vec::new(),
-            argument_infos: Vec::new(),
-            argument_bindings: Vec::new(),
-            loop_stack,
-            source_anchor: dummy_anchor(),
-            result_consumed: None,
-            object_run_return_used: None,
-            under_asserterror: None,
-            control_context: None,
-            order: None,
-            in_statement_position: false,
-        }
-    }
-
-    /// A resolved combined edge `from -> to` with an explicit `kind` (unlike
-    /// `test_support::edge`, which hardcodes `"direct"`).
-    fn edge_kind(from: &str, to: &str, callsite_id: &str, kind: &str) -> CombinedEdge {
-        CombinedEdge {
-            from: from.to_string(),
-            to: to.to_string(),
-            kind: kind.to_string(),
-            callsite_id: Some(callsite_id.to_string()),
-            operation_id: None,
-            event_id: None,
-            subscriber_app_id: None,
-            resolution: "resolved".to_string(),
-        }
-    }
-
-    /// A minimal `L3RecordOperation`.
-    #[allow(clippy::too_many_arguments)]
-    fn record_op(
-        id: &str,
-        op: &str,
-        record_variable_name: &str,
-        table_id: Option<&str>,
-        loop_stack: Vec<String>,
-        in_until_condition: bool,
-    ) -> L3RecordOperation {
-        L3RecordOperation {
-            id: id.to_string(),
-            op: op.to_string(),
-            record_variable_name: record_variable_name.to_string(),
-            record_variable_id: None,
-            table_id: table_id.map(|s| s.to_string()),
-            temp_state: None,
-            field_arguments: None,
-            source_anchor: dummy_anchor(),
-            loop_stack,
-            field_argument_infos: None,
-            in_until_condition,
-            run_trigger: None,
-        }
-    }
-
-    /// A minimal `DetectorContext` sufficient for `build_d1_graph`: only
-    /// `routine_by_id` / `graph.edges_by_from` / `summaries` are populated
-    /// (the fields `build_d1_graph` actually reads); everything else is
-    /// empty / default, mirroring `d50.rs`'s `minimal_ctx` pattern.
-    fn minimal_ctx<'a>(
-        routines: &'a [L3Routine],
-        graph_edges: HashMap<String, Vec<CombinedEdge>>,
-        summaries: HashMap<String, FullRoutineSummary>,
-    ) -> DetectorContext<'a> {
-        let routine_by_id: HashMap<&'a str, &'a L3Routine> =
-            routines.iter().map(|r| (r.id.as_str(), r)).collect();
-        let graph = crate::engine::l4::combined_graph::CombinedGraph {
-            nodes: vec![],
-            edges_by_from: graph_edges,
-            edges_from_order: vec![],
-            uncertainty_edges: vec![],
-            typed_edges: vec![],
-        };
-        DetectorContext {
-            graph,
-            event_graph: crate::engine::l3::event_graph::EventGraph {
-                events: vec![],
-                edges: vec![],
-            },
-            routine_by_id,
-            objects_by_id: HashMap::new(),
-            table_by_id: HashMap::new(),
-            reverse_call_graph: std::collections::BTreeMap::new(),
-            entry_points: std::collections::BTreeSet::new(),
-            transaction_spans: vec![],
-            resolved_call_edge_by_callsite: HashMap::new(),
-            uncertainty_edges_by_from: HashMap::new(),
-            uncertainties_by_node: HashMap::new(),
-            call_site_by_id: HashMap::new(),
-            summaries,
-            event_flow_indexes: EventFlowIndexes::default(),
-            parameter_roles_by_routine: HashMap::new(),
-            upgraded_bindings_by_callsite: HashMap::new(),
-            reachable_roots: std::collections::BTreeSet::new(),
-            internal_reachable_externally: false,
-            dep_routine_ids: std::collections::BTreeSet::new(),
-            declared_dependencies: Vec::new(),
-            app_versions: HashMap::new(),
-            root_classifications_by_routine: HashMap::new(),
-            ordering_facts: std::sync::OnceLock::new(),
-            ordering_source: None,
-            closed_world_temp_params: Default::default(),
-            summarize_diagnostics: Vec::new(),
-            fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
-                routines,
-                &[],
-            ),
-            cross_extension_subscribers: std::collections::BTreeMap::new(),
-        }
-    }
+    use crate::engine::l5::test_support::{
+        call_site, coverage, edge_kind, fact, loop_def, minimal_ctx, record_op, routine, summary,
+    };
 
     // -----------------------------------------------------------------------
     // Test 1: edge filter drops event-dispatch and non-db targets.
