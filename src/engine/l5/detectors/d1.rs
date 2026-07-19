@@ -561,7 +561,7 @@ fn build_finding(
 /// edges under a colliding id; it cannot suppress a genuine transitive finding.
 /// (Implicit-trigger edges never reach this guard: their `callsite_id` is the
 /// record-op id `{rid}/op{n}`, which can never equal a call site's `{rid}/cs{n}`.)
-fn edge_target_matches_callsite_callee(
+pub(crate) fn edge_target_matches_callsite_callee(
     edge: &CombinedEdge,
     cs: &crate::engine::l2::features::PCallSite,
     routine_by_id: &HashMap<&str, &L3Routine>,

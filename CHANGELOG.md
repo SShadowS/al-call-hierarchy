@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_graph` — compact filtered call graph + terminals + seeds for the d1
+  reachability redesign** (`src/engine/l5/d1_graph.rs`, Task 1 of the
+  d1-db-op-in-loop reachability-search redesign). Extracts, from a
+  `DetectorContext` + `L3Workspace`: a `D1Graph` (dense-`NodeIx` node ids, a
+  filtered outgoing-edge list per node mirroring the existing
+  `D1Policy::expand` rule — drop `event-dispatch`, drop targets with no
+  summary or `touches_db == No` — and a filtered terminal-op list per node
+  mirroring `D1Policy::terminals_at` — db-touching class minus the G-1
+  terminator-`Next` exclusion minus the G-6 virtual-system-table exclusion),
+  restricted to the BFS closure reachable from every in-loop-call seed
+  (branch-(b)'s exact ladder: resolvable G-18 edge, not `interface`/`dynamic`,
+  callee summary present and touching the db). Pure data-extraction step —
+  nothing consumes it yet (Tasks 3/5 will); `detect_d1`'s own
+  `D1Policy`/`walk_evidence` exhaustive-path pipeline is untouched and
+  produces byte-identical output (full suite green, including every
+  `differential_*`/`cli_a_*` golden). The only change to an existing file is
+  making `d1.rs`'s `edge_target_matches_callsite_callee` `pub(crate)` (every
+  other reused helper was already `pub`/`pub(crate)`).
 - **Permanent env-gated perf-tracing module** (`src/engine/perf_trace.rs`, spec
   `docs/superpowers/specs/2026-07-18-tracing-infra.md`) — a bespoke tracer (NOT
   the `tracing` crate) making the three measurement waves' throwaway

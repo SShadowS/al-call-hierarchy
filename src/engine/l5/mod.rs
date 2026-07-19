@@ -44,6 +44,10 @@ pub mod table_display;
 pub mod confidence;
 pub mod detector_context;
 pub mod detectors;
+// d1-reachability redesign Task 1 — the compact filtered graph + terminals +
+// seeds `build_d1_graph` extracts for the reachability search (Tasks 3/5).
+// Nothing consumes it yet; `detectors::d1::detect_d1` stays fully live.
+pub(crate) mod d1_graph;
 // Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
 // event-flow detectors consume. NO detectors yet — index + query + fan-out +
 // chain-walk substrate only.
