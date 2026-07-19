@@ -1964,13 +1964,26 @@ mod memo_tests {
 ///      never fewer.
 ///   2. `shadow_severity_non_decreasing` — for every key both pipelines share,
 ///      the NEW severity is never WORSE (lower-ranked) than the OLD one. Where
-///      several old premerge records collapse onto the same key (multiple
-///      complete walk routes to the same terminal, or multiple in-loop
-///      callsites into the same PD-terminal callee), the OLD side of the
-///      comparison is the MAX severity among them — `detect_d1`'s own
-///      `merge_by_terminal` would have picked exactly that max as the
-///      post-merge canonical, so this is the fair comparison, not an
-///      approximation.
+///      several old premerge records collapse onto the SAME `(loop, terminal
+///      routine, terminal op)` key (multiple complete walk routes to the same
+///      terminal, or multiple in-loop callsites into the same PD-terminal
+///      callee — all sharing one exact `id`), the OLD side of the comparison
+///      is the MAX severity among them. CORRECTNESS NOTE — this is a
+///      DELIBERATELY STRICTER baseline than what `detect_d1` actually emits
+///      for that exact `id` today: `detect_d1`'s own id-dedupe
+///      (`seen.contains(&f.finding.id)`, first-wins) runs BEFORE
+///      `reconcile_merge_tie`/`merge_by_terminal` and keeps whichever route the
+///      DFS discovered FIRST, not the highest-severity one — `merge_by_terminal`
+///      never even sees the dropped duplicates (it only reconciles ACROSS
+///      DIFFERENT loops/ids that share a `root_cause_key`, picking the worst
+///      there). So `max(severities sharing one id) >= detect_d1`'s actual
+///      first-wins severity for that id always, which is why asserting
+///      `new >= max` is still SOUND (it implies the weaker `new >=
+///      detect_d1`'s-actual-output too) — but it is a stricter comparison than
+///      "vs. what `detect_d1` emits today", not an exact restatement of it.
+///      `shadow_do_workspace` below additionally compares against `detect_d1`'s
+///      REAL post-merge output directly, since the MAX baseline undercounts
+///      real severity upgrades.
 ///   3. `shadow_root_cause_keys_subset` — every OLD `rootCauseKey`
 ///      `(terminal routine, terminal op)` pair (the LOOP-independent identity
 ///      `merge_by_terminal` itself groups by) is present in the NEW
@@ -2547,7 +2560,10 @@ mod shadow_tests {
         /// finding carries.
         old_keys: HashSet<(String, String, String)>,
         /// The MAX severity rank across every pre-merge OLD finding sharing a
-        /// key (oracle 2's fair comparison — see the module doc).
+        /// key — a deliberately STRICTER baseline than `detect_d1`'s own
+        /// id-first-wins dedupe actually emits for that exact id (see the
+        /// module doc's oracle-2 correctness note for why `new >= max` is
+        /// still sound, just not an exact restatement of production output).
         old_max_sev_by_key: HashMap<(String, String, String), i32>,
         /// The NEW aggregate's severity rank, by the SAME 3-part key (one
         /// `LoopTerminalAgg` per key, by construction — see `search_loops`).
@@ -2557,6 +2573,31 @@ mod shadow_tests {
         old_root_cause_keys: HashSet<(String, String)>,
         /// Every NEW `(terminal owner, terminal op)` pair.
         new_owner_op_keys: HashSet<(String, String)>,
+    }
+
+    /// The `(loop_id, terminal_routine_id, terminal_op_id)` identity
+    /// `build_finding` bakes into every finding's OWN evidence path — read
+    /// structurally (see the module doc's "Key extraction" paragraph for why:
+    /// a naive slash-split of the `d1/{loop}/{routine}/{op}` id string is
+    /// ambiguous whenever a routine/op internal id itself contains a `/`).
+    /// Shared by every key-extraction helper below, including the vs-actual
+    /// comparison (`extract_final_sev_by_key`), so the identity rule exists
+    /// exactly once.
+    fn finding_identity(f: &Finding) -> (String, String, String) {
+        let loop_id = f.evidence_path[0]
+            .loop_id
+            .clone()
+            .expect("a d1 finding's first evidence step is always a loop step (build_finding)");
+        let last = f
+            .evidence_path
+            .last()
+            .expect("a d1 finding's evidence_path is never empty");
+        let routine_id = last.routine_id.clone();
+        let op_id = last.operation_id.clone().expect(
+            "a d1 finding's terminal evidence step always carries operation_id \
+             (terminal_step/direct op_step)",
+        );
+        (loop_id, routine_id, op_id)
     }
 
     /// The three OLD-side key sets, extracted from a `detect_d1_premerge` run
@@ -2576,19 +2617,7 @@ mod shadow_tests {
         let mut old_root_cause_keys: HashSet<(String, String)> = HashSet::new();
         for rec in premerge {
             let f = &rec.finding;
-            let loop_id = f.evidence_path[0]
-                .loop_id
-                .clone()
-                .expect("a d1 finding's first evidence step is always a loop step (build_finding)");
-            let last = f
-                .evidence_path
-                .last()
-                .expect("a d1 finding's evidence_path is never empty");
-            let routine_id = last.routine_id.clone();
-            let op_id = last.operation_id.clone().expect(
-                "a d1 finding's terminal evidence step always carries operation_id \
-                 (terminal_step/direct op_step)",
-            );
+            let (loop_id, routine_id, op_id) = finding_identity(f);
             let key = (loop_id, routine_id.clone(), op_id.clone());
             old_keys.insert(key.clone());
             let rank = severity_rank(&f.severity);
@@ -2623,6 +2652,48 @@ mod shadow_tests {
             new_owner_op_keys.insert((agg.terminal.owner.id.clone(), agg.terminal.op.id.clone()));
         }
         (new_sev_by_key, new_owner_op_keys)
+    }
+
+    /// Key a `detect_d1`-shaped `&[Finding]` by `(terminal routine, terminal
+    /// op)` ONLY — no loop, matching `root_cause_key`'s granularity — taking
+    /// the MAX severity per key (defensive: `detect_d1`'s own
+    /// `merge_by_terminal` already collapses to at most one `Finding` per
+    /// `root_cause_key`, so in practice every key has exactly one severity,
+    /// but `max` costs nothing and keeps this helper robust to that invariant
+    /// ever loosening). Used by `shadow_do_workspace`'s vs-actual comparison
+    /// (Task 4 review finding #1): the OLD-max-baseline oracles above compare
+    /// against a STRICTER baseline than `detect_d1` actually emits (see the
+    /// module doc), so this reads `detect_d1`'s REAL post-merge output
+    /// directly for an apples-to-apples check.
+    fn extract_final_sev_by_key(findings: &[Finding]) -> HashMap<(String, String), i32> {
+        let mut out: HashMap<(String, String), i32> = HashMap::new();
+        for f in findings {
+            let (_loop_id, routine_id, op_id) = finding_identity(f);
+            let rank = severity_rank(&f.severity);
+            out.entry((routine_id, op_id))
+                .and_modify(|v| *v = (*v).max(rank))
+                .or_insert(rank);
+        }
+        out
+    }
+
+    /// Fold a loop-keyed severity map down to `(terminal routine, terminal
+    /// op)` by taking the MAX severity across every loop that reaches it —
+    /// the SAME reduction `merge_by_terminal` performs on the OLD side
+    /// (worst-wins across different loops/ids sharing a `root_cause_key`),
+    /// applied here to the NEW side so the vs-actual comparison is
+    /// apples-to-apples at the SAME (post-merge) granularity as
+    /// `extract_final_sev_by_key`'s output.
+    fn fold_to_owner_op_max(
+        sev_by_key: &HashMap<(String, String, String), i32>,
+    ) -> HashMap<(String, String), i32> {
+        let mut out: HashMap<(String, String), i32> = HashMap::new();
+        for ((_loop_id, routine_id, op_id), &rank) in sev_by_key {
+            out.entry((routine_id.clone(), op_id.clone()))
+                .and_modify(|v| *v = (*v).max(rank))
+                .or_insert(rank);
+        }
+        out
     }
 
     /// Run BOTH pipelines over one fixture and extract the oracle keys.
@@ -2683,6 +2754,17 @@ mod shadow_tests {
         }
     }
 
+    /// The ONE fixture with a legitimate, BY-DESIGN empty OLD-side population:
+    /// `budget_buster_star_fanout`'s whole point is that the old walker's
+    /// 500-node budget starves before it ever reaches the terminal, so its
+    /// `detect_d1_premerge` output (and every OLD-keyed set derived from it)
+    /// is EXPECTED to be empty. Every other fixture must contribute a
+    /// non-empty OLD-side population — an aggregate-only `> 0` guard across
+    /// all ten fixtures would let any ONE of them silently regress to zero
+    /// findings without failing (Task 4 review finding #2); naming the one
+    /// legitimate exception explicitly closes that gap.
+    const EXPECTED_EMPTY_OLD_SIDE_FIXTURE: &str = "budget_buster_star_fanout";
+
     #[test]
     fn shadow_old_premerge_keys_subset_of_new() {
         let mut total_old = 0usize;
@@ -2698,6 +2780,32 @@ mod shadow_tests {
                      search_loops aggregate key set"
                 );
             }
+            if name == EXPECTED_EMPTY_OLD_SIDE_FIXTURE {
+                assert!(
+                    case.old_keys.is_empty(),
+                    "fixture {name}: expected ZERO old premerge keys (the old \
+                     walker's 500-node budget should starve before reaching the \
+                     terminal) — got {:?}",
+                    case.old_keys
+                );
+                assert!(
+                    !case.new_sev_by_key.is_empty(),
+                    "fixture {name}: expected the NEW pipeline to still find the \
+                     terminal past the old budget — got zero new aggregates \
+                     (the fixture would be pointless if it did)"
+                );
+            } else {
+                assert!(
+                    !case.old_keys.is_empty(),
+                    "fixture {name}: expected at least one old premerge key, got \
+                     zero — a silent per-fixture regression an aggregate-only \
+                     count would hide"
+                );
+                assert!(
+                    !case.new_sev_by_key.is_empty(),
+                    "fixture {name}: expected at least one new aggregate, got zero"
+                );
+            }
         }
         assert!(
             total_old > 0,
@@ -2711,25 +2819,41 @@ mod shadow_tests {
 
     #[test]
     fn shadow_severity_non_decreasing() {
-        let mut compared = 0usize;
+        let mut compared_total = 0usize;
         for (name, (routines, graph_edges, summaries)) in fixtures() {
             let case = compute_shadow_case(&routines, graph_edges, summaries);
+            let mut compared_here = 0usize;
             for (key, &old_rank) in &case.old_max_sev_by_key {
                 let Some(&new_rank) = case.new_sev_by_key.get(key) else {
                     // A key missing from the NEW side is oracle 1's violation to
                     // report, not this oracle's — skip (nothing to compare).
                     continue;
                 };
-                compared += 1;
+                compared_here += 1;
                 assert!(
                     new_rank >= old_rank,
                     "fixture {name}: severity regressed for key {key:?}: \
                      old(max)={old_rank} new={new_rank}"
                 );
             }
+            compared_total += compared_here;
+            if name == EXPECTED_EMPTY_OLD_SIDE_FIXTURE {
+                assert_eq!(
+                    compared_here, 0,
+                    "fixture {name}: expected ZERO shared (old, new) keys (the old \
+                     side has no premerge findings here) — got {compared_here}"
+                );
+            } else {
+                assert!(
+                    compared_here > 0,
+                    "fixture {name}: expected at least one shared (old, new) key \
+                     to compare severities over, got zero — a silent per-fixture \
+                     regression an aggregate-only count would hide"
+                );
+            }
         }
         assert!(
-            compared > 0,
+            compared_total > 0,
             "fixture population must exercise at least one shared (old, new) key"
         );
     }
@@ -2747,6 +2871,20 @@ mod shadow_tests {
                      the new (owner, op) set"
                 );
             }
+            if name == EXPECTED_EMPTY_OLD_SIDE_FIXTURE {
+                assert!(
+                    case.old_root_cause_keys.is_empty(),
+                    "fixture {name}: expected ZERO old rootCauseKeys — got {:?}",
+                    case.old_root_cause_keys
+                );
+            } else {
+                assert!(
+                    !case.old_root_cause_keys.is_empty(),
+                    "fixture {name}: expected at least one old rootCauseKey, got \
+                     zero — a silent per-fixture regression an aggregate-only \
+                     count would hide"
+                );
+            }
         }
         assert!(
             total > 0,
@@ -2759,6 +2897,17 @@ mod shadow_tests {
     /// over it, and prints the partitioned diff — keys only in the NEW
     /// aggregate population ("new-coverage") vs. shared keys where the NEW
     /// severity is STRICTLY better ("severity-upgrade") vs. unchanged.
+    ///
+    /// ALSO prints a companion "vs-actual" comparison (Task 4 review finding
+    /// #1): the partition above is measured against `old_max_sev_by_key` — a
+    /// DELIBERATELY STRICTER baseline than what `detect_d1` actually emits
+    /// today (see the module doc's oracle-2 correctness note), so it
+    /// UNDERCOUNTS real severity upgrades. This block instead runs the ACTUAL
+    /// production `detect_d1` and compares the new severity against its REAL
+    /// post-merge output, keyed by `(terminal routine, terminal op)` (folding
+    /// both sides' per-loop severities to their max first — the same
+    /// reduction `merge_by_terminal` itself performs), which is the number
+    /// Task 5/6 should actually use as the triage pre-read.
     /// `#[ignore]`d: reads a real workspace off disk, which does not exist in
     /// CI or on most dev machines. Run explicitly:
     /// ```text
@@ -2838,6 +2987,36 @@ mod shadow_tests {
             new_owner_op_keys.len()
         );
 
+        // vs-actual (Task 4 review finding #1): compare against detect_d1's
+        // REAL post-merge output, not the stricter MAX-of-premerge baseline
+        // above. `detect_d1` re-runs the SAME premerge walk internally, so
+        // this is a second (more expensive but more accurate) pass over the
+        // SAME `resolved`/`ctx` — acceptable here since this whole test is
+        // manual/`#[ignore]`d.
+        let actual_output = detect_d1(&resolved, &ctx).expect("detect_d1 must not error on DO_WS");
+        let actual_final_sev_by_key = extract_final_sev_by_key(&actual_output.findings);
+        let new_owner_op_max_sev = fold_to_owner_op_max(&new_sev_by_key);
+
+        let mut vs_actual_upgraded = 0usize;
+        let mut vs_actual_unchanged = 0usize;
+        let mut vs_actual_regressed = 0usize;
+        for (key, &actual_rank) in &actual_final_sev_by_key {
+            let Some(&new_rank) = new_owner_op_max_sev.get(key) else {
+                // Covered by oracle 3 (rootCauseKeys subset) — every actual
+                // rootCauseKey is a premerge rootCauseKey, which is already
+                // asserted a subset of the new owner/op set below.
+                continue;
+            };
+            match new_rank.cmp(&actual_rank) {
+                std::cmp::Ordering::Greater => vs_actual_upgraded += 1,
+                std::cmp::Ordering::Equal => vs_actual_unchanged += 1,
+                std::cmp::Ordering::Less => vs_actual_regressed += 1,
+            }
+        }
+        println!(
+            "vs-actual: upgraded={vs_actual_upgraded} unchanged={vs_actual_unchanged} regressed={vs_actual_regressed}"
+        );
+
         for key in &old_keys {
             assert!(
                 new_sev_by_key.contains_key(key),
@@ -2864,5 +3043,16 @@ mod shadow_tests {
             );
         }
         println!("SUBSET oracle 3 (rootCauseKeys): PASS");
+
+        // vs-actual is mathematically implied by oracle 2 (new >= old-max >=
+        // detect_d1's actual first-wins severity per id, and taking max over
+        // loops on both sides preserves that inequality) — assert it holds in
+        // practice too rather than only printing the (expected-zero) count.
+        assert_eq!(
+            vs_actual_regressed, 0,
+            "new severity regressed vs. detect_d1's ACTUAL post-merge output for \
+             {vs_actual_regressed} key(s) — a genuine Tasks 1-3 divergence bug"
+        );
+        println!("vs-actual regression check: PASS");
     }
 }

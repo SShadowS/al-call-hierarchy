@@ -26,18 +26,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event-dispatch-filtered edge, and two distinct loops in one routine): (1)
   every old premerge `(loop, terminal routine, terminal op)` key is a subset
   of the new aggregate key set; (2) the new severity is never worse than the
-  OLD MAX severity among every premerge record sharing a key (the fair
-  comparison, since `merge_by_terminal` itself would pick that max); (3) every
-  old `rootCauseKey` `(terminal routine, terminal op)` pair is a subset of the
-  new `(terminal owner, terminal op)` set. A manual `#[ignore]`d
-  `shadow_do_workspace` test (gated on `DO_WS`) runs the same three oracles
-  against a real Business Central workspace and prints the partitioned diff.
-  Run against Continia's DO workspace: all three oracles PASS (zero
-  divergence) with `oldKeys=6110` / `newKeys=11251` — 5141 keys found ONLY by
-  the new pipeline (`new-coverage`, i.e. terminals the old 500-node budget
-  starved on this dense real workspace), 119 keys where the new severity is a
-  strict upgrade over the old (`severity-upgrade`), and 5991 unchanged;
-  `rootCauseKey` counts old=828 / new=908. Confirms Tasks 1-3 are a strict
+  OLD MAX severity among every premerge record sharing a key — a deliberately
+  STRICTER baseline than `detect_d1`'s own id-first-wins dedupe (which keeps
+  whichever route the DFS discovered first, not the highest severity, BEFORE
+  `reconcile_merge_tie`/`merge_by_terminal` ever run) actually emits for that
+  exact id, so `new >= max` is sound but undercounts real upgrades relative to
+  production output; (3) every old `rootCauseKey` `(terminal routine, terminal
+  op)` pair is a subset of the new `(terminal owner, terminal op)` set. Every
+  oracle asserts PER-FIXTURE (not just in aggregate) that each fixture
+  contributes a non-empty OLD-side population — except
+  `budget_buster_star_fanout`, whose BY-DESIGN empty OLD-side population is
+  asserted explicitly by name — so a single fixture silently regressing to
+  zero findings fails loudly instead of hiding behind a passing aggregate
+  total. A manual `#[ignore]`d `shadow_do_workspace` test (gated on `DO_WS`) runs the
+  same three oracles against a real Business Central workspace, ALSO compares
+  the new severity against `detect_d1`'s REAL post-merge output directly (keyed
+  by `(terminal routine, terminal op)`, folding both sides' per-loop severities
+  to their max — the same reduction `merge_by_terminal` itself performs), and
+  prints both partitioned diffs. Run against Continia's DO workspace: all
+  oracles PASS (zero divergence) with `oldKeys=6110` / `newKeys=11251` — 5141
+  keys found ONLY by the new pipeline (`new-coverage`, i.e. terminals the old
+  500-node budget starved on this dense real workspace), 119 keys where the
+  new severity is a strict upgrade over the MAX-baseline (`severity-upgrade`),
+  5991 unchanged, and — the more accurate figure — `vs-actual: upgraded=61
+  unchanged=767 regressed=0` against `detect_d1`'s ACTUAL current post-merge
+  output; `rootCauseKey` counts old=828 / new=908. Confirms Tasks 1-3 are a strict
   improvement over the still-live walker with no regressions, on both the
   fixture corpus and a real workspace.
 - **`d1_reach` — product-state reachability search + per-(loop, terminal-op)
