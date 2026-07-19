@@ -210,6 +210,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **`d1_reach::search_loops` parallelized across loop groups** (Task 7a of the
+  d1-db-op-in-loop reachability redesign; `src/engine/l5/d1_reach.rs`,
+  `feat/d1-reachability`). Task 6 measured d1-only Base App 28.0 (8,020 files)
+  running for >4 hours still inside `search_loops`, never finishing, while DO
+  ran in 5.23 s: root cause is `search_loops` running ONE product-state BFS
+  per loop group, SERIALLY, each with a fresh per-group `seen` map — on Base
+  App's dense 797-member SCC, thousands of loop groups each re-traverse the
+  same overlapping closure. Groups are independent (`process_group`'s only
+  output was an append to a shared `&mut out`, and `search_loops` already
+  ends with a total-order `out.sort_by` over `(loop routine id, loop id,
+  terminal owner id, op id)`), so group-processing order cannot affect the
+  final sorted output — an output-IDENTICAL refactor licensed by that proof.
+  `process_group` now RETURNS `Vec<LoopTerminalAgg>` instead of writing into
+  a shared accumulator; `search_loops` collects its groups into a `Vec` and
+  runs them via `rayon::par_iter().flat_map(..).collect()` (rayon was already
+  a dependency), keeping the final sort verbatim. Full suite + `check-goldens`
+  byte-stable with NO regen. (Whether this alone brings the 8020 measurement
+  under the finish bar is the Task 7 measurement gate's job, not this task's —
+  see `.superpowers/sdd/task-7-brief.md`; Task 7b, a cross-group start-label
+  memo, is gated on that re-measure.)
 - **d1 cutover to terminal-centric reachability findings** (Task 5 of the
   d1-db-op-in-loop reachability redesign; `src/engine/l5/detectors/d1.rs`,
   `feat/d1-reachability`). `detect_d1`'s exhaustive simple-path walk

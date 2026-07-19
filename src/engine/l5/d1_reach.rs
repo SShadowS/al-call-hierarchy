@@ -342,7 +342,14 @@ fn materialize_transitive<'a>(
 }
 
 /// The whole multi-source search + aggregation + witness selection for ONE loop
-/// group (rules 1-7). Pushes one [`LoopTerminalAgg`] per (terminal owner, op).
+/// group (rules 1-7). Returns one [`LoopTerminalAgg`] per (terminal owner, op).
+///
+/// Groups are INDEPENDENT: every argument here is a shared-immutable borrow
+/// (`graph`/`seeds`/`direct_ops`/`ctx`/`cw`), and this function's only output
+/// is its OWN return value — nothing aliases another group's state. Combined
+/// with `search_loops`'s final total-order `sort_by` (rule 8), that makes the
+/// order groups are processed in unobservable, which is what licenses running
+/// them concurrently (`search_loops` below runs this via `rayon::par_iter`).
 #[allow(clippy::too_many_arguments)]
 fn process_group<'g, 'a>(
     graph: &'g D1Graph<'a>,
@@ -355,8 +362,8 @@ fn process_group<'g, 'a>(
     loop_info: &'a PLoop,
     seed_indices: &[usize],
     direct_indices: &[usize],
-    out: &mut Vec<LoopTerminalAgg<'a>>,
-) {
+) -> Vec<LoopTerminalAgg<'a>> {
+    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
     let mut labels: Vec<LabelRec<'g, 'a>> = Vec::new();
     let mut queue: VecDeque<usize> = VecDeque::new();
     let mut seen: HashMap<NodeIx, HashSet<(TempVec, i64, bool)>> = HashMap::new();
@@ -567,11 +574,26 @@ fn process_group<'g, 'a>(
             uncertainties,
         });
     }
+    out
 }
 
 /// Run the reachability search over every loop group (rules 1-8). Direct ops and
 /// seed-transitive candidates compete in the SAME per-(loop, terminal-op)
 /// aggregation; the returned aggregates are sorted deterministically.
+///
+/// Task 7a: groups run on rayon's global pool. Each group's search is a
+/// self-contained product-state BFS over shared-IMMUTABLE inputs
+/// (`graph`/`seeds`/`direct_ops`/`ctx`/`cw` — no group mutates anything another
+/// group reads), so scheduling order cannot influence any group's own result;
+/// `process_group` returns its slice instead of writing into a shared `&mut
+/// out`, so no cross-thread merge point can interleave two groups' pushes
+/// either. The one order-sensitive step, rule 8's total-order `out.sort_by`, is
+/// unchanged and runs AFTER every group's result has been collected — so
+/// whatever order rayon finishes the groups in, the sort produces the same
+/// output the fully-serial version did. On Base Application's dense SCC this
+/// turns "(num loop groups) × (dense-SCC traversal), serial" into the same
+/// total work spread across the available cores (see
+/// `.superpowers/sdd/task-7-brief.md`).
 pub(crate) fn search_loops<'a>(
     graph: &D1Graph<'a>,
     seeds: &[D1Seed<'a>],
@@ -613,22 +635,30 @@ pub(crate) fn search_loops<'a>(
             .push(i);
     }
 
-    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
-    for (&(_lr, loop_id), group) in &groups {
-        process_group(
-            graph,
-            seeds,
-            direct_ops,
-            ctx,
-            cw,
-            group.loop_routine,
-            loop_id,
-            group.loop_info,
-            &group.seed_indices,
-            &group.direct_indices,
-            &mut out,
-        );
-    }
+    // Collect the BTreeMap into a `Vec` (still key-sorted — deterministic,
+    // though the sort below no longer depends on it) so it can be handed to
+    // rayon's `par_iter`.
+    let groups: Vec<((&'a str, &'a str), Group<'a>)> = groups.into_iter().collect();
+
+    use rayon::prelude::*;
+    let mut out: Vec<LoopTerminalAgg<'a>> = groups
+        .par_iter()
+        .flat_map(|(key, group)| {
+            let loop_id = key.1;
+            process_group(
+                graph,
+                seeds,
+                direct_ops,
+                ctx,
+                cw,
+                group.loop_routine,
+                loop_id,
+                group.loop_info,
+                &group.seed_indices,
+                &group.direct_indices,
+            )
+        })
+        .collect();
 
     // Rule 8: deterministic output order, independent of traversal order.
     out.sort_by(|a, b| {
@@ -1055,6 +1085,269 @@ mod tests {
             assert_eq!(x.terminal.op.id, y.terminal.op.id);
             assert_eq!(x.terminal.owner.id, y.terminal.owner.id);
             assert_eq!(x.terminal.local_depth, y.terminal.local_depth);
+            assert_eq!(x.entry_callsite_id, y.entry_callsite_id);
+            assert_eq!(x.severity, y.severity);
+            assert_eq!(x.verdict, y.verdict);
+            assert_eq!(x.reachable_verdicts, y.reachable_verdicts);
+            assert_eq!(x.depth_bucket, y.depth_bucket);
+            assert_eq!(x.effective_loop_depth, y.effective_loop_depth);
+            assert_eq!(x.witness, y.witness);
+            assert_eq!(x.uncertainties, y.uncertainties);
+        }
+    }
+
+    // =======================================================================
+    // Task 7a: parallel/serial equivalence + determinism. Three INDEPENDENT
+    // transitive groups (R1, R2, R3) all reach the SAME terminal (T/op0) —
+    // the overlapping-closure shape the rayon `par_iter` refactor must not
+    // scramble — plus one direct-op-only group (R4) with its own terminal.
+    // Two invariants: (a) `search_loops` (the parallel entry point) is
+    // field-identical across repeated calls; (b) it equals a serial
+    // reference this test computes by calling `process_group` directly, per
+    // group, in a DELIBERATELY reversed (non-canonical) order, then applying
+    // rule 8's own sort — proving the final output does not depend on which
+    // order the independent groups are processed in (the exact property
+    // that licenses running them on rayon's pool instead of serially).
+    //
+    // TDD note: this test is written against the POST-refactor
+    // `process_group` signature (returns `Vec<LoopTerminalAgg>`), so before
+    // the refactor lands it fails to COMPILE against the pre-refactor
+    // `&mut out`-taking signature — a meaningful RED for a call-order
+    // refactor (there is no pre-refactor runtime behavior to trivially pass
+    // against; the old code is already serial-only).
+    // =======================================================================
+    fn multi_group_fixture() -> Fixture {
+        let mut r1 = routine("R1", "procedure");
+        r1.loops = vec![loop_def("R1/loop0")];
+        r1.call_sites = vec![call_site("R1/cs0", "A1", vec!["R1/loop0".to_string()])];
+        let mut a1 = routine("A1", "procedure");
+        a1.call_sites = vec![call_site("A1/csT", "T", vec![])];
+
+        let mut r2 = routine("R2", "procedure");
+        r2.loops = vec![loop_def("R2/loop0")];
+        r2.call_sites = vec![call_site("R2/cs0", "A2", vec!["R2/loop0".to_string()])];
+        // A2 carries two OWN call sites (mirrors Test 2): A2->T direct (decoy,
+        // 1 hop) AND A2->X2->Y2->T (3 hops, bucket 2 via the A2/csX loop_stack
+        // decoy) — the deeper realizable route must win WITHIN this group,
+        // independent of any other group's search.
+        let mut a2 = routine("A2", "procedure");
+        a2.call_sites = vec![
+            call_site("A2/csT", "T", vec![]),
+            call_site("A2/csX", "X2", vec!["A2/loop0".to_string()]),
+        ];
+        let mut x2 = routine("X2", "procedure");
+        x2.call_sites = vec![call_site("X2/csY", "Y2", vec![])];
+        let mut y2 = routine("Y2", "procedure");
+        y2.call_sites = vec![call_site("Y2/csT", "T", vec![])];
+
+        let mut r3 = routine("R3", "procedure");
+        r3.loops = vec![loop_def("R3/loop0")];
+        r3.call_sites = vec![call_site("R3/cs0", "A3", vec!["R3/loop0".to_string()])];
+        let mut a3 = routine("A3", "procedure");
+        a3.call_sites = vec![call_site("A3/csT", "T", vec![])];
+
+        // R4: a direct-op-only group (branch (a)) — no seed, own terminal.
+        let mut r4 = routine("R4", "procedure");
+        r4.loops = vec![loop_def("R4/loop0")];
+        r4.record_operations = vec![record_op(
+            "R4/opD",
+            "Modify",
+            "Rec",
+            Some("t/R4"),
+            vec!["R4/loop0".to_string()],
+            false,
+        )];
+
+        // The SHARED terminal, reached transitively by R1, R2 and R3.
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![r1, a1, r2, a2, x2, y2, r3, a3, r4, t];
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R1".to_string(),
+            vec![edge_kind("R1", "A1", "R1/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A1".to_string(),
+            vec![edge_kind("A1", "T", "A1/csT", "direct")],
+        );
+        graph_edges.insert(
+            "R2".to_string(),
+            vec![edge_kind("R2", "A2", "R2/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A2".to_string(),
+            vec![
+                edge_kind("A2", "T", "A2/csT", "direct"),
+                edge_kind("A2", "X2", "A2/csX", "direct"),
+            ],
+        );
+        graph_edges.insert(
+            "X2".to_string(),
+            vec![edge_kind("X2", "Y2", "X2/csY", "direct")],
+        );
+        graph_edges.insert(
+            "Y2".to_string(),
+            vec![edge_kind("Y2", "T", "Y2/csT", "direct")],
+        );
+        graph_edges.insert(
+            "R3".to_string(),
+            vec![edge_kind("R3", "A3", "R3/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A3".to_string(),
+            vec![edge_kind("A3", "T", "A3/csT", "direct")],
+        );
+
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("A1", "t/A1"),
+            ("A2", "t/A2"),
+            ("X2", "t/X2"),
+            ("Y2", "t/Y2"),
+            ("A3", "t/A3"),
+            ("T", "t/T"),
+        ]
+        .into_iter()
+        .map(|(id, table)| (id.to_string(), db_summary(id, table)))
+        .collect();
+
+        (routines, graph_edges, summaries)
+    }
+
+    #[test]
+    fn parallel_matches_serial_reference_and_is_deterministic() {
+        let (routines, graph_edges, summaries) = multi_group_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(
+            seeds.len(),
+            3,
+            "one in-loop seed per transitive group (R1/R2/R3)"
+        );
+
+        let r4_idx = routines.iter().position(|r| r.id == "R4").unwrap();
+        let direct_ops = vec![DirectOp {
+            routine: &routines[r4_idx],
+            loop_id: routines[r4_idx].loops[0].id.as_str(),
+            loop_info: &routines[r4_idx].loops[0],
+            op: &routines[r4_idx].record_operations[0],
+        }];
+
+        let cw = ClosedWorldTempParams::new();
+
+        // (a) determinism: two full invocations of `search_loops` (the
+        // parallel entry point) produce field-identical output.
+        let aggs1 = search_loops(&graph, &seeds, &direct_ops, &ctx, &cw);
+        let aggs2 = search_loops(&graph, &seeds, &direct_ops, &ctx, &cw);
+        assert_eq!(aggs1.len(), aggs2.len());
+        for (x, y) in aggs1.iter().zip(aggs2.iter()) {
+            assert_eq!(x.loop_routine.id, y.loop_routine.id);
+            assert_eq!(x.loop_id, y.loop_id);
+            assert_eq!(x.terminal.op.id, y.terminal.op.id);
+            assert_eq!(x.terminal.owner.id, y.terminal.owner.id);
+            assert_eq!(x.entry_callsite_id, y.entry_callsite_id);
+            assert_eq!(x.severity, y.severity);
+            assert_eq!(x.verdict, y.verdict);
+            assert_eq!(x.reachable_verdicts, y.reachable_verdicts);
+            assert_eq!(x.depth_bucket, y.depth_bucket);
+            assert_eq!(x.effective_loop_depth, y.effective_loop_depth);
+            assert_eq!(x.witness, y.witness);
+            assert_eq!(x.uncertainties, y.uncertainties);
+        }
+
+        assert_eq!(
+            aggs1.len(),
+            4,
+            "3 transitive groups into T + 1 direct-op group"
+        );
+        let overlap_count = aggs1
+            .iter()
+            .filter(|a| a.terminal.owner.id == "T" && a.terminal.op.id == "T/op0")
+            .count();
+        assert_eq!(
+            overlap_count, 3,
+            "R1/R2/R3 all reach the SAME terminal T/op0 — the overlapping-closure shape"
+        );
+
+        // (b) equals a serial reference: group the seeds/direct-ops EXACTLY
+        // like `search_loops` does, but call `process_group` directly, per
+        // group, in a DELIBERATELY reversed order, then apply rule 8's own
+        // sort.
+        #[allow(clippy::type_complexity)]
+        let mut ref_groups: Vec<(&L3Routine, &str, &PLoop, Vec<usize>, Vec<usize>)> = Vec::new();
+        for (i, seed) in seeds.iter().enumerate() {
+            let key = (seed.loop_routine.id.as_str(), seed.loop_id);
+            if let Some(g) = ref_groups
+                .iter_mut()
+                .find(|g| (g.0.id.as_str(), g.1) == key)
+            {
+                g.3.push(i);
+            } else {
+                ref_groups.push((
+                    seed.loop_routine,
+                    seed.loop_id,
+                    seed.loop_info,
+                    vec![i],
+                    Vec::new(),
+                ));
+            }
+        }
+        for (i, d) in direct_ops.iter().enumerate() {
+            let key = (d.routine.id.as_str(), d.loop_id);
+            if let Some(g) = ref_groups
+                .iter_mut()
+                .find(|g| (g.0.id.as_str(), g.1) == key)
+            {
+                g.4.push(i);
+            } else {
+                ref_groups.push((d.routine, d.loop_id, d.loop_info, Vec::new(), vec![i]));
+            }
+        }
+        // Reversed relative to discovery order — proves the final sort makes
+        // call order irrelevant (the property parallel execution relies on).
+        ref_groups.reverse();
+
+        let mut serial_out: Vec<LoopTerminalAgg> = Vec::new();
+        for (loop_routine, loop_id, loop_info, seed_indices, direct_indices) in &ref_groups {
+            serial_out.extend(process_group(
+                &graph,
+                &seeds,
+                &direct_ops,
+                &ctx,
+                &cw,
+                loop_routine,
+                loop_id,
+                loop_info,
+                seed_indices,
+                direct_indices,
+            ));
+        }
+        serial_out.sort_by(|a, b| {
+            a.loop_routine
+                .id
+                .cmp(&b.loop_routine.id)
+                .then_with(|| a.loop_id.cmp(b.loop_id))
+                .then_with(|| a.terminal.owner.id.cmp(&b.terminal.owner.id))
+                .then_with(|| a.terminal.op.id.cmp(&b.terminal.op.id))
+        });
+
+        assert_eq!(serial_out.len(), aggs1.len());
+        for (x, y) in serial_out.iter().zip(aggs1.iter()) {
+            assert_eq!(x.loop_routine.id, y.loop_routine.id);
+            assert_eq!(x.loop_id, y.loop_id);
+            assert_eq!(x.terminal.op.id, y.terminal.op.id);
+            assert_eq!(x.terminal.owner.id, y.terminal.owner.id);
             assert_eq!(x.entry_callsite_id, y.entry_callsite_id);
             assert_eq!(x.severity, y.severity);
             assert_eq!(x.verdict, y.verdict);
