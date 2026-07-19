@@ -88,27 +88,37 @@ ALSEM_TRACE_EXIT_AFTER=<span>  early exit after a named span
   detached runs via the scratchpad monitor-script pattern for anything
   >10 min.
 
-## 4. THE OPEN DECISION (blocks the next d1 work — user's call)
+## 4. THE OPEN DECISION — RESOLVED (2026-07-19): reachability redesign, NO caps
 
-d1 output semantics: every complete path becomes evidence
-(additionalPaths + count in findings). At Base-App density that is ~900k
-paths ≈ 3 h. Options:
+**Resolved.** None of A/B/C below was taken. The d1-reachability redesign
+(`docs/superpowers/plans/2026-07-19-d1-reachability-redesign.md`, Tasks 1-5,
+branch `feat/d1-reachability`) replaced the exhaustive simple-path enumeration
+outright: one compact filtered graph + an UNBOUNDED per-loop multi-source label
+search over product states `(node, param-temp-vector, depth-bucket≤2,
+uncertainty-flag)`, aggregated per `(loop, terminal-op)`. Cycle safety is label
+dedup — **NO node/depth budget, NO output cap anywhere**. Findings are now
+terminal-centric: ONE finding per `(terminal routine, op)` carrying one
+`LoopContext` per reaching loop (winner drives severity/confidence/notes; the
+non-winner witnesses stay in `additionalPaths`). The falsified premise was
+"d1 is output-bound" — the ~900k enumerated paths never reached output (first-wins
+dedupe discarded them); the cost was the enumeration itself, which the
+reachability search eliminates. The old walk path is deleted from d1 (it survives
+only as the `#[cfg(test)]` shadow oracle); `path_walker.rs` itself stays (d2/d46/d48).
+
+Historical options (NOT taken, kept for the record):
 
 A. **Honest cap**: keep first path + `additionalPathsCount`, cap enumerated
-   extras at N with an explicit "paths capped at N" diagnostic on the
-   finding (honest-caps doctrine — never silent). Expected: d1 → minutes.
-   Output changes → goldens rebaseline + DO/CDO finding-level triage gate.
+   extras at N with an explicit "paths capped at N" diagnostic.
 B. First-path-only + count (N=0 form of A).
 C. Keep exhaustive enumeration; accept ~3 h d1 at this density (batch-only).
 
-Secondary (only alongside A/B): CompleteOnly streaming in walk_evidence for
-cut-ignoring consumers (≤31% trim, behavior-preserving — design sketch in
-`.superpowers/sdd/w2c-design.md`-era notes and gpt's Stage A in the pi
-transcript, summarized in measurements doc §9).
-
 ## 5. The remaining queue (after the §4 decision)
 
-1. d1 semantics implementation per the decision (goldens rebaseline + triage).
+1. ~~d1 semantics implementation per the decision~~ — **DONE** (reachability
+   redesign, Tasks 1-5; goldens rebaselined + triaged, DO semantic-diff clean).
+   Task 6 = perf re-measure + this handoff's closure. Only the `d1.reach` census
+   (`nodes/edges/seeds/direct_ops/aggregates`) remains as the d1 Hot-tier trace
+   (the old `d1.walk_stats`/`d1.memo` walk trace is gone).
 2. **B1-narrow**: core-summary interning wedge (EffectIx/UncertaintyIx +
    bitset memberships INSIDE the Jacobi domain first, engine-wide B1 only
    after it proves out; preserve lexical order explicitly — never intern

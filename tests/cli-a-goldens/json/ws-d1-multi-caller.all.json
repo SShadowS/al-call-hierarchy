@@ -22,7 +22,7 @@
           "description": "Move the database operation outside the loop, or batch it into a set-based operation.",
           "safety": "medium"
         },
-        "id": "d1/225874ed4a5f49e9/1f759718521ad524b9d1bd5f9649038d0d7e94611c736d22d36dd6b87df43ec2/loop0/225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0",
+        "id": "d1/225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/225874ed4a5f49e9/a3ff9b214a741a8eb3d93cb2eda0a0ddbc4f527530764a955da42312ca95e513/op0",
         "pathCount": 3,
         "primaryLocation": {
           "column": 9,

@@ -412,11 +412,13 @@ codeunit 50133 "ST D1 Flow"
 /// Both share the SAME terminal op so `merge_by_terminal` collapses them to ONE
 /// finding.
 ///
-/// Both paths FIRE at the SAME op-based severity (CalcFields → high), so there is no
-/// merge-TIE — the canonical finding's FlowField note must SURVIVE the merge intact
-/// (NOT be stripped by the reconcile pass). This is the defect the dedicated
-/// `FlowFieldGated` variant fixes: faking `Physical` would have left a Physical
-/// canonical with NO note, losing the FlowField fact entirely.
+/// Both paths FIRE at the SAME op-based severity (CalcFields → high). The
+/// terminal-centric assembly collapses them to ONE finding with one `LoopContext`
+/// per caller; the FlowField fact must SURVIVE — carried structurally by the
+/// `flowfield-on-temp` verdict on the temp caller's context (the redesign
+/// replaced the old dual-verdict prose note). This is the defect the dedicated
+/// `FlowFieldGated` variant fixes: faking `Physical` would have lost the FlowField
+/// fact entirely.
 #[test]
 fn merge_flowfield_gated_with_physical_preserves_flowfield_note() {
     let src = r#"
@@ -471,22 +473,27 @@ codeunit 50135 "MF D1 Merge"
         "a merged FlowFieldGated + physical finding must fire. rootCause: {}",
         f.root_cause
     );
-    // The dual-verdict note must surface BOTH verdicts, preserving the FlowField fact
-    // via the dedicated `flowfield-on-temp` label.
-    assert!(
-        f.root_cause.contains("temp state varies by caller"),
-        "the merged finding must carry the dual-verdict note. rootCause: {}",
-        f.root_cause
+    // Both verdicts are surfaced PER LOOP in contexts[] — the FlowField fact is
+    // preserved structurally by the dedicated `flowfield-on-temp` verdict on the
+    // temp caller's context (regardless of which context wins the same-severity,
+    // same-verdict-quality tie-break — the redesign dropped the dual-verdict prose).
+    let ctxs = f.contexts.as_ref().expect("d1 findings carry contexts");
+    assert_eq!(
+        ctxs.len(),
+        2,
+        "one context per caller loop. contexts: {ctxs:#?}"
+    );
+    let verdicts: std::collections::BTreeSet<&str> =
+        ctxs.iter().map(|c| c.verdict.as_str()).collect();
+    assert_eq!(
+        verdicts,
+        ["flowfield-on-temp", "physical"].into_iter().collect(),
+        "the FlowField fact (flowfield-on-temp) + physical are both surfaced across \
+         contexts. contexts: {ctxs:#?}"
     );
     assert!(
-        f.root_cause.contains("flowfield-on-temp via CallerTemp"),
-        "the merge must PRESERVE the FlowField fact (flowfield-on-temp via CallerTemp). \
-         rootCause: {}",
-        f.root_cause
-    );
-    assert!(
-        f.root_cause.contains("physical via CallerPhysical"),
-        "the merge must credit the physical verdict to CallerPhysical. rootCause: {}",
+        !f.root_cause.contains("temp state varies by caller"),
+        "the dual-verdict prose note is gone (verdicts live in contexts). rootCause: {}",
         f.root_cause
     );
 }

@@ -79,11 +79,18 @@ the bottom, CHANGELOG, and git log.
   traced d1-only runs; measurements doc §9): d1 is OUTPUT-BOUND on
   complete-path multiplicity — 69.1% of retained walk results are genuine
   complete witness paths (~126/walk, ~900k for the full census ≈ 3h),
-  Jacobi/substrate CLEAN at ~24 min / 43.5 GB. **Next d1 step is a USER
-  SEMANTICS DECISION**: cap/summarize additionalPaths per finding with an
-  explicit capped diagnostic (honest-caps doctrine) → expected d1 collapse
-  to minutes; goldens rebaseline + DO/CDO triage gate it. CompleteOnly
-  cut-elision = secondary trim (≤31%) only alongside that decision. Downstream candidates once attributed: d1 typed-receiver-§7
+  Jacobi/substrate CLEAN at ~24 min / 43.5 GB.
+  **RESOLVED 2026-07-19 — d1-reachability redesign (Tasks 1-5,
+  `feat/d1-reachability`)**: the "output-bound" premise was FALSE (the ~900k
+  paths never reached output — first-wins dedupe discarded them; the cost was
+  the enumeration). NO caps taken. `detect_d1` now runs an unbounded filtered
+  reachability search (`d1_graph` + `d1_reach`) + terminal-centric assembly
+  (one finding per `(terminal routine, op)` with per-loop `LoopContext`s); the
+  old walk is deleted from d1 (survives only as the `#[cfg(test)]` shadow
+  oracle). DO semantic-diff vs old: 828→908 findings (+80 budget-free), 61
+  severity upgrades, 0 downgrades / 0 vanished keys, 5.2 s. Goldens rebaselined
+  + triaged. Task 6 = perf re-measure at 8020 density + handoff §4 closure.
+  Downstream candidates once attributed: d1 typed-receiver-§7
   guard-tag/flow-insensitive redesign; B1 interned ids + bitsets / B2
   SCC-shared cones (8.34M-cardinality summary mass, Jacobi plateau); B3
   single-substrate unification (needs detector-feature parity harness).

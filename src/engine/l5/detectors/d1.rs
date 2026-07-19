@@ -1,23 +1,35 @@
 //! D1 — database operation inside a loop (direct or through an in-loop call
-//! chain). Port of al-sem `src/detectors/d1-db-op-in-loop.ts`.
+//! chain). Originally a port of al-sem `src/detectors/d1-db-op-in-loop.ts`; the
+//! call-chain analysis is now the Rust-owned REACHABILITY pipeline
+//! (`.superpowers/sdd/task-5-brief.md` — the d1-reachability redesign).
 //!
-//! THE most complex L5 detector: it consumes the PW-0 path-walker substrate
-//! end-to-end. Its byte-match validates `walk_evidence` + `merge_by_terminal` +
-//! `describe_table` + `pick_actionable_anchor` + `classify_op` together.
+//! ## Production pipeline (terminal-centric reachability)
 //!
-//! Two emission paths:
-//!   (a) DIRECT in-loop db-touching ops in THIS routine → a synthetic two-step
-//!       WalkResult (`[loopStep, opStep]`, `effectiveLoopDepth = loopStack.len()`,
-//!       no uncertainties).
-//!   (b) IN-LOOP CALLS to db-touching callees → `walk_evidence` from the callee,
-//!       seeded with `[loopStep, callStep]` and `initial_loop_depth =
-//!       cs.loopStack.len()`. Each Complete result's terminal op is recovered from
-//!       `last_step.operation_id`.
+//! `detect_d1` no longer walks every simple path (the old `walk_evidence`
+//! exhaustive enumeration, silently truncated at a 500-node budget). Instead:
+//!   1. [`enumerate_direct_ops`] — the production direct-op (old branch (a))
+//!      enumeration + the `candidatesConsidered`/`skipped_*`/`downgradedToInfo`
+//!      stat counting (the branch-(b) callsite skips are counted alongside).
+//!   2. [`build_d1_graph`] (`d1_graph`) — the compact filtered call graph + the
+//!      in-loop-call seed set.
+//!   3. [`search_loops`] (`d1_reach`) — one unbounded multi-source label search
+//!      per loop group over Task 2's forward param-temp vector, aggregated per
+//!      `(loop, terminal-op)` into a [`LoopTerminalAgg`] with a selected winner
+//!      witness. Cycle safety is label dedup alone — NO node/depth budget.
+//!   4. [`assemble_findings`] — group aggregates by `(terminal routine, op)` into
+//!      ONE terminal-centric [`Finding`] per group, carrying one [`LoopContext`]
+//!      per reaching loop. `contexts[0]` (the winner: severity desc, verdict
+//!      quality desc, loop routine id, loop id) drives the finding's severity,
+//!      confidence, `evidence_path`, temp/setup notes and wording — all from the
+//!      SAME context (fixing the old best-confidence-across-loops mismatch). The
+//!      non-winner witnesses become `additional_paths`.
 //!
-//! Two-stage collapse: (1) dedup by `id` (first-wins), (2) `merge_by_terminal`
-//! (folds M ancestor loops on the same terminal op into one finding with
-//! `additionalPaths`). Fingerprint is computed AFTER merge (the union grows
-//! affectedTables); then sort by `id`.
+//! `id = root_cause_key = "d1/{terminal_routine_id}/{op_id}"` — TERMINAL-based
+//! identity (the schema change: the old per-loop `d1/{loop}/{routine}/{op}` ids
+//! are gone). Two defect classes the redesign closes: **D-A** (the 500-node
+//! budget silently under-found deep terminals) and **D-B** (DFS-order-accidental
+//! verdicts + canonical-loop merge accidents + best-confidence-across-loops
+//! mismatch).
 //!
 //! ## Dependency-role path is DEAD (source-only)
 //! al-sem's `terminalsAt` and the finding-build op-recovery both fall back to
@@ -25,42 +37,59 @@
 //! SOURCE-ONLY Rust pipeline every routine is primary, so that fallback never
 //! engages; it is documented inline but not implemented (mirrors `run_detectors`).
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::engine::l3::l3_workspace::L3Table;
-use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
+use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l4::combined_graph::CombinedEdge;
-use crate::engine::l4::effect_lattice::TempStateKind;
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
-use crate::engine::l5::capability_query::{EffectPresence, touches_db_of};
-use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
+use crate::engine::l5::d1_graph::build_d1_graph;
+use crate::engine::l5::d1_reach::{DirectOp, LoopTerminalAgg, search_loops};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
 };
 use crate::engine::l5::finding::{
-    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, LoopContext, SourceAnchor,
 };
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
-use crate::engine::l5::path_merge::{merge_by_terminal, sev_rank};
-use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
-use crate::engine::l5::path_walker::{
-    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop, WalkTraceStats,
-    walk_evidence,
-};
+use crate::engine::l5::path_merge::{annotate_root_cause, sev_rank};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::table_display::{DescribeOp, describe_table};
 use crate::engine::perf_trace as pt;
-use serde_json::json;
+
+// The OLD exhaustive-path-walker pipeline (`detect_d1_premerge` + `D1Policy` +
+// `build_finding` + `apply_seed_transform`) survives ONLY as the Task 4 shadow
+// oracle — the regression net the `shadow_tests` / `memo_tests` unit tests below
+// run side-by-side with the production reachability pipeline. It is off the
+// production path entirely, so it (and the imports it alone needs) is
+// `#[cfg(test)]`-gated: it never enters a release build.
+#[cfg(test)]
+use crate::engine::l4::effect_lattice::TempStateKind;
+#[cfg(test)]
+use crate::engine::l5::capability_query::{EffectPresence, touches_db_of};
+#[cfg(test)]
+use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
+#[cfg(test)]
+use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
+#[cfg(test)]
+use crate::engine::l5::path_walker::{
+    PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkResult, WalkStop, walk_evidence,
+};
+#[cfg(test)]
+use std::cell::RefCell;
+#[cfg(test)]
+use std::rc::Rc;
 
 const DETECTOR: &str = "d1-db-op-in-loop";
 
-/// The path-walker's depth/node budget for the interprocedural call-chain walk.
+/// The OLD path-walker's depth/node budget for the interprocedural call-chain
+/// walk. Kept only for the `#[cfg(test)]` shadow oracle (`detect_d1_premerge`) —
+/// the production reachability search has NO budget (cycle safety = label dedup).
+#[cfg(test)]
 const BOUNDS: WalkBounds = WalkBounds {
     max_depth: 20,
     max_nodes: 500,
@@ -80,7 +109,9 @@ const CURSOR_OPENER_OPS: [&str; 4] = ["FindSet", "FindFirst", "FindLast", "Find"
 
 /// The terminal op's `temp_state` as a [`TempStateKind`] (the resolver's input).
 /// A `None` temp_state → `Unknown` (al-sem always sets `{kind:"unknown"}` for
-/// untracked ops, so the absence maps the same way).
+/// untracked ops, so the absence maps the same way). Test-only: the production
+/// path resolves temp-ness via `d1_temp`'s forward vector, not this.
+#[cfg(test)]
 fn op_temp_state_kind(op: &L3RecordOperation) -> TempStateKind {
     match &op.temp_state {
         Some(ts) => TempStateKind::from_p_temp_state(ts),
@@ -166,6 +197,10 @@ pub(crate) enum TempVerdict {
 }
 
 impl TempVerdict {
+    /// Map a resolved [`TempStateKind`] to a verdict. Test-only: the OLD
+    /// `build_finding` used it after the backward per-path resolver; the
+    /// production path composes verdicts forward in `d1_reach::flowfield_verdict`.
+    #[cfg(test)]
     fn from_resolved(state: &TempStateKind) -> Self {
         match state {
             TempStateKind::Known(true) => TempVerdict::Temporary,
@@ -176,10 +211,10 @@ impl TempVerdict {
         }
     }
 
-    /// The dual-verdict note fragment for this verdict (`temporary` / `physical` /
-    /// `uncertain` / `flowfield-on-temp`), used to build the merge-tie note
-    /// "temporary via <A>; physical via <B>".
-    fn label(self) -> &'static str {
+    /// The verdict label fragment (`temporary` / `physical` / `uncertain` /
+    /// `flowfield-on-temp`) surfaced in a [`LoopContext`]'s `verdict` /
+    /// `reachable_verdicts`.
+    pub(crate) fn label(self) -> &'static str {
         match self {
             TempVerdict::Temporary => "temporary",
             TempVerdict::Physical => "physical",
@@ -187,20 +222,28 @@ impl TempVerdict {
             TempVerdict::FlowFieldGated => "flowfield-on-temp",
         }
     }
+
+    /// Verdict-quality rank for the winner-selection / context ordering:
+    /// `Physical == FlowFieldGated > Uncertain > Temporary`. (Distinct from the
+    /// derived `Ord`, which is declaration order and only used to sort a
+    /// context's `reachable_verdicts` list.)
+    pub(crate) fn quality(self) -> i32 {
+        match self {
+            TempVerdict::Physical | TempVerdict::FlowFieldGated => 3,
+            TempVerdict::Uncertain => 2,
+            TempVerdict::Temporary => 1,
+        }
+    }
 }
 
-/// A pre-merge finding paired with the data the RV-6 merge-tie reconciliation needs:
-/// the PATH-RESOLVED temp verdict and the root caller's display name (the ancestor
-/// the path starts in). `loop_routine.name` is the caller label surfaced in the
-/// dual-verdict note when paths disagree.
-///
-/// `pub(crate)` (Task 4, `.superpowers/sdd/task-4-brief.md`): the shadow
-/// differential (`shadow_tests` below) reads `.finding` off the raw pre-merge
-/// population `detect_d1_premerge` returns.
+/// A pre-merge finding from the OLD walker. Test-only: the shadow differential
+/// (`shadow_tests` below) reads `.finding` off the raw pre-merge population
+/// `detect_d1_premerge` returns. (The old `verdict`/`caller_label` fields died
+/// with `reconcile_merge_tie` — the redesign carries per-loop verdicts in
+/// `Finding.contexts`, not a reconciliation note.)
+#[cfg(test)]
 pub(crate) struct FindingRec {
     pub(crate) finding: Finding,
-    verdict: TempVerdict,
-    caller_label: String,
 }
 
 /// `describeTable(op, routine, tableById)`. Builds the `DescribeOp` view from an
@@ -365,13 +408,15 @@ fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
         .collect()
 }
 
-/// `buildFinding(...)` — assemble the internal Finding (fingerprint DEFERRED until
-/// after `merge_by_terminal`).
+/// `buildFinding(...)` — assemble the internal Finding for the OLD walker path.
+/// Test-only (the shadow oracle): the production pipeline assembles findings from
+/// `LoopTerminalAgg`s in [`assemble_findings`], not from a single `WalkResult`.
 ///
 /// `terminal_routine_id` is al-sem's `terminalOp.routineId` (a separate field on
 /// `RecordOperation`; the Rust `L3RecordOperation` carries no routine id, so the
 /// caller threads the owning routine's internal id). `terminal_op_anchor` is the
 /// op's INTERNAL `SourceAnchor` (built by the caller via `anchor_of`).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn build_finding(
     loop_routine: &L3Routine,
@@ -537,6 +582,7 @@ fn build_finding(
         fingerprint: None,
         event_kind: None,
         cross_extension_subscribers: None,
+        contexts: None,
     };
 
     let actionable = pick_actionable_anchor(&finding, role_by_routine);
@@ -586,6 +632,9 @@ pub(crate) fn edge_target_matches_callsite_callee(
 }
 
 /// The D1 WalkPolicy — holds references to the eager indexes the closures read.
+/// Test-only: it drives the OLD `walk_evidence` exhaustive walk, kept solely as
+/// the `#[cfg(test)]` shadow oracle.
+#[cfg(test)]
 struct D1Policy<'a> {
     routine_by_id: &'a HashMap<&'a str, &'a L3Routine>,
     table_by_id: &'a HashMap<&'a str, &'a L3Table>,
@@ -618,6 +667,7 @@ struct D1Policy<'a> {
     walk_memo: RefCell<HashMap<String, Rc<Vec<WalkResult>>>>,
 }
 
+#[cfg(test)]
 impl<'a> D1Policy<'a> {
     /// `touches_db_of(s)`, memoized once-per-run by the summary's routine id.
     fn touches_db_memoized(
@@ -737,6 +787,7 @@ pub(crate) fn terminal_step(
     }
 }
 
+#[cfg(test)]
 impl<'a> WalkPolicy for D1Policy<'a> {
     fn terminals_at(&self, node: &str, _ctx: &PathCtx) -> Vec<Terminal> {
         let Some(r) = self.routine_by_id.get(node).copied() else {
@@ -824,7 +875,8 @@ impl<'a> WalkPolicy for D1Policy<'a> {
 /// (never read for a branch/terminal/cut decision) and `initial_loop_depth`
 /// seeds `inherited_loop_depth`, which flows ONLY into `effective_loop_depth`
 /// additively — never into a cut (cycle/depth/budget use `routine_path` +
-/// `nodes_visited` alone). See Wave-2c design §3.
+/// `nodes_visited` alone). See Wave-2c design §3. Test-only (the shadow oracle).
+#[cfg(test)]
 fn apply_seed_transform(
     canonical: &[WalkResult],
     initial_loop_depth: i64,
@@ -846,75 +898,18 @@ fn apply_seed_transform(
         .collect()
 }
 
-/// Emit the two Hot-tier (`Detail::Hot`) d1 counter groups: the aggregate
-/// `d1.walk_stats` (walk + retained-by-stop-kind totals — the decisive
-/// `unused_cut / all_retained` ratio derives from these) and `d1.memo` (memo
-/// hit/miss + retained-size totals). Called at EVERY 1000-memo-miss checkpoint
-/// AND once at the end. The inputs are cumulative and Chrome `C` counters are
-/// last-value-wins, so periodic re-emission is correct — and it makes the
-/// aggregates KILL-DURABLE: a cap-killed 8020-scale run (the only kind that
-/// matters — the end flush never runs on a kill) still carries the last
-/// checkpoint's decisive stop-kind counters instead of nothing.
-#[allow(clippy::too_many_arguments)]
-fn emit_d1_hot_counters(
-    walk_stats: &WalkTraceStats,
-    memo_hits: u64,
-    memo_misses: u64,
-    retained_results: u64,
-    retained_steps: u64,
-    max_entry_results: u64,
-    max_entry_steps: u64,
-) {
-    let mut walk_lc = pt::LocalCounters::new();
-    walk_lc.set("nodes_visited", walk_stats.nodes_visited);
-    walk_lc.set("edges_examined", walk_stats.edges_examined);
-    walk_lc.set("complete", walk_stats.complete);
-    walk_lc.set("cycle_cut", walk_stats.cycle_cut);
-    walk_lc.set("depth_cut", walk_stats.depth_cut);
-    walk_lc.set("node_budget_cut", walk_stats.node_budget_cut);
-    walk_lc.set("dead_end", walk_stats.dead_end);
-    walk_lc.set("walks", walk_stats.walks);
-    walk_lc.set("walks_hit_node_bound", walk_stats.walks_hit_node_bound);
-    walk_lc.flush("d1.walk_stats");
-
-    let mut memo_lc = pt::LocalCounters::new();
-    memo_lc.set("memo_hits", memo_hits);
-    memo_lc.set("memo_misses", memo_misses);
-    memo_lc.set("retained_results", retained_results);
-    memo_lc.set("retained_steps", retained_steps);
-    memo_lc.set("max_entry_results", max_entry_results);
-    memo_lc.set("max_entry_steps", max_entry_steps);
-    memo_lc.flush("d1.memo");
-}
-
-/// Aggregate counters `detect_d1_premerge`'s walk phase accumulates that
-/// `detect_d1`'s `DetectorStats` reports post-merge (Task 4,
-/// `.superpowers/sdd/task-4-brief.md`): carved out alongside `findings` so the
-/// premerge phase is a complete, standalone unit — the shadow differential runs
-/// it directly, on the SAME `DetectorContext` the `build_d1_graph` +
-/// `search_loops` reachability pipeline consumes.
-pub(crate) struct D1PremergeStats {
-    pub(crate) candidates_considered: usize,
-    pub(crate) skipped_parse_incomplete: u64,
-    pub(crate) skipped_opaque_callee: u64,
-    pub(crate) skipped_dynamic_dispatch: u64,
-    pub(crate) skipped_virtual_table: u64,
-    pub(crate) downgraded_to_info: u64,
-}
-
-/// The PW-0 path-walker phase of `detect_d1` — every direct in-loop db op
-/// (branch a) and every in-loop call-chain walk into a db-touching callee
-/// (branch b), PRE-dedupe / PRE-merge. Carved out verbatim (Task 4): `detect_d1`
-/// calls this and continues from the id-dedupe loop onward — behavior-preserving
-/// (the full suite + `check-goldens` prove byte-identical detector output).
-/// `pub(crate)` so the Task 4 shadow differential (`shadow_tests` below, and the
-/// manual `shadow_do_workspace` DO run) can run this SAME pre-merge population
-/// side-by-side with the new `build_d1_graph` + `search_loops` reachability
-/// pipeline on identical `DetectorContext` input.
-pub(crate) fn detect_d1_premerge(
-    resolved: &L3Resolved,
-    ctx: &DetectorContext,
-) -> (Vec<FindingRec>, D1PremergeStats) {
+/// The OLD PW-0 path-walker phase — every direct in-loop db op (branch a) and
+/// every in-loop call-chain walk into a db-touching callee (branch b), PRE-dedupe
+/// / PRE-merge. Test-only: it is the Task 4 shadow oracle the `shadow_tests` /
+/// `shadow_do_workspace` differential runs side-by-side with the production
+/// `build_d1_graph` + `search_loops` reachability pipeline on identical
+/// `DetectorContext` input. Only the FINDING population is produced — the stat
+/// counters moved to the production [`enumerate_direct_ops`], and the Hot-tier
+/// walk/memo trace instrumentation was removed with the cutover (production census
+/// is `d1.reach`); the `walk_memo` canonical-walk optimization is kept (the
+/// `memo_tests` prove it byte-identical).
+#[cfg(test)]
+pub(crate) fn detect_d1_premerge(resolved: &L3Resolved, ctx: &DetectorContext) -> Vec<FindingRec> {
     let ws = &resolved.workspace;
 
     // Source-only role map (every routine primary) — used by pick_actionable_anchor.
@@ -939,23 +934,7 @@ pub(crate) fn detect_d1_premerge(
         }
     }
 
-    // Each finding is tracked with its PATH-RESOLVED temp verdict + the root caller's
-    // display name, so the post-dedup merge-tie pass (RV-6) can reconcile paths that
-    // DISAGREE on the temp-derived severity into one finding (worst severity wins +
-    // dual-verdict note).
     let mut findings: Vec<FindingRec> = Vec::new();
-    let mut candidates_considered = 0usize;
-    let mut skipped_parse_incomplete = 0u64;
-    let mut skipped_opaque_callee = 0u64;
-    let mut skipped_dynamic_dispatch = 0u64;
-    // G-6: direct in-loop ops skipped because they target a BC virtual/system
-    // table (no SQL backing). Counted PER DIRECT OP, like the other direct skips.
-    let mut skipped_virtual_table = 0u64;
-    // downgradedToInfo: counted PER DIRECT IN-LOOP OP, PRE-merge, in the direct-op
-    // branch only (mirrors d1.ts:320-322). NOT reconstructed post-merge by rootCause
-    // text — that would under-count when ≥2 temp ops merge into one finding and
-    // over-count transitive (callee-terminal) temp findings TS never counts.
-    let mut downgraded_to_info = 0u64;
 
     let policy = D1Policy {
         routine_by_id: &ctx.routine_by_id,
@@ -967,96 +946,13 @@ pub(crate) fn detect_d1_premerge(
         walk_memo: RefCell::new(HashMap::new()),
     };
 
-    // Hot-tier tracing (`Detail::Hot`). Tested ONCE here (outside every walk) so
-    // the interprocedural walk stays branch-free on the disabled path: `trace_hot`
-    // gates whether `walk_evidence` receives `Some(&mut walk_stats)` or `None`, and
-    // whether the d1-side memo/retention counters accumulate. All of it is
-    // measurement-only — no counter, span, or census reads or mutates a finding, so
-    // OFF and ON produce byte-identical analysis output.
-    let trace_hot = pt::enabled(pt::Detail::Hot);
-    // Aggregate walk stats across every CANONICAL callee walk (one per memo miss);
-    // its result-by-stop-kind totals ARE the retained population (d1 stores every
-    // canonical vec and consumes only `Complete`), so the decisive
-    // `unused_cut / all_retained` ratio is derivable from `d1.walk_stats` alone.
-    let mut walk_stats = WalkTraceStats::default();
-    let mut memo_hits = 0u64;
-    let mut memo_misses = 0u64;
-    // Retained WalkResult + evidence-step totals across all memo entries
-    // (aggregate + single-entry max) — the memo-RSS blow-up signal.
-    let mut retained_results = 0u64;
-    let mut retained_steps = 0u64;
-    let mut max_entry_results = 0u64;
-    let mut max_entry_steps = 0u64;
-    // Wall-clock checkpoint cadence (`Some` only when Hot ⇒ zero cost off). The
-    // 1000-miss stride is too COARSE at 8020 density (~0.25 misses/s ⇒ its first
-    // flush is ~68 min in), so a capped run dies counter-less; re-emit the
-    // cumulative aggregates every 60s too. Reset on each flush.
-    let mut last_flush = trace_hot.then(std::time::Instant::now);
-
-    if trace_hot {
-        // Pre-walk census, emitted BEFORE the first walk: the in-loop call-site
-        // population and the DISTINCT db-touching callee roots that will each seed
-        // one canonical walk (≈ the eventual memo-miss count). Reads only; it
-        // pre-warms the pure `touches_db` memo, which cannot change any finding.
-        let mut in_loop_callsites = 0u64;
-        let mut walk_candidates = 0u64;
-        let mut distinct_roots: HashSet<&str> = HashSet::new();
-        for routine in &ws.routines {
-            if !routine.body_available || routine.parse_incomplete {
-                continue;
-            }
-            for cs in &routine.call_sites {
-                if cs.loop_stack.is_empty() {
-                    continue;
-                }
-                in_loop_callsites += 1;
-                let edge = ctx.graph.edges_by_from.get(&routine.id).and_then(|edges| {
-                    edges.iter().find(|e| {
-                        e.callsite_id.as_deref() == Some(cs.id.as_str())
-                            && edge_target_matches_callsite_callee(e, cs, &ctx.routine_by_id)
-                    })
-                });
-                let Some(edge) = edge else {
-                    continue;
-                };
-                if edge.kind == "interface" || edge.kind == "dynamic" {
-                    continue;
-                }
-                let Some(callee_summary) = ctx.summaries.get(&edge.to) else {
-                    continue;
-                };
-                if policy.touches_db_memoized(callee_summary) == EffectPresence::No {
-                    continue;
-                }
-                walk_candidates += 1;
-                distinct_roots.insert(edge.to.as_str());
-            }
-        }
-        let distinct = distinct_roots.len() as u64;
-        pt::instant_lazy("d1", "walk_census", || {
-            json!({
-                "in_loop_callsites": in_loop_callsites,
-                "walk_candidates": walk_candidates,
-                "distinct_callee_roots": distinct,
-            })
-        });
-    }
-
     for routine in &ws.routines {
-        // roleOf(routine) === "primary": source-only ⇒ always true, so the
-        // `roleOf(r) !== "primary"` candidate gate was dropped. TRACKED LATENT GAP
-        // (applies to ALL primary-scoped default detectors): in cross-app mode this
-        // gate's absence would overcount dependency routines in candidatesConsidered.
-        // A1's corpus is source-only (all-primary), so it's not exercised; to be
-        // locked with a cross-app stats fixture in a later pass.
         if !routine.body_available {
             continue;
         }
         if routine.parse_incomplete {
-            skipped_parse_incomplete += 1;
             continue;
         }
-        candidates_considered += 1;
 
         let loop_by_id: HashMap<&str, &crate::engine::l2::features::PLoop> =
             routine.loops.iter().map(|l| (l.id.as_str(), l)).collect();
@@ -1096,7 +992,6 @@ pub(crate) fn detect_d1_premerge(
             // metadata store — no physical SQL backing, never a SQL round-trip, so
             // an in-loop read of one is never a d1 finding (docs/engine-gaps.md G-6).
             if op_targets_virtual_system_table(op, routine, &ctx.table_by_id) {
-                skipped_virtual_table += 1;
                 continue;
             }
             let Some(representative_loop) = representative_loop_id(&op.loop_stack) else {
@@ -1105,17 +1000,6 @@ pub(crate) fn detect_d1_premerge(
             let Some(loop_info) = loop_by_id.get(representative_loop).copied() else {
                 continue;
             };
-            // d1.ts:320-322 — known-temp direct op ⇒ severity forced to "info".
-            // Count it here, PER OP, before the finding is built (NOT post-merge).
-            // RV-1 (Task 11): a known-temp `CalcFields`/`SetAutoCalcFields` whose
-            // FlowField gate BLOCKS the downgrade now FIRES (not info), so it must NOT
-            // increment `downgradedToInfo`. Exclude the gated ops here so the stat
-            // tracks the ops that genuinely downgrade.
-            let flowfield_gated_direct = FLOWFIELD_GATED_OPS.contains(&op.op.as_str())
-                && flowfield_gate_blocks_downgrade(op, &ctx.table_by_id);
-            if is_known_temp(op) && !flowfield_gated_direct {
-                downgraded_to_info += 1;
-            }
 
             let loop_step = EvidenceStep {
                 routine_id: routine.id.clone(),
@@ -1139,7 +1023,7 @@ pub(crate) fn detect_d1_premerge(
                 uncertainties: Vec::new(),
                 stop: WalkStop::Complete,
             };
-            let (finding, verdict) = build_finding_internal(
+            let (finding, _verdict) = build_finding_internal(
                 routine,
                 loop_info.id.as_str(),
                 &result,
@@ -1151,11 +1035,7 @@ pub(crate) fn detect_d1_premerge(
                 &edge_kind_by_callsite,
                 &ctx.closed_world_temp_params,
             );
-            findings.push(FindingRec {
-                finding,
-                verdict,
-                caller_label: routine.name.clone(),
-            });
+            findings.push(FindingRec { finding });
         }
 
         // (b) In-loop calls to DB-touching callees — walk the call chain.
@@ -1192,11 +1072,9 @@ pub(crate) fn detect_d1_premerge(
             });
             let Some(edge) = edge else {
                 // No resolved edge — opaque callee.
-                skipped_opaque_callee += 1;
                 continue;
             };
             if edge.kind == "interface" || edge.kind == "dynamic" {
-                skipped_dynamic_dispatch += 1;
                 continue;
             }
             let Some(callee_summary) = ctx.summaries.get(&edge.to) else {
@@ -1237,13 +1115,9 @@ pub(crate) fn detect_d1_premerge(
             let canonical = {
                 let mut memo = policy.walk_memo.borrow_mut();
                 if memo.contains_key(&edge.to) {
-                    if trace_hot {
-                        memo_hits += 1;
-                    }
                     Rc::clone(memo.get(&edge.to).expect("contains_key just succeeded"))
                 } else {
-                    // Memo MISS → one canonical walk. Feed `walk_stats` only when
-                    // Hot is on (else `None` = zero walk overhead).
+                    // Memo MISS → one canonical walk (no trace instrumentation).
                     let results = walk_evidence(
                         &edge.to,
                         &policy,
@@ -1253,69 +1127,13 @@ pub(crate) fn detect_d1_premerge(
                             initial_steps: Vec::new(),
                         },
                         &ctx.uncertainties_by_node,
-                        if trace_hot {
-                            Some(&mut walk_stats)
-                        } else {
-                            None
-                        },
+                        None,
                     );
-                    if trace_hot {
-                        memo_misses += 1;
-                        let n = results.len() as u64;
-                        let steps: u64 = results.iter().map(|r| r.path.len() as u64).sum();
-                        retained_results += n;
-                        retained_steps += steps;
-                        max_entry_results = max_entry_results.max(n);
-                        max_entry_steps = max_entry_steps.max(steps);
-                        // RSS checkpoint every 1000 misses: the tiny span's close
-                        // snapshots working-set / peak / private RSS; the counter
-                        // carries the running miss number alongside on the timeline.
-                        // ALSO snapshot the cumulative walk/memo aggregates here so
-                        // the decisive stop-kind ratio is KILL-DURABLE — at 8020
-                        // scale the run is cap-killed and the end flush never runs,
-                        // so a checkpoint-only trace would carry census + RSS but
-                        // ZERO stop-kind counters (ratio uncomputable). Cumulative +
-                        // last-value-wins C counters ⇒ re-emission is correct.
-                        if memo_misses.is_multiple_of(1000) {
-                            pt::counter("d1.memo_misses", memo_misses);
-                            emit_d1_hot_counters(
-                                &walk_stats,
-                                memo_hits,
-                                memo_misses,
-                                retained_results,
-                                retained_steps,
-                                max_entry_results,
-                                max_entry_steps,
-                            );
-                            drop(pt::span("d1", "memo_checkpoint"));
-                        }
-                    }
                     let rc = Rc::new(results);
                     memo.insert(edge.to.clone(), Rc::clone(&rc));
                     rc
                 }
             };
-
-            // Time-based durability checkpoint: runs on EVERY in-loop callsite
-            // (hit or miss), so the decisive aggregates reach the trace within 60s
-            // even during a long miss-sparse phase — the miss-stride alone first
-            // fires ~68 min in at density, after both prior capped runs had died.
-            // `last_flush` is `Some` only when Hot is on; `elapsed()` is the sole
-            // per-iteration cost and only when Hot.
-            if let Some(lf) = &mut last_flush
-                && lf.elapsed() >= std::time::Duration::from_secs(60)
-            {
-                emit_d1_hot_counters(
-                    &walk_stats,
-                    memo_hits,
-                    memo_misses,
-                    retained_results,
-                    retained_steps,
-                    max_entry_results,
-                    max_entry_steps,
-                );
-                *lf = std::time::Instant::now();
-            }
 
             let results = apply_seed_transform(
                 canonical.as_slice(),
@@ -1349,7 +1167,7 @@ pub(crate) fn detect_d1_premerge(
                 let Some(terminal_op) = terminal_op else {
                     continue;
                 };
-                let (finding, verdict) = build_finding_internal(
+                let (finding, _verdict) = build_finding_internal(
                     routine,
                     loop_info.id.as_str(),
                     result,
@@ -1361,111 +1179,449 @@ pub(crate) fn detect_d1_premerge(
                     &edge_kind_by_callsite,
                     &ctx.closed_world_temp_params,
                 );
-                findings.push(FindingRec {
-                    finding,
-                    verdict,
-                    caller_label: routine.name.clone(),
-                });
+                findings.push(FindingRec { finding });
             }
         }
     }
 
-    // Hot-tier end flush (`Detail::Hot`): the FINAL cumulative `d1.walk_stats`
-    // (aggregate walk + retained-by-stop-kind totals — `all_retained = complete +
-    // cycle_cut + depth_cut + node_budget_cut + dead_end`, `unused_cut =
-    // all_retained - complete` give the decisive ratio) + `d1.memo` (hit/miss +
-    // retained-size totals). Same emission as the per-1000-miss checkpoints above;
-    // on a clean run this is the last (authoritative) value, on a cap-killed run
-    // the last checkpoint's snapshot already carried the ratio.
-    if trace_hot {
-        emit_d1_hot_counters(
-            &walk_stats,
-            memo_hits,
-            memo_misses,
-            retained_results,
-            retained_steps,
-            max_entry_results,
-            max_entry_steps,
-        );
-    }
-
-    (
-        findings,
-        D1PremergeStats {
-            candidates_considered,
-            skipped_parse_incomplete,
-            skipped_opaque_callee,
-            skipped_dynamic_dispatch,
-            skipped_virtual_table,
-            downgraded_to_info,
-        },
-    )
+    findings
 }
 
+/// The d1 `DetectorStats` counters the production enumeration accumulates. The
+/// branch-(a) direct-op ladder yields `candidates_considered` /
+/// `skipped_parse_incomplete` / `skipped_virtual_table` / `downgraded_to_info`;
+/// the branch-(b) in-loop-call ladder yields `skipped_opaque_callee` /
+/// `skipped_dynamic_dispatch` (the production seeds themselves are built by
+/// `build_d1_graph`, which does not surface those skip reasons).
+#[derive(Default)]
+struct DirectOpStats {
+    candidates_considered: usize,
+    skipped_parse_incomplete: u64,
+    skipped_opaque_callee: u64,
+    skipped_dynamic_dispatch: u64,
+    skipped_virtual_table: u64,
+    downgraded_to_info: u64,
+}
+
+/// The PRODUCTION direct-op (old branch (a)) enumeration + the d1 stat counting.
+///
+/// Returns every DIRECT in-loop db op surviving branch (a)'s EXACT ladder
+/// (`loop_stack` non-empty, db-touching class, the cursor-opener `Next` skip, G-1
+/// terminator-`Next`, G-6 virtual-system-table) as a [`DirectOp`] the
+/// reachability search folds into its per-`(loop, terminal-op)` aggregation, PLUS
+/// the [`DirectOpStats`]. Every predicate mirrors the OLD `detect_d1_premerge`
+/// ladder EXACTLY so the reported stats are byte-identical (pinned by
+/// `tests/cli/d1_downgraded_to_info_oracle.rs` + the cli-a stats goldens).
+fn enumerate_direct_ops<'a>(
+    ws: &'a L3Workspace,
+    ctx: &DetectorContext,
+) -> (Vec<DirectOp<'a>>, DirectOpStats) {
+    let mut out: Vec<DirectOp<'a>> = Vec::new();
+    let mut s = DirectOpStats::default();
+
+    for routine in &ws.routines {
+        // detect_d1's routine gate (candidatesConsidered / parseIncomplete).
+        if !routine.body_available {
+            continue;
+        }
+        if routine.parse_incomplete {
+            s.skipped_parse_incomplete += 1;
+            continue;
+        }
+        s.candidates_considered += 1;
+
+        let loop_by_id: HashMap<&str, &crate::engine::l2::features::PLoop> =
+            routine.loops.iter().map(|l| (l.id.as_str(), l)).collect();
+
+        // Record-vars with a cursor opened before any loop (the in-loop `Next`
+        // cursor-advance exemption).
+        let mut cursor_opened_record_vars: HashSet<String> = HashSet::new();
+        for op in &routine.record_operations {
+            if !op.loop_stack.is_empty() {
+                continue;
+            }
+            if !CURSOR_OPENER_OPS.contains(&op.op.as_str()) {
+                continue;
+            }
+            cursor_opened_record_vars.insert(op.record_variable_name.to_lowercase());
+        }
+
+        // (a) DIRECT in-loop db ops.
+        for op in &routine.record_operations {
+            if op.loop_stack.is_empty() {
+                continue;
+            }
+            if !is_db_touching_class(classify_op(&op.op)) {
+                continue;
+            }
+            if op.op == "Next"
+                && cursor_opened_record_vars.contains(&op.record_variable_name.to_lowercase())
+            {
+                continue;
+            }
+            if is_terminator_next(op) {
+                continue;
+            }
+            if op_targets_virtual_system_table(op, routine, &ctx.table_by_id) {
+                s.skipped_virtual_table += 1;
+                continue;
+            }
+            let Some(representative_loop) = representative_loop_id(&op.loop_stack) else {
+                continue;
+            };
+            let Some(loop_info) = loop_by_id.get(representative_loop).copied() else {
+                continue;
+            };
+            // downgradedToInfo: PER DIRECT IN-LOOP OP (mirrors d1.ts:320-322). A
+            // known-temp FlowField-gated CalcFields/SetAutoCalcFields still FIRES
+            // (RV-1), so it is excluded here so the stat tracks the ops that
+            // genuinely downgrade.
+            let flowfield_gated_direct = FLOWFIELD_GATED_OPS.contains(&op.op.as_str())
+                && flowfield_gate_blocks_downgrade(op, &ctx.table_by_id);
+            if is_known_temp(op) && !flowfield_gated_direct {
+                s.downgraded_to_info += 1;
+            }
+            out.push(DirectOp {
+                routine,
+                loop_id: representative_loop,
+                loop_info,
+                op,
+            });
+        }
+
+        // (b) In-loop CALL skip counting (opaqueCallee / dynamicDispatch). The
+        // production seeds are built by `build_d1_graph` (which applies the SAME
+        // ladder); here we reproduce only branch (b)'s skip ladder to preserve
+        // those two stat counters. Mirrors `detect_d1_premerge`'s branch (b)
+        // exactly: the loop guard, then G-18 edge resolution, then the two skips
+        // (missing-summary / touches_db == No were never counted — not counted
+        // here either).
+        for cs in &routine.call_sites {
+            if cs.loop_stack.is_empty() {
+                continue;
+            }
+            let Some(representative_loop) = representative_loop_id(&cs.loop_stack) else {
+                continue;
+            };
+            if !loop_by_id.contains_key(representative_loop) {
+                continue;
+            }
+            let edge = ctx.graph.edges_by_from.get(&routine.id).and_then(|edges| {
+                edges.iter().find(|e| {
+                    e.callsite_id.as_deref() == Some(cs.id.as_str())
+                        && edge_target_matches_callsite_callee(e, cs, &ctx.routine_by_id)
+                })
+            });
+            let Some(edge) = edge else {
+                s.skipped_opaque_callee += 1;
+                continue;
+            };
+            if edge.kind == "interface" || edge.kind == "dynamic" {
+                s.skipped_dynamic_dispatch += 1;
+            }
+        }
+    }
+
+    (out, s)
+}
+
+/// One per-loop context under assembly: the source [`LoopTerminalAgg`] + the
+/// built [`LoopContext`] + the fields the group finding lifts from the WINNER.
+struct CtxUnderAssembly<'agg, 'data> {
+    agg: &'agg LoopTerminalAgg<'data>,
+    context: LoopContext,
+    confidence: FindingConfidence,
+    setup_singleton: bool,
+}
+
+/// Build one [`CtxUnderAssembly`] from a reachability aggregate: the per-loop
+/// confidence (from the aggregate's uncertainty union), the setup-singleton flag
+/// (for the winner's note/fix), and the serialized-shape [`LoopContext`].
+fn build_context<'agg, 'data>(
+    agg: &'agg LoopTerminalAgg<'data>,
+    ctx: &DetectorContext,
+) -> CtxUnderAssembly<'agg, 'data> {
+    let confidence = to_confidence(&uncertainty_lites(&agg.uncertainties), "likely");
+    let setup_singleton =
+        is_setup_singleton_get(agg.terminal.op, Some(agg.terminal.owner), &ctx.table_by_id);
+    // depth_class: "nested-loop" iff the winner's scoring depth bucket >= 2.
+    let depth_class = if agg.depth_bucket >= 2 {
+        "nested-loop"
+    } else {
+        "single-loop"
+    };
+    let reachable_verdicts: Vec<String> = agg
+        .reachable_verdicts
+        .iter()
+        .map(|v| v.label().to_string())
+        .collect();
+    let context = LoopContext {
+        loop_id: agg.loop_id.to_string(),
+        loop_routine_id: agg.loop_routine.id.clone(),
+        entry_callsite_id: agg.entry_callsite_id.map(|s| s.to_string()),
+        verdict: agg.verdict.label().to_string(),
+        reachable_verdicts,
+        depth_class: depth_class.to_string(),
+        severity: agg.severity.to_string(),
+        confidence: confidence.clone(),
+        witness: agg.witness.clone(),
+    };
+    CtxUnderAssembly {
+        agg,
+        context,
+        confidence,
+        setup_singleton,
+    }
+}
+
+/// Assemble ONE terminal-centric [`Finding`] from a group's per-loop contexts.
+/// `ctxs` is already sorted so `ctxs[0]` is the WINNER; the finding lifts its
+/// severity / confidence / evidence_path / temp+setup notes / G-4 wording from
+/// that single context, and the non-winner witnesses become `additional_paths`.
+fn build_group_finding(
+    ctxs: &[CtxUnderAssembly],
+    ctx: &DetectorContext,
+    role_by_routine: &HashMap<&str, &str>,
+) -> Finding {
+    let winner = &ctxs[0];
+    let agg = winner.agg;
+    let terminal_op = agg.terminal.op;
+    let terminal_routine = agg.terminal.owner;
+    let loop_routine = agg.loop_routine;
+    let terminal_routine_id = terminal_routine.id.as_str();
+
+    // Terminal-based identity — the schema change (old per-loop id is gone).
+    let id = format!("d1/{}/{}", terminal_routine_id, terminal_op.id);
+    let root_cause_key = id.clone();
+
+    // Winner verdict → temp note (Physical carries none).
+    let temp_note = match agg.verdict {
+        TempVerdict::Temporary => NOTE_TEMPORARY,
+        TempVerdict::Uncertain => NOTE_UNCERTAIN,
+        TempVerdict::FlowFieldGated => NOTE_TEMP_FLOWFIELD,
+        TempVerdict::Physical => "",
+    };
+    let setup_note = if winner.setup_singleton {
+        " (Setup singleton — BC caches Get() per session, so the round-trip happens at most once.)"
+    } else {
+        ""
+    };
+
+    // G-4 pure-transitive wording (from the WINNER's loop/terminal).
+    let pure_transitive =
+        terminal_routine_id != loop_routine.id && terminal_op.loop_stack.is_empty();
+    let base_root_cause = if pure_transitive {
+        format!(
+            "A loop in {} reaches {} in {}, which has no loop of its own \u{2014} the \
+             operation runs once per iteration of that loop{}{}.",
+            loop_routine.name,
+            table_note(terminal_op, Some(terminal_routine), &ctx.table_by_id),
+            terminal_routine.name,
+            temp_note,
+            setup_note
+        )
+    } else {
+        format!(
+            "A loop in {} reaches {}{}{}.",
+            loop_routine.name,
+            table_note(terminal_op, Some(terminal_routine), &ctx.table_by_id),
+            temp_note,
+            setup_note
+        )
+    };
+    // Multi-context annotation (reuse path_merge's fn) — "(Also reached from N
+    // other in-loop ancestors.)" when > 1 context.
+    let root_cause = annotate_root_cause(&base_root_cause, ctxs.len());
+
+    // affectedObjects = sorted union over contexts' loop-routine object ids + the
+    // terminal object id.
+    let mut affected_set: BTreeSet<String> = BTreeSet::new();
+    for c in ctxs {
+        affected_set.insert(c.agg.loop_routine.object_id.clone());
+    }
+    affected_set.insert(terminal_routine.object_id.clone());
+    let affected_objects: Vec<String> = affected_set.into_iter().collect();
+
+    // affectedTables = the terminal op's own table (unchanged rule).
+    let affected_tables: Vec<String> = match &terminal_op.table_id {
+        Some(t) => vec![t.clone()],
+        None => Vec::new(),
+    };
+
+    // additional_paths = non-winner witnesses in CONTEXT order (None for a
+    // single-context finding — matching the old singleton shape / pathCount 1).
+    let additional_paths = if ctxs.len() > 1 {
+        Some(
+            ctxs[1..]
+                .iter()
+                .map(|c| c.context.witness.clone())
+                .collect(),
+        )
+    } else {
+        None
+    };
+
+    let fix_options = if winner.setup_singleton {
+        vec![FixOption {
+            description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
+                          typically O(1) after the first hit. Hoist the Get() outside the loop \
+                          only if the call site shows up in a CPU profile."
+                .to_string(),
+            safety: "high".to_string(),
+        }]
+    } else {
+        vec![FixOption {
+            description: "Move the database operation outside the loop, or batch it into a \
+                          set-based operation."
+                .to_string(),
+            safety: "medium".to_string(),
+        }]
+    };
+
+    let contexts: Vec<LoopContext> = ctxs.iter().map(|c| c.context.clone()).collect();
+
+    let mut finding = Finding {
+        id,
+        root_cause_key,
+        detector: DETECTOR.to_string(),
+        title: "Database operation inside a loop".to_string(),
+        root_cause,
+        // Severity + confidence from the SAME (winning) context.
+        severity: agg.severity.to_string(),
+        confidence: winner.confidence.clone(),
+        primary_location: anchor_of(&terminal_op.source_anchor, terminal_routine),
+        evidence_path: agg.witness.clone(),
+        additional_paths,
+        affected_objects,
+        affected_tables,
+        fix_options,
+        provenance: vec![Evidence {
+            source: "tree-sitter".to_string(),
+            note: None,
+        }],
+        actionable_anchor: None,
+        fingerprint: None,
+        event_kind: None,
+        cross_extension_subscribers: None,
+        contexts: Some(contexts),
+    };
+
+    let actionable = pick_actionable_anchor(&finding, role_by_routine);
+    if actionable.is_some() {
+        finding.actionable_anchor = actionable;
+    }
+    finding
+}
+
+/// Group the reachability aggregates by `(terminal routine, terminal op)` and
+/// assemble ONE terminal-centric [`Finding`] per group. Deterministic: the
+/// grouping is a `BTreeMap` over already-sorted `aggs` (`search_loops` rule 8),
+/// and the per-group context order (winner first) is a total order on
+/// (severity rank desc, verdict quality desc, loop routine id asc, loop id asc).
+fn assemble_findings(
+    aggs: &[LoopTerminalAgg],
+    ctx: &DetectorContext,
+    role_by_routine: &HashMap<&str, &str>,
+) -> Vec<Finding> {
+    let mut groups: BTreeMap<(&str, &str), Vec<&LoopTerminalAgg>> = BTreeMap::new();
+    for agg in aggs {
+        groups
+            .entry((agg.terminal.owner.id.as_str(), agg.terminal.op.id.as_str()))
+            .or_default()
+            .push(agg);
+    }
+
+    let mut out: Vec<Finding> = Vec::new();
+    for (_key, members) in groups {
+        let mut ctxs: Vec<CtxUnderAssembly> =
+            members.iter().map(|&agg| build_context(agg, ctx)).collect();
+        // Winner selection / context order (the brief's locked rule).
+        ctxs.sort_by(|a, b| {
+            sev_rank(b.agg.severity)
+                .cmp(&sev_rank(a.agg.severity))
+                .then_with(|| b.agg.verdict.quality().cmp(&a.agg.verdict.quality()))
+                .then_with(|| a.agg.loop_routine.id.cmp(&b.agg.loop_routine.id))
+                .then_with(|| a.agg.loop_id.cmp(b.agg.loop_id))
+        });
+        out.push(build_group_finding(&ctxs, ctx, role_by_routine));
+    }
+    out
+}
+
+/// D1 — database operation inside a loop. The production reachability pipeline
+/// (see the module doc): enumerate direct ops + stats, build the compact filtered
+/// graph + seeds, run the unbounded per-loop label search, assemble one
+/// terminal-centric finding per `(terminal routine, op)`.
 pub fn detect_d1(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
 ) -> Result<DetectorOutput, DetectorError> {
     let fp_index = &ctx.fingerprint_index;
-    let (findings, premerge_stats) = detect_d1_premerge(resolved, ctx);
+    let ws = &resolved.workspace;
 
-    // Two-stage collapse:
-    //   1. Dedupe by id (loop+op pair), first-wins.
-    //   1b. RV-6 merge-tie reconciliation (see `reconcile_merge_tie`).
-    //   2. merge_by_terminal — fold ancestor loops on the same terminal op.
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut deduped: Vec<FindingRec> = Vec::new();
-    for f in findings {
-        if seen.contains(&f.finding.id) {
-            continue;
-        }
-        seen.insert(f.finding.id.clone());
-        deduped.push(f);
+    // Source-only role map (every routine primary) — used by pick_actionable_anchor.
+    let role_by_routine: HashMap<&str, &str> = ws
+        .routines
+        .iter()
+        .map(|r| (r.id.as_str(), "primary"))
+        .collect();
+
+    // (1) Direct-op enumeration + stat counting (old branch-(a) ladder + the
+    // branch-(b) opaque/dynamic skip counts).
+    let (direct_ops, dstats) = enumerate_direct_ops(ws, ctx);
+
+    // (2) Compact filtered graph + in-loop-call seeds (`d1_graph`).
+    let mut touches_db_memo = HashMap::new();
+    let (graph, seeds) = build_d1_graph(ctx, ws, &mut touches_db_memo);
+
+    // (3) The unbounded per-loop reachability search (`d1_reach`) — one aggregate
+    // per (loop, terminal-op), each with its selected winner witness.
+    let aggs = search_loops(
+        &graph,
+        &seeds,
+        &direct_ops,
+        ctx,
+        &ctx.closed_world_temp_params,
+    );
+
+    // `d1.reach` census (Hot-tier, measurement-only — zero cost when disabled).
+    // Replaces the old `d1.walk_stats`/`d1.memo` walk trace: the search finishes
+    // in seconds, so no cap-durable checkpoint machinery is needed.
+    if pt::enabled(pt::Detail::Hot) {
+        let mut lc = pt::LocalCounters::new();
+        lc.set("nodes", graph.node_ids.len() as u64);
+        lc.set("edges", graph.edges.iter().map(|e| e.len() as u64).sum());
+        lc.set("seeds", seeds.len() as u64);
+        lc.set("direct_ops", direct_ops.len() as u64);
+        lc.set("aggregates", aggs.len() as u64);
+        lc.flush("d1.reach");
     }
 
-    // RV-6 merge-tie: `merge_by_terminal` collapses every path sharing a terminal
-    // (rootCauseKey) into ONE finding. Post path-resolution, paths in the SAME group
-    // can DISAGREE on the temp-derived severity (caller-A path → info/temp; caller-B
-    // path → normal/physical). Reconcile BEFORE merge: the WORST severity wins
-    // (deterministic, conservative — never let a temp path hide a physical path's
-    // finding) AND the temp note lists BOTH verdicts ("temporary via A; physical via
-    // B", sorted). Reconcile rewrites every group member to agree so the downstream
-    // `merge_by_terminal` (which picks the canonical and lifts its rootCause) emits
-    // the reconciled severity + dual-verdict note regardless of which member it picks.
-    let deduped = reconcile_merge_tie(deduped);
+    // (4) Assemble one terminal-centric finding per (terminal routine, op).
+    let mut findings = assemble_findings(&aggs, ctx, &role_by_routine);
 
-    let mut merged = merge_by_terminal(deduped);
-    // downgradedSetupSingleton: counted POST-merge by rootCause text — TS counts THAT
-    // one post-merge too (d1.ts:439), so the text filter is correct here.
+    // downgradedSetupSingleton: counted POST-assembly by rootCause text (mirrors
+    // the old post-merge count, d1.ts:439).
     let mut downgraded_setup_singleton = 0u64;
-    for f in &mut merged {
+    for f in &findings {
         if f.root_cause.contains("Setup singleton") {
             downgraded_setup_singleton += 1;
         }
     }
 
     // G-7 (docs/engine-gaps.md): DOWN-CONFIDENCE (never suppress) a finding whose
-    // EVERY path root routine — the canonical evidence path's first step plus every
-    // additionalPaths first step — is provably dead per d14's EXACT criteria
-    // (`provably_dead_routine_ids`: unreachable from the entry-point closure +
-    // `local`/app-scoped-`internal` + not a Test object + not a property-expression
-    // host + not itself a root). d14's dead-determination has its own open-world FPs
-    // (e.g. reflection-style invocation the resolver cannot see), so the finding
-    // KEEPS FIRING at the SAME severity — only the confidence drops one notch and
-    // the rootCause gains an explanatory note. Any live (or merely unprovable) path
-    // root keeps full confidence. Runs POST-merge so a terminal reachable from BOTH
-    // a dead and a live loop is judged across ALL its merged paths.
+    // EVERY context witness's first-step routine is provably dead per d14's EXACT
+    // criteria. The finding KEEPS FIRING at the SAME severity — only the
+    // confidence drops one notch and the rootCause gains an explanatory note.
+    // Applied per finding across ALL its contexts (winner + non-winner).
     let mut down_confidenced_dead_routine = 0u64;
-    if !merged.is_empty() {
+    if !findings.is_empty() {
         let dead = crate::engine::l5::detectors::d14::provably_dead_routine_ids(resolved, ctx);
         if !dead.is_empty() {
-            for f in &mut merged {
+            for f in &mut findings {
                 let mut roots: Vec<&str> = Vec::new();
-                if let Some(first) = f.evidence_path.first() {
-                    roots.push(first.routine_id.as_str());
-                }
-                for path in f.additional_paths.iter().flatten() {
-                    if let Some(first) = path.first() {
+                for c in f.contexts.iter().flatten() {
+                    if let Some(first) = c.witness.first() {
                         roots.push(first.routine_id.as_str());
                     }
                 }
@@ -1473,8 +1629,7 @@ pub fn detect_d1(
                     continue;
                 }
                 down_confidenced_dead_routine += 1;
-                // One notch down; `possible` is already the floor (al-sem's capped
-                // level), so it stays put.
+                // One notch down; `possible` is already the floor, so it stays put.
                 f.confidence.level = match f.confidence.level.as_str() {
                     "confirmed" => "likely".to_string(),
                     "likely" => "possible".to_string(),
@@ -1484,34 +1639,33 @@ pub fn detect_d1(
             }
         }
     }
-    // Fingerprint AFTER merge — affectedObjects/affectedTables are unioned.
-    for f in &mut merged {
+
+    // Fingerprint: rootCauseKey + terminal primary location + affected tables —
+    // all UNCHANGED by the cutover, so the edit-stable identity is preserved.
+    for f in &mut findings {
         f.fingerprint = Some(fp_index.fingerprint_of(f));
     }
-    // merge_by_terminal already sorts by compareStrings(id); the explicit final
-    // sort by id (al-sem `sorted = merged.sort(...)`) is a no-op duplicate but
-    // kept for faithfulness.
-    merged.sort_by(|a, b| a.id.cmp(&b.id));
+    // Deterministic output order by the terminal-based id.
+    findings.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let emitted = merged.len();
-    let mut stats = DetectorStats::new(DETECTOR, premerge_stats.candidates_considered, emitted);
-    stats.add_skip("opaqueCallee", premerge_stats.skipped_opaque_callee);
-    stats.add_skip("dynamicDispatch", premerge_stats.skipped_dynamic_dispatch);
-    stats.add_skip("parseIncomplete", premerge_stats.skipped_parse_incomplete);
-    stats.add_skip("virtualTable", premerge_stats.skipped_virtual_table);
-    stats.add_skip("downgradedToInfo", premerge_stats.downgraded_to_info);
+    let emitted = findings.len();
+    let mut stats = DetectorStats::new(DETECTOR, dstats.candidates_considered, emitted);
+    stats.add_skip("opaqueCallee", dstats.skipped_opaque_callee);
+    stats.add_skip("dynamicDispatch", dstats.skipped_dynamic_dispatch);
+    stats.add_skip("parseIncomplete", dstats.skipped_parse_incomplete);
+    stats.add_skip("virtualTable", dstats.skipped_virtual_table);
+    stats.add_skip("downgradedToInfo", dstats.downgraded_to_info);
     stats.add_skip("downgradedSetupSingleton", downgraded_setup_singleton);
     stats.add_skip("downConfidencedDeadRoutine", down_confidenced_dead_routine);
     Ok(DetectorOutput {
-        findings: merged,
+        findings,
         stats,
         diagnostics: vec![],
     })
 }
 
-/// The fixed temp-note fragments (leading space included) `build_finding` appends to
-/// a finding's rootCause. `reconcile_merge_tie` strips whichever one a member carries
-/// before inserting the dual-verdict note.
+/// The fixed temp-note fragments (leading space included) the assembly appends to
+/// a finding's rootCause, keyed off the WINNER context's verdict.
 const NOTE_TEMPORARY: &str = " (temporary record — not a SQL round-trip)";
 const NOTE_UNCERTAIN: &str = " (temp state uncertain)";
 /// RV-1 (Task 11): the temp-record CalcFields/SetAutoCalcFields finding that the
@@ -1527,108 +1681,13 @@ const NOTE_TEMP_FLOWFIELD: &str =
 const NOTE_DEAD_ROUTINE: &str =
     " (looping routine appears unreachable from any entry point; see d14-dead-routine)";
 
-/// RV-6 merge-tie reconciliation. `merge_by_terminal` groups by `rootCauseKey`; a
-/// group whose members DISAGREE on the temp-derived severity must collapse with the
-/// WORST severity (conservative) and a note that lists every distinct verdict +
-/// caller ("temporary via A; physical via B", sorted). This pass rewrites each tied
-/// member so they AGREE before the merge runs (the merge then lifts the canonical's
-/// already-reconciled severity + note). Groups whose members already agree on
-/// severity are left untouched (byte-preserving for the common single-verdict case).
-fn reconcile_merge_tie(recs: Vec<FindingRec>) -> Vec<Finding> {
-    // First-seen ordered grouping by rootCauseKey (preserve finding order overall).
-    let mut order: Vec<String> = Vec::new();
-    let mut group_idx: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, rec) in recs.iter().enumerate() {
-        let key = rec.finding.root_cause_key.clone();
-        match group_idx.get_mut(&key) {
-            Some(v) => v.push(i),
-            None => {
-                order.push(key.clone());
-                group_idx.insert(key, vec![i]);
-            }
-        }
-    }
-
-    let mut recs = recs;
-    for key in &order {
-        let idxs = &group_idx[key];
-        if idxs.len() < 2 {
-            continue;
-        }
-        // A tie needs reconciling iff either (i) the members disagree on severity, OR
-        // (ii) RV-1 (Task 11): the members disagree on VERDICT and at least one is
-        // `FlowFieldGated`. Case (ii) matters even when severities AGREE: the canonical
-        // pick (worst, then position, then id) could otherwise lift a `Physical`
-        // member's NOTE-LESS rootCause and silently drop the FlowField fact. Forcing
-        // the dual-verdict note here surfaces "flowfield-on-temp via <caller>" so the
-        // FlowField fact survives the merge regardless of which member is canonical.
-        let first_sev = recs[idxs[0]].finding.severity.clone();
-        let severities_agree = idxs.iter().all(|&i| recs[i].finding.severity == first_sev);
-        let first_verdict = recs[idxs[0]].verdict;
-        let verdicts_agree = idxs.iter().all(|&i| recs[i].verdict == first_verdict);
-        let has_flowfield_gated = idxs
-            .iter()
-            .any(|&i| recs[i].verdict == TempVerdict::FlowFieldGated);
-        let needs_reconcile = !severities_agree || (!verdicts_agree && has_flowfield_gated);
-        if !needs_reconcile {
-            continue;
-        }
-
-        // Worst severity wins (deterministic, conservative).
-        let worst = idxs
-            .iter()
-            .map(|&i| recs[i].finding.severity.as_str())
-            .max_by_key(|s| sev_rank(s))
-            .unwrap_or(first_sev.as_str())
-            .to_string();
-
-        // Distinct "<verdict> via <caller>" parts, deduped + sorted for determinism.
-        let mut parts: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for &i in idxs {
-            let rec = &recs[i];
-            parts.insert(format!("{} via {}", rec.verdict.label(), rec.caller_label));
-        }
-        let dual_note = format!(" (temp state varies by caller: {})", parts_join(&parts));
-
-        // Rewrite every member: worst severity + the dual-verdict temp note (replacing
-        // whichever single-verdict note — or none, for physical — the member carried).
-        for &i in idxs {
-            recs[i].finding.severity = worst.clone();
-            let rc = &recs[i].finding.root_cause;
-            let stripped = strip_temp_note(rc);
-            recs[i].finding.root_cause = insert_temp_note(&stripped, &dual_note);
-        }
-    }
-
-    recs.into_iter().map(|r| r.finding).collect()
-}
-
-/// `parts.join("; ")` over a sorted set.
-fn parts_join(parts: &std::collections::BTreeSet<String>) -> String {
-    parts.iter().cloned().collect::<Vec<_>>().join("; ")
-}
-
-/// Remove the single-verdict temp note (`NOTE_TEMPORARY` / `NOTE_UNCERTAIN`) from a
-/// rootCause if present. Physical findings carry no temp note, so a no-op. The note
-/// always sits immediately before the trailing setup-note (if any) and the final
-/// `.`, so a substring removal is exact.
-fn strip_temp_note(root_cause: &str) -> String {
-    for note in [NOTE_TEMPORARY, NOTE_UNCERTAIN, NOTE_TEMP_FLOWFIELD] {
-        if let Some(pos) = root_cause.find(note) {
-            let mut s = root_cause.to_string();
-            s.replace_range(pos..pos + note.len(), "");
-            return s;
-        }
-    }
-    root_cause.to_string()
-}
-
 /// Insert `note` (which carries its own leading space) right before the trailing
 /// setup-note/`.`. Both rootCause shapes — `"A loop in X reaches <tableNote>[tempNote]
 /// [setupNote]."` and the G-4 pure-transitive `"… in Z, which has no loop of its own
 /// — … of that loop[tempNote][setupNote]."` — keep `[tempNote][setupNote].` as the
 /// tail, so re-inserting before the setup note if present (else before the final `.`)
-/// lands the dual-verdict note exactly where the single-verdict note sat.
+/// lands the note exactly where the winner's temp note sat. Used for G-7's
+/// `NOTE_DEAD_ROUTINE`.
 fn insert_temp_note(root_cause: &str, note: &str) -> String {
     const SETUP_NOTE_PREFIX: &str = " (Setup singleton";
     if let Some(pos) = root_cause.find(SETUP_NOTE_PREFIX) {
@@ -1646,7 +1705,9 @@ fn insert_temp_note(root_cause: &str, note: &str) -> String {
 /// Wrapper around `build_finding` that recovers the terminal op's owning-routine
 /// id + internal source anchor before delegating. `terminal_routine` is the
 /// op's owning routine (the DIRECT case passes `routine`; the call case passes
-/// the routine resolved from `last_step.routine_id`).
+/// the routine resolved from `last_step.routine_id`). Test-only (the shadow
+/// oracle's finding builder).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn build_finding_internal(
     loop_routine: &L3Routine,
@@ -2004,7 +2065,7 @@ mod shadow_tests {
     use super::*;
     use crate::engine::l3::l3_workspace::L3Workspace;
     use crate::engine::l5::d1_graph::build_d1_graph;
-    use crate::engine::l5::d1_reach::{DirectOp, LoopTerminalAgg, search_loops};
+    use crate::engine::l5::d1_reach::LoopTerminalAgg;
     use crate::engine::l5::full_summary::FullRoutineSummary;
     use crate::engine::l5::test_support::{
         arg_binding, call_site, coverage, edge_kind, fact, loop_def, minimal_ctx, record_op,
@@ -2485,70 +2546,9 @@ mod shadow_tests {
         ]
     }
 
-    /// Enumerate every DIRECT in-loop db op surviving `detect_d1` branch (a)'s
-    /// EXACT ladder (this file, the `(a) Direct in-loop DB ops` block above:
-    /// `loop_stack` non-empty, db-touching class, the cursor-opener `Next`
-    /// skip, G-1 terminator-`Next`, G-6 virtual-system-table) — the SAME
-    /// population `build_d1_graph`'s Task 5 successor will eventually fold
-    /// in, and the same shape `d1_reach`'s own
-    /// `direct_and_transitive_same_op_adjudicated` test builds by hand.
-    fn enumerate_direct_ops<'a>(
-        ws: &'a L3Workspace,
-        table_by_id: &HashMap<&str, &L3Table>,
-    ) -> Vec<DirectOp<'a>> {
-        let mut out = Vec::new();
-        for routine in &ws.routines {
-            if !routine.body_available || routine.parse_incomplete {
-                continue;
-            }
-            let loop_by_id: HashMap<&str, &crate::engine::l2::features::PLoop> =
-                routine.loops.iter().map(|l| (l.id.as_str(), l)).collect();
-
-            let mut cursor_opened_record_vars: HashSet<String> = HashSet::new();
-            for op in &routine.record_operations {
-                if !op.loop_stack.is_empty() {
-                    continue;
-                }
-                if !CURSOR_OPENER_OPS.contains(&op.op.as_str()) {
-                    continue;
-                }
-                cursor_opened_record_vars.insert(op.record_variable_name.to_lowercase());
-            }
-
-            for op in &routine.record_operations {
-                if op.loop_stack.is_empty() {
-                    continue;
-                }
-                if !is_db_touching_class(classify_op(&op.op)) {
-                    continue;
-                }
-                if op.op == "Next"
-                    && cursor_opened_record_vars.contains(&op.record_variable_name.to_lowercase())
-                {
-                    continue;
-                }
-                if is_terminator_next(op) {
-                    continue;
-                }
-                if op_targets_virtual_system_table(op, routine, table_by_id) {
-                    continue;
-                }
-                let Some(representative_loop) = op.loop_stack.last().map(|s| s.as_str()) else {
-                    continue;
-                };
-                let Some(loop_info) = loop_by_id.get(representative_loop).copied() else {
-                    continue;
-                };
-                out.push(DirectOp {
-                    routine,
-                    loop_id: representative_loop,
-                    loop_info,
-                    op,
-                });
-            }
-        }
-        out
-    }
+    // The shadow differential reuses the PRODUCTION `enumerate_direct_ops`
+    // (`super::enumerate_direct_ops`) — the same direct-op population + stat
+    // counting `detect_d1` runs — so the oracle can never drift from production.
 
     /// The OWNED result of running both pipelines over one fixture: every
     /// field is a plain `String`/`i32` (no borrowed lifetimes), so the three
@@ -2721,7 +2721,7 @@ mod shadow_tests {
             primary_app: None,
             infra_diagnostics: vec![],
         };
-        let (premerge, _stats) = detect_d1_premerge(&resolved, &ctx);
+        let premerge = detect_d1_premerge(&resolved, &ctx);
         let (old_keys, old_max_sev_by_key, old_root_cause_keys) = extract_old_keys(&premerge);
 
         // NEW: build_d1_graph + direct-op enumeration + search_loops, over the
@@ -2735,7 +2735,7 @@ mod shadow_tests {
         };
         let mut memo = HashMap::new();
         let (graph, seeds) = build_d1_graph(&ctx, &ws, &mut memo);
-        let direct_ops = enumerate_direct_ops(&ws, &ctx.table_by_id);
+        let (direct_ops, _stats) = enumerate_direct_ops(&ws, &ctx);
         let aggs = search_loops(
             &graph,
             &seeds,
@@ -2942,12 +2942,12 @@ mod shadow_tests {
         );
         let ws = &resolved.workspace;
 
-        let (premerge, _stats) = detect_d1_premerge(&resolved, &ctx);
+        let premerge = detect_d1_premerge(&resolved, &ctx);
         let (old_keys, old_max_sev_by_key, old_root_cause_keys) = extract_old_keys(&premerge);
 
         let mut memo = HashMap::new();
         let (graph, seeds) = build_d1_graph(&ctx, ws, &mut memo);
-        let direct_ops = enumerate_direct_ops(ws, &ctx.table_by_id);
+        let (direct_ops, _stats) = enumerate_direct_ops(ws, &ctx);
         let aggs = search_loops(
             &graph,
             &seeds,
@@ -3054,5 +3054,348 @@ mod shadow_tests {
              {vs_actual_regressed} key(s) — a genuine Tasks 1-3 divergence bug"
         );
         println!("vs-actual regression check: PASS");
+    }
+}
+/// Task 5 assembly tests (`.superpowers/sdd/task-5-brief.md` Step 1): each test
+/// asserts a locked-semantics bullet of the terminal-centric assembly. Tests 1-3
+/// drive the production pipeline directly (`build_d1_graph` + `search_loops` +
+/// `assemble_findings`) over hand-built fixtures; test 4 exercises the G-7
+/// down-confidence over REAL AL source (it needs the d14 dead-routine substrate).
+#[cfg(test)]
+mod assembly_tests {
+    use super::*;
+    use crate::engine::l3::l3_workspace::{L3Resolved, L3Workspace};
+    use crate::engine::l5::d1_graph::build_d1_graph;
+    use crate::engine::l5::d1_reach::search_loops;
+    use crate::engine::l5::full_summary::FullRoutineSummary;
+    use crate::engine::l5::test_support::{
+        call_site, coverage, edge_kind, fact, loop_def, minimal_ctx, record_op, routine, summary,
+    };
+
+    type Fixture = (
+        Vec<L3Routine>,
+        HashMap<String, Vec<CombinedEdge>>,
+        HashMap<String, FullRoutineSummary>,
+    );
+
+    fn db_write_summary(id: &str, table: &str) -> FullRoutineSummary {
+        summary(
+            id,
+            vec![fact("modify", "table", Some(table))],
+            vec![],
+            Some(coverage("complete")),
+        )
+    }
+
+    fn ws(routines: &[L3Routine]) -> L3Workspace {
+        L3Workspace {
+            objects: vec![],
+            tables: vec![],
+            routines: routines.to_vec(),
+        }
+    }
+
+    fn role_map(routines: &[L3Routine]) -> HashMap<&str, &str> {
+        routines
+            .iter()
+            .map(|r| (r.id.as_str(), "primary"))
+            .collect()
+    }
+
+    /// Two DISTINCT loop routines (L1, L2) each in-loop-call a shared helper H
+    /// whose single (non-looping) `Modify` is the terminal — the canonical
+    /// "one terminal reached by N loops" shape.
+    fn two_loops_one_terminal() -> Fixture {
+        let mut l1 = routine("L1", "procedure");
+        l1.loops = vec![loop_def("L1/loop0")];
+        l1.call_sites = vec![call_site("L1/cs0", "H", vec!["L1/loop0".to_string()])];
+        let mut l2 = routine("L2", "procedure");
+        l2.loops = vec![loop_def("L2/loop0")];
+        l2.call_sites = vec![call_site("L2/cs0", "H", vec!["L2/loop0".to_string()])];
+        let mut h = routine("H", "procedure");
+        h.record_operations = vec![record_op(
+            "H/op0",
+            "Modify",
+            "Rec",
+            Some("t/H"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![l1, l2, h];
+        let mut edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        edges.insert(
+            "L1".to_string(),
+            vec![edge_kind("L1", "H", "L1/cs0", "direct")],
+        );
+        edges.insert(
+            "L2".to_string(),
+            vec![edge_kind("L2", "H", "L2/cs0", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> =
+            [("H".to_string(), db_write_summary("H", "t/H"))]
+                .into_iter()
+                .collect();
+        (routines, edges, summaries)
+    }
+
+    /// Run the production pipeline over a fixture and return the assembled findings.
+    fn assemble(
+        routines: &[L3Routine],
+        edges: HashMap<String, Vec<CombinedEdge>>,
+        summaries: HashMap<String, FullRoutineSummary>,
+    ) -> Vec<Finding> {
+        let ctx = minimal_ctx(routines, edges, summaries);
+        let workspace = ws(routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let (direct_ops, _stats) = enumerate_direct_ops(&workspace, &ctx);
+        let aggs = search_loops(
+            &graph,
+            &seeds,
+            &direct_ops,
+            &ctx,
+            &ctx.closed_world_temp_params,
+        );
+        assemble_findings(&aggs, &ctx, &role_map(routines))
+    }
+
+    /// Bullet: "Group aggregates by (terminal_routine_id, op_id). One Finding per
+    /// group" + one `LoopContext` per reaching loop + terminal-based id.
+    #[test]
+    fn one_finding_per_terminal_with_contexts() {
+        let (routines, edges, summaries) = two_loops_one_terminal();
+        let findings = assemble(&routines, edges, summaries);
+
+        assert_eq!(findings.len(), 1, "one Finding per (terminal routine, op)");
+        let f = &findings[0];
+        assert_eq!(f.id, "d1/H/H/op0", "terminal-based id");
+        assert_eq!(f.root_cause_key, f.id, "id == root_cause_key");
+        let ctxs = f.contexts.as_ref().expect("d1 findings carry contexts");
+        assert_eq!(ctxs.len(), 2, "one context per reaching loop");
+        // Context order: same severity/verdict here, so loop routine id ascending.
+        assert_eq!(ctxs[0].loop_routine_id, "L1");
+        assert_eq!(ctxs[1].loop_routine_id, "L2");
+        // additional_paths = the one non-winner witness.
+        assert_eq!(
+            f.additional_paths.as_ref().map(|p| p.len()),
+            Some(1),
+            "non-winner witness kept in additional_paths"
+        );
+    }
+
+    /// A terminal reached by TWO loops at DIFFERENT severities: L1 directly
+    /// (depth 1 -> high) and L2 via M whose call to H is in M's own loop
+    /// (depth 2 -> critical). The winner (L2/critical) must drive severity,
+    /// confidence, evidence_path and wording.
+    fn severity_race_fixture() -> Fixture {
+        let mut l1 = routine("L1", "procedure");
+        l1.loops = vec![loop_def("L1/loop0")];
+        l1.call_sites = vec![call_site("L1/cs0", "H", vec!["L1/loop0".to_string()])];
+
+        let mut l2 = routine("L2", "procedure");
+        l2.loops = vec![loop_def("L2/loop0")];
+        l2.call_sites = vec![call_site("L2/cs0", "M", vec!["L2/loop0".to_string()])];
+
+        // M's call to H sits in M/loop0, so the M->H edge carries loop_depth 1 (via
+        // ctx.call_site_by_id). M has no loops of its own, so it never seeds.
+        let mut m = routine("M", "procedure");
+        m.call_sites = vec![call_site("M/cs0", "H", vec!["M/loop0".to_string()])];
+
+        let mut h = routine("H", "procedure");
+        h.record_operations = vec![record_op(
+            "H/op0",
+            "Modify",
+            "Rec",
+            Some("t/H"),
+            vec![],
+            false,
+        )];
+
+        let routines = vec![l1, l2, m, h];
+        let mut edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        edges.insert(
+            "L1".to_string(),
+            vec![edge_kind("L1", "H", "L1/cs0", "direct")],
+        );
+        edges.insert(
+            "L2".to_string(),
+            vec![edge_kind("L2", "M", "L2/cs0", "direct")],
+        );
+        edges.insert(
+            "M".to_string(),
+            vec![edge_kind("M", "H", "M/cs0", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("M".to_string(), db_write_summary("M", "t/M")),
+            ("H".to_string(), db_write_summary("H", "t/H")),
+        ]
+        .into_iter()
+        .collect();
+        (routines, edges, summaries)
+    }
+
+    /// Bullet: "Finding severity, confidence, evidence_path, notes, wording all
+    /// from the winner (severity and confidence from the SAME context)."
+    #[test]
+    fn winner_drives_severity_confidence_and_wording() {
+        let (routines, edges, summaries) = severity_race_fixture();
+        let findings = assemble(&routines, edges, summaries);
+
+        assert_eq!(findings.len(), 1);
+        let f = &findings[0];
+        let ctxs = f.contexts.as_ref().unwrap();
+        assert_eq!(ctxs.len(), 2);
+        // Winner is the depth-2 (critical) L2 route; the high L1 route is second.
+        assert_eq!(ctxs[0].loop_routine_id, "L2");
+        assert_eq!(ctxs[0].severity, "critical");
+        assert_eq!(ctxs[1].loop_routine_id, "L1");
+        assert_eq!(ctxs[1].severity, "high");
+        // Finding fields all lift from ctxs[0].
+        assert_eq!(f.severity, "critical", "severity from the winner");
+        assert_eq!(
+            f.confidence, ctxs[0].confidence,
+            "confidence from the SAME (winning) context"
+        );
+        assert_eq!(
+            f.evidence_path, ctxs[0].witness,
+            "evidence_path is the winner witness"
+        );
+        assert_eq!(
+            f.evidence_path.len(),
+            4,
+            "the winner is the L2->M->H route (loop, call, hop, terminal)"
+        );
+        assert!(
+            f.root_cause.contains("A loop in L2"),
+            "wording names the winner's loop routine: {}",
+            f.root_cause
+        );
+    }
+
+    /// Bullet: terminal-based `id = root_cause_key = d1/{terminal}/{op}` AND the
+    /// fingerprint INPUTS (detector, terminal primary location, affected tables,
+    /// root_cause_key) are unchanged vs the OLD pipeline, so a new finding's
+    /// fingerprint equals the OLD premerge finding's fingerprint for the same key.
+    #[test]
+    fn terminal_based_id_and_stable_fingerprint_inputs() {
+        let (routines, edges, summaries) = two_loops_one_terminal();
+        let ctx = minimal_ctx(&routines, edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let (direct_ops, _stats) = enumerate_direct_ops(&workspace, &ctx);
+        let aggs = search_loops(
+            &graph,
+            &seeds,
+            &direct_ops,
+            &ctx,
+            &ctx.closed_world_temp_params,
+        );
+        let mut new_findings = assemble_findings(&aggs, &ctx, &role_map(&routines));
+
+        // OLD pipeline (shadow oracle) over the SAME content, separate owned clone.
+        let resolved = L3Resolved {
+            workspace: ws(&routines),
+            root_classifications: vec![],
+            primary_app: None,
+            infra_diagnostics: vec![],
+        };
+        let premerge = detect_d1_premerge(&resolved, &ctx);
+        // rootCauseKey -> fingerprint (all premerge findings sharing a key hash equal).
+        let mut old_fp: HashMap<String, String> = HashMap::new();
+        for rec in &premerge {
+            let fp = ctx.fingerprint_index.fingerprint_of(&rec.finding);
+            old_fp.insert(rec.finding.root_cause_key.clone(), fp);
+        }
+        assert!(!old_fp.is_empty(), "old premerge must produce a finding");
+
+        for f in &mut new_findings {
+            assert_eq!(f.id, f.root_cause_key, "id == root_cause_key");
+            assert_eq!(f.root_cause_key, "d1/H/H/op0", "terminal-based key");
+            let new_fp = ctx.fingerprint_index.fingerprint_of(f);
+            assert_eq!(
+                Some(&new_fp),
+                old_fp.get(&f.root_cause_key),
+                "fingerprint inputs unchanged vs the old pipeline for {}",
+                f.root_cause_key
+            );
+        }
+    }
+
+    /// Bullet (G-7): the dead-routine down-confidence roots = EVERY context
+    /// witness's first-step routine. Two dead LOCAL loop routines reach one shared
+    /// terminal -> ONE finding with TWO contexts; both loop roots are d14-dead, so
+    /// the finding down-confidences (note appended), proving G-7 spans all
+    /// contexts, not just the winner. Real AL source (d14 needs the reachability
+    /// substrate).
+    #[test]
+    fn dead_routine_downconfidence_spans_all_contexts() {
+        const SRC: &str = r#"
+table 50790 "T5 G7 Rec"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+codeunit 50790 "T5 D1 G7"
+{
+    local procedure DoInsert()
+    var R: Record "T5 G7 Rec";
+    begin
+        R.Insert();
+    end;
+
+    local procedure DeadLoopA()
+    var i: Integer;
+    begin
+        for i := 1 to 10 do
+            DoInsert();
+    end;
+
+    local procedure DeadLoopB()
+    var i: Integer;
+    begin
+        for i := 1 to 5 do
+            DoInsert();
+    end;
+}
+"#;
+        let files = vec![("src/T5D1G7.al".to_string(), SRC.to_string())];
+        let resolved = crate::engine::l3::l3_workspace::assemble_and_resolve_default(
+            &files,
+            "11111111-0000-0000-0000-0000000g7d1a",
+        );
+        let d1: Vec<_> = crate::engine::l5::detectors::registered_detectors()
+            .into_iter()
+            .filter(|d| d.name == "d1-db-op-in-loop")
+            .collect();
+        assert_eq!(d1.len(), 1, "d1 registered once");
+        let out = crate::engine::l5::registry::run_detectors(&resolved, &d1);
+        let findings: Vec<&Finding> = out
+            .findings
+            .iter()
+            .filter(|f| f.detector == "d1-db-op-in-loop")
+            .collect();
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "both dead loops reach the SAME terminal -> one finding. {:#?}",
+            findings
+        );
+        let f = findings[0];
+        let ctxs = f.contexts.as_ref().expect("contexts present");
+        assert_eq!(ctxs.len(), 2, "two reaching-loop contexts");
+        let mut roots: Vec<&str> = ctxs.iter().map(|c| c.loop_routine_id.as_str()).collect();
+        roots.sort();
+        roots.dedup();
+        assert_eq!(roots.len(), 2, "two DISTINCT dead loop roots");
+        assert!(
+            f.root_cause
+                .contains("appears unreachable from any entry point"),
+            "G-7 down-confidence note applied across ALL contexts: {}",
+            f.root_cause
+        );
     }
 }

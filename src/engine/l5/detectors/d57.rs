@@ -245,6 +245,7 @@ fn build_finding(
         fingerprint: None,
         event_kind: None,
         cross_extension_subscribers: None,
+        contexts: None,
     };
     finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
     finding

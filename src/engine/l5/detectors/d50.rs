@@ -351,6 +351,7 @@ pub fn detect_d50(
             fingerprint: None,
             event_kind: None,
             cross_extension_subscribers: None,
+            contexts: None,
         };
         finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
         findings.push(finding);

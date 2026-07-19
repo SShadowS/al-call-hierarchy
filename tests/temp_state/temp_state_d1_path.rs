@@ -38,10 +38,13 @@ fn al(name: &str, body: &str) -> (String, String) {
 /// Caller A loops calling `H(TempCust)` (a TEMPORARY local) → that path resolves
 /// Known(true) → info/temporary. Caller B loops calling `H(PhysCust)` (a PHYSICAL
 /// local) → that path resolves Known(false) → high/physical. Both paths share the
-/// SAME terminal op so `merge_by_terminal` collapses them to ONE finding. RV-6
-/// merge-tie: the WORST severity (high) wins AND the note lists BOTH verdicts.
+/// SAME terminal op so the terminal-centric assembly collapses them to ONE
+/// finding with one `LoopContext` per caller loop. The WINNER (the physical
+/// route — higher verdict quality) drives severity (worst = high) and the note;
+/// BOTH verdicts are surfaced structurally across `contexts[]` (the redesign
+/// replaced the old dual-verdict prose note — verdicts now live in the contexts).
 #[test]
-fn mixed_callers_worst_severity_and_dual_verdict_note() {
+fn mixed_callers_worst_severity_and_context_verdicts() {
     let src = r#"
 table 50111 "MT Cust"
 {
@@ -86,41 +89,43 @@ codeunit 50111 "MT D1 Mixed"
     let f = &findings[0];
 
     // Worst severity wins: the physical path fires at "high" (Modify-in-loop), the
-    // temp path would be "info". The merged severity is the WORST = high.
+    // temp path would be "info". The winner (physical) drives the finding severity.
     assert_eq!(
         f.severity, "high",
-        "worst severity must win the merge-tie (physical 'high' over temp 'info'). rootCause: {}",
+        "worst severity must win (physical 'high' over temp 'info'). rootCause: {}",
         f.root_cause
     );
 
-    // The dual-verdict note lists BOTH verdicts (sorted, deterministic).
+    // Both callers' verdicts are surfaced PER LOOP in contexts[] — the redesign
+    // replaced the old dual-verdict prose note with structured contexts.
+    let ctxs = f.contexts.as_ref().expect("d1 findings carry contexts");
+    assert_eq!(
+        ctxs.len(),
+        2,
+        "one context per caller loop. contexts: {ctxs:#?}"
+    );
+    // The winner (contexts[0]) is the physical route (higher verdict quality).
+    assert_eq!(
+        ctxs[0].verdict, "physical",
+        "the physical route wins on verdict quality. contexts: {ctxs:#?}"
+    );
+    let verdicts: std::collections::BTreeSet<&str> =
+        ctxs.iter().map(|c| c.verdict.as_str()).collect();
+    assert_eq!(
+        verdicts,
+        ["physical", "temporary"].into_iter().collect(),
+        "both verdicts surfaced across contexts. contexts: {ctxs:#?}"
+    );
+    // The winner is physical, so NO temp note on the rootCause; and the deleted
+    // dual-verdict prose note must not reappear.
     assert!(
-        f.root_cause.contains("temp state varies by caller"),
-        "merge-tie note must surface the dual verdict. rootCause: {}",
+        !f.root_cause.contains("temp state varies by caller"),
+        "the dual-verdict prose note is gone (verdicts live in contexts). rootCause: {}",
         f.root_cause
     );
     assert!(
-        f.root_cause.contains("temporary via CallerTemp"),
-        "note must credit the temporary verdict to CallerTemp. rootCause: {}",
-        f.root_cause
-    );
-    assert!(
-        f.root_cause.contains("physical via CallerPhysical"),
-        "note must credit the physical verdict to CallerPhysical. rootCause: {}",
-        f.root_cause
-    );
-    // Sorted: "physical ..." precedes "temporary ..." (lexicographic).
-    let phys = f.root_cause.find("physical via").unwrap();
-    let temp = f.root_cause.find("temporary via").unwrap();
-    assert!(
-        phys < temp,
-        "dual-verdict parts must be sorted (physical before temporary). rootCause: {}",
-        f.root_cause
-    );
-    // The OLD single-verdict notes must NOT linger alongside the dual note.
-    assert!(
-        !f.root_cause.contains("temp state uncertain"),
-        "reconciled note must replace the single-verdict note. rootCause: {}",
+        !f.root_cause.contains("temporary record"),
+        "a physical winner carries no temporary note. rootCause: {}",
         f.root_cause
     );
 }

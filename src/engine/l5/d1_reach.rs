@@ -179,25 +179,15 @@ fn flowfield_verdict(
     }
 }
 
-/// Verdict-quality rank for the selection rule: `Physical == FlowFieldGated >
-/// Uncertain > Temporary`. (Distinct from `TempVerdict`'s derived `Ord`, which
-/// is declaration order and only used to sort `reachable_verdicts`.)
-fn verdict_quality(v: TempVerdict) -> i32 {
-    match v {
-        TempVerdict::Physical | TempVerdict::FlowFieldGated => 3,
-        TempVerdict::Uncertain => 2,
-        TempVerdict::Temporary => 1,
-    }
-}
-
 /// The selection key (higher is better on each dimension, so the winner is the
-/// candidate with the max key). Rule 5: severity rank -> verdict quality ->
+/// candidate with the max key). Rule 5: severity rank -> verdict quality
+/// ([`TempVerdict::quality`], the SAME rank Task 5's context ordering uses) ->
 /// `unc == false` preferred -> fewest hops -> first-discovered. `discovery` is
 /// unique per candidate, so the key is a total order (a single unique max).
 fn selection_key(c: &Candidate) -> (i32, i32, i32, i64, i64) {
     (
         sev_rank(c.severity),
-        verdict_quality(c.verdict),
+        c.verdict.quality(),
         if c.unc { 0 } else { 1 },
         -(c.hops as i64),
         -(c.discovery as i64),

@@ -108,6 +108,7 @@ fn build_d49_finding(
         fingerprint: None,
         event_kind: None,
         cross_extension_subscribers: None,
+        contexts: None,
     };
     finding.fingerprint = Some(fp.fingerprint_of(&finding));
     finding

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`LoopContext` schema — terminal-centric d1 findings** (Task 5 of the
+  d1-db-op-in-loop reachability redesign; `src/engine/l5/finding.rs`). A d1
+  `Finding` now carries `contexts: Option<Vec<LoopContext>>` — one context per
+  loop that reaches the finding's terminal op, each recording `loop_id`,
+  `loop_routine_id`, `entry_callsite_id`, `verdict`
+  (`temporary|physical|uncertain|flowfield-on-temp`), `reachable_verdicts`,
+  `depth_class` (`single-loop|nested-loop`), `severity`, `confidence`, and its
+  `witness` path. `contexts[0]` is the WINNER (ordered by severity rank desc,
+  verdict quality desc, loop routine id, loop id); the finding's severity,
+  confidence, `evidence_path`, temp/setup notes and wording all come from that
+  same context, and the non-winner witnesses stay in `additionalPaths`. The
+  internal `LoopContext` is a plain struct (the internal `Finding` is never
+  serialized); the serialized surface is `StableLoopContext` (camelCase,
+  `StableEvidenceStep`-mirrored witness), emitted by the R4 projection.
 - **d1 shadow differential — the old walker as a lower-bound oracle for the
   new reachability pipeline** (Task 4 of the d1-db-op-in-loop
   reachability-search redesign; `src/engine/l5/detectors/d1.rs`'s test module
@@ -154,6 +168,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output (verified on a real `alsem analyze` run, modulo the wall-clock
   `generatedAt` stamp).
 
+### Removed
+- **d1's old exhaustive-walk consumption + its merge/reconcile machinery**
+  (Task 5 of the d1-db-op-in-loop reachability redesign;
+  `src/engine/l5/detectors/d1.rs`). Removed from the production path: the
+  `D1Policy` `WalkPolicy` walk consumption (`walk_evidence` + `walk_memo` +
+  `apply_seed_transform`), `reconcile_merge_tie` (+ its `strip_temp_note` /
+  `parts_join` helpers — the RV-6 "temp state varies by caller" dual-verdict
+  prose note is gone; per-loop verdicts now live structurally in
+  `Finding.contexts[].verdict`/`reachable_verdicts`), the `merge_by_terminal`
+  call (the fn itself stays — d2 still uses it), and the d1 Hot-tier
+  `d1.walk_stats` / `d1.memo` / `d1.walk_census` walk-trace counters +
+  cap-durable checkpoint machinery (replaced by the seconds-fast `d1.reach`
+  census). `detect_d1_premerge` + `D1Policy` + `build_finding` +
+  `apply_seed_transform` survive ONLY as the `#[cfg(test)]` shadow oracle (the
+  Task 4 regression net); `path_walker.rs` itself is untouched (d2/d46/d48 use
+  it). The `detect_d1_premerge` premerge `D1PremergeStats` struct is gone — the
+  production stats (`candidatesConsidered`/`skipped_*`/`downgradedToInfo`) are
+  now counted in the new `enumerate_direct_ops`; `downgradedSetupSingleton` /
+  `downConfidencedDeadRoutine` are still counted post-assembly. No stat KEYS
+  changed (the old merge never emitted a `mergedPathGroups`-style key).
+
 ### Fixed
 - **perf_trace Jacobi-tier per-pass counters were silently coupled to the
   per-SCC span's `ALSEM_TRACE_SCC_MIN` size gate** (`src/engine/l4/summary_runner.rs`
@@ -175,6 +210,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **d1 cutover to terminal-centric reachability findings** (Task 5 of the
+  d1-db-op-in-loop reachability redesign; `src/engine/l5/detectors/d1.rs`,
+  `feat/d1-reachability`). `detect_d1`'s exhaustive simple-path walk
+  (`walk_evidence` + `merge_by_terminal`, silently truncated at a 500-node
+  budget) is replaced by the Rust-owned reachability pipeline: `build_d1_graph`
+  (compact filtered graph + in-loop-call seeds) → `search_loops` (ONE unbounded
+  multi-source label search per loop group over the forward param-temp vector —
+  cycle safety is label dedup, NO node/depth budget) → terminal-centric
+  assembly (group aggregates by `(terminal routine, op)` into ONE finding per
+  group, one `LoopContext` per reaching loop). **BREAKING identity change**:
+  `id = root_cause_key = "d1/{terminal_routine_id}/{op_id}"` — the old per-loop
+  `d1/{loop}/{routine}/{op}` ids are gone (fingerprints are UNCHANGED: they
+  already hashed the terminal-based `rootCauseKey` + terminal primary location +
+  affected tables). This closes two defect classes: **D-A** — the 500-node
+  budget silently UNDER-found terminals reachable only past a wide fan-out
+  (budget-free coverage); **D-B** — DFS-order-accidental verdicts,
+  canonical-loop merge accidents and the best-confidence-across-loops mismatch
+  (severity AND confidence now come from the SAME winning context). DO
+  semantic-diff vs the old pipeline (fingerprint-keyed): 828 → 908 findings
+  (+80 budget-free new terminals), 61 severity UPGRADES (realizable deeper
+  witnesses), **0 downgrades, 0 vanished rootCauseKeys**; runtime 5.2 s (no
+  blowup). Goldens rebaselined + triaged (id migration + new `contexts`/
+  `additionalPaths` shape only — no severity downgrade, no vanished key). The
+  d1 Hot-tier trace is now the `d1.reach` census
+  (`nodes/edges/seeds/direct_ops/aggregates`).
 - **Engine memory/speed Wave 1** — ten byte-stable performance fixes to the
   analyze substrate, from the 2026-07-17 design review
   (`docs/superpowers/specs/2026-07-17-engine-memory-speed-findings.md` §7;

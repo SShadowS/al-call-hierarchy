@@ -1138,6 +1138,7 @@ mod tests {
             fingerprint: Some(id.to_string()),
             event_kind: None,
             cross_extension_subscribers: None,
+            contexts: None,
         }
     }
 
