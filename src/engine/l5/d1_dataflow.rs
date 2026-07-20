@@ -665,7 +665,16 @@ pub(crate) fn solve_group<'a>(
 
         let winner = cands
             .iter()
-            .max_by_key(|c| selection_rank(c.severity, c.verdict, c.unc, c.hops, c.discovery))
+            .max_by_key(|c| {
+                selection_rank(
+                    c.severity,
+                    c.verdict,
+                    c.unc,
+                    c.hops,
+                    c.depth_bucket,
+                    c.discovery,
+                )
+            })
             .expect("a bucket is never empty");
 
         let (witness, uncertainties, entry_callsite_id, effective_loop_depth) = match &winner.source
@@ -1194,6 +1203,16 @@ fn route(
         *seq += 1;
         heap.push(HeapItem { hops, seq: s, prop });
     } else {
+        // Topological invariant: a cross-SCC edge only ever targets a STRICTLY
+        // downstream (not-yet-drained) SCC (`scc_of[caller] < scc_of[callee]`).
+        // If a future `condense` regression broke the numbering, this would
+        // otherwise SILENTLY drop the proposal into an already-drained upstream
+        // pending buffer — fail loudly instead.
+        debug_assert!(
+            target > current_scc,
+            "route: proposal targets SCC {target} <= current {current_scc} — \
+             condense produced a non-topological order (upstream pending is drained)"
+        );
         pending[target as usize].push(prop);
     }
 }
@@ -1624,7 +1643,16 @@ pub(crate) fn solve_batch<'a>(
 
             let winner = cands
                 .iter()
-                .max_by_key(|c| selection_rank(c.severity, c.verdict, c.unc, c.hops, c.discovery))
+                .max_by_key(|c| {
+                    selection_rank(
+                        c.severity,
+                        c.verdict,
+                        c.unc,
+                        c.hops,
+                        c.depth_bucket,
+                        c.discovery,
+                    )
+                })
                 .expect("a bucket is never empty");
 
             let (witness, uncertainties, entry_callsite_id, effective_loop_depth) =
@@ -2812,5 +2840,149 @@ mod tests {
         assert_eq!(seeds.len(), 80, "one in-loop seed per group");
         let cw = ClosedWorldTempParams::new();
         assert_batch_agrees(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    // === Task D3 fix: the depth_bucket straddle (saturating severity) ======
+    // A `LockTable` terminal — base severity "low", which `severity_for` does
+    // NOT bump on depth>=2 (it SATURATES: only high/medium promote) — reached by
+    // two EQUAL-hop paths whose summed loop_depth straddles the nested-loop
+    // threshold: R->A->B->T carries edge loop_depth 1 (bucket 2), R->A->C->T
+    // carries 0 (bucket 1). All of (severity, verdict, unc, hops) tie, so ONLY
+    // `depth_bucket` distinguishes the two candidates — and the canonical
+    // `selection_rank` must pick the HIGHER (nested-loop) bucket in
+    // `process_group`, `solve_group` AND `solve_batch` deterministically, closing
+    // the discovery-order divergence in the reported `depth_class`.
+    fn straddle_fixture() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        // A has NO loops (it never seeds); its callsites' loop_stacks give the
+        // A->B edge loop_depth 1 and the A->C edge loop_depth 0 (via
+        // call_site_by_id) — the Task-1 non-zero edge-loop_depth pattern.
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![
+            call_site("A/csB", "B", vec!["A/loop0".to_string()]),
+            call_site("A/csC", "C", vec![]),
+        ];
+        let b = routine("B", "procedure");
+        let c = routine("C", "procedure");
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "LockTable",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+        let routines = vec![r, a, b, c, t];
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![
+                edge_kind("A", "B", "A/csB", "direct"),
+                edge_kind("A", "C", "A/csC", "direct"),
+            ],
+        );
+        graph_edges.insert(
+            "B".to_string(),
+            vec![edge_kind("B", "T", "B/csT", "direct")],
+        );
+        graph_edges.insert(
+            "C".to_string(),
+            vec![edge_kind("C", "T", "C/csT", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = ["A", "B", "C", "T"]
+            .iter()
+            .map(|id| (id.to_string(), db_summary(id, &format!("t/{id}"))))
+            .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    #[test]
+    fn depth_bucket_straddle_prefers_nested_loop() {
+        let (routines, graph_edges, summaries) = straddle_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(seeds.len(), 1, "only R/cs0 -> A seeds");
+        let cw = ClosedWorldTempParams::new();
+        let liveness = compute_liveness(&graph, &ctx, &cw);
+        let scc = condense(&graph);
+        let seed_indices: Vec<usize> = (0..seeds.len()).collect();
+
+        let oracle = process_group(
+            &graph,
+            &seeds,
+            &[],
+            &ctx,
+            &cw,
+            seeds[0].loop_routine,
+            seeds[0].loop_id,
+            seeds[0].loop_info,
+            &seed_indices,
+            &[],
+        );
+        let solo = solve_group(
+            &graph,
+            &liveness,
+            &seeds,
+            &[],
+            &ctx,
+            &cw,
+            seeds[0].loop_routine,
+            seeds[0].loop_id,
+            seeds[0].loop_info,
+            &seed_indices,
+            &[],
+        );
+        let group = GroupSpec {
+            loop_routine: seeds[0].loop_routine,
+            loop_id: seeds[0].loop_id,
+            loop_info: seeds[0].loop_info,
+            seed_indices: seed_indices.clone(),
+            direct_indices: Vec::new(),
+        };
+        let batch = solve_batch(
+            &graph,
+            &liveness,
+            &scc,
+            &seeds,
+            &[],
+            &ctx,
+            &cw,
+            std::slice::from_ref(&group),
+        );
+
+        for (name, aggs) in [
+            ("process_group", &oracle),
+            ("solve_group", &solo),
+            ("solve_batch", &batch),
+        ] {
+            assert_eq!(aggs.len(), 1, "{name}: one (loop, LockTable) aggregate");
+            let agg = &aggs[0];
+            assert_eq!(
+                agg.terminal.op.id, "T/op0",
+                "{name}: the LockTable terminal"
+            );
+            assert_eq!(
+                agg.severity, "low",
+                "{name}: LockTable base severity, saturated (no depth>=2 bump)"
+            );
+            assert_eq!(
+                agg.depth_bucket, 2,
+                "{name}: the HIGHER (nested-loop) bucket wins the straddle, deterministically"
+            );
+        }
+
+        // The two dataflow engines agree with the oracle on all six components
+        // (now including the canonical, discovery-independent depth_bucket).
+        assert_agrees(&graph, &seeds, &[], &ctx, &cw);
     }
 }

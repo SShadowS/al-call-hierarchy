@@ -184,28 +184,53 @@ pub(crate) fn flowfield_verdict(
 /// The selection key (higher is better on each dimension, so the winner is the
 /// candidate with the max key). Rule 5: severity rank -> verdict quality
 /// ([`TempVerdict::quality`], the SAME rank Task 5's context ordering uses) ->
-/// `unc == false` preferred -> fewest hops -> first-discovered. `discovery` is
-/// unique per candidate, so the key is a total order (a single unique max).
-fn selection_key(c: &Candidate) -> (i32, i32, i32, i64, i64) {
-    selection_rank(c.severity, c.verdict, c.unc, c.hops, c.discovery)
+/// `unc == false` preferred -> fewest hops -> HIGHER `depth_bucket` ->
+/// first-discovered. `discovery` is unique per candidate, so the key is a total
+/// order (a single unique max).
+fn selection_key(c: &Candidate) -> (i32, i32, i32, i64, i64, i64) {
+    selection_rank(
+        c.severity,
+        c.verdict,
+        c.unc,
+        c.hops,
+        c.depth_bucket,
+        c.discovery,
+    )
 }
 
 /// The selection key (rule 5) from the RAW winner-selection fields, decoupled
-/// from [`Candidate`] so the D2 dataflow solver ([`crate::engine::l5::d1_dataflow`])
-/// can rank its own fact-derived candidates with the identical comparator
-/// instead of duplicating the tuple. Higher is better on each dimension.
+/// from [`Candidate`] so the D2/D3 dataflow solvers
+/// ([`crate::engine::l5::d1_dataflow`]) can rank their own fact-derived
+/// candidates with the identical comparator instead of duplicating the tuple.
+/// Higher is better on each dimension.
+///
+/// `depth_bucket` is a tiebreak AHEAD of `-discovery` (HIGHER bucket wins) so
+/// the reported bucket — hence the golden-visible `depth_class`
+/// (single-loop vs nested-loop, `d1.rs`) — is CANONICAL, not decided by an
+/// engine-specific discovery order. This closes a real divergence vector:
+/// `severity_for` SATURATES the depth>=2 bump (it promotes only high/medium,
+/// leaving `low`/`info` unchanged — `d1.rs`), so a `low`-severity op (e.g.
+/// `LockTable` -> db-lock) reached at EQUAL hops by two paths whose summed
+/// loop_depth straddles the threshold (bucket 1 vs 2) ties on
+/// `(severity, verdict, unc, hops)` — leaving `depth_bucket` the only thing that
+/// distinguishes them. Preferring the higher bucket is conservative
+/// (nested-loop is the worse finding, and it IS genuinely reachable at depth 2)
+/// AND deterministic across `process_group` / `solve_group` / `solve_batch`,
+/// whose discovery orders differ.
 pub(crate) fn selection_rank(
     severity: &str,
     verdict: TempVerdict,
     unc: bool,
     hops: u32,
+    depth_bucket: i64,
     discovery: usize,
-) -> (i32, i32, i32, i64, i64) {
+) -> (i32, i32, i32, i64, i64, i64) {
     (
         sev_rank(severity),
         verdict.quality(),
         if unc { 0 } else { 1 },
         -(hops as i64),
+        depth_bucket,
         -(discovery as i64),
     )
 }
@@ -1457,6 +1482,23 @@ mod tests {
             cand(&op, &owner, "high", TempVerdict::Physical, false, 1, 1),
         ];
         assert_eq!(winner_of(&c), 1, "fewer hops wins");
+
+        // (4b) HIGHER depth_bucket wins at equal severity+verdict+unc+hops, ahead
+        // of -discovery — even with an ADVERSE (higher) discovery. This is the
+        // canonicalization that keeps the reported bucket (-> depth_class)
+        // deterministic across engines whose discovery orders differ (the
+        // saturating-severity straddle: `low`/`info` ops don't get the depth>=2
+        // bump, so bucket 1 vs 2 ties on every dimension above depth_bucket).
+        let mut lo = cand(&op, &owner, "low", TempVerdict::Physical, false, 2, 0);
+        lo.depth_bucket = 1;
+        let mut hi = cand(&op, &owner, "low", TempVerdict::Physical, false, 2, 9);
+        hi.depth_bucket = 2;
+        let c = [lo, hi];
+        assert_eq!(
+            winner_of(&c),
+            9,
+            "higher depth_bucket wins ahead of -discovery (deterministic depth_class)"
+        );
 
         // (5) First-discovered breaks a full tie (lowest discovery wins).
         let c = [

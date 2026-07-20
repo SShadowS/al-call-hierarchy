@@ -310,6 +310,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **`d1_reach::selection_rank` made canonical — `depth_bucket` tiebreak ahead of
+  `-discovery`** (Task D3 review fix; `src/engine/l5/d1_reach.rs`,
+  `feat/d1-reachability`). The winner comparator gained a HIGHER-`depth_bucket`-wins
+  tiebreak between `-hops` and `-discovery`, applied via the shared `selection_rank`
+  so `process_group` / `solve_group` / `solve_batch` all rank identically. This
+  closes a divergence vector: `severity_for` SATURATES the depth>=2 bump (it
+  promotes only high/medium, leaving `low`/`info` unchanged), so a `low`-severity op
+  (e.g. `LockTable`) reached at EQUAL hops by two paths whose summed loop_depth
+  straddles the nested-loop threshold (bucket 1 vs 2) ties on every dimension above
+  `depth_bucket` — previously letting the engine-specific discovery order decide the
+  golden-visible `depth_class`. Preferring the higher bucket is conservative
+  (nested-loop is genuinely reachable at depth 2) and deterministic across engines.
+  Committed goldens are byte-identical (the corpus does not currently hit the
+  straddle+flip); guarded by a `LockTable` straddle fixture asserting all three
+  engines report bucket 2.
 - **`d1_reach::search_loops` rewired to the batched dataflow solver (partial
   cutover)** (Task D3; `src/engine/l5/d1_reach.rs`, `feat/d1-reachability`).
   `detect_d1` calls `search_loops`, so rewiring it IS a production-path cutover:
