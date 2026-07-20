@@ -290,6 +290,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **`d1_dataflow::solve_batch` SCORING-phase blowup — O(lanes × all-nodes) with a
+  per-lane fact re-scan, now proportional to reached terminal facts
+  (byte-identical)** (`src/engine/l5/d1_dataflow.rs`, Task D3-perf/scorefix;
+  `feat/d1-reachability`). Once the fixpoint worklist was bounded (the heap-blowup
+  fix below), the remaining Base-App-8020 wall was the "Rules 4-7: score terminals"
+  loop: it ran `for lane in ≤64 { for node in 0..all-100,941 { … } }`, re-visiting
+  EVERY program node for every lane, and at each reached terminal re-scanned ALL of
+  the node's reach/value facts once per lane (`f.mask & bit`), String-allocating a
+  closed-world key (`owner.id.to_string()`) per terminal per lane — a heavy batch
+  reaching the dense 797-member SCC sat here for minutes with ZERO fixpoint pops.
+  Three output-identical fixes: (1) **iterate only terminal-bearing nodes**
+  (precomputed ascending; the ~99% of nodes with no terminal are skipped, preserving
+  the exact per-lane visit order); (2) **hoist the lane-independent read-mode /
+  closed-world-proven check** to one `read_slots[node][ti]` precompute (the
+  `to_string()` HashSet probe now runs once per `(node, ti)` instead of once per
+  `(lane, node, ti)`); (3) **invert the per-lane fact re-scan into a node-outer
+  fan-out** — each reached fact is scanned ONCE and its lane-presence `mask` fanned
+  out (`while m != 0 { lane = m.trailing_zeros(); … m &= m-1 }`) to only the lanes
+  it reaches, with each fact's verdict/severity/`depth_bucket` computed once (they
+  are lane-independent) instead of per lane. Cost drops from
+  O(lanes × terminal-node-facts) to O(terminal-node-facts + emitted-candidates).
+  Byte-identity across all three: `discovery` is a PER-LANE counter whose only
+  effect is the final winner tie-break, compared only WITHIN one lane's bucket; the
+  node/ti/fact loops keep their old ascending order and each lane is appended to
+  only when its bit is present, so every lane still receives its candidates in the
+  exact old `(node, ti, fact)` order → per-lane discovery, hence the winner AND its
+  witness, are unchanged. Winner-selection still runs per lane in lane order, so the
+  output vector stays `(lane, bucket-key)`-ordered. Proven by the unchanged
+  `batch_equals_per_group` / `search_loops_matches_process_group` differentials and
+  BYTE-IDENTICAL goldens (`scripts/check-goldens` green, no regen — including part
+  3's fan-out). The scoring phase is now wrapped in a Hot-tier
+  (`crate::engine::perf_trace`) `d1.reach`/`scoring` span so the next run shows it is
+  fast per batch; the existing `batch_summary`/`batch_internal` counters are kept.
 - **`d1_dataflow::solve_batch` heap blowup — redundant proposals never entered
   the worklist again (output-identical)** (`src/engine/l5/d1_dataflow.rs`, Task
   D3-perf; `feat/d1-reachability`). On Base App 8020-file density a single

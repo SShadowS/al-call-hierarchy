@@ -1636,14 +1636,68 @@ pub(crate) fn solve_batch<'a>(
     }
 
     // Rules 4-7: score terminals + select winner + materialize witness PER LANE.
-    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
-    for (lane, group) in batch.iter().enumerate() {
-        let bit = 1u64 << lane;
-        let root = root_state(group.loop_routine.id.as_str(), cw);
-        let mut buckets: BTreeMap<(&'a str, &'a str), Vec<Candidate<'a>>> = BTreeMap::new();
-        let mut discovery = 0usize;
+    // This phase used to be O(lanes × ALL n_nodes) with a per-lane fact re-scan
+    // (String-allocating a closed-world key per terminal per lane) — the batch's
+    // dominant cost once the fixpoint was bounded. It is now proportional to the
+    // TERMINAL-bearing nodes' reached facts (see the three precomputes below).
+    let _scoring_span = crate::engine::perf_trace::span("d1.reach", "scoring");
 
-        // Direct ops first (branch (a) precedence) — identical to solve_group.
+    // Part 1: only terminal-bearing nodes can contribute a transitive candidate;
+    // the ~99% of nodes with no terminal are skipped. Ascending order preserves
+    // the exact per-lane discovery numbering the winner tie-break depends on.
+    let terminal_nodes: Vec<NodeIx> = (0..n_nodes as NodeIx)
+        .filter(|&node| !graph.terminals[node as usize].is_empty())
+        .collect();
+
+    // Part 2: the read-mode / closed-world-proven check is lane-INDEPENDENT, so
+    // resolve it ONCE per (terminal node, ti) instead of re-running the
+    // `owner.id.to_string()` HashSet probe on every one of the ≤64 lanes.
+    // `read_slots[tn][ti]` mirrors `solve_group`'s `value_slot`: `Some(slot)` =
+    // value-based read, `None` = reach-based (constant op, or proven-PD terminal).
+    let read_slots: Vec<Vec<Option<u16>>> = terminal_nodes
+        .iter()
+        .map(|&node| {
+            graph.terminals[node as usize]
+                .iter()
+                .enumerate()
+                .map(|(ti, t)| match liveness.terminal_reads[node as usize][ti] {
+                    None => None,
+                    Some(slot) => {
+                        let i = liveness.need[node as usize][slot as usize];
+                        if cw.contains(&(t.owner.id.to_string(), i)) {
+                            None
+                        } else {
+                            Some(slot)
+                        }
+                    }
+                })
+                .collect()
+        })
+        .collect();
+
+    // Per-lane candidate buckets, held simultaneously so the transitive phase can
+    // be driven NODE-outer (Part 3): each reached fact is scanned ONCE and its
+    // presence `mask` fanned out to only the lanes it reaches, instead of every
+    // one of the ≤64 lanes re-scanning every fact at each terminal node. Cost
+    // drops from O(lanes × terminal-node-facts) to O(terminal-node-facts +
+    // emitted-candidates).
+    //
+    // Byte-identity: `discovery` is a PER-LANE counter (its only effect is the
+    // final winner tie-break, compared only WITHIN one lane's bucket). Because the
+    // node/ti/fact loops run in the same ascending order as before and each lane
+    // is appended to only when its bit is present, every lane still receives its
+    // candidates in the exact old `(node, ti, fact)` order — so per-lane discovery
+    // numbering, hence the winner, is unchanged.
+    let lanes = batch.len();
+    let mut lane_buckets: Vec<BTreeMap<(&'a str, &'a str), Vec<Candidate<'a>>>> =
+        (0..lanes).map(|_| BTreeMap::new()).collect();
+    let mut discovery: Vec<usize> = vec![0usize; lanes];
+
+    // Direct ops first (branch (a) precedence) — identical to solve_group. Done
+    // per lane so they occupy discovery `0..direct_count` exactly as before, ahead
+    // of every transitive candidate for that lane.
+    for (lane, group) in batch.iter().enumerate() {
+        let root = root_state(group.loop_routine.id.as_str(), cw);
         for &di in &group.direct_indices {
             let d = &direct_ops[di];
             let op = d.op;
@@ -1654,7 +1708,7 @@ pub(crate) fn solve_batch<'a>(
             let depth_bucket = local_depth.min(2);
             let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
             let severity = severity_for(op, verdict, depth_bucket, is_singleton);
-            buckets
+            lane_buckets[lane]
                 .entry((owner.id.as_str(), op.id.as_str()))
                 .or_default()
                 .push(Candidate {
@@ -1663,7 +1717,7 @@ pub(crate) fn solve_batch<'a>(
                     unc: false,
                     hops: 0,
                     depth_bucket,
-                    discovery,
+                    discovery: discovery[lane],
                     source: CandSource::Direct {
                         routine: owner,
                         loop_info: d.loop_info,
@@ -1673,102 +1727,100 @@ pub(crate) fn solve_batch<'a>(
                     terminal_owner: owner,
                     terminal_local_depth: local_depth,
                 });
-            discovery += 1;
+            discovery[lane] += 1;
         }
+    }
 
-        // Transitive candidates: one per present fact (this lane's bit set)
-        // reaching each terminal. Read mode + proven re-check mirror solve_group.
-        for node in 0..n_nodes as NodeIx {
-            let terminals = &graph.terminals[node as usize];
-            for (ti, t) in terminals.iter().enumerate() {
-                let op = t.op;
-                let owner = t.owner;
-                let local_depth = t.local_depth;
-                let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
+    // Transitive candidates: one per present fact reaching each terminal. Read mode
+    // + proven re-check are precomputed lane-independently in `read_slots` (Part
+    // 2); only terminal-bearing nodes are visited, ascending (Part 1). Each fact's
+    // verdict/severity/depth_bucket are lane-independent (they depend on the fact,
+    // not the lane) so they are computed ONCE per fact, then fanned out over the
+    // fact's lane mask (Part 3) — only `hops` and `discovery` are read per lane.
+    for (tn_idx, &node) in terminal_nodes.iter().enumerate() {
+        let terminals = &graph.terminals[node as usize];
+        for (ti, t) in terminals.iter().enumerate() {
+            let op = t.op;
+            let owner = t.owner;
+            let local_depth = t.local_depth;
+            let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
+            let key = (owner.id.as_str(), op.id.as_str());
 
-                let value_slot: Option<u16> = match liveness.terminal_reads[node as usize][ti] {
-                    None => None,
-                    Some(slot) => {
-                        let i = liveness.need[node as usize][slot as usize];
-                        if cw.contains(&(owner.id.to_string(), i)) {
-                            None
-                        } else {
-                            Some(slot)
+            match read_slots[tn_idx][ti] {
+                None => {
+                    let verdict = flowfield_verdict(
+                        resolve_terminal(op, &TempVec::new(), owner.id.as_str(), cw),
+                        op,
+                        &ctx.table_by_id,
+                    );
+                    for &ri in &solver.reach_at[node as usize] {
+                        let f = &solver.reach_facts[ri];
+                        let depth_bucket = (f.depth + local_depth).min(2);
+                        let severity = severity_for(op, verdict, depth_bucket, is_singleton);
+                        let mut m = f.mask;
+                        while m != 0 {
+                            let lane = m.trailing_zeros() as usize;
+                            m &= m - 1;
+                            lane_buckets[lane].entry(key).or_default().push(Candidate {
+                                verdict,
+                                severity,
+                                unc: f.unc,
+                                hops: solver.reach_hops[ri][lane],
+                                depth_bucket,
+                                discovery: discovery[lane],
+                                source: CandSource::TransReach { reach_fact: ri },
+                                terminal_op: op,
+                                terminal_owner: owner,
+                                terminal_local_depth: local_depth,
+                            });
+                            discovery[lane] += 1;
                         }
                     }
-                };
-
-                match value_slot {
-                    None => {
+                }
+                Some(slot) => {
+                    let i = liveness.need[node as usize][slot as usize];
+                    for &vi in &solver.value_at[node as usize] {
+                        let f = &solver.value_facts[vi];
+                        if f.slot != slot {
+                            continue;
+                        }
+                        let frame: TempVec = std::iter::once((i, f.class)).collect();
                         let verdict = flowfield_verdict(
-                            resolve_terminal(op, &TempVec::new(), owner.id.as_str(), cw),
+                            resolve_terminal(op, &frame, owner.id.as_str(), cw),
                             op,
                             &ctx.table_by_id,
                         );
-                        for &ri in &solver.reach_at[node as usize] {
-                            let f = &solver.reach_facts[ri];
-                            if f.mask & bit == 0 {
-                                continue;
-                            }
-                            let depth_bucket = (f.depth + local_depth).min(2);
-                            let severity = severity_for(op, verdict, depth_bucket, is_singleton);
-                            buckets
-                                .entry((owner.id.as_str(), op.id.as_str()))
-                                .or_default()
-                                .push(Candidate {
-                                    verdict,
-                                    severity,
-                                    unc: f.unc,
-                                    hops: solver.reach_hops[ri][lane],
-                                    depth_bucket,
-                                    discovery,
-                                    source: CandSource::TransReach { reach_fact: ri },
-                                    terminal_op: op,
-                                    terminal_owner: owner,
-                                    terminal_local_depth: local_depth,
-                                });
-                            discovery += 1;
-                        }
-                    }
-                    Some(slot) => {
-                        let i = liveness.need[node as usize][slot as usize];
-                        for &vi in &solver.value_at[node as usize] {
-                            let f = &solver.value_facts[vi];
-                            if f.slot != slot || f.mask & bit == 0 {
-                                continue;
-                            }
-                            let frame: TempVec = std::iter::once((i, f.class)).collect();
-                            let verdict = flowfield_verdict(
-                                resolve_terminal(op, &frame, owner.id.as_str(), cw),
-                                op,
-                                &ctx.table_by_id,
-                            );
-                            let depth_bucket = (f.depth + local_depth).min(2);
-                            let severity = severity_for(op, verdict, depth_bucket, is_singleton);
-                            buckets
-                                .entry((owner.id.as_str(), op.id.as_str()))
-                                .or_default()
-                                .push(Candidate {
-                                    verdict,
-                                    severity,
-                                    unc: f.unc,
-                                    hops: solver.value_hops[vi][lane],
-                                    depth_bucket,
-                                    discovery,
-                                    source: CandSource::TransValue { value_fact: vi },
-                                    terminal_op: op,
-                                    terminal_owner: owner,
-                                    terminal_local_depth: local_depth,
-                                });
-                            discovery += 1;
+                        let depth_bucket = (f.depth + local_depth).min(2);
+                        let severity = severity_for(op, verdict, depth_bucket, is_singleton);
+                        let mut m = f.mask;
+                        while m != 0 {
+                            let lane = m.trailing_zeros() as usize;
+                            m &= m - 1;
+                            lane_buckets[lane].entry(key).or_default().push(Candidate {
+                                verdict,
+                                severity,
+                                unc: f.unc,
+                                hops: solver.value_hops[vi][lane],
+                                depth_bucket,
+                                discovery: discovery[lane],
+                                source: CandSource::TransValue { value_fact: vi },
+                                terminal_op: op,
+                                terminal_owner: owner,
+                                terminal_local_depth: local_depth,
+                            });
+                            discovery[lane] += 1;
                         }
                     }
                 }
             }
         }
+    }
 
-        // Rules 5/7: per bucket, select the winner and materialize its witness.
-        for (_key, cands) in buckets {
+    // Rules 5/7: per lane (in order, so `out` stays (lane, bucket-key)-ordered),
+    // per bucket, select the winner and materialize its witness.
+    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
+    for (lane, group) in batch.iter().enumerate() {
+        for (_key, cands) in std::mem::take(&mut lane_buckets[lane]) {
             let mut reachable_verdicts: Vec<TempVerdict> =
                 cands.iter().map(|c| c.verdict).collect();
             reachable_verdicts.sort();
