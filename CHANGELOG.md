@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_dataflow` — single-group FACT solver (`solve_group`), the correctness
+  spine of the d1 dataflow-solver rewrite** (`src/engine/l5/d1_dataflow.rs`,
+  Task D2; `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`,
+  `feat/d1-reachability`). Replaces `d1_reach::process_group`'s joint-`TempVec`
+  product-state BFS (3^params label multiplicity) with independent per-parameter
+  facts, exploiting the D1-proven unary premise: `reach[node][depth][unc]` and
+  `value[node][live-param-slot][Temp|Physical|Unknown][depth][unc]` (a 1-bit
+  "mask" for one group — D3 widens to 64 lanes). Facts are seeded from
+  `d1_temp::{root_state,cross_hop}` (the seed entry `TempVec` projected to the
+  entry's live params), propagated level-synchronously over the filtered
+  `D1Graph` with a FIFO delta worklist to fixpoint (facts only GAIN presence →
+  cycles terminate; first arrival = shortest = min hops), applying D1's compiled
+  `ParamTransfer` (`Const` driven by the caller's reach fact, `Copy` forwarding
+  the caller's value fact at that slot). Terminals score from reach (a constant
+  op, or a closed-world-PROVEN PD read — mirroring `resolve_terminal`'s proven
+  short-circuit EXACTLY, since D1's `terminal_reads` over-reports proven params)
+  or from the read value fact (a non-proven PD), gated by `flowfield_verdict` +
+  `severity_for`; the winner is selected by the identical `selection_rank`
+  comparator and its witness materialized from per-fact first-arrival
+  predecessors. **The differential IS the deliverable**: `solve_group` reproduces
+  `process_group`'s SIX load-bearing components per (loop, terminal-op) —
+  coverage, `reachable_verdicts`, severity, verdict, `depth_bucket`, `unc` —
+  proven by a differential test that runs BOTH engines on every d1_reach fixture
+  (budget-buster fanout, depth-2-beats-depth-1, physical-beats-temp multi-seed,
+  cycle, direct+transitive, multi-group overlapping closure) plus an
+  uncertain-winner fixture that drives component 6 to `true`; **all six
+  components matched on every fixture, no divergence found**, and each solved
+  witness is asserted a valid realizing path. `process_group` stays the live
+  oracle; nothing wires `solve_group` into `detect_d1` yet (D3 batches it). Reuses
+  `d1_reach`'s helpers (`flowfield_verdict`/`selection_rank`/`loop_step_ev`/
+  `call_step_ev`/`node_has_uncertainty` extracted `pub(crate)`; `severity_for`/
+  `hop_step`/`terminal_step` from `detectors::d1`) — no scoring logic duplicated.
+  New module + behavior-preserving visibility bumps only; full suite green, no
+  detector output or goldens touched.
 - **`d1_liveness` — backward `Need[node]` param-liveness fixpoint + compiled
   per-edge `ParamTransfer`** (`src/engine/l5/d1_liveness.rs`, Task D1 of the
   d1 dataflow-solver redesign; `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`,

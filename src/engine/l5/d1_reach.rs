@@ -148,7 +148,7 @@ enum CandKind<'a> {
 }
 
 /// `true` iff `node_id` has a non-empty per-node uncertainty set.
-fn node_has_uncertainty(ctx: &DetectorContext, node_id: &str) -> bool {
+pub(crate) fn node_has_uncertainty(ctx: &DetectorContext, node_id: &str) -> bool {
     ctx.uncertainties_by_node
         .get(node_id)
         .is_some_and(|v| !v.is_empty())
@@ -159,7 +159,7 @@ fn node_has_uncertainty(ctx: &DetectorContext, node_id: &str) -> bool {
 /// `CalcFields`/`SetAutoCalcFields` whose FlowField gate BLOCKS the info
 /// downgrade becomes the dedicated `FlowFieldGated`, not `Temporary`). Mirrors
 /// `build_finding`'s verdict computation (`d1.rs:404-421`), forward-composed.
-fn flowfield_verdict(
+pub(crate) fn flowfield_verdict(
     pt: ParamTemp,
     op: &L3RecordOperation,
     table_by_id: &HashMap<&str, &L3Table>,
@@ -185,12 +185,26 @@ fn flowfield_verdict(
 /// `unc == false` preferred -> fewest hops -> first-discovered. `discovery` is
 /// unique per candidate, so the key is a total order (a single unique max).
 fn selection_key(c: &Candidate) -> (i32, i32, i32, i64, i64) {
+    selection_rank(c.severity, c.verdict, c.unc, c.hops, c.discovery)
+}
+
+/// The selection key (rule 5) from the RAW winner-selection fields, decoupled
+/// from [`Candidate`] so the D2 dataflow solver ([`crate::engine::l5::d1_dataflow`])
+/// can rank its own fact-derived candidates with the identical comparator
+/// instead of duplicating the tuple. Higher is better on each dimension.
+pub(crate) fn selection_rank(
+    severity: &str,
+    verdict: TempVerdict,
+    unc: bool,
+    hops: u32,
+    discovery: usize,
+) -> (i32, i32, i32, i64, i64) {
     (
-        sev_rank(c.severity),
-        c.verdict.quality(),
-        if c.unc { 0 } else { 1 },
-        -(c.hops as i64),
-        -(c.discovery as i64),
+        sev_rank(severity),
+        verdict.quality(),
+        if unc { 0 } else { 1 },
+        -(hops as i64),
+        -(discovery as i64),
     )
 }
 
@@ -249,7 +263,7 @@ fn push_label<'g, 'a>(
 }
 
 /// A branch-(b) loop step (`d1.rs:1141-1148` / `d1.rs:1052-1059`).
-fn loop_step_ev(routine: &L3Routine, loop_info: &PLoop) -> EvidenceStep {
+pub(crate) fn loop_step_ev(routine: &L3Routine, loop_info: &PLoop) -> EvidenceStep {
     EvidenceStep {
         routine_id: routine.id.clone(),
         operation_id: None,
@@ -262,7 +276,11 @@ fn loop_step_ev(routine: &L3Routine, loop_info: &PLoop) -> EvidenceStep {
 
 /// The seed's call step (`d1.rs:1149-1161`): the in-loop call from the loop
 /// routine into the seed's resolved callee entry.
-fn call_step_ev<'a>(seed: &D1Seed<'a>, graph: &D1Graph<'a>, ctx: &DetectorContext) -> EvidenceStep {
+pub(crate) fn call_step_ev<'a>(
+    seed: &D1Seed<'a>,
+    graph: &D1Graph<'a>,
+    ctx: &DetectorContext,
+) -> EvidenceStep {
     let entry_id = graph.node_ids[seed.entry as usize];
     let to_name = ctx
         .routine_by_id
@@ -351,7 +369,7 @@ fn materialize_transitive<'a>(
 /// order groups are processed in unobservable, which is what licenses running
 /// them concurrently (`search_loops` below runs this via `rayon::par_iter`).
 #[allow(clippy::too_many_arguments)]
-fn process_group<'g, 'a>(
+pub(crate) fn process_group<'g, 'a>(
     graph: &'g D1Graph<'a>,
     seeds: &[D1Seed<'a>],
     direct_ops: &[DirectOp<'a>],
