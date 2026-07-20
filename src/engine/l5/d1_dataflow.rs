@@ -1738,6 +1738,17 @@ pub(crate) fn solve_batch<'a>(
     // not the lane) so they are computed ONCE per fact, then fanned out over the
     // fact's lane mask (Part 3) — only `hops` and `discovery` are read per lane.
     for (tn_idx, &node) in terminal_nodes.iter().enumerate() {
+        // A terminal node NOT reached by this batch (no reach/value fact in its
+        // per-node arena) can emit no candidate — skip it before paying any
+        // per-terminal setup (`is_setup_singleton_get`/`flowfield_verdict`). Byte-
+        // identical: the old code fell through the empty fact loops and pushed
+        // nothing. At Base-App scale a batch reaches a small fraction of the
+        // ~100k-node graph's terminal-bearing nodes, so this skips the ~99% that
+        // would otherwise pay full per-terminal setup on every one of the 97
+        // batches — the batch's dominant post-fixpoint cost.
+        if solver.reach_at[node as usize].is_empty() && solver.value_at[node as usize].is_empty() {
+            continue;
+        }
         let terminals = &graph.terminals[node as usize];
         for (ti, t) in terminals.iter().enumerate() {
             let op = t.op;
