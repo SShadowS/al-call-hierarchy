@@ -62,7 +62,7 @@
 //! in components 1-6 is a BUG (proven absent by the `tests` differential below).
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, VecDeque};
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
@@ -740,6 +740,971 @@ pub(crate) fn solve_group<'a>(
             witness,
             uncertainties,
         });
+    }
+    out
+}
+
+// ===========================================================================
+// Task D3 — the BATCH driver: 64-lane group bitsets + call-SCC condensation
+// scheduler. `solve_batch` solves up to 64 loop groups sharing ONE traversal of
+// the (dense 797-member) call SCC: the D2 single-group fact model widened from a
+// 1-bit "mask" to a `u64` group-mask (group i in the batch owns bit i). This is
+// where the dataflow win materializes — the SCC is threaded once per BATCH, not
+// once per group.
+//
+// ## Correctness (why the shared traversal is exact)
+//
+// Per gpt's design (memory note `d1-output-bound-falsified` §2026-07-20): d1's
+// temp propagation is UNARY, so the GROUP-SETS realizing each per-parameter fact
+// are union-only-monotone (bits are only ever OR-ed in, never cleared) even
+// though temp VALUES are not. A standard least-fixpoint over the ORIGINAL call
+// SCC therefore reproduces, PER LANE, the identical (node, depth, unc, slot,
+// class) fact set — hence identical coverage / reachable_verdicts / severity /
+// verdict / depth_bucket / unc — that `solve_group` (and thus `process_group`)
+// produces for that group. Only the WITNESS / entry-callsite / equal-ranked tie
+// (component 7) may differ, exactly as at D2.
+//
+// ## Scheduling + provenance
+//
+// Facts propagate FORWARD (caller -> callee). We process the call-graph SCC
+// condensation in TOPOLOGICAL order (callers before callees); cross-SCC
+// arrivals are buffered per downstream SCC and, within each SCC, drained by a
+// min-hops-first (level-synchronous) delta worklist so a lane's FIRST arrival at
+// a fact is its minimum hop count (= shortest witness). Provenance is per
+// (fact, lane): the first-arrival predecessor (the seed it descends from, or the
+// parent fact + crossed edge), stored in per-lane arrays and walked at scoring
+// time to materialize that lane's winning witness. The whole batch arena is
+// dropped after emitting its aggregates (the memory bound — serial batches, no
+// concurrent arenas).
+
+/// Batch width — how many loop groups share one condensation pass. Group `i` in
+/// the batch owns bit `i` of the `u64` lane masks. (D6 may lower this — 32/16 —
+/// if the dense-SCC batch arena exceeds the RSS headroom.)
+pub(crate) const BATCH_WIDTH: usize = 64;
+
+/// One loop group in a batch: the (loop routine, loop id) identity plus the seed
+/// and direct-op indices (into the shared `seeds`/`direct_ops` slices) that
+/// belong to it. `search_loops` assigns groups to lanes in the existing sorted
+/// `(loop_routine_id, loop_id)` order.
+pub(crate) struct GroupSpec<'a> {
+    pub loop_routine: &'a L3Routine,
+    pub loop_id: &'a str,
+    pub loop_info: &'a PLoop,
+    pub seed_indices: Vec<usize>,
+    pub direct_indices: Vec<usize>,
+}
+
+/// The call-graph SCC condensation over the filtered [`D1Graph`]. Deterministic:
+/// node iteration (0..n) and per-node edge order are both fixed, so Tarjan's
+/// emission order — and hence every field here — is a pure function of the graph.
+pub(crate) struct CallScc {
+    /// `NodeIx` -> its SCC id (an index into `members`/`topo_order`, in
+    /// topological numbering: a caller SCC has a lower id than its callees').
+    pub scc_of: Vec<u32>,
+    /// SCC id -> its member nodes, sorted ascending by `NodeIx`.
+    pub members: Vec<Vec<NodeIx>>,
+    /// SCC ids in TOPOLOGICAL order (callers before callees). Since ids are
+    /// assigned in topological order, this is simply `0..members.len()`, but it
+    /// is materialized so a caller iterates schedule order without assuming the
+    /// numbering convention.
+    pub topo_order: Vec<u32>,
+}
+
+/// One explicit Tarjan work-stack frame (node + next-child cursor) — no
+/// recursion (AL call graphs can be deep). Mirrors `l4::scc::Frame`.
+struct SccFrame {
+    node: NodeIx,
+    child: usize,
+}
+
+/// Tarjan's SCC over the filtered [`D1Graph`], iterative + deterministic.
+///
+/// This is a DENSE (`NodeIx`-indexed) port of the engine's existing iterative
+/// Tarjan, `crate::engine::l4::scc::tarjan_scc` — same explicit-work-stack
+/// shape, same reverse-topological emission — but that one operates on
+/// `String`-keyed `SccInputGraph`s (it runs over al-sem's combined graph), which
+/// would force a full String-adjacency rebuild + a re-map back to `NodeIx` on
+/// every call; the `D1Graph` is already interned to dense `NodeIx`, so a direct
+/// port keeps the index alignment the solver relies on. Tarjan emits SCCs in
+/// REVERSE-topological order (callees before callers); we reverse that to number
+/// SCCs (and `topo_order`) callers-first — the order forward fact propagation
+/// wants.
+pub(crate) fn condense(graph: &D1Graph) -> CallScc {
+    let n = graph.node_ids.len();
+    const UNVISITED: u32 = u32::MAX;
+    let mut index = vec![UNVISITED; n];
+    let mut lowlink = vec![0u32; n];
+    let mut on_stack = vec![false; n];
+    let mut tarjan_stack: Vec<NodeIx> = Vec::new();
+    let mut next_index = 0u32;
+    // Raw SCCs in Tarjan's natural REVERSE-topological emission order.
+    let mut raw_sccs: Vec<Vec<NodeIx>> = Vec::new();
+
+    for start in 0..n as NodeIx {
+        if index[start as usize] != UNVISITED {
+            continue;
+        }
+        let mut work: Vec<SccFrame> = vec![SccFrame {
+            node: start,
+            child: 0,
+        }];
+        while !work.is_empty() {
+            let top = work.len() - 1;
+            let node = work[top].node;
+            let child = work[top].child;
+
+            if child == 0 {
+                index[node as usize] = next_index;
+                lowlink[node as usize] = next_index;
+                next_index += 1;
+                tarjan_stack.push(node);
+                on_stack[node as usize] = true;
+            }
+
+            let edges = &graph.edges[node as usize];
+            if child < edges.len() {
+                work[top].child += 1;
+                let to = edges[child].to;
+                if index[to as usize] == UNVISITED {
+                    work.push(SccFrame { node: to, child: 0 });
+                } else if on_stack[to as usize] {
+                    let cur = lowlink[node as usize];
+                    lowlink[node as usize] = cur.min(index[to as usize]);
+                }
+                continue;
+            }
+
+            // All children explored — settle this node.
+            if lowlink[node as usize] == index[node as usize] {
+                let mut members: Vec<NodeIx> = Vec::new();
+                loop {
+                    let w = tarjan_stack.pop().expect("Tarjan stack underflow");
+                    on_stack[w as usize] = false;
+                    members.push(w);
+                    if w == node {
+                        break;
+                    }
+                }
+                raw_sccs.push(members);
+            }
+            work.pop();
+            if let Some(parent) = work.last() {
+                let pn = parent.node;
+                let cur = lowlink[pn as usize];
+                lowlink[pn as usize] = cur.min(lowlink[node as usize]);
+            }
+        }
+    }
+
+    // raw_sccs is in reverse-topological order (callees before callers); reverse
+    // it so SCC id / topo_order run callers-first (forward propagation order).
+    let mut scc_of = vec![u32::MAX; n];
+    let mut members: Vec<Vec<NodeIx>> = Vec::with_capacity(raw_sccs.len());
+    for raw in raw_sccs.iter().rev() {
+        let scc_id = members.len() as u32;
+        let mut sorted = raw.clone();
+        sorted.sort_unstable();
+        for &m in &sorted {
+            scc_of[m as usize] = scc_id;
+        }
+        members.push(sorted);
+    }
+    let topo_order: Vec<u32> = (0..members.len() as u32).collect();
+    CallScc {
+        scc_of,
+        members,
+        topo_order,
+    }
+}
+
+/// A reach fact's per-lane first-arrival predecessor (the seed it descends from,
+/// or the parent reach fact + the crossed edge). `None` = the lane is not
+/// present at this fact.
+#[derive(Clone, Copy)]
+enum ReachPredB {
+    None,
+    Seed {
+        seed_index: u32,
+    },
+    Hop {
+        pred: u32,
+        from_node: NodeIx,
+        edge_k: u32,
+    },
+}
+
+/// A value fact's per-lane first-arrival predecessor. `HopFromReach` is the hop
+/// that BORN this class via a `Const` transfer (its parent is a reach fact);
+/// `HopFromValue` / `Seed` chain through value facts (mirrors D2's `ValuePred`).
+#[derive(Clone, Copy)]
+enum ValuePredB {
+    None,
+    Seed {
+        seed_index: u32,
+    },
+    HopFromValue {
+        pred: u32,
+        from_node: NodeIx,
+        edge_k: u32,
+    },
+    HopFromReach {
+        pred: u32,
+        from_node: NodeIx,
+        edge_k: u32,
+    },
+}
+
+/// One `reach[node][depth][unc]` fact shared across the batch's ≤64 lanes: the
+/// key + the lane presence `mask`. Per-lane provenance (hops + predecessor)
+/// lives in the parallel `reach_hops`/`reach_pred` arrays (indexed by fact id).
+struct ReachFactB {
+    node: NodeIx,
+    depth: i64,
+    unc: bool,
+    mask: u64,
+}
+
+/// One `value[node][slot][class][depth][unc]` fact shared across the lanes.
+struct ValueFactB {
+    node: NodeIx,
+    slot: u16,
+    class: ParamTemp,
+    depth: i64,
+    unc: bool,
+    mask: u64,
+}
+
+/// A pending arrival to a fact key: the newly-arriving lane `mask` at `hops`,
+/// plus the predecessor to record for those lanes. Routed to the target SCC's
+/// worklist (same SCC) or its pending buffer (a downstream SCC).
+enum Proposal {
+    Reach {
+        node: NodeIx,
+        depth: i64,
+        unc: bool,
+        mask: u64,
+        hops: u32,
+        pred: ReachPredB,
+    },
+    Value {
+        node: NodeIx,
+        slot: u16,
+        class: ParamTemp,
+        depth: i64,
+        unc: bool,
+        mask: u64,
+        hops: u32,
+        pred: ValuePredB,
+    },
+}
+
+impl Proposal {
+    fn node(&self) -> NodeIx {
+        match self {
+            Proposal::Reach { node, .. } | Proposal::Value { node, .. } => *node,
+        }
+    }
+    fn hops(&self) -> u32 {
+        match self {
+            Proposal::Reach { hops, .. } | Proposal::Value { hops, .. } => *hops,
+        }
+    }
+}
+
+/// A min-hops-first worklist item for the current SCC's level-synchronous
+/// drain. Ordered by `(hops, seq)` ascending (via a reversed `Ord` over the
+/// max-heap); `seq` is a monotonic push counter making the within-hop order
+/// deterministic (it only affects an equal-ranked tie — component 7).
+struct HeapItem {
+    hops: u32,
+    seq: u64,
+    prop: Proposal,
+}
+
+impl PartialEq for HeapItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.hops == other.hops && self.seq == other.seq
+    }
+}
+impl Eq for HeapItem {}
+impl PartialOrd for HeapItem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for HeapItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // `BinaryHeap` is a MAX-heap; reverse so the SMALLEST (hops, seq) pops
+        // first (min-hops-first = level-synchronous).
+        other
+            .hops
+            .cmp(&self.hops)
+            .then_with(|| other.seq.cmp(&self.seq))
+    }
+}
+
+/// The batch fact solver's shared arenas (across all lanes in the batch), their
+/// dedup indices, per-node fact lists (for scoring), and per-lane provenance.
+struct BatchSolver {
+    reach_facts: Vec<ReachFactB>,
+    value_facts: Vec<ValueFactB>,
+    reach_hops: Vec<[u32; BATCH_WIDTH]>,
+    reach_pred: Vec<[ReachPredB; BATCH_WIDTH]>,
+    value_hops: Vec<[u32; BATCH_WIDTH]>,
+    value_pred: Vec<[ValuePredB; BATCH_WIDTH]>,
+    reach_index: HashMap<(NodeIx, i64, bool), usize>,
+    value_index: HashMap<(NodeIx, u16, ParamTemp, i64, bool), usize>,
+    reach_at: Vec<Vec<usize>>,
+    value_at: Vec<Vec<usize>>,
+}
+
+impl BatchSolver {
+    fn new(n_nodes: usize) -> Self {
+        BatchSolver {
+            reach_facts: Vec::new(),
+            value_facts: Vec::new(),
+            reach_hops: Vec::new(),
+            reach_pred: Vec::new(),
+            value_hops: Vec::new(),
+            value_pred: Vec::new(),
+            reach_index: HashMap::new(),
+            value_index: HashMap::new(),
+            reach_at: vec![Vec::new(); n_nodes],
+            value_at: vec![Vec::new(); n_nodes],
+        }
+    }
+
+    /// Commit an incoming reach arrival: create the fact key if absent, then set
+    /// the lanes that are NEWLY present (`mask & !fact.mask`) — first arrival
+    /// wins, recording each new lane's `hops` + `pred`. Returns `(fact idx, new
+    /// bits)`; `new bits == 0` means nothing to propagate.
+    fn commit_reach(
+        &mut self,
+        node: NodeIx,
+        depth: i64,
+        unc: bool,
+        mask: u64,
+        hops: u32,
+        pred: ReachPredB,
+    ) -> (usize, u64) {
+        let key = (node, depth, unc);
+        let idx = match self.reach_index.get(&key) {
+            Some(&i) => i,
+            None => {
+                let i = self.reach_facts.len();
+                self.reach_facts.push(ReachFactB {
+                    node,
+                    depth,
+                    unc,
+                    mask: 0,
+                });
+                self.reach_hops.push([0u32; BATCH_WIDTH]);
+                self.reach_pred.push([ReachPredB::None; BATCH_WIDTH]);
+                self.reach_at[node as usize].push(i);
+                self.reach_index.insert(key, i);
+                i
+            }
+        };
+        let fact = &mut self.reach_facts[idx];
+        let new_bits = mask & !fact.mask;
+        if new_bits == 0 {
+            return (idx, 0);
+        }
+        fact.mask |= new_bits;
+        let hops_arr = &mut self.reach_hops[idx];
+        let pred_arr = &mut self.reach_pred[idx];
+        let mut m = new_bits;
+        while m != 0 {
+            let lane = m.trailing_zeros() as usize;
+            hops_arr[lane] = hops;
+            pred_arr[lane] = pred;
+            m &= m - 1;
+        }
+        (idx, new_bits)
+    }
+
+    /// Commit an incoming value arrival (see [`Self::commit_reach`]).
+    #[allow(clippy::too_many_arguments)]
+    fn commit_value(
+        &mut self,
+        node: NodeIx,
+        slot: u16,
+        class: ParamTemp,
+        depth: i64,
+        unc: bool,
+        mask: u64,
+        hops: u32,
+        pred: ValuePredB,
+    ) -> (usize, u64) {
+        let key = (node, slot, class, depth, unc);
+        let idx = match self.value_index.get(&key) {
+            Some(&i) => i,
+            None => {
+                let i = self.value_facts.len();
+                self.value_facts.push(ValueFactB {
+                    node,
+                    slot,
+                    class,
+                    depth,
+                    unc,
+                    mask: 0,
+                });
+                self.value_hops.push([0u32; BATCH_WIDTH]);
+                self.value_pred.push([ValuePredB::None; BATCH_WIDTH]);
+                self.value_at[node as usize].push(i);
+                self.value_index.insert(key, i);
+                i
+            }
+        };
+        let fact = &mut self.value_facts[idx];
+        let new_bits = mask & !fact.mask;
+        if new_bits == 0 {
+            return (idx, 0);
+        }
+        fact.mask |= new_bits;
+        let hops_arr = &mut self.value_hops[idx];
+        let pred_arr = &mut self.value_pred[idx];
+        let mut m = new_bits;
+        while m != 0 {
+            let lane = m.trailing_zeros() as usize;
+            hops_arr[lane] = hops;
+            pred_arr[lane] = pred;
+            m &= m - 1;
+        }
+        (idx, new_bits)
+    }
+}
+
+/// Route a generated proposal to the current SCC's min-hops worklist (target in
+/// the SAME SCC) or the target SCC's pending buffer (a downstream SCC — the call
+/// SCC condensation is a DAG once condensed, so a proposal never targets an
+/// already-settled upstream SCC).
+fn route(
+    prop: Proposal,
+    current_scc: u32,
+    scc_of: &[u32],
+    heap: &mut BinaryHeap<HeapItem>,
+    pending: &mut [Vec<Proposal>],
+    seq: &mut u64,
+) {
+    let target = scc_of[prop.node() as usize];
+    if target == current_scc {
+        let hops = prop.hops();
+        let s = *seq;
+        *seq += 1;
+        heap.push(HeapItem { hops, seq: s, prop });
+    } else {
+        pending[target as usize].push(prop);
+    }
+}
+
+/// Walk a reach fact's per-lane first-arrival predecessor chain to its seed,
+/// collecting the `(from_node, edge_k)` hops in TERMINAL->SEED order (the batch
+/// analogue of [`collect_reach_chain`], reading the per-lane predecessor).
+fn collect_reach_chain_b(
+    reach_pred: &[[ReachPredB; BATCH_WIDTH]],
+    lane: usize,
+    start: usize,
+) -> (Vec<(NodeIx, usize)>, usize) {
+    let mut hops: Vec<(NodeIx, usize)> = Vec::new();
+    let mut cur = start;
+    loop {
+        match reach_pred[cur][lane] {
+            ReachPredB::Seed { seed_index } => return (hops, seed_index as usize),
+            ReachPredB::Hop {
+                pred,
+                from_node,
+                edge_k,
+            } => {
+                hops.push((from_node, edge_k as usize));
+                cur = pred as usize;
+            }
+            ReachPredB::None => unreachable!("a present lane always has a reach predecessor"),
+        }
+    }
+}
+
+/// Walk a value fact's per-lane first-arrival predecessor chain (the batch
+/// analogue of [`collect_value_chain`]); a `HopFromReach` switches the walk onto
+/// the caller's reach chain for the remainder.
+fn collect_value_chain_b(
+    value_pred: &[[ValuePredB; BATCH_WIDTH]],
+    reach_pred: &[[ReachPredB; BATCH_WIDTH]],
+    lane: usize,
+    start: usize,
+) -> (Vec<(NodeIx, usize)>, usize) {
+    let mut hops: Vec<(NodeIx, usize)> = Vec::new();
+    let mut cur = start;
+    loop {
+        match value_pred[cur][lane] {
+            ValuePredB::Seed { seed_index } => return (hops, seed_index as usize),
+            ValuePredB::HopFromValue {
+                pred,
+                from_node,
+                edge_k,
+            } => {
+                hops.push((from_node, edge_k as usize));
+                cur = pred as usize;
+            }
+            ValuePredB::HopFromReach {
+                pred,
+                from_node,
+                edge_k,
+            } => {
+                hops.push((from_node, edge_k as usize));
+                let (mut rest, seed_index) = collect_reach_chain_b(reach_pred, lane, pred as usize);
+                hops.append(&mut rest);
+                return (hops, seed_index);
+            }
+            ValuePredB::None => unreachable!("a present lane always has a value predecessor"),
+        }
+    }
+}
+
+/// Solve a BATCH of up to [`BATCH_WIDTH`] loop groups sharing ONE call-SCC
+/// condensation pass. Group `i` in `batch` owns bit `i` of the `u64` lane masks.
+/// Returns one [`LoopTerminalAgg`] per (group, terminal-op) — components 1-6
+/// identical to `solve_group` per group; witness (component 7) may differ.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solve_batch<'a>(
+    graph: &D1Graph<'a>,
+    liveness: &Liveness,
+    scc: &CallScc,
+    seeds: &[D1Seed<'a>],
+    direct_ops: &[DirectOp<'a>],
+    ctx: &'a DetectorContext,
+    cw: &ClosedWorldTempParams,
+    batch: &[GroupSpec<'a>],
+) -> Vec<LoopTerminalAgg<'a>> {
+    assert!(
+        batch.len() <= BATCH_WIDTH,
+        "a batch holds at most {BATCH_WIDTH} lanes"
+    );
+    let n_nodes = graph.node_ids.len();
+    let mut solver = BatchSolver::new(n_nodes);
+
+    // Per-node scalars used repeatedly during propagation (mirrors solve_group).
+    let unc_by_node: Vec<bool> = graph
+        .node_ids
+        .iter()
+        .map(|id| node_has_uncertainty(ctx, id))
+        .collect();
+    let expandable: Vec<bool> = graph
+        .node_ids
+        .iter()
+        .map(|id| ctx.routine_by_id.contains_key(id))
+        .collect();
+
+    // Per-SCC pending arrivals from upstream SCCs (+ seeds). Drained when that
+    // SCC is reached in topological order.
+    let mut pending: Vec<Vec<Proposal>> = (0..scc.members.len()).map(|_| Vec::new()).collect();
+    let mut seq: u64 = 0;
+
+    // Rule 1: seed every lane's frontier into its entry node's SCC pending
+    // buffer. The seed entry `TempVec` is `cross_hop` of the group's loop-routine
+    // root across the seed callsite (EXACTLY solve_group's seed label), projected
+    // to the entry's live params.
+    for (lane, group) in batch.iter().enumerate() {
+        let bit = 1u64 << lane;
+        let root = root_state(group.loop_routine.id.as_str(), cw);
+        for &si in &group.seed_indices {
+            let seed = &seeds[si];
+            let entry = seed.entry;
+            let entry_id = graph.node_ids[entry as usize];
+            let binding_ok = edge_kind_binding_ok(seed.entry_edge_kind);
+            let entry_temp = cross_hop(
+                &root,
+                seed.loop_routine,
+                seed.callsite.id.as_str(),
+                entry_id,
+                binding_ok,
+                cw,
+            );
+            let depth = seed.seed_depth.min(2);
+            let unc = unc_by_node[entry as usize];
+            let entry_scc = scc.scc_of[entry as usize] as usize;
+            pending[entry_scc].push(Proposal::Reach {
+                node: entry,
+                depth,
+                unc,
+                mask: bit,
+                hops: 0,
+                pred: ReachPredB::Seed {
+                    seed_index: si as u32,
+                },
+            });
+            for (slot, &p) in liveness.need[entry as usize].iter().enumerate() {
+                let class = lookup(&entry_temp, p);
+                pending[entry_scc].push(Proposal::Value {
+                    node: entry,
+                    slot: slot as u16,
+                    class,
+                    depth,
+                    unc,
+                    mask: bit,
+                    hops: 0,
+                    pred: ValuePredB::Seed {
+                        seed_index: si as u32,
+                    },
+                });
+            }
+        }
+    }
+
+    // Rules 2-3: process SCCs in topological order. Within each SCC, a min-hops
+    // (level-synchronous) delta worklist drains to least-fixpoint — masks only
+    // OR-in bits, so cycles terminate; min-hops-first pops make a lane's first
+    // arrival its minimum hop count.
+    for &scc_id in &scc.topo_order {
+        let mut heap: BinaryHeap<HeapItem> = BinaryHeap::new();
+        for prop in std::mem::take(&mut pending[scc_id as usize]) {
+            let hops = prop.hops();
+            let s = seq;
+            seq += 1;
+            heap.push(HeapItem { hops, seq: s, prop });
+        }
+        while let Some(item) = heap.pop() {
+            match item.prop {
+                Proposal::Reach {
+                    node,
+                    depth,
+                    unc,
+                    mask,
+                    hops,
+                    pred,
+                } => {
+                    let (idx, new_bits) = solver.commit_reach(node, depth, unc, mask, hops, pred);
+                    if new_bits == 0 || !expandable[node as usize] {
+                        continue;
+                    }
+                    for (k, edge) in graph.edges[node as usize].iter().enumerate() {
+                        let m = edge.to;
+                        let d2 = (depth + edge.loop_depth).min(2);
+                        let u2 = unc || unc_by_node[m as usize];
+                        route(
+                            Proposal::Reach {
+                                node: m,
+                                depth: d2,
+                                unc: u2,
+                                mask: new_bits,
+                                hops: hops + 1,
+                                pred: ReachPredB::Hop {
+                                    pred: idx as u32,
+                                    from_node: node,
+                                    edge_k: k as u32,
+                                },
+                            },
+                            scc_id,
+                            &scc.scc_of,
+                            &mut heap,
+                            &mut pending,
+                            &mut seq,
+                        );
+                        for (callee_slot, transfer) in
+                            liveness.edge_transfers[node as usize][k].iter().enumerate()
+                        {
+                            if let ParamTransfer::Const(pt) = transfer {
+                                route(
+                                    Proposal::Value {
+                                        node: m,
+                                        slot: callee_slot as u16,
+                                        class: *pt,
+                                        depth: d2,
+                                        unc: u2,
+                                        mask: new_bits,
+                                        hops: hops + 1,
+                                        pred: ValuePredB::HopFromReach {
+                                            pred: idx as u32,
+                                            from_node: node,
+                                            edge_k: k as u32,
+                                        },
+                                    },
+                                    scc_id,
+                                    &scc.scc_of,
+                                    &mut heap,
+                                    &mut pending,
+                                    &mut seq,
+                                );
+                            }
+                        }
+                    }
+                }
+                Proposal::Value {
+                    node,
+                    slot,
+                    class,
+                    depth,
+                    unc,
+                    mask,
+                    hops,
+                    pred,
+                } => {
+                    let (idx, new_bits) =
+                        solver.commit_value(node, slot, class, depth, unc, mask, hops, pred);
+                    if new_bits == 0 || !expandable[node as usize] {
+                        continue;
+                    }
+                    for (k, edge) in graph.edges[node as usize].iter().enumerate() {
+                        let m = edge.to;
+                        let d2 = (depth + edge.loop_depth).min(2);
+                        let u2 = unc || unc_by_node[m as usize];
+                        for (callee_slot, transfer) in
+                            liveness.edge_transfers[node as usize][k].iter().enumerate()
+                        {
+                            if let ParamTransfer::Copy { caller_slot } = transfer
+                                && *caller_slot == slot
+                            {
+                                route(
+                                    Proposal::Value {
+                                        node: m,
+                                        slot: callee_slot as u16,
+                                        class,
+                                        depth: d2,
+                                        unc: u2,
+                                        mask: new_bits,
+                                        hops: hops + 1,
+                                        pred: ValuePredB::HopFromValue {
+                                            pred: idx as u32,
+                                            from_node: node,
+                                            edge_k: k as u32,
+                                        },
+                                    },
+                                    scc_id,
+                                    &scc.scc_of,
+                                    &mut heap,
+                                    &mut pending,
+                                    &mut seq,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Rules 4-7: score terminals + select winner + materialize witness PER LANE.
+    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
+    for (lane, group) in batch.iter().enumerate() {
+        let bit = 1u64 << lane;
+        let root = root_state(group.loop_routine.id.as_str(), cw);
+        let mut buckets: BTreeMap<(&'a str, &'a str), Vec<Candidate<'a>>> = BTreeMap::new();
+        let mut discovery = 0usize;
+
+        // Direct ops first (branch (a) precedence) — identical to solve_group.
+        for &di in &group.direct_indices {
+            let d = &direct_ops[di];
+            let op = d.op;
+            let owner = d.routine;
+            let base_pt = resolve_terminal(op, &root, owner.id.as_str(), cw);
+            let verdict = flowfield_verdict(base_pt, op, &ctx.table_by_id);
+            let local_depth = op.loop_stack.len() as i64;
+            let depth_bucket = local_depth.min(2);
+            let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
+            let severity = severity_for(op, verdict, depth_bucket, is_singleton);
+            buckets
+                .entry((owner.id.as_str(), op.id.as_str()))
+                .or_default()
+                .push(Candidate {
+                    verdict,
+                    severity,
+                    unc: false,
+                    hops: 0,
+                    depth_bucket,
+                    discovery,
+                    source: CandSource::Direct {
+                        routine: owner,
+                        loop_info: d.loop_info,
+                        op,
+                    },
+                    terminal_op: op,
+                    terminal_owner: owner,
+                    terminal_local_depth: local_depth,
+                });
+            discovery += 1;
+        }
+
+        // Transitive candidates: one per present fact (this lane's bit set)
+        // reaching each terminal. Read mode + proven re-check mirror solve_group.
+        for node in 0..n_nodes as NodeIx {
+            let terminals = &graph.terminals[node as usize];
+            for (ti, t) in terminals.iter().enumerate() {
+                let op = t.op;
+                let owner = t.owner;
+                let local_depth = t.local_depth;
+                let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
+
+                let value_slot: Option<u16> = match liveness.terminal_reads[node as usize][ti] {
+                    None => None,
+                    Some(slot) => {
+                        let i = liveness.need[node as usize][slot as usize];
+                        if cw.contains(&(owner.id.to_string(), i)) {
+                            None
+                        } else {
+                            Some(slot)
+                        }
+                    }
+                };
+
+                match value_slot {
+                    None => {
+                        let verdict = flowfield_verdict(
+                            resolve_terminal(op, &TempVec::new(), owner.id.as_str(), cw),
+                            op,
+                            &ctx.table_by_id,
+                        );
+                        for &ri in &solver.reach_at[node as usize] {
+                            let f = &solver.reach_facts[ri];
+                            if f.mask & bit == 0 {
+                                continue;
+                            }
+                            let depth_bucket = (f.depth + local_depth).min(2);
+                            let severity = severity_for(op, verdict, depth_bucket, is_singleton);
+                            buckets
+                                .entry((owner.id.as_str(), op.id.as_str()))
+                                .or_default()
+                                .push(Candidate {
+                                    verdict,
+                                    severity,
+                                    unc: f.unc,
+                                    hops: solver.reach_hops[ri][lane],
+                                    depth_bucket,
+                                    discovery,
+                                    source: CandSource::TransReach { reach_fact: ri },
+                                    terminal_op: op,
+                                    terminal_owner: owner,
+                                    terminal_local_depth: local_depth,
+                                });
+                            discovery += 1;
+                        }
+                    }
+                    Some(slot) => {
+                        let i = liveness.need[node as usize][slot as usize];
+                        for &vi in &solver.value_at[node as usize] {
+                            let f = &solver.value_facts[vi];
+                            if f.slot != slot || f.mask & bit == 0 {
+                                continue;
+                            }
+                            let frame: TempVec = std::iter::once((i, f.class)).collect();
+                            let verdict = flowfield_verdict(
+                                resolve_terminal(op, &frame, owner.id.as_str(), cw),
+                                op,
+                                &ctx.table_by_id,
+                            );
+                            let depth_bucket = (f.depth + local_depth).min(2);
+                            let severity = severity_for(op, verdict, depth_bucket, is_singleton);
+                            buckets
+                                .entry((owner.id.as_str(), op.id.as_str()))
+                                .or_default()
+                                .push(Candidate {
+                                    verdict,
+                                    severity,
+                                    unc: f.unc,
+                                    hops: solver.value_hops[vi][lane],
+                                    depth_bucket,
+                                    discovery,
+                                    source: CandSource::TransValue { value_fact: vi },
+                                    terminal_op: op,
+                                    terminal_owner: owner,
+                                    terminal_local_depth: local_depth,
+                                });
+                            discovery += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Rules 5/7: per bucket, select the winner and materialize its witness.
+        for (_key, cands) in buckets {
+            let mut reachable_verdicts: Vec<TempVerdict> =
+                cands.iter().map(|c| c.verdict).collect();
+            reachable_verdicts.sort();
+            reachable_verdicts.dedup();
+
+            let winner = cands
+                .iter()
+                .max_by_key(|c| selection_rank(c.severity, c.verdict, c.unc, c.hops, c.discovery))
+                .expect("a bucket is never empty");
+
+            let (witness, uncertainties, entry_callsite_id, effective_loop_depth) =
+                match &winner.source {
+                    CandSource::Direct {
+                        routine,
+                        loop_info,
+                        op,
+                    } => {
+                        let loop_step = loop_step_ev(routine, loop_info);
+                        let op_step = terminal_step(
+                            &ctx.routine_by_id,
+                            &ctx.table_by_id,
+                            routine.id.as_str(),
+                            Some(op.id.as_str()),
+                        );
+                        (
+                            vec![loop_step, op_step],
+                            Vec::new(),
+                            None,
+                            winner.terminal_local_depth,
+                        )
+                    }
+                    CandSource::TransReach { reach_fact } => {
+                        let terminal_node = solver.reach_facts[*reach_fact].node;
+                        let (hops, seed_index) =
+                            collect_reach_chain_b(&solver.reach_pred, lane, *reach_fact);
+                        build_transitive_witness(
+                            &hops,
+                            seed_index,
+                            terminal_node,
+                            winner.terminal_owner,
+                            winner.terminal_op,
+                            winner.terminal_local_depth,
+                            graph,
+                            ctx,
+                            seeds,
+                        )
+                    }
+                    CandSource::TransValue { value_fact } => {
+                        let terminal_node = solver.value_facts[*value_fact].node;
+                        let (hops, seed_index) = collect_value_chain_b(
+                            &solver.value_pred,
+                            &solver.reach_pred,
+                            lane,
+                            *value_fact,
+                        );
+                        build_transitive_witness(
+                            &hops,
+                            seed_index,
+                            terminal_node,
+                            winner.terminal_owner,
+                            winner.terminal_op,
+                            winner.terminal_local_depth,
+                            graph,
+                            ctx,
+                            seeds,
+                        )
+                    }
+                };
+
+            out.push(LoopTerminalAgg {
+                loop_routine: group.loop_routine,
+                loop_id: group.loop_id,
+                loop_info: group.loop_info,
+                terminal: D1Terminal {
+                    op: winner.terminal_op,
+                    owner: winner.terminal_owner,
+                    local_depth: winner.terminal_local_depth,
+                },
+                entry_callsite_id,
+                severity: winner.severity,
+                verdict: winner.verdict,
+                reachable_verdicts,
+                depth_bucket: winner.depth_bucket,
+                effective_loop_depth,
+                witness,
+                uncertainties,
+            });
+        }
     }
     out
 }
@@ -1557,5 +2522,295 @@ mod tests {
         }];
         let cw = ClosedWorldTempParams::new();
         assert_agrees(&graph, &seeds, &direct_ops, &ctx, &cw);
+    }
+
+    // === Task D3: condensation determinism + real-SCC identification ======
+    #[test]
+    fn condensation_deterministic() {
+        use crate::engine::l5::d1_graph::D1Edge;
+        // A<->B is a real 2-member cycle; C->D is a chain of two singletons.
+        let node_ids = vec!["A", "B", "C", "D"];
+        let mut node_ix = HashMap::new();
+        for (i, id) in node_ids.iter().enumerate() {
+            node_ix.insert(*id, i as u32);
+        }
+        let mk = |to: u32| D1Edge {
+            to,
+            kind: "direct",
+            callsite_id: None,
+            loop_depth: 0,
+            binding_ok: true,
+        };
+        let graph = D1Graph {
+            node_ids: node_ids.clone(),
+            node_ix,
+            edges: vec![
+                vec![mk(1)], // A -> B
+                vec![mk(0)], // B -> A (closes the cycle)
+                vec![mk(3)], // C -> D
+                vec![],      // D (leaf)
+            ],
+            terminals: vec![vec![], vec![], vec![], vec![]],
+        };
+
+        let s1 = condense(&graph);
+        let s2 = condense(&graph);
+        assert_eq!(s1.scc_of, s2.scc_of, "scc ids identical across runs");
+        assert_eq!(
+            s1.topo_order, s2.topo_order,
+            "topo order identical across runs"
+        );
+
+        let a = graph.node_ix["A"];
+        let b = graph.node_ix["B"];
+        let c = graph.node_ix["C"];
+        let d = graph.node_ix["D"];
+        // The cycle is one SCC whose members are exactly {A, B}.
+        assert_eq!(
+            s1.scc_of[a as usize], s1.scc_of[b as usize],
+            "A and B belong to the same (cyclic) SCC"
+        );
+        assert_eq!(
+            s1.members[s1.scc_of[a as usize] as usize],
+            vec![a.min(b), a.max(b)],
+            "the cyclic SCC's members are exactly {{A, B}}"
+        );
+        // C and D are distinct singleton SCCs.
+        assert_ne!(
+            s1.scc_of[c as usize], s1.scc_of[d as usize],
+            "C and D are separate singleton SCCs"
+        );
+        assert_eq!(s1.members[s1.scc_of[c as usize] as usize], vec![c]);
+        assert_eq!(s1.members[s1.scc_of[d as usize] as usize], vec![d]);
+        // Topological order: the caller C precedes its callee D.
+        assert!(
+            s1.scc_of[c as usize] < s1.scc_of[d as usize],
+            "C (caller) precedes D (callee) in topological SCC order"
+        );
+        assert_eq!(
+            s1.topo_order,
+            (0..s1.members.len() as u32).collect::<Vec<_>>(),
+            "topo_order is the identity permutation over topologically-numbered SCCs"
+        );
+    }
+
+    // === Task D3: solve_batch == solve_group per lane, across >1 batch ====
+    // A fixture with > BATCH_WIDTH independent loop groups (forcing >=2 batches),
+    // all overlapping on a SHARED recursive SCC (the C<->D cycle) and a shared
+    // terminal T. For every group, `solve_batch`'s per-lane aggregates must equal
+    // `solve_group`'s on components 1-6, with a structurally-valid witness.
+    #[allow(clippy::type_complexity)]
+    fn many_groups_fixture(n: usize) -> Fixture {
+        // Shared recursive SCC: C <-> D, with the terminal op on D.
+        let c = routine("C", "procedure");
+        let mut c_only = c;
+        c_only.call_sites = vec![call_site("C/csD", "D", vec![])];
+        let mut d = routine("D", "procedure");
+        d.call_sites = vec![call_site("D/csC", "C", vec![])];
+        d.record_operations = vec![record_op(
+            "D/op0",
+            "Modify",
+            "Rec",
+            Some("t/D"),
+            vec![],
+            false,
+        )];
+        // Shared plain terminal.
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+
+        let mut routines: Vec<L3Routine> = Vec::new();
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+
+        graph_edges.insert(
+            "C".to_string(),
+            vec![edge_kind("C", "D", "C/csD", "direct")],
+        );
+        graph_edges.insert(
+            "D".to_string(),
+            vec![edge_kind("D", "C", "D/csC", "direct")],
+        );
+        summaries.insert("C".to_string(), db_summary("C", "t/C"));
+        summaries.insert("D".to_string(), db_summary("D", "t/D"));
+        summaries.insert("T".to_string(), db_summary("T", "t/T"));
+
+        for i in 0..n {
+            let rid = format!("R{i}");
+            let aid = format!("A{i}");
+            let mut r = routine(&rid, "procedure");
+            r.loops = vec![loop_def(&format!("{rid}/loop0"))];
+            r.call_sites = vec![call_site(
+                &format!("{rid}/cs0"),
+                &aid,
+                vec![format!("{rid}/loop0")],
+            )];
+            let a = routine(&aid, "procedure");
+            graph_edges.insert(
+                rid.clone(),
+                vec![edge_kind(&rid, &aid, &format!("{rid}/cs0"), "direct")],
+            );
+            graph_edges.insert(
+                aid.clone(),
+                vec![
+                    edge_kind(&aid, "T", &format!("{aid}/csT"), "direct"),
+                    edge_kind(&aid, "C", &format!("{aid}/csC"), "direct"),
+                ],
+            );
+            summaries.insert(aid.clone(), db_summary(&aid, &format!("t/{aid}")));
+            routines.push(r);
+            routines.push(a);
+        }
+        routines.push(c_only);
+        routines.push(d);
+        routines.push(t);
+        (routines, graph_edges, summaries)
+    }
+
+    /// Group `seeds`/`direct_ops` EXACTLY as `search_loops` does, chunk the sorted
+    /// groups into `BATCH_WIDTH` lanes, and assert every lane of every batch's
+    /// `solve_batch` output equals `solve_group`'s for that group on the six
+    /// load-bearing components + a valid witness. Panics unless it exercises >1
+    /// batch (the chunking boundary) and produces aggregates.
+    fn assert_batch_agrees(
+        graph: &D1Graph,
+        seeds: &[D1Seed],
+        direct_ops: &[DirectOp],
+        ctx: &DetectorContext,
+        cw: &ClosedWorldTempParams,
+    ) {
+        let liveness = compute_liveness(graph, ctx, cw);
+        let scc = condense(graph);
+
+        let mut groups: BTreeMap<(&str, &str), GroupSpec> = BTreeMap::new();
+        for (i, seed) in seeds.iter().enumerate() {
+            groups
+                .entry((seed.loop_routine.id.as_str(), seed.loop_id))
+                .or_insert_with(|| GroupSpec {
+                    loop_routine: seed.loop_routine,
+                    loop_id: seed.loop_id,
+                    loop_info: seed.loop_info,
+                    seed_indices: Vec::new(),
+                    direct_indices: Vec::new(),
+                })
+                .seed_indices
+                .push(i);
+        }
+        for (i, d) in direct_ops.iter().enumerate() {
+            groups
+                .entry((d.routine.id.as_str(), d.loop_id))
+                .or_insert_with(|| GroupSpec {
+                    loop_routine: d.routine,
+                    loop_id: d.loop_id,
+                    loop_info: d.loop_info,
+                    seed_indices: Vec::new(),
+                    direct_indices: Vec::new(),
+                })
+                .direct_indices
+                .push(i);
+        }
+        let group_vec: Vec<GroupSpec> = groups.into_values().collect();
+        assert!(
+            group_vec.len() > BATCH_WIDTH,
+            "fixture must exceed one batch ({} groups) to exercise chunking",
+            group_vec.len()
+        );
+
+        let mut n_batches = 0usize;
+        let mut total = 0usize;
+        for chunk in group_vec.chunks(BATCH_WIDTH) {
+            n_batches += 1;
+            let batch_out = solve_batch(graph, &liveness, &scc, seeds, direct_ops, ctx, cw, chunk);
+            for group in chunk {
+                let solo = solve_group(
+                    graph,
+                    &liveness,
+                    seeds,
+                    direct_ops,
+                    ctx,
+                    cw,
+                    group.loop_routine,
+                    group.loop_id,
+                    group.loop_info,
+                    &group.seed_indices,
+                    &group.direct_indices,
+                );
+                let batch_g: Vec<&LoopTerminalAgg> = batch_out
+                    .iter()
+                    .filter(|a| {
+                        a.loop_routine.id == group.loop_routine.id && a.loop_id == group.loop_id
+                    })
+                    .collect();
+
+                let gk = (group.loop_routine.id.as_str(), group.loop_id);
+                let solo_keys: std::collections::BTreeSet<(&str, &str)> = solo
+                    .iter()
+                    .map(|a| (a.terminal.owner.id.as_str(), a.terminal.op.id.as_str()))
+                    .collect();
+                let batch_keys: std::collections::BTreeSet<(&str, &str)> = batch_g
+                    .iter()
+                    .map(|a| (a.terminal.owner.id.as_str(), a.terminal.op.id.as_str()))
+                    .collect();
+                assert_eq!(
+                    solo_keys, batch_keys,
+                    "coverage (1) diverged for group {gk:?}"
+                );
+
+                let solo_by: HashMap<(&str, &str), &LoopTerminalAgg> = solo
+                    .iter()
+                    .map(|a| ((a.terminal.owner.id.as_str(), a.terminal.op.id.as_str()), a))
+                    .collect();
+                for b in &batch_g {
+                    let k = (b.terminal.owner.id.as_str(), b.terminal.op.id.as_str());
+                    let s = solo_by[&k];
+                    assert_eq!(
+                        b.reachable_verdicts, s.reachable_verdicts,
+                        "reachable_verdicts (2) diverged for {gk:?}/{k:?}"
+                    );
+                    assert_eq!(
+                        b.severity, s.severity,
+                        "severity (3) diverged for {gk:?}/{k:?}"
+                    );
+                    assert_eq!(
+                        b.verdict, s.verdict,
+                        "verdict (4) diverged for {gk:?}/{k:?}"
+                    );
+                    assert_eq!(
+                        b.depth_bucket, s.depth_bucket,
+                        "depth_bucket (5) diverged for {gk:?}/{k:?}"
+                    );
+                    assert_eq!(
+                        winner_unc(b),
+                        winner_unc(s),
+                        "unc (6) diverged for {gk:?}/{k:?}"
+                    );
+                    assert_witness_valid(b, ctx);
+                }
+                total += batch_g.len();
+            }
+        }
+        assert!(n_batches >= 2, "the fixture must span more than one batch");
+        assert!(total > 0, "fixture must produce at least one aggregate");
+    }
+
+    #[test]
+    fn batch_equals_per_group() {
+        // 80 independent loop groups -> two batches (64 + 16), all overlapping on
+        // the shared recursive C<->D SCC and the shared terminal T.
+        let (routines, graph_edges, summaries) = many_groups_fixture(80);
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(seeds.len(), 80, "one in-loop seed per group");
+        let cw = ClosedWorldTempParams::new();
+        assert_batch_agrees(&graph, &seeds, &[], &ctx, &cw);
     }
 }

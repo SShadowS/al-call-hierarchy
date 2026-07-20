@@ -51,9 +51,11 @@ use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
+use crate::engine::l5::d1_dataflow::{BATCH_WIDTH, GroupSpec, condense, solve_batch};
 use crate::engine::l5::d1_graph::{
     D1Edge, D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok,
 };
+use crate::engine::l5::d1_liveness::compute_liveness;
 use crate::engine::l5::d1_temp::{ParamTemp, TempVec, cross_hop, resolve_terminal, root_state};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -362,12 +364,14 @@ fn materialize_transitive<'a>(
 /// The whole multi-source search + aggregation + witness selection for ONE loop
 /// group (rules 1-7). Returns one [`LoopTerminalAgg`] per (terminal owner, op).
 ///
-/// Groups are INDEPENDENT: every argument here is a shared-immutable borrow
-/// (`graph`/`seeds`/`direct_ops`/`ctx`/`cw`), and this function's only output
-/// is its OWN return value — nothing aliases another group's state. Combined
-/// with `search_loops`'s final total-order `sort_by` (rule 8), that makes the
-/// order groups are processed in unobservable, which is what licenses running
-/// them concurrently (`search_loops` below runs this via `rayon::par_iter`).
+/// As of Task D3 this is NO LONGER on the production path — `search_loops` runs
+/// the batched dataflow solver ([`crate::engine::l5::d1_dataflow::solve_batch`])
+/// instead. `process_group` is retained as the differential ORACLE the D2/D3
+/// tests check `solve_group`/`solve_batch` against on the six load-bearing
+/// components (it is deleted at the D5 cutover). Groups are INDEPENDENT: every
+/// argument is a shared-immutable borrow (`graph`/`seeds`/`direct_ops`/`ctx`/
+/// `cw`) and the only output is the return value, so per-group results never
+/// alias — the property the fact solver's per-lane batching also relies on.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn process_group<'g, 'a>(
     graph: &'g D1Graph<'a>,
@@ -599,19 +603,20 @@ pub(crate) fn process_group<'g, 'a>(
 /// seed-transitive candidates compete in the SAME per-(loop, terminal-op)
 /// aggregation; the returned aggregates are sorted deterministically.
 ///
-/// Task 7a: groups run on rayon's global pool. Each group's search is a
-/// self-contained product-state BFS over shared-IMMUTABLE inputs
-/// (`graph`/`seeds`/`direct_ops`/`ctx`/`cw` — no group mutates anything another
-/// group reads), so scheduling order cannot influence any group's own result;
-/// `process_group` returns its slice instead of writing into a shared `&mut
-/// out`, so no cross-thread merge point can interleave two groups' pushes
-/// either. The one order-sensitive step, rule 8's total-order `out.sort_by`, is
-/// unchanged and runs AFTER every group's result has been collected — so
-/// whatever order rayon finishes the groups in, the sort produces the same
-/// output the fully-serial version did. On Base Application's dense SCC this
-/// turns "(num loop groups) × (dense-SCC traversal), serial" into the same
-/// total work spread across the available cores (see
-/// `.superpowers/sdd/task-7-brief.md`).
+/// Task D3: the batched dataflow solver. Groups are keyed
+/// `(loop_routine_id, loop_id)` in a `BTreeMap` (deterministic, sorted order —
+/// the SAME order `process_group`'s driver used, and the order lanes are
+/// assigned within a batch), then chunked into [`BATCH_WIDTH`]-lane batches and
+/// solved SERIALLY by [`solve_batch`] over one shared call-SCC condensation +
+/// param-liveness. 7a's rayon `par_iter` is GONE — it spread whole GROUPS across
+/// 32 cores, each materializing its own dense-797-SCC label arena (the 42.8 GB
+/// RSS blowup). The batch solver instead shares the SCC traversal across 64
+/// lanes and drops each batch's arena before the next, so peak RSS is bounded by
+/// one batch's fact set. Components 1-6 per (loop, terminal-op) are identical to
+/// `process_group`'s (`solve_batch` == `solve_group` == `process_group` on
+/// coverage/reachable_verdicts/severity/verdict/depth_bucket/unc); only the
+/// witness (component 7) may pick a different equal-ranked realizing path. The
+/// one order-sensitive step, rule 8's total-order `out.sort_by`, is unchanged.
 pub(crate) fn search_loops<'a>(
     graph: &D1Graph<'a>,
     seeds: &[D1Seed<'a>],
@@ -620,19 +625,14 @@ pub(crate) fn search_loops<'a>(
     cw: &ClosedWorldTempParams,
 ) -> Vec<LoopTerminalAgg<'a>> {
     // The loop-group universe = seed groups ∪ direct-op groups, keyed
-    // (loop_routine_id, loop_id). BTreeMap => deterministic group iteration.
-    struct Group<'a> {
-        loop_routine: &'a L3Routine,
-        loop_info: &'a PLoop,
-        seed_indices: Vec<usize>,
-        direct_indices: Vec<usize>,
-    }
-    let mut groups: BTreeMap<(&'a str, &'a str), Group<'a>> = BTreeMap::new();
+    // (loop_routine_id, loop_id). BTreeMap => deterministic, sorted group order.
+    let mut groups: BTreeMap<(&'a str, &'a str), GroupSpec<'a>> = BTreeMap::new();
     for (i, seed) in seeds.iter().enumerate() {
         groups
             .entry((seed.loop_routine.id.as_str(), seed.loop_id))
-            .or_insert_with(|| Group {
+            .or_insert_with(|| GroupSpec {
                 loop_routine: seed.loop_routine,
+                loop_id: seed.loop_id,
                 loop_info: seed.loop_info,
                 seed_indices: Vec::new(),
                 direct_indices: Vec::new(),
@@ -643,8 +643,9 @@ pub(crate) fn search_loops<'a>(
     for (i, d) in direct_ops.iter().enumerate() {
         groups
             .entry((d.routine.id.as_str(), d.loop_id))
-            .or_insert_with(|| Group {
+            .or_insert_with(|| GroupSpec {
                 loop_routine: d.routine,
+                loop_id: d.loop_id,
                 loop_info: d.loop_info,
                 seed_indices: Vec::new(),
                 direct_indices: Vec::new(),
@@ -652,31 +653,23 @@ pub(crate) fn search_loops<'a>(
             .direct_indices
             .push(i);
     }
+    // Key-sorted group order (BTreeMap into_values) => deterministic lane
+    // assignment; group i in a batch owns bit i.
+    let groups: Vec<GroupSpec<'a>> = groups.into_values().collect();
 
-    // Collect the BTreeMap into a `Vec` (still key-sorted — deterministic,
-    // though the sort below no longer depends on it) so it can be handed to
-    // rayon's `par_iter`.
-    let groups: Vec<((&'a str, &'a str), Group<'a>)> = groups.into_iter().collect();
+    // Shared ONCE across every batch: the backward param-liveness fixpoint +
+    // compiled transfers, and the call-graph SCC condensation.
+    let liveness = compute_liveness(graph, ctx, cw);
+    let scc = condense(graph);
 
-    use rayon::prelude::*;
-    let mut out: Vec<LoopTerminalAgg<'a>> = groups
-        .par_iter()
-        .flat_map(|(key, group)| {
-            let loop_id = key.1;
-            process_group(
-                graph,
-                seeds,
-                direct_ops,
-                ctx,
-                cw,
-                group.loop_routine,
-                loop_id,
-                group.loop_info,
-                &group.seed_indices,
-                &group.direct_indices,
-            )
-        })
-        .collect();
+    // Serial 64-lane batches — each shares one condensation pass and drops its
+    // arena before the next (the RSS bound; no rayon).
+    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
+    for batch in groups.chunks(BATCH_WIDTH) {
+        out.extend(solve_batch(
+            graph, &liveness, &scc, seeds, direct_ops, ctx, cw, batch,
+        ));
+    }
 
     // Rule 8: deterministic output order, independent of traversal order.
     out.sort_by(|a, b| {
@@ -1471,5 +1464,220 @@ mod tests {
             cand(&op, &owner, "high", TempVerdict::Physical, false, 2, 3),
         ];
         assert_eq!(winner_of(&c), 3, "lowest discovery (first-discovered) wins");
+    }
+
+    // =======================================================================
+    // Task D3: the FULL new `search_loops` (batch driver) equals a reference
+    // that runs `process_group` per group + rule-8 sort, on components 1-6.
+    // Run on the existing multi-group fixture (one batch) AND a >BATCH_WIDTH
+    // fixture (forcing chunking) — proving the grouping / lane assignment /
+    // chunking / final sort glue preserves the six load-bearing components. Only
+    // the witness (component 7) may pick a different equal-ranked path.
+    // =======================================================================
+
+    /// The per-group `process_group` oracle: group EXACTLY as `search_loops`
+    /// does, run `process_group` per group, apply rule 8's own sort.
+    fn oracle_reference<'a>(
+        graph: &D1Graph<'a>,
+        seeds: &[D1Seed<'a>],
+        direct_ops: &[DirectOp<'a>],
+        ctx: &'a DetectorContext,
+        cw: &ClosedWorldTempParams,
+    ) -> Vec<LoopTerminalAgg<'a>> {
+        let mut groups: BTreeMap<(&'a str, &'a str), GroupSpec<'a>> = BTreeMap::new();
+        for (i, seed) in seeds.iter().enumerate() {
+            groups
+                .entry((seed.loop_routine.id.as_str(), seed.loop_id))
+                .or_insert_with(|| GroupSpec {
+                    loop_routine: seed.loop_routine,
+                    loop_id: seed.loop_id,
+                    loop_info: seed.loop_info,
+                    seed_indices: Vec::new(),
+                    direct_indices: Vec::new(),
+                })
+                .seed_indices
+                .push(i);
+        }
+        for (i, d) in direct_ops.iter().enumerate() {
+            groups
+                .entry((d.routine.id.as_str(), d.loop_id))
+                .or_insert_with(|| GroupSpec {
+                    loop_routine: d.routine,
+                    loop_id: d.loop_id,
+                    loop_info: d.loop_info,
+                    seed_indices: Vec::new(),
+                    direct_indices: Vec::new(),
+                })
+                .direct_indices
+                .push(i);
+        }
+        let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
+        for group in groups.into_values() {
+            out.extend(process_group(
+                graph,
+                seeds,
+                direct_ops,
+                ctx,
+                cw,
+                group.loop_routine,
+                group.loop_id,
+                group.loop_info,
+                &group.seed_indices,
+                &group.direct_indices,
+            ));
+        }
+        out.sort_by(|a, b| {
+            a.loop_routine
+                .id
+                .cmp(&b.loop_routine.id)
+                .then_with(|| a.loop_id.cmp(b.loop_id))
+                .then_with(|| a.terminal.owner.id.cmp(&b.terminal.owner.id))
+                .then_with(|| a.terminal.op.id.cmp(&b.terminal.op.id))
+        });
+        out
+    }
+
+    fn assert_search_loops_matches_oracle(
+        graph: &D1Graph,
+        seeds: &[D1Seed],
+        direct_ops: &[DirectOp],
+        ctx: &DetectorContext,
+        cw: &ClosedWorldTempParams,
+    ) {
+        let got = search_loops(graph, seeds, direct_ops, ctx, cw);
+        let want = oracle_reference(graph, seeds, direct_ops, ctx, cw);
+        assert_eq!(
+            got.len(),
+            want.len(),
+            "aggregate count (coverage, component 1) must match the oracle"
+        );
+        assert!(!got.is_empty(), "fixture must produce aggregates");
+        for (g, r) in got.iter().zip(want.iter()) {
+            // Component 1 (coverage) + rule-8 ordering: identical (loop, owner, op).
+            assert_eq!(g.loop_routine.id, r.loop_routine.id, "loop routine (1)");
+            assert_eq!(g.loop_id, r.loop_id, "loop id (1)");
+            assert_eq!(
+                g.terminal.owner.id, r.terminal.owner.id,
+                "terminal owner (1)"
+            );
+            assert_eq!(g.terminal.op.id, r.terminal.op.id, "terminal op (1)");
+            assert_eq!(g.reachable_verdicts, r.reachable_verdicts, "reachable (2)");
+            assert_eq!(g.severity, r.severity, "severity (3)");
+            assert_eq!(g.verdict, r.verdict, "verdict (4)");
+            assert_eq!(g.depth_bucket, r.depth_bucket, "depth_bucket (5)");
+            assert_eq!(
+                g.uncertainties.is_empty(),
+                r.uncertainties.is_empty(),
+                "unc presence (6)"
+            );
+        }
+    }
+
+    /// n independent loop groups, all overlapping on a shared recursive SCC
+    /// (C<->D, terminal on D) and a shared plain terminal T.
+    fn many_groups_fixture(n: usize) -> Fixture {
+        let mut c = routine("C", "procedure");
+        c.call_sites = vec![call_site("C/csD", "D", vec![])];
+        let mut d = routine("D", "procedure");
+        d.call_sites = vec![call_site("D/csC", "C", vec![])];
+        d.record_operations = vec![record_op(
+            "D/op0",
+            "Modify",
+            "Rec",
+            Some("t/D"),
+            vec![],
+            false,
+        )];
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+
+        let mut routines: Vec<L3Routine> = Vec::new();
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+
+        graph_edges.insert(
+            "C".to_string(),
+            vec![edge_kind("C", "D", "C/csD", "direct")],
+        );
+        graph_edges.insert(
+            "D".to_string(),
+            vec![edge_kind("D", "C", "D/csC", "direct")],
+        );
+        summaries.insert("C".to_string(), db_summary("C", "t/C"));
+        summaries.insert("D".to_string(), db_summary("D", "t/D"));
+        summaries.insert("T".to_string(), db_summary("T", "t/T"));
+
+        for i in 0..n {
+            let rid = format!("R{i}");
+            let aid = format!("A{i}");
+            let mut r = routine(&rid, "procedure");
+            r.loops = vec![loop_def(&format!("{rid}/loop0"))];
+            r.call_sites = vec![call_site(
+                &format!("{rid}/cs0"),
+                &aid,
+                vec![format!("{rid}/loop0")],
+            )];
+            let a = routine(&aid, "procedure");
+            graph_edges.insert(
+                rid.clone(),
+                vec![edge_kind(&rid, &aid, &format!("{rid}/cs0"), "direct")],
+            );
+            graph_edges.insert(
+                aid.clone(),
+                vec![
+                    edge_kind(&aid, "T", &format!("{aid}/csT"), "direct"),
+                    edge_kind(&aid, "C", &format!("{aid}/csC"), "direct"),
+                ],
+            );
+            summaries.insert(aid.clone(), db_summary(&aid, &format!("t/{aid}")));
+            routines.push(r);
+            routines.push(a);
+        }
+        routines.push(c);
+        routines.push(d);
+        routines.push(t);
+        (routines, graph_edges, summaries)
+    }
+
+    #[test]
+    fn search_loops_matches_process_group() {
+        let cw = ClosedWorldTempParams::new();
+
+        // (a) The existing multi-group fixture (single batch): direct + transitive.
+        {
+            let (routines, graph_edges, summaries) = multi_group_fixture();
+            let ctx = minimal_ctx(&routines, graph_edges, summaries);
+            let workspace = ws(&routines);
+            let mut memo = HashMap::new();
+            let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+            let r4_idx = routines.iter().position(|r| r.id == "R4").unwrap();
+            let direct_ops = vec![DirectOp {
+                routine: &routines[r4_idx],
+                loop_id: routines[r4_idx].loops[0].id.as_str(),
+                loop_info: &routines[r4_idx].loops[0],
+                op: &routines[r4_idx].record_operations[0],
+            }];
+            assert_search_loops_matches_oracle(&graph, &seeds, &direct_ops, &ctx, &cw);
+        }
+
+        // (b) A >BATCH_WIDTH fixture (80 groups -> chunked into >=2 batches),
+        // overlapping on a shared recursive SCC — exercises the chunking glue.
+        {
+            let (routines, graph_edges, summaries) = many_groups_fixture(80);
+            let ctx = minimal_ctx(&routines, graph_edges, summaries);
+            let workspace = ws(&routines);
+            let mut memo = HashMap::new();
+            let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+            assert_eq!(seeds.len(), 80, "one in-loop seed per group");
+            assert!(seeds.len() > BATCH_WIDTH, "must exceed one batch");
+            assert_search_loops_matches_oracle(&graph, &seeds, &[], &ctx, &cw);
+        }
     }
 }

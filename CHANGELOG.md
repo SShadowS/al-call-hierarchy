@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_dataflow` — 64-lane BATCH solver (`solve_batch`) + call-SCC condensation
+  (`condense`)** (`src/engine/l5/d1_dataflow.rs`, Task D3;
+  `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`,
+  `feat/d1-reachability`). Widens D2's single-group 1-bit fact model to `u64`
+  group-masks (group `i` in a batch owns bit `i`) so up to `BATCH_WIDTH` (64)
+  loop groups share ONE traversal of the (dense 797-member) call SCC instead of
+  one BFS per group — the point where the dataflow win materializes.
+  `condense` is a dense (`NodeIx`-indexed) iterative Tarjan over the filtered
+  `D1Graph` (a port of `engine::l4::scc::tarjan_scc`, which is `String`-keyed for
+  al-sem's combined graph and would force a full String-adjacency rebuild + re-map
+  per call), returning `node->scc`, per-SCC members, and a caller-first
+  topological order. `solve_batch` seeds each lane, then drains the fact fixpoint
+  in SCC-topological order with a per-SCC min-hops-first (level-synchronous) delta
+  worklist — masks only ever OR-in bits, so the fixpoint terminates even inside
+  the recursive SCC, and a lane's first arrival at a fact is its minimum hop count
+  (shortest witness). Scoring/winner-selection/witness materialization run PER
+  LANE via per-(fact, lane) first-arrival predecessors, reproducing `solve_group`
+  (hence `process_group`) on the six load-bearing components — coverage,
+  `reachable_verdicts`, severity, verdict, `depth_bucket`, `unc`. Proven by
+  `batch_equals_per_group` (80 groups → 2 batches, overlapping on a shared
+  recursive `C<->D` SCC + shared terminal, asserting `solve_batch` == `solve_group`
+  per lane on 1-6 + a valid witness) and `condensation_deterministic` (identical
+  scc ids/topo order across runs; a real 2-member cycle vs singletons). The batch
+  arena is dropped after each batch — serial batches, no concurrent arenas (the
+  RSS bound). All five committed golden families stayed BYTE-IDENTICAL through the
+  cutover (`scripts/check-goldens` green, no regen).
 - **`d1_dataflow` — single-group FACT solver (`solve_group`), the correctness
   spine of the d1 dataflow-solver rewrite** (`src/engine/l5/d1_dataflow.rs`,
   Task D2; `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`,
@@ -236,6 +262,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt` stamp).
 
 ### Removed
+- **7a's rayon `par_iter` group-parallelism in `d1_reach::search_loops`** (Task
+  D3; `src/engine/l5/d1_reach.rs`, `feat/d1-reachability`). This was the 42.8 GB
+  RSS culprit — 32 concurrent worker threads each materializing a fresh
+  dense-797-SCC label arena. The batched dataflow solver shares the SCC traversal
+  across 64 lanes and drops each batch's arena before the next, so peak RSS is
+  bounded by one batch's fact set; batches run serially (at most a bounded
+  concurrency may return later, licensed by D6 measurement).
 - **d1's old exhaustive-walk consumption + its merge/reconcile machinery**
   (Task 5 of the d1-db-op-in-loop reachability redesign;
   `src/engine/l5/detectors/d1.rs`). Removed from the production path: the
@@ -277,6 +310,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **`d1_reach::search_loops` rewired to the batched dataflow solver (partial
+  cutover)** (Task D3; `src/engine/l5/d1_reach.rs`, `feat/d1-reachability`).
+  `detect_d1` calls `search_loops`, so rewiring it IS a production-path cutover:
+  `search_loops` now assigns groups deterministic lanes from the existing sorted
+  `(loop_routine_id, loop_id)` order, chunks them into 64-lane batches, and solves
+  each batch SERIALLY via `d1_dataflow::solve_batch` over one shared
+  param-liveness fixpoint + call-SCC condensation, then keeps rule 8's total-order
+  `sort_by` verbatim. Components 1-6 per (loop, terminal-op) are identical to the
+  old per-group product-state BFS (`process_group`, retained as the differential
+  ORACLE until the D5 cutover); only the witness (component 7) MAY pick a
+  different equal-ranked realizing path — and on the committed corpus it did not,
+  so all five golden families are byte-identical.
 - **`d1_reach::search_loops` parallelized across loop groups** (Task 7a of the
   d1-db-op-in-loop reachability redesign; `src/engine/l5/d1_reach.rs`,
   `feat/d1-reachability`). Task 6 measured d1-only Base App 28.0 (8,020 files)
