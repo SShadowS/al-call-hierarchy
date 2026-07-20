@@ -62,7 +62,7 @@
 //! in components 1-6 is a BUG (proven absent by the `tests` differential below).
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, BinaryHeap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
@@ -1020,35 +1020,64 @@ impl Proposal {
     }
 }
 
-/// A min-hops-first worklist item for the current SCC's level-synchronous
-/// drain. Ordered by `(hops, seq)` ascending (via a reversed `Ord` over the
-/// max-heap); `seq` is a monotonic push counter making the within-hop order
-/// deterministic (it only affects an equal-ranked tie — component 7).
-struct HeapItem {
-    hops: u32,
-    seq: u64,
-    prop: Proposal,
+/// A hop-indexed FIFO bucket queue draining ONE SCC's proposals in
+/// level-synchronous (min-hops-first) order. `buckets[h]` holds the proposals at
+/// hop `h`; `cursor` is the lowest hop that may still hold items. Draining
+/// lowest-hop-first, and within a hop in FIFO (push) order, reproduces the old
+/// `BinaryHeap<HeapItem>`'s `(hops, seq)`-ascending pop order EXACTLY — `seq` was
+/// just a monotonic push counter, so FIFO-within-hop IS `seq` order — so a lane's
+/// first arrival at a fact is still its minimum hop count (the witness
+/// shortest-path tiebreak, component 7). The win over the heap: O(1) push/pop
+/// (no `log n` compare cascade) and no fat `HeapItem` wrapper allocation.
+///
+/// The invariant that makes this exact: within an SCC drain, processing a hop-`h`
+/// item only ever routes same-SCC proposals at hop `h + 1` (`hops + 1`), never
+/// back into hop `h` or below — so once `cursor` advances past a hop, nothing
+/// re-fills it, and each hop bucket is complete before it is drained.
+struct HopQueue {
+    buckets: Vec<VecDeque<Proposal>>,
+    cursor: usize,
+    len: usize,
 }
 
-impl PartialEq for HeapItem {
-    fn eq(&self, other: &Self) -> bool {
-        self.hops == other.hops && self.seq == other.seq
+impl HopQueue {
+    fn new() -> Self {
+        HopQueue {
+            buckets: Vec::new(),
+            cursor: 0,
+            len: 0,
+        }
     }
-}
-impl Eq for HeapItem {}
-impl PartialOrd for HeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+
+    fn push(&mut self, prop: Proposal) {
+        let hop = prop.hops() as usize;
+        if hop >= self.buckets.len() {
+            self.buckets.resize_with(hop + 1, VecDeque::new);
+        }
+        self.buckets[hop].push_back(prop);
+        self.len += 1;
+        // Defensive: pushes never target a below-cursor hop during a drain (the
+        // invariant above), but keep the cursor valid if one ever did so no item
+        // is stranded in an already-skipped bucket.
+        self.cursor = self.cursor.min(hop);
     }
-}
-impl Ord for HeapItem {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // `BinaryHeap` is a MAX-heap; reverse so the SMALLEST (hops, seq) pops
-        // first (min-hops-first = level-synchronous).
-        other
-            .hops
-            .cmp(&self.hops)
-            .then_with(|| other.seq.cmp(&self.seq))
+
+    /// Pop the lowest-hop, earliest-pushed (FIFO) proposal — identical order to
+    /// the old heap's `(hops, seq)` pop.
+    fn pop(&mut self) -> Option<Proposal> {
+        while self.cursor < self.buckets.len() {
+            if let Some(p) = self.buckets[self.cursor].pop_front() {
+                self.len -= 1;
+                return Some(p);
+            }
+            self.cursor += 1;
+        }
+        None
+    }
+
+    /// Live item count (for the Hot-tier worklist-size instrumentation).
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -1182,6 +1211,38 @@ impl BatchSolver {
         }
         (idx, new_bits)
     }
+
+    /// The lanes of `mask` NOT already committed at reach fact `(node, depth,
+    /// unc)` — the only bits worth PROPOSING. A not-yet-created fact has an
+    /// all-zero mask, so every bit is new. This moves the first-arrival dedup
+    /// BEFORE the push (was: only at [`Self::commit_reach`], after the proposal
+    /// had already been pushed AND popped — the dense-SCC heap blowup). It stays
+    /// output-identical because the target mask only GROWS between push and pop,
+    /// so `commit_reach` re-filters the carried bits to the exact same set
+    /// regardless of what was filtered here.
+    fn reach_new_bits(&self, node: NodeIx, depth: i64, unc: bool, mask: u64) -> u64 {
+        match self.reach_index.get(&(node, depth, unc)) {
+            Some(&i) => mask & !self.reach_facts[i].mask,
+            None => mask,
+        }
+    }
+
+    /// The lanes of `mask` NOT already committed at value fact `(node, slot,
+    /// class, depth, unc)` (see [`Self::reach_new_bits`]).
+    fn value_new_bits(
+        &self,
+        node: NodeIx,
+        slot: u16,
+        class: ParamTemp,
+        depth: i64,
+        unc: bool,
+        mask: u64,
+    ) -> u64 {
+        match self.value_index.get(&(node, slot, class, depth, unc)) {
+            Some(&i) => mask & !self.value_facts[i].mask,
+            None => mask,
+        }
+    }
 }
 
 /// Route a generated proposal to the current SCC's min-hops worklist (target in
@@ -1192,16 +1253,12 @@ fn route(
     prop: Proposal,
     current_scc: u32,
     scc_of: &[u32],
-    heap: &mut BinaryHeap<HeapItem>,
+    queue: &mut HopQueue,
     pending: &mut [Vec<Proposal>],
-    seq: &mut u64,
 ) {
     let target = scc_of[prop.node() as usize];
     if target == current_scc {
-        let hops = prop.hops();
-        let s = *seq;
-        *seq += 1;
-        heap.push(HeapItem { hops, seq: s, prop });
+        queue.push(prop);
     } else {
         // Topological invariant: a cross-SCC edge only ever targets a STRICTLY
         // downstream (not-yet-drained) SCC (`scc_of[caller] < scc_of[callee]`).
@@ -1302,6 +1359,20 @@ pub(crate) fn solve_batch<'a>(
     let n_nodes = graph.node_ids.len();
     let mut solver = BatchSolver::new(n_nodes);
 
+    // Hot-tier (`Detail::Hot`) attribution: the periodic in-fixpoint checkpoint +
+    // per-batch summary confirm the worklist is BOUNDED (not the pre-fix
+    // hundreds-of-millions accumulation). The gate is read ONCE here; every
+    // increment/emission below is behind it, so the disabled path pays nothing.
+    // `batch_seq` is a self-contained running batch ordinal (the "batch index"
+    // label) — it needs no caller cooperation, so `solve_batch`'s signature stays
+    // free of a trace-only param.
+    let trace_hot = crate::engine::perf_trace::enabled(crate::engine::perf_trace::Detail::Hot);
+    let mut pops: u64 = 0;
+    let mut max_worklist: usize = 0;
+    if trace_hot {
+        crate::engine::perf_trace::counter_delta("d1.reach.batch_seq", 1);
+    }
+
     // Per-node scalars used repeatedly during propagation (mirrors solve_group).
     let unc_by_node: Vec<bool> = graph
         .node_ids
@@ -1317,7 +1388,6 @@ pub(crate) fn solve_batch<'a>(
     // Per-SCC pending arrivals from upstream SCCs (+ seeds). Drained when that
     // SCC is reached in topological order.
     let mut pending: Vec<Vec<Proposal>> = (0..scc.members.len()).map(|_| Vec::new()).collect();
-    let mut seq: u64 = 0;
 
     // Rule 1: seed every lane's frontier into its entry node's SCC pending
     // buffer. The seed entry `TempVec` is `cross_hop` of the group's loop-routine
@@ -1371,19 +1441,43 @@ pub(crate) fn solve_batch<'a>(
     }
 
     // Rules 2-3: process SCCs in topological order. Within each SCC, a min-hops
-    // (level-synchronous) delta worklist drains to least-fixpoint — masks only
-    // OR-in bits, so cycles terminate; min-hops-first pops make a lane's first
-    // arrival its minimum hop count.
+    // (level-synchronous) bucket-queue worklist drains to least-fixpoint — masks
+    // only OR-in bits, so cycles terminate; min-hops-first pops make a lane's
+    // first arrival its minimum hop count. Each generated proposal is filtered
+    // through `*_new_bits` BEFORE it is enqueued: only the lanes NOT already
+    // committed at the target fact are carried, and an all-redundant proposal is
+    // never enqueued at all (the fix — see [`BatchSolver::reach_new_bits`]).
     for &scc_id in &scc.topo_order {
-        let mut heap: BinaryHeap<HeapItem> = BinaryHeap::new();
+        let mut queue = HopQueue::new();
         for prop in std::mem::take(&mut pending[scc_id as usize]) {
-            let hops = prop.hops();
-            let s = seq;
-            seq += 1;
-            heap.push(HeapItem { hops, seq: s, prop });
+            queue.push(prop);
         }
-        while let Some(item) = heap.pop() {
-            match item.prop {
+        if trace_hot && queue.len() > max_worklist {
+            max_worklist = queue.len();
+        }
+        while let Some(prop) = queue.pop() {
+            if trace_hot {
+                pops += 1;
+                let wl = queue.len();
+                if wl > max_worklist {
+                    max_worklist = wl;
+                }
+                if pops.is_multiple_of(100_000) {
+                    let reach_facts = solver.reach_facts.len() as u64;
+                    let value_facts = solver.value_facts.len() as u64;
+                    let worklist = wl as u64;
+                    crate::engine::perf_trace::instant_lazy("d1.reach", "batch_internal", || {
+                        serde_json::json!({
+                            "scc": scc_id,
+                            "pops": pops,
+                            "worklist": worklist,
+                            "reach_facts": reach_facts,
+                            "value_facts": value_facts,
+                        })
+                    });
+                }
+            }
+            match prop {
                 Proposal::Reach {
                     node,
                     depth,
@@ -1400,50 +1494,61 @@ pub(crate) fn solve_batch<'a>(
                         let m = edge.to;
                         let d2 = (depth + edge.loop_depth).min(2);
                         let u2 = unc || unc_by_node[m as usize];
-                        route(
-                            Proposal::Reach {
-                                node: m,
-                                depth: d2,
-                                unc: u2,
-                                mask: new_bits,
-                                hops: hops + 1,
-                                pred: ReachPredB::Hop {
-                                    pred: idx as u32,
-                                    from_node: node,
-                                    edge_k: k as u32,
+                        let rnb = solver.reach_new_bits(m, d2, u2, new_bits);
+                        if rnb != 0 {
+                            route(
+                                Proposal::Reach {
+                                    node: m,
+                                    depth: d2,
+                                    unc: u2,
+                                    mask: rnb,
+                                    hops: hops + 1,
+                                    pred: ReachPredB::Hop {
+                                        pred: idx as u32,
+                                        from_node: node,
+                                        edge_k: k as u32,
+                                    },
                                 },
-                            },
-                            scc_id,
-                            &scc.scc_of,
-                            &mut heap,
-                            &mut pending,
-                            &mut seq,
-                        );
+                                scc_id,
+                                &scc.scc_of,
+                                &mut queue,
+                                &mut pending,
+                            );
+                        }
                         for (callee_slot, transfer) in
                             liveness.edge_transfers[node as usize][k].iter().enumerate()
                         {
                             if let ParamTransfer::Const(pt) = transfer {
-                                route(
-                                    Proposal::Value {
-                                        node: m,
-                                        slot: callee_slot as u16,
-                                        class: *pt,
-                                        depth: d2,
-                                        unc: u2,
-                                        mask: new_bits,
-                                        hops: hops + 1,
-                                        pred: ValuePredB::HopFromReach {
-                                            pred: idx as u32,
-                                            from_node: node,
-                                            edge_k: k as u32,
-                                        },
-                                    },
-                                    scc_id,
-                                    &scc.scc_of,
-                                    &mut heap,
-                                    &mut pending,
-                                    &mut seq,
+                                let vnb = solver.value_new_bits(
+                                    m,
+                                    callee_slot as u16,
+                                    *pt,
+                                    d2,
+                                    u2,
+                                    new_bits,
                                 );
+                                if vnb != 0 {
+                                    route(
+                                        Proposal::Value {
+                                            node: m,
+                                            slot: callee_slot as u16,
+                                            class: *pt,
+                                            depth: d2,
+                                            unc: u2,
+                                            mask: vnb,
+                                            hops: hops + 1,
+                                            pred: ValuePredB::HopFromReach {
+                                                pred: idx as u32,
+                                                from_node: node,
+                                                edge_k: k as u32,
+                                            },
+                                        },
+                                        scc_id,
+                                        &scc.scc_of,
+                                        &mut queue,
+                                        &mut pending,
+                                    );
+                                }
                             }
                         }
                     }
@@ -1473,33 +1578,61 @@ pub(crate) fn solve_batch<'a>(
                             if let ParamTransfer::Copy { caller_slot } = transfer
                                 && *caller_slot == slot
                             {
-                                route(
-                                    Proposal::Value {
-                                        node: m,
-                                        slot: callee_slot as u16,
-                                        class,
-                                        depth: d2,
-                                        unc: u2,
-                                        mask: new_bits,
-                                        hops: hops + 1,
-                                        pred: ValuePredB::HopFromValue {
-                                            pred: idx as u32,
-                                            from_node: node,
-                                            edge_k: k as u32,
-                                        },
-                                    },
-                                    scc_id,
-                                    &scc.scc_of,
-                                    &mut heap,
-                                    &mut pending,
-                                    &mut seq,
+                                let vnb = solver.value_new_bits(
+                                    m,
+                                    callee_slot as u16,
+                                    class,
+                                    d2,
+                                    u2,
+                                    new_bits,
                                 );
+                                if vnb != 0 {
+                                    route(
+                                        Proposal::Value {
+                                            node: m,
+                                            slot: callee_slot as u16,
+                                            class,
+                                            depth: d2,
+                                            unc: u2,
+                                            mask: vnb,
+                                            hops: hops + 1,
+                                            pred: ValuePredB::HopFromValue {
+                                                pred: idx as u32,
+                                                from_node: node,
+                                                edge_k: k as u32,
+                                            },
+                                        },
+                                        scc_id,
+                                        &scc.scc_of,
+                                        &mut queue,
+                                        &mut pending,
+                                    );
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Per-batch summary (Hot only): pops, peak worklist, and the final fact-arena
+    // sizes — the bound-confirmation counter the fix exists to make observable.
+    if trace_hot {
+        let reach_facts = solver.reach_facts.len() as u64;
+        let value_facts = solver.value_facts.len() as u64;
+        let max_worklist = max_worklist as u64;
+        let lanes = batch.len() as u64;
+        let total_pops = pops;
+        crate::engine::perf_trace::instant_lazy("d1.reach", "batch_summary", || {
+            serde_json::json!({
+                "lanes": lanes,
+                "pops": total_pops,
+                "max_worklist": max_worklist,
+                "reach_facts": reach_facts,
+                "value_facts": value_facts,
+            })
+        });
     }
 
     // Rules 4-7: score terminals + select winner + materialize witness PER LANE.

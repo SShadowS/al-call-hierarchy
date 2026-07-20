@@ -290,6 +290,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **`d1_dataflow::solve_batch` heap blowup — redundant proposals never entered
+  the worklist again (output-identical)** (`src/engine/l5/d1_dataflow.rs`, Task
+  D3-perf; `feat/d1-reachability`). On Base App 8020-file density a single
+  `solve_batch` over the dense 797-member SCC ran >39 min CPU-bound with RSS
+  climbing to 37 GB: the per-SCC `BinaryHeap<HeapItem>` accumulated hundreds of
+  millions of REDUNDANT `Proposal`s because `route` pushed one per edge traversal
+  even when the target fact already held those lane bits — the first-arrival dedup
+  only ran later at `commit_reach`/`commit_value` (returning `new_bits == 0`),
+  AFTER each fat proposal had been pushed and popped. Two output-identical fixes:
+  (1) **skip-redundant-before-push** — new `BatchSolver::{reach,value}_new_bits`
+  consult the target fact's CURRENT committed mask at push time and carry only the
+  lanes NOT already present (`new_bits & !target.mask`); an all-redundant proposal
+  is never enqueued. This is exact because the target mask only GROWS between push
+  and pop, so `commit_*` re-filters the carried bits to the identical set
+  regardless — a skipped/shrunk proposal would have committed nothing and
+  propagated nothing anyway. (2) **hops-indexed bucket queue** (`HopQueue`)
+  replacing the `BinaryHeap` — hops only ever increase by 1 per edge, so draining
+  lowest-hop-first and FIFO-within-hop reproduces the heap's `(hops, seq)`-ascending
+  pop order EXACTLY (a lane's first arrival at a fact is still its minimum hop
+  count; the `seq` counter and the `HeapItem` `Ord` machinery are gone), at O(1)
+  push/pop instead of O(log n). The min-hops FIRST-ARRIVAL order — which sets each
+  lane's witness hop count and feeds the selection rule's `-hops` dimension — is
+  preserved identically. Proven by the unchanged `batch_equals_per_group` /
+  `search_loops_matches_process_group` differentials and BYTE-IDENTICAL goldens
+  (`scripts/check-goldens` green, no regen). Also added Hot-tier
+  (`crate::engine::perf_trace`) instrumentation: a periodic `d1.reach.batch_internal`
+  checkpoint every 100k pops (current worklist size + `reach_facts`/`value_facts`
+  arena sizes + cumulative pops) confirming the worklist is now bounded, a per-batch
+  `d1.reach.batch_summary` (pops, peak worklist, fact counts) at each `solve_batch`
+  return, and a self-contained `d1.reach.batch_seq` running batch ordinal — all
+  zero-cost when Hot is off, and needing no change to `solve_batch`'s signature.
 - **perf_trace Jacobi-tier per-pass counters were silently coupled to the
   per-SCC span's `ALSEM_TRACE_SCC_MIN` size gate** (`src/engine/l4/summary_runner.rs`
   `run_one_scc`) — found running Task 4's real-DO `ALSEM_TRACE_DETAIL=jacobi`
