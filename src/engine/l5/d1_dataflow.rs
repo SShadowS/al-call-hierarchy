@@ -62,7 +62,7 @@
 //! in components 1-6 is a BUG (proven absent by the `tests` differential below).
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
@@ -82,6 +82,7 @@ use crate::engine::l5::detectors::d1::{
     TempVerdict, hop_step, is_setup_singleton_get, severity_for, terminal_step,
 };
 use crate::engine::l5::finding::EvidenceStep;
+use crate::engine::l5::path_merge::sev_rank;
 
 /// A reach fact's first-arrival predecessor (the seed it descends from, or the
 /// parent reach fact + the crossed edge).
@@ -1337,10 +1338,374 @@ fn collect_value_chain_b(
     }
 }
 
+/// The read-mode + precomputed verdict/severity tables for ONE terminal, all
+/// batch-INDEPENDENT (computed ONCE per d1 run — see [`build_terminal_plan`]).
+/// `Reach` = the terminal reads a caller-independent verdict (a constant op, or
+/// a closed-world-proven PD whose class resolves to `Temp` without reading any
+/// value); `Value` = the verdict depends on the resolved [`ParamTemp`] class of
+/// the read slot. Mirrors `solve_batch`'s old per-batch `read_slots` +
+/// `flowfield_verdict`/`severity_for` recomputation, hoisted out of the batch loop.
+enum ReadPlan {
+    Reach {
+        verdict: TempVerdict,
+        /// `severity_for(op, verdict, db, is_singleton)` for `db ∈ {0, 1, 2}`.
+        sev_by_bucket: [&'static str; 3],
+    },
+    Value {
+        slot: u16,
+        /// Verdict per [`ParamTemp`] class (`Temp` = 0, `Physical` = 1,
+        /// `Unknown` = 2 — the `class as usize` index).
+        verdict_by_class: [TempVerdict; 3],
+        /// `severity_for` per (class, depth-bucket) pair.
+        sev_by_class_bucket: [[&'static str; 3]; 3],
+    },
+}
+
+/// One graph terminal `(node, ti)` with its batch-independent read plan. Because
+/// each `(owner, op)` terminal lives at exactly ONE node (the owner routine's
+/// node), the entry's key `(owner.id, op.id)` is unique across the plan.
+struct TermEntry<'a> {
+    node: NodeIx,
+    op: &'a L3RecordOperation,
+    owner: &'a L3Routine,
+    local_depth: i64,
+    read: ReadPlan,
+}
+
+/// The run-global terminal scoring plan — every graph terminal's read mode +
+/// verdict/severity tables, precomputed ONCE (all batch-INDEPENDENT) and shared
+/// across every batch. This hoists what `solve_batch`'s scoring loop used to
+/// rebuild per batch: `terminal_nodes`, `read_slots`, `is_setup_singleton_get`,
+/// the reach-case verdict, and the per-class value verdicts + severity tables.
+/// Entries are in ascending `(node, ti)` order — the SAME order the old scoring
+/// loop visited terminals, so the discovery (source-order) tie-break is exact.
+pub(crate) struct TerminalPlan<'a> {
+    entries: Vec<TermEntry<'a>>,
+}
+
+/// Build the run-global [`TerminalPlan`]. Called ONCE (in `search_loops`) before
+/// the batch loop and shared by every `solve_batch` call — never rebuilt per batch.
+pub(crate) fn build_terminal_plan<'a>(
+    graph: &D1Graph<'a>,
+    liveness: &Liveness,
+    ctx: &'a DetectorContext,
+    cw: &ClosedWorldTempParams,
+) -> TerminalPlan<'a> {
+    const CLASSES: [ParamTemp; 3] = [ParamTemp::Temp, ParamTemp::Physical, ParamTemp::Unknown];
+    let n_nodes = graph.node_ids.len();
+    let mut entries: Vec<TermEntry<'a>> = Vec::new();
+    for node in 0..n_nodes as NodeIx {
+        for (ti, t) in graph.terminals[node as usize].iter().enumerate() {
+            let op = t.op;
+            let owner = t.owner;
+            let local_depth = t.local_depth;
+            let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
+
+            // Read mode + closed-world-proven re-check — mirrors the old
+            // `read_slots` precompute EXACTLY (`Some(slot)` = value-based read,
+            // `None` = reach-based: a constant op or a proven-PD terminal).
+            let read_slot: Option<u16> = match liveness.terminal_reads[node as usize][ti] {
+                None => None,
+                Some(slot) => {
+                    let i = liveness.need[node as usize][slot as usize];
+                    if cw.contains(&(owner.id.to_string(), i)) {
+                        None
+                    } else {
+                        Some(slot)
+                    }
+                }
+            };
+
+            let read = match read_slot {
+                None => {
+                    let verdict = flowfield_verdict(
+                        resolve_terminal(op, &TempVec::new(), owner.id.as_str(), cw),
+                        op,
+                        &ctx.table_by_id,
+                    );
+                    let mut sev_by_bucket = [""; 3];
+                    for (db, s) in sev_by_bucket.iter_mut().enumerate() {
+                        *s = severity_for(op, verdict, db as i64, is_singleton);
+                    }
+                    ReadPlan::Reach {
+                        verdict,
+                        sev_by_bucket,
+                    }
+                }
+                Some(slot) => {
+                    let i = liveness.need[node as usize][slot as usize];
+                    let mut verdict_by_class = [TempVerdict::Temporary; 3];
+                    let mut sev_by_class_bucket = [[""; 3]; 3];
+                    for (ci, &class) in CLASSES.iter().enumerate() {
+                        let frame: TempVec = std::iter::once((i, class)).collect();
+                        let verdict = flowfield_verdict(
+                            resolve_terminal(op, &frame, owner.id.as_str(), cw),
+                            op,
+                            &ctx.table_by_id,
+                        );
+                        verdict_by_class[ci] = verdict;
+                        for (db, s) in sev_by_class_bucket[ci].iter_mut().enumerate() {
+                            *s = severity_for(op, verdict, db as i64, is_singleton);
+                        }
+                    }
+                    ReadPlan::Value {
+                        slot,
+                        verdict_by_class,
+                        sev_by_class_bucket,
+                    }
+                }
+            };
+
+            entries.push(TermEntry {
+                node,
+                op,
+                owner,
+                local_depth,
+                read,
+            });
+        }
+    }
+    TerminalPlan { entries }
+}
+
+/// The winning candidate's source for one (lane, terminal-key) — enough to
+/// materialize its witness. `Reach`/`Value` index the batch fact arenas; `Direct`
+/// carries the in-loop op's own witness inputs (its loop + owner + op).
+#[derive(Clone, Copy)]
+enum BestSource<'a> {
+    Direct {
+        routine: &'a L3Routine,
+        loop_info: &'a PLoop,
+        op: &'a L3RecordOperation,
+        local_depth: i64,
+    },
+    Reach {
+        fact_ix: usize,
+    },
+    Value {
+        fact_ix: usize,
+    },
+}
+
+/// The running-best candidate for one lane at one terminal key. `rank` is the
+/// FIRST FIVE components of [`selection_rank`] (severity, verdict-quality,
+/// `unc == false`, `-hops`, `depth_bucket`). The sixth component (`-discovery`)
+/// is NOT stored: candidates are folded in the exact old push order (direct ops
+/// first, then facts in `reach_at`/`value_at` order) and [`update_best`] uses a
+/// STRICT-greater compare, so the first-in-order wins every tie — reproducing
+/// "lowest discovery wins" EXACTLY without a discovery counter.
+#[derive(Clone, Copy)]
+struct BestRef<'a> {
+    rank: (i32, i32, i32, i64, i64),
+    verdict: TempVerdict,
+    severity: &'static str,
+    depth_bucket: i64,
+    source: BestSource<'a>,
+}
+
+/// One direct in-loop db-op candidate for a lane, precomputed in the direct
+/// phase and folded into its terminal-key's running best BEFORE that key's
+/// transitive facts (direct precedence == lowest discovery).
+struct DirectCand<'a> {
+    lane: usize,
+    verdict: TempVerdict,
+    severity: &'static str,
+    depth_bucket: i64,
+    rank: (i32, i32, i32, i64, i64),
+    routine: &'a L3Routine,
+    loop_info: &'a PLoop,
+    op: &'a L3RecordOperation,
+    local_depth: i64,
+}
+
+/// The first FIVE [`selection_rank`] components (drops the `-discovery` tail —
+/// see [`BestRef`]). Reuses `selection_rank` so the component formula is shared,
+/// not duplicated.
+#[inline]
+fn rank5(
+    severity: &str,
+    verdict: TempVerdict,
+    unc: bool,
+    hops: u32,
+    depth_bucket: i64,
+) -> (i32, i32, i32, i64, i64) {
+    let r = selection_rank(severity, verdict, unc, hops, depth_bucket, 0);
+    (r.0, r.1, r.2, r.3, r.4)
+}
+
+/// STRICT-greater running-best update: replace `best[lane]` iff `cand.rank`
+/// beats the stored rank. On a tie the incumbent (first-in-order = lower
+/// discovery) is kept — the byte-identity guarantee.
+#[inline]
+fn update_best<'a>(best: &mut [Option<BestRef<'a>>], lane: usize, cand: BestRef<'a>) {
+    match &best[lane] {
+        Some(b) if cand.rank <= b.rank => {}
+        _ => best[lane] = Some(cand),
+    }
+}
+
+/// Fold a direct candidate into a terminal-key's running best + verdict masks.
+fn fold_direct<'a>(c: &DirectCand<'a>, best: &mut [Option<BestRef<'a>>], vmask: &mut [u64; 4]) {
+    vmask[c.verdict as usize] |= 1u64 << c.lane;
+    update_best(
+        best,
+        c.lane,
+        BestRef {
+            rank: c.rank,
+            verdict: c.verdict,
+            severity: c.severity,
+            depth_bucket: c.depth_bucket,
+            source: BestSource::Direct {
+                routine: c.routine,
+                loop_info: c.loop_info,
+                op: c.op,
+                local_depth: c.local_depth,
+            },
+        },
+    );
+}
+
+/// The distinct verdicts reaching `lane`, in [`TempVerdict`] declaration order
+/// (== the sorted+deduped order the old `reachable_verdicts` Vec produced). Built
+/// from the four per-verdict lane masks — replacing the old per-candidate verdict
+/// collection + sort + dedup with four `u64` bit tests.
+fn reachable_from_masks(vmask: &[u64; 4], lane: usize) -> Vec<TempVerdict> {
+    const ORDER: [TempVerdict; 4] = [
+        TempVerdict::Temporary,
+        TempVerdict::Physical,
+        TempVerdict::Uncertain,
+        TempVerdict::FlowFieldGated,
+    ];
+    let bit = 1u64 << lane;
+    let mut out = Vec::new();
+    for (i, v) in ORDER.iter().enumerate() {
+        if vmask[i] & bit != 0 {
+            out.push(*v);
+        }
+    }
+    out
+}
+
+/// Emit one [`LoopTerminalAgg`] per present lane at one terminal key: for each
+/// lane whose running-best is set, materialize the winner's witness (via the
+/// existing per-lane predecessor walkers) and derive `reachable_verdicts` from
+/// the verdict masks. `owner`/`op`/`local_depth` are the terminal's metadata
+/// (used by the Reach/Value arms); a `Direct` winner carries its own.
+#[allow(clippy::too_many_arguments)]
+fn emit_lane_aggregates<'a>(
+    best: &[Option<BestRef<'a>>],
+    vmask: &[u64; 4],
+    lanes: usize,
+    batch: &[GroupSpec<'a>],
+    owner: &'a L3Routine,
+    op: &'a L3RecordOperation,
+    local_depth: i64,
+    solver: &BatchSolver,
+    graph: &D1Graph<'a>,
+    ctx: &'a DetectorContext,
+    seeds: &[D1Seed<'a>],
+    out: &mut Vec<LoopTerminalAgg<'a>>,
+) {
+    for (lane, group) in batch.iter().enumerate().take(lanes) {
+        let Some(b) = &best[lane] else {
+            continue;
+        };
+        let reachable_verdicts = reachable_from_masks(vmask, lane);
+
+        let (witness, uncertainties, entry_callsite_id, effective_loop_depth, t_owner, t_op, t_ld) =
+            match b.source {
+                BestSource::Direct {
+                    routine,
+                    loop_info,
+                    op: dop,
+                    local_depth: dld,
+                } => {
+                    let loop_step = loop_step_ev(routine, loop_info);
+                    let op_step = terminal_step(
+                        &ctx.routine_by_id,
+                        &ctx.table_by_id,
+                        routine.id.as_str(),
+                        Some(dop.id.as_str()),
+                    );
+                    (
+                        vec![loop_step, op_step],
+                        Vec::new(),
+                        None,
+                        dld,
+                        routine,
+                        dop,
+                        dld,
+                    )
+                }
+                BestSource::Reach { fact_ix } => {
+                    let terminal_node = solver.reach_facts[fact_ix].node;
+                    let (hops, seed_index) =
+                        collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
+                    let (w, u, cs, eff) = build_transitive_witness(
+                        &hops,
+                        seed_index,
+                        terminal_node,
+                        owner,
+                        op,
+                        local_depth,
+                        graph,
+                        ctx,
+                        seeds,
+                    );
+                    (w, u, cs, eff, owner, op, local_depth)
+                }
+                BestSource::Value { fact_ix } => {
+                    let terminal_node = solver.value_facts[fact_ix].node;
+                    let (hops, seed_index) = collect_value_chain_b(
+                        &solver.value_pred,
+                        &solver.reach_pred,
+                        lane,
+                        fact_ix,
+                    );
+                    let (w, u, cs, eff) = build_transitive_witness(
+                        &hops,
+                        seed_index,
+                        terminal_node,
+                        owner,
+                        op,
+                        local_depth,
+                        graph,
+                        ctx,
+                        seeds,
+                    );
+                    (w, u, cs, eff, owner, op, local_depth)
+                }
+            };
+
+        out.push(LoopTerminalAgg {
+            loop_routine: group.loop_routine,
+            loop_id: group.loop_id,
+            loop_info: group.loop_info,
+            terminal: D1Terminal {
+                op: t_op,
+                owner: t_owner,
+                local_depth: t_ld,
+            },
+            entry_callsite_id,
+            severity: b.severity,
+            verdict: b.verdict,
+            reachable_verdicts,
+            depth_bucket: b.depth_bucket,
+            effective_loop_depth,
+            witness,
+            uncertainties,
+        });
+    }
+}
+
 /// Solve a BATCH of up to [`BATCH_WIDTH`] loop groups sharing ONE call-SCC
 /// condensation pass. Group `i` in `batch` owns bit `i` of the `u64` lane masks.
 /// Returns one [`LoopTerminalAgg`] per (group, terminal-op) — components 1-6
 /// identical to `solve_group` per group; witness (component 7) may differ.
+///
+/// `plan` is the run-global [`TerminalPlan`] (built ONCE by `search_loops`); the
+/// scoring phase reads its precomputed read-mode / verdict / severity tables
+/// instead of rebuilding them per batch.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_batch<'a>(
     graph: &D1Graph<'a>,
@@ -1350,6 +1715,7 @@ pub(crate) fn solve_batch<'a>(
     direct_ops: &[DirectOp<'a>],
     ctx: &'a DetectorContext,
     cw: &ClosedWorldTempParams,
+    plan: &TerminalPlan<'a>,
     batch: &[GroupSpec<'a>],
 ) -> Vec<LoopTerminalAgg<'a>> {
     assert!(
@@ -1636,66 +2002,24 @@ pub(crate) fn solve_batch<'a>(
     }
 
     // Rules 4-7: score terminals + select winner + materialize witness PER LANE.
-    // This phase used to be O(lanes × ALL n_nodes) with a per-lane fact re-scan
-    // (String-allocating a closed-world key per terminal per lane) — the batch's
-    // dominant cost once the fixpoint was bounded. It is now proportional to the
-    // TERMINAL-bearing nodes' reached facts (see the three precomputes below).
+    // The old per-batch fan-out — a `BTreeMap<key, Vec<Candidate>>` per lane fed
+    // ~100M fat `Candidate` pushes to pick a few thousand winners — is GONE.
+    // Scoring is now TERMINAL-outer with a per-lane running-best array + four
+    // verdict masks: each terminal-bearing node's facts are scanned once into a
+    // fixed `[Option<BestRef>; 64]` (no allocation, no map lookup in the hot
+    // loop), and only the winner per (lane, key) is materialized. All
+    // batch-INDEPENDENT terminal interpretation (read mode, verdicts, severity
+    // tables) was hoisted ONCE into `plan` (see `build_terminal_plan`).
     let _scoring_span = crate::engine::perf_trace::span("d1.reach", "scoring");
-
-    // Part 1: only terminal-bearing nodes can contribute a transitive candidate;
-    // the ~99% of nodes with no terminal are skipped. Ascending order preserves
-    // the exact per-lane discovery numbering the winner tie-break depends on.
-    let terminal_nodes: Vec<NodeIx> = (0..n_nodes as NodeIx)
-        .filter(|&node| !graph.terminals[node as usize].is_empty())
-        .collect();
-
-    // Part 2: the read-mode / closed-world-proven check is lane-INDEPENDENT, so
-    // resolve it ONCE per (terminal node, ti) instead of re-running the
-    // `owner.id.to_string()` HashSet probe on every one of the ≤64 lanes.
-    // `read_slots[tn][ti]` mirrors `solve_group`'s `value_slot`: `Some(slot)` =
-    // value-based read, `None` = reach-based (constant op, or proven-PD terminal).
-    let read_slots: Vec<Vec<Option<u16>>> = terminal_nodes
-        .iter()
-        .map(|&node| {
-            graph.terminals[node as usize]
-                .iter()
-                .enumerate()
-                .map(|(ti, t)| match liveness.terminal_reads[node as usize][ti] {
-                    None => None,
-                    Some(slot) => {
-                        let i = liveness.need[node as usize][slot as usize];
-                        if cw.contains(&(t.owner.id.to_string(), i)) {
-                            None
-                        } else {
-                            Some(slot)
-                        }
-                    }
-                })
-                .collect()
-        })
-        .collect();
-
-    // Per-lane candidate buckets, held simultaneously so the transitive phase can
-    // be driven NODE-outer (Part 3): each reached fact is scanned ONCE and its
-    // presence `mask` fanned out to only the lanes it reaches, instead of every
-    // one of the ≤64 lanes re-scanning every fact at each terminal node. Cost
-    // drops from O(lanes × terminal-node-facts) to O(terminal-node-facts +
-    // emitted-candidates).
-    //
-    // Byte-identity: `discovery` is a PER-LANE counter (its only effect is the
-    // final winner tie-break, compared only WITHIN one lane's bucket). Because the
-    // node/ti/fact loops run in the same ascending order as before and each lane
-    // is appended to only when its bit is present, every lane still receives its
-    // candidates in the exact old `(node, ti, fact)` order — so per-lane discovery
-    // numbering, hence the winner, is unchanged.
     let lanes = batch.len();
-    let mut lane_buckets: Vec<BTreeMap<(&'a str, &'a str), Vec<Candidate<'a>>>> =
-        (0..lanes).map(|_| BTreeMap::new()).collect();
-    let mut discovery: Vec<usize> = vec![0usize; lanes];
 
-    // Direct ops first (branch (a) precedence) — identical to solve_group. Done
-    // per lane so they occupy discovery `0..direct_count` exactly as before, ahead
-    // of every transitive candidate for that lane.
+    // Direct ops first (branch (a) precedence). Grouped by terminal key so a
+    // key's directs can be folded into its running best BEFORE its transitive
+    // facts (the old direct-before-transitive discovery order). A direct op's key
+    // = (loop_routine.id, op.id); its terminal owner IS the loop routine. Within
+    // a lane the pushes stay in `direct_indices` order (the tie-break the old
+    // per-lane discovery counter encoded).
+    let mut direct_by_key: HashMap<(&'a str, &'a str), Vec<DirectCand<'a>>> = HashMap::new();
     for (lane, group) in batch.iter().enumerate() {
         let root = root_state(group.loop_routine.id.as_str(), cw);
         for &di in &group.direct_indices {
@@ -1708,227 +2032,179 @@ pub(crate) fn solve_batch<'a>(
             let depth_bucket = local_depth.min(2);
             let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
             let severity = severity_for(op, verdict, depth_bucket, is_singleton);
-            lane_buckets[lane]
+            direct_by_key
                 .entry((owner.id.as_str(), op.id.as_str()))
                 .or_default()
-                .push(Candidate {
+                .push(DirectCand {
+                    lane,
                     verdict,
                     severity,
-                    unc: false,
-                    hops: 0,
                     depth_bucket,
-                    discovery: discovery[lane],
-                    source: CandSource::Direct {
-                        routine: owner,
-                        loop_info: d.loop_info,
-                        op,
-                    },
-                    terminal_op: op,
-                    terminal_owner: owner,
-                    terminal_local_depth: local_depth,
+                    rank: rank5(severity, verdict, false, 0, depth_bucket),
+                    routine: owner,
+                    loop_info: d.loop_info,
+                    op,
+                    local_depth,
                 });
-            discovery[lane] += 1;
         }
     }
 
-    // Transitive candidates: one per present fact reaching each terminal. Read mode
-    // + proven re-check are precomputed lane-independently in `read_slots` (Part
-    // 2); only terminal-bearing nodes are visited, ascending (Part 1). Each fact's
-    // verdict/severity/depth_bucket are lane-independent (they depend on the fact,
-    // not the lane) so they are computed ONCE per fact, then fanned out over the
-    // fact's lane mask (Part 3) — only `hops` and `discovery` are read per lane.
-    for (tn_idx, &node) in terminal_nodes.iter().enumerate() {
-        // A terminal node NOT reached by this batch (no reach/value fact in its
-        // per-node arena) can emit no candidate — skip it before paying any
-        // per-terminal setup (`is_setup_singleton_get`/`flowfield_verdict`). Byte-
-        // identical: the old code fell through the empty fact loops and pushed
-        // nothing. At Base-App scale a batch reaches a small fraction of the
-        // ~100k-node graph's terminal-bearing nodes, so this skips the ~99% that
-        // would otherwise pay full per-terminal setup on every one of the 97
-        // batches — the batch's dominant post-fixpoint cost.
+    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
+    // Terminal keys whose direct ops were already folded + emitted below, so the
+    // direct-only pass doesn't re-emit them.
+    let mut consumed_direct_keys: HashSet<(&'a str, &'a str)> = HashSet::new();
+
+    // Transitive scoring, TERMINAL-outer. `plan.entries` is in ascending
+    // (node, ti) order, so folding a key's directs first and then its facts in
+    // `reach_at`/`value_at` order reproduces the OLD per-lane push order EXACTLY
+    // — the strict-greater `update_best` then keeps the first-in-order (lowest
+    // discovery) on every tie, so the winner (and thus the witness) is identical.
+    for entry in &plan.entries {
+        let node = entry.node;
+        // A terminal node NOT reached by this batch can emit no TRANSITIVE
+        // candidate; skip the fact scan. Its direct-only ops (if any) are emitted
+        // by the direct-only pass below — byte-identical to the old code, whose
+        // direct phase ran unconditionally and whose transitive phase fell through
+        // the empty fact loops. This skips the ~99% of terminal-bearing nodes a
+        // batch never reaches (the old post-fixpoint dominant cost).
         if solver.reach_at[node as usize].is_empty() && solver.value_at[node as usize].is_empty() {
             continue;
         }
-        let terminals = &graph.terminals[node as usize];
-        for (ti, t) in terminals.iter().enumerate() {
-            let op = t.op;
-            let owner = t.owner;
-            let local_depth = t.local_depth;
-            let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
-            let key = (owner.id.as_str(), op.id.as_str());
+        let key = (entry.owner.id.as_str(), entry.op.id.as_str());
+        let mut best: [Option<BestRef<'a>>; BATCH_WIDTH] = [None; BATCH_WIDTH];
+        let mut vmask = [0u64; 4];
 
-            match read_slots[tn_idx][ti] {
-                None => {
-                    let verdict = flowfield_verdict(
-                        resolve_terminal(op, &TempVec::new(), owner.id.as_str(), cw),
-                        op,
-                        &ctx.table_by_id,
-                    );
-                    for &ri in &solver.reach_at[node as usize] {
-                        let f = &solver.reach_facts[ri];
-                        let depth_bucket = (f.depth + local_depth).min(2);
-                        let severity = severity_for(op, verdict, depth_bucket, is_singleton);
-                        let mut m = f.mask;
-                        while m != 0 {
-                            let lane = m.trailing_zeros() as usize;
-                            m &= m - 1;
-                            lane_buckets[lane].entry(key).or_default().push(Candidate {
+        // Direct precedence: fold this key's direct ops before its facts.
+        if let Some(cands) = direct_by_key.get(&key) {
+            for c in cands {
+                fold_direct(c, &mut best, &mut vmask);
+            }
+            consumed_direct_keys.insert(key);
+        }
+
+        match &entry.read {
+            ReadPlan::Reach {
+                verdict,
+                sev_by_bucket,
+            } => {
+                let verdict = *verdict;
+                for &ri in &solver.reach_at[node as usize] {
+                    let f = &solver.reach_facts[ri];
+                    let db = (f.depth + entry.local_depth).min(2);
+                    let severity = sev_by_bucket[db as usize];
+                    vmask[verdict as usize] |= f.mask;
+                    // severity/verdict/unc/db are per-FACT constants; only `hops`
+                    // varies per lane — hoist the rest out of the lane fan-out.
+                    let sev_r = sev_rank(severity);
+                    let q = verdict.quality();
+                    let unc_pref = if f.unc { 0 } else { 1 };
+                    let hops = &solver.reach_hops[ri];
+                    let mut m = f.mask;
+                    while m != 0 {
+                        let lane = m.trailing_zeros() as usize;
+                        m &= m - 1;
+                        let rank = (sev_r, q, unc_pref, -(hops[lane] as i64), db);
+                        // STRICT-greater keeps the first-in-order (lowest discovery)
+                        // on ties; construct `BestRef` ONLY on a win.
+                        if best[lane].is_none_or(|b| rank > b.rank) {
+                            best[lane] = Some(BestRef {
+                                rank,
                                 verdict,
                                 severity,
-                                unc: f.unc,
-                                hops: solver.reach_hops[ri][lane],
-                                depth_bucket,
-                                discovery: discovery[lane],
-                                source: CandSource::TransReach { reach_fact: ri },
-                                terminal_op: op,
-                                terminal_owner: owner,
-                                terminal_local_depth: local_depth,
+                                depth_bucket: db,
+                                source: BestSource::Reach { fact_ix: ri },
                             });
-                            discovery[lane] += 1;
                         }
                     }
                 }
-                Some(slot) => {
-                    let i = liveness.need[node as usize][slot as usize];
-                    for &vi in &solver.value_at[node as usize] {
-                        let f = &solver.value_facts[vi];
-                        if f.slot != slot {
-                            continue;
-                        }
-                        let frame: TempVec = std::iter::once((i, f.class)).collect();
-                        let verdict = flowfield_verdict(
-                            resolve_terminal(op, &frame, owner.id.as_str(), cw),
-                            op,
-                            &ctx.table_by_id,
-                        );
-                        let depth_bucket = (f.depth + local_depth).min(2);
-                        let severity = severity_for(op, verdict, depth_bucket, is_singleton);
-                        let mut m = f.mask;
-                        while m != 0 {
-                            let lane = m.trailing_zeros() as usize;
-                            m &= m - 1;
-                            lane_buckets[lane].entry(key).or_default().push(Candidate {
+            }
+            ReadPlan::Value {
+                slot,
+                verdict_by_class,
+                sev_by_class_bucket,
+            } => {
+                let slot = *slot;
+                for &vi in &solver.value_at[node as usize] {
+                    let f = &solver.value_facts[vi];
+                    if f.slot != slot {
+                        continue;
+                    }
+                    let ci = f.class as usize;
+                    let verdict = verdict_by_class[ci];
+                    let db = (f.depth + entry.local_depth).min(2);
+                    let severity = sev_by_class_bucket[ci][db as usize];
+                    vmask[verdict as usize] |= f.mask;
+                    let sev_r = sev_rank(severity);
+                    let q = verdict.quality();
+                    let unc_pref = if f.unc { 0 } else { 1 };
+                    let hops = &solver.value_hops[vi];
+                    let mut m = f.mask;
+                    while m != 0 {
+                        let lane = m.trailing_zeros() as usize;
+                        m &= m - 1;
+                        let rank = (sev_r, q, unc_pref, -(hops[lane] as i64), db);
+                        if best[lane].is_none_or(|b| rank > b.rank) {
+                            best[lane] = Some(BestRef {
+                                rank,
                                 verdict,
                                 severity,
-                                unc: f.unc,
-                                hops: solver.value_hops[vi][lane],
-                                depth_bucket,
-                                discovery: discovery[lane],
-                                source: CandSource::TransValue { value_fact: vi },
-                                terminal_op: op,
-                                terminal_owner: owner,
-                                terminal_local_depth: local_depth,
+                                depth_bucket: db,
+                                source: BestSource::Value { fact_ix: vi },
                             });
-                            discovery[lane] += 1;
                         }
                     }
                 }
             }
         }
+
+        emit_lane_aggregates(
+            &best,
+            &vmask,
+            lanes,
+            batch,
+            entry.owner,
+            entry.op,
+            entry.local_depth,
+            &solver,
+            graph,
+            ctx,
+            seeds,
+            &mut out,
+        );
     }
 
-    // Rules 5/7: per lane (in order, so `out` stays (lane, bucket-key)-ordered),
-    // per bucket, select the winner and materialize its witness.
-    let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
-    for (lane, group) in batch.iter().enumerate() {
-        for (_key, cands) in std::mem::take(&mut lane_buckets[lane]) {
-            let mut reachable_verdicts: Vec<TempVerdict> =
-                cands.iter().map(|c| c.verdict).collect();
-            reachable_verdicts.sort();
-            reachable_verdicts.dedup();
-
-            let winner = cands
-                .iter()
-                .max_by_key(|c| {
-                    selection_rank(
-                        c.severity,
-                        c.verdict,
-                        c.unc,
-                        c.hops,
-                        c.depth_bucket,
-                        c.discovery,
-                    )
-                })
-                .expect("a bucket is never empty");
-
-            let (witness, uncertainties, entry_callsite_id, effective_loop_depth) =
-                match &winner.source {
-                    CandSource::Direct {
-                        routine,
-                        loop_info,
-                        op,
-                    } => {
-                        let loop_step = loop_step_ev(routine, loop_info);
-                        let op_step = terminal_step(
-                            &ctx.routine_by_id,
-                            &ctx.table_by_id,
-                            routine.id.as_str(),
-                            Some(op.id.as_str()),
-                        );
-                        (
-                            vec![loop_step, op_step],
-                            Vec::new(),
-                            None,
-                            winner.terminal_local_depth,
-                        )
-                    }
-                    CandSource::TransReach { reach_fact } => {
-                        let terminal_node = solver.reach_facts[*reach_fact].node;
-                        let (hops, seed_index) =
-                            collect_reach_chain_b(&solver.reach_pred, lane, *reach_fact);
-                        build_transitive_witness(
-                            &hops,
-                            seed_index,
-                            terminal_node,
-                            winner.terminal_owner,
-                            winner.terminal_op,
-                            winner.terminal_local_depth,
-                            graph,
-                            ctx,
-                            seeds,
-                        )
-                    }
-                    CandSource::TransValue { value_fact } => {
-                        let terminal_node = solver.value_facts[*value_fact].node;
-                        let (hops, seed_index) = collect_value_chain_b(
-                            &solver.value_pred,
-                            &solver.reach_pred,
-                            lane,
-                            *value_fact,
-                        );
-                        build_transitive_witness(
-                            &hops,
-                            seed_index,
-                            terminal_node,
-                            winner.terminal_owner,
-                            winner.terminal_op,
-                            winner.terminal_local_depth,
-                            graph,
-                            ctx,
-                            seeds,
-                        )
-                    }
-                };
-
-            out.push(LoopTerminalAgg {
-                loop_routine: group.loop_routine,
-                loop_id: group.loop_id,
-                loop_info: group.loop_info,
-                terminal: D1Terminal {
-                    op: winner.terminal_op,
-                    owner: winner.terminal_owner,
-                    local_depth: winner.terminal_local_depth,
-                },
-                entry_callsite_id,
-                severity: winner.severity,
-                verdict: winner.verdict,
-                reachable_verdicts,
-                depth_bucket: winner.depth_bucket,
-                effective_loop_depth,
-                witness,
-                uncertainties,
-            });
+    // Direct-only keys: any terminal key with direct ops that was NOT scored above
+    // (no graph terminal, or its owner node was unreached this batch). No
+    // transitive facts exist for these, so the winner is always a Direct source —
+    // identical to the old code's direct-only buckets. Key iteration order is
+    // irrelevant: `search_loops`'s rule-8 sort canonicalizes the output.
+    for (key, cands) in &direct_by_key {
+        if consumed_direct_keys.contains(key) {
+            continue;
         }
+        let mut best: [Option<BestRef<'a>>; BATCH_WIDTH] = [None; BATCH_WIDTH];
+        let mut vmask = [0u64; 4];
+        for c in cands {
+            fold_direct(c, &mut best, &mut vmask);
+        }
+        // Terminal metadata for the Reach/Value arms (never taken here — the
+        // winner is always Direct, which carries its own witness inputs). Any
+        // cand's owner/op/local_depth serve; they all share the key.
+        let any = &cands[0];
+        emit_lane_aggregates(
+            &best,
+            &vmask,
+            lanes,
+            batch,
+            any.routine,
+            any.op,
+            any.local_depth,
+            &solver,
+            graph,
+            ctx,
+            seeds,
+            &mut out,
+        );
     }
     out
 }
@@ -2912,6 +3188,7 @@ mod tests {
     ) {
         let liveness = compute_liveness(graph, ctx, cw);
         let scc = condense(graph);
+        let plan = build_terminal_plan(graph, &liveness, ctx, cw);
 
         let mut groups: BTreeMap<(&str, &str), GroupSpec> = BTreeMap::new();
         for (i, seed) in seeds.iter().enumerate() {
@@ -2951,7 +3228,9 @@ mod tests {
         let mut total = 0usize;
         for chunk in group_vec.chunks(BATCH_WIDTH) {
             n_batches += 1;
-            let batch_out = solve_batch(graph, &liveness, &scc, seeds, direct_ops, ctx, cw, chunk);
+            let batch_out = solve_batch(
+                graph, &liveness, &scc, seeds, direct_ops, ctx, cw, &plan, chunk,
+            );
             for group in chunk {
                 let solo = solve_group(
                     graph,
@@ -3111,6 +3390,7 @@ mod tests {
         let cw = ClosedWorldTempParams::new();
         let liveness = compute_liveness(&graph, &ctx, &cw);
         let scc = condense(&graph);
+        let plan = build_terminal_plan(&graph, &liveness, &ctx, &cw);
         let seed_indices: Vec<usize> = (0..seeds.len()).collect();
 
         let oracle = process_group(
@@ -3153,6 +3433,7 @@ mod tests {
             &[],
             &ctx,
             &cw,
+            &plan,
             std::slice::from_ref(&group),
         );
 

@@ -374,6 +374,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **`d1_dataflow::solve_batch` scoring rewritten — candidate materialization
+  eliminated (the Base-App 8020 ~8-hour wall)** (Task TPlan;
+  `src/engine/l5/d1_dataflow.rs` + `src/engine/l5/d1_reach.rs`,
+  `feat/d1-reachability`). The per-batch SCORING phase no longer builds a
+  `BTreeMap<(owner,op), Vec<Candidate>>` per lane and fans ~100M+ fat `Candidate`
+  pushes across the run (97 batches each re-scoring the shared ~100k-node
+  db-touching component) only to pick a few thousand winners. Two changes: (1) a
+  run-global `TerminalPlan` (`build_terminal_plan`) is precomputed ONCE in
+  `search_loops` — every terminal's read mode, closed-world-proven re-check,
+  reach-case verdict, per-`ParamTemp`-class value verdicts, and the
+  severity-by-(class,depth-bucket) tables are all batch-INDEPENDENT, so the old
+  per-batch `terminal_nodes`/`read_slots`/`is_setup_singleton_get`/verdict/severity
+  recompute (×97) collapses to one build shared by every batch; (2) per-batch
+  scoring is now TERMINAL-outer with a fixed per-lane running-best
+  `[Option<BestRef>; 64]` + four `u64` verdict masks — each reached terminal's
+  facts are scanned once (no map lookup, no allocation in the hot loop), the
+  winner selected by a STRICT-greater `selection_rank` compare, and `reachable_verdicts`
+  derived from the verdict masks (four bit tests, replacing the per-candidate
+  collect+sort+dedup). Byte-identity: the winner comparator's `-discovery`
+  tiebreak is replaced by SOURCE ORDER — candidates are folded in the exact old
+  push order (direct ops first, then facts in `reach_at`/`value_at` order) and the
+  strict-greater update keeps the first-in-order on ties, reproducing
+  lowest-discovery-wins EXACTLY. Components 1-6 stay differential-identical
+  (`batch_equals_per_group` / `search_loops_matches_process_group`) and all five
+  golden families are BYTE-STABLE (no regen — witness unchanged). `solve_batch`
+  gained a `&TerminalPlan` param; `solve_group` (the D2 oracle) is untouched.
 - **`d1_reach::selection_rank` made canonical — `depth_bucket` tiebreak ahead of
   `-discovery`** (Task D3 review fix; `src/engine/l5/d1_reach.rs`,
   `feat/d1-reachability`). The winner comparator gained a HIGHER-`depth_bucket`-wins

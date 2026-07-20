@@ -51,7 +51,9 @@ use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
-use crate::engine::l5::d1_dataflow::{BATCH_WIDTH, GroupSpec, condense, solve_batch};
+use crate::engine::l5::d1_dataflow::{
+    BATCH_WIDTH, GroupSpec, build_terminal_plan, condense, solve_batch,
+};
 use crate::engine::l5::d1_graph::{
     D1Edge, D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok,
 };
@@ -684,16 +686,56 @@ pub(crate) fn search_loops<'a>(
 
     // Shared ONCE across every batch: the backward param-liveness fixpoint +
     // compiled transfers, and the call-graph SCC condensation.
+    let g_lv = crate::engine::perf_trace::span("d1", "compute_liveness");
     let liveness = compute_liveness(graph, ctx, cw);
+    drop(g_lv);
+    let g_cd = crate::engine::perf_trace::span("d1", "condense");
     let scc = condense(graph);
+    drop(g_cd);
+    // The run-global terminal scoring plan (read modes + per-verdict/severity
+    // tables), precomputed ONCE here and shared by every batch's scoring phase —
+    // never rebuilt per batch (the old per-batch `terminal_nodes`/`read_slots`).
+    let g_tp = crate::engine::perf_trace::span("d1", "terminal_plan");
+    let plan = build_terminal_plan(graph, &liveness, ctx, cw);
+    drop(g_tp);
+
+    // Hot-tier (`Detail::Hot`) attribution: the batch census + kill-durable
+    // per-batch cumulative timing. `d1.reach.batch_census` (once) carries the
+    // group/batch/node/edge counts; `d1.reach.batches_done`/`cumulative_ms`
+    // (last-value-wins C counters, re-emitted every batch) let a cap-killed run
+    // still show batches/sec — distinguishing batch-count-bound from
+    // per-batch-bound. Zero cost when Hot is off.
+    let trace_hot = crate::engine::perf_trace::enabled(crate::engine::perf_trace::Detail::Hot);
+    let n_batches = groups.len().div_ceil(BATCH_WIDTH);
+    if trace_hot {
+        let edges: u64 = graph.edges.iter().map(|e| e.len() as u64).sum();
+        crate::engine::perf_trace::instant_lazy("d1.reach", "batch_census", || {
+            serde_json::json!({
+                "groups": groups.len(),
+                "batches": n_batches,
+                "nodes": graph.node_ids.len(),
+                "edges": edges,
+                "seeds": seeds.len(),
+                "direct_ops": direct_ops.len(),
+                "batch_width": BATCH_WIDTH,
+            })
+        });
+    }
 
     // Serial 64-lane batches — each shares one condensation pass and drops its
     // arena before the next (the RSS bound; no rayon).
     let mut out: Vec<LoopTerminalAgg<'a>> = Vec::new();
-    for batch in groups.chunks(BATCH_WIDTH) {
+    let mut cumulative_ms: u64 = 0;
+    for (bi, batch) in groups.chunks(BATCH_WIDTH).enumerate() {
+        let t0 = trace_hot.then(std::time::Instant::now);
         out.extend(solve_batch(
-            graph, &liveness, &scc, seeds, direct_ops, ctx, cw, batch,
+            graph, &liveness, &scc, seeds, direct_ops, ctx, cw, &plan, batch,
         ));
+        if let Some(t0) = t0 {
+            cumulative_ms += t0.elapsed().as_millis() as u64;
+            crate::engine::perf_trace::counter("d1.reach.batches_done", (bi + 1) as u64);
+            crate::engine::perf_trace::counter("d1.reach.cumulative_ms", cumulative_ms);
+        }
     }
 
     // Rule 8: deterministic output order, independent of traversal order.
