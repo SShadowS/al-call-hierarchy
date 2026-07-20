@@ -79,8 +79,10 @@ pub(crate) enum ParamTemp {
 pub(crate) type TempVec = SmallVec<[(u32, ParamTemp); 4]>;
 
 /// Look up `idx` in a sorted sparse [`TempVec`]; absent -> `Unknown` (the
-/// sparse-vector default — see module docs).
-fn lookup(v: &TempVec, idx: u32) -> ParamTemp {
+/// sparse-vector default — see module docs). `pub(crate)` so the sparse-read
+/// is defined ONCE and reused by the D2 fact solver
+/// ([`crate::engine::l5::d1_dataflow`]) + the D1 liveness differential test.
+pub(crate) fn lookup(v: &TempVec, idx: u32) -> ParamTemp {
     v.binary_search_by_key(&idx, |&(i, _)| i)
         .map(|pos| v[pos].1)
         .unwrap_or(ParamTemp::Unknown)

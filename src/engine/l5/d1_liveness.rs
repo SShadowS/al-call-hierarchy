@@ -269,7 +269,7 @@ pub(crate) fn compute_liveness<'a>(
 mod tests {
     use super::*;
     use crate::engine::l5::d1_graph::D1Terminal;
-    use crate::engine::l5::d1_temp::{TempVec, cross_hop};
+    use crate::engine::l5::d1_temp::{TempVec, cross_hop, lookup};
     use crate::engine::l5::test_support::{
         arg_binding, call_site, minimal_ctx, record_op, routine, ts_known, ts_pd,
     };
@@ -589,14 +589,6 @@ mod tests {
             "binding_ok=false blocks every non-proven param on the B->H edge"
         );
 
-        // Local param-value lookup mirroring d1_temp's own (private) `lookup`.
-        fn lookup_pt(v: &TempVec, idx: u32) -> ParamTemp {
-            v.iter()
-                .find(|&&(i, _)| i == idx)
-                .map(|&(_, pt)| pt)
-                .unwrap_or(ParamTemp::Unknown)
-        }
-
         fn apply_transfer(transfer: &ParamTransfer, caller_slot_values: &[ParamTemp]) -> ParamTemp {
             match transfer {
                 ParamTransfer::Const(pt) => *pt,
@@ -611,13 +603,13 @@ mod tests {
         let a_caller_state: TempVec = vec![(3, ParamTemp::Physical)].into_iter().collect();
         let a_slot_values: Vec<ParamTemp> = liveness.need[0]
             .iter()
-            .map(|&j| lookup_pt(&a_caller_state, j))
+            .map(|&j| lookup(&a_caller_state, j))
             .collect();
         let a_oracle = cross_hop(&a_caller_state, a_routine, "A/cs0", "H", true, &cw);
         let a_transfers = &liveness.edge_transfers[0][0];
         assert_eq!(a_transfers.len(), 5);
         for (slot, &p) in liveness.need[2].iter().enumerate() {
-            let expected = lookup_pt(&a_oracle, p);
+            let expected = lookup(&a_oracle, p);
             let actual = apply_transfer(&a_transfers[slot], &a_slot_values);
             assert_eq!(
                 actual, expected,
@@ -633,7 +625,7 @@ mod tests {
         let b_transfers = &liveness.edge_transfers[1][0];
         assert_eq!(b_transfers.len(), 5);
         for (slot, &p) in liveness.need[2].iter().enumerate() {
-            let expected = lookup_pt(&b_oracle, p);
+            let expected = lookup(&b_oracle, p);
             let actual = apply_transfer(&b_transfers[slot], &b_slot_values);
             assert_eq!(
                 actual, expected,

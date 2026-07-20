@@ -74,22 +74,14 @@ use crate::engine::l5::d1_reach::{
     DirectOp, LoopTerminalAgg, call_step_ev, flowfield_verdict, loop_step_ev, node_has_uncertainty,
     selection_rank,
 };
-use crate::engine::l5::d1_temp::{ParamTemp, TempVec, cross_hop, resolve_terminal, root_state};
+use crate::engine::l5::d1_temp::{
+    ParamTemp, TempVec, cross_hop, lookup, resolve_terminal, root_state,
+};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::d1::{
     TempVerdict, hop_step, is_setup_singleton_get, severity_for, terminal_step,
 };
 use crate::engine::l5::finding::EvidenceStep;
-
-/// Look up `idx` in a sorted sparse [`TempVec`]; absent -> `Unknown` (mirrors
-/// `d1_temp`'s own private `lookup`; the seed-entry projection needs it to read
-/// the live params off `cross_hop`'s output vector).
-fn temp_lookup(v: &TempVec, idx: u32) -> ParamTemp {
-    v.iter()
-        .find(|&&(i, _)| i == idx)
-        .map(|&(_, pt)| pt)
-        .unwrap_or(ParamTemp::Unknown)
-}
 
 /// A reach fact's first-arrival predecessor (the seed it descends from, or the
 /// parent reach fact + the crossed edge).
@@ -433,7 +425,7 @@ pub(crate) fn solve_group<'a>(
         let unc = unc_by_node[entry as usize];
         solver.ensure_reach(entry, depth, unc, 0, ReachPred::Seed { seed_index: si });
         for (slot, &p) in liveness.need[entry as usize].iter().enumerate() {
-            let class = temp_lookup(&entry_temp, p);
+            let class = lookup(&entry_temp, p);
             solver.ensure_value(
                 entry,
                 slot as u16,
@@ -905,7 +897,7 @@ mod tests {
                 let o_unc = winner_unc(o);
                 assert_eq!(s_unc, o_unc, "unc (6) diverged for {key:?}/{k:?}");
 
-                assert_witness_valid(s);
+                assert_witness_valid(s, ctx);
             }
             total += solved.len();
         }
@@ -928,9 +920,15 @@ mod tests {
     }
 
     /// A `solve_group` aggregate's witness must be a valid realizing path: first
-    /// step in the loop routine (a loop step), last step the terminal op, and
-    /// the intermediate steps a `[call, hop*]` chain.
-    fn assert_witness_valid(agg: &LoopTerminalAgg) {
+    /// step in the loop routine (a loop step), last step the terminal op, the
+    /// intermediate steps a `[call, hop*]` chain, and — the brief's "hop count ==
+    /// reported" + edge-contiguity requirements — every consecutive `(from, to)`
+    /// pair of intermediate/terminal steps a REAL graph edge (`from`'s callsite
+    /// resolving `from -> to` in `ctx.graph.edges_by_from`). Because the walk
+    /// crosses exactly one real edge per step and lands precisely on the terminal
+    /// owner, the witness's hop count is the true path length — no gap, no repeat,
+    /// no phantom hop (the "reported" count).
+    fn assert_witness_valid(agg: &LoopTerminalAgg, ctx: &DetectorContext) {
         let w = &agg.witness;
         assert!(!w.is_empty(), "witness must be non-empty");
         // First step: the loop step, in the loop routine, naming the loop.
@@ -972,12 +970,33 @@ mod tests {
                 agg.entry_callsite_id.is_some(),
                 "a transitive winner records its entry callsite"
             );
-            for step in &w[1..w.len() - 1] {
+            // Edge contiguity + hop count: each `(from, to)` in the [call, hop*,
+            // terminal] tail is a real edge `from --from.callsite--> to`. `from`
+            // ranges over the call + hop steps (all carry a callsite, none a loop
+            // id); `to` ranges over the hops + terminal step.
+            for pair in w[1..].windows(2) {
+                let from = &pair[0];
+                let to = &pair[1];
                 assert!(
-                    step.callsite_id.is_some(),
+                    from.callsite_id.is_some(),
                     "the call + hop steps each carry a callsite"
                 );
-                assert!(step.loop_id.is_none(), "non-loop intermediate steps");
+                assert!(from.loop_id.is_none(), "non-loop intermediate steps");
+                let cs = from.callsite_id.as_deref();
+                let is_real_edge =
+                    ctx.graph
+                        .edges_by_from
+                        .get(&from.routine_id)
+                        .is_some_and(|edges| {
+                            edges
+                                .iter()
+                                .any(|e| e.callsite_id.as_deref() == cs && e.to == to.routine_id)
+                        });
+                assert!(
+                    is_real_edge,
+                    "witness step {} --{:?}--> {} must be a real graph edge (contiguity)",
+                    from.routine_id, cs, to.routine_id
+                );
             }
         }
     }
@@ -1231,6 +1250,95 @@ mod tests {
         let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
         assert_eq!(seeds.len(), 2);
         let cw = ClosedWorldTempParams::new();
+        assert_agrees(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    // === Fixture 3b: the FlowFieldGated-vs-Physical DISCOVERY TIE =========
+    // The one shape where a pure first-discovery tie decides component 4
+    // (verdict): a `CalcFields` PD-terminal reachable by two in-loop seeds — one
+    // passing a TEMP record (-> `FlowFieldGated`, since the FlowField gate BLOCKS
+    // the info-downgrade — here via a missing `table_id`, `flowfield_gate_blocks_
+    // downgrade` d1.rs:143-148), one PHYSICAL (-> `Physical`). Both share
+    // verdict-quality rank 3 AND the SAME severity ("high", `CalcFields` is a
+    // heavy-read op) at equal unc(false)/hops(0), so the winner is decided by
+    // `-discovery` ALONE. `reachable_verdicts` (a SET) holds BOTH; only the single
+    // WINNER verdict is at stake — a binding component-4 constraint. This asserts
+    // `solve_group` and `process_group` pick the SAME winner verdict.
+    fn flowfield_tie_fixture() -> Fixture {
+        use crate::engine::l5::test_support::{arg_binding, ts_known, ts_pd};
+
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        let mut cs0 = call_site("R/cs0", "H", vec!["R/loop0".to_string()]);
+        cs0.argument_bindings = vec![arg_binding(0, Some(ts_known(true)))]; // temp
+        let mut cs1 = call_site("R/cs1", "H", vec!["R/loop0".to_string()]);
+        cs1.argument_bindings = vec![arg_binding(0, Some(ts_known(false)))]; // physical
+        r.call_sites = vec![cs0, cs1];
+
+        let mut h = routine("H", "procedure");
+        // CalcFields with NO table_id -> the FlowField gate blocks the temp
+        // downgrade (unresolvable table is conservative), so a Temp-resolved read
+        // is `FlowFieldGated`, not `Temporary`.
+        let mut op0 = record_op("H/op0", "CalcFields", "Rec", None, vec![], false);
+        op0.temp_state = Some(ts_pd(0)); // PD on param 0 — resolves per caller
+        h.record_operations = vec![op0];
+
+        let routines = vec![r, h];
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![
+                edge_kind("R", "H", "R/cs0", "direct"),
+                edge_kind("R", "H", "R/cs1", "direct"),
+            ],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> =
+            [("H".to_string(), db_summary("H", "t/H"))]
+                .into_iter()
+                .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    #[test]
+    fn agrees_on_flowfield_vs_physical_discovery_tie() {
+        use crate::engine::l5::detectors::d1::TempVerdict;
+
+        let (routines, graph_edges, summaries) = flowfield_tie_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(seeds.len(), 2, "one temp seed + one physical seed into H");
+        let cw = ClosedWorldTempParams::new();
+
+        // Confirm the tie is real: BOTH verdicts reach the terminal at the same
+        // severity, and the winner is genuinely FlowFieldGated (not Temporary,
+        // not Physical) — else the fixture would not exercise the tie path.
+        let liveness = compute_liveness(&graph, &ctx, &cw);
+        let seed_indices: Vec<usize> = (0..seeds.len()).collect();
+        let solved = solve_group(
+            &graph,
+            &liveness,
+            &seeds,
+            &[],
+            &ctx,
+            &cw,
+            seeds[0].loop_routine,
+            seeds[0].loop_id,
+            seeds[0].loop_info,
+            &seed_indices,
+            &[],
+        );
+        assert_eq!(solved.len(), 1);
+        assert_eq!(solved[0].severity, "high", "CalcFields heavy-read => high");
+        assert_eq!(
+            solved[0].reachable_verdicts,
+            vec![TempVerdict::Physical, TempVerdict::FlowFieldGated],
+            "both verdicts reach the terminal (the SET holds both)"
+        );
+
+        // The differential decides the tie: solve_group and process_group must
+        // agree on the single WINNER verdict (component 4) despite the tie.
         assert_agrees(&graph, &seeds, &[], &ctx, &cw);
     }
 

@@ -33,9 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proven by a differential test that runs BOTH engines on every d1_reach fixture
   (budget-buster fanout, depth-2-beats-depth-1, physical-beats-temp multi-seed,
   cycle, direct+transitive, multi-group overlapping closure) plus an
-  uncertain-winner fixture that drives component 6 to `true`; **all six
-  components matched on every fixture, no divergence found**, and each solved
-  witness is asserted a valid realizing path. `process_group` stays the live
+  uncertain-winner fixture that drives component 6 to `true` and a
+  FlowFieldGated-vs-Physical PD-terminal fixture whose winner is a pure
+  first-discovery tie (the one shape where the tie decides component 4 —
+  `CalcFields` reachable as both Temp→FlowFieldGated and Physical at equal
+  severity/unc/hops); **all six components matched on every fixture, no
+  divergence found** (the discovery tie AGREED — both engines pick
+  FlowFieldGated), and each solved witness is asserted a valid realizing path
+  (edge contiguity + hop count verified against the graph). `process_group` stays the live
   oracle; nothing wires `solve_group` into `detect_d1` yet (D3 batches it). Reuses
   `d1_reach`'s helpers (`flowfield_verdict`/`selection_rank`/`loop_step_ev`/
   `call_step_ev`/`node_has_uncertainty` extracted `pub(crate)`; `severity_for`/
