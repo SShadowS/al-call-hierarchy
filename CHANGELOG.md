@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_liveness` — backward `Need[node]` param-liveness fixpoint + compiled
+  per-edge `ParamTransfer`** (`src/engine/l5/d1_liveness.rs`, Task D1 of the
+  d1 dataflow-solver redesign; `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`,
+  `feat/d1-reachability`). The arc replaces d1's per-loop-group product-state
+  BFS (`d1_reach.rs`'s `search_loops`/`process_group`) — which does not finish
+  on Base App 8020 density — with a batched per-parameter dataflow solver; this
+  first task compiles the substrate the solver rests on. `compute_liveness`
+  computes, per node in a `D1Graph`, the sorted set of downstream-observable
+  ("live") parameter indices via a backward, union-only-monotone fixpoint:
+  `Need[n] = {i : some terminal at n reads op temp_state PD(i)} ∪ {caller
+  param j : edge n→m, callee param p ∈ Need[m], the edge's binding for p is
+  ParameterDependent(j)}` — a closed-world proof, a `Known` binding, a
+  non-`binding_ok` edge, or a missing binding all contribute NOTHING to the
+  caller's need (only a `PD` forward does). It then compiles one `ParamTransfer`
+  (`Const(ParamTemp)` or `Copy{caller_slot}`) per edge per live callee
+  parameter, and one read-slot per terminal. **Unary-premise verification**:
+  the task brief required confirming d1's temp propagation is UNARY (each
+  callee parameter a function of AT MOST ONE caller parameter, never a
+  combination) before trusting the whole dataflow-solver design on it —
+  `classify_edge_param` is a literal per-parameter transcription of
+  `d1_temp::cross_hop`'s binding-table loop body (same closed-world-proven ->
+  `binding_ok` -> callsite -> binding check order), and its differential test
+  (`transfer_matches_cross_hop_per_param`) proves every compiled `ParamTransfer`
+  reproduces `cross_hop`'s own per-parameter answer across all 5 outcome kinds
+  (proven, const-temp, const-physical, unknown, copy) — **the premise holds,
+  confirmed by transcription rather than assumed**; no falsifying case was
+  found. New module only — nothing consumes it yet (D2 wires the fact solver
+  over it); full suite green, no goldens touched.
 - **`LoopContext` schema — terminal-centric d1 findings** (Task 5 of the
   d1-db-op-in-loop reachability redesign; `src/engine/l5/finding.rs`). A d1
   `Finding` now carries `contexts: Option<Vec<LoopContext>>` — one context per

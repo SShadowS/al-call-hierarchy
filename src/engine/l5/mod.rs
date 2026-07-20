@@ -58,6 +58,10 @@ pub(crate) mod d1_temp;
 // `d1_graph`/`d1_temp`. Nothing consumes it yet; Task 5 cuts `detect_d1` over to
 // it. `detectors::d1::detect_d1` stays fully live and byte-identical.
 pub(crate) mod d1_reach;
+// d1 dataflow-solver redesign Task D1 — the backward `Need[node]` param-
+// liveness fixpoint + the compiled per-edge `ParamTransfer` table the D2 fact
+// solver will consume. Nothing consumes it yet.
+pub(crate) mod d1_liveness;
 // Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
 // event-flow detectors consume. NO detectors yet — index + query + fan-out +
 // chain-walk substrate only.
