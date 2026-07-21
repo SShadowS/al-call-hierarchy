@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_dataflow` — per-fact/lane `origin_seed` propagation (`reach_origin`/
+  `value_origin`)** (`src/engine/l5/d1_dataflow.rs`, Task C2;
+  `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`).
+  `BatchSolver` now tracks, per fact and per lane, the SEED index that first
+  reached it — `reach_origin: Vec<[u32; BATCH_WIDTH]>` / `value_origin: Vec<[u32;
+  BATCH_WIDTH]>`, parallel to `reach_hops`/`value_hops` (unset lanes sentinel
+  `u32::MAX`, mirroring `ReachPredB::None`). Set incrementally in `commit_reach`/
+  `commit_value`'s existing per-lane loop: a `Seed` predecessor originates itself;
+  a `Hop`/`HopFromValue`/`HopFromReach` predecessor copies its PARENT fact's
+  origin[lane] for that lane (`HopFromReach`'s parent is a REACH fact, so it reads
+  `reach_origin`, not `value_origin`) — no predecessor-chain walk. Correct because
+  the `HopQueue` drains in nondecreasing-hops order, so a parent's origin[lane] is
+  always set before the child that copies it. This is the piece a bounded
+  representative witness (Task C3) needs to recover a fact's seed in O(1) instead
+  of walking its full ~28k-hop predecessor chain. Proven by
+  `origin_propagation_matches_chain_walk` (a purpose-built 3-hop fixture,
+  `A -> B -> C -> H`, whose B→C edge binds a KNOWN temp literal — the Const
+  transfer that switches H's value-fact chain onto a `HopFromReach` transition
+  mid-walk): asserts, for EVERY reach fact and EVERY value fact the fixpoint
+  populates (not just the terminal), that the incrementally-propagated origin
+  equals the seed `collect_reach_chain_b`/`collect_value_chain_b` finds by walking
+  the full chain. Purely additive — `solve_batch`/`score_batch_to_sink`/
+  `detect_d1` are unchanged, so all five golden families stay BYTE-IDENTICAL
+  (`scripts/check-goldens` green, no regen).
 - **`d1_cohort` — terminal bitmap-COHORT sink (`TerminalSink`) + `score_batch_to_sink`
   emission** (`src/engine/l5/d1_cohort.rs`, `src/engine/l5/d1_dataflow.rs`, Task C1;
   `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`).

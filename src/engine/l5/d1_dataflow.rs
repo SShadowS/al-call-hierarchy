@@ -1090,8 +1090,22 @@ struct BatchSolver {
     value_facts: Vec<ValueFactB>,
     reach_hops: Vec<[u32; BATCH_WIDTH]>,
     reach_pred: Vec<[ReachPredB; BATCH_WIDTH]>,
+    /// Task C2: `reach_origin[fact][lane]` = the seed index that FIRST reached
+    /// this fact on this lane — set incrementally in [`Self::commit_reach`] by
+    /// following the SAME predecessor just recorded in `reach_pred` (a `Seed`
+    /// originates itself; a `Hop` copies its parent reach fact's origin[lane]).
+    /// Lets a representative witness (Task C3) recover a fact's seed in O(1)
+    /// instead of walking its full predecessor chain. `u32::MAX` = unset (a
+    /// lane absent from this fact — mirrors `ReachPredB::None`'s sentinel role).
+    reach_origin: Vec<[u32; BATCH_WIDTH]>,
     value_hops: Vec<[u32; BATCH_WIDTH]>,
     value_pred: Vec<[ValuePredB; BATCH_WIDTH]>,
+    /// Task C2: `value_origin[fact][lane]`, mirroring `reach_origin` for value
+    /// facts. `HopFromValue` copies the parent VALUE fact's origin[lane];
+    /// `HopFromReach` copies the parent REACH fact's origin[lane] (`pred`
+    /// indexes into `reach_origin`, not `value_origin`, for that variant — the
+    /// value fact was born from a reach arrival, not a prior value fact).
+    value_origin: Vec<[u32; BATCH_WIDTH]>,
     reach_index: HashMap<(NodeIx, i64, bool), usize>,
     value_index: HashMap<(NodeIx, u16, ParamTemp, i64, bool), usize>,
     reach_at: Vec<Vec<usize>>,
@@ -1105,8 +1119,10 @@ impl BatchSolver {
             value_facts: Vec::new(),
             reach_hops: Vec::new(),
             reach_pred: Vec::new(),
+            reach_origin: Vec::new(),
             value_hops: Vec::new(),
             value_pred: Vec::new(),
+            value_origin: Vec::new(),
             reach_index: HashMap::new(),
             value_index: HashMap::new(),
             reach_at: vec![Vec::new(); n_nodes],
@@ -1140,6 +1156,7 @@ impl BatchSolver {
                 });
                 self.reach_hops.push([0u32; BATCH_WIDTH]);
                 self.reach_pred.push([ReachPredB::None; BATCH_WIDTH]);
+                self.reach_origin.push([u32::MAX; BATCH_WIDTH]);
                 self.reach_at[node as usize].push(i);
                 self.reach_index.insert(key, i);
                 i
@@ -1158,6 +1175,17 @@ impl BatchSolver {
             let lane = m.trailing_zeros() as usize;
             hops_arr[lane] = hops;
             pred_arr[lane] = pred;
+            // Task C2: origin follows the SAME predecessor just recorded above.
+            // `Hop`'s `pred` fact was committed at a strictly lower hop count
+            // (the HopQueue drains in nondecreasing-hops order), so its
+            // origin[lane] is already set — copying it here needs no chain walk.
+            self.reach_origin[idx][lane] = match pred {
+                ReachPredB::Seed { seed_index } => seed_index,
+                ReachPredB::Hop { pred: p, .. } => self.reach_origin[p as usize][lane],
+                ReachPredB::None => unreachable!(
+                    "commit_reach: a newly-committed lane always carries a real predecessor"
+                ),
+            };
             m &= m - 1;
         }
         (idx, new_bits)
@@ -1191,6 +1219,7 @@ impl BatchSolver {
                 });
                 self.value_hops.push([0u32; BATCH_WIDTH]);
                 self.value_pred.push([ValuePredB::None; BATCH_WIDTH]);
+                self.value_origin.push([u32::MAX; BATCH_WIDTH]);
                 self.value_at[node as usize].push(i);
                 self.value_index.insert(key, i);
                 i
@@ -1209,6 +1238,19 @@ impl BatchSolver {
             let lane = m.trailing_zeros() as usize;
             hops_arr[lane] = hops;
             pred_arr[lane] = pred;
+            // Task C2: `HopFromValue`'s parent is a VALUE fact (copy
+            // value_origin); `HopFromReach`'s parent is a REACH fact — its
+            // `pred` indexes reach_origin, not value_origin (see the struct
+            // doc). Both parents were committed at a strictly lower hop count,
+            // so their origin[lane] is already set.
+            self.value_origin[idx][lane] = match pred {
+                ValuePredB::Seed { seed_index } => seed_index,
+                ValuePredB::HopFromValue { pred: p, .. } => self.value_origin[p as usize][lane],
+                ValuePredB::HopFromReach { pred: p, .. } => self.reach_origin[p as usize][lane],
+                ValuePredB::None => unreachable!(
+                    "commit_value: a newly-committed lane always carries a real predecessor"
+                ),
+            };
             m &= m - 1;
         }
         (idx, new_bits)
@@ -1382,6 +1424,13 @@ struct TermEntry<'a> {
 /// loop visited terminals, so the discovery (source-order) tie-break is exact.
 pub(crate) struct TerminalPlan<'a> {
     entries: Vec<TermEntry<'a>>,
+}
+
+impl<'a> TerminalPlan<'a> {
+    /// Number of terminal entries — the dense `TerminalSink` size.
+    pub(crate) fn terminal_count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 /// Build the run-global [`TerminalPlan`]. Called ONCE (in `search_loops`) before
@@ -2687,6 +2736,240 @@ pub(crate) fn score_batch_to_sink<'a>(
     }
 }
 
+/// Test-only: drive the SAME fixpoint (Rules 1-3 — seed every lane's frontier,
+/// then drain each SCC in topological order) that `solve_batch`/
+/// `score_batch_to_sink` run internally, and return the populated
+/// [`BatchSolver`] itself instead of a scored/emitted result. Task C2's
+/// origin-propagation test needs to inspect the solver's per-lane provenance
+/// (`reach_pred`/`reach_origin`/`value_pred`/`value_origin`) directly, which
+/// neither production entry point exposes. Byte-for-byte the same commit/route
+/// sequence as those two (minus their Hot-tier tracing, irrelevant here) — see
+/// `score_batch_to_sink`'s own doc for why the fixpoint section is safe to
+/// reproduce verbatim.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn run_batch_fixpoint_for_test<'a>(
+    graph: &D1Graph<'a>,
+    liveness: &Liveness,
+    scc: &CallScc,
+    seeds: &[D1Seed<'a>],
+    ctx: &'a DetectorContext,
+    cw: &ClosedWorldTempParams,
+    batch: &[GroupSpec<'a>],
+) -> BatchSolver {
+    let n_nodes = graph.node_ids.len();
+    let mut solver = BatchSolver::new(n_nodes);
+
+    let unc_by_node: Vec<bool> = graph
+        .node_ids
+        .iter()
+        .map(|id| node_has_uncertainty(ctx, id))
+        .collect();
+    let expandable: Vec<bool> = graph
+        .node_ids
+        .iter()
+        .map(|id| ctx.routine_by_id.contains_key(id))
+        .collect();
+
+    let mut pending: Vec<Vec<Proposal>> = (0..scc.members.len()).map(|_| Vec::new()).collect();
+
+    // Rule 1: seed every lane's frontier (identical to solve_batch/score_batch_to_sink).
+    for (lane, group) in batch.iter().enumerate() {
+        let bit = 1u64 << lane;
+        let root = root_state(group.loop_routine.id.as_str(), cw);
+        for &si in &group.seed_indices {
+            let seed = &seeds[si];
+            let entry = seed.entry;
+            let entry_id = graph.node_ids[entry as usize];
+            let binding_ok = edge_kind_binding_ok(seed.entry_edge_kind);
+            let entry_temp = cross_hop(
+                &root,
+                seed.loop_routine,
+                seed.callsite.id.as_str(),
+                entry_id,
+                binding_ok,
+                cw,
+            );
+            let depth = seed.seed_depth.min(2);
+            let unc = unc_by_node[entry as usize];
+            let entry_scc = scc.scc_of[entry as usize] as usize;
+            pending[entry_scc].push(Proposal::Reach {
+                node: entry,
+                depth,
+                unc,
+                mask: bit,
+                hops: 0,
+                pred: ReachPredB::Seed {
+                    seed_index: si as u32,
+                },
+            });
+            for (slot, &p) in liveness.need[entry as usize].iter().enumerate() {
+                let class = lookup(&entry_temp, p);
+                pending[entry_scc].push(Proposal::Value {
+                    node: entry,
+                    slot: slot as u16,
+                    class,
+                    depth,
+                    unc,
+                    mask: bit,
+                    hops: 0,
+                    pred: ValuePredB::Seed {
+                        seed_index: si as u32,
+                    },
+                });
+            }
+        }
+    }
+
+    // Rules 2-3: least-fixpoint over the SCC condensation.
+    for &scc_id in &scc.topo_order {
+        let mut queue = HopQueue::new();
+        for prop in std::mem::take(&mut pending[scc_id as usize]) {
+            queue.push(prop);
+        }
+        while let Some(prop) = queue.pop() {
+            match prop {
+                Proposal::Reach {
+                    node,
+                    depth,
+                    unc,
+                    mask,
+                    hops,
+                    pred,
+                } => {
+                    let (idx, new_bits) = solver.commit_reach(node, depth, unc, mask, hops, pred);
+                    if new_bits == 0 || !expandable[node as usize] {
+                        continue;
+                    }
+                    for (k, edge) in graph.edges[node as usize].iter().enumerate() {
+                        let m = edge.to;
+                        let d2 = (depth + edge.loop_depth).min(2);
+                        let u2 = unc || unc_by_node[m as usize];
+                        let rnb = solver.reach_new_bits(m, d2, u2, new_bits);
+                        if rnb != 0 {
+                            route(
+                                Proposal::Reach {
+                                    node: m,
+                                    depth: d2,
+                                    unc: u2,
+                                    mask: rnb,
+                                    hops: hops + 1,
+                                    pred: ReachPredB::Hop {
+                                        pred: idx as u32,
+                                        from_node: node,
+                                        edge_k: k as u32,
+                                    },
+                                },
+                                scc_id,
+                                &scc.scc_of,
+                                &mut queue,
+                                &mut pending,
+                            );
+                        }
+                        for (callee_slot, transfer) in
+                            liveness.edge_transfers[node as usize][k].iter().enumerate()
+                        {
+                            if let ParamTransfer::Const(pt) = transfer {
+                                let vnb = solver.value_new_bits(
+                                    m,
+                                    callee_slot as u16,
+                                    *pt,
+                                    d2,
+                                    u2,
+                                    new_bits,
+                                );
+                                if vnb != 0 {
+                                    route(
+                                        Proposal::Value {
+                                            node: m,
+                                            slot: callee_slot as u16,
+                                            class: *pt,
+                                            depth: d2,
+                                            unc: u2,
+                                            mask: vnb,
+                                            hops: hops + 1,
+                                            pred: ValuePredB::HopFromReach {
+                                                pred: idx as u32,
+                                                from_node: node,
+                                                edge_k: k as u32,
+                                            },
+                                        },
+                                        scc_id,
+                                        &scc.scc_of,
+                                        &mut queue,
+                                        &mut pending,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Proposal::Value {
+                    node,
+                    slot,
+                    class,
+                    depth,
+                    unc,
+                    mask,
+                    hops,
+                    pred,
+                } => {
+                    let (idx, new_bits) =
+                        solver.commit_value(node, slot, class, depth, unc, mask, hops, pred);
+                    if new_bits == 0 || !expandable[node as usize] {
+                        continue;
+                    }
+                    for (k, edge) in graph.edges[node as usize].iter().enumerate() {
+                        let m = edge.to;
+                        let d2 = (depth + edge.loop_depth).min(2);
+                        let u2 = unc || unc_by_node[m as usize];
+                        for (callee_slot, transfer) in
+                            liveness.edge_transfers[node as usize][k].iter().enumerate()
+                        {
+                            if let ParamTransfer::Copy { caller_slot } = transfer
+                                && *caller_slot == slot
+                            {
+                                let vnb = solver.value_new_bits(
+                                    m,
+                                    callee_slot as u16,
+                                    class,
+                                    d2,
+                                    u2,
+                                    new_bits,
+                                );
+                                if vnb != 0 {
+                                    route(
+                                        Proposal::Value {
+                                            node: m,
+                                            slot: callee_slot as u16,
+                                            class,
+                                            depth: d2,
+                                            unc: u2,
+                                            mask: vnb,
+                                            hops: hops + 1,
+                                            pred: ValuePredB::HopFromValue {
+                                                pred: idx as u32,
+                                                from_node: node,
+                                                edge_k: k as u32,
+                                            },
+                                        },
+                                        scc_id,
+                                        &scc.scc_of,
+                                        &mut queue,
+                                        &mut pending,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    solver
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3939,6 +4222,182 @@ mod tests {
         // The two dataflow engines agree with the oracle on all six components
         // (now including the canonical, discovery-independent depth_bucket).
         assert_agrees(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    // === Task C2: origin_seed propagation ===================================
+    // A -> B -> C -> H (3 hops from the seed entry A to the terminal H) —
+    // deliberately deeper than 2 hops. B's callsite to C binds C's param 0 to a
+    // KNOWN temp LITERAL (`ts_known`, a Const transfer): this is where H's value
+    // chain switches onto the REACH chain (`ValuePredB::HopFromReach`), since a
+    // Const value has no caller-value parent. C's callsite to H then forwards
+    // C's OWN param 0 (`ts_pd(0)`, a Copy transfer) to H, which reads it directly
+    // (`ts_pd(0)` on H's own op) — so H ends up with BOTH a plain 3-hop REACH
+    // fact and a VALUE fact whose predecessor chain crosses a HopFromReach
+    // transition partway through. One fixture, both coverage requirements.
+    fn deep_value_chain_fixture() -> Fixture {
+        use crate::engine::l5::test_support::{arg_binding, ts_known, ts_pd};
+
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![call_site("A/csB", "B", vec![])];
+
+        let mut b = routine("B", "procedure");
+        let mut b_cs = call_site("B/csC", "C", vec![]);
+        b_cs.argument_bindings = vec![arg_binding(0, Some(ts_known(true)))];
+        b.call_sites = vec![b_cs];
+
+        let mut c = routine("C", "procedure");
+        let mut c_cs = call_site("C/csH", "H", vec![]);
+        c_cs.argument_bindings = vec![arg_binding(0, Some(ts_pd(0)))];
+        c.call_sites = vec![c_cs];
+
+        let mut h = routine("H", "procedure");
+        let mut op0 = record_op("H/op0", "Modify", "Rec", Some("t/H"), vec![], false);
+        op0.temp_state = Some(ts_pd(0));
+        h.record_operations = vec![op0];
+
+        let routines = vec![r, a, b, c, h];
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![edge_kind("A", "B", "A/csB", "direct")],
+        );
+        graph_edges.insert(
+            "B".to_string(),
+            vec![edge_kind("B", "C", "B/csC", "direct")],
+        );
+        graph_edges.insert(
+            "C".to_string(),
+            vec![edge_kind("C", "H", "C/csH", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = ["A", "B", "C", "H"]
+            .iter()
+            .map(|id| (id.to_string(), db_summary(id, &format!("t/{id}"))))
+            .collect();
+        (routines, graph_edges, summaries)
+    }
+
+    /// Run the fixture's single lane through [`run_batch_fixpoint_for_test`] and
+    /// assert, for EVERY reach fact and EVERY value fact the fixpoint populated
+    /// (not just H's), that the incrementally-propagated `reach_origin`/
+    /// `value_origin` equals the seed index [`collect_reach_chain_b`]/
+    /// [`collect_value_chain_b`] finds by walking the full predecessor chain —
+    /// the equivalence Task C2 exists to make cheap. Separately confirms the
+    /// fixture actually exercises both required shapes: H's reach fact is >2
+    /// hops from its seed, and H's value fact's chain crosses a `HopFromReach`
+    /// transition (a value fact born from a reach arrival, not a prior value).
+    #[test]
+    fn origin_propagation_matches_chain_walk() {
+        let (routines, graph_edges, summaries) = deep_value_chain_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(seeds.len(), 1, "only R/cs0 -> A seeds");
+        let cw = ClosedWorldTempParams::new();
+        let liveness = compute_liveness(&graph, &ctx, &cw);
+        let scc = condense(&graph);
+
+        let group = GroupSpec {
+            loop_routine: seeds[0].loop_routine,
+            loop_id: seeds[0].loop_id,
+            loop_info: seeds[0].loop_info,
+            seed_indices: vec![0],
+            direct_indices: Vec::new(),
+        };
+        let solver = run_batch_fixpoint_for_test(
+            &graph,
+            &liveness,
+            &scc,
+            &seeds,
+            &ctx,
+            &cw,
+            std::slice::from_ref(&group),
+        );
+        let lane = 0usize;
+
+        // --- Deep reach chain (>2 hops) at the terminal node H -------------
+        let h_node = graph.node_ix["H"];
+        let h_reach_facts = &solver.reach_at[h_node as usize];
+        assert_eq!(h_reach_facts.len(), 1, "one (depth, unc) reach fact at H");
+        let h_reach_ix = h_reach_facts[0];
+        let (h_reach_hops, h_reach_seed) =
+            collect_reach_chain_b(&solver.reach_pred, lane, h_reach_ix);
+        assert!(
+            h_reach_hops.len() > 2,
+            "H's reach chain must be deeper than 2 hops (A->B->C->H); got {}",
+            h_reach_hops.len()
+        );
+        assert_eq!(
+            solver.reach_origin[h_reach_ix][lane], h_reach_seed as u32,
+            "incremental reach_origin at the deep terminal must equal the chain-walk seed"
+        );
+
+        // --- Value chain crossing a HopFromReach transition at H -----------
+        let h_value_facts = &solver.value_at[h_node as usize];
+        assert_eq!(h_value_facts.len(), 1, "one value fact at H (slot 0)");
+        let h_value_ix = h_value_facts[0];
+        let crosses_hop_from_reach = matches!(
+            solver.value_pred[h_value_ix][lane],
+            ValuePredB::HopFromValue { pred, .. }
+                if matches!(solver.value_pred[pred as usize][lane], ValuePredB::HopFromReach { .. })
+        );
+        assert!(
+            crosses_hop_from_reach,
+            "H's value chain must cross a HopFromReach transition (born at B's Const edge to C)"
+        );
+        let (h_value_hops, h_value_seed) =
+            collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, h_value_ix);
+        assert!(
+            !h_value_hops.is_empty(),
+            "the value chain must record at least one hop"
+        );
+        assert_eq!(
+            solver.value_origin[h_value_ix][lane], h_value_seed as u32,
+            "incremental value_origin across a HopFromReach transition must equal the chain-walk seed"
+        );
+
+        // --- Non-vacuous, comprehensive: every reach fact + every value fact -
+        let mut reach_checked = 0usize;
+        for (ix, fact) in solver.reach_facts.iter().enumerate() {
+            let mut m = fact.mask;
+            while m != 0 {
+                let l = m.trailing_zeros() as usize;
+                m &= m - 1;
+                let (_, seed) = collect_reach_chain_b(&solver.reach_pred, l, ix);
+                assert_eq!(
+                    solver.reach_origin[ix][l], seed as u32,
+                    "reach fact {ix} lane {l}: incremental origin != chain-walk origin"
+                );
+                reach_checked += 1;
+            }
+        }
+        assert!(reach_checked > 0, "fixture must populate reach facts");
+
+        let mut value_checked = 0usize;
+        for (ix, fact) in solver.value_facts.iter().enumerate() {
+            let mut m = fact.mask;
+            while m != 0 {
+                let l = m.trailing_zeros() as usize;
+                m &= m - 1;
+                let (_, seed) =
+                    collect_value_chain_b(&solver.value_pred, &solver.reach_pred, l, ix);
+                assert_eq!(
+                    solver.value_origin[ix][l], seed as u32,
+                    "value fact {ix} lane {l}: incremental origin != chain-walk origin"
+                );
+                value_checked += 1;
+            }
+        }
+        assert!(value_checked > 0, "fixture must populate value facts");
     }
 
     // === Task C1: the terminal bitmap-COHORT differential (the spine) ======
