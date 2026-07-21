@@ -139,5 +139,6 @@ pub fn detect_d20(
         findings,
         stats: DetectorStats::new(DETECTOR, candidates_considered, emitted),
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

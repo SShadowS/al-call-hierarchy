@@ -550,6 +550,7 @@ pub fn detect_d2(
         findings: merged,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
 

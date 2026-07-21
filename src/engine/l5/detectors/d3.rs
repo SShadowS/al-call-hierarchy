@@ -591,5 +591,6 @@ pub fn detect_d3(
         findings: deduped,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

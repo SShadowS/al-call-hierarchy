@@ -127,5 +127,6 @@ pub fn detect_d9(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

@@ -570,6 +570,7 @@ pub fn detect_d48(
         findings: emitted,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
 

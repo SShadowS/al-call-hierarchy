@@ -17,7 +17,7 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::detector_context::{
     DetectorContext, build_detector_context, build_detector_context_cross_app,
 };
-use crate::engine::l5::finding::Finding;
+use crate::engine::l5::finding::{D1CohortIndex, Finding};
 use crate::engine::perf_trace as pt;
 
 /// Substrate demand bits (W1.0 demand-driven detector substrate).
@@ -179,6 +179,12 @@ pub struct DetectorOutput {
     /// `DetectorOutput::no_diag(findings, stats)` reduces boilerplate for detectors
     /// that never emit diagnostics.
     pub diagnostics: Vec<Diagnostic>,
+    /// The run-level d1 cohort decompression index (loop catalog + loop-set
+    /// registry) — `Some` ONLY on `detect_d1`'s output, `None` for every other
+    /// detector. `run_each` lifts the (at most one) `Some` into `RunOutput` so the
+    /// R4 projection can serialize it alongside the findings; the compressed d1
+    /// report's `cohort_contexts[].loop_set` handles are meaningless without it.
+    pub d1_cohort_index: Option<D1CohortIndex>,
 }
 
 impl DetectorOutput {
@@ -188,6 +194,7 @@ impl DetectorOutput {
             findings,
             stats,
             diagnostics: vec![],
+            d1_cohort_index: None,
         }
     }
 }
@@ -245,6 +252,12 @@ pub struct RunOutput {
     /// documented TS-concat position rather than collapsing both into "detect".
     /// Empty whenever every SCC converges (additive).
     pub summarize_diagnostics: Vec<Diagnostic>,
+    /// The d1 detector's run-level cohort decompression index (loop catalog +
+    /// loop-set registry), if d1 ran. `None` when d1 was not among the selected
+    /// detectors (or it failed). Consumed by the R4 projection to serialize the
+    /// catalog/registry envelope so a JSON consumer can decompress each d1
+    /// finding's `cohort_contexts[].loop_set`.
+    pub d1_cohort_index: Option<D1CohortIndex>,
 }
 
 /// Convert an L4 `SummarizeDiagnostic` into the shared `l5::registry::Diagnostic`
@@ -290,7 +303,8 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
         .iter()
         .map(from_summarize_diagnostic)
         .collect();
-    let (findings, diagnostics, detector_stats) = run_each(resolved, &ctx, detectors);
+    let (findings, diagnostics, detector_stats, d1_cohort_index) =
+        run_each(resolved, &ctx, detectors);
 
     // Role-scoping filter (registry.ts:161-172). Source-only: every routine's role
     // is "primary" (no analysisRole), so the predicate keeps everything.
@@ -308,6 +322,7 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
         diagnostics,
         detector_stats,
         summarize_diagnostics,
+        d1_cohort_index,
     }
 }
 
@@ -337,7 +352,8 @@ pub(crate) fn run_detectors_cross_app(
         primary_app: None,
         infra_diagnostics: Vec::new(),
     };
-    let (findings, diagnostics, detector_stats) = run_each(&resolved, &ctx, detectors);
+    let (findings, diagnostics, detector_stats, d1_cohort_index) =
+        run_each(&resolved, &ctx, detectors);
 
     // role_by_routine: dep routines → "dependency", else "primary".
     let role_by_routine: std::collections::HashMap<&str, &str> = base
@@ -359,6 +375,7 @@ pub(crate) fn run_detectors_cross_app(
         diagnostics,
         detector_stats,
         summarize_diagnostics,
+        d1_cohort_index,
     }
 }
 
@@ -378,15 +395,23 @@ fn merged_workspace_view(
 
 /// Run each detector in isolation via the `Result` contract (see `run_detectors`'s
 /// doc comment for the full guarantee), collecting findings + stats.
+#[allow(clippy::type_complexity)]
 fn run_each(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
     detectors: &[Detector],
-) -> (Vec<Finding>, Vec<Diagnostic>, Vec<DetectorStats>) {
+) -> (
+    Vec<Finding>,
+    Vec<Diagnostic>,
+    Vec<DetectorStats>,
+    Option<D1CohortIndex>,
+) {
     let _total_span = pt::span("detector", "detectors.total");
     let mut findings: Vec<Finding> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     let mut detector_stats: Vec<DetectorStats> = Vec::new();
+    // At most ONE detector (d1) produces a cohort index; keep the (single) `Some`.
+    let mut d1_cohort_index: Option<D1CohortIndex> = None;
 
     for detector in detectors {
         // Dynamic per-detector span name (`detector.<name>`) — the `TraceName::Owned`
@@ -424,6 +449,9 @@ fn run_each(
                 // Collect detector-emitted diagnostics (non-error; d43 substrate guard etc.)
                 diagnostics.extend(output.diagnostics);
                 detector_stats.push(output.stats);
+                if let Some(idx) = output.d1_cohort_index {
+                    d1_cohort_index = Some(idx);
+                }
             }
             Ok(Err(e)) => {
                 diagnostics.push(Diagnostic {
@@ -446,7 +474,7 @@ fn run_each(
             }
         }
     }
-    (findings, diagnostics, detector_stats)
+    (findings, diagnostics, detector_stats, d1_cohort_index)
 }
 
 /// Apply the role-scope filter (drop dep-anchored findings) then the stable sort.

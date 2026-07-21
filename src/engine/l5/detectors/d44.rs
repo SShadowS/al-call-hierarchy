@@ -327,6 +327,7 @@ pub fn detect_d44(
         findings: kept,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
 

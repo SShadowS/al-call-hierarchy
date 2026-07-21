@@ -464,5 +464,6 @@ pub fn detect_d47(
         findings: emitted,
         stats: DetectorStats::new(DETECTOR, candidates_considered, count),
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

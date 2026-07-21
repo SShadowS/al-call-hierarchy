@@ -228,5 +228,6 @@ pub fn detect_d18(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

@@ -250,5 +250,6 @@ pub fn detect_d4(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

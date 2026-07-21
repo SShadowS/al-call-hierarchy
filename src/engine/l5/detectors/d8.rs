@@ -193,5 +193,6 @@ pub fn detect_d8(
         findings: deduped,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

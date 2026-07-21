@@ -132,7 +132,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line
           <span class="flow-note">Modify on MC Customer</span>
           <span class="flow-loc">src/D1MultiCaller.al:19</span>
         </span>
-      </li></ol><p class="flow-extra">+ 2 other paths reach the same operation</p>
+      </li></ol><p class="flow-extra">Reached by 3 loops across 1 verdict class:</p><ul class="cohort-classes">
+        <li>physical — 3 loops (severity high)</li></ul>
     <div class="tables"><span class="lbl">writes</span><span class="chip">MC Customer</span></div>
     <details class="fix"><summary>Fix options</summary><ul><li><span class="safety safety-medium">medium</span> Move the database operation outside the loop, or batch it into a set-based operation.</li></ul></details>
     

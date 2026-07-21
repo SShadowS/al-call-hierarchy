@@ -189,6 +189,9 @@
           ],
           "codeFlows": [
             {
+              "message": {
+                "text": "Reached by 3 loops — physical verdict, 0 total hops"
+              },
               "threadFlows": [
                 {
                   "locations": [
@@ -216,118 +219,6 @@
                           },
                           "region": {
                             "startLine": 27,
-                            "startColumn": 13
-                          }
-                        },
-                        "message": {
-                          "text": "calls ModifyHelper"
-                        }
-                      }
-                    },
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/D1MultiCaller.al"
-                          },
-                          "region": {
-                            "startLine": 19,
-                            "startColumn": 9
-                          }
-                        },
-                        "message": {
-                          "text": "Modify on MC Customer"
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "threadFlows": [
-                {
-                  "locations": [
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/D1MultiCaller.al"
-                          },
-                          "region": {
-                            "startLine": 34,
-                            "startColumn": 9
-                          }
-                        },
-                        "message": {
-                          "text": "for loop"
-                        }
-                      }
-                    },
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/D1MultiCaller.al"
-                          },
-                          "region": {
-                            "startLine": 35,
-                            "startColumn": 13
-                          }
-                        },
-                        "message": {
-                          "text": "calls ModifyHelper"
-                        }
-                      }
-                    },
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/D1MultiCaller.al"
-                          },
-                          "region": {
-                            "startLine": 19,
-                            "startColumn": 9
-                          }
-                        },
-                        "message": {
-                          "text": "Modify on MC Customer"
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "threadFlows": [
-                {
-                  "locations": [
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/D1MultiCaller.al"
-                          },
-                          "region": {
-                            "startLine": 42,
-                            "startColumn": 9
-                          }
-                        },
-                        "message": {
-                          "text": "for loop"
-                        }
-                      }
-                    },
-                    {
-                      "location": {
-                        "physicalLocation": {
-                          "artifactLocation": {
-                            "uri": "ws:src/D1MultiCaller.al"
-                          },
-                          "region": {
-                            "startLine": 43,
                             "startColumn": 13
                           }
                         },

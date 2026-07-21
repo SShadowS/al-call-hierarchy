@@ -473,23 +473,26 @@ codeunit 50135 "MF D1 Merge"
         "a merged FlowFieldGated + physical finding must fire. rootCause: {}",
         f.root_cause
     );
-    // Both verdicts are surfaced PER LOOP in contexts[] — the FlowField fact is
-    // preserved structurally by the dedicated `flowfield-on-temp` verdict on the
-    // temp caller's context (regardless of which context wins the same-severity,
-    // same-verdict-quality tie-break — the redesign dropped the dual-verdict prose).
-    let ctxs = f.contexts.as_ref().expect("d1 findings carry contexts");
+    // Both verdicts are surfaced per VERDICT CLASS in cohortContexts[] — the
+    // FlowField fact is preserved structurally by the dedicated `flowfield-on-temp`
+    // verdict on the temp caller's cohort (the C6 cutover: per-class cohorts
+    // replaced the old per-loop contexts + the dropped dual-verdict prose).
+    let ccs = f
+        .cohort_contexts
+        .as_ref()
+        .expect("d1 findings carry cohort_contexts");
     assert_eq!(
-        ctxs.len(),
+        ccs.len(),
         2,
-        "one context per caller loop. contexts: {ctxs:#?}"
+        "one cohort per verdict class. cohortContexts: {ccs:#?}"
     );
     let verdicts: std::collections::BTreeSet<&str> =
-        ctxs.iter().map(|c| c.verdict.as_str()).collect();
+        ccs.iter().map(|c| c.verdict.as_str()).collect();
     assert_eq!(
         verdicts,
         ["flowfield-on-temp", "physical"].into_iter().collect(),
         "the FlowField fact (flowfield-on-temp) + physical are both surfaced across \
-         contexts. contexts: {ctxs:#?}"
+         cohorts. cohortContexts: {ccs:#?}"
     );
     assert!(
         !f.root_cause.contains("temp state varies by caller"),

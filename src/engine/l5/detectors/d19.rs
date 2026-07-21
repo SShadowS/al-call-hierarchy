@@ -140,5 +140,6 @@ pub fn detect_d19(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

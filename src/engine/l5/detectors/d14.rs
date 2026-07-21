@@ -262,6 +262,7 @@ pub fn detect_d14(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
 

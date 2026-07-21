@@ -51,8 +51,9 @@ use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
+use crate::engine::l5::d1_cohort::{TerminalCohorts, TerminalSink, emit_finalize_census};
 use crate::engine::l5::d1_dataflow::{
-    BATCH_WIDTH, GroupSpec, build_terminal_plan, condense, solve_batch,
+    BATCH_WIDTH, GroupSpec, build_terminal_plan, condense, score_batch_to_sink, solve_batch,
 };
 use crate::engine::l5::d1_graph::{
     D1Edge, D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok,
@@ -65,7 +66,7 @@ use crate::engine::l5::detectors::d1::{
     FLOWFIELD_GATED_OPS, TempVerdict, flowfield_gate_blocks_downgrade, hop_step,
     is_setup_singleton_get, severity_for, terminal_step,
 };
-use crate::engine::l5::finding::EvidenceStep;
+use crate::engine::l5::finding::{EvidenceStep, LoopCatalogEntry};
 use crate::engine::l5::path_merge::sev_rank;
 
 /// One (loop, terminal-op) aggregate: everything Task 5 needs to build a context.
@@ -761,6 +762,147 @@ pub(crate) fn search_loops<'a>(
             .then_with(|| a.terminal.op.id.cmp(&b.terminal.op.id))
     });
     out
+}
+
+/// The PRODUCTION cohort-report output of one d1 run (the C6 cutover replacement
+/// for `search_loops`'s `Vec<LoopTerminalAgg>`): the finalized per-terminal
+/// bitmap cohorts + the run-level loop CATALOG (one [`LoopCatalogEntry`] per
+/// loop-group, indexed by `loop_ix` == its GLOBAL group index == its position in
+/// the sorted `groups` vector == the `GroupIx` bit the sink's cohort bitmaps set).
+/// `detect_d1` consumes `terminals` to assemble one compressed `Finding` per
+/// reached terminal, decompressing each cohort's `loop_set` back through
+/// `catalog[loop_ix]`.
+pub(crate) struct D1CohortRun<'a> {
+    pub terminals: Vec<TerminalCohorts<'a>>,
+    pub catalog: Vec<LoopCatalogEntry>,
+}
+
+/// Run the reachability search over every loop group, EMITTING per-terminal
+/// bitmap COHORTS (the C6 cutover production path) instead of one
+/// [`LoopTerminalAgg`] witness per `(loop, terminal-op)`. Same grouping /
+/// liveness / SCC condensation / terminal plan as [`search_loops`]; the ONLY
+/// change is the per-batch emission — [`score_batch_to_sink`] sets the winner's
+/// loop bit in its `(terminal, ContextKey)` cohort (building ONE bounded
+/// representative witness per cohort, lazily) rather than materializing a full
+/// witness for every winning lane. The winner SELECTION (the running-best scan)
+/// is byte-for-byte the same, so the per-`(loop, terminal)` verdict / depth_bucket
+/// / unc / reachable_verdicts are identical to `search_loops`' aggregates — the
+/// differential (`d1_dataflow::score_batch_to_sink_matches_old`) proves it.
+pub(crate) fn search_loops_cohorts<'a>(
+    graph: &D1Graph<'a>,
+    seeds: &[D1Seed<'a>],
+    direct_ops: &[DirectOp<'a>],
+    ctx: &'a DetectorContext,
+    cw: &ClosedWorldTempParams,
+) -> D1CohortRun<'a> {
+    // The loop-group universe — IDENTICAL construction/ordering to `search_loops`
+    // (BTreeMap by (loop_routine_id, loop_id) => deterministic, sorted group order;
+    // group i owns bit i / catalog index i).
+    let mut groups: BTreeMap<(&'a str, &'a str), GroupSpec<'a>> = BTreeMap::new();
+    for (i, seed) in seeds.iter().enumerate() {
+        groups
+            .entry((seed.loop_routine.id.as_str(), seed.loop_id))
+            .or_insert_with(|| GroupSpec {
+                loop_routine: seed.loop_routine,
+                loop_id: seed.loop_id,
+                loop_info: seed.loop_info,
+                seed_indices: Vec::new(),
+                direct_indices: Vec::new(),
+            })
+            .seed_indices
+            .push(i);
+    }
+    for (i, d) in direct_ops.iter().enumerate() {
+        groups
+            .entry((d.routine.id.as_str(), d.loop_id))
+            .or_insert_with(|| GroupSpec {
+                loop_routine: d.routine,
+                loop_id: d.loop_id,
+                loop_info: d.loop_info,
+                seed_indices: Vec::new(),
+                direct_indices: Vec::new(),
+            })
+            .direct_indices
+            .push(i);
+    }
+    let groups: Vec<GroupSpec<'a>> = groups.into_values().collect();
+
+    // The run-level loop catalog: one entry per group, positional by GLOBAL group
+    // index (== the `GroupIx` the sink's cohort bitmaps set). `entry_callsite_id`
+    // is the group's FIRST seed callsite (representative; `None` for a direct-op-
+    // only group), advisory metadata for rendering — never a correctness input.
+    let catalog: Vec<LoopCatalogEntry> = groups
+        .iter()
+        .enumerate()
+        .map(|(g, gs)| LoopCatalogEntry {
+            loop_ix: g as u32,
+            loop_routine_id: gs.loop_routine.id.clone(),
+            loop_id: gs.loop_id.to_string(),
+            anchor: anchor_of(&gs.loop_info.source_anchor, gs.loop_routine),
+            entry_callsite_id: gs
+                .seed_indices
+                .first()
+                .map(|&si| seeds[si].callsite.id.clone()),
+        })
+        .collect();
+
+    let g_lv = crate::engine::perf_trace::span("d1", "compute_liveness");
+    let liveness = compute_liveness(graph, ctx, cw);
+    drop(g_lv);
+    crate::engine::l5::d1_cohort::emit_liveness_census(&liveness, graph.node_ids.len());
+    let g_cd = crate::engine::perf_trace::span("d1", "condense");
+    let scc = condense(graph);
+    drop(g_cd);
+    let g_tp = crate::engine::perf_trace::span("d1", "terminal_plan");
+    let plan = build_terminal_plan(graph, &liveness, ctx, cw);
+    drop(g_tp);
+
+    let trace_hot = crate::engine::perf_trace::enabled(crate::engine::perf_trace::Detail::Hot);
+    let n_batches = groups.len().div_ceil(BATCH_WIDTH);
+    if trace_hot {
+        let edges: u64 = graph.edges.iter().map(|e| e.len() as u64).sum();
+        crate::engine::perf_trace::instant_lazy("d1.cohort", "batch_census", || {
+            serde_json::json!({
+                "groups": groups.len(),
+                "batches": n_batches,
+                "nodes": graph.node_ids.len(),
+                "edges": edges,
+                "seeds": seeds.len(),
+                "direct_ops": direct_ops.len(),
+                "batch_width": BATCH_WIDTH,
+            })
+        });
+    }
+
+    // Serial 64-lane batches — each shares one condensation pass, drops its fact
+    // arena before the next, and emits its winners into the RUN-GLOBAL sink.
+    let mut sink = TerminalSink::new(plan.terminal_count(), groups.len());
+    let mut cumulative_ms: u64 = 0;
+    for (bi, batch) in groups.chunks(BATCH_WIDTH).enumerate() {
+        let t0 = trace_hot.then(std::time::Instant::now);
+        score_batch_to_sink(
+            graph,
+            &liveness,
+            &scc,
+            seeds,
+            direct_ops,
+            ctx,
+            cw,
+            &plan,
+            batch,
+            bi * BATCH_WIDTH,
+            &mut sink,
+        );
+        if let Some(t0) = t0 {
+            cumulative_ms += t0.elapsed().as_millis() as u64;
+            crate::engine::perf_trace::counter("d1.cohort.batches_done", (bi + 1) as u64);
+            crate::engine::perf_trace::counter("d1.cohort.cumulative_ms", cumulative_ms);
+        }
+    }
+
+    let terminals = sink.finalize();
+    emit_finalize_census(&terminals);
+    D1CohortRun { terminals, catalog }
 }
 
 #[cfg(test)]

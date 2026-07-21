@@ -226,6 +226,13 @@ struct ThreadFlow {
 
 #[derive(Serialize)]
 struct CodeFlow {
+    /// SARIF `codeFlow.message` — for a d1 COHORT finding, the per-class summary
+    /// ("reached by N loops — <verdict>, M total hops") so the compressed
+    /// cohort's `loop_count`/`total_hops` metadata rides on its representative
+    /// code-flow. `None` (skipped) for every non-cohort finding, keeping their
+    /// SARIF byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<MessageText>,
     #[serde(rename = "threadFlows")]
     thread_flows: Vec<ThreadFlow>,
 }
@@ -329,26 +336,52 @@ fn build_result(summary: &FindingSummary, raw: &Finding) -> SarifResult {
         None
     };
 
-    // codeFlows: [evidencePath, ...additionalPaths] filtered to non-empty.
-    let mut all_paths: Vec<&Vec<EvidenceStep>> = vec![&raw.evidence_path];
-    if let Some(extra) = &raw.additional_paths {
-        for p in extra {
-            all_paths.push(p);
-        }
-    }
-    let non_empty: Vec<&Vec<EvidenceStep>> =
-        all_paths.into_iter().filter(|p| !p.is_empty()).collect();
-    let code_flows = if non_empty.is_empty() {
-        None
+    // codeFlows. For a d1 COHORT finding (`cohort_contexts` set), emit ONE
+    // code-flow per verdict-class cohort — its bounded representative witness +
+    // a `message` carrying the class's `loop_count`/verdict/`total_hops`. For
+    // every other finding, the unchanged `[evidencePath, ...additionalPaths]`
+    // list (message-less, byte-identical to before the cutover).
+    let code_flows = if let Some(cohorts) = &raw.cohort_contexts {
+        let flows: Vec<CodeFlow> = cohorts
+            .iter()
+            .map(|c| {
+                let path = crate::engine::l5::d1_witness::flatten_witness(&c.witness);
+                let loops = if c.loop_count == 1 { "loop" } else { "loops" };
+                CodeFlow {
+                    message: Some(MessageText {
+                        text: format!(
+                            "Reached by {} {loops} — {} verdict, {} total hops",
+                            c.loop_count, c.verdict, c.witness.total_hops
+                        ),
+                    }),
+                    thread_flows: vec![path_to_thread_flow(&path)],
+                }
+            })
+            .filter(|cf| !cf.thread_flows[0].locations.is_empty())
+            .collect();
+        if flows.is_empty() { None } else { Some(flows) }
     } else {
-        Some(
-            non_empty
-                .into_iter()
-                .map(|p| CodeFlow {
-                    thread_flows: vec![path_to_thread_flow(p)],
-                })
-                .collect(),
-        )
+        let mut all_paths: Vec<&Vec<EvidenceStep>> = vec![&raw.evidence_path];
+        if let Some(extra) = &raw.additional_paths {
+            for p in extra {
+                all_paths.push(p);
+            }
+        }
+        let non_empty: Vec<&Vec<EvidenceStep>> =
+            all_paths.into_iter().filter(|p| !p.is_empty()).collect();
+        if non_empty.is_empty() {
+            None
+        } else {
+            Some(
+                non_empty
+                    .into_iter()
+                    .map(|p| CodeFlow {
+                        message: None,
+                        thread_flows: vec![path_to_thread_flow(p)],
+                    })
+                    .collect(),
+            )
+        }
     };
 
     SarifResult {

@@ -1299,6 +1299,8 @@ fn run_rust(golden_name: &str, source_dir: &str, detector_names: &[&str]) -> R4F
             detectors: names,
             finding_count: 0,
             findings: vec![],
+            loop_catalog: Vec::new(),
+            loop_set_registry: None,
         },
     }
 }
@@ -1688,6 +1690,8 @@ fn differential_r4_findings_match_goldens() {
                 detectors: names.clone(),
                 finding_count: 0,
                 findings: vec![],
+                loop_catalog: Vec::new(),
+                loop_set_registry: None,
             },
         };
         assert_eq!(

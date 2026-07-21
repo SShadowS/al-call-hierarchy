@@ -80,6 +80,7 @@ pub fn detect_d17(
             findings,
             stats: DetectorStats::new(DETECTOR, 0, 0),
             diagnostics: vec![],
+            d1_cohort_index: None,
         });
     }
 
@@ -228,6 +229,7 @@ pub fn detect_d17(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
 

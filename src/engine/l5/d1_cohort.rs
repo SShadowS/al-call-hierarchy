@@ -38,7 +38,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::d1_liveness::Liveness;
+use crate::engine::l5::d1_witness::WitnessSummary;
 use crate::engine::l5::detectors::d1::TempVerdict;
 
 /// A loop-group index — dense over the sorted loop-group universe
@@ -203,7 +206,7 @@ pub struct LoopSetId(pub u32);
 /// (Task C3). `get`/`iter` decompress an id back to its loop-group indices; `len`
 /// interned sets total in the (small) hundreds to low thousands on real corpora,
 /// nowhere near the 3.2M per-`(loop, terminal)` population this redesign replaces.
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LoopSetRegistry {
     /// Canonical (trimmed, no trailing all-zero word) word sequence per interned
     /// id — `sets[id.0]` is `id`'s bitmap. Positional: `to_stable`/
@@ -370,26 +373,36 @@ impl std::hash::Hash for ContextKey {
     }
 }
 
-/// A lightweight, arena-independent handle to a `(terminal, ContextKey)`
-/// class's representative winner — stored FIRST-SEEN. Task C1 does NOT build or
-/// consume a witness (that is a later task); this records only the winner's
-/// first-arrival hop count, the one scalar that outlives the per-batch fact
-/// arena and that the eventual bounded representative witness will need.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct BestRefLite {
-    pub hops: u32,
+/// The representative evidence for a `(terminal, ContextKey)` cohort — built
+/// ONCE, FIRST-SEEN (Task C6 cutover), while the per-batch fact arena is still
+/// alive (the arena-lifetime constraint: `score_batch_to_sink` drops its
+/// `BatchSolver` per batch, so the witness must be materialized at insert time).
+/// Carries the bounded representative [`WitnessSummary`] (Task C3) AND the
+/// uncertainty union along that representative path — the latter drives the
+/// finding-level confidence, which the OLD per-loop path derived from the
+/// winner's own path uncertainties (so computing it along the first-seen
+/// representative, which for a cohort IS the lowest-group-index — hence the OLD
+/// winner-selection's `loop_routine_id`/`loop_id`-min — reaching loop, preserves
+/// the finding's confidence exactly).
+#[derive(Debug, Clone)]
+pub(crate) struct CohortRep {
+    pub witness: WitnessSummary,
+    pub uncertainties: Vec<Uncertainty>,
 }
 
 // ===========================================================================
 // TerminalSink — run-global: Terminal -> ContextKey -> loop-bitmap
 // ===========================================================================
 
-/// One finalized terminal: its `(owner_id, op_id)` key, its context cohorts
-/// (each a `ContextKey` + the loops realizing it + the representative), and the
-/// per-verdict reachable-loop bitmaps (`verdict_sets[verdict as usize]`).
+/// One finalized terminal: the OWNING routine + db op it fires (the actual graph
+/// references, NOT re-derived from ids — a colliding-id sibling routine may lack
+/// the op, which is exactly the G-18 hazard that would drop the finding), its
+/// context cohorts (each a `ContextKey` + the loops realizing it + the
+/// representative), and the per-verdict reachable-loop bitmaps
+/// (`verdict_sets[verdict as usize]`).
 pub(crate) struct TerminalCohorts<'a> {
-    pub key: (&'a str, &'a str),
-    pub cohorts: Vec<(ContextKey, GroupBitmap, BestRefLite)>,
+    pub key: (&'a L3Routine, &'a L3RecordOperation),
+    pub cohorts: Vec<(ContextKey, GroupBitmap, CohortRep)>,
     pub verdict_sets: [GroupBitmap; 4],
 }
 
@@ -405,10 +418,14 @@ pub(crate) struct TerminalCohorts<'a> {
 pub(crate) struct TerminalSink<'a> {
     /// Group-index universe size (for the debug-only range check).
     n_groups: usize,
+    /// Intern by `(owner_id, op_id)` (dedups colliding terminals to one slot,
+    /// mirroring the old `assemble_findings` group-by-id) — but the STORED
+    /// identity (`terminals`) is the first-seen routine+op REFERENCE, so the
+    /// finding builder never re-derives the op from a colliding-id sibling.
     ix_of: HashMap<(&'a str, &'a str), TerminalIx>,
-    keys: Vec<(&'a str, &'a str)>,
+    terminals: Vec<(&'a L3Routine, &'a L3RecordOperation)>,
     /// Per terminal: `ContextKey -> (loop cohort, first-seen representative)`.
-    cohorts: Vec<HashMap<ContextKey, (GroupBitmap, BestRefLite)>>,
+    cohorts: Vec<HashMap<ContextKey, (GroupBitmap, CohortRep)>>,
     /// Per terminal: per-verdict (indexed `verdict as usize`) reaching loops.
     verdicts: Vec<[GroupBitmap; 4]>,
     /// Per terminal: every loop already inserted (any ctx) — the disjointness
@@ -423,22 +440,29 @@ impl<'a> TerminalSink<'a> {
         TerminalSink {
             n_groups,
             ix_of: HashMap::with_capacity(n_terminals),
-            keys: Vec::with_capacity(n_terminals),
+            terminals: Vec::with_capacity(n_terminals),
             cohorts: Vec::with_capacity(n_terminals),
             verdicts: Vec::with_capacity(n_terminals),
             seen: Vec::with_capacity(n_terminals),
         }
     }
 
-    /// Intern a terminal key `(owner_id, op_id)` to its dense [`TerminalIx`],
-    /// stable across batches (the same key always maps to the same slot).
-    pub(crate) fn terminal_ix(&mut self, key: (&'a str, &'a str)) -> TerminalIx {
+    /// Intern a terminal (owning routine + db op) to its dense [`TerminalIx`],
+    /// stable across batches (the same `(owner_id, op_id)` always maps to the same
+    /// slot). The first-seen `(owner, op)` REFERENCE is stored — see the struct's
+    /// `ix_of`/`terminals` doc for why the reference, not the id, is kept.
+    pub(crate) fn terminal_ix(
+        &mut self,
+        owner: &'a L3Routine,
+        op: &'a L3RecordOperation,
+    ) -> TerminalIx {
+        let key = (owner.id.as_str(), op.id.as_str());
         if let Some(&ix) = self.ix_of.get(&key) {
             return ix;
         }
-        let ix = self.keys.len();
+        let ix = self.terminals.len();
         self.ix_of.insert(key, ix);
-        self.keys.push(key);
+        self.terminals.push((owner, op));
         self.cohorts.push(HashMap::new());
         self.verdicts
             .push(std::array::from_fn(|_| GroupBitmap::new()));
@@ -447,15 +471,24 @@ impl<'a> TerminalSink<'a> {
     }
 
     /// Record loop `group`'s winner at `terminal`: set its bit in the `ctx`
-    /// cohort (recording the first-seen representative for the class) and set it
-    /// in each reaching verdict's bitmap. Asserts the disjointness invariant.
+    /// cohort and set it in each reaching verdict's bitmap. Asserts the
+    /// disjointness invariant.
+    ///
+    /// `build_rep` is called AT MOST ONCE per `(terminal, ContextKey)` cohort —
+    /// only on the FIRST loop that lands in it (`or_insert_with`), never on a
+    /// later loop joining an existing cohort. That is the whole cohort-redesign
+    /// win: exactly one representative witness is materialized per cohort
+    /// (~34,861 total), not one per `(loop, terminal)` (3.2M). The closure is
+    /// where the caller ([`crate::engine::l5::d1_dataflow::sink_emit`]) builds
+    /// the witness from the STILL-ALIVE per-batch `BatchSolver` — the arena is
+    /// dropped after the batch, so the witness cannot be deferred to finalize.
     pub(crate) fn insert(
         &mut self,
         terminal: TerminalIx,
         group: GroupIx,
         ctx: ContextKey,
         reachable: [bool; 4],
-        rep: BestRefLite,
+        build_rep: impl FnOnce() -> CohortRep,
     ) {
         debug_assert!(
             (group as usize) < self.n_groups,
@@ -471,7 +504,7 @@ impl<'a> TerminalSink<'a> {
         self.seen[terminal].set(group);
         let entry = self.cohorts[terminal]
             .entry(ctx)
-            .or_insert_with(|| (GroupBitmap::new(), rep));
+            .or_insert_with(|| (GroupBitmap::new(), build_rep()));
         entry.0.set(group);
         for (v, &r) in reachable.iter().enumerate() {
             if r {
@@ -482,7 +515,7 @@ impl<'a> TerminalSink<'a> {
 
     /// The number of interned (reached) terminals.
     pub(crate) fn n_terminals(&self) -> usize {
-        self.keys.len()
+        self.terminals.len()
     }
 
     /// Finalize: yield, per reached terminal, its cohorts + per-verdict
@@ -490,9 +523,14 @@ impl<'a> TerminalSink<'a> {
     /// terminal (the disjointness invariant), so no cross-cohort subtraction is
     /// needed.
     pub(crate) fn finalize(self) -> Vec<TerminalCohorts<'a>> {
-        let mut out = Vec::with_capacity(self.keys.len());
-        for ((key, cmap), vsets) in self.keys.into_iter().zip(self.cohorts).zip(self.verdicts) {
-            let cohorts: Vec<(ContextKey, GroupBitmap, BestRefLite)> = cmap
+        let mut out = Vec::with_capacity(self.terminals.len());
+        for ((key, cmap), vsets) in self
+            .terminals
+            .into_iter()
+            .zip(self.cohorts)
+            .zip(self.verdicts)
+        {
+            let cohorts: Vec<(ContextKey, GroupBitmap, CohortRep)> = cmap
                 .into_iter()
                 .map(|(ctx, (bm, rep))| (ctx, bm, rep))
                 .collect();
@@ -571,6 +609,43 @@ pub(crate) fn emit_finalize_census(cohorts: &[TerminalCohorts]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::l5::finding::{EvidenceStep, SourceAnchor};
+
+    /// A throwaway [`CohortRep`] for the sink unit tests — its contents are never
+    /// inspected here (the differential in `d1_dataflow` proves the real
+    /// witness/uncertainty build); these tests only exercise the bitmap-cohort
+    /// bookkeeping (interning, disjointness, verdict decompression).
+    fn dummy_rep() -> CohortRep {
+        let step = EvidenceStep {
+            routine_id: "R".to_string(),
+            operation_id: None,
+            callsite_id: None,
+            loop_id: None,
+            source_anchor: SourceAnchor {
+                source_unit_id: String::new(),
+                start_line: 0,
+                start_column: 0,
+                end_line: 0,
+                end_column: 0,
+                enclosing_routine_id: "R".to_string(),
+                syntax_kind: String::new(),
+                normalized_text_hash: None,
+                leading_context_hash: None,
+                trailing_context_hash: None,
+            },
+            note: String::new(),
+        };
+        CohortRep {
+            witness: WitnessSummary {
+                total_hops: 0,
+                first_steps: vec![step.clone()],
+                omitted_hops: 0,
+                last_steps: vec![],
+                terminal_step: step,
+            },
+            uncertainties: vec![],
+        }
+    }
 
     #[test]
     fn group_bitmap_set_contains_iter_count() {
@@ -643,10 +718,16 @@ mod tests {
 
     #[test]
     fn sink_interns_terminals_and_decompresses() {
+        use crate::engine::l5::test_support::{record_op, routine};
+        let r = routine("R", "procedure");
+        let op_r = record_op("R/op0", "Modify", "Rec", None, vec![], false);
+        let s = routine("S", "procedure");
+        let op_s = record_op("S/op0", "Modify", "Rec", None, vec![], false);
+
         let mut sink = TerminalSink::new(2, 8);
-        let t0 = sink.terminal_ix(("R", "R/op0"));
-        let t0_again = sink.terminal_ix(("R", "R/op0"));
-        let t1 = sink.terminal_ix(("S", "S/op0"));
+        let t0 = sink.terminal_ix(&r, &op_r);
+        let t0_again = sink.terminal_ix(&r, &op_r);
+        let t1 = sink.terminal_ix(&s, &op_s);
         assert_eq!(t0, t0_again, "same key interns to the same slot");
         assert_ne!(t0, t1);
 
@@ -662,13 +743,12 @@ mod tests {
             depth_bucket: 0,
             unc: true,
         };
-        let rep = BestRefLite { hops: 3 };
         // t0: loop 0 -> ctx_a (physical reaches; temporary also reaches),
         //     loop 1 -> ctx_b (temporary only).
-        sink.insert(t0, 0, ctx_a, [true, true, false, false], rep);
-        sink.insert(t0, 1, ctx_b, [true, false, false, false], rep);
+        sink.insert(t0, 0, ctx_a, [true, true, false, false], dummy_rep);
+        sink.insert(t0, 1, ctx_b, [true, false, false, false], dummy_rep);
         // t1: loop 2 -> ctx_a.
-        sink.insert(t1, 2, ctx_a, [false, true, false, false], rep);
+        sink.insert(t1, 2, ctx_a, [false, true, false, false], dummy_rep);
 
         let finalized = sink.finalize();
         // Decompress into (group, key) -> (verdict, depth, unc, reachable).
@@ -679,7 +759,7 @@ mod tests {
                 for g in bm.iter() {
                     let reachable = reachable_verdicts_of(&tc.verdict_sets, g);
                     let prev = got.insert(
-                        (g, tc.key.0, tc.key.1),
+                        (g, tc.key.0.id.as_str(), tc.key.1.id.as_str()),
                         (ctx.verdict, ctx.depth_bucket, ctx.unc, reachable),
                     );
                     assert!(prev.is_none(), "each (loop, terminal) decompresses once");
@@ -714,8 +794,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "disjointness")]
     fn sink_asserts_disjointness() {
+        use crate::engine::l5::test_support::{record_op, routine};
+        let r = routine("R", "procedure");
+        let op_r = record_op("R/op0", "Modify", "Rec", None, vec![], false);
         let mut sink = TerminalSink::new(1, 4);
-        let t = sink.terminal_ix(("R", "R/op0"));
+        let t = sink.terminal_ix(&r, &op_r);
         let ctx_a = ContextKey {
             severity: "high",
             verdict: TempVerdict::Physical,
@@ -728,10 +811,9 @@ mod tests {
             depth_bucket: 0,
             unc: false,
         };
-        let rep = BestRefLite { hops: 0 };
-        sink.insert(t, 0, ctx_a, [false, true, false, false], rep);
+        sink.insert(t, 0, ctx_a, [false, true, false, false], dummy_rep);
         // Same (terminal, loop) in a SECOND context — must panic.
-        sink.insert(t, 0, ctx_b, [true, false, false, false], rep);
+        sink.insert(t, 0, ctx_b, [true, false, false, false], dummy_rep);
     }
 
     // === LoopSetRegistry — hash-cons interning (Task C4) =====================

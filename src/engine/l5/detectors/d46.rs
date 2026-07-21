@@ -349,5 +349,6 @@ pub fn detect_d46(
         findings: emitted,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

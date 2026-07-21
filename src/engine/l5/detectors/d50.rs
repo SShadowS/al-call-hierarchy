@@ -375,6 +375,7 @@ pub fn detect_d50(
         findings: emitted,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
 

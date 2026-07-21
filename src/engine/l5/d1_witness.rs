@@ -73,6 +73,49 @@ pub struct WitnessSummary {
 /// One graph hop, `(from_node, edge_k)` into `D1Graph::edges[from_node]`.
 type HopSlice<'h> = &'h [(NodeIx, usize)];
 
+/// Build the representative witness for a DIRECT in-loop db op (old branch (a)):
+/// `[loop_step]` + the terminal `op_step`, zero hops. This is the cohort-report
+/// analogue of the old direct witness `vec![loop_step, op_step]`
+/// (`d1_dataflow::emit_lane_aggregates`'s `BestSource::Direct` arm) — flattening
+/// [`WitnessSummary`] (`first_steps ++ last_steps ++ terminal_step`) reproduces
+/// that exact two-step path.
+pub(crate) fn direct_witness(
+    routine: &L3Routine,
+    loop_info: &crate::engine::l2::features::PLoop,
+    op: &L3RecordOperation,
+    ctx: &DetectorContext,
+) -> WitnessSummary {
+    let loop_step = loop_step_ev(routine, loop_info);
+    let op_step = terminal_step(
+        &ctx.routine_by_id,
+        &ctx.table_by_id,
+        routine.id.as_str(),
+        Some(op.id.as_str()),
+    );
+    WitnessSummary {
+        total_hops: 0,
+        first_steps: vec![loop_step],
+        omitted_hops: 0,
+        last_steps: vec![],
+        terminal_step: op_step,
+    }
+}
+
+/// Flatten a [`WitnessSummary`] into a single `Vec<EvidenceStep>` —
+/// `first_steps ++ last_steps ++ [terminal_step]`, dropping the (possibly empty)
+/// omitted middle. For a witness that fit within `k_first + m_last` hops
+/// (`omitted_hops == 0`, the shallow case — every fixture path, and any DO path
+/// ≤ 12 hops with the default bounds) this reproduces the OLD full
+/// `evidence_path` BYTE-FOR-BYTE; for a deeper path it is the bounded
+/// representative (prefix + suffix + terminal), the approved compression.
+pub(crate) fn flatten_witness(w: &WitnessSummary) -> Vec<EvidenceStep> {
+    let mut out = Vec::with_capacity(w.first_steps.len() + w.last_steps.len() + 1);
+    out.extend(w.first_steps.iter().cloned());
+    out.extend(w.last_steps.iter().cloned());
+    out.push(w.terminal_step.clone());
+    out
+}
+
 /// Render one graph hop `(from_node, edge_k)` into its [`EvidenceStep`] — the
 /// same per-hop [`hop_step`] call `d1_dataflow::build_transitive_witness` makes.
 fn render_hop(

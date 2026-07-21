@@ -503,6 +503,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **d1 CUTOVER — `detect_d1` emits the compressed terminal-cohort report; the
+  per-`(loop, terminal)` witness/context explosion is GONE** (Tasks C5+C6,
+  `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`;
+  `src/engine/l5/detectors/d1.rs`, `src/engine/l5/d1_reach.rs`,
+  `src/engine/l5/d1_dataflow.rs`, `src/engine/l5/d1_cohort.rs`,
+  `src/engine/l5/finding.rs`, `src/engine/l5/registry.rs`,
+  `src/engine/gate/format_sarif.rs`, `src/engine/gate/format_html.rs`).
+  `detect_d1` now runs `d1_reach::search_loops_cohorts` (the sink path:
+  `score_batch_to_sink` per batch → `TerminalSink::finalize`) and assembles ONE
+  `Finding` per reached terminal carrying `cohort_contexts: Vec<D1CohortContext>`
+  — one entry per `(severity, verdict, depth_bucket, uncertain,
+  reachable_verdicts)` verdict CLASS — instead of one `LoopContext` per reaching
+  loop. Each cohort carries an interned `loop_set` (+ `loop_count`) and ONE
+  bounded representative `WitnessSummary`; the run-level loop CATALOG +
+  `LoopSetRegistry` (needed to decompress `loop_set` → loop identity) ride on the
+  new `DetectorOutput.d1_cohort_index` → `RunOutput.d1_cohort_index` → the R4
+  projection's `loopCatalog`/`loopSetRegistry` envelope (emitted ONLY when a d1
+  finding survives the projection's detector filter, so non-d1 goldens stay
+  byte-identical). The representative witness is materialized LAZILY at
+  sink-insert time (once per cohort, off the still-alive per-batch `BatchSolver`
+  arena) — replacing the ~3.2M full-witness builds (each a ~28k-hop predecessor
+  walk) with ~one per cohort. **The per-`(loop, terminal)` `(verdict,
+  depth_bucket, unc, reachable_verdicts)` tuples are PRESERVED EXACTLY** (the
+  winner-selection scan is byte-identical; proven by the
+  `score_batch_to_sink_matches_old` differential + a decompress-vs-old golden
+  triage); the finding's `id`/`root_cause`/`severity`/`confidence`/`fingerprint`/
+  `affected_objects`/`primary_location` are byte-identical on the real CDO-shaped
+  DO workspace (908 findings, `detectorStats` identical). Only the OUTPUT SHAPE
+  moved (USER-APPROVED): `contexts` → `cohort_contexts`, `evidence_path` +
+  `additional_paths` become the bounded per-cohort representative witnesses, and
+  `pathCount` now counts cohorts rather than loops. The terminal owner+op are
+  carried as graph REFERENCES through the sink (not re-derived from
+  `routine_by_id`), so a colliding-id trigger (`OnAction`) no longer drops its
+  finding (the G-18 hazard). The old `search_loops`/`solve_batch`/
+  `emit_lane_aggregates`/`build_transitive_witness`/`assemble_findings` path
+  survives as the `#[cfg(test)]` differential ORACLE. SARIF renders one code-flow
+  per cohort (with a `loop_count`/verdict/`total_hops` message); HTML renders the
+  per-verdict-class loop-count summary.
 - **`d1_dataflow::solve_batch` scoring rewritten — candidate materialization
   eliminated (the Base-App 8020 ~8-hour wall)** (Task TPlan;
   `src/engine/l5/d1_dataflow.rs` + `src/engine/l5/d1_reach.rs`,

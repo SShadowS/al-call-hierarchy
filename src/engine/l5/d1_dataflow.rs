@@ -68,7 +68,7 @@ use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
-use crate::engine::l5::d1_cohort::{BestRefLite, ContextKey, GroupIx, TerminalSink};
+use crate::engine::l5::d1_cohort::{CohortRep, ContextKey, GroupIx, TerminalSink};
 use crate::engine::l5::d1_graph::{D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok};
 use crate::engine::l5::d1_liveness::{Liveness, ParamTransfer};
 use crate::engine::l5::d1_reach::{
@@ -78,6 +78,7 @@ use crate::engine::l5::d1_reach::{
 use crate::engine::l5::d1_temp::{
     ParamTemp, TempVec, cross_hop, lookup, resolve_terminal, root_state,
 };
+use crate::engine::l5::d1_witness::{direct_witness, representative_witness};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::d1::{
     TempVerdict, hop_step, is_setup_singleton_get, severity_for, terminal_step,
@@ -2298,6 +2299,129 @@ pub(crate) fn solve_batch<'a>(
 // aggregates on verdict / depth_bucket / unc / coverage / reachable_verdicts.
 // ===========================================================================
 
+/// The bounded-representative-witness slice bounds (Task C3): the first `K` hop
+/// steps nearest the seed + the last `M` nearest the terminal are kept, the rest
+/// summarized as `omitted_hops`. `K + M = 12` covers every fixture path (all
+/// ≤ 4 hops) whole (no omission → the flattened witness is byte-identical to the
+/// old full one), and bounds the DO/8020 witness size for the deep chains that
+/// drove the old ~28k-hop-per-`(loop, terminal)` blowup.
+pub(crate) const WITNESS_K_FIRST: usize = 8;
+pub(crate) const WITNESS_M_LAST: usize = 4;
+
+/// The uncertainty union along a representative predecessor chain — the SAME
+/// seed→terminal-node concat + [`dedupe_uncertainties`] that
+/// [`build_transitive_witness`] computes, factored out so the cohort path builds
+/// it WITHOUT materializing the full witness. `hops` is TERMINAL→SEED order (as
+/// `collect_reach_chain_b`/`collect_value_chain_b` return); the path nodes are
+/// the hops' `from_node`s (seed entry … pre-terminal, in seed→terminal order)
+/// plus `terminal_node`. Preserving this exact order + dedup makes the cohort
+/// finding's confidence BYTE-IDENTICAL to the old per-loop winner's confidence
+/// (the cohort's first-seen representative IS the old winner-selection's
+/// lowest-`(loop_routine_id, loop_id)` reaching loop — see [`CohortRep`]).
+fn path_uncertainties(
+    hops_terminal_to_seed: &[(NodeIx, usize)],
+    terminal_node: NodeIx,
+    graph: &D1Graph,
+    ctx: &DetectorContext,
+) -> Vec<Uncertainty> {
+    let mut concat: Vec<Uncertainty> = Vec::new();
+    // Seed→terminal node order = the hops' from_nodes reversed, then the terminal.
+    for (from_node, _edge_k) in hops_terminal_to_seed.iter().rev() {
+        let nid = graph.node_ids[*from_node as usize];
+        if let Some(v) = ctx.uncertainties_by_node.get(nid) {
+            concat.extend(v.iter().cloned());
+        }
+    }
+    let tid = graph.node_ids[terminal_node as usize];
+    if let Some(v) = ctx.uncertainties_by_node.get(tid) {
+        concat.extend(v.iter().cloned());
+    }
+    dedupe_uncertainties(concat)
+}
+
+/// Build ONE representative [`CohortRep`] (bounded witness + path uncertainties)
+/// for a lane's running-best winner — the closure `sink_emit` hands to
+/// [`TerminalSink::insert`], invoked at most ONCE per `(terminal, ContextKey)`
+/// cohort (first-seen). Reads the STILL-ALIVE per-batch `solver`: a `Direct`
+/// winner needs no arena (its two-step witness is self-contained); a
+/// `Reach`/`Value` winner walks its lane's predecessor chain (bounded per cohort,
+/// not per `(loop, terminal)`) for the witness's hop steps + the uncertainty
+/// union. `owner`/`op` are the terminal's identity (used only by the fact arms —
+/// a `Direct` winner carries its own loop/op); `term_node` is the terminal's
+/// graph node, `Some` on the terminal-outer scoring pass (where a fact winner is
+/// possible) and `None` on the direct-only pass (whose winners are all `Direct`).
+#[allow(clippy::too_many_arguments)]
+fn build_cohort_rep<'a>(
+    b: &BestRef<'a>,
+    lane: usize,
+    solver: &BatchSolver,
+    graph: &D1Graph<'a>,
+    ctx: &DetectorContext,
+    seeds: &[D1Seed<'a>],
+    owner: &'a L3Routine,
+    op: &'a L3RecordOperation,
+    term_node: Option<NodeIx>,
+) -> CohortRep {
+    match b.source {
+        BestSource::Direct {
+            routine,
+            loop_info,
+            op: dop,
+            ..
+        } => CohortRep {
+            witness: direct_witness(routine, loop_info, dop, ctx),
+            uncertainties: Vec::new(),
+        },
+        BestSource::Reach { fact_ix } => {
+            let tn = term_node.expect("a Reach winner requires the terminal node");
+            let (hops, _seed) = collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
+            let uncertainties = path_uncertainties(&hops, tn, graph, ctx);
+            let witness = representative_witness(
+                solver,
+                graph,
+                ctx,
+                seeds,
+                lane,
+                fact_ix,
+                false,
+                tn,
+                owner,
+                op,
+                WITNESS_K_FIRST,
+                WITNESS_M_LAST,
+            );
+            CohortRep {
+                witness,
+                uncertainties,
+            }
+        }
+        BestSource::Value { fact_ix } => {
+            let tn = term_node.expect("a Value winner requires the terminal node");
+            let (hops, _seed) =
+                collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix);
+            let uncertainties = path_uncertainties(&hops, tn, graph, ctx);
+            let witness = representative_witness(
+                solver,
+                graph,
+                ctx,
+                seeds,
+                lane,
+                fact_ix,
+                true,
+                tn,
+                owner,
+                op,
+                WITNESS_K_FIRST,
+                WITNESS_M_LAST,
+            );
+            CohortRep {
+                witness,
+                uncertainties,
+            }
+        }
+    }
+}
+
 /// Emit one cohort winner per PRESENT lane at one terminal key into `sink`:
 /// intern the terminal, then for each lane whose running-best is set, set the
 /// loop bit in the winner's [`ContextKey`] cohort + record each reaching verdict
@@ -2306,26 +2430,35 @@ pub(crate) fn solve_batch<'a>(
 /// never interned — it produces no aggregate in the old path either). The
 /// winner's `unc` bit is recovered from `rank.2` (the `unc == false` preference,
 /// `0` iff the winning fact/path is uncertain — identical to the old
-/// `!uncertainties.is_empty()`), and the representative's hop count from
-/// `rank.3` (`-(hops)`).
+/// `!uncertainties.is_empty()`). The representative [`CohortRep`] (bounded
+/// witness + confidence-driving uncertainties) is built LAZILY inside
+/// [`TerminalSink::insert`] — only for the FIRST loop landing in each cohort —
+/// off the still-alive `solver`.
+#[allow(clippy::too_many_arguments)]
 fn sink_emit<'a>(
     sink: &mut TerminalSink<'a>,
-    key: (&'a str, &'a str),
+    owner: &'a L3Routine,
+    op: &'a L3RecordOperation,
     batch_base: usize,
     lanes: usize,
     best: &[Option<BestRef<'a>>; BATCH_WIDTH],
     vmask: &[u64; 4],
+    solver: &BatchSolver,
+    graph: &D1Graph<'a>,
+    ctx: &DetectorContext,
+    seeds: &[D1Seed<'a>],
+    term_node: Option<NodeIx>,
 ) {
     if !best.iter().take(lanes).any(|b| b.is_some()) {
         return;
     }
-    let tix = sink.terminal_ix(key);
+    let tix = sink.terminal_ix(owner, op);
     for (lane, slot) in best.iter().enumerate().take(lanes) {
         let Some(b) = slot else {
             continue;
         };
         let group = (batch_base + lane) as GroupIx;
-        let ctx = ContextKey {
+        let ck = ContextKey {
             severity: b.severity,
             verdict: b.verdict,
             depth_bucket: b.depth_bucket,
@@ -2337,10 +2470,9 @@ fn sink_emit<'a>(
             (vmask[2] >> lane) & 1 == 1,
             (vmask[3] >> lane) & 1 == 1,
         ];
-        let rep = BestRefLite {
-            hops: (-b.rank.3) as u32,
-        };
-        sink.insert(tix, group, ctx, reachable, rep);
+        sink.insert(tix, group, ck, reachable, || {
+            build_cohort_rep(b, lane, solver, graph, ctx, seeds, owner, op, term_node)
+        });
     }
 }
 
@@ -2745,11 +2877,24 @@ pub(crate) fn score_batch_to_sink<'a>(
             }
         }
 
-        sink_emit(sink, key, batch_base, lanes, &best, &vmask);
+        sink_emit(
+            sink,
+            entry.owner,
+            entry.op,
+            batch_base,
+            lanes,
+            &best,
+            &vmask,
+            &solver,
+            graph,
+            ctx,
+            seeds,
+            Some(entry.node),
+        );
     }
 
-    for (key, cands) in &direct_by_key {
-        if consumed_direct_keys.contains(key) {
+    for (_key, cands) in &direct_by_key {
+        if consumed_direct_keys.contains(_key) {
             continue;
         }
         let mut best: [Option<BestRef<'a>>; BATCH_WIDTH] = [None; BATCH_WIDTH];
@@ -2757,7 +2902,24 @@ pub(crate) fn score_batch_to_sink<'a>(
         for c in cands {
             fold_direct(c, &mut best, &mut vmask);
         }
-        sink_emit(sink, *key, batch_base, lanes, &best, &vmask);
+        // A direct-only key's winner is always `Direct` (no facts), which carries
+        // its own witness inputs; `owner`/`op` come from any cand (all share the
+        // key) and `term_node` is `None` (never read on the Direct arm).
+        let any = &cands[0];
+        sink_emit(
+            sink,
+            any.routine,
+            any.op,
+            batch_base,
+            lanes,
+            &best,
+            &vmask,
+            &solver,
+            graph,
+            ctx,
+            seeds,
+            None,
+        );
     }
 }
 
@@ -4529,7 +4691,7 @@ mod tests {
         // DECOMPRESS the sink: (group, owner_id, op_id) -> the cohort tuple.
         let mut new_map: HashMap<(u32, String, String), CohortRow> = HashMap::new();
         for tc in &cohorts {
-            let (owner, op) = tc.key;
+            let (owner, op) = (tc.key.0.id.as_str(), tc.key.1.id.as_str());
             for (ck, bm, _rep) in &tc.cohorts {
                 for g in bm.iter() {
                     let reachable = reachable_verdicts_of(&tc.verdict_sets, g);

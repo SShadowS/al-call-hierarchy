@@ -45,15 +45,24 @@ use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
+use crate::engine::l5::d1_cohort::{
+    GroupBitmap, LoopSetId, LoopSetRegistry, reachable_verdicts_of,
+};
 use crate::engine::l5::d1_graph::build_d1_graph;
-use crate::engine::l5::d1_reach::{DirectOp, LoopTerminalAgg, search_loops};
+use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
+#[cfg(test)]
+use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
+use crate::engine::l5::d1_witness::flatten_witness;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
 };
+#[cfg(test)]
+use crate::engine::l5::finding::LoopContext;
 use crate::engine::l5::finding::{
-    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, LoopContext, SourceAnchor,
+    D1CohortContext, D1CohortIndex, Evidence, EvidenceStep, Finding, FindingConfidence, FixOption,
+    SourceAnchor,
 };
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{annotate_root_cause, sev_rank};
@@ -1328,6 +1337,13 @@ fn enumerate_direct_ops<'a>(
 
 /// One per-loop context under assembly: the source [`LoopTerminalAgg`] + the
 /// built [`LoopContext`] + the fields the group finding lifts from the WINNER.
+///
+/// TEST-ONLY as of the C6 cohort cutover: `detect_d1` now assembles compressed
+/// cohort findings via [`assemble_cohort_findings`]; this per-loop `LoopContext`
+/// assembly (`build_context`/`build_group_finding`/`assemble_findings`) survives
+/// only as the differential ORACLE the d1 test modules run against
+/// `search_loops` (the old `Vec<LoopTerminalAgg>` path).
+#[cfg(test)]
 struct CtxUnderAssembly<'agg, 'data> {
     agg: &'agg LoopTerminalAgg<'data>,
     context: LoopContext,
@@ -1338,6 +1354,7 @@ struct CtxUnderAssembly<'agg, 'data> {
 /// Build one [`CtxUnderAssembly`] from a reachability aggregate: the per-loop
 /// confidence (from the aggregate's uncertainty union), the setup-singleton flag
 /// (for the winner's note/fix), and the serialized-shape [`LoopContext`].
+#[cfg(test)]
 fn build_context<'agg, 'data>(
     agg: &'agg LoopTerminalAgg<'data>,
     ctx: &DetectorContext,
@@ -1379,6 +1396,7 @@ fn build_context<'agg, 'data>(
 /// `ctxs` is already sorted so `ctxs[0]` is the WINNER; the finding lifts its
 /// severity / confidence / evidence_path / temp+setup notes / G-4 wording from
 /// that single context, and the non-winner witnesses become `additional_paths`.
+#[cfg(test)]
 fn build_group_finding(
     ctxs: &[CtxUnderAssembly],
     ctx: &DetectorContext,
@@ -1520,6 +1538,7 @@ fn build_group_finding(
 /// grouping is a `BTreeMap` over already-sorted `aggs` (`search_loops` rule 8),
 /// and the per-group context order (winner first) is a total order on
 /// (severity rank desc, verdict quality desc, loop routine id asc, loop id asc).
+#[cfg(test)]
 fn assemble_findings(
     aggs: &[LoopTerminalAgg],
     ctx: &DetectorContext,
@@ -1550,10 +1569,291 @@ fn assemble_findings(
     out
 }
 
-/// D1 — database operation inside a loop. The production reachability pipeline
-/// (see the module doc): enumerate direct ops + stats, build the compact filtered
-/// graph + seeds, run the unbounded per-loop label search, assemble one
-/// terminal-centric finding per `(terminal routine, op)`.
+/// The lowest GLOBAL group index a bitmap names (its "representative" loop —
+/// which, because groups are visited in sorted `(loop_routine_id, loop_id)`
+/// order and a cohort's first-seen loop is therefore its lowest group index,
+/// equals the OLD winner-selection's `loop_routine_id`/`loop_id`-minimal reaching
+/// loop). `u32::MAX` for an empty bitmap (never happens for a real cohort).
+fn min_group(bm: &GroupBitmap) -> u32 {
+    bm.iter().next().unwrap_or(u32::MAX)
+}
+
+/// Assemble ONE compressed [`Finding`] per reached terminal from the cohort run
+/// (the C6 cutover replacement for [`assemble_findings`]), and build the
+/// run-level [`LoopSetRegistry`] as cohorts are interned.
+///
+/// Per terminal:
+/// - The WINNER ContextKey cohort = max `(sev_rank, verdict quality)`, tie-broken
+///   by SMALLEST representative group — which reproduces the OLD winner-context
+///   selection EXACTLY (max severity → max verdict quality → min
+///   `(loop_routine_id, loop_id)`), because a cohort's representative loop is its
+///   lowest group index and the global-min top-`(sev, verdict)` loop is the min of
+///   its OWN cohort. So the finding's `severity` (the max), `confidence` (from the
+///   winner cohort's representative-path uncertainties = the old winner's), the
+///   root-cause loop name, `primary_location`, `evidence_path` (the winner's
+///   witness) and fingerprint inputs are all PRESERVED across the cutover — only
+///   the witness becomes bounded and the per-loop `contexts` become per-class
+///   `cohort_contexts`.
+/// - `cohort_contexts` = every ContextKey cohort partitioned FURTHER by
+///   `reachable_verdicts` (a per-`(loop, terminal)` property that can vary within a
+///   ContextKey class), each with an interned `loop_set` + `loop_count` + the ck
+///   cohort's shared bounded representative `witness`; ordered `(sev desc, verdict
+///   quality desc, min group asc)` so `cohort_contexts[0]` is the winner class.
+/// - `evidence_path` = the winner cohort's flattened representative witness;
+///   `additional_paths` = the non-winner cohort_contexts' witnesses in the same
+///   order (so a SARIF code-flow index maps to a `cohort_contexts` index).
+fn assemble_cohort_findings(
+    run: &D1CohortRun,
+    ctx: &DetectorContext,
+    role_by_routine: &HashMap<&str, &str>,
+) -> (Vec<Finding>, LoopSetRegistry) {
+    let mut registry = LoopSetRegistry::new();
+    let mut out: Vec<Finding> = Vec::new();
+
+    // Iterate terminals in a DETERMINISTIC key order so the run-level loop-set
+    // registry's intern order (and thus every `LoopSetId`) is reproducible: the
+    // sink's terminal order is partly HashMap-derived (the direct-only emission
+    // pass), and `finalize` collects each terminal's cohorts from a HashMap, so
+    // neither is stable on its own. Sorting terminals here + the finest cohorts
+    // below (before interning) makes the registry a pure function of the input.
+    let mut term_order: Vec<usize> = (0..run.terminals.len()).collect();
+    term_order.sort_by(|&a, &b| {
+        let (ra, oa) = run.terminals[a].key;
+        let (rb, ob) = run.terminals[b].key;
+        (ra.id.as_str(), oa.id.as_str()).cmp(&(rb.id.as_str(), ob.id.as_str()))
+    });
+
+    for &ti in &term_order {
+        let tc = &run.terminals[ti];
+        if tc.cohorts.is_empty() {
+            continue;
+        }
+        // The terminal's OWNING routine + db op are the sink's stored graph
+        // references (the first-seen `(owner, op)` the sink interned) — NOT
+        // re-derived from `routine_by_id`, which for a colliding-id trigger
+        // (`OnAction`, …) would return a SIBLING body whose `record_operations`
+        // lack this op and silently drop the finding (G-18).
+        let (terminal_routine, terminal_op) = tc.key;
+
+        // WINNER ContextKey cohort: max (sev_rank, verdict quality), tie → min
+        // representative group (reproduces the old winner-context selection).
+        let winner_ix = tc
+            .cohorts
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                sev_rank(a.0.severity)
+                    .cmp(&sev_rank(b.0.severity))
+                    .then_with(|| a.0.verdict.quality().cmp(&b.0.verdict.quality()))
+                    .then_with(|| min_group(&b.1).cmp(&min_group(&a.1)))
+            })
+            .map(|(i, _)| i)
+            .expect("tc.cohorts is non-empty");
+        let (winner_ck, _winner_bm, winner_rep) = &tc.cohorts[winner_ix];
+
+        // The winner's loop routine (from the representative witness's loop step).
+        let loop_routine_id = winner_rep
+            .witness
+            .first_steps
+            .first()
+            .map(|s| s.routine_id.as_str())
+            .unwrap_or(terminal_routine.id.as_str());
+        let loop_routine = ctx.routine_by_id.get(loop_routine_id).copied();
+        let loop_routine_name = loop_routine.map(|r| r.name.as_str()).unwrap_or("");
+
+        // Build the FINEST cohorts (ContextKey × reachable_verdicts). Interning is
+        // DEFERRED until after the sort below (with a placeholder `loop_set`) so
+        // the registry order is deterministic regardless of `tc.cohorts`' HashMap
+        // iteration order.
+        let mut finest: Vec<(i32, i32, u32, GroupBitmap, D1CohortContext)> = Vec::new();
+        for (ck, bm, rep) in &tc.cohorts {
+            // Partition this ContextKey cohort's loops by reachable_verdicts.
+            let mut by_rv: BTreeMap<Vec<i32>, GroupBitmap> = BTreeMap::new();
+            for g in bm.iter() {
+                let key: Vec<i32> = reachable_verdicts_of(&tc.verdict_sets, g)
+                    .iter()
+                    .map(|v| *v as i32)
+                    .collect();
+                by_rv.entry(key).or_default().set(g);
+            }
+            for (_key, sub_bm) in by_rv {
+                let g0 = min_group(&sub_bm);
+                let rv_labels: Vec<String> = reachable_verdicts_of(&tc.verdict_sets, g0)
+                    .iter()
+                    .map(|v| v.label().to_string())
+                    .collect();
+                let loop_count = sub_bm.count();
+                finest.push((
+                    sev_rank(ck.severity),
+                    ck.verdict.quality(),
+                    g0,
+                    sub_bm,
+                    D1CohortContext {
+                        severity: ck.severity.to_string(),
+                        verdict: ck.verdict.label().to_string(),
+                        depth_bucket: ck.depth_bucket,
+                        uncertain: ck.unc,
+                        reachable_verdicts: rv_labels,
+                        loop_set: LoopSetId(0), // placeholder — assigned after the sort
+                        loop_count,
+                        witness: rep.witness.clone(),
+                    },
+                ));
+            }
+        }
+        // Order: winner class first (sev desc, verdict quality desc, min group asc).
+        // `min_group` is unique per finest cohort (a loop lands in exactly one), so
+        // this is a TOTAL order — a stable, input-only interning sequence.
+        finest.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        let total_loops: u64 = finest.iter().map(|(_, _, _, _, c)| c.loop_count).sum();
+        let cohort_contexts: Vec<D1CohortContext> = finest
+            .into_iter()
+            .map(|(_, _, _, sub_bm, mut c)| {
+                c.loop_set = registry.intern(&sub_bm);
+                c
+            })
+            .collect();
+
+        // evidence_path = winner's flattened representative witness; additional =
+        // the non-winner cohort witnesses in cohort_contexts order.
+        let evidence_path = flatten_witness(&winner_rep.witness);
+        let additional_paths = if cohort_contexts.len() > 1 {
+            Some(
+                cohort_contexts[1..]
+                    .iter()
+                    .map(|c| flatten_witness(&c.witness))
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        // Identity + wording (all derived from the winner — preserved vs. old).
+        let terminal_routine_id = terminal_routine.id.as_str();
+        let id = format!("d1/{}/{}", terminal_routine_id, terminal_op.id);
+        let root_cause_key = id.clone();
+
+        let temp_note = match winner_ck.verdict {
+            TempVerdict::Temporary => NOTE_TEMPORARY,
+            TempVerdict::Uncertain => NOTE_UNCERTAIN,
+            TempVerdict::FlowFieldGated => NOTE_TEMP_FLOWFIELD,
+            TempVerdict::Physical => "",
+        };
+        let setup_singleton =
+            is_setup_singleton_get(terminal_op, Some(terminal_routine), &ctx.table_by_id);
+        let setup_note = if setup_singleton {
+            " (Setup singleton — BC caches Get() per session, so the round-trip happens at most once.)"
+        } else {
+            ""
+        };
+
+        let pure_transitive =
+            terminal_routine_id != loop_routine_id && terminal_op.loop_stack.is_empty();
+        let base_root_cause = if pure_transitive {
+            format!(
+                "A loop in {} reaches {} in {}, which has no loop of its own \u{2014} the \
+                 operation runs once per iteration of that loop{}{}.",
+                loop_routine_name,
+                table_note(terminal_op, Some(terminal_routine), &ctx.table_by_id),
+                terminal_routine.name,
+                temp_note,
+                setup_note
+            )
+        } else {
+            format!(
+                "A loop in {} reaches {}{}{}.",
+                loop_routine_name,
+                table_note(terminal_op, Some(terminal_routine), &ctx.table_by_id),
+                temp_note,
+                setup_note
+            )
+        };
+        // "(Also reached from N other in-loop ancestors.)" over TOTAL reaching
+        // loops — the same count the old per-loop `ctxs.len()` gave.
+        let root_cause = annotate_root_cause(&base_root_cause, total_loops as usize);
+
+        // affectedObjects = every reaching loop's routine object + the terminal's.
+        let mut affected_set: BTreeSet<String> = BTreeSet::new();
+        for (_ck, bm, _rep) in &tc.cohorts {
+            for g in bm.iter() {
+                let lr_id = run.catalog[g as usize].loop_routine_id.as_str();
+                if let Some(r) = ctx.routine_by_id.get(lr_id) {
+                    affected_set.insert(r.object_id.clone());
+                }
+            }
+        }
+        affected_set.insert(terminal_routine.object_id.clone());
+        let affected_objects: Vec<String> = affected_set.into_iter().collect();
+
+        let affected_tables: Vec<String> = match &terminal_op.table_id {
+            Some(t) => vec![t.clone()],
+            None => Vec::new(),
+        };
+
+        let confidence: FindingConfidence =
+            to_confidence(&uncertainty_lites(&winner_rep.uncertainties), "likely");
+
+        let fix_options = if setup_singleton {
+            vec![FixOption {
+                description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
+                              typically O(1) after the first hit. Hoist the Get() outside the loop \
+                              only if the call site shows up in a CPU profile."
+                    .to_string(),
+                safety: "high".to_string(),
+            }]
+        } else {
+            vec![FixOption {
+                description: "Move the database operation outside the loop, or batch it into a \
+                              set-based operation."
+                    .to_string(),
+                safety: "medium".to_string(),
+            }]
+        };
+
+        let mut finding = Finding {
+            id,
+            root_cause_key,
+            detector: DETECTOR.to_string(),
+            title: "Database operation inside a loop".to_string(),
+            root_cause,
+            severity: winner_ck.severity.to_string(),
+            confidence,
+            primary_location: anchor_of(&terminal_op.source_anchor, terminal_routine),
+            evidence_path,
+            additional_paths,
+            affected_objects,
+            affected_tables,
+            fix_options,
+            provenance: vec![Evidence {
+                source: "tree-sitter".to_string(),
+                note: None,
+            }],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+            contexts: None,
+            cohort_contexts: Some(cohort_contexts),
+        };
+
+        let actionable = pick_actionable_anchor(&finding, role_by_routine);
+        if actionable.is_some() {
+            finding.actionable_anchor = actionable;
+        }
+        out.push(finding);
+    }
+
+    (out, registry)
+}
+
+/// D1 — database operation inside a loop. The production cohort pipeline (see the
+/// module doc): enumerate direct ops + stats, build the compact filtered graph +
+/// seeds, run the reachability search emitting per-terminal bitmap cohorts, and
+/// assemble one compressed terminal-centric finding per `(terminal routine, op)`.
 pub fn detect_d1(
     resolved: &L3Resolved,
     ctx: &DetectorContext,
@@ -1570,15 +1870,21 @@ pub fn detect_d1(
 
     // (1) Direct-op enumeration + stat counting (old branch-(a) ladder + the
     // branch-(b) opaque/dynamic skip counts).
+    let g_dir = pt::span("d1", "enumerate_direct");
     let (direct_ops, dstats) = enumerate_direct_ops(ws, ctx);
+    drop(g_dir);
 
     // (2) Compact filtered graph + in-loop-call seeds (`d1_graph`).
+    let g_bg = pt::span("d1", "build_graph");
     let mut touches_db_memo = HashMap::new();
     let (graph, seeds) = build_d1_graph(ctx, ws, &mut touches_db_memo);
+    drop(g_bg);
 
-    // (3) The unbounded per-loop reachability search (`d1_reach`) — one aggregate
-    // per (loop, terminal-op), each with its selected winner witness.
-    let aggs = search_loops(
+    // (3) The reachability search, emitting per-terminal bitmap COHORTS (the C6
+    // cutover): ONE bounded representative witness per (terminal, ContextKey)
+    // class instead of one full witness per (loop, terminal). Winner selection is
+    // byte-identical to the old aggregate path — see `search_loops_cohorts`.
+    let run = search_loops_cohorts(
         &graph,
         &seeds,
         &direct_ops,
@@ -1586,24 +1892,24 @@ pub fn detect_d1(
         &ctx.closed_world_temp_params,
     );
 
-    // `d1.reach` census (Hot-tier, measurement-only — zero cost when disabled).
-    // Replaces the old `d1.walk_stats`/`d1.memo` walk trace: the search finishes
-    // in seconds, so no cap-durable checkpoint machinery is needed.
+    // `d1.cohort` census (Hot-tier, measurement-only — zero cost when disabled).
     if pt::enabled(pt::Detail::Hot) {
         let mut lc = pt::LocalCounters::new();
         lc.set("nodes", graph.node_ids.len() as u64);
         lc.set("edges", graph.edges.iter().map(|e| e.len() as u64).sum());
         lc.set("seeds", seeds.len() as u64);
         lc.set("direct_ops", direct_ops.len() as u64);
-        lc.set("aggregates", aggs.len() as u64);
-        lc.flush("d1.reach");
+        lc.set("terminals", run.terminals.len() as u64);
+        lc.set("loop_groups", run.catalog.len() as u64);
+        lc.flush("d1.cohort");
     }
 
-    // (4) Assemble one terminal-centric finding per (terminal routine, op).
-    let mut findings = assemble_findings(&aggs, ctx, &role_by_routine);
+    // (4) Assemble ONE compressed terminal-centric finding per reached terminal;
+    // the run-level loop-set registry is built as cohorts are interned.
+    let (mut findings, registry) = assemble_cohort_findings(&run, ctx, &role_by_routine);
 
     // downgradedSetupSingleton: counted POST-assembly by rootCause text (mirrors
-    // the old post-merge count, d1.ts:439).
+    // the old post-merge count, d1.ts:439) — unchanged.
     let mut downgraded_setup_singleton = 0u64;
     for f in &findings {
         if f.root_cause.contains("Setup singleton") {
@@ -1612,19 +1918,20 @@ pub fn detect_d1(
     }
 
     // G-7 (docs/engine-gaps.md): DOWN-CONFIDENCE (never suppress) a finding whose
-    // EVERY context witness's first-step routine is provably dead per d14's EXACT
-    // criteria. The finding KEEPS FIRING at the SAME severity — only the
-    // confidence drops one notch and the rootCause gains an explanatory note.
-    // Applied per finding across ALL its contexts (winner + non-winner).
+    // EVERY reaching loop's routine is provably dead per d14's EXACT criteria.
+    // The old per-loop path collected each context witness's first-step (loop)
+    // routine; the compressed report carries the SAME population as its loops'
+    // catalog entries, so decompress every cohort's `loop_set` → loop routine id
+    // via the run catalog (one loop routine per reaching loop — identical set).
     let mut down_confidenced_dead_routine = 0u64;
     if !findings.is_empty() {
         let dead = crate::engine::l5::detectors::d14::provably_dead_routine_ids(resolved, ctx);
         if !dead.is_empty() {
             for f in &mut findings {
                 let mut roots: Vec<&str> = Vec::new();
-                for c in f.contexts.iter().flatten() {
-                    if let Some(first) = c.witness.first() {
-                        roots.push(first.routine_id.as_str());
+                for cc in f.cohort_contexts.iter().flatten() {
+                    for g in registry.iter(cc.loop_set) {
+                        roots.push(run.catalog[g as usize].loop_routine_id.as_str());
                     }
                 }
                 if roots.is_empty() || !roots.iter().all(|r| dead.contains(*r)) {
@@ -1663,6 +1970,10 @@ pub fn detect_d1(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: Some(D1CohortIndex {
+            catalog: run.catalog,
+            registry,
+        }),
     })
 }
 
@@ -3387,9 +3698,24 @@ codeunit 50790 "T5 D1 G7"
             findings
         );
         let f = findings[0];
-        let ctxs = f.contexts.as_ref().expect("contexts present");
-        assert_eq!(ctxs.len(), 2, "two reaching-loop contexts");
-        let mut roots: Vec<&str> = ctxs.iter().map(|c| c.loop_routine_id.as_str()).collect();
+        // C6 cohort schema: the two reaching loops live in `cohort_contexts` (one
+        // verdict class, loop_count 2) — decompress its `loop_set` via the run
+        // catalog to recover the two DISTINCT dead loop roots (the population G-7
+        // spans). The old per-loop `contexts` is now `None`.
+        assert!(f.contexts.is_none(), "cutover: per-loop contexts retired");
+        let idx = out
+            .d1_cohort_index
+            .as_ref()
+            .expect("d1 cohort index present");
+        let ccs = f.cohort_contexts.as_ref().expect("cohort_contexts present");
+        let total_loops: u64 = ccs.iter().map(|c| c.loop_count).sum();
+        assert_eq!(total_loops, 2, "two reaching loops");
+        let mut roots: Vec<&str> = Vec::new();
+        for cc in ccs {
+            for g in idx.registry.iter(cc.loop_set) {
+                roots.push(idx.catalog[g as usize].loop_routine_id.as_str());
+            }
+        }
         roots.sort();
         roots.dedup();
         assert_eq!(roots.len(), 2, "two DISTINCT dead loop roots");

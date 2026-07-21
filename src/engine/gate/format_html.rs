@@ -231,13 +231,41 @@ fn render_flow(finding: &Finding, m: &Maps) -> String {
             h(&loc),
         ));
     }
-    let extra = match &finding.additional_paths {
-        Some(paths) if !paths.is_empty() => {
-            let n = paths.len();
-            let noun = if n == 1 { "path" } else { "paths" };
-            format!(r#"<p class="flow-extra">+ {n} other {noun} reach the same operation</p>"#)
+    // For a d1 COHORT finding, render the compressed per-verdict-class summary
+    // (each class's loop_count) instead of the old "+ N other paths" note — the
+    // representative witness above is ONE class's; this names how many loops each
+    // class covers. Non-d1 findings keep the additional-paths note unchanged.
+    let extra = if let Some(cohorts) = &finding.cohort_contexts {
+        let total_loops: u64 = cohorts.iter().map(|c| c.loop_count).sum();
+        let n = cohorts.len();
+        let class_noun = if n == 1 { "class" } else { "classes" };
+        let loop_noun = if total_loops == 1 { "loop" } else { "loops" };
+        let items: String = cohorts
+            .iter()
+            .map(|c| {
+                let ln = if c.loop_count == 1 { "loop" } else { "loops" };
+                let unc = if c.uncertain { ", uncertain" } else { "" };
+                format!(
+                    "\n        <li>{} \u{2014} {} {ln} (severity {}{})</li>",
+                    h(&c.verdict),
+                    c.loop_count,
+                    h(&c.severity),
+                    unc
+                )
+            })
+            .collect();
+        format!(
+            r#"<p class="flow-extra">Reached by {total_loops} {loop_noun} across {n} verdict {class_noun}:</p><ul class="cohort-classes">{items}</ul>"#
+        )
+    } else {
+        match &finding.additional_paths {
+            Some(paths) if !paths.is_empty() => {
+                let n = paths.len();
+                let noun = if n == 1 { "path" } else { "paths" };
+                format!(r#"<p class="flow-extra">+ {n} other {noun} reach the same operation</p>"#)
+            }
+            _ => String::new(),
         }
-        _ => String::new(),
     };
     format!("<ol class=\"flow\">{nodes}</ol>{extra}")
 }

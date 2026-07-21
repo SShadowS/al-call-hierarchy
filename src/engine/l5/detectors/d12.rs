@@ -132,5 +132,6 @@ pub fn detect_d12(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

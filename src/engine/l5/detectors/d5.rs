@@ -222,5 +222,6 @@ pub fn detect_d5(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

@@ -366,6 +366,7 @@ pub fn detect_d43(
                     DETECTOR
                 ),
             }],
+            d1_cohort_index: None,
         });
     }
 

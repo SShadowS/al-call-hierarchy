@@ -96,25 +96,29 @@ codeunit 50111 "MT D1 Mixed"
         f.root_cause
     );
 
-    // Both callers' verdicts are surfaced PER LOOP in contexts[] — the redesign
-    // replaced the old dual-verdict prose note with structured contexts.
-    let ctxs = f.contexts.as_ref().expect("d1 findings carry contexts");
+    // Both callers' verdicts are surfaced per VERDICT CLASS in cohortContexts[]
+    // (the C6 cutover: one cohort per class, winner first — the two single-caller
+    // loops fall into distinct physical/temporary classes).
+    let ccs = f
+        .cohort_contexts
+        .as_ref()
+        .expect("d1 findings carry cohort_contexts");
     assert_eq!(
-        ctxs.len(),
+        ccs.len(),
         2,
-        "one context per caller loop. contexts: {ctxs:#?}"
+        "one cohort per verdict class. cohortContexts: {ccs:#?}"
     );
-    // The winner (contexts[0]) is the physical route (higher verdict quality).
+    // The winner (cohortContexts[0]) is the physical route (higher verdict quality).
     assert_eq!(
-        ctxs[0].verdict, "physical",
-        "the physical route wins on verdict quality. contexts: {ctxs:#?}"
+        ccs[0].verdict, "physical",
+        "the physical route wins on verdict quality. cohortContexts: {ccs:#?}"
     );
     let verdicts: std::collections::BTreeSet<&str> =
-        ctxs.iter().map(|c| c.verdict.as_str()).collect();
+        ccs.iter().map(|c| c.verdict.as_str()).collect();
     assert_eq!(
         verdicts,
         ["physical", "temporary"].into_iter().collect(),
-        "both verdicts surfaced across contexts. contexts: {ctxs:#?}"
+        "both verdicts surfaced across cohorts. cohortContexts: {ccs:#?}"
     );
     // The winner is physical, so NO temp note on the rootCause; and the deleted
     // dual-verdict prose note must not reappear.

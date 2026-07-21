@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::d1_cohort::{LoopSetId, LoopSetRegistry};
+use crate::engine::l5::d1_cohort::{LoopSetId, LoopSetRegistry, StableLoopSetRegistry};
 use crate::engine::l5::d1_witness::WitnessSummary;
 use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detectors_cross_app};
 
@@ -109,6 +109,20 @@ pub struct LoopContext {
     pub witness: Vec<EvidenceStep>,
 }
 
+/// The run-level d1 cohort decompression index: the loop CATALOG (one
+/// [`LoopCatalogEntry`] per loop-group, positional by `loop_ix`) + the
+/// hash-consed [`LoopSetRegistry`] that a [`D1CohortContext::loop_set`] handle
+/// interns into. Produced ONLY by `detect_d1` (attached to its `DetectorOutput`),
+/// carried through `RunOutput`, and serialized alongside the findings by the R4
+/// projection so a consumer can expand each cohort's `loop_set` back to per-loop
+/// identities via [`decompress_cohort_context`]. Every non-d1 detector leaves it
+/// `None`.
+#[derive(Debug, Clone, Default)]
+pub struct D1CohortIndex {
+    pub catalog: Vec<LoopCatalogEntry>,
+    pub registry: LoopSetRegistry,
+}
+
 /// One entry in a d1 run's loop catalog — the shared, run-level identity table a
 /// compressed cohort's `loop_set` (interned via
 /// [`crate::engine::l5::d1_cohort::LoopSetRegistry`]) decompresses into. ONE
@@ -146,6 +160,15 @@ pub struct D1CohortContext {
     pub verdict: String,
     pub depth_bucket: i64,
     pub uncertain: bool,
+    /// Every distinct verdict reaching this terminal-op along ANY of the cohort's
+    /// loops (`TempVerdict::label` values, in declaration order — the SAME set the
+    /// old per-loop `LoopContext::reachable_verdicts` carried). Part of the cohort
+    /// IDENTITY: the C6 cutover partitions each `(terminal, ContextKey)` sink
+    /// cohort FURTHER by this set (it is a per-`(loop, terminal)` property that can
+    /// vary WITHIN a ContextKey class — two loops both WINNING `physical` may reach
+    /// via `[temporary, physical]` vs `[physical]`), so a cohort's every loop shares
+    /// it exactly and [`decompress_cohort_context`] broadcasts it per loop.
+    pub reachable_verdicts: Vec<String>,
     pub loop_set: LoopSetId,
     pub loop_count: u64,
     pub witness: WitnessSummary,
@@ -325,6 +348,7 @@ pub struct StableD1CohortContext {
     pub verdict: String,
     pub depth_bucket: i64,
     pub uncertain: bool,
+    pub reachable_verdicts: Vec<String>,
     pub loop_set: LoopSetId,
     pub loop_count: u64,
     pub witness: StableWitnessSummary,
@@ -385,6 +409,21 @@ pub struct R4FindingsProjection {
     #[serde(rename = "findingCount")]
     pub finding_count: usize,
     pub findings: Vec<StableFinding>,
+    /// The run-level d1 loop CATALOG (`loop_ix`-positional) — present ONLY when
+    /// the run produced d1 cohort findings, so a consumer can expand each
+    /// `cohortContexts[].loopSet` to per-loop identities. Empty (and skipped) for
+    /// every non-d1 fixture, so those goldens stay byte-identical across the C6
+    /// cutover.
+    #[serde(rename = "loopCatalog", default, skip_serializing_if = "Vec::is_empty")]
+    pub loop_catalog: Vec<StableLoopCatalogEntry>,
+    /// The run-level hash-consed loop-set registry — the `loopSet` handle → loop
+    /// index expansion table. `None` (skipped) when there are no d1 cohort findings.
+    #[serde(
+        rename = "loopSetRegistry",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub loop_set_registry: Option<StableLoopSetRegistry>,
 }
 
 // ===========================================================================
@@ -585,6 +624,7 @@ fn project_d1_cohort_context(
         verdict: c.verdict.clone(),
         depth_bucket: c.depth_bucket,
         uncertain: c.uncertain,
+        reachable_verdicts: c.reachable_verdicts.clone(),
         loop_set: c.loop_set,
         loop_count: c.loop_count,
         witness: project_witness_summary(&c.witness, map),
@@ -603,7 +643,7 @@ pub fn decompress_cohort_context<'a>(
     ctx: &'a D1CohortContext,
     registry: &LoopSetRegistry,
     catalog: &'a [LoopCatalogEntry],
-) -> Vec<(&'a LoopCatalogEntry, &'a str, i64, bool)> {
+) -> Vec<(&'a LoopCatalogEntry, &'a str, i64, bool, &'a [String])> {
     registry
         .iter(ctx.loop_set)
         .map(|g| {
@@ -612,6 +652,7 @@ pub fn decompress_cohort_context<'a>(
                 ctx.verdict.as_str(),
                 ctx.depth_bucket,
                 ctx.uncertain,
+                ctx.reachable_verdicts.as_slice(),
             )
         })
         .collect()
@@ -712,7 +753,11 @@ pub fn project_r4_findings(
     fixture_name: &str,
     detector_names: &[String],
 ) -> R4FindingsProjection {
-    let RunOutput { findings, .. } = run_detectors(resolved, detectors);
+    let RunOutput {
+        findings,
+        d1_cohort_index,
+        ..
+    } = run_detectors(resolved, detectors);
 
     // Filter to only the named detectors (mirrors al-sem: only selected detectors run).
     let detector_name_set: std::collections::HashSet<&str> =
@@ -735,11 +780,40 @@ pub fn project_r4_findings(
             .then_with(|| a.root_cause_key.cmp(&b.root_cause_key))
     });
 
+    let has_d1 = stable.iter().any(|f| f.cohort_contexts.is_some());
+    let (loop_catalog, loop_set_registry) =
+        project_cohort_index(d1_cohort_index.as_ref(), has_d1, &map);
+
     R4FindingsProjection {
         fixture_name: fixture_name.to_string(),
         detectors: detector_names.to_vec(),
         finding_count: stable.len(),
         findings: stable,
+        loop_catalog,
+        loop_set_registry,
+    }
+}
+
+/// Project the run-level d1 cohort index to its serialized catalog + registry —
+/// but ONLY when `has_d1_findings` (some d1 finding SURVIVED the detector-name
+/// filter). `run_detectors` always runs d1, so a fixture requesting a DIFFERENT
+/// detector (e.g. a d5-only r4 golden whose source also happens to trip d1) still
+/// carries a `d1_cohort_index`; gating on the FILTERED output keeps such goldens
+/// byte-identical (empty catalog + `None` registry → both `skip_serializing_if`).
+fn project_cohort_index(
+    idx: Option<&D1CohortIndex>,
+    has_d1_findings: bool,
+    map: &HashMap<String, String>,
+) -> (Vec<StableLoopCatalogEntry>, Option<StableLoopSetRegistry>) {
+    match idx {
+        Some(idx) if has_d1_findings => (
+            idx.catalog
+                .iter()
+                .map(|e| project_loop_catalog_entry(e, map))
+                .collect(),
+            Some(idx.registry.to_stable()),
+        ),
+        _ => (Vec::new(), None),
     }
 }
 
@@ -766,10 +840,16 @@ pub fn project_r4_findings_cross_app(
             detectors: detector_names.to_vec(),
             finding_count: 0,
             findings: vec![],
+            loop_catalog: Vec::new(),
+            loop_set_registry: None,
         };
     };
 
-    let RunOutput { findings, .. } = run_detectors_cross_app(&base, detectors);
+    let RunOutput {
+        findings,
+        d1_cohort_index,
+        ..
+    } = run_detectors_cross_app(&base, detectors);
 
     let detector_name_set: std::collections::HashSet<&str> =
         detector_names.iter().map(|s| s.as_str()).collect();
@@ -789,11 +869,17 @@ pub fn project_r4_findings_cross_app(
             .then_with(|| a.root_cause_key.cmp(&b.root_cause_key))
     });
 
+    let has_d1 = stable.iter().any(|f| f.cohort_contexts.is_some());
+    let (loop_catalog, loop_set_registry) =
+        project_cohort_index(d1_cohort_index.as_ref(), has_d1, &map);
+
     R4FindingsProjection {
         fixture_name: fixture_name.to_string(),
         detectors: detector_names.to_vec(),
         finding_count: stable.len(),
         findings: stable,
+        loop_catalog,
+        loop_set_registry,
     }
 }
 
@@ -936,22 +1022,24 @@ mod tests {
             verdict: "physical".to_string(),
             depth_bucket: 1,
             uncertain: false,
+            reachable_verdicts: vec!["temporary".to_string(), "physical".to_string()],
             loop_set,
             loop_count: 3,
             witness: dummy_witness(),
         };
 
         let tuples = decompress_cohort_context(&ctx, &registry, &catalog);
-        let got: Vec<(u32, &str, i64, bool)> = tuples
+        let got: Vec<(u32, &str, i64, bool, Vec<String>)> = tuples
             .iter()
-            .map(|(e, v, d, u)| (e.loop_ix, *v, *d, *u))
+            .map(|(e, v, d, u, rv)| (e.loop_ix, *v, *d, *u, rv.to_vec()))
             .collect();
+        let rv = vec!["temporary".to_string(), "physical".to_string()];
         assert_eq!(
             got,
             vec![
-                (0, "physical", 1, false),
-                (2, "physical", 1, false),
-                (5, "physical", 1, false),
+                (0, "physical", 1, false, rv.clone()),
+                (2, "physical", 1, false, rv.clone()),
+                (5, "physical", 1, false, rv.clone()),
             ]
         );
         // The catalog identities resolved are the RIGHT loops, not just the right count.
@@ -989,6 +1077,7 @@ mod tests {
             verdict: "physical".to_string(),
             depth_bucket: 1,
             uncertain: false,
+            reachable_verdicts: vec!["physical".to_string()],
             loop_set: loop_set_a,
             loop_count: 2,
             witness: dummy_witness(),
@@ -998,6 +1087,7 @@ mod tests {
             verdict: "temporary".to_string(),
             depth_bucket: 0,
             uncertain: true,
+            reachable_verdicts: vec!["temporary".to_string()],
             loop_set: loop_set_b,
             loop_count: 1,
             witness: dummy_witness(),
@@ -1083,6 +1173,7 @@ mod tests {
                     verdict: "physical".to_string(),
                     depth_bucket: 1,
                     uncertain: false,
+                    reachable_verdicts: vec!["physical".to_string()],
                     loop_set: loop_set_a,
                     loop_count: 2,
                     witness: dummy_witness(),
@@ -1092,6 +1183,7 @@ mod tests {
                     verdict: "temporary".to_string(),
                     depth_bucket: 0,
                     uncertain: true,
+                    reachable_verdicts: vec!["temporary".to_string()],
                     loop_set: loop_set_b,
                     loop_count: 1,
                     witness: dummy_witness(),

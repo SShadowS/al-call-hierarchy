@@ -184,5 +184,6 @@ pub fn detect_d10(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }

@@ -189,6 +189,9 @@
           ],
           "codeFlows": [
             {
+              "message": {
+                "text": "Reached by 1 loop — physical verdict, 0 total hops"
+              },
               "threadFlows": [
                 {
                   "locations": [

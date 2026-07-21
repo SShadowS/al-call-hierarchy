@@ -78,38 +78,40 @@
           "source": "tree-sitter"
         }
       ],
-      "contexts": [
+      "cohortContexts": [
         {
-          "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2/loop0",
-          "loopRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+          "severity": "info",
           "verdict": "physical",
+          "depthBucket": 1,
+          "uncertain": false,
           "reachableVerdicts": [
             "physical"
           ],
-          "depthClass": "single-loop",
-          "severity": "info",
-          "confidence": {
-            "level": "likely",
-            "evidence": []
-          },
-          "witness": [
-            {
-              "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
-              "sourceAnchor": {
-                "sourceUnitId": "ws:src/Codeunit.al",
-                "range": {
-                  "startLine": 9,
-                  "startColumn": 8,
-                  "endLine": 10,
-                  "endColumn": 29
+          "loopSet": 0,
+          "loopCount": 1,
+          "witness": {
+            "totalHops": 0,
+            "firstSteps": [
+              {
+                "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "range": {
+                    "startLine": 9,
+                    "startColumn": 8,
+                    "endLine": 10,
+                    "endColumn": 29
+                  },
+                  "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+                  "syntaxKind": "for_statement"
                 },
-                "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
-                "syntaxKind": "for_statement"
-              },
-              "note": "for loop",
-              "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2/loop0"
-            },
-            {
+                "note": "for loop",
+                "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2/loop0"
+              }
+            ],
+            "omittedHops": 0,
+            "lastSteps": [],
+            "terminalStep": {
               "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
               "sourceAnchor": {
                 "sourceUnitId": "ws:src/Codeunit.al",
@@ -125,7 +127,7 @@
               "note": "Get on Sales Receivables Setup",
               "operationId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2/op0"
             }
-          ]
+          }
         }
       ],
       "fingerprint": "a8aad2257a77162e"
@@ -203,38 +205,40 @@
           "source": "tree-sitter"
         }
       ],
-      "contexts": [
+      "cohortContexts": [
         {
-          "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40/loop0",
-          "loopRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+          "severity": "medium",
           "verdict": "physical",
+          "depthBucket": 1,
+          "uncertain": false,
           "reachableVerdicts": [
             "physical"
           ],
-          "depthClass": "single-loop",
-          "severity": "medium",
-          "confidence": {
-            "level": "likely",
-            "evidence": []
-          },
-          "witness": [
-            {
-              "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
-              "sourceAnchor": {
-                "sourceUnitId": "ws:src/Codeunit.al",
-                "range": {
-                  "startLine": 19,
-                  "startColumn": 8,
-                  "endLine": 20,
-                  "endColumn": 34
+          "loopSet": 2,
+          "loopCount": 1,
+          "witness": {
+            "totalHops": 0,
+            "firstSteps": [
+              {
+                "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "range": {
+                    "startLine": 19,
+                    "startColumn": 8,
+                    "endLine": 20,
+                    "endColumn": 34
+                  },
+                  "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+                  "syntaxKind": "for_statement"
                 },
-                "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
-                "syntaxKind": "for_statement"
-              },
-              "note": "for loop",
-              "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40/loop0"
-            },
-            {
+                "note": "for loop",
+                "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40/loop0"
+              }
+            ],
+            "omittedHops": 0,
+            "lastSteps": [],
+            "terminalStep": {
               "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
               "sourceAnchor": {
                 "sourceUnitId": "ws:src/Codeunit.al",
@@ -250,7 +254,7 @@
               "note": "Get on Customer",
               "operationId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40/op0"
             }
-          ]
+          }
         }
       ],
       "fingerprint": "d75486042e2af774"
@@ -328,38 +332,40 @@
           "source": "tree-sitter"
         }
       ],
-      "contexts": [
+      "cohortContexts": [
         {
-          "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25/loop0",
-          "loopRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+          "severity": "medium",
           "verdict": "physical",
+          "depthBucket": 1,
+          "uncertain": false,
           "reachableVerdicts": [
             "physical"
           ],
-          "depthClass": "single-loop",
-          "severity": "medium",
-          "confidence": {
-            "level": "likely",
-            "evidence": []
-          },
-          "witness": [
-            {
-              "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
-              "sourceAnchor": {
-                "sourceUnitId": "ws:src/Codeunit.al",
-                "range": {
-                  "startLine": 29,
-                  "startColumn": 8,
-                  "endLine": 30,
-                  "endColumn": 33
+          "loopSet": 1,
+          "loopCount": 1,
+          "witness": {
+            "totalHops": 0,
+            "firstSteps": [
+              {
+                "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/Codeunit.al",
+                  "range": {
+                    "startLine": 29,
+                    "startColumn": 8,
+                    "endLine": 30,
+                    "endColumn": 33
+                  },
+                  "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+                  "syntaxKind": "for_statement"
                 },
-                "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
-                "syntaxKind": "for_statement"
-              },
-              "note": "for loop",
-              "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25/loop0"
-            },
-            {
+                "note": "for loop",
+                "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25/loop0"
+              }
+            ],
+            "omittedHops": 0,
+            "lastSteps": [],
+            "terminalStep": {
               "routineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
               "sourceAnchor": {
                 "sourceUnitId": "ws:src/Codeunit.al",
@@ -375,10 +381,73 @@
               "note": "FindSet on Sales Receivables Setup",
               "operationId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25/op0"
             }
-          ]
+          }
         }
       ],
       "fingerprint": "928ae2eeca1e6f98"
     }
-  ]
+  ],
+  "loopCatalog": [
+    {
+      "loopIx": 0,
+      "loopRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+      "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2/loop0",
+      "anchor": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 9,
+          "startColumn": 8,
+          "endLine": 10,
+          "endColumn": 29
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#d28a13803355bdc65d2b049d02654c7a9cdb316b3eb5388254a4fd1e5b1167d2",
+        "syntaxKind": "for_statement"
+      }
+    },
+    {
+      "loopIx": 1,
+      "loopRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+      "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25/loop0",
+      "anchor": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 29,
+          "startColumn": 8,
+          "endLine": 30,
+          "endColumn": 33
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#16310a28bb3f0f3f2e4f8125ed31e55b2287ecc328eb0e550dcee3904c991a25",
+        "syntaxKind": "for_statement"
+      }
+    },
+    {
+      "loopIx": 2,
+      "loopRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+      "loopId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40/loop0",
+      "anchor": {
+        "sourceUnitId": "ws:src/Codeunit.al",
+        "range": {
+          "startLine": 19,
+          "startColumn": 8,
+          "endLine": 20,
+          "endColumn": 34
+        },
+        "enclosingRoutineId": "11111111-0000-0000-0000-00000000d100:Codeunit:50200#25865effffcc669ff268e9507fec23dad768e4fc3240cb58133301a3d7b23a40",
+        "syntaxKind": "for_statement"
+      }
+    }
+  ],
+  "loopSetRegistry": {
+    "sets": [
+      [
+        0
+      ],
+      [
+        1
+      ],
+      [
+        2
+      ]
+    ]
+  }
 }

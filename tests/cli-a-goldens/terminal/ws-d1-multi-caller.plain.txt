@@ -4,5 +4,4 @@ HIGH (1):
   [d1-db-op-in-loop] Database operation inside a loop — A loop in CallerA reaches Modify on MC Customer in ModifyHelper, which has no loop of its own — the operation runs once per iteration of that loop. (Also reached from 2 other in-loop ancestors.)
     ws:src/D1MultiCaller.al:19:9 in D1 Multi Caller :: ModifyHelper
     confidence: likely
-    also reached from 2 other paths (full traces in SARIF output / explain_path MCP tool)
     fix (medium): Move the database operation outside the loop, or batch it into a set-based operation.

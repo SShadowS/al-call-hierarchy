@@ -150,5 +150,6 @@ pub fn detect_d13(
         findings,
         stats,
         diagnostics: vec![],
+        d1_cohort_index: None,
     })
 }
