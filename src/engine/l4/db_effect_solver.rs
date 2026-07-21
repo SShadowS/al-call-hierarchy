@@ -25,7 +25,7 @@ use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
 use crate::engine::l4::effect_lattice::TempStateKind;
 use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
-use crate::engine::l4::summary::{RoutineSummary, TempState};
+use crate::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
 use crate::engine::l4::summary_runner::{
     FieldIndex, base_intraprocedural_summary, substitute_pd_temp_state,
 };
@@ -451,18 +451,22 @@ pub fn closed_form_union(
 
     let mut c: Vec<u64> = Vec::new();
 
-    // Source 1: each member's own base terminal effects.
+    // Source 1: each member's own base terminal effects. `computed_base`
+    // only gets initialized (and only lives) on the fallback path — the
+    // common case (`base_summaries` has the member) borrows straight from
+    // the map, never cloning a whole `RoutineSummary` just to read its
+    // `db_effects`.
     for m in &eff.members {
-        let owned_base = match base_summaries.get(m) {
-            Some(b) => Some(b.clone()),
-            None => routines_by_id
-                .get(m.as_str())
-                .map(|r| base_intraprocedural_summary(r, routines_by_id, &empty_fields)),
-        };
-        let Some(base) = owned_base else {
+        let computed_base;
+        let db_effects: &[DbEffect] = if let Some(b) = base_summaries.get(m) {
+            &b.db_effects
+        } else if let Some(r) = routines_by_id.get(m.as_str()) {
+            computed_base = base_intraprocedural_summary(r, routines_by_id, &empty_fields);
+            &computed_base.db_effects
+        } else {
             continue; // effective_sccs already excludes missing members; defensive only.
         };
-        for e in &base.db_effects {
+        for e in db_effects {
             intern_terminal_db_effect(
                 universe,
                 &mut c,
@@ -1422,6 +1426,65 @@ mod tests {
             universe.get(&pd_identity),
             None,
             "the member's own base PD effect must never be interned by closed_form_union"
+        );
+    }
+
+    #[test]
+    fn terminal_emission_lands_in_every_member_presence() {
+        // A<->B; no base effects, no settled successors, no PD facts — a
+        // single `TerminalEmission` (Step A's output) is the ONLY source
+        // contributing to `C`. Its `EffectId` bit must be set in EVERY
+        // member's presence bitset (source 3's "shared across the whole
+        // SCC" contract), even though it's recorded against just one
+        // `routine_id` ("a") and its base identity matches nothing else in
+        // scope (no base effect, no settled-successor effect).
+        let routines = vec![pd_routine("a"), pd_routine("b")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(
+            &["a", "b"],
+            vec![pd_edge("a", "b", "a_cs1"), pd_edge("b", "a", "b_cs1")],
+        );
+        let eff = Scc {
+            members: vec!["a".into(), "b".into()],
+            recursive: true,
+        };
+        let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let pd_facts: Vec<PdFact> = Vec::new();
+        let terminal_emissions = vec![TerminalEmission {
+            routine_id: "a".to_string(),
+            base: ("Insert".to_string(), "t7".to_string(), "op7".to_string()),
+            temp: TempStateKind::Known(true),
+        }];
+        let mut universe = EffectUniverse::new();
+
+        let presence = closed_form_union(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &pd_facts,
+            &terminal_emissions,
+            &mut universe,
+        );
+
+        let emitted_id = universe.intern(&EffectIdentity {
+            op: "Insert".to_string(),
+            table_id: "t7".to_string(),
+            operation_id: "op7".to_string(),
+            temp: TempStateKind::Known(true),
+        });
+
+        let a_bits = presence.by_member.get("a").expect("a present");
+        let b_bits = presence.by_member.get("b").expect("b present");
+        assert!(
+            has_bit(a_bits, emitted_id),
+            "terminal emission must land on the member it was recorded against"
+        );
+        assert!(
+            has_bit(b_bits, emitted_id),
+            "terminal emission must be shared into EVERY member's presence, not just the one it landed on"
         );
     }
 }
