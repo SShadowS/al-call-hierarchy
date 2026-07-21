@@ -27,56 +27,7 @@
         "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
         "syntaxKind": "call_expression"
       },
-      "evidencePath": [
-        {
-          "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
-          "sourceAnchor": {
-            "sourceUnitId": "ws:src/D1MultiCaller.al",
-            "range": {
-              "startLine": 25,
-              "startColumn": 8,
-              "endLine": 26,
-              "endColumn": 31
-            },
-            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
-            "syntaxKind": "for_statement"
-          },
-          "note": "for loop",
-          "loopId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/loop0"
-        },
-        {
-          "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
-          "sourceAnchor": {
-            "sourceUnitId": "ws:src/D1MultiCaller.al",
-            "range": {
-              "startLine": 26,
-              "startColumn": 12,
-              "endLine": 26,
-              "endColumn": 30
-            },
-            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c",
-            "syntaxKind": "call_expression"
-          },
-          "note": "calls ModifyHelper",
-          "callsiteId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c/cs0"
-        },
-        {
-          "routineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
-          "sourceAnchor": {
-            "sourceUnitId": "ws:src/D1MultiCaller.al",
-            "range": {
-              "startLine": 18,
-              "startColumn": 8,
-              "endLine": 18,
-              "endColumn": 21
-            },
-            "enclosingRoutineId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f",
-            "syntaxKind": "call_expression"
-          },
-          "note": "Modify on MC Customer",
-          "operationId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f/op0"
-        }
-      ],
+      "evidencePath": [],
       "affectedObjects": [
         "11111111-0000-0000-0000-00000000d01a:Codeunit:50101"
       ],

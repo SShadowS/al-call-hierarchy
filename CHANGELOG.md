@@ -419,6 +419,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **d1 cohort perf polish (Task C8): representative-witness build is now O(M),
+  and the R4 findings projection drops a byte-for-byte witness triplication**
+  (`src/engine/l5/d1_witness.rs`, `src/engine/l5/d1_dataflow.rs`,
+  `src/engine/l5/finding.rs`; `feat/d1-reachability`;
+  `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`). Task C3's
+  `representative_witness` walked the FULL predecessor chain
+  (`collect_reach_chain_b`/`collect_value_chain_b`, O(total_hops) per cohort)
+  before slicing to a first-K/last-M display window — for the Base App 8020
+  corpus's ~28k-hop chains this per-cohort walk (×34,861 cohorts) was itself the
+  dominant remaining cost after Task C1's sink cutover (d1-only: 231s detector
+  vs 9.35s compute-only). Fix: two new bounded predecessor walkers
+  (`collect_reach_chain_b_bounded`/`collect_value_chain_b_bounded`, correctly
+  Seed-checked-before-limit-checked so the `total_hops == m_last` boundary
+  never mis-reports a spurious cap) walk ONLY the last `m_last` hops BACKWARD
+  from the terminal — O(m_last), independent of chain depth.
+  `representative_witness` no longer materializes a first-K prefix at all
+  (`first_steps` is now always exactly `[loop_step, call_step]`, read O(1) off
+  the seed via Task C2's origin array); `omitted_hops =
+  total_hops.saturating_sub(m_last)`, computed from the O(1) authoritative hop
+  count. `WITNESS_K_FIRST` is retired (`WITNESS_M_LAST = 4` is now the only
+  bound). Separately, `finding.rs`'s R4 stable projection
+  (`project_finding`) was serializing the SAME representative witness data
+  THREE TIMES for every d1 finding: once per cohort in
+  `cohortContexts[].witness`, again flattened at the top-level `evidencePath`
+  (the winner's witness), and again in `additionalPaths` (the non-winner
+  cohorts' witnesses) — measured on `aldump --r4-findings` over DO,
+  `evidencePath`+`additionalPaths` were ~5.6MB of a d1 finding's ~14.6MB
+  (~38%), 100% reconstructable from `cohortContexts` via `flatten_witness`.
+  `project_finding` now emits `evidencePath: []`/omits `additionalPaths` when
+  `cohort_contexts` is present (d1's ONLY today); every other detector is
+  unaffected. Net measured on DO's `aldump --r4-findings` dump (all detectors):
+  27.1MB → 18.3MB (−32%), `alsem analyze <DO> --format json` (the GATE path,
+  which never serialized witness/cohort data to begin with) stayed
+  byte-identical (payload-for-payload; only `generatedAt` differs) at 3,877,862
+  bytes, runtime 8.9s → 6.2s. Decompressed `(loop, terminal, verdict,
+  depth_bucket, uncertain, reachable_verdicts)` tuples proven UNCHANGED: 11,251
+  tuples before and after on DO, zero mismatches; all identity fields
+  (`fingerprint`/`severity`/`rootCause`/`confidence`/`affectedObjects`/
+  `affectedTables`/`primaryLocation`/`rootCauseKey`) byte-identical across all
+  908 d1 findings. Goldens: only `tests/r4-goldens/ws-d1*.r4.golden.json`
+  moved (witness content unaffected on these shallow ≤4-hop fixture chains —
+  only the now-redundant `evidencePath` emptied); `l2_ir`/`cli`/`l3`/
+  `differential` families byte-stable, `scripts/check-goldens --regen` green.
 - **`d1_dataflow::solve_batch` SCORING-phase blowup — O(lanes × all-nodes) with a
   per-lane fact re-scan, now proportional to reached terminal facts
   (byte-identical)** (`src/engine/l5/d1_dataflow.rs`, Task D3-perf/scorefix;

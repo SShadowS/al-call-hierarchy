@@ -663,6 +663,19 @@ fn project_finding(
     map: &HashMap<String, String>,
     stable_finding_id: &impl Fn(&str) -> String,
 ) -> StableFinding {
+    // Task C8 (output-size polish): when `cohort_contexts` is present (d1's
+    // compressed cohort schema — the ONLY producer of `cohort_contexts` today),
+    // `evidence_path`/`additional_paths` are 100% RECONSTRUCTABLE from
+    // `cohort_contexts[0].witness` / `cohort_contexts[1..].witness` via
+    // `flatten_witness` — a consumer already has to branch on `cohort_contexts`
+    // for d1 (its `contexts` is always `None`, the C6 cutover), so branching the
+    // SAME way for the flattened path is no new burden. Measured on DO's R4
+    // dump: `evidencePath` + `additionalPaths` were ~5.6MB of a d1 finding's
+    // ~14.6MB (~38%) — a byte-for-byte TRIPLICATION of `cohort_contexts[].witness`
+    // (~6.0MB) for zero informational gain. Every OTHER detector (no
+    // `cohort_contexts`) is unaffected — `evidence_path`/`additional_paths` stay
+    // its ONLY witness data, unchanged.
+    let is_cohort_bearing = f.cohort_contexts.is_some();
     StableFinding {
         detector: f.detector.clone(),
         id: stable_finding_id(&f.id),
@@ -676,11 +689,14 @@ fn project_finding(
             capped_by: f.confidence.capped_by.clone(),
         },
         primary_location: project_anchor(&f.primary_location, map),
-        evidence_path: f
-            .evidence_path
-            .iter()
-            .map(|s| project_evidence_step(s, map))
-            .collect(),
+        evidence_path: if is_cohort_bearing {
+            Vec::new()
+        } else {
+            f.evidence_path
+                .iter()
+                .map(|s| project_evidence_step(s, map))
+                .collect()
+        },
         affected_objects: f
             .affected_objects
             .iter()
@@ -696,12 +712,16 @@ fn project_finding(
             })
             .collect(),
         provenance: f.provenance.iter().map(project_evidence).collect(),
-        additional_paths: f.additional_paths.as_ref().map(|paths| {
-            paths
-                .iter()
-                .map(|p| p.iter().map(|s| project_evidence_step(s, map)).collect())
-                .collect()
-        }),
+        additional_paths: if is_cohort_bearing {
+            None
+        } else {
+            f.additional_paths.as_ref().map(|paths| {
+                paths
+                    .iter()
+                    .map(|p| p.iter().map(|s| project_evidence_step(s, map)).collect())
+                    .collect()
+            })
+        },
         contexts: f
             .contexts
             .as_ref()

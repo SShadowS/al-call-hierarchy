@@ -1,40 +1,47 @@
 //! `d1_witness` — Task C3 of the d1 cohort redesign
 //! (`.superpowers/sdd/task-c3-brief.md`,
-//! `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`): ONE bounded
-//! representative witness per `(terminal, ContextKey)`, replacing the
-//! per-`(loop, terminal)` FULL witness [`d1_dataflow::build_transitive_witness`]
-//! built for every winning lane (the ~28k-hop predecessor-chain walk that drove
-//! the Base App 8020 ~8h run before Task C1's sink cutover — see that module's
-//! doc). Task C1's [`crate::engine::l5::d1_cohort::TerminalSink`] already
-//! collapses 3.2M `(loop, terminal)` aggregates down to ~34,861 `(terminal,
-//! ContextKey)` cohorts; this module makes the ONE witness each cohort still
-//! owes CHEAP, instead of building one PER WINNING LANE.
+//! `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`), made O(M) by
+//! Task C8 (`docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`'s perf
+//! polish): ONE bounded representative witness per `(terminal, ContextKey)`,
+//! replacing the per-`(loop, terminal)` FULL witness
+//! [`d1_dataflow::build_transitive_witness`] built for every winning lane (the
+//! ~28k-hop predecessor-chain walk that drove the Base App 8020 ~8h run before
+//! Task C1's sink cutover — see that module's doc). Task C1's
+//! [`crate::engine::l5::d1_cohort::TerminalSink`] already collapses 3.2M
+//! `(loop, terminal)` aggregates down to ~34,861 `(terminal, ContextKey)`
+//! cohorts; this module makes the ONE witness each cohort still owes CHEAP,
+//! instead of building one PER WINNING LANE.
 //!
-//! ## Design
+//! ## Design (Task C8: O(M), no full-chain walk at all)
 //!
 //! The winner's SEED is read directly from [`BatchSolver::reach_origin`] /
 //! [`BatchSolver::value_origin`] (Task C2) — an O(1) lookup, never a walk to
 //! FIND it. `total_hops` is read directly from [`BatchSolver::reach_hops`] /
 //! [`BatchSolver::value_hops`] — the authoritative first-arrival hop count, no
-//! recompute. The hop STEPS themselves (for display) still need the actual
-//! `(from_node, edge_k)` sequence, so [`representative_witness`] walks the
-//! predecessor chain ONCE per cohort (`collect_reach_chain_b`/
-//! `collect_value_chain_b` — option (a) from the task brief: bounded by the
-//! cohort count, ~34,861, NOT the 3.2M `(loop, terminal)` pairs the old
-//! per-winner witness build walked), then slices the result to the first-K +
-//! last-M hop steps a human witness needs, with an `omitted_hops` count for the
-//! (possibly empty) middle. The full uncertainty-vector union and the TRUE
-//! (unclamped) effective-depth recompute [`d1_dataflow::build_transitive_witness`]
-//! builds are DROPPED — the cohort's own `ContextKey` already carries the exact
-//! `depth_bucket`/`unc` (Task C1), so this witness owes only a REPRESENTATIVE
-//! realizing path, not a second derivation of those two fields.
-//!
-//! Nothing wires [`representative_witness`] into `detect_d1` yet — that is a
-//! later cohort-redesign task (compressed report schema + consumer cutover).
+//! recompute. Task C3's original design still walked the FULL predecessor chain
+//! (`collect_reach_chain_b`/`collect_value_chain_b`, bounded by the cohort
+//! count — ~34,861 — rather than the 3.2M `(loop, terminal)` pairs the old
+//! per-winner build walked, but still O(total_hops) PER COHORT) to materialize
+//! a first-K/last-M slice. For the ~28k-hop chains real BC code produces, that
+//! per-cohort walk was itself the dominant remaining cost. Task C8 drops it
+//! entirely: [`representative_witness`] now walks ONLY the last `m_last` hops
+//! BACKWARD from the terminal (`collect_reach_chain_b_bounded`/
+//! `collect_value_chain_b_bounded`) — O(m_last), independent of chain depth —
+//! and never materializes a first-K prefix at all (`first_steps` is always just
+//! `[loop_step, call_step]`, read O(1) off the seed). `omitted_hops` is
+//! `total_hops.saturating_sub(m_last)` — computed from the O(1) authoritative
+//! hop count, not from anything the walk discovers. The full uncertainty-vector
+//! union and the TRUE (unclamped) effective-depth recompute
+//! [`d1_dataflow::build_transitive_witness`] builds are DROPPED — the cohort's
+//! own `ContextKey` already carries the exact `depth_bucket`/`unc` (Task C1),
+//! so this witness owes only a REPRESENTATIVE realizing path, not a second
+//! derivation of those two fields.
 #![allow(dead_code)]
 
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
-use crate::engine::l5::d1_dataflow::{BatchSolver, collect_reach_chain_b, collect_value_chain_b};
+use crate::engine::l5::d1_dataflow::{
+    BatchSolver, collect_reach_chain_b_bounded, collect_value_chain_b_bounded,
+};
 use crate::engine::l5::d1_graph::{D1Graph, D1Seed, NodeIx};
 use crate::engine::l5::d1_reach::{call_step_ev, loop_step_ev};
 use crate::engine::l5::detector_context::DetectorContext;
@@ -42,13 +49,14 @@ use crate::engine::l5::detectors::d1::{hop_step, terminal_step};
 use crate::engine::l5::finding::EvidenceStep;
 
 /// A bounded representative witness for one `(terminal, ContextKey)` cohort:
-/// `[loop_step, call_step]` + up to `k_first` hop steps nearest the seed, an
-/// `omitted_hops` count for the (possibly empty) middle, up to `m_last` hop
-/// steps nearest the terminal, and the terminal step itself.
+/// `[loop_step, call_step]` (ALWAYS exactly these two — Task C8 dropped the
+/// first-K prefix), an `omitted_hops` count for the (possibly empty) unwalked
+/// middle, up to `m_last` hop steps nearest the terminal, and the terminal step
+/// itself.
 ///
 /// `total_hops` is the AUTHORITATIVE first-arrival hop count
 /// (`BatchSolver::reach_hops`/`value_hops`) — independent of how many hop
-/// steps were actually materialized into `first_steps`/`last_steps`.
+/// steps were actually materialized into `last_steps`.
 ///
 /// Derives `Debug`/`Clone`/`PartialEq`/`Eq` (Task C4) so it can be embedded in
 /// [`crate::engine::l5::finding::D1CohortContext`], which follows `finding.rs`'s
@@ -56,22 +64,20 @@ use crate::engine::l5::finding::EvidenceStep;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessSummary {
     pub total_hops: u32,
-    /// `[loop_step, call_step]` + up to `k_first` hop steps, in seed->terminal
-    /// order. Never empty — always carries the two prefix steps. When the full
-    /// chain fits within `k_first + m_last` hops, EVERY hop step lives here
-    /// (the shallow case) and `last_steps` is empty.
+    /// `[loop_step, call_step]` — ALWAYS exactly these two steps (Task C8: no
+    /// hop steps live here any more, since materializing them would require
+    /// walking forward from the seed, an O(total_hops) walk).
     pub first_steps: Vec<EvidenceStep>,
-    /// Hops skipped between `first_steps`' and `last_steps`' hop portions.
-    /// `0` when the whole chain fit in `first_steps` (the shallow case).
+    /// Hops skipped between the call step and `last_steps`' window.
+    /// `total_hops.saturating_sub(m_last)` — `0` when the whole chain fits
+    /// within `last_steps` (`total_hops <= m_last`, the shallow case).
     pub omitted_hops: u32,
     /// Up to `m_last` hop steps immediately preceding the terminal, in
-    /// seed->terminal order. Empty in the shallow case.
+    /// seed->terminal order. Holds the WHOLE chain in the shallow case
+    /// (`total_hops <= m_last`).
     pub last_steps: Vec<EvidenceStep>,
     pub terminal_step: EvidenceStep,
 }
-
-/// One graph hop, `(from_node, edge_k)` into `D1Graph::edges[from_node]`.
-type HopSlice<'h> = &'h [(NodeIx, usize)];
 
 /// Build the representative witness for a DIRECT in-loop db op (old branch (a)):
 /// `[loop_step]` + the terminal `op_step`, zero hops. This is the cohort-report
@@ -103,11 +109,11 @@ pub(crate) fn direct_witness(
 
 /// Flatten a [`WitnessSummary`] into a single `Vec<EvidenceStep>` —
 /// `first_steps ++ last_steps ++ [terminal_step]`, dropping the (possibly empty)
-/// omitted middle. For a witness that fit within `k_first + m_last` hops
-/// (`omitted_hops == 0`, the shallow case — every fixture path, and any DO path
-/// ≤ 12 hops with the default bounds) this reproduces the OLD full
-/// `evidence_path` BYTE-FOR-BYTE; for a deeper path it is the bounded
-/// representative (prefix + suffix + terminal), the approved compression.
+/// omitted middle. For a witness that fit within `m_last` hops (`omitted_hops
+/// == 0`, the shallow case — every fixture path, and any DO path ≤ `m_last`
+/// hops) this reproduces the OLD full `evidence_path` BYTE-FOR-BYTE; for a
+/// deeper path it is the bounded representative (`[loop_step, call_step]` +
+/// suffix + terminal), the approved compression.
 pub(crate) fn flatten_witness(w: &WitnessSummary) -> Vec<EvidenceStep> {
     let mut out = Vec::with_capacity(w.first_steps.len() + w.last_steps.len() + 1);
     out.extend(w.first_steps.iter().cloned());
@@ -136,7 +142,8 @@ fn render_hop(
     )
 }
 
-/// Build ONE bounded representative witness for a winning (lane, fact) pair.
+/// Build ONE bounded representative witness for a winning (lane, fact) pair —
+/// O(m_last), Task C8: no walk over the full predecessor chain, ever.
 ///
 /// `fact_ix`/`is_value_fact` select the winning reach or value fact (indexed
 /// into `BatchSolver::reach_facts`/`value_facts`, the same way
@@ -146,16 +153,25 @@ fn render_hop(
 /// `build_transitive_witness`'s parameters).
 ///
 /// Algorithm: the seed is read via [`BatchSolver::reach_origin`]/
-/// [`BatchSolver::value_origin`] (Task C2) — O(1), NOT a walk to find it. The
-/// hop STEPS are collected by one bounded walk of the predecessor chain
-/// (`collect_reach_chain_b`/`collect_value_chain_b`), reversed to seed->terminal
-/// order, then sliced: if the chain fits within `k_first + m_last` hops, the
-/// WHOLE chain goes into `first_steps` (`last_steps` empty, `omitted_hops` 0);
-/// otherwise the first `k_first` hops go into `first_steps`, the last `m_last`
-/// into `last_steps`, and the count in between is reported as `omitted_hops`.
-/// A `debug_assert` cross-checks the walk's own seed against the O(1) origin
-/// lookup — the correctness invariant (Task C2) this witness's cheap seed
-/// lookup relies on.
+/// [`BatchSolver::value_origin`] (Task C2) — O(1), NOT a walk to find it.
+/// `total_hops` is read via [`BatchSolver::reach_hops`]/[`BatchSolver::value_hops`]
+/// — O(1), the authoritative hop count. The hop STEPS are collected by a
+/// BACKWARD walk from the terminal, capped at `m_last` hops
+/// (`collect_reach_chain_b_bounded`/`collect_value_chain_b_bounded`) — O(m_last)
+/// regardless of chain depth: a deep chain (`total_hops > m_last`) never sees
+/// its middle or its seed-adjacent hops at all. `first_steps` is always exactly
+/// `[loop_step, call_step]` (no hop steps — materializing a seed-adjacent
+/// prefix would require walking FORWARD from the seed, which is exactly the
+/// O(total_hops) cost this rewrite removes). `omitted_hops =
+/// total_hops.saturating_sub(m_last)`, computed from the O(1) `total_hops`, not
+/// from anything the bounded walk discovers. When the chain is short
+/// (`total_hops <= m_last`) the bounded walk reaches the seed and `last_steps`
+/// ends up holding the WHOLE chain, `omitted_hops == 0` — the walk cost is
+/// still bounded by `m_last`, so this shallow case is cheap too.
+/// `debug_assert`s cross-check the walk's own seed (when it reaches one)
+/// against the O(1) origin lookup, and that a capped walk collects EXACTLY
+/// `m_last` hops — the invariants a subtly wrong hop-vs-seed check ordering
+/// could otherwise violate right at the `total_hops == m_last` boundary.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn representative_witness<'a>(
     solver: &BatchSolver,
@@ -168,7 +184,6 @@ pub(crate) fn representative_witness<'a>(
     terminal_node: NodeIx,
     terminal_owner: &'a L3Routine,
     terminal_op: &'a L3RecordOperation,
-    k_first: usize,
     m_last: usize,
 ) -> WitnessSummary {
     // The seed: O(1) via Task C2's origin array — never a chain walk to find it.
@@ -191,32 +206,54 @@ pub(crate) fn representative_witness<'a>(
         solver.reach_hops[fact_ix][lane]
     };
 
-    // ONE bounded walk of the predecessor chain, for the hop STEPS only
-    // (option (a) from the task brief — bounded per cohort, not per-(loop,
-    // terminal)). Returned in TERMINAL->SEED order; reverse for display.
-    let (hops_terminal_to_seed, walked_seed_index) = if is_value_fact {
-        collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix)
+    // Bounded BACKWARD walk from the terminal: at most `m_last` hops, O(m_last)
+    // regardless of chain depth. `walked_seed_index` is `Some` only when the
+    // walk reached the seed (chain length <= m_last); it is never used to
+    // discover the chain length — `total_hops` (above) is authoritative.
+    let (mut hops_terminal_to_seed, walked_seed_index) = if is_value_fact {
+        collect_value_chain_b_bounded(
+            &solver.value_pred,
+            &solver.reach_pred,
+            lane,
+            fact_ix,
+            m_last,
+        )
     } else {
-        collect_reach_chain_b(&solver.reach_pred, lane, fact_ix)
+        collect_reach_chain_b_bounded(&solver.reach_pred, lane, fact_ix, m_last)
     };
-    debug_assert_eq!(
-        walked_seed_index, origin_seed_index,
-        "origin_seed (Task C2) must equal the chain-walk seed — the correctness \
-         invariant this witness's O(1) seed lookup relies on"
-    );
-    debug_assert_eq!(
-        hops_terminal_to_seed.len() as u32,
-        total_hops,
-        "reach_hops/value_hops must equal the chain-walk's own hop count"
-    );
-    let mut hops = hops_terminal_to_seed;
-    hops.reverse(); // now seed -> terminal order
+    if let Some(ws) = walked_seed_index {
+        debug_assert_eq!(
+            ws, origin_seed_index,
+            "origin_seed (Task C2) must equal the chain-walk seed when the bounded \
+             walk reaches it — the correctness invariant this witness's O(1) seed \
+             lookup relies on"
+        );
+        debug_assert_eq!(
+            hops_terminal_to_seed.len() as u32,
+            total_hops,
+            "a bounded walk that reached the seed must have collected exactly \
+             total_hops hops (the chain's true length)"
+        );
+    } else {
+        debug_assert_eq!(
+            hops_terminal_to_seed.len(),
+            m_last,
+            "a capped walk (seed not reached within m_last hops) always collects \
+             exactly m_last hops"
+        );
+        debug_assert!(
+            total_hops as usize > m_last,
+            "a capped walk (seed not reached within m_last hops) implies \
+             total_hops > m_last"
+        );
+    }
+    hops_terminal_to_seed.reverse(); // now seed -> terminal order, for display
 
     let seed = &seeds[origin_seed_index];
 
     // Path validity: the chain's terminal-most hop must land on terminal_node
     // (a zero-hop witness's seed entry must BE the terminal node instead).
-    match hops.last() {
+    match hops_terminal_to_seed.last() {
         Some(&(from_node, edge_k)) => {
             debug_assert_eq!(
                 graph.edges[from_node as usize][edge_k].to, terminal_node,
@@ -231,26 +268,16 @@ pub(crate) fn representative_witness<'a>(
         }
     }
 
-    let n = hops.len();
-    let (first_hops, omitted_hops, last_hops): (HopSlice, u32, HopSlice) = if n <= k_first + m_last
-    {
-        // Shallow: the whole chain fits — no omission, nothing in last_steps.
-        (&hops[..], 0, &[])
-    } else {
-        let omitted = (n - k_first - m_last) as u32;
-        (&hops[..k_first], omitted, &hops[n - m_last..])
-    };
+    let omitted_hops = total_hops.saturating_sub(m_last as u32);
 
-    let mut first_steps: Vec<EvidenceStep> = Vec::with_capacity(2 + first_hops.len());
-    first_steps.push(loop_step_ev(seed.loop_routine, seed.loop_info));
-    first_steps.push(call_step_ev(seed, graph, ctx));
-    first_steps.extend(
-        first_hops
-            .iter()
-            .map(|&(from_node, edge_k)| render_hop(graph, ctx, from_node, edge_k)),
-    );
+    // ALWAYS exactly [loop_step, call_step] — Task C8 dropped the first-K
+    // prefix, which required a forward-from-seed walk to materialize.
+    let first_steps: Vec<EvidenceStep> = vec![
+        loop_step_ev(seed.loop_routine, seed.loop_info),
+        call_step_ev(seed, graph, ctx),
+    ];
 
-    let last_steps: Vec<EvidenceStep> = last_hops
+    let last_steps: Vec<EvidenceStep> = hops_terminal_to_seed
         .iter()
         .map(|&(from_node, edge_k)| render_hop(graph, ctx, from_node, edge_k))
         .collect();
@@ -526,14 +553,15 @@ mod tests {
         }
     }
 
-    // === Deep fixture: hops > K+M — first-K + last-M + omitted ==============
+    // === Deep fixture: hops > M — last-M + omitted, first_steps is just the
+    // 2-element prefix (Task C8: no first-K any more) ========================
     // (Setup is inlined per test, not factored into a shared helper: `graph`/
     // `seeds` borrow BOTH `ctx` and `workspace`, so a helper returning them
     // would have to return a self-referential struct — mirrors
     // `d1_dataflow::tests::origin_propagation_matches_chain_walk`'s own inline
     // setup for the same reason.)
     #[test]
-    fn deep_reach_witness_first_k_last_m_omitted() {
+    fn deep_reach_witness_last_m_omitted() {
         let (routines, graph_edges, summaries) = deep_reach_chain_fixture(9);
         let ctx = minimal_ctx(&routines, graph_edges, summaries);
         let workspace = ws(&routines);
@@ -568,28 +596,27 @@ mod tests {
         let t_routine = ctx.routine_by_id["T"];
         let t_op = &t_routine.record_operations[0];
 
-        const K: usize = 3;
         const M: usize = 2;
         let w = representative_witness(
-            &solver, &graph, &ctx, &seeds, 0, fact_ix, false, t_node, t_routine, t_op, K, M,
+            &solver, &graph, &ctx, &seeds, 0, fact_ix, false, t_node, t_routine, t_op, M,
         );
 
         assert_eq!(w.total_hops, 10, "A -> C1..C9 -> T is 10 hops");
-        // prefix (2) + K hop steps.
-        assert_eq!(w.first_steps.len(), 2 + K);
-        assert_eq!(w.first_steps[2].routine_id, "A");
-        assert_eq!(w.first_steps[3].routine_id, "C1");
-        assert_eq!(w.first_steps[4].routine_id, "C2");
+        assert_eq!(
+            w.first_steps.len(),
+            2,
+            "first_steps is always just [loop_step, call_step] (Task C8)"
+        );
         assert_eq!(w.last_steps.len(), M);
         assert_eq!(w.last_steps[0].routine_id, "C8");
         assert_eq!(w.last_steps[1].routine_id, "C9");
-        assert_eq!(w.omitted_hops, (w.total_hops as usize - K - M) as u32);
-        assert_eq!(w.omitted_hops, 5);
+        assert_eq!(w.omitted_hops, w.total_hops - M as u32);
+        assert_eq!(w.omitted_hops, 8);
 
         assert_witness_valid(&w, &ctx, "R", "R/loop0", "T", "T/op0");
     }
 
-    // === Shallow fixture: hops <= K+M — whole chain, omitted = 0 ============
+    // === Shallow fixture: hops < M — whole chain in last_steps, omitted = 0 =
     #[test]
     fn shallow_reach_witness_whole_chain_no_omission() {
         let (routines, graph_edges, summaries) = deep_reach_chain_fixture(1);
@@ -626,24 +653,83 @@ mod tests {
         let t_routine = ctx.routine_by_id["T"];
         let t_op = &t_routine.record_operations[0];
 
-        const K: usize = 3;
-        const M: usize = 2;
+        const M: usize = 5;
         let w = representative_witness(
-            &solver, &graph, &ctx, &seeds, 0, fact_ix, false, t_node, t_routine, t_op, K, M,
+            &solver, &graph, &ctx, &seeds, 0, fact_ix, false, t_node, t_routine, t_op, M,
         );
 
         assert_eq!(w.total_hops, 2, "A -> C1 -> T is 2 hops");
-        // Whole chain (2 hops) fits in first_steps: prefix (2) + 2 hop steps.
-        assert_eq!(w.first_steps.len(), 4);
-        assert_eq!(w.first_steps[2].routine_id, "A");
-        assert_eq!(w.first_steps[3].routine_id, "C1");
-        assert!(w.last_steps.is_empty(), "shallow case: last_steps empty");
+        assert_eq!(
+            w.first_steps.len(),
+            2,
+            "first_steps is always just [loop_step, call_step] (Task C8)"
+        );
+        // total_hops (2) < m_last (5): the whole chain fits in last_steps.
+        assert_eq!(w.last_steps.len(), 2);
+        assert_eq!(w.last_steps[0].routine_id, "A");
+        assert_eq!(w.last_steps[1].routine_id, "C1");
         assert_eq!(w.omitted_hops, 0);
 
         assert_witness_valid(&w, &ctx, "R", "R/loop0", "T", "T/op0");
     }
 
-    // === Value-fact terminal via a HopFromReach transition ===================
+    // === Boundary fixture: hops == M exactly — the bounded walk must still
+    // reach the seed (not off-by-one into a spurious `omitted_hops`) =========
+    #[test]
+    fn reach_witness_total_hops_equals_m_last_no_omission() {
+        let (routines, graph_edges, summaries) = deep_reach_chain_fixture(2);
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(seeds.len(), 1, "fixture must have exactly one seed");
+        let cw = ClosedWorldTempParams::new();
+        let liveness = compute_liveness(&graph, &ctx, &cw);
+        let scc = condense(&graph);
+        let group = GroupSpec {
+            loop_routine: seeds[0].loop_routine,
+            loop_id: seeds[0].loop_id,
+            loop_info: seeds[0].loop_info,
+            seed_indices: vec![0],
+            direct_indices: Vec::new(),
+        };
+        let solver = run_batch_fixpoint_for_test(
+            &graph,
+            &liveness,
+            &scc,
+            &seeds,
+            &ctx,
+            &cw,
+            std::slice::from_ref(&group),
+        );
+
+        let t_node = graph.node_ix["T"];
+        let reach_facts = &solver.reach_at[t_node as usize];
+        assert_eq!(reach_facts.len(), 1, "one reach fact at T");
+        let fact_ix = reach_facts[0];
+
+        let t_routine = ctx.routine_by_id["T"];
+        let t_op = &t_routine.record_operations[0];
+
+        const M: usize = 3;
+        let w = representative_witness(
+            &solver, &graph, &ctx, &seeds, 0, fact_ix, false, t_node, t_routine, t_op, M,
+        );
+
+        assert_eq!(w.total_hops, 3, "A -> C1 -> C2 -> T is 3 hops");
+        // total_hops == m_last EXACTLY: the bounded walk must reach the seed
+        // right at the boundary, not report a spurious capped/omitted result.
+        assert_eq!(w.last_steps.len(), 3);
+        assert_eq!(w.last_steps[0].routine_id, "A");
+        assert_eq!(w.last_steps[1].routine_id, "C1");
+        assert_eq!(w.last_steps[2].routine_id, "C2");
+        assert_eq!(w.omitted_hops, 0);
+
+        assert_witness_valid(&w, &ctx, "R", "R/loop0", "T", "T/op0");
+    }
+
+    // === Value-fact terminal via a HopFromReach transition, straddling the
+    // last-M window (the bounded walk must cross value->reach mid-window) ====
     #[test]
     fn deep_value_witness_crosses_hop_from_reach() {
         let (routines, graph_edges, summaries) = deep_value_chain_fixture();
@@ -680,20 +766,29 @@ mod tests {
         let h_routine = ctx.routine_by_id["H"];
         let h_op = &h_routine.record_operations[0];
 
-        const K: usize = 2;
-        const M: usize = 1;
+        // M=3 puts the HopFromReach-crossing edge (B->C, hop index 1 from the
+        // seed) INSIDE the last-3-nearest-terminal window: last_steps must hold
+        // B->C, C->D, D->H, and the bounded walk must cross from the value chain
+        // onto the reach chain mid-window to collect it.
+        const M: usize = 3;
         let w = representative_witness(
-            &solver, &graph, &ctx, &seeds, 0, fact_ix, true, h_node, h_routine, h_op, K, M,
+            &solver, &graph, &ctx, &seeds, 0, fact_ix, true, h_node, h_routine, h_op, M,
         );
 
         assert_eq!(w.total_hops, 4, "A -> B -> C -> D -> H is 4 hops");
-        // prefix (2) + K=2 hop steps: A->B, B->C (the HopFromReach-crossing hop).
-        assert_eq!(w.first_steps.len(), 2 + K);
-        assert_eq!(w.first_steps[2].routine_id, "A");
-        assert_eq!(w.first_steps[3].routine_id, "B");
+        assert_eq!(
+            w.first_steps.len(),
+            2,
+            "first_steps is always just [loop_step, call_step] (Task C8)"
+        );
         assert_eq!(w.last_steps.len(), M);
-        assert_eq!(w.last_steps[0].routine_id, "D");
-        assert_eq!(w.omitted_hops, 1, "the C->D hop is the omitted middle");
+        assert_eq!(
+            w.last_steps[0].routine_id, "B",
+            "the HopFromReach-crossing edge (B->C) lands inside the last-M window"
+        );
+        assert_eq!(w.last_steps[1].routine_id, "C");
+        assert_eq!(w.last_steps[2].routine_id, "D");
+        assert_eq!(w.omitted_hops, 1, "the A->B hop is the omitted middle");
 
         assert_witness_valid(&w, &ctx, "R", "R/loop0", "H", "H/op0");
     }

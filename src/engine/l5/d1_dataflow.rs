@@ -1407,6 +1407,100 @@ pub(crate) fn collect_value_chain_b(
     }
 }
 
+/// Walk a reach fact's per-lane first-arrival predecessor chain, collecting AT
+/// MOST `limit` `(from_node, edge_k)` hops nearest the TERMINAL (terminal->seed
+/// order) — Task C8's BOUNDED analogue of [`collect_reach_chain_b`]. O(limit),
+/// never O(total hops): the walk stops the instant it has collected `limit`
+/// hops, without ever reaching the seed for a deep chain. The `Seed` arm is
+/// checked FIRST, unconditionally (before the length check), so a chain whose
+/// TRUE length is `<= limit` still walks to completion and reports its real
+/// seed — the boundary case `total_hops == limit` correctly returns
+/// `Some(seed_index)` with exactly `limit` hops collected, not `None`.
+///
+/// Returns `(hops, Some(seed_index))` when the walk reached the seed (the
+/// chain's true length is `<= limit`) or `(hops, None)` when it was capped
+/// (the chain is deeper than `limit` — the caller already knows the
+/// authoritative `total_hops` via `BatchSolver::reach_hops`, so this walk never
+/// needs to discover the chain's true length itself).
+pub(crate) fn collect_reach_chain_b_bounded(
+    reach_pred: &[[ReachPredB; BATCH_WIDTH]],
+    lane: usize,
+    start: usize,
+    limit: usize,
+) -> (Vec<(NodeIx, usize)>, Option<usize>) {
+    let mut hops: Vec<(NodeIx, usize)> = Vec::with_capacity(limit);
+    let mut cur = start;
+    loop {
+        match reach_pred[cur][lane] {
+            ReachPredB::Seed { seed_index } => return (hops, Some(seed_index as usize)),
+            ReachPredB::Hop {
+                pred,
+                from_node,
+                edge_k,
+            } => {
+                if hops.len() >= limit {
+                    return (hops, None);
+                }
+                hops.push((from_node, edge_k as usize));
+                cur = pred as usize;
+            }
+            ReachPredB::None => unreachable!("a present lane always has a reach predecessor"),
+        }
+    }
+}
+
+/// Walk a value fact's per-lane first-arrival predecessor chain, collecting AT
+/// MOST `limit` hops nearest the terminal (the bounded analogue of
+/// [`collect_value_chain_b`], mirroring [`collect_reach_chain_b_bounded`]'s
+/// Seed-first-unconditional check for the same boundary-exactness reason). A
+/// `HopFromReach` mid-chain (the hop that BORN the value class via a `Const`
+/// transfer) consumes one unit of the remaining budget, then hands the rest to
+/// [`collect_reach_chain_b_bounded`] for the tail — so a last-M window that
+/// happens to straddle the value/reach transition still walks it correctly, in
+/// O(limit) total (never O(total hops)).
+pub(crate) fn collect_value_chain_b_bounded(
+    value_pred: &[[ValuePredB; BATCH_WIDTH]],
+    reach_pred: &[[ReachPredB; BATCH_WIDTH]],
+    lane: usize,
+    start: usize,
+    limit: usize,
+) -> (Vec<(NodeIx, usize)>, Option<usize>) {
+    let mut hops: Vec<(NodeIx, usize)> = Vec::with_capacity(limit);
+    let mut cur = start;
+    loop {
+        match value_pred[cur][lane] {
+            ValuePredB::Seed { seed_index } => return (hops, Some(seed_index as usize)),
+            ValuePredB::HopFromValue {
+                pred,
+                from_node,
+                edge_k,
+            } => {
+                if hops.len() >= limit {
+                    return (hops, None);
+                }
+                hops.push((from_node, edge_k as usize));
+                cur = pred as usize;
+            }
+            ValuePredB::HopFromReach {
+                pred,
+                from_node,
+                edge_k,
+            } => {
+                if hops.len() >= limit {
+                    return (hops, None);
+                }
+                hops.push((from_node, edge_k as usize));
+                let remaining = limit - hops.len();
+                let (mut rest, seed_index) =
+                    collect_reach_chain_b_bounded(reach_pred, lane, pred as usize, remaining);
+                hops.append(&mut rest);
+                return (hops, seed_index);
+            }
+            ValuePredB::None => unreachable!("a present lane always has a value predecessor"),
+        }
+    }
+}
+
 /// The read-mode + precomputed verdict/severity tables for ONE terminal, all
 /// batch-INDEPENDENT (computed ONCE per d1 run — see [`build_terminal_plan`]).
 /// `Reach` = the terminal reads a caller-independent verdict (a constant op, or
@@ -2292,20 +2386,25 @@ pub(crate) fn solve_batch<'a>(
 // `solve_batch` above, but the winner per (lane, terminal) is EMITTED into a
 // [`TerminalSink`] cohort (a `ContextKey` + the loop's bit) instead of a
 // materialized `LoopTerminalAgg` witness. This is the speed-critical change —
-// no per-(loop, terminal) witness build, no ~28k-hop predecessor walk. `detect_d1`
-// stays on the `solve_batch`/`emit_lane_aggregates` path (goldens byte-stable);
-// this path is exercised ONLY by the `score_batch_to_sink_matches_old` differential
-// below until the cohort cutover, which proves `decompress(sink)` equals the old
+// no per-(loop, terminal) witness build, no ~28k-hop predecessor walk.
+// `detect_d1` is CUT OVER to this path (Tasks C5+C6, `d1_reach::search_loops_cohorts`);
+// `solve_batch`/`emit_lane_aggregates` survive only as the `score_batch_to_sink_matches_old`
+// differential's oracle below, which proves `decompress(sink)` equals the old
 // aggregates on verdict / depth_bucket / unc / coverage / reachable_verdicts.
 // ===========================================================================
 
-/// The bounded-representative-witness slice bounds (Task C3): the first `K` hop
-/// steps nearest the seed + the last `M` nearest the terminal are kept, the rest
-/// summarized as `omitted_hops`. `K + M = 12` covers every fixture path (all
-/// ≤ 4 hops) whole (no omission → the flattened witness is byte-identical to the
-/// old full one), and bounds the DO/8020 witness size for the deep chains that
-/// drove the old ~28k-hop-per-`(loop, terminal)` blowup.
-pub(crate) const WITNESS_K_FIRST: usize = 8;
+/// The bounded-representative-witness slice bound (Task C8): the last `M` hop
+/// steps nearest the terminal are kept, the rest summarized as `omitted_hops`.
+/// Task C3 originally also kept a first-`K` prefix nearest the seed, but
+/// materializing it required walking the chain FORWARD from the seed — an
+/// O(total_hops) walk that dominated the ~220s cohort-build gap on the 8020
+/// corpus (~28k-hop chains). Task C8 drops that prefix entirely: `first_steps`
+/// is now always just `[loop_step, call_step]` (O(1) via `*_origin`), and
+/// `last_steps` is collected by [`collect_reach_chain_b_bounded`]/
+/// [`collect_value_chain_b_bounded`] — a BACKWARD walk from the terminal capped
+/// at `M` hops, O(M) regardless of chain depth. `M = 4` covers every fixture
+/// path (all ≤ 4 hops) whole (no omission), and bounds the DO/8020 witness size
+/// for the deep chains that drove the blowup.
 pub(crate) const WITNESS_M_LAST: usize = 4;
 
 /// The uncertainty union along a representative predecessor chain — the SAME
@@ -2387,7 +2486,6 @@ fn build_cohort_rep<'a>(
                 tn,
                 owner,
                 op,
-                WITNESS_K_FIRST,
                 WITNESS_M_LAST,
             );
             CohortRep {
@@ -2411,7 +2509,6 @@ fn build_cohort_rep<'a>(
                 tn,
                 owner,
                 op,
-                WITNESS_K_FIRST,
                 WITNESS_M_LAST,
             );
             CohortRep {
