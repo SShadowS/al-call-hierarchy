@@ -49,6 +49,11 @@ use crate::engine::l5::finding::EvidenceStep;
 /// `total_hops` is the AUTHORITATIVE first-arrival hop count
 /// (`BatchSolver::reach_hops`/`value_hops`) — independent of how many hop
 /// steps were actually materialized into `first_steps`/`last_steps`.
+///
+/// Derives `Debug`/`Clone`/`PartialEq`/`Eq` (Task C4) so it can be embedded in
+/// [`crate::engine::l5::finding::D1CohortContext`], which follows `finding.rs`'s
+/// internal-type convention of deriving that same set.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessSummary {
     pub total_hops: u32,
     /// `[loop_step, call_step]` + up to `k_first` hop steps, in seed->terminal

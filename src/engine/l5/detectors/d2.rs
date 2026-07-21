@@ -517,6 +517,7 @@ pub fn detect_d2(
                 event_kind: None,
                 cross_extension_subscribers: None,
                 contexts: None,
+                cohort_contexts: None,
             };
             // Fingerprint deferred until AFTER merge_by_terminal.
             findings.push(finding);

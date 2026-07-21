@@ -36,6 +36,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::l5::d1_liveness::Liveness;
 use crate::engine::l5::detectors::d1::TempVerdict;
 
@@ -168,6 +170,174 @@ impl GroupBitmap {
                 word,
                 base: (wi as u32) * 64,
             })
+    }
+}
+
+// ===========================================================================
+// LoopSetId / LoopSetRegistry — hash-consed GroupBitmap interning (Task C4,
+// `.superpowers/sdd/task-c4-brief.md`)
+// ===========================================================================
+
+/// An interned [`GroupBitmap`] handle — hash-consed by [`LoopSetRegistry::intern`].
+/// Two structurally-identical bitmaps (the same set bits, built independently —
+/// e.g. by two different terminals whose cohorts happen to be realized by the
+/// exact same loops) always intern to the SAME id, so the compressed report's
+/// [`crate::engine::l5::finding::D1CohortContext::loop_set`] handles reference ONE
+/// shared bitmap instead of one copy per cohort. `#[serde(transparent)]` so the
+/// STABLE form (`StableD1CohortContext::loop_set`) serializes as a bare integer —
+/// an opaque, run-scoped index a consumer resolves via the accompanying
+/// [`StableLoopSetRegistry`] + loop catalog, not a semantically stable id of its
+/// own (unlike routine/table/object ids elsewhere in this file's projection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LoopSetId(pub u32);
+
+/// Hash-consed [`GroupBitmap`] registry — the run-level de-duplicated store a
+/// compressed d1 report's `D1CohortContext::loop_set` handles index into (Task C4).
+/// `intern` hash-conses by bitmap CONTENT (its trimmed word sequence): many
+/// `(terminal, ContextKey)` cohorts across a run realize the exact same
+/// reaching-loop set (e.g. every terminal directly inside one loop with no nested
+/// calls shares that loop's singleton set), so collapsing identical bitmaps to one
+/// shared id is the compressed report's second big memory win — alongside the
+/// terminal-cohort collapse (Task C1) and the bounded representative witness
+/// (Task C3). `get`/`iter` decompress an id back to its loop-group indices; `len`
+/// interned sets total in the (small) hundreds to low thousands on real corpora,
+/// nowhere near the 3.2M per-`(loop, terminal)` population this redesign replaces.
+#[derive(Default)]
+pub struct LoopSetRegistry {
+    /// Canonical (trimmed, no trailing all-zero word) word sequence per interned
+    /// id — `sets[id.0]` is `id`'s bitmap. Positional: `to_stable`/
+    /// `StableLoopSetRegistry::to_registry` rely on `Vec` index == `LoopSetId.0`.
+    sets: Vec<Box<[u64]>>,
+    /// Content -> id, for hash-consing. Duplicates `sets`' bytes (the standard
+    /// interner tradeoff — see `string-interner`, already a crate dependency for
+    /// the same reason) in exchange for O(1) intern lookups.
+    index: HashMap<Box<[u64]>, LoopSetId>,
+}
+
+impl LoopSetRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `bitmap`'s word slice, trimmed of any trailing (highest-index) all-zero
+    /// words, so two bitmaps that differ only in over-allocated trailing zero
+    /// capacity intern to the SAME id. (`GroupBitmap` built via `set`/`or_with`
+    /// alone never actually produces a trailing zero word — `set`'s `ensure_words`
+    /// only ever grows to fit the bit it is about to set — so this is a defensive
+    /// normalization, not a case reachable through the public `GroupBitmap` API
+    /// today; kept because a hash-consing key must never trust an invariant it
+    /// cannot itself verify.)
+    fn canonical_words(bitmap: &GroupBitmap) -> &[u64] {
+        let words = bitmap.words();
+        match words.iter().rposition(|&w| w != 0) {
+            Some(ix) => &words[..=ix],
+            None => &[],
+        }
+    }
+
+    /// Intern `bitmap`, hash-consing by content: an identical bitmap (same set
+    /// bits) built independently returns the SAME [`LoopSetId`]; a different
+    /// bitmap gets a new one. `pub(crate)` (not `pub`) because it takes a
+    /// [`GroupBitmap`] by reference, and `GroupBitmap` itself is `pub(crate)` —
+    /// matches its own visibility rather than the registry's (which is `pub`
+    /// so a genuinely-external-reachable consumer like
+    /// `finding::decompress_cohort_context` can still hold `&LoopSetRegistry`).
+    pub(crate) fn intern(&mut self, bitmap: &GroupBitmap) -> LoopSetId {
+        let key = Self::canonical_words(bitmap);
+        if let Some(&id) = self.index.get(key) {
+            return id;
+        }
+        let boxed: Box<[u64]> = key.to_vec().into_boxed_slice();
+        let id = LoopSetId(self.sets.len() as u32);
+        self.sets.push(boxed.clone());
+        self.index.insert(boxed, id);
+        id
+    }
+
+    /// Decompress `id` back to its interned [`GroupBitmap`] (a fresh owned copy —
+    /// `GroupBitmap` has no borrowed variant to hand back a reference as one).
+    /// `pub(crate)` — see [`Self::intern`]'s doc for why.
+    pub(crate) fn get(&self, id: LoopSetId) -> GroupBitmap {
+        let words = &self.sets[id.0 as usize];
+        if words.is_empty() {
+            GroupBitmap::Empty
+        } else {
+            GroupBitmap::Dense(words.clone())
+        }
+    }
+
+    /// Iterate `id`'s loop-group indices directly, ascending — avoids
+    /// materializing a [`GroupBitmap`] when the caller only wants the indices
+    /// (the common case: rendering a cohort's loop list).
+    pub fn iter(&self, id: LoopSetId) -> impl Iterator<Item = GroupIx> + '_ {
+        let words: &[u64] = &self.sets[id.0 as usize];
+        words.iter().enumerate().flat_map(|(wi, &word)| WordBits {
+            word,
+            base: (wi as u32) * 64,
+        })
+    }
+
+    /// The number of loops `id`'s bitmap names (mirrors `GroupBitmap::count`).
+    pub fn count(&self, id: LoopSetId) -> u64 {
+        self.sets[id.0 as usize]
+            .iter()
+            .map(|w| w.count_ones() as u64)
+            .sum()
+    }
+
+    /// The number of DISTINCT interned sets.
+    pub fn len(&self) -> usize {
+        self.sets.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sets.is_empty()
+    }
+
+    /// Project to the STABLE (serialized) form: `sets[id.0]` is `id`'s
+    /// decompressed loop-group indices, ascending — positional by `LoopSetId`.
+    pub fn to_stable(&self) -> StableLoopSetRegistry {
+        StableLoopSetRegistry {
+            sets: (0..self.sets.len() as u32)
+                .map(|ix| self.iter(LoopSetId(ix)).collect())
+                .collect(),
+        }
+    }
+}
+
+/// [`LoopSetRegistry`] — STABLE (serialized) form: `sets[id.0]` is `id`'s
+/// decompressed loop-group indices (ascending), a plain `Vec<Vec<GroupIx>>`
+/// positional by [`LoopSetId`]. `to_registry` rebuilds an interning-equivalent
+/// registry — SAME id for SAME position — the round-trip this compressed
+/// report's JSON serialization relies on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StableLoopSetRegistry {
+    pub sets: Vec<Vec<GroupIx>>,
+}
+
+impl StableLoopSetRegistry {
+    /// Rebuild a [`LoopSetRegistry`] whose `LoopSetId`s match this stable form's
+    /// positions exactly (`sets[i]` decompresses under id `LoopSetId(i)`), built
+    /// directly from the positional data rather than by re-`intern`-ing (which
+    /// would silently COLLAPSE two equal-content entries at different positions —
+    /// impossible for a registry honestly produced by `to_stable`, but this stays
+    /// a faithful 1:1 rebuild of whatever JSON it is actually given).
+    pub fn to_registry(&self) -> LoopSetRegistry {
+        let mut reg = LoopSetRegistry::default();
+        for indices in &self.sets {
+            let mut bm = GroupBitmap::new();
+            for &g in indices {
+                bm.set(g);
+            }
+            let words: Box<[u64]> = LoopSetRegistry::canonical_words(&bm)
+                .to_vec()
+                .into_boxed_slice();
+            let id = LoopSetId(reg.sets.len() as u32);
+            reg.sets.push(words.clone());
+            reg.index.insert(words, id);
+        }
+        reg
     }
 }
 
@@ -562,5 +732,105 @@ mod tests {
         sink.insert(t, 0, ctx_a, [false, true, false, false], rep);
         // Same (terminal, loop) in a SECOND context — must panic.
         sink.insert(t, 0, ctx_b, [true, false, false, false], rep);
+    }
+
+    // === LoopSetRegistry — hash-cons interning (Task C4) =====================
+
+    #[test]
+    fn loop_set_registry_interns_identical_bitmaps_to_same_id() {
+        let mut reg = LoopSetRegistry::new();
+        let mut a = GroupBitmap::new();
+        a.set(0);
+        a.set(5);
+        a.set(64);
+        let mut b = GroupBitmap::new();
+        // Same content, built in a DIFFERENT insertion order and by a different
+        // (independent) bitmap — hash-consing must key on content, not identity.
+        b.set(64);
+        b.set(0);
+        b.set(5);
+
+        let id_a = reg.intern(&a);
+        let id_b = reg.intern(&b);
+        assert_eq!(id_a, id_b, "identical bitmaps intern to the SAME id");
+
+        let mut c = GroupBitmap::new();
+        c.set(0);
+        c.set(5);
+        let id_c = reg.intern(&c);
+        assert_ne!(id_a, id_c, "a different bitmap gets a DIFFERENT id");
+
+        // Re-interning `a` again returns the already-assigned id (no growth).
+        assert_eq!(reg.intern(&a), id_a);
+        assert_eq!(reg.len(), 2);
+    }
+
+    #[test]
+    fn loop_set_registry_decompresses_to_exact_group_set() {
+        let mut reg = LoopSetRegistry::new();
+        let mut a = GroupBitmap::new();
+        a.set(0);
+        a.set(5);
+        a.set(64);
+        a.set(200);
+        let id_a = reg.intern(&a);
+
+        assert_eq!(reg.iter(id_a).collect::<Vec<_>>(), vec![0, 5, 64, 200]);
+        assert_eq!(reg.count(id_a), 4);
+        assert_eq!(
+            reg.get(id_a).iter().collect::<Vec<_>>(),
+            vec![0, 5, 64, 200],
+            "get(id) decompresses back to the exact original bitmap"
+        );
+    }
+
+    #[test]
+    fn loop_set_registry_empty_bitmaps_share_one_id() {
+        let mut reg = LoopSetRegistry::new();
+        let id1 = reg.intern(&GroupBitmap::new());
+        let id2 = reg.intern(&GroupBitmap::new());
+        assert_eq!(
+            id1, id2,
+            "two independently-built empty bitmaps intern equal"
+        );
+        assert_eq!(reg.iter(id1).collect::<Vec<_>>(), Vec::<GroupIx>::new());
+        assert_eq!(reg.len(), 1);
+    }
+
+    #[test]
+    fn loop_set_registry_stable_round_trip() {
+        let mut reg = LoopSetRegistry::new();
+        let mut a = GroupBitmap::new();
+        a.set(1);
+        a.set(2);
+        a.set(130);
+        let mut b = GroupBitmap::new();
+        b.set(9);
+        let id_a = reg.intern(&a);
+        let id_b = reg.intern(&b);
+
+        let stable = reg.to_stable();
+        assert_eq!(stable.sets[id_a.0 as usize], vec![1, 2, 130]);
+        assert_eq!(stable.sets[id_b.0 as usize], vec![9]);
+
+        // JSON round trip of the stable form itself.
+        let json = serde_json::to_string(&stable).unwrap();
+        let back: StableLoopSetRegistry = serde_json::from_str(&json).unwrap();
+        assert_eq!(stable, back);
+
+        // Rebuilding via `to_registry` preserves the id<->content mapping: the
+        // ORIGINAL bitmaps re-intern to the SAME ids against the rebuilt registry.
+        let mut rebuilt = back.to_registry();
+        assert_eq!(rebuilt.intern(&a), id_a);
+        assert_eq!(rebuilt.intern(&b), id_b);
+        assert_eq!(rebuilt.iter(id_a).collect::<Vec<_>>(), vec![1, 2, 130]);
+    }
+
+    #[test]
+    fn loop_set_id_serializes_transparently() {
+        let id = LoopSetId(42);
+        assert_eq!(serde_json::to_string(&id).unwrap(), "42");
+        let back: LoopSetId = serde_json::from_str("42").unwrap();
+        assert_eq!(back, id);
     }
 }

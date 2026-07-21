@@ -8,6 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`finding`/`d1_cohort` — compressed report schema + loop-set interning
+  (`LoopSetId`, `LoopSetRegistry`, `LoopCatalogEntry`, `D1CohortContext`,
+  `decompress_cohort_context`)** (`src/engine/l5/finding.rs`,
+  `src/engine/l5/d1_cohort.rs`, `src/engine/l5/d1_witness.rs`, Task C4;
+  `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`,
+  `feat/d1-reachability`). Defines the "reached by N loops" OUTPUT shape that
+  will replace `Finding.contexts`' one-`LoopContext`-per-loop repetition:
+  `Finding` gains `cohort_contexts: Option<Vec<D1CohortContext>>` — one entry
+  per `(terminal, ContextKey)` verdict class, each a `severity`/`verdict`/
+  `depth_bucket`/`uncertain` scalar quad plus a `loop_set: LoopSetId` handle
+  (how many/which loops realize it) and ONE representative `witness`
+  (Task C3's `WitnessSummary`, now `Debug`/`Clone`/`PartialEq`/`Eq` so it can be
+  embedded). `LoopSetId` hash-cons handles are minted by the new
+  `d1_cohort::LoopSetRegistry`: `intern(&GroupBitmap)` returns the SAME id for
+  bitmaps with identical set bits (content-keyed, not identity-keyed) —
+  collapsing the many terminals that realize the exact same reaching-loop set
+  down to one shared handle — and `iter`/`get`/`count` decompress an id back to
+  its loop-group indices. A run-level `LoopCatalogEntry` table (one entry per
+  DISTINCT loop, indexed by `loop_ix`) resolves those indices to loop identity;
+  the new `decompress_cohort_context` helper is the reusable "walk a cohort's
+  `loop_set` through the registry, pairing each loop's catalog entry with the
+  cohort's own verdict/depth_bucket/uncertain" primitive future consumers (the
+  SARIF/HTML renderers, Task C5) will use. Every internal type has a `Stable*`
+  serialized mirror (`StableWitnessSummary`, `StableLoopCatalogEntry`,
+  `StableD1CohortContext`, plus `d1_cohort::StableLoopSetRegistry` — a plain
+  `Vec<Vec<GroupIx>>` positional by id, whose `to_registry()` rebuilds an
+  interning-equivalent registry), following the file's existing internal/stable
+  split; `LoopSetId` is `#[serde(transparent)]` so it serializes as a bare
+  integer, an opaque run-scoped handle a consumer resolves via the accompanying
+  stable registry + catalog rather than a self-describing stable id.
+  `StableFinding` gains `cohortContexts` (skip-if-none). Proven by 3 new
+  `d1_cohort` tests (hash-cons same/different bitmaps, exact decompression,
+  stable JSON round-trip incl. rebuild-preserves-ids) and 3 new `finding` tests
+  (a cohort decompresses to its exact `(loop, verdict, depth_bucket, unc)`
+  tuples; two disjoint-loop-set cohorts decompress disjoint; a finding carrying
+  `cohort_contexts` round-trips through stable projection + JSON alongside its
+  catalog and registry). Purely additive — nothing populates `cohort_contexts`
+  yet (`detect_d1` stays on the `contexts`/`LoopContext` path; C5 wires
+  consumers, C6 cuts over), so every `Finding` construction site — 68 sites
+  across 61 files (every detector + the gate/actionable-anchor/fingerprint/
+  registry/policy-engine call sites) — picked up a mechanical
+  `cohort_contexts: None,` (mirroring how `contexts: None,` was added
+  crate-wide when `LoopContext` first landed). All five golden families stay
+  BYTE-IDENTICAL (`scripts/check-goldens` green,
+  no regen) with the full `cargo test -p al-call-hierarchy --lib` suite (1590
+  tests) green and `cargo clippy --all-targets --all-features` clean.
 - **`d1_witness` — bounded representative witness (`representative_witness`,
   `WitnessSummary`)** (`src/engine/l5/d1_witness.rs`, `src/engine/l5/d1_dataflow.rs`,
   Task C3; `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`,

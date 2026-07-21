@@ -162,6 +162,7 @@ pub fn detect_d44(
             event_kind: event_kind_by_id.get(event_id).map(|s| s.to_string()),
             cross_extension_subscribers: cross_ext,
             contexts: None,
+            cohort_contexts: None,
         };
         finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
         findings.push(finding);
@@ -290,6 +291,7 @@ pub fn detect_d44(
             event_kind: event_kind_by_id.get(event_id).map(|s| s.to_string()),
             cross_extension_subscribers: cross_ext,
             contexts: None,
+            cohort_contexts: None,
         };
         finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
         findings.push(finding);

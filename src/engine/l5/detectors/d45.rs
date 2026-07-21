@@ -193,6 +193,7 @@ pub fn detect_d45(
                 event_kind: publisher_event_kind.clone(),
                 cross_extension_subscribers: cross_ext,
                 contexts: None,
+                cohort_contexts: None,
             };
             finding.fingerprint = Some(fp_index.fingerprint_of(&finding));
             findings.push(finding);

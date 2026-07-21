@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
+use crate::engine::l5::d1_cohort::{LoopSetId, LoopSetRegistry};
+use crate::engine::l5::d1_witness::WitnessSummary;
 use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detectors_cross_app};
 
 // ===========================================================================
@@ -107,6 +109,48 @@ pub struct LoopContext {
     pub witness: Vec<EvidenceStep>,
 }
 
+/// One entry in a d1 run's loop catalog — the shared, run-level identity table a
+/// compressed cohort's `loop_set` (interned via
+/// [`crate::engine::l5::d1_cohort::LoopSetRegistry`]) decompresses into. ONE
+/// entry per DISTINCT loop across the whole run (the loop-group universe,
+/// `search_loops`'s `groups`), NOT one per `(loop, terminal)` — the catalog is
+/// indexed by `loop_ix` (`catalog[ix].loop_ix == ix`), so a decompressed
+/// `GroupBitmap`'s set bits index directly into it. Lives at the run level (the
+/// catalog + [`crate::engine::l5::d1_cohort::LoopSetRegistry`] attach to the d1
+/// run's output, NOT per-finding — many findings' cohorts share the SAME
+/// catalog), following this file's internal/stable split: this INTERNAL form is
+/// a plain struct; [`StableLoopCatalogEntry`] is its serialized mirror.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopCatalogEntry {
+    pub loop_ix: u32,
+    pub loop_routine_id: String,
+    pub loop_id: String,
+    pub anchor: SourceAnchor,
+    pub entry_callsite_id: Option<String>,
+}
+
+/// One `(terminal, ContextKey)` cohort — "reached by N loops", a verdict-class
+/// group replacing [`LoopContext`]'s per-LOOP repetition (the compressed report
+/// schema, Task C4, `.superpowers/sdd/task-c4-brief.md`). `loop_set` is a handle
+/// into the run's `LoopSetRegistry` (see [`LoopCatalogEntry`]'s doc); every loop
+/// it names shares this SAME verdict/depth_bucket/uncertain — the cohort sink's
+/// disjointness + per-class-grouping invariant (Task C1: [`crate::engine::l5::
+/// d1_cohort::TerminalSink::insert`]) guarantees a loop lands in exactly one
+/// cohort per terminal, and that cohort's `ContextKey` IS its
+/// verdict/depth_bucket/unc — so ONE representative `witness` (Task C3's bounded
+/// witness) suffices as evidence for the whole class. INTERNAL form; see
+/// [`StableD1CohortContext`] for the serialized mirror.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct D1CohortContext {
+    pub severity: String,
+    pub verdict: String,
+    pub depth_bucket: i64,
+    pub uncertain: bool,
+    pub loop_set: LoopSetId,
+    pub loop_count: u64,
+    pub witness: WitnessSummary,
+}
+
 /// `Finding` (`model/finding.ts`) — INTERNAL form. Only the fields the ported
 /// detectors populate are present; later-wave optional fields (additionalPaths /
 /// actionableAnchor / eventKind / crossExtensionSubscribers) are added as detectors
@@ -134,6 +178,12 @@ pub struct Finding {
     /// Terminal-centric per-loop contexts (d1 only; `None` for every other
     /// detector). `contexts[0]` is the winner — see [`LoopContext`].
     pub contexts: Option<Vec<LoopContext>>,
+    /// Compressed, verdict-class cohorts (d1 only; `None` for every other
+    /// detector, and for every `contexts`-path d1 finding until the consumer
+    /// cutover, Task C6) — the output-shape replacement for `contexts`: "reached
+    /// by N loops" per verdict class instead of one [`LoopContext`] per loop. See
+    /// [`D1CohortContext`].
+    pub cohort_contexts: Option<Vec<D1CohortContext>>,
 }
 
 // ===========================================================================
@@ -237,6 +287,49 @@ pub struct StableLoopContext {
     pub witness: Vec<StableEvidenceStep>,
 }
 
+/// `WitnessSummary` (`d1_witness.rs`) — STABLE (serialized) form. `first_steps`/
+/// `last_steps`/`terminal_step` are `StableEvidenceStep`-mirrored (same as
+/// `StableLoopContext::witness`), so a compressed cohort's witness projects to
+/// the same stable id space as the rest of the finding.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StableWitnessSummary {
+    pub total_hops: u32,
+    pub first_steps: Vec<StableEvidenceStep>,
+    pub omitted_hops: u32,
+    pub last_steps: Vec<StableEvidenceStep>,
+    pub terminal_step: StableEvidenceStep,
+}
+
+/// `LoopCatalogEntry` — STABLE (serialized) form.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StableLoopCatalogEntry {
+    pub loop_ix: u32,
+    pub loop_routine_id: String,
+    pub loop_id: String,
+    pub anchor: StableSourceAnchor,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry_callsite_id: Option<String>,
+}
+
+/// `D1CohortContext` — STABLE (serialized) form. `loop_set` serializes as its
+/// raw interned index (`LoopSetId` is `#[serde(transparent)]`) — an opaque,
+/// run-scoped handle; a consumer decompresses it via the run's
+/// `StableLoopSetRegistry` + `StableLoopCatalogEntry` catalog, neither of which
+/// live on the finding itself (see the module's Task C4 doc).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StableD1CohortContext {
+    pub severity: String,
+    pub verdict: String,
+    pub depth_bucket: i64,
+    pub uncertain: bool,
+    pub loop_set: LoopSetId,
+    pub loop_count: u64,
+    pub witness: StableWitnessSummary,
+}
+
 /// The fully stable-projected Finding. Field order = al-sem `projectFinding`
 /// insertion order; the OPTION tail is in golden order:
 /// additionalPaths, contexts, actionableAnchor, fingerprint, eventKind,
@@ -267,6 +360,8 @@ pub struct StableFinding {
     pub additional_paths: Option<Vec<Vec<StableEvidenceStep>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contexts: Option<Vec<StableLoopContext>>,
+    #[serde(rename = "cohortContexts", skip_serializing_if = "Option::is_none")]
+    pub cohort_contexts: Option<Vec<StableD1CohortContext>>,
     #[serde(rename = "actionableAnchor", skip_serializing_if = "Option::is_none")]
     pub actionable_anchor: Option<StableSourceAnchor>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -443,6 +538,85 @@ fn project_loop_context(c: &LoopContext, map: &HashMap<String, String>) -> Stabl
     }
 }
 
+fn project_witness_summary(
+    w: &WitnessSummary,
+    map: &HashMap<String, String>,
+) -> StableWitnessSummary {
+    StableWitnessSummary {
+        total_hops: w.total_hops,
+        first_steps: w
+            .first_steps
+            .iter()
+            .map(|s| project_evidence_step(s, map))
+            .collect(),
+        omitted_hops: w.omitted_hops,
+        last_steps: w
+            .last_steps
+            .iter()
+            .map(|s| project_evidence_step(s, map))
+            .collect(),
+        terminal_step: project_evidence_step(&w.terminal_step, map),
+    }
+}
+
+/// Project one [`LoopCatalogEntry`] to its stable form. `pub` (not routed through
+/// `project_finding`, unlike the per-finding helpers below it) — the run-level
+/// catalog lives alongside the findings, not inside one, so its consumer (the
+/// eventual run-level report envelope, C5/C6) calls this directly.
+pub fn project_loop_catalog_entry(
+    e: &LoopCatalogEntry,
+    map: &HashMap<String, String>,
+) -> StableLoopCatalogEntry {
+    StableLoopCatalogEntry {
+        loop_ix: e.loop_ix,
+        loop_routine_id: map_routine_id(&e.loop_routine_id, map),
+        loop_id: map_sub_id(&e.loop_id, map),
+        anchor: project_anchor(&e.anchor, map),
+        entry_callsite_id: e.entry_callsite_id.as_ref().map(|id| map_sub_id(id, map)),
+    }
+}
+
+fn project_d1_cohort_context(
+    c: &D1CohortContext,
+    map: &HashMap<String, String>,
+) -> StableD1CohortContext {
+    StableD1CohortContext {
+        severity: c.severity.clone(),
+        verdict: c.verdict.clone(),
+        depth_bucket: c.depth_bucket,
+        uncertain: c.uncertain,
+        loop_set: c.loop_set,
+        loop_count: c.loop_count,
+        witness: project_witness_summary(&c.witness, map),
+    }
+}
+
+/// Decompress `ctx`'s cohort into its per-loop `(catalog entry, verdict,
+/// depth_bucket, uncertain)` tuples: every loop in `ctx.loop_set` shares this
+/// SAME verdict/depth_bucket/uncertain — the cohort sink's disjointness +
+/// per-class-grouping invariant guarantees it (a cohort IS one verdict class,
+/// see [`D1CohortContext`]'s doc) — so this is a plain broadcast of `ctx`'s own
+/// scalar fields across the registry-decompressed loop indices, each resolved
+/// through the run's `catalog` (indexed by `loop_ix`, i.e. `catalog[g as usize]`
+/// is loop-group `g`'s entry).
+pub fn decompress_cohort_context<'a>(
+    ctx: &'a D1CohortContext,
+    registry: &LoopSetRegistry,
+    catalog: &'a [LoopCatalogEntry],
+) -> Vec<(&'a LoopCatalogEntry, &'a str, i64, bool)> {
+    registry
+        .iter(ctx.loop_set)
+        .map(|g| {
+            (
+                &catalog[g as usize],
+                ctx.verdict.as_str(),
+                ctx.depth_bucket,
+                ctx.uncertain,
+            )
+        })
+        .collect()
+}
+
 fn project_finding(
     f: &Finding,
     map: &HashMap<String, String>,
@@ -491,6 +665,11 @@ fn project_finding(
             .contexts
             .as_ref()
             .map(|cs| cs.iter().map(|c| project_loop_context(c, map)).collect()),
+        cohort_contexts: f.cohort_contexts.as_ref().map(|cs| {
+            cs.iter()
+                .map(|c| project_d1_cohort_context(c, map))
+                .collect()
+        }),
         actionable_anchor: f.actionable_anchor.as_ref().map(|a| project_anchor(a, map)),
         fingerprint: f.fingerprint.clone(),
         event_kind: f.event_kind.clone(),
@@ -687,5 +866,279 @@ mod tests {
     #[should_panic(expected = "malformed TableId")]
     fn table_id_wrong_segment_panics() {
         map_table_id("11111111-0000-0000-0000-00000000d40a/Codeunit/50104");
+    }
+
+    // === Task C4 — compressed report schema + loop-set interning =============
+
+    use crate::engine::l5::d1_cohort::{GroupBitmap, GroupIx, StableLoopSetRegistry};
+
+    fn dummy_anchor(enclosing: &str) -> SourceAnchor {
+        SourceAnchor {
+            source_unit_id: "ws:test.al".to_string(),
+            start_line: 1,
+            start_column: 0,
+            end_line: 1,
+            end_column: 10,
+            enclosing_routine_id: enclosing.to_string(),
+            syntax_kind: "procedure".to_string(),
+            normalized_text_hash: None,
+            leading_context_hash: None,
+            trailing_context_hash: None,
+        }
+    }
+
+    fn dummy_step(routine: &str, note: &str) -> EvidenceStep {
+        EvidenceStep {
+            routine_id: routine.to_string(),
+            operation_id: None,
+            callsite_id: None,
+            loop_id: None,
+            source_anchor: dummy_anchor(routine),
+            note: note.to_string(),
+        }
+    }
+
+    fn dummy_witness() -> WitnessSummary {
+        WitnessSummary {
+            total_hops: 1,
+            first_steps: vec![dummy_step("Loop", "loop"), dummy_step("Loop", "call")],
+            omitted_hops: 0,
+            last_steps: vec![],
+            terminal_step: dummy_step("Term", "terminal"),
+        }
+    }
+
+    /// A `D1CohortContext` decompresses (via the registry + catalog) to the
+    /// EXACT `(loop, verdict, depth_bucket, unc)` tuples it represents: every
+    /// loop named by its `loop_set` carries the cohort's own verdict/
+    /// depth_bucket/uncertain (the cohort IS a verdict class).
+    #[test]
+    fn d1_cohort_context_decompresses_to_exact_tuples() {
+        let mut registry = LoopSetRegistry::new();
+        let mut bm = GroupBitmap::new();
+        bm.set(0);
+        bm.set(2);
+        bm.set(5);
+        let loop_set = registry.intern(&bm);
+
+        let catalog: Vec<LoopCatalogEntry> = (0..6)
+            .map(|ix| LoopCatalogEntry {
+                loop_ix: ix,
+                loop_routine_id: format!("R{ix}"),
+                loop_id: format!("R{ix}/loop0"),
+                anchor: dummy_anchor(&format!("R{ix}")),
+                entry_callsite_id: Some(format!("R{ix}/cs0")),
+            })
+            .collect();
+
+        let ctx = D1CohortContext {
+            severity: "high".to_string(),
+            verdict: "physical".to_string(),
+            depth_bucket: 1,
+            uncertain: false,
+            loop_set,
+            loop_count: 3,
+            witness: dummy_witness(),
+        };
+
+        let tuples = decompress_cohort_context(&ctx, &registry, &catalog);
+        let got: Vec<(u32, &str, i64, bool)> = tuples
+            .iter()
+            .map(|(e, v, d, u)| (e.loop_ix, *v, *d, *u))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (0, "physical", 1, false),
+                (2, "physical", 1, false),
+                (5, "physical", 1, false),
+            ]
+        );
+        // The catalog identities resolved are the RIGHT loops, not just the right count.
+        assert_eq!(tuples[0].0.loop_routine_id, "R0");
+        assert_eq!(tuples[1].0.loop_routine_id, "R2");
+        assert_eq!(tuples[2].0.loop_routine_id, "R5");
+    }
+
+    /// Two cohorts (different verdict classes) sharing NO loops decompress to
+    /// disjoint tuple sets, and their `loop_set`s intern to distinct ids.
+    #[test]
+    fn d1_cohort_context_disjoint_classes_decompress_disjoint() {
+        let mut registry = LoopSetRegistry::new();
+        let mut bm_a = GroupBitmap::new();
+        bm_a.set(1);
+        bm_a.set(3);
+        let mut bm_b = GroupBitmap::new();
+        bm_b.set(2);
+        let loop_set_a = registry.intern(&bm_a);
+        let loop_set_b = registry.intern(&bm_b);
+        assert_ne!(loop_set_a, loop_set_b);
+
+        let catalog: Vec<LoopCatalogEntry> = (0..4)
+            .map(|ix| LoopCatalogEntry {
+                loop_ix: ix,
+                loop_routine_id: format!("R{ix}"),
+                loop_id: format!("R{ix}/loop0"),
+                anchor: dummy_anchor(&format!("R{ix}")),
+                entry_callsite_id: None,
+            })
+            .collect();
+
+        let ctx_a = D1CohortContext {
+            severity: "high".to_string(),
+            verdict: "physical".to_string(),
+            depth_bucket: 1,
+            uncertain: false,
+            loop_set: loop_set_a,
+            loop_count: 2,
+            witness: dummy_witness(),
+        };
+        let ctx_b = D1CohortContext {
+            severity: "medium".to_string(),
+            verdict: "temporary".to_string(),
+            depth_bucket: 0,
+            uncertain: true,
+            loop_set: loop_set_b,
+            loop_count: 1,
+            witness: dummy_witness(),
+        };
+
+        let got_a: Vec<u32> = decompress_cohort_context(&ctx_a, &registry, &catalog)
+            .iter()
+            .map(|(e, ..)| e.loop_ix)
+            .collect();
+        let got_b: Vec<u32> = decompress_cohort_context(&ctx_b, &registry, &catalog)
+            .iter()
+            .map(|(e, ..)| e.loop_ix)
+            .collect();
+        assert_eq!(got_a, vec![1, 3]);
+        assert_eq!(got_b, vec![2]);
+    }
+
+    /// Stable serialization round-trip for a finding carrying `cohort_contexts`,
+    /// alongside its run-level loop catalog + loop-set registry: internal ->
+    /// stable -> JSON -> deserialize -> matches, for all three.
+    #[test]
+    fn finding_with_cohort_contexts_stable_round_trip() {
+        let mut registry = LoopSetRegistry::new();
+        let mut bm_a = GroupBitmap::new();
+        bm_a.set(0);
+        bm_a.set(3);
+        let loop_set_a = registry.intern(&bm_a);
+        let mut bm_b = GroupBitmap::new();
+        bm_b.set(1);
+        let loop_set_b = registry.intern(&bm_b);
+
+        let catalog: Vec<LoopCatalogEntry> = vec![
+            LoopCatalogEntry {
+                loop_ix: 0,
+                loop_routine_id: "R0".to_string(),
+                loop_id: "R0/loop0".to_string(),
+                anchor: dummy_anchor("R0"),
+                entry_callsite_id: None,
+            },
+            LoopCatalogEntry {
+                loop_ix: 1,
+                loop_routine_id: "R1".to_string(),
+                loop_id: "R1/loop0".to_string(),
+                anchor: dummy_anchor("R1"),
+                entry_callsite_id: None,
+            },
+            LoopCatalogEntry {
+                loop_ix: 3,
+                loop_routine_id: "R3".to_string(),
+                loop_id: "R3/loop0".to_string(),
+                anchor: dummy_anchor("R3"),
+                entry_callsite_id: None,
+            },
+        ];
+
+        let finding = Finding {
+            id: "d1/R0/T/T/op0".to_string(),
+            root_cause_key: "d1/T/T/op0".to_string(),
+            detector: "d1".to_string(),
+            title: "title".to_string(),
+            root_cause: "root cause".to_string(),
+            severity: "high".to_string(),
+            confidence: FindingConfidence {
+                level: "high".to_string(),
+                capped_by: None,
+                evidence: vec![],
+            },
+            primary_location: dummy_anchor("T"),
+            evidence_path: vec![],
+            additional_paths: None,
+            affected_objects: vec![],
+            affected_tables: vec![],
+            fix_options: vec![],
+            provenance: vec![],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+            contexts: None,
+            cohort_contexts: Some(vec![
+                D1CohortContext {
+                    severity: "high".to_string(),
+                    verdict: "physical".to_string(),
+                    depth_bucket: 1,
+                    uncertain: false,
+                    loop_set: loop_set_a,
+                    loop_count: 2,
+                    witness: dummy_witness(),
+                },
+                D1CohortContext {
+                    severity: "medium".to_string(),
+                    verdict: "temporary".to_string(),
+                    depth_bucket: 0,
+                    uncertain: true,
+                    loop_set: loop_set_b,
+                    loop_count: 1,
+                    witness: dummy_witness(),
+                },
+            ]),
+        };
+
+        let map: HashMap<String, String> = HashMap::new();
+        let stable_id_fn = |s: &str| s.to_string();
+        let stable = project_finding(&finding, &map, &stable_id_fn);
+
+        let cc = stable
+            .cohort_contexts
+            .as_ref()
+            .expect("cohort_contexts survives projection");
+        assert_eq!(cc.len(), 2);
+        assert_eq!(cc[0].loop_set, loop_set_a);
+        assert_eq!(cc[1].loop_set, loop_set_b);
+
+        // Round trip the finding's stable JSON.
+        let json = serde_json::to_string_pretty(&stable).unwrap();
+        assert!(json.contains("\"cohortContexts\""));
+        let back: StableFinding = serde_json::from_str(&json).unwrap();
+        assert_eq!(stable, back);
+
+        // Round trip the run-level catalog alongside it.
+        let stable_catalog: Vec<StableLoopCatalogEntry> = catalog
+            .iter()
+            .map(|e| project_loop_catalog_entry(e, &map))
+            .collect();
+        let catalog_json = serde_json::to_string(&stable_catalog).unwrap();
+        let catalog_back: Vec<StableLoopCatalogEntry> =
+            serde_json::from_str(&catalog_json).unwrap();
+        assert_eq!(stable_catalog, catalog_back);
+
+        // Round trip the run-level registry alongside it.
+        let stable_registry = registry.to_stable();
+        let registry_json = serde_json::to_string(&stable_registry).unwrap();
+        let registry_back: StableLoopSetRegistry = serde_json::from_str(&registry_json).unwrap();
+        assert_eq!(stable_registry, registry_back);
+
+        // The rebuilt registry decompresses the SAME loop-set ids to the SAME
+        // loop-group indices as the original.
+        for c in cc {
+            let orig: Vec<GroupIx> = registry.iter(c.loop_set).collect();
+            let rebuilt_ids: Vec<GroupIx> = registry_back.to_registry().iter(c.loop_set).collect();
+            assert_eq!(orig, rebuilt_ids);
+        }
     }
 }
