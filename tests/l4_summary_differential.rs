@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use al_call_hierarchy::engine::l4::summary::RoutineSummary;
 use al_call_hierarchy::engine::l4::summary_runner::{
-    FieldIndex, compute_summaries_v2_with_leaves, compute_summaries_with_leaves,
+    FieldIndex, compute_summaries_v2_with_leaves_core, compute_summaries_with_leaves,
 };
 
 // Task 9 (l4-summary-fixpoint-redesign): the CDO_WS/ENFORCE_CDO_WS gating helper
@@ -41,7 +41,11 @@ fn assert_parity_with_leaves(name: &str, leaves: &HashMap<String, RoutineSummary
     let (routines, graph, scc, fields, ub) = fixtures::build(name);
     let (old, _t, _d) =
         compute_summaries_with_leaves(&routines, &graph, &scc, &ub, &fields, false, leaves);
-    let new = compute_summaries_v2_with_leaves(&routines, &graph, &scc, &ub, &fields, leaves);
+    // The differential compares the COMPLETE RoutineSummary (map); the `_core`
+    // fn also returns the roles cap-hit diagnostics, which are irrelevant here
+    // (and empty on every fixture — roles converge).
+    let (new, _diags) =
+        compute_summaries_v2_with_leaves_core(&routines, &graph, &scc, &ub, &fields, leaves);
     assert_eq!(old.len(), new.len(), "[{name}] routine count");
     for (id, old_s) in &old {
         let new_s = new
@@ -295,7 +299,7 @@ fn cdo_whole_program_v2_parity() {
         false,
         &leaf_summaries,
     );
-    let new = compute_summaries_v2_with_leaves(
+    let (new, _diags) = compute_summaries_v2_with_leaves_core(
         &ws.routines,
         &graph,
         &scc,

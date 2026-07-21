@@ -1082,10 +1082,19 @@ pub fn compute_summaries_with_leaves(
 ///
 /// STRICT PARITY (Phase 1): the result MUST equal the old
 /// [`compute_summaries_with_leaves`] over the complete `RoutineSummary`, per
-/// routine — enforced by `tests/l4_summary_differential.rs`. Drops the
-/// `(traces, diagnostics)` tuple: the v2 path has no trajectory artifact
-/// (`RawSccTrace` is not a contract per Phase 1's Global Constraints);
-/// diagnostics are handled at cutover (Task 10).
+/// routine — enforced by `tests/l4_summary_differential.rs`.
+///
+/// This is the `_core` assembly: it returns the settled map PLUS any
+/// summarize-stage `SummarizeDiagnostic` raised by the roles fixpoint's
+/// convergence backstop (empty on every real SCC — roles converge). It has NO
+/// trajectory artifact: `RawSccTrace` is not a contract (Phase 1 Global
+/// Constraints), and the v2 db-effect solver is closed-form, so there is no
+/// per-pass trace to emit. The tuple-returning production entry points
+/// [`compute_summaries_v2`] / [`compute_summaries_v2_with_leaves`] wrap this,
+/// returning `(map, /* empty */ Vec<RawSccTrace>, Vec<SummarizeDiagnostic>)` to
+/// match the OLD [`compute_summaries`] / [`compute_summaries_with_leaves`]
+/// signatures so production callers swap the fn name with no other churn. The
+/// differential harness consumes THIS `_core` fn directly (map-only comparison).
 ///
 /// ## Assembly discipline
 ///
@@ -1099,14 +1108,14 @@ pub fn compute_summaries_with_leaves(
 /// running that JACOBI. For each Tarjan SCC, the roles fixpoint and the db-effect
 /// solver BOTH read `v2_map` as their predecessor view (before it is updated with
 /// this SCC), then this SCC's members are assembled member-by-member.
-pub fn compute_summaries_v2_with_leaves(
+pub fn compute_summaries_v2_with_leaves_core(
     routines: &[L3Routine],
     graph: &CombinedGraph,
     scc: &SccResult,
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     fields: &FieldIndex,
     leaf_summaries: &HashMap<String, RoutineSummary>,
-) -> HashMap<String, RoutineSummary> {
+) -> (HashMap<String, RoutineSummary>, Vec<SummarizeDiagnostic>) {
     // --- Scaffolding: mirror compute_summaries_with_leaves exactly. ---
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
@@ -1174,11 +1183,32 @@ pub fn compute_summaries_v2_with_leaves(
     // One workspace-wide interned effect universe, threaded across every SCC.
     let mut universe = EffectUniverse::new();
 
+    // Summarize-stage diagnostics raised by the roles fixpoint's convergence
+    // backstop. Empty on every real SCC (roles converge) — see [`RolesSccOut`].
+    let mut diagnostics: Vec<SummarizeDiagnostic> = Vec::new();
+
     for scc_entry in &scc.sccs {
         // parameter_roles from the roles-ONLY fixpoint (the old db_effects JACOBI
         // is NOT run). Reads `v2_map` as its predecessor view (this SCC not yet
         // inserted).
-        let roles_out = run_one_scc_roles(scc_entry, &v2_map, &ctx);
+        let RolesSccOut {
+            roles,
+            cap_hit_stable_members,
+        } = run_one_scc_roles(scc_entry, &v2_map, &ctx);
+
+        // Surface the roles fixpoint's cap-hit as a summarize-stage diagnostic,
+        // byte-identical to the OLD solver's message shape (severity/stage/text).
+        // Never fires on the corpus (roles converge); preserves the honesty signal.
+        if let Some(members) = &cap_hit_stable_members {
+            diagnostics.push(SummarizeDiagnostic {
+                severity: "warning".to_string(),
+                stage: "summarize".to_string(),
+                message: format!(
+                    "Summary fixed-point did not converge for SCC [{}]; its facts are lower-confidence",
+                    members.join(", ")
+                ),
+            });
+        }
 
         // New db-triple. Reads the SAME predecessor view (`v2_map`); its internal
         // feed-forward layers this SCC's sibling effective SCCs on top.
@@ -1201,9 +1231,24 @@ pub fn compute_summaries_v2_with_leaves(
         // set (== the solver's recomputed set); a missing triple entry falls back
         // to empty (which fails the differential loudly rather than silently
         // masking a dropped member).
-        for (id, parameter_roles) in roles_out {
-            let (db_effects, uncertainties, has_unresolved_calls) =
+        for (id, parameter_roles) in roles {
+            let (db_effects, mut uncertainties, has_unresolved_calls) =
                 triple.get(&id).cloned().unwrap_or_default();
+            // On a roles cap-hit, attach the per-member `fixpoint-capped`
+            // Uncertainty EXACTLY as the OLD solver did (appended AFTER the
+            // solver's dedup+sorted uncertainties, mirroring old's post-fixpoint
+            // push) so v2 stays byte-identical to old on a cap. Never fires on the
+            // corpus (roles converge), so the golden path is untouched.
+            if cap_hit_stable_members.is_some() {
+                let stable_id = stable_map.get(&id).cloned().unwrap_or_else(|| id.clone());
+                uncertainties.push(Uncertainty {
+                    kind: "fixpoint-capped".to_string(),
+                    callsite_id: None,
+                    operation_id: None,
+                    routine_id: Some(stable_id),
+                    interface_name: None,
+                });
+            }
             let assembled = RoutineSummary {
                 routine_id: id.clone(),
                 db_effects,
@@ -1216,7 +1261,82 @@ pub fn compute_summaries_v2_with_leaves(
         }
     }
 
-    v2_map
+    (v2_map, diagnostics)
+}
+
+// ---------------------------------------------------------------------------
+// compute_summaries_v2 tuple wrappers — OLD-signature-compatible entry points.
+// ---------------------------------------------------------------------------
+
+/// Tuple-returning v2 entry point matching the OLD [`compute_summaries_with_leaves`]
+/// signature so production callers swap the fn name with no other churn. Wraps
+/// [`compute_summaries_v2_with_leaves_core`], returning
+/// `(map, /* empty */ Vec<RawSccTrace>, Vec<SummarizeDiagnostic>)`.
+///
+/// - `raw_traces`: ALWAYS EMPTY. v2 is trace-free — the closed-form db-effect
+///   solver has NO per-pass trajectory (`RawSccTrace` is not a contract per Phase
+///   1's Global Constraints). The trace oracle stays on the OLD
+///   [`compute_summaries`] (`summary.rs::run_and_project`).
+/// - `collect_trace`: accepted for signature-compatibility with the old solver and
+///   IGNORED (there is no trajectory to collect).
+/// - `summarize_diagnostics`: the roles fixpoint's cap-hit backstop, surfaced by
+///   the core. Empty on every real SCC (roles converge). The db_effects path is
+///   closed-form and NEVER caps, so a db_effects cap diagnostic can no longer occur
+///   — matching old, which never emitted one on the corpus either.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_summaries_v2_with_leaves(
+    routines: &[L3Routine],
+    graph: &CombinedGraph,
+    scc: &SccResult,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
+    collect_trace: bool,
+    leaf_summaries: &HashMap<String, RoutineSummary>,
+) -> (
+    HashMap<String, RoutineSummary>,
+    Vec<RawSccTrace>,
+    Vec<SummarizeDiagnostic>,
+) {
+    // v2 has no trajectory artifact; `collect_trace` is a no-op here.
+    let _ = collect_trace;
+    let (map, diagnostics) = compute_summaries_v2_with_leaves_core(
+        routines,
+        graph,
+        scc,
+        upgraded_bindings,
+        fields,
+        leaf_summaries,
+    );
+    (map, Vec::new(), diagnostics)
+}
+
+/// Tuple-returning v2 entry point matching the OLD [`compute_summaries`] signature
+/// (no fixed leaves). Delegates to [`compute_summaries_v2_with_leaves`] with an
+/// empty leaf map, mirroring how the old [`compute_summaries`] delegates to
+/// [`compute_summaries_with_leaves`]. See that wrapper for the `raw_traces`
+/// (always empty) / `summarize_diagnostics` semantics.
+pub fn compute_summaries_v2(
+    routines: &[L3Routine],
+    graph: &CombinedGraph,
+    scc: &SccResult,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
+    collect_trace: bool,
+) -> (
+    HashMap<String, RoutineSummary>,
+    Vec<RawSccTrace>,
+    Vec<SummarizeDiagnostic>,
+) {
+    let no_leaves: HashMap<String, RoutineSummary> = HashMap::new();
+    compute_summaries_v2_with_leaves(
+        routines,
+        graph,
+        scc,
+        upgraded_bindings,
+        fields,
+        collect_trace,
+        &no_leaves,
+    )
 }
 
 /// The SHARED per-SCC compute context — the workspace-wide lookup structures the
@@ -1671,6 +1791,36 @@ fn roles_change_key(
     summary_change_key(&proj).parameter_roles
 }
 
+/// The result of the roles-ONLY per-SCC fixpoint ([`run_one_scc_roles`]): each
+/// member's settled `parameter_roles`, PLUS a cap-hit witness.
+/// `cap_hit_stable_members` is `Some(sorted stable ids)` iff the roles JACOBI hit
+/// `MAX_FIXED_POINT_ITERATIONS` without converging — the SAME honesty signal the
+/// old whole-summary fixpoint raised (a `SummarizeDiagnostic` at the summarize
+/// stage + a per-member `fixpoint-capped` `Uncertainty`). It is `None` on
+/// convergence, which is EVERY real corpus/fixture SCC (roles converge — the old
+/// fixpoint never cap-hit there, verified by the 10-fixture + CDO whole-program
+/// differential), so the witness stays inert on the byte-identical golden path.
+///
+/// The db_effects path in v2 is closed-form and CANNOT cap, so this roles cap is
+/// the only convergence backstop v2 can raise. When the OLD whole-summary fixpoint
+/// caps for a db_effects-only reason (roles converged), v2 cannot reproduce it —
+/// but that never happens on the corpus (old fully converges), and the goldens
+/// gate would catch it as a divergence if it ever did.
+struct RolesSccOut {
+    roles: Vec<(String, Vec<RecordRoleSummary>)>,
+    cap_hit_stable_members: Option<Vec<String>>,
+}
+
+impl RolesSccOut {
+    /// Constructor for the convergent (no cap) case — every real SCC.
+    fn converged(roles: Vec<(String, Vec<RecordRoleSummary>)>) -> Self {
+        Self {
+            roles,
+            cap_hit_stable_members: None,
+        }
+    }
+}
+
 /// Compute ONE SCC's settled `parameter_roles` per member — the roles-ONLY
 /// fixpoint that replaces the full [`run_one_scc`] on the v2 path (Task 8b). It
 /// runs [`compose_roles_only`] (NOT `compose_routine`), so the old db_effects
@@ -1704,7 +1854,7 @@ fn run_one_scc_roles(
     scc_entry: &super::scc::Scc,
     predecessor_final_map: &HashMap<String, RoutineSummary>,
     ctx: &SccComputeCtx,
-) -> Vec<(String, Vec<RecordRoleSummary>)> {
+) -> RolesSccOut {
     let leaf_summaries = ctx.leaf_summaries;
 
     // A roles-carrying, db_effects-EMPTY RoutineSummary — the only shape the
@@ -1724,14 +1874,14 @@ fn run_one_scc_roles(
         // Non-recursive SCC: single pass (mirrors run_one_scc's early return set).
         let id = match scc_entry.members.first() {
             Some(id) => id,
-            None => return Vec::new(),
+            None => return RolesSccOut::converged(Vec::new()),
         };
         if leaf_summaries.contains_key(id) {
-            return Vec::new();
+            return RolesSccOut::converged(Vec::new());
         }
         let routine = match ctx.routines_by_id.get(id) {
             Some(r) => r,
-            None => return Vec::new(),
+            None => return RolesSccOut::converged(Vec::new()),
         };
         let base_roles = ctx
             .base_summaries
@@ -1748,7 +1898,7 @@ fn run_one_scc_roles(
             ctx.graph,
             ctx.body_avail_by_id,
         );
-        return vec![(id.clone(), roles)];
+        return RolesSccOut::converged(vec![(id.clone(), roles)]);
     }
 
     // Recursive SCC — JACOBI fixed-point on roles only.
@@ -1809,6 +1959,10 @@ fn run_one_scc_roles(
 
     let mut iterations = 0usize;
     let mut changed = true;
+    // Cap-hit witness — sorted stable member ids when the roles fixpoint fails to
+    // converge within MAX_FIXED_POINT_ITERATIONS. `None` (converged) on every real
+    // SCC; see [`RolesSccOut`].
+    let mut cap_hit_stable_members: Option<Vec<String>> = None;
 
     while changed {
         changed = false;
@@ -1875,6 +2029,28 @@ fn run_one_scc_roles(
             // Same cap as run_one_scc. Roles-only convergence cannot outlast the
             // old whole-summary fixpoint (roles are one of its components), so a
             // cap-hit here mirrors a cap-hit there with the same round-MAX roles.
+            // Record the honesty signal EXACTLY as the old `run_one_scc` did
+            // (summary_runner.rs FIX 4): a deterministic, modelInstanceId-
+            // independent, sorted stable-id member list, plus the same stderr
+            // warning. The caller (`compute_summaries_v2_with_leaves_core`) turns
+            // this into the `SummarizeDiagnostic` + per-member `fixpoint-capped`
+            // uncertainty so the v2 path is byte-identical to old on a cap.
+            let mut members: Vec<&str> = scc_entry
+                .members
+                .iter()
+                .map(|m| {
+                    ctx.stable_map
+                        .get(m)
+                        .map(|s| s.as_str())
+                        .unwrap_or(m.as_str())
+                })
+                .collect();
+            members.sort_unstable();
+            eprintln!(
+                "warning: summarize: Summary fixed-point did not converge for SCC [{}]",
+                members.join(", ")
+            );
+            cap_hit_stable_members = Some(members.into_iter().map(str::to_string).collect());
             break;
         }
     }
@@ -1885,7 +2061,10 @@ fn run_one_scc_roles(
             out.push((id.clone(), s.parameter_roles));
         }
     }
-    out
+    RolesSccOut {
+        roles: out,
+        cap_hit_stable_members,
+    }
 }
 
 // ---------------------------------------------------------------------------
