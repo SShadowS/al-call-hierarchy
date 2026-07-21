@@ -1,10 +1,9 @@
 //! `d1_graph` — Task 1 of the d1-reachability redesign
 //! (`.superpowers/sdd/task-1-brief.md`): extracts the COMPACT filtered call
 //! graph + per-node terminal-op list + in-loop-call seed set that the
-//! reachability search (Tasks 3/5) will run over. This module PRODUCES data
-//! only — nothing consumes it yet. `detect_d1`'s own `D1Policy` +
-//! `walk_evidence` exhaustive-path pipeline stays fully live and
-//! byte-identical; this module changes no detector output.
+//! reachability search runs over. `build_d1_graph` is on the LIVE production
+//! path — `detect_d1` calls it directly, then feeds its output to
+//! `d1_reach::search_loops_cohorts` (the cohort-redesign entry point).
 //!
 //! Every filter here is a DIRECT port of an existing `d1.rs` rule — see the
 //! per-function doc comment for its exact citation. `build_d1_graph` builds:
@@ -22,9 +21,10 @@
 //! same inputs always produce the same `node_ids` order — see
 //! `closure_is_reachable_only_and_deterministic` below).
 //!
-//! NOTE: complete but not yet wired into `detect_d1` (Tasks 3/5 will consume
-//! it); module-level `allow(dead_code)` until a caller reads the produced
-//! fields (mirrors `src/telemetry/dedup.rs`'s same "future design" pattern).
+//! NOTE: wired into `detect_d1` (see above). The module-level
+//! `allow(dead_code)` predates that wiring; it is retained unchanged here —
+//! not audited in this pass (scoped to `d1_reach`/`d1_dataflow`/`finding`;
+//! see their own doc headers for the cohort-redesign dead-code cleanup).
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};

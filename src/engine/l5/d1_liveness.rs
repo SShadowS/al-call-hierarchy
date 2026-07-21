@@ -2,8 +2,10 @@
 //! (`.superpowers/sdd/task-d1-brief.md`,
 //! `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`): the backward
 //! `Need[node]` param-liveness fixpoint + the compiled per-edge
-//! [`ParamTransfer`] table the D2 fact solver will consume. Nothing consumes
-//! this module yet.
+//! [`ParamTransfer`] table the fact solvers consume. `compute_liveness` is
+//! LIVE — called once per run by the production
+//! `d1_reach::search_loops_cohorts` and shared across every batch's
+//! `d1_dataflow::score_batch_to_sink` fixpoint.
 //!
 //! ## Why this is exact, not an approximation (the unary premise)
 //!

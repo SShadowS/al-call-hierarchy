@@ -45,45 +45,50 @@ pub mod confidence;
 pub mod detector_context;
 pub mod detectors;
 // d1-reachability redesign Task 1 — the compact filtered graph + terminals +
-// seeds `build_d1_graph` extracts for the reachability search (Tasks 3/5).
-// Nothing consumes it yet; `detectors::d1::detect_d1` stays fully live.
+// seeds `build_d1_graph` extracts for the reachability search. LIVE:
+// `detectors::d1::detect_d1` calls it directly.
 pub(crate) mod d1_graph;
 // d1-reachability redesign Task 2 — the forward param-temp-state vector
 // (`root_state`/`cross_hop`/`resolve_terminal`), differentially proven
-// equivalent to the backward `path_temp_resolve` resolver. Nothing consumes
-// it yet; Task 3's reachability search threads it through `d1_graph`.
+// equivalent to the backward `path_temp_resolve` resolver. LIVE: threaded
+// through `d1_graph`'s compact graph by `d1_dataflow::score_batch_to_sink`.
 pub(crate) mod d1_temp;
-// d1-reachability redesign Task 3 — the multi-source product-state reachability
-// search + per-(loop, terminal-op) aggregation + witness selection over
-// `d1_graph`/`d1_temp`. Nothing consumes it yet; Task 5 cuts `detect_d1` over to
-// it. `detectors::d1::detect_d1` stays fully live and byte-identical.
+// d1-reachability redesign Task 3 — the multi-source per-(loop, terminal-op)
+// reachability search over `d1_graph`/`d1_temp`. `search_loops_cohorts` is
+// the LIVE production entry point (`detectors::d1::detect_d1` calls it); the
+// original per-loop label search (`process_group`/`search_loops`) survives
+// only as the `#[cfg(test)]` differential oracle it and `d1_dataflow`'s batch
+// solvers are checked against.
 pub(crate) mod d1_reach;
 // d1 dataflow-solver redesign Task D1 — the backward `Need[node]` param-
-// liveness fixpoint + the compiled per-edge `ParamTransfer` table the D2 fact
-// solver will consume. Nothing consumes it yet.
+// liveness fixpoint + the compiled per-edge `ParamTransfer` table the fact
+// solvers consume. LIVE: `compute_liveness` is called once per run by
+// `d1_reach::search_loops_cohorts`.
 pub(crate) mod d1_liveness;
-// d1 dataflow-solver redesign Task D2 — the single-group fact solver
-// (`solve_group`): reach/value facts seeded from `d1_temp`, propagated
-// level-synchronously over `d1_graph` using `d1_liveness`'s compiled
-// `ParamTransfer` table, scored + winner-selected to reproduce
-// `d1_reach::process_group`'s six load-bearing components (coverage,
+// d1 dataflow-solver redesign Task D2/D3 — the batched fact solver
+// (`BatchSolver`/`score_batch_to_sink`): reach/value facts seeded from
+// `d1_temp`, propagated level-synchronously over `d1_graph` using
+// `d1_liveness`'s compiled `ParamTransfer` table, scored + winner-selected to
+// reproduce `d1_reach::process_group`'s six load-bearing components (coverage,
 // reachable_verdicts, severity, verdict, depth_bucket, unc) per (loop,
-// terminal-op). `process_group` stays the differential oracle; nothing wires
-// `solve_group` into `detect_d1` yet (D3+).
+// terminal-op). `score_batch_to_sink` is LIVE — `search_loops_cohorts` calls
+// it per batch; the single-group `solve_group` and its batched predecessor
+// `solve_batch` are `#[cfg(test)]`-only differential oracles.
 pub(crate) mod d1_dataflow;
 // d1 cohort redesign Task C1 — the terminal bitmap-cohort SINK (`TerminalSink`,
-// `GroupBitmap`, `ContextKey`) that replaces `d1_dataflow::emit_lane_aggregates`'s
-// per-(loop, terminal) witness materialization. Exercised by the `d1_dataflow`
-// differential only; `detect_d1` stays on the old (`emit_lane_aggregates`) path
-// until the cohort cutover, so goldens are byte-stable.
+// `GroupBitmap`, `ContextKey`) that replaces the old per-(loop, terminal)
+// witness materialization (`d1_dataflow::emit_lane_aggregates`, now
+// `#[cfg(test)]`-only). LIVE — `detect_d1`'s production path
+// (`search_loops_cohorts` -> `score_batch_to_sink`) emits into it directly.
 pub(crate) mod d1_cohort;
 // d1 cohort redesign Task C3 — the bounded REPRESENTATIVE witness
 // (`representative_witness`/`WitnessSummary`) for one `(terminal, ContextKey)`
 // cohort: `[loop_step, call_step]` (seed via Task C2's O(1) `origin_seed`, no
 // chain walk to find it) + first-K/last-M hop steps + `omitted_hops` + the
 // terminal step, built from ONE bounded predecessor-chain walk per cohort
-// instead of `d1_dataflow::build_transitive_witness`'s per-(loop, terminal)
-// full witness. Nothing wires it into `detect_d1` yet.
+// instead of `d1_dataflow::build_transitive_witness`'s (now `#[cfg(test)]`-only)
+// per-(loop, terminal) full witness. LIVE — `d1_dataflow::build_cohort_rep`
+// calls it to materialize each cohort's witness lazily.
 pub(crate) mod d1_witness;
 // Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
 // event-flow detectors consume. NO detectors yet — index + query + fan-out +

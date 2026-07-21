@@ -1,10 +1,11 @@
 //! `d1_temp` — Task 2 of the d1-reachability redesign
 //! (`.superpowers/sdd/task-2-brief.md`): a FORWARD, per-node param-temp-state
 //! vector, differentially proven equivalent to the backward per-path resolver
-//! `resolve_temp_along_path_closed_world` (`path_temp_resolve.rs`). Task 3's
-//! reachability search will thread this through `d1_graph`'s compact graph
-//! instead of re-walking a `Vec<EvidenceStep>` per terminal; nothing consumes
-//! it yet.
+//! `resolve_temp_along_path_closed_world` (`path_temp_resolve.rs`).
+//! `cross_hop`/`resolve_terminal`/`root_state` are LIVE — threaded through
+//! `d1_graph`'s compact graph by the production
+//! `d1_reach::search_loops_cohorts` -> `d1_dataflow::score_batch_to_sink`
+//! path — instead of re-walking a `Vec<EvidenceStep>` per terminal.
 //!
 //! ## Why forward, not backward
 //!

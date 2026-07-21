@@ -1,12 +1,20 @@
 //! `d1_reach` — Task 3 of the d1-reachability redesign
 //! (`.superpowers/sdd/task-3-brief.md`): the algorithmic core. A single
 //! multi-source label search per loop group over Task 1's compact
-//! [`D1Graph`], threading Task 2's forward param-temp vector ([`TempVec`] via
-//! [`cross_hop`]/[`resolve_terminal`]) instead of re-walking a `Vec<EvidenceStep>`
-//! per terminal, aggregated per (loop, terminal-op) into one [`LoopTerminalAgg`]
-//! with a selected winner witness. NOTHING consumes it yet — `detect_d1`'s
-//! `D1Policy` + `walk_evidence` pipeline stays fully live and byte-identical
-//! (Task 5 cuts over). This module changes no detector output.
+//! [`D1Graph`], threading Task 2's forward param-temp vector (`TempVec` via
+//! `cross_hop`/`resolve_terminal`) instead of re-walking a `Vec<EvidenceStep>`
+//! per terminal, aggregated per (loop, terminal-op) into one `LoopTerminalAgg`
+//! with a selected winner witness.
+//!
+//! **Production entry point is [`search_loops_cohorts`]**, which shares this
+//! module's grouping/liveness/SCC-condensation/terminal-plan setup but emits
+//! per-terminal bitmap COHORTS (via `d1_dataflow::score_batch_to_sink`) instead
+//! of one `LoopTerminalAgg` per (loop, terminal-op) — see its own doc. The
+//! original per-loop label search documented below (`process_group` /
+//! `search_loops`, Task 3's algorithm) is retained ONLY as the `#[cfg(test)]`
+//! differential ORACLE that the cohort path and the `d1_dataflow` D2/D3
+//! solvers are checked against; it is compiled into test builds alone and
+//! never runs in a release binary.
 //!
 //! ## The search (locked algorithm — the brief's numbered list is the spec)
 //!
@@ -43,33 +51,46 @@
 //!    on the seed->terminal path (the same rule the walker applied).
 //! 8. Output sorted by (loop routine id, loop id, terminal owner id, op id) —
 //!    no traversal-order dependence.
-#![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
+use std::collections::{HashSet, VecDeque};
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
+#[cfg(test)]
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::d1_cohort::{TerminalCohorts, TerminalSink, emit_finalize_census};
+#[cfg(test)]
+use crate::engine::l5::d1_dataflow::solve_batch;
 use crate::engine::l5::d1_dataflow::{
-    BATCH_WIDTH, GroupSpec, build_terminal_plan, condense, score_batch_to_sink, solve_batch,
+    BATCH_WIDTH, GroupSpec, build_terminal_plan, condense, score_batch_to_sink,
 };
-use crate::engine::l5::d1_graph::{
-    D1Edge, D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok,
-};
+#[cfg(test)]
+use crate::engine::l5::d1_graph::{D1Edge, D1Terminal, NodeIx, edge_kind_binding_ok};
+use crate::engine::l5::d1_graph::{D1Graph, D1Seed};
 use crate::engine::l5::d1_liveness::compute_liveness;
-use crate::engine::l5::d1_temp::{ParamTemp, TempVec, cross_hop, resolve_terminal, root_state};
+use crate::engine::l5::d1_temp::ParamTemp;
+#[cfg(test)]
+use crate::engine::l5::d1_temp::{TempVec, cross_hop, resolve_terminal, root_state};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
 use crate::engine::l5::detectors::d1::{
-    FLOWFIELD_GATED_OPS, TempVerdict, flowfield_gate_blocks_downgrade, hop_step,
-    is_setup_singleton_get, severity_for, terminal_step,
+    FLOWFIELD_GATED_OPS, TempVerdict, flowfield_gate_blocks_downgrade,
+};
+#[cfg(test)]
+use crate::engine::l5::detectors::d1::{
+    hop_step, is_setup_singleton_get, severity_for, terminal_step,
 };
 use crate::engine::l5::finding::{EvidenceStep, LoopCatalogEntry};
 use crate::engine::l5::path_merge::sev_rank;
 
-/// One (loop, terminal-op) aggregate: everything Task 5 needs to build a context.
+/// One (loop, terminal-op) aggregate: the old `process_group`/`solve_group`/
+/// `solve_batch` oracle output shape. `search_loops_cohorts` (the production
+/// path) never constructs one of these — it emits bitmap cohorts directly
+/// (`TerminalCohorts`) — so this type is `#[cfg(test)]`-only.
+#[cfg(test)]
 pub(crate) struct LoopTerminalAgg<'a> {
     pub loop_routine: &'a L3Routine,
     pub loop_id: &'a str,
@@ -103,7 +124,8 @@ pub(crate) struct DirectOp<'a> {
 /// One BFS label: the identity triple `(temp_vec, depth_bucket, unc)` plus the
 /// backpointer, hop count, and originating seed index. `'g` = the borrow of the
 /// compact graph (the `D1Edge` backpointers live in `graph.edges`); `'a` = the
-/// workspace/ctx lifetime.
+/// workspace/ctx lifetime. `process_group`-only (oracle).
+#[cfg(test)]
 struct LabelRec<'g, 'a> {
     node: NodeIx,
     temp_vec: TempVec,
@@ -116,6 +138,7 @@ struct LabelRec<'g, 'a> {
 }
 
 /// A label's predecessor: the seed itself, or the parent label + the edge crossed.
+#[cfg(test)]
 enum Back<'g, 'a> {
     Seed,
     Hop { pred: usize, edge: &'g D1Edge<'a> },
@@ -123,7 +146,8 @@ enum Back<'g, 'a> {
 
 /// One scored candidate for a (loop, terminal-op) bucket. `discovery` is the
 /// per-group generation index (direct ops first, then transitive in BFS label
-/// order) — the deterministic last tie-break.
+/// order) — the deterministic last tie-break. `process_group`-only (oracle).
+#[cfg(test)]
 struct Candidate<'a> {
     verdict: TempVerdict,
     severity: &'static str,
@@ -141,6 +165,8 @@ struct Candidate<'a> {
 
 /// A candidate's provenance — the witness source. A direct op carries its own
 /// step inputs; a transitive candidate points back into the label arena.
+/// `process_group`-only (oracle).
+#[cfg(test)]
 enum CandKind<'a> {
     Direct {
         routine: &'a L3Routine,
@@ -159,7 +185,7 @@ pub(crate) fn node_has_uncertainty(ctx: &DetectorContext, node_id: &str) -> bool
         .is_some_and(|v| !v.is_empty())
 }
 
-/// The terminal-op verdict: [`resolve_terminal`]'s [`ParamTemp`] mapped to a
+/// The terminal-op verdict: `resolve_terminal`'s [`ParamTemp`] mapped to a
 /// [`TempVerdict`], with the RV-1 FlowField gate on the `Temp` case (a temp
 /// `CalcFields`/`SetAutoCalcFields` whose FlowField gate BLOCKS the info
 /// downgrade becomes the dedicated `FlowFieldGated`, not `Temporary`). Mirrors
@@ -189,7 +215,9 @@ pub(crate) fn flowfield_verdict(
 /// ([`TempVerdict::quality`], the SAME rank Task 5's context ordering uses) ->
 /// `unc == false` preferred -> fewest hops -> HIGHER `depth_bucket` ->
 /// first-discovered. `discovery` is unique per candidate, so the key is a total
-/// order (a single unique max).
+/// order (a single unique max). `process_group`-only (oracle) — `solve_group`/
+/// `solve_batch`/`score_batch_to_sink` call [`selection_rank`] directly.
+#[cfg(test)]
 fn selection_key(c: &Candidate) -> (i32, i32, i32, i64, i64, i64) {
     selection_rank(
         c.severity,
@@ -240,7 +268,8 @@ pub(crate) fn selection_rank(
 
 /// The unclamped (true) effective depth of a transitive candidate:
 /// `seed_depth + Σ edge.loop_depth + local_depth`, recomputed along the
-/// backpointer chain (rule 4's reported depth).
+/// backpointer chain (rule 4's reported depth). `process_group`-only (oracle).
+#[cfg(test)]
 fn true_depth(labels: &[LabelRec], li: usize, local_depth: i64, seeds: &[D1Seed]) -> i64 {
     let mut sum_edges = 0i64;
     let mut cur = li;
@@ -260,6 +289,8 @@ fn true_depth(labels: &[LabelRec], li: usize, local_depth: i64, seeds: &[D1Seed]
 /// Insert a label iff its `(temp_vec, depth_bucket, unc)` triple is new for the
 /// node — first discovery wins (rule 2). A revisited node with an already-seen
 /// triple is not re-enqueued: this is the ONLY cycle-safety mechanism.
+/// `process_group`-only (oracle).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn push_label<'g, 'a>(
     labels: &mut Vec<LabelRec<'g, 'a>>,
@@ -328,7 +359,10 @@ pub(crate) fn call_step_ev<'a>(
 }
 
 /// Materialize the winning transitive candidate's witness + uncertainty union by
-/// walking its backpointer chain to the seed (rule 7).
+/// walking its backpointer chain to the seed (rule 7). `process_group`-only
+/// (oracle) — the cohort/dataflow path's equivalent is `d1_dataflow`'s
+/// `build_transitive_witness`/`representative_witness`.
+#[cfg(test)]
 fn materialize_transitive<'a>(
     labels: &[LabelRec<'_, 'a>],
     label_idx: usize,
@@ -390,16 +424,17 @@ fn materialize_transitive<'a>(
 }
 
 /// The whole multi-source search + aggregation + witness selection for ONE loop
-/// group (rules 1-7). Returns one [`LoopTerminalAgg`] per (terminal owner, op).
+/// group (rules 1-7). Returns one `LoopTerminalAgg` per (terminal owner, op).
 ///
-/// As of Task D3 this is NO LONGER on the production path — `search_loops` runs
-/// the batched dataflow solver ([`crate::engine::l5::d1_dataflow::solve_batch`])
-/// instead. `process_group` is retained as the differential ORACLE the D2/D3
-/// tests check `solve_group`/`solve_batch` against on the six load-bearing
-/// components (it is deleted at the D5 cutover). Groups are INDEPENDENT: every
-/// argument is a shared-immutable borrow (`graph`/`seeds`/`direct_ops`/`ctx`/
-/// `cw`) and the only output is the return value, so per-group results never
-/// alias — the property the fact solver's per-lane batching also relies on.
+/// NOT on the production path — `search_loops_cohorts` runs the batched
+/// dataflow solver (`d1_dataflow::score_batch_to_sink`) instead. `process_group`
+/// is retained as the `#[cfg(test)]` differential ORACLE the D2/D3/cohort tests
+/// check `solve_group`/`solve_batch`/`score_batch_to_sink` against on the six
+/// load-bearing components. Groups are INDEPENDENT: every argument is a
+/// shared-immutable borrow (`graph`/`seeds`/`direct_ops`/`ctx`/`cw`) and the
+/// only output is the return value, so per-group results never alias — the
+/// property the fact solver's per-lane batching also relies on.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn process_group<'g, 'a>(
     graph: &'g D1Graph<'a>,
@@ -627,24 +662,26 @@ pub(crate) fn process_group<'g, 'a>(
     out
 }
 
-/// Run the reachability search over every loop group (rules 1-8). Direct ops and
-/// seed-transitive candidates compete in the SAME per-(loop, terminal-op)
-/// aggregation; the returned aggregates are sorted deterministically.
+/// Run the reachability search over every loop group (rules 1-8) via the D3
+/// batched dataflow solver (`solve_batch`), returning one `LoopTerminalAgg` per
+/// (loop, terminal-op). `#[cfg(test)]`-only: the production entry point is
+/// [`search_loops_cohorts`], which shares this function's grouping/batching
+/// shape but emits bitmap cohorts instead of materializing every aggregate's
+/// witness. `search_loops` survives solely as the differential oracle
+/// `score_batch_to_sink_matches_old` (and friends) check
+/// [`crate::engine::l5::d1_dataflow::score_batch_to_sink`] against.
 ///
-/// Task D3: the batched dataflow solver. Groups are keyed
-/// `(loop_routine_id, loop_id)` in a `BTreeMap` (deterministic, sorted order —
-/// the SAME order `process_group`'s driver used, and the order lanes are
-/// assigned within a batch), then chunked into [`BATCH_WIDTH`]-lane batches and
-/// solved SERIALLY by [`solve_batch`] over one shared call-SCC condensation +
-/// param-liveness. 7a's rayon `par_iter` is GONE — it spread whole GROUPS across
-/// 32 cores, each materializing its own dense-797-SCC label arena (the 42.8 GB
-/// RSS blowup). The batch solver instead shares the SCC traversal across 64
-/// lanes and drops each batch's arena before the next, so peak RSS is bounded by
-/// one batch's fact set. Components 1-6 per (loop, terminal-op) are identical to
-/// `process_group`'s (`solve_batch` == `solve_group` == `process_group` on
+/// Groups are keyed `(loop_routine_id, loop_id)` in a `BTreeMap`
+/// (deterministic, sorted order — the SAME order `process_group`'s driver
+/// used, and the order lanes are assigned within a batch), then chunked into
+/// [`BATCH_WIDTH`]-lane batches and solved SERIALLY by `solve_batch` over one
+/// shared call-SCC condensation + param-liveness. Components 1-6 per (loop,
+/// terminal-op) are identical to `process_group`'s (`solve_batch` ==
+/// `solve_group` == `process_group` on
 /// coverage/reachable_verdicts/severity/verdict/depth_bucket/unc); only the
 /// witness (component 7) may pick a different equal-ranked realizing path. The
 /// one order-sensitive step, rule 8's total-order `out.sort_by`, is unchanged.
+#[cfg(test)]
 pub(crate) fn search_loops<'a>(
     graph: &D1Graph<'a>,
     seeds: &[D1Seed<'a>],

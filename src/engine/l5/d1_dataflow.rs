@@ -1,13 +1,20 @@
 //! `d1_dataflow` — Task D2 of the d1 dataflow-solver redesign
 //! (`.superpowers/sdd/task-d2-brief.md`,
 //! `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`): the single-group
-//! FACT solver ([`solve_group`]), the correctness spine of the rewrite. It
-//! reproduces [`crate::engine::l5::d1_reach::process_group`]'s six load-bearing
-//! components — coverage, `reachable_verdicts`, severity, verdict,
-//! `depth_bucket`, and `unc` — per (loop, terminal-op), while replacing the
-//! joint-`TempVec` product-state BFS with independent per-parameter facts.
-//! `process_group` stays ALIVE as the differential ORACLE (see the `tests`
-//! module below); nothing wires `solve_group` into `detect_d1` yet.
+//! FACT solver (`solve_group`), the correctness spine of the rewrite. It
+//! reproduces `d1_reach::process_group`'s six load-bearing components —
+//! coverage, `reachable_verdicts`, severity, verdict, `depth_bucket`, and
+//! `unc` — per (loop, terminal-op), while replacing the joint-`TempVec`
+//! product-state BFS with independent per-parameter facts.
+//!
+//! **`solve_group`/`solve_batch` (and their private helpers below) are
+//! `#[cfg(test)]`-only** — Task D3 widened the single-group fact model to the
+//! batched, SCC-shared [`BatchSolver`] (`score_batch_to_sink`, wired into
+//! production via `d1_reach::search_loops_cohorts`), which supersedes both.
+//! `process_group`/`solve_group`/`solve_batch` are retained solely as the
+//! differential ORACLE chain the `tests` module below checks
+//! [`BatchSolver`]/`score_batch_to_sink` against on the six load-bearing
+//! components; component 7 (the witness) is allowed to differ.
 //!
 //! ## The fact model (single group = a 1-bit "mask"; D3 widens to u64/64 lanes)
 //!
@@ -60,34 +67,41 @@
 //! Only the witness / entry-callsite / reported true-depth / uncertainty vector /
 //! first-discovery tie (component 7) MAY differ from `process_group` — a change
 //! in components 1-6 is a BUG (proven absent by the `tests` differential below).
-#![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::d1_cohort::{CohortRep, ContextKey, GroupIx, TerminalSink};
-use crate::engine::l5::d1_graph::{D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok};
+#[cfg(test)]
+use crate::engine::l5::d1_graph::D1Terminal;
+use crate::engine::l5::d1_graph::{D1Graph, D1Seed, NodeIx, edge_kind_binding_ok};
 use crate::engine::l5::d1_liveness::{Liveness, ParamTransfer};
 use crate::engine::l5::d1_reach::{
-    DirectOp, LoopTerminalAgg, call_step_ev, flowfield_verdict, loop_step_ev, node_has_uncertainty,
-    selection_rank,
+    DirectOp, flowfield_verdict, node_has_uncertainty, selection_rank,
 };
+#[cfg(test)]
+use crate::engine::l5::d1_reach::{LoopTerminalAgg, call_step_ev, loop_step_ev};
 use crate::engine::l5::d1_temp::{
     ParamTemp, TempVec, cross_hop, lookup, resolve_terminal, root_state,
 };
 use crate::engine::l5::d1_witness::{direct_witness, representative_witness};
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::detectors::d1::{
-    TempVerdict, hop_step, is_setup_singleton_get, severity_for, terminal_step,
-};
+use crate::engine::l5::detectors::d1::{TempVerdict, is_setup_singleton_get, severity_for};
+#[cfg(test)]
+use crate::engine::l5::detectors::d1::{hop_step, terminal_step};
+#[cfg(test)]
 use crate::engine::l5::finding::EvidenceStep;
 use crate::engine::l5::path_merge::sev_rank;
 
 /// A reach fact's first-arrival predecessor (the seed it descends from, or the
-/// parent reach fact + the crossed edge).
+/// parent reach fact + the crossed edge). `solve_group`-only (oracle) — the
+/// batch solver's analogue is [`ReachPredB`].
+#[cfg(test)]
 #[derive(Clone, Copy)]
 enum ReachPred {
     Seed {
@@ -101,6 +115,8 @@ enum ReachPred {
 }
 
 /// One `reach[node][depth][unc]` presence fact + its min-hop provenance.
+/// `solve_group`-only (oracle).
+#[cfg(test)]
 struct ReachFact {
     node: NodeIx,
     depth: i64,
@@ -111,7 +127,9 @@ struct ReachFact {
 
 /// A value fact's first-arrival predecessor. A `Const` transfer is born at a hop
 /// from the caller's REACH fact (the class has no caller-value parent);
-/// `Copy`/seed chain through value facts.
+/// `Copy`/seed chain through value facts. `solve_group`-only (oracle) — the
+/// batch solver's analogue is [`ValuePredB`].
+#[cfg(test)]
 #[derive(Clone, Copy)]
 enum ValuePred {
     Seed {
@@ -130,6 +148,8 @@ enum ValuePred {
 }
 
 /// One `value[node][slot][class][depth][unc]` presence fact + provenance.
+/// `solve_group`-only (oracle).
+#[cfg(test)]
 struct ValueFact {
     node: NodeIx,
     slot: u16,
@@ -141,6 +161,8 @@ struct ValueFact {
 }
 
 /// A worklist item — a newly-created fact whose outgoing propagation is pending.
+/// `solve_group`-only (oracle).
+#[cfg(test)]
 enum WorkItem {
     Reach(usize),
     Value(usize),
@@ -148,6 +170,8 @@ enum WorkItem {
 
 /// A candidate's provenance — the witness source. A direct op carries its own
 /// step inputs; a transitive candidate points back into a fact arena.
+/// `solve_group`-only (oracle).
+#[cfg(test)]
 enum CandSource<'a> {
     Direct {
         routine: &'a L3Routine,
@@ -162,7 +186,9 @@ enum CandSource<'a> {
     },
 }
 
-/// One scored candidate for a (loop, terminal-op) bucket.
+/// One scored candidate for a (loop, terminal-op) bucket. `solve_group`-only
+/// (oracle) — the batch solver's analogue is [`BestRef`]/[`DirectCand`].
+#[cfg(test)]
 struct Candidate<'a> {
     verdict: TempVerdict,
     severity: &'static str,
@@ -178,6 +204,9 @@ struct Candidate<'a> {
 
 /// The per-group fact solver's mutable state — the fact arenas, their dedup
 /// indices, per-node fact lists (for scoring), and the delta worklist.
+/// `solve_group`-only (oracle) — the batch solver's analogue is
+/// [`BatchSolver`].
+#[cfg(test)]
 struct Solver {
     reach_facts: Vec<ReachFact>,
     value_facts: Vec<ValueFact>,
@@ -188,6 +217,7 @@ struct Solver {
     queue: VecDeque<WorkItem>,
 }
 
+#[cfg(test)]
 impl Solver {
     fn new(n_nodes: usize) -> Self {
         Solver {
@@ -254,7 +284,9 @@ impl Solver {
 }
 
 /// Walk a reach fact's first-arrival predecessor chain to its seed, collecting
-/// the `(from_node, edge_k)` hops in TERMINAL->SEED order.
+/// the `(from_node, edge_k)` hops in TERMINAL->SEED order. `solve_group`-only
+/// (oracle) — the batch solver's analogue is [`collect_reach_chain_b`].
+#[cfg(test)]
 fn collect_reach_chain(reach_facts: &[ReachFact], start: usize) -> (Vec<(NodeIx, usize)>, usize) {
     let mut hops: Vec<(NodeIx, usize)> = Vec::new();
     let mut cur = start;
@@ -275,7 +307,9 @@ fn collect_reach_chain(reach_facts: &[ReachFact], start: usize) -> (Vec<(NodeIx,
 
 /// Walk a value fact's first-arrival predecessor chain. A `HopFromReach` (the
 /// hop that BORN this class via a `Const` transfer) switches the walk onto the
-/// caller's reach chain for the remainder.
+/// caller's reach chain for the remainder. `solve_group`-only (oracle) — the
+/// batch solver's analogue is [`collect_value_chain_b`].
+#[cfg(test)]
 fn collect_value_chain(
     value_facts: &[ValueFact],
     reach_facts: &[ReachFact],
@@ -313,6 +347,9 @@ fn collect_value_chain(
 /// per edge (seed->terminal order) + the terminal step; the union of node
 /// uncertainties along THIS path; the entry callsite; and the TRUE (unclamped)
 /// effective depth `seed_depth + Σ edge.loop_depth + local_depth`.
+/// `solve_group`/`emit_lane_aggregates`-only (oracle) — the cohort path's
+/// analogue is `representative_witness` (`d1_witness.rs`).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn build_transitive_witness<'a>(
     hops: &[(NodeIx, usize)],
@@ -375,6 +412,9 @@ fn build_transitive_witness<'a>(
 
 /// Solve ONE loop group with the fact model; returns the SAME `Vec<LoopTerminalAgg>`
 /// `process_group` returns (components 1-6 identical; witness may differ).
+/// `#[cfg(test)]`-only: superseded in production by the batched [`BatchSolver`]
+/// (`score_batch_to_sink`); retained as a differential oracle (see the module doc).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_group<'a>(
     graph: &D1Graph<'a>,
@@ -977,6 +1017,11 @@ pub(crate) enum ValuePredB {
 /// key + the lane presence `mask`. Per-lane provenance (hops + predecessor)
 /// lives in the parallel `reach_hops`/`reach_pred` arrays (indexed by fact id).
 struct ReachFactB {
+    // Read back only by the `#[cfg(test)]` oracle (`solve_group`'s
+    // `CandSource::TransReach` arm / `emit_lane_aggregates`) — the live cohort
+    // path tracks the current node through its own SCC-traversal loop variable
+    // instead of round-tripping it through the fact.
+    #[cfg_attr(not(test), allow(dead_code))]
     node: NodeIx,
     depth: i64,
     unc: bool,
@@ -985,6 +1030,8 @@ struct ReachFactB {
 
 /// One `value[node][slot][class][depth][unc]` fact shared across the lanes.
 struct ValueFactB {
+    // Read back only by the `#[cfg(test)]` oracle — see `ReachFactB::node`'s doc.
+    #[cfg_attr(not(test), allow(dead_code))]
     node: NodeIx,
     slot: u16,
     class: ParamTemp,
@@ -1647,6 +1694,10 @@ enum BestSource<'a> {
         routine: &'a L3Routine,
         loop_info: &'a PLoop,
         op: &'a L3RecordOperation,
+        // Read back only by the `#[cfg(test)]` oracle (`emit_lane_aggregates`)
+        // — `build_cohort_rep` (live) derives a Direct winner's witness from
+        // `routine`/`loop_info`/`op` alone via `direct_witness`, ignoring this.
+        #[cfg_attr(not(test), allow(dead_code))]
         local_depth: i64,
     },
     Reach {
@@ -1738,7 +1789,9 @@ fn fold_direct<'a>(c: &DirectCand<'a>, best: &mut [Option<BestRef<'a>>], vmask: 
 /// The distinct verdicts reaching `lane`, in [`TempVerdict`] declaration order
 /// (== the sorted+deduped order the old `reachable_verdicts` Vec produced). Built
 /// from the four per-verdict lane masks — replacing the old per-candidate verdict
-/// collection + sort + dedup with four `u64` bit tests.
+/// collection + sort + dedup with four `u64` bit tests. `emit_lane_aggregates`-only
+/// (oracle) — `sink_emit` computes the cohort path's equivalent inline.
+#[cfg(test)]
 fn reachable_from_masks(vmask: &[u64; 4], lane: usize) -> Vec<TempVerdict> {
     const ORDER: [TempVerdict; 4] = [
         TempVerdict::Temporary,
@@ -1756,11 +1809,13 @@ fn reachable_from_masks(vmask: &[u64; 4], lane: usize) -> Vec<TempVerdict> {
     out
 }
 
-/// Emit one [`LoopTerminalAgg`] per present lane at one terminal key: for each
+/// Emit one `LoopTerminalAgg` per present lane at one terminal key: for each
 /// lane whose running-best is set, materialize the winner's witness (via the
 /// existing per-lane predecessor walkers) and derive `reachable_verdicts` from
 /// the verdict masks. `owner`/`op`/`local_depth` are the terminal's metadata
 /// (used by the Reach/Value arms); a `Direct` winner carries its own.
+/// `solve_batch`-only (oracle) — the cohort path's analogue is `sink_emit`.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn emit_lane_aggregates<'a>(
     best: &[Option<BestRef<'a>>],
@@ -1870,12 +1925,16 @@ fn emit_lane_aggregates<'a>(
 
 /// Solve a BATCH of up to [`BATCH_WIDTH`] loop groups sharing ONE call-SCC
 /// condensation pass. Group `i` in `batch` owns bit `i` of the `u64` lane masks.
-/// Returns one [`LoopTerminalAgg`] per (group, terminal-op) — components 1-6
+/// Returns one `LoopTerminalAgg` per (group, terminal-op) — components 1-6
 /// identical to `solve_group` per group; witness (component 7) may differ.
 ///
-/// `plan` is the run-global [`TerminalPlan`] (built ONCE by `search_loops`); the
-/// scoring phase reads its precomputed read-mode / verdict / severity tables
-/// instead of rebuilding them per batch.
+/// `plan` is the run-global [`TerminalPlan`] (built ONCE per run, shared
+/// across batches); the scoring phase reads its precomputed read-mode /
+/// verdict / severity tables instead of rebuilding them per batch.
+/// `#[cfg(test)]`-only: superseded in production by [`score_batch_to_sink`]
+/// (the cohort-emitting sibling that reproduces this exact fixpoint); retained
+/// as the `search_loops` differential oracle (see the module doc).
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_batch<'a>(
     graph: &D1Graph<'a>,
