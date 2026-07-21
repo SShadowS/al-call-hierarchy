@@ -462,6 +462,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moved (witness content unaffected on these shallow ≤4-hop fixture chains —
   only the now-redundant `evidencePath` emptied); `l2_ir`/`cli`/`l3`/
   `differential` families byte-stable, `scripts/check-goldens --regen` green.
+- **d1 finest-cohort assembly (Task C9): BITMAP partition replaces the
+  per-loop `by_rv` scan (byte-identical output)**
+  (`src/engine/l5/detectors/d1.rs`, `src/engine/l5/d1_cohort.rs`;
+  `feat/d1-reachability`;
+  `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`). Even after Task
+  C1's sink cutover, `assemble_cohort_findings`'s "Build the FINEST cohorts"
+  step still re-expanded the compressed `(ContextKey, GroupBitmap)` cohorts
+  back to one step per LOOP: `for g in bm.iter() { ... }` per `ContextKey`
+  cohort, computing each loop's `reachable_verdicts` and grouping into a
+  `BTreeMap<Vec<i32>, GroupBitmap>` (`by_rv`) — a `Vec<i32>` alloc + BTreeMap
+  insert per loop. Summed over every `(loop, terminal)` pair on Base App 8020
+  that's ~3.2M steps, ~208s of the detector's 217s. Fix: a loop's
+  reachable-verdict set is entirely determined by which of `tc.verdict_sets`'
+  ≤4 per-verdict bitmaps contain it, so the only possible partitions are the
+  ≤16 subsets (masks) of `TempVerdict`'s 4 variants — for each mask, the
+  sub-cohort is `bm` ANDed with (reaches v) / AND-NOTted with (doesn't reach
+  v) per verdict bit, the exact same partition `by_rv` built, via ≤16 bitmap
+  ops per `ContextKey` cohort instead of one step per loop. `GroupBitmap`
+  gains `and_with`/`and_not` (in-place AND / AND-NOT, never growing `self` —
+  clearing/intersecting bits can only shrink a set) plus `Clone` (to snapshot
+  a cohort's bitmap before intersecting it per mask), each with new unit
+  tests including a differential check against filtering `bm.iter()` by
+  `verdict.contains(g)` directly. Verified byte-identical: `aldump
+  --r4-findings <DO>` (the format that serializes `cohortContexts[]` —
+  `reachable_verdicts`/`loopSet`/witness — the exact surface this touches) is
+  **byte-for-byte identical** before/after (`cmp` exit 0, 18,341,807 bytes
+  both runs); `alsem analyze <DO> --format json` (the GATE path) is also
+  byte-identical (908 d1 findings, whole `payload.findings` list equal,
+  3,877,862 bytes both runs, only `generatedAt` differs). `scripts/check-goldens`
+  (no regen) green — 0 files moved, all five families byte-stable.
 - **`d1_dataflow::solve_batch` SCORING-phase blowup — O(lanes × all-nodes) with a
   per-lane fact re-scan, now proportional to reached terminal facts
   (byte-identical)** (`src/engine/l5/d1_dataflow.rs`, Task D3-perf/scorefix;

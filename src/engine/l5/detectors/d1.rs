@@ -37,7 +37,13 @@
 //! SOURCE-ONLY Rust pipeline every routine is primary, so that fallback never
 //! engages; it is documented inline but not implemented (mirrors `run_detectors`).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+// `BTreeMap` is test-only (Task C9 replaced the production `by_rv` grouping's
+// `BTreeMap<Vec<i32>, GroupBitmap>` with a bitmap partition — see the
+// finest-cohort assembly below); `assemble_findings` (the `#[cfg(test)]`
+// shadow-oracle path) still groups aggregates with one.
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::engine::l3::l3_workspace::L3Table;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine, L3Workspace};
@@ -1665,19 +1671,39 @@ fn assemble_cohort_findings(
         // DEFERRED until after the sort below (with a placeholder `loop_set`) so
         // the registry order is deterministic regardless of `tc.cohorts`' HashMap
         // iteration order.
+        //
+        // Task C9: this used to re-expand every `(loop, terminal)` pair by
+        // iterating `bm.iter()` per cohort (a per-loop `Vec<i32>` key alloc +
+        // `BTreeMap` insert) — summed over all cohorts/terminals, ~3.2M loop
+        // visits, ~208s on Base App 8020. A loop's reachable-verdict set is
+        // entirely determined by which of `tc.verdict_sets`' ≤4 per-verdict
+        // bitmaps contain it, so the possible partitions are exactly the ≤16
+        // subsets (masks) of `TempVerdict`'s 4 variants. For each mask, the
+        // sub-cohort is `bm` intersected with (reaches v) / excluding (doesn't
+        // reach v) for every verdict bit — the SAME partition the old per-loop
+        // `by_rv: BTreeMap<Vec<i32>, _>` built, via ≤16 bitmap AND/AND-NOT ops
+        // per cohort instead of one step per loop.
         let mut finest: Vec<(i32, i32, u32, GroupBitmap, D1CohortContext)> = Vec::new();
         for (ck, bm, rep) in &tc.cohorts {
-            // Partition this ContextKey cohort's loops by reachable_verdicts.
-            let mut by_rv: BTreeMap<Vec<i32>, GroupBitmap> = BTreeMap::new();
-            for g in bm.iter() {
-                let key: Vec<i32> = reachable_verdicts_of(&tc.verdict_sets, g)
-                    .iter()
-                    .map(|v| *v as i32)
-                    .collect();
-                by_rv.entry(key).or_default().set(g);
-            }
-            for (_key, sub_bm) in by_rv {
+            for mask in 0u32..(1 << tc.verdict_sets.len()) {
+                let mut sub_bm = bm.clone();
+                for (i, vset) in tc.verdict_sets.iter().enumerate() {
+                    if sub_bm.is_empty() {
+                        break; // AND/AND-NOT can only shrink further from here
+                    }
+                    if mask & (1 << i) != 0 {
+                        sub_bm.and_with(vset); // loops that DO reach this verdict
+                    } else {
+                        sub_bm.and_not(vset); // loops that do NOT reach it
+                    }
+                }
+                if sub_bm.is_empty() {
+                    continue;
+                }
                 let g0 = min_group(&sub_bm);
+                // Re-derive the labels via the SAME function the old per-loop
+                // path used (called once per non-empty mask, not per loop) so
+                // the label set + order are byte-identical.
                 let rv_labels: Vec<String> = reachable_verdicts_of(&tc.verdict_sets, g0)
                     .iter()
                     .map(|v| v.label().to_string())

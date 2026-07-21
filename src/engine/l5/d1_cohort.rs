@@ -70,7 +70,7 @@ const VERDICT_ORDER: [TempVerdict; 4] = [
 /// A dense-lazy bitmap over [`GroupIx`]. `Empty` costs nothing until the first
 /// [`Self::set`]; `Dense` holds `ceil(highest_bit / 64)` words, grown lazily to
 /// fit the highest set bit (no up-front `n_groups` sizing needed).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) enum GroupBitmap {
     #[default]
     Empty,
@@ -149,6 +149,38 @@ impl GroupBitmap {
             if let GroupBitmap::Dense(words) = self {
                 for (w, ov) in words.iter_mut().zip(o.iter()) {
                     *w |= *ov;
+                }
+            }
+        }
+    }
+
+    /// AND `other`'s bits into `self` IN PLACE — keep only bits set in BOTH
+    /// (Task C9: the bitmap-partition replacement for the finest-cohort
+    /// per-loop `by_rv` scan — see `d1.rs`'s finest-cohort assembly). A bit
+    /// implicitly absent past a bitmap's word length is 0, so AND never needs
+    /// to GROW `self`: any word of `self` past `other`'s length is zeroed
+    /// (nothing there can be set in `other`), and `self` never gains bits it
+    /// didn't already have.
+    pub(crate) fn and_with(&mut self, other: &GroupBitmap) {
+        if let GroupBitmap::Dense(words) = self {
+            let ow = other.words();
+            for (i, w) in words.iter_mut().enumerate() {
+                let ov = if i < ow.len() { ow[i] } else { 0 };
+                *w &= ov;
+            }
+        }
+        // `GroupBitmap::Empty AND anything` stays `Empty` — a no-op.
+    }
+
+    /// AND-NOT `other`'s bits OUT of `self` IN PLACE — clear every bit
+    /// `other` has set, keeping everything else. Never grows `self` (clearing
+    /// bits can only shrink the set).
+    pub(crate) fn and_not(&mut self, other: &GroupBitmap) {
+        if let GroupBitmap::Dense(words) = self {
+            let ow = other.words();
+            for (i, w) in words.iter_mut().enumerate() {
+                if i < ow.len() {
+                    *w &= !ow[i];
                 }
             }
         }
@@ -681,6 +713,86 @@ mod tests {
         let empty = GroupBitmap::new();
         a.or_with(&empty);
         assert_eq!(a.count(), 3);
+    }
+
+    #[test]
+    fn group_bitmap_and_with_intersects_without_growing() {
+        let mut a = GroupBitmap::new();
+        a.set(1);
+        a.set(70);
+        a.set(130);
+        let mut b = GroupBitmap::new();
+        b.set(70); // overlap
+        b.set(200); // beyond a's current length — must NOT grow a
+        a.and_with(&b);
+        assert_eq!(a.iter().collect::<Vec<_>>(), vec![70]);
+        assert_eq!(a.count(), 1);
+        assert!(!a.contains(200), "and_with must never grow self");
+
+        // AND with an empty bitmap clears everything (nothing is in `Empty`).
+        let mut c = GroupBitmap::new();
+        c.set(5);
+        c.and_with(&GroupBitmap::new());
+        assert!(c.is_empty());
+
+        // Empty AND anything stays Empty (no-op, no panic).
+        let mut e = GroupBitmap::new();
+        e.and_with(&b);
+        assert!(e.is_empty());
+    }
+
+    #[test]
+    fn group_bitmap_and_not_clears_shared_bits_only() {
+        let mut a = GroupBitmap::new();
+        a.set(1);
+        a.set(70);
+        a.set(130);
+        let mut b = GroupBitmap::new();
+        b.set(70); // shared — must be cleared
+        b.set(200); // not in a — irrelevant
+        a.and_not(&b);
+        assert_eq!(a.iter().collect::<Vec<_>>(), vec![1, 130]);
+        assert_eq!(a.count(), 2);
+
+        // and_not an empty bitmap is a no-op.
+        let mut c = GroupBitmap::new();
+        c.set(9);
+        c.and_not(&GroupBitmap::new());
+        assert_eq!(c.iter().collect::<Vec<_>>(), vec![9]);
+
+        // Empty and_not anything stays Empty.
+        let mut e = GroupBitmap::new();
+        e.and_not(&b);
+        assert!(e.is_empty());
+    }
+
+    #[test]
+    fn group_bitmap_and_with_and_not_partition_like_old_per_loop_scan() {
+        // Mirrors the Task C9 partition shape: a cohort bitmap `bm` split by
+        // membership in a `verdict` bitmap using AND / AND-NOT must equal
+        // filtering `bm.iter()` by `verdict.contains(g)` directly.
+        let mut bm = GroupBitmap::new();
+        for g in [0u32, 1, 64, 65, 200] {
+            bm.set(g);
+        }
+        let mut verdict = GroupBitmap::new();
+        for g in [1u32, 64, 999] {
+            verdict.set(g);
+        }
+
+        let mut reaches = bm.clone();
+        reaches.and_with(&verdict);
+        let mut not_reaches = bm.clone();
+        not_reaches.and_not(&verdict);
+
+        let expected_reaches: Vec<GroupIx> = bm.iter().filter(|g| verdict.contains(*g)).collect();
+        let expected_not_reaches: Vec<GroupIx> =
+            bm.iter().filter(|g| !verdict.contains(*g)).collect();
+
+        assert_eq!(reaches.iter().collect::<Vec<_>>(), expected_reaches);
+        assert_eq!(not_reaches.iter().collect::<Vec<_>>(), expected_not_reaches);
+        // Partition covers `bm` exactly, disjointly.
+        assert_eq!(reaches.count() + not_reaches.count(), bm.count());
     }
 
     #[test]
