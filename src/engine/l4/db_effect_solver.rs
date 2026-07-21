@@ -25,7 +25,9 @@ use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
 use crate::engine::l4::effect_lattice::{TempStateKind, merge_via, via_for_edge_kind};
 use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
-use crate::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
+use crate::engine::l4::summary::{
+    DbEffect, RoutineSummary, TempState, Uncertainty, dedupe_uncertainties, uncertainty_key,
+};
 use crate::engine::l4::summary_runner::{
     FieldIndex, base_intraprocedural_summary, substitute_pd_temp_state,
 };
@@ -747,6 +749,238 @@ pub fn reconstruct_via(
     via_map
 }
 
+// ---------------------------------------------------------------------------
+// Side-facts solvers: uncertainties (per-effective-SCC set union, respecting
+// the callsite-local kind filter) + has_unresolved_calls (boolean-OR
+// reachability).
+// ---------------------------------------------------------------------------
+
+/// The 4 uncertainty kinds `compose_routine`'s inherited-union fold SKIPS
+/// (`summary_runner.rs:442-454`) when folding a CALLEE's uncertainties into a
+/// CALLER — each describes a resolution failure AT one specific callsite (a
+/// `member-not-found`/`external-target`/`ambiguous-overload` dispatch
+/// failure, or a zero/multi-impl `interface-open-world` dispatch), so it must
+/// never be attributed to a caller of the routine that owns that callsite.
+/// Every real producer of these 4 kinds is a to-less
+/// [`UncertaintyEdge`](crate::engine::l4::combined_graph::UncertaintyEdge)
+/// (`combined_graph.rs:260,272,299,304`) — folded into its OWN routine's
+/// uncertainties unconditionally (`summary_runner.rs:488-502`, no kind
+/// filter on the way IN) — so a routine that owns one of these always keeps
+/// it in its own final `uncertainties`; it simply never propagates further
+/// when some OTHER routine inherits from it. Checked generically by KIND
+/// here (matching `compose_routine`'s own `matches!`), not by assuming only
+/// uncertainty-edges ever produce these kinds, so a future producer is still
+/// filtered correctly on the inherited side without touching this function.
+fn is_callsite_local_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "member-not-found" | "external-target" | "ambiguous-overload" | "interface-open-world"
+    )
+}
+
+/// Per-member side-facts for one effective SCC: `uncertainties` (deduped +
+/// sorted by [`uncertainty_key`], via [`dedupe_uncertainties`]) and
+/// `has_unresolved_calls`.
+pub struct SideFacts {
+    pub uncertainties: HashMap<String, Vec<Uncertainty>>,
+    pub has_unresolved: HashMap<String, bool>,
+}
+
+/// Solve BOTH side-facts for one effective SCC (`eff`) in a single closed-form
+/// pass, reproducing the OLD JACOBI `compose_routine`'s fold
+/// (`summary_runner.rs:351-502`) EXACTLY at its FIXED POINT — not its
+/// iteration.
+///
+/// ## Why one shared value converges for the WHOLE effective SCC
+///
+/// `has_unresolved_calls` propagates from callee to caller UNCONDITIONALLY —
+/// no kind filter at all (`summary_runner.rs:456-458`, `481-482`, `500`).
+/// `uncertainties` propagates too, but only for kinds that are NOT one of the
+/// 4 [`is_callsite_local_kind`] kinds (`summary_runner.rs:442-454`). Both are
+/// otherwise the same closure argument: an effective SCC is, by
+/// `tarjan_scc`'s own contract, STRONGLY CONNECTED — every member can reach
+/// every other member via a path of intra-effective-SCC edges (verified at
+/// the JACOBI level too: `run_one_scc` seeds `in_progress` with EVERY
+/// non-leaf member's BASE summary before the first pass, `summary_runner.rs
+/// :1196-1206`, so an intra-SCC `lookup` never actually sees "no summary yet"
+/// at any pass — only a truly external, never-settled target can trigger the
+/// unresolved-lookup branch). Unrolling the JACOBI fixed point along an
+/// intra-SCC path shows that whatever a member `w` produces LOCALLY (its own
+/// base facts, its own opaque-callee/uncertainty-edge entries) — filtered to
+/// the propagatable (non-callsite-local) part for uncertainties, unfiltered
+/// for the boolean — eventually reaches every member `v` that can reach `w`,
+/// which by strong connectivity is every member of `eff`, `v` included. So
+/// at the fixed point:
+///
+/// ```text
+/// shared_uncertainties  = ⋃_{w ∈ eff} NF(produced_at(w))
+///                        ∪ ⋃_{w ∈ eff, edge w->ext, ext settled} NF(ext.uncertainties)
+/// shared_has_unresolved = ⋃_{w ∈ eff} local_trigger(w)
+///                        ∪ ⋃_{w ∈ eff, edge w->ext, ext settled} ext.has_unresolved_calls
+/// ```
+///
+/// (`NF` = filter OUT the 4 callsite-local kinds; `produced_at(w)` = `w`'s own
+/// base uncertainties + its own opaque-callee entries + its own
+/// uncertainty-edge entries; `local_trigger(w)` = `w`'s base
+/// `has_unresolved_calls`, OR an edge to a target that is NEITHER an
+/// intra-`eff` member NOR settled, OR an opaque-callee-triggering edge, OR a
+/// nonempty `uncertainty_edges_by_from[w]`) — identical for EVERY member of
+/// `eff`, so this function computes each union ONCE rather than folding it
+/// separately per member the way the old JACOBI fold does.
+///
+/// A member's FINAL `uncertainties` is then
+/// `dedupe_uncertainties(shared_uncertainties ++ produced_at(v))` —
+/// `produced_at(v)`'s own callsite-local entries (excluded from
+/// `shared_uncertainties`) survive only on `v` itself, exactly like the old
+/// fold never propagating them past their owner; `produced_at(v)` is placed
+/// LAST so it wins any same-key tie against `shared_uncertainties` (last
+/// write wins — [`dedupe_uncertainties`]'s own semantics), keeping a
+/// member's OWN payload authoritative for a key it itself produced.
+pub fn solve_side_facts(
+    eff: &Scc,
+    graph: &CombinedGraph,
+    routines_by_id: &HashMap<String, &L3Routine>,
+    settled: &HashMap<String, RoutineSummary>,
+    base_summaries: &HashMap<String, RoutineSummary>,
+    uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
+) -> SideFacts {
+    let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
+    let empty_fields = FieldIndex::new();
+
+    // Workspace-wide body-availability, for the opaque-callee guard — mirrors
+    // `compute_summaries_with_leaves`'s own `body_avail_by_id` construction
+    // (`summary_runner.rs:872-875`); built HERE from `routines_by_id` since
+    // this function's signature (per the plan/brief, verbatim) carries no
+    // separate `body_avail_by_id` parameter.
+    let body_avail_by_id: HashMap<&str, bool> = routines_by_id
+        .iter()
+        .map(|(id, r)| (id.as_str(), r.body_available))
+        .collect();
+
+    // Per-member entries PRODUCED AT that member (base + its own opaque-callee
+    // + its own uncertainty-edge entries, regardless of kind) — `produced_at(m)`
+    // in the doc above.
+    let mut own_by_member: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+    // The SCC-wide shared union of the PROPAGATABLE (non-callsite-local) part
+    // — `shared_uncertainties` in the doc above — keyed by `uncertainty_key`
+    // so a legitimate duplicate (the same source reached via two different
+    // members' edges) collapses for free.
+    let mut shared: HashMap<String, Uncertainty> = HashMap::new();
+    // The SCC-wide has_unresolved_calls OR — `shared_has_unresolved` above.
+    let mut shared_has_unresolved = false;
+
+    for m in &eff.members {
+        let computed_base;
+        let base: &RoutineSummary = if let Some(b) = base_summaries.get(m) {
+            b
+        } else if let Some(r) = routines_by_id.get(m.as_str()) {
+            computed_base = base_intraprocedural_summary(r, routines_by_id, &empty_fields);
+            &computed_base
+        } else {
+            continue; // effective_sccs already excludes missing members; defensive only.
+        };
+
+        let mut own: Vec<Uncertainty> = base.uncertainties.clone();
+        let mut local_hu = base.has_unresolved_calls;
+        for u in &own {
+            if !is_callsite_local_kind(&u.kind) {
+                shared.insert(uncertainty_key(u), u.clone());
+            }
+        }
+
+        for edge in graph.edges_by_from.get(m).into_iter().flatten() {
+            if !member_set.contains(edge.to.as_str()) {
+                match settled.get(&edge.to) {
+                    None => {
+                        // Genuinely unresolved target (neither an intra-eff
+                        // member nor a settled successor/leaf) — matches the
+                        // old fold's `continue`: no opaque-callee check runs
+                        // for THIS edge either.
+                        local_hu = true;
+                        continue;
+                    }
+                    Some(callee) => {
+                        if callee.has_unresolved_calls {
+                            shared_has_unresolved = true;
+                        }
+                        for u in &callee.uncertainties {
+                            if !is_callsite_local_kind(&u.kind) {
+                                shared.insert(uncertainty_key(u), u.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            // Reaches here for: an intra-eff edge (always "resolved" at the
+            // fixed point — see the doc above) OR a resolved external edge.
+            // An intra-eff `to`'s own production is already folded into
+            // `shared`/`own_by_member` when `to` itself is visited as `m` by
+            // this same outer loop, so nothing further is needed for that
+            // case beyond the opaque-callee check below, which applies
+            // uniformly to every edge that reaches here (exactly like
+            // `compose_routine`, which never special-cases an intra-SCC
+            // target for this check either).
+            let callee_opaque = !body_avail_by_id
+                .get(edge.to.as_str())
+                .copied()
+                .unwrap_or(false);
+            let add_opaque = edge.kind == "interface" || edge.kind == "dynamic" || callee_opaque;
+            if add_opaque {
+                if let Some(cs_id) = &edge.callsite_id {
+                    let u = Uncertainty {
+                        kind: "opaque-callee".to_string(),
+                        callsite_id: Some(cs_id.clone()),
+                        operation_id: None,
+                        routine_id: None,
+                        interface_name: None,
+                    };
+                    shared.insert(uncertainty_key(&u), u.clone());
+                    own.push(u);
+                }
+                local_hu = true;
+            }
+        }
+
+        if let Some(idxs) = uncertainty_edges_by_from.get(m) {
+            if !idxs.is_empty() {
+                local_hu = true;
+            }
+            for &i in idxs {
+                let ue = &graph.uncertainty_edges[i];
+                let u = Uncertainty::from(&ue.uncertainty);
+                // Empirically always one of the 4 filtered kinds (every real
+                // `UncertaintyEdge` producer is — see this fn's own doc), but
+                // apply the SAME generic filter check here rather than
+                // hardcoding that fact.
+                if !is_callsite_local_kind(&u.kind) {
+                    shared.insert(uncertainty_key(&u), u.clone());
+                }
+                own.push(u);
+            }
+        }
+
+        if local_hu {
+            shared_has_unresolved = true;
+        }
+        own_by_member.insert(m.clone(), own);
+    }
+
+    let shared_vec: Vec<Uncertainty> = shared.into_values().collect();
+    let mut uncertainties: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+    let mut has_unresolved: HashMap<String, bool> = HashMap::new();
+    for m in &eff.members {
+        let mut all = shared_vec.clone();
+        all.extend(own_by_member.remove(m).unwrap_or_default());
+        uncertainties.insert(m.clone(), dedupe_uncertainties(all));
+        has_unresolved.insert(m.clone(), shared_has_unresolved);
+    }
+
+    SideFacts {
+        uncertainties,
+        has_unresolved,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -841,8 +1075,12 @@ mod tests {
     };
     use crate::engine::l3::call_resolver::UpgradedBinding;
     use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+    use crate::engine::l4::combined_graph::Uncertainty as CgUncertainty;
+    use crate::engine::l4::combined_graph::UncertaintyEdge;
     use crate::engine::l4::effect_lattice::effect_key_of;
+    use crate::engine::l4::scc::SccResult;
     use crate::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
+    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
     use std::collections::HashSet;
 
     fn pd_anchor() -> PAnchor {
@@ -1910,5 +2148,352 @@ mod tests {
         // refuse it before it ever gets to compete.
         let mut via_map: HashMap<(String, EffectId), String> = HashMap::new();
         merge_via_into(&mut via_map, "a", EffectId(0), "totally-bogus-via");
+    }
+
+    // -----------------------------------------------------------------------
+    // Side-facts solvers: uncertainties + has_unresolved_calls (Task 7).
+    // -----------------------------------------------------------------------
+
+    /// Build the `from`-indexed uncertainty-edge lookup exactly like
+    /// `compute_summaries_with_leaves` does (`summary_runner.rs:902-908`), so
+    /// a test's hand-built `graph.uncertainty_edges` and its
+    /// `uncertainty_edges_by_from` argument stay consistent with each other.
+    fn index_uncertainty_edges(graph: &CombinedGraph) -> HashMap<String, Vec<usize>> {
+        let mut by_from: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, ue) in graph.uncertainty_edges.iter().enumerate() {
+            by_from.entry(ue.from.clone()).or_default().push(i);
+        }
+        by_from
+    }
+
+    #[test]
+    fn inherited_callsite_local_kind_filtered_generic_kind_propagates() {
+        // `a` (singleton effective SCC, no self-loop) has a resolved "direct"
+        // edge to an already-settled `ext` carrying BOTH a callsite-local
+        // kind (`member-not-found` — must be filtered from the inherited
+        // union) and a generic non-filtered kind (`parse-incomplete` — must
+        // propagate). `ext` is body-available so this edge never ALSO
+        // triggers the (separately tested) opaque-callee path.
+        let member_not_found = Uncertainty {
+            kind: "member-not-found".to_string(),
+            callsite_id: Some("ext_cs1".to_string()),
+            operation_id: None,
+            routine_id: None,
+            interface_name: None,
+        };
+        let generic = Uncertainty {
+            kind: "parse-incomplete".to_string(),
+            callsite_id: None,
+            operation_id: None,
+            routine_id: Some("ext".to_string()),
+            interface_name: None,
+        };
+        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
+        settled.insert(
+            "ext".to_string(),
+            RoutineSummary {
+                routine_id: "ext".to_string(),
+                db_effects: Vec::new(),
+                in_recursive_cycle: false,
+                has_unresolved_calls: false,
+                uncertainties: vec![member_not_found, generic],
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a"), pd_routine("ext")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
+        let eff = Scc {
+            members: vec!["a".into()],
+            recursive: false,
+        };
+        let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        let uncertainty_edges_by_from = index_uncertainty_edges(&graph);
+
+        let facts = solve_side_facts(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &uncertainty_edges_by_from,
+        );
+
+        let a_uncertainties = facts.uncertainties.get("a").expect("a present");
+        assert!(
+            a_uncertainties.iter().any(|u| u.kind == "parse-incomplete"),
+            "generic non-filtered kind must propagate: {a_uncertainties:?}"
+        );
+        assert!(
+            !a_uncertainties.iter().any(|u| u.kind == "member-not-found"),
+            "callsite-local kind must be filtered from the inherited union: {a_uncertainties:?}"
+        );
+        assert_eq!(
+            facts.has_unresolved.get("a").copied(),
+            Some(false),
+            "no local/opaque/edge trigger fired; ext itself is not unresolved"
+        );
+    }
+
+    #[test]
+    fn opaque_callee_edge_adds_uncertainty_and_sets_has_unresolved() {
+        // `a` has a resolved "direct" edge to `ext`, a routine that IS
+        // present in `settled` (a resolved call) but carries
+        // `body_available: false` (an ABI-only stub) — FIX 3's scenario: a
+        // body-available caller with a resolved DIRECT edge to a bodyless
+        // callee. Must add an `opaque-callee` uncertainty keyed by the
+        // edge's OWN callsite_id and set `has_unresolved_calls`.
+        let mut ext = pd_routine("ext");
+        ext.body_available = false;
+
+        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
+        settled.insert(
+            "ext".to_string(),
+            RoutineSummary {
+                routine_id: "ext".to_string(),
+                db_effects: Vec::new(),
+                in_recursive_cycle: false,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a"), ext];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
+        let eff = Scc {
+            members: vec!["a".into()],
+            recursive: false,
+        };
+        let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        let uncertainty_edges_by_from = index_uncertainty_edges(&graph);
+
+        let facts = solve_side_facts(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &uncertainty_edges_by_from,
+        );
+
+        let a_uncertainties = facts.uncertainties.get("a").expect("a present");
+        assert!(
+            a_uncertainties
+                .iter()
+                .any(|u| u.kind == "opaque-callee" && u.callsite_id.as_deref() == Some("a_cs1")),
+            "expected an opaque-callee uncertainty keyed by the edge's callsite_id: {a_uncertainties:?}"
+        );
+        assert_eq!(facts.has_unresolved.get("a").copied(), Some(true));
+    }
+
+    #[test]
+    fn recursive_members_share_uncertainty_union_but_not_filtered_kind() {
+        // A<->B (recursive effective SCC). `a` has an out-edge to a settled
+        // `ext` carrying a generic (`parse-incomplete`) uncertainty — `b`
+        // never touches `ext` directly, but must still inherit it via the
+        // SCC closure. `a` ALSO owns a `member-not-found` uncertainty-edge —
+        // that one must stay on `a` only; `b` must NOT see it.
+        let generic = Uncertainty {
+            kind: "parse-incomplete".to_string(),
+            callsite_id: None,
+            operation_id: None,
+            routine_id: Some("ext".to_string()),
+            interface_name: None,
+        };
+        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
+        settled.insert(
+            "ext".to_string(),
+            RoutineSummary {
+                routine_id: "ext".to_string(),
+                db_effects: Vec::new(),
+                in_recursive_cycle: false,
+                has_unresolved_calls: false,
+                uncertainties: vec![generic],
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a"), pd_routine("b"), pd_routine("ext")];
+        let rbid = pd_routines_by_id(&routines);
+        let mut graph = pd_graph(
+            &["a", "b", "ext"],
+            vec![
+                pd_edge("a", "b", "a_cs1"),
+                pd_edge("b", "a", "b_cs1"),
+                pd_edge("a", "ext", "a_cs2"),
+            ],
+        );
+        graph.uncertainty_edges.push(UncertaintyEdge {
+            from: "a".to_string(),
+            uncertainty: CgUncertainty {
+                kind: "member-not-found".to_string(),
+                callsite_id: Some("a_mnf_cs".to_string()),
+                operation_id: None,
+                routine_id: None,
+                interface_name: None,
+            },
+        });
+        let uncertainty_edges_by_from = index_uncertainty_edges(&graph);
+
+        let eff = Scc {
+            members: vec!["a".into(), "b".into()],
+            recursive: true,
+        };
+        let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+
+        let facts = solve_side_facts(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &uncertainty_edges_by_from,
+        );
+
+        let a_u = facts.uncertainties.get("a").expect("a present");
+        let b_u = facts.uncertainties.get("b").expect("b present");
+
+        assert!(
+            a_u.iter().any(|u| u.kind == "parse-incomplete"),
+            "a: {a_u:?}"
+        );
+        assert!(
+            b_u.iter().any(|u| u.kind == "parse-incomplete"),
+            "b must share the SCC-wide generic uncertainty: {b_u:?}"
+        );
+        assert!(
+            a_u.iter().any(|u| u.kind == "member-not-found"),
+            "a keeps its own callsite-local uncertainty: {a_u:?}"
+        );
+        assert!(
+            !b_u.iter().any(|u| u.kind == "member-not-found"),
+            "b must NOT inherit a's callsite-local uncertainty: {b_u:?}"
+        );
+        // `a`'s uncertainty-edge (regardless of its FILTERED kind) sets
+        // has_unresolved_calls unconditionally (`summary_runner.rs:500` sets
+        // it for EVERY uncertainty edge, with no kind check at all — unlike
+        // the uncertainties filter, this boolean is never callsite-local),
+        // and that boolean is OR-shared across the whole strongly-connected
+        // effective SCC, so `b` inherits `true` too even though `b` owns no
+        // uncertainty-edge of its own.
+        assert_eq!(facts.has_unresolved.get("a").copied(), Some(true));
+        assert_eq!(facts.has_unresolved.get("b").copied(), Some(true));
+    }
+
+    #[test]
+    fn oracle_parity_with_compose_routine_for_filter_opaque_and_uncertainty_edge() {
+        // Build a REAL fixture — {a,b} recursive effective SCC, `ext` an
+        // external bodyless (opaque) successor, `a` parse-incomplete (a
+        // generic base uncertainty) and owning a `member-not-found`
+        // uncertainty-edge — run the OLD `compute_summaries_with_leaves` over
+        // the WHOLE workspace (ext's singleton SCC settles first, exactly
+        // the ordering the real assembly uses) and assert `solve_side_facts`
+        // reproduces the old solver's converged
+        // `uncertainties`/`has_unresolved_calls` BIT FOR BIT — the "truest
+        // oracle" per the task brief.
+        let mut a = pd_routine("a");
+        a.parse_incomplete = true;
+        let b = pd_routine("b");
+        let mut ext = pd_routine("ext");
+        ext.body_available = false;
+
+        let routines = vec![a, b, ext];
+        let rbid = pd_routines_by_id(&routines);
+
+        let mut graph = pd_graph(
+            &["a", "b", "ext"],
+            vec![
+                pd_edge("a", "b", "a_cs1"),
+                pd_edge("b", "a", "b_cs1"),
+                pd_edge("a", "ext", "a_cs2"),
+            ],
+        );
+        graph.uncertainty_edges.push(UncertaintyEdge {
+            from: "a".to_string(),
+            uncertainty: CgUncertainty {
+                kind: "member-not-found".to_string(),
+                callsite_id: Some("a_mnf_cs".to_string()),
+                operation_id: None,
+                routine_id: None,
+                interface_name: None,
+            },
+        });
+        let uncertainty_edges_by_from = index_uncertainty_edges(&graph);
+
+        let scc = SccResult {
+            sccs: vec![
+                Scc {
+                    members: vec!["ext".into()],
+                    recursive: false,
+                },
+                Scc {
+                    members: vec!["a".into(), "b".into()],
+                    recursive: true,
+                },
+            ],
+            scc_id_by_routine: HashMap::new(),
+        };
+        let upgraded_bindings: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
+        let fields = FieldIndex::new();
+        let leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+
+        let (old_map, _trace, _diag) = compute_summaries_with_leaves(
+            &routines,
+            &graph,
+            &scc,
+            &upgraded_bindings,
+            &fields,
+            false,
+            &leaf_summaries,
+        );
+
+        // Feed solve_side_facts the same inputs the surrounding Task-8
+        // assembly would have in scope once `ext`'s effective SCC has
+        // already settled.
+        let eff = Scc {
+            members: vec!["a".into(), "b".into()],
+            recursive: true,
+        };
+        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
+        settled.insert(
+            "ext".to_string(),
+            old_map.get("ext").expect("ext settled").clone(),
+        );
+        let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        for id in ["a", "b"] {
+            let r = *rbid.get(id).expect("routine present");
+            base_summaries.insert(
+                id.to_string(),
+                base_intraprocedural_summary(r, &rbid, &fields),
+            );
+        }
+
+        let facts = solve_side_facts(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &uncertainty_edges_by_from,
+        );
+
+        for m in ["a", "b"] {
+            let old_summary = old_map
+                .get(m)
+                .unwrap_or_else(|| panic!("old solver missing {m}"));
+            assert_eq!(
+                facts.uncertainties.get(m).cloned().unwrap_or_default(),
+                old_summary.uncertainties,
+                "[{m}] uncertainties mismatch vs old compose_routine oracle"
+            );
+            assert_eq!(
+                facts.has_unresolved.get(m).copied(),
+                Some(old_summary.has_unresolved_calls),
+                "[{m}] has_unresolved_calls mismatch vs old compose_routine oracle"
+            );
+        }
     }
 }
