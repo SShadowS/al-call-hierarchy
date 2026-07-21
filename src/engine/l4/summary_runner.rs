@@ -1006,6 +1006,38 @@ pub fn compute_summaries_with_leaves(
     (final_map, raw_traces, cap_diagnostics)
 }
 
+// ---------------------------------------------------------------------------
+// compute_summaries_v2 — the new-solver seam (l4-summary-fixpoint-redesign).
+// ---------------------------------------------------------------------------
+
+/// v2 db-effect solver seam. Task 1 (differential-harness scaffolding)
+/// delegates to the old JACOBI solver so the differential harness
+/// (`tests/l4_summary_differential.rs`) is green from day one; Tasks 2-8 replace
+/// the db-effect / uncertainty / has_unresolved_calls computation with the new
+/// `db_effect_solver`, keeping `parameter_roles` sourced from the old
+/// `compose_routine`. Drops the `(traces, diagnostics)` tuple the old fn returns
+/// — the v2 path has no trajectory artifact to report (`RawSccTrace` is not a
+/// contract per Phase 1's Global Constraints); diagnostics are handled in Task 10.
+pub fn compute_summaries_v2_with_leaves(
+    routines: &[L3Routine],
+    graph: &CombinedGraph,
+    scc: &SccResult,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
+    leaf_summaries: &HashMap<String, RoutineSummary>,
+) -> HashMap<String, RoutineSummary> {
+    let (map, _trace, _diag) = compute_summaries_with_leaves(
+        routines,
+        graph,
+        scc,
+        upgraded_bindings,
+        fields,
+        false,
+        leaf_summaries,
+    );
+    map
+}
+
 /// The SHARED per-SCC compute context — the workspace-wide lookup structures the
 /// JACOBI loop reads (all keyed by internal RoutineId, so a single SCC's loop
 /// reads only the entries it needs). Both the from-scratch
