@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_witness` — bounded representative witness (`representative_witness`,
+  `WitnessSummary`)** (`src/engine/l5/d1_witness.rs`, `src/engine/l5/d1_dataflow.rs`,
+  Task C3; `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`,
+  `feat/d1-reachability`). Builds ONE bounded witness per `(terminal, ContextKey)`
+  cohort instead of Task C1's sink relying on `d1_dataflow::build_transitive_witness`'s
+  per-`(loop, terminal)` full witness (the ~28k-hop predecessor walk, 3.2M builds,
+  driving the ~8-hour Base App 8020 cost). The seed is read via Task C2's
+  `BatchSolver::reach_origin`/`value_origin` — O(1), never a chain walk to find it.
+  `total_hops` is read straight off `BatchSolver::reach_hops`/`value_hops` —
+  authoritative, never recomputed. The hop STEPS themselves still need ONE bounded
+  walk of the predecessor chain (`collect_reach_chain_b`/`collect_value_chain_b`,
+  option (a) from the task brief — bounded by the ~34,861 cohort count, not the 3.2M
+  `(loop, terminal)` pairs), reversed to seed->terminal order and sliced to the first
+  `k_first` + last `m_last` hop steps with an `omitted_hops` count for the (possibly
+  empty) middle; when the whole chain fits within `k_first + m_last` hops, EVERY hop
+  step lands in `first_steps` and `omitted_hops` is 0. The full uncertainty-vector
+  union and the TRUE (unclamped) effective-depth recompute
+  `build_transitive_witness` builds are DROPPED — the cohort's own `ContextKey`
+  already carries the exact `depth_bucket`/`unc` (Task C1), so this witness owes
+  only a representative realizing path, not a second derivation of those two
+  fields. `BatchSolver`'s `reach_pred`/`value_pred`/`reach_hops`/`value_hops`/
+  `reach_origin`/`value_origin`/`reach_at`/`value_at` fields, `ReachPredB`/
+  `ValuePredB`, `collect_reach_chain_b`/`collect_value_chain_b`, and the
+  `#[cfg(test)]` `run_batch_fixpoint_for_test` helper widen from private to
+  `pub(crate)` so the new sibling module (and its own tests) can reach them.
+  Proven by 3 fixtures: a 10-hop reach chain (`K=3`/`M=2` — first-3 + last-2 +
+  `omitted_hops=5`), a 2-hop shallow chain (whole chain in `first_steps`,
+  `omitted_hops=0`), and a 4-hop value-fact chain crossing a `HopFromReach`
+  transition mid-chain (`K=2`/`M=1`) — each asserts `total_hops` exact, the hop
+  slices land on the right routines, and the witness is a valid realizing path
+  (first step in the loop routine, contiguous real graph edges within each
+  contiguous run, terminal step matches). Nothing wires `representative_witness`
+  into `detect_d1` yet — purely additive, so all five golden families stay
+  BYTE-IDENTICAL (`scripts/check-goldens` green, no regen) and the full `cargo
+  test -p al-call-hierarchy --lib` suite (1582 tests) stays green.
 - **`d1_dataflow` — per-fact/lane `origin_seed` propagation (`reach_origin`/
   `value_origin`)** (`src/engine/l5/d1_dataflow.rs`, Task C2;
   `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`).

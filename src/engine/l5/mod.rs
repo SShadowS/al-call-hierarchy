@@ -77,6 +77,14 @@ pub(crate) mod d1_dataflow;
 // differential only; `detect_d1` stays on the old (`emit_lane_aggregates`) path
 // until the cohort cutover, so goldens are byte-stable.
 pub(crate) mod d1_cohort;
+// d1 cohort redesign Task C3 — the bounded REPRESENTATIVE witness
+// (`representative_witness`/`WitnessSummary`) for one `(terminal, ContextKey)`
+// cohort: `[loop_step, call_step]` (seed via Task C2's O(1) `origin_seed`, no
+// chain walk to find it) + first-K/last-M hop steps + `omitted_hops` + the
+// terminal step, built from ONE bounded predecessor-chain walk per cohort
+// instead of `d1_dataflow::build_transitive_witness`'s per-(loop, terminal)
+// full witness. Nothing wires it into `detect_d1` yet.
+pub(crate) mod d1_witness;
 // Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
 // event-flow detectors consume. NO detectors yet — index + query + fan-out +
 // chain-walk substrate only.

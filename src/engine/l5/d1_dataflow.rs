@@ -931,8 +931,12 @@ pub(crate) fn condense(graph: &D1Graph) -> CallScc {
 /// A reach fact's per-lane first-arrival predecessor (the seed it descends from,
 /// or the parent reach fact + the crossed edge). `None` = the lane is not
 /// present at this fact.
+///
+/// `pub(crate)`: Task C3's `d1_witness` (a sibling module) walks
+/// `BatchSolver::reach_pred` directly to materialize a bounded witness's hop
+/// steps.
 #[derive(Clone, Copy)]
-enum ReachPredB {
+pub(crate) enum ReachPredB {
     None,
     Seed {
         seed_index: u32,
@@ -947,8 +951,11 @@ enum ReachPredB {
 /// A value fact's per-lane first-arrival predecessor. `HopFromReach` is the hop
 /// that BORN this class via a `Const` transfer (its parent is a reach fact);
 /// `HopFromValue` / `Seed` chain through value facts (mirrors D2's `ValuePred`).
+///
+/// `pub(crate)`: see [`ReachPredB`]'s doc — `d1_witness` walks
+/// `BatchSolver::value_pred` directly.
 #[derive(Clone, Copy)]
-enum ValuePredB {
+pub(crate) enum ValuePredB {
     None,
     Seed {
         seed_index: u32,
@@ -1085,11 +1092,19 @@ impl HopQueue {
 
 /// The batch fact solver's shared arenas (across all lanes in the batch), their
 /// dedup indices, per-node fact lists (for scoring), and per-lane provenance.
-struct BatchSolver {
+///
+/// `pub(crate)` (struct + the `*_hops`/`*_pred`/`*_origin` provenance fields
+/// only): Task C3's `d1_witness` (a sibling module) builds a bounded
+/// representative witness directly off these arrays — `*_origin` for the O(1)
+/// seed lookup, `*_hops` for the authoritative total, `*_pred` for the one
+/// bounded chain walk that yields the first-K/last-M hop steps. The fact
+/// arenas/indices stay private — `d1_witness` never needs them, only the
+/// caller-supplied `terminal_node`/`terminal_owner`/`terminal_op`.
+pub(crate) struct BatchSolver {
     reach_facts: Vec<ReachFactB>,
     value_facts: Vec<ValueFactB>,
-    reach_hops: Vec<[u32; BATCH_WIDTH]>,
-    reach_pred: Vec<[ReachPredB; BATCH_WIDTH]>,
+    pub(crate) reach_hops: Vec<[u32; BATCH_WIDTH]>,
+    pub(crate) reach_pred: Vec<[ReachPredB; BATCH_WIDTH]>,
     /// Task C2: `reach_origin[fact][lane]` = the seed index that FIRST reached
     /// this fact on this lane — set incrementally in [`Self::commit_reach`] by
     /// following the SAME predecessor just recorded in `reach_pred` (a `Seed`
@@ -1097,19 +1112,22 @@ struct BatchSolver {
     /// Lets a representative witness (Task C3) recover a fact's seed in O(1)
     /// instead of walking its full predecessor chain. `u32::MAX` = unset (a
     /// lane absent from this fact — mirrors `ReachPredB::None`'s sentinel role).
-    reach_origin: Vec<[u32; BATCH_WIDTH]>,
-    value_hops: Vec<[u32; BATCH_WIDTH]>,
-    value_pred: Vec<[ValuePredB; BATCH_WIDTH]>,
+    pub(crate) reach_origin: Vec<[u32; BATCH_WIDTH]>,
+    pub(crate) value_hops: Vec<[u32; BATCH_WIDTH]>,
+    pub(crate) value_pred: Vec<[ValuePredB; BATCH_WIDTH]>,
     /// Task C2: `value_origin[fact][lane]`, mirroring `reach_origin` for value
     /// facts. `HopFromValue` copies the parent VALUE fact's origin[lane];
     /// `HopFromReach` copies the parent REACH fact's origin[lane] (`pred`
     /// indexes into `reach_origin`, not `value_origin`, for that variant — the
     /// value fact was born from a reach arrival, not a prior value fact).
-    value_origin: Vec<[u32; BATCH_WIDTH]>,
+    pub(crate) value_origin: Vec<[u32; BATCH_WIDTH]>,
     reach_index: HashMap<(NodeIx, i64, bool), usize>,
     value_index: HashMap<(NodeIx, u16, ParamTemp, i64, bool), usize>,
-    reach_at: Vec<Vec<usize>>,
-    value_at: Vec<Vec<usize>>,
+    /// `pub(crate)`: `d1_witness`'s tests locate a fixture's terminal-node fact
+    /// (the same way the scoring loop's `entry.node` lookup does) to build a
+    /// `representative_witness` call without needing a full `TerminalPlan`.
+    pub(crate) reach_at: Vec<Vec<usize>>,
+    pub(crate) value_at: Vec<Vec<usize>>,
 }
 
 impl BatchSolver {
@@ -1321,7 +1339,11 @@ fn route(
 /// Walk a reach fact's per-lane first-arrival predecessor chain to its seed,
 /// collecting the `(from_node, edge_k)` hops in TERMINAL->SEED order (the batch
 /// analogue of [`collect_reach_chain`], reading the per-lane predecessor).
-fn collect_reach_chain_b(
+///
+/// `pub(crate)`: Task C3's `d1_witness` calls this to collect the bounded
+/// witness's hop steps (the seed index it also returns is cross-checked
+/// against `BatchSolver::reach_origin`'s O(1) value, not used to FIND it).
+pub(crate) fn collect_reach_chain_b(
     reach_pred: &[[ReachPredB; BATCH_WIDTH]],
     lane: usize,
     start: usize,
@@ -1347,7 +1369,10 @@ fn collect_reach_chain_b(
 /// Walk a value fact's per-lane first-arrival predecessor chain (the batch
 /// analogue of [`collect_value_chain`]); a `HopFromReach` switches the walk onto
 /// the caller's reach chain for the remainder.
-fn collect_value_chain_b(
+///
+/// `pub(crate)`: see [`collect_reach_chain_b`]'s doc — `d1_witness` calls this
+/// for the value-fact witness case.
+pub(crate) fn collect_value_chain_b(
     value_pred: &[[ValuePredB; BATCH_WIDTH]],
     reach_pred: &[[ReachPredB; BATCH_WIDTH]],
     lane: usize,
@@ -2746,9 +2771,13 @@ pub(crate) fn score_batch_to_sink<'a>(
 /// sequence as those two (minus their Hot-tier tracing, irrelevant here) — see
 /// `score_batch_to_sink`'s own doc for why the fixpoint section is safe to
 /// reproduce verbatim.
+///
+/// `pub(crate)`: Task C3's `d1_witness` test module (a sibling of this one)
+/// reuses it the same way to populate a `BatchSolver` for
+/// `representative_witness` fixtures, without re-deriving the fixpoint.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
-fn run_batch_fixpoint_for_test<'a>(
+pub(crate) fn run_batch_fixpoint_for_test<'a>(
     graph: &D1Graph<'a>,
     liveness: &Liveness,
     scc: &CallScc,
