@@ -237,3 +237,49 @@ the bottom, CHANGELOG, and git log.
 2026-07-16/17, BCQuality detector wave (`8bb9756`):
 - [x] 13 detectors d52–d64 + `bcquality` preset; FP triage on DO; root-cause fixes for
   d53/d56/d60/d63 (only d56 was temporarily opt-in, since re-promoted)
+
+## d1-db-op-in-loop cohort redesign — RESOLVED 2026-07-21 (merged ee3aa45)
+
+The perf-optimization-handoff §4 "open decision" (d1 output semantics / no-caps)
+is CLOSED. d1's exhaustive path-enumeration walk — which took ~8h on Base App
+8020 and was always killed — was rewritten as an IFDS/reachability-indexing
+COHORT DATAFLOW (co-designed with gpt-5.6-sol; see memory `d1-output-bound-falsified`
+§2026-07-21 for the full design + the 24-commit arc C1-C9 + cleanup):
+
+- Per-loop reachability computed once as bitmap COHORTS (Terminal -> ContextKey
+  -> loop-bitmap), not per-loop re-traversal. Compressed terminal-centric output
+  (interned loop-sets + loop catalog + ONE bounded representative witness per
+  verdict-class). Reuses d1_graph/d1_liveness/d1_temp; the old walk path is now
+  cfg(test) as the differential oracle.
+- **8020 now FINISHES** (~26min total, d1 detector ~140-250s, machine-noise-
+  dependent; pure compute floor 9.35s). DO (real customer ws) BYTE-IDENTICAL on
+  all identity fields at 6-7s. Correctness proven: decompressed cohorts == old
+  (loop,terminal,verdict,depth_bucket,unc) tuples + reachable_verdicts (differential
+  + regenerated goldens + DO diff). Whole-branch review clean.
+- Output shape CHANGED (user-approved): compressed cohorts vs old per-loop contexts;
+  pathCount now counts verdict-classes.
+
+### Deferred d1 follow-ups (non-blocking; 8020 already finishes)
+1. **Witness/uncertainty polish (~130s residual)**: `build_cohort_rep`'s full-chain
+   `path_uncertainties` walk for UNCERTAIN cohorts is the residual (certain cohorts
+   already skipped, ee07983). Eliminate by accumulating uncertainty-KIND-SETS in the
+   fixpoint (no walk) — output-identical, targets d1 ~10-30s. NEEDS A QUIET MACHINE
+   to validate (these detached 8020 runs swing +/-80s; sub-fixes unmeasurable against
+   that noise).
+2. **`affected_objects` bitmap-partition** (d1.rs ~1807): a `bm.iter()` loop over the
+   ~3.2M (loop,terminal) population, same shape C9 bitmap-partitioned for `by_rv`.
+3. **`finding.rs` LoopContext/StableLoopContext cleanup**: the superseded Task-5
+   per-loop schema is dead-in-practice but referenced from the generic
+   `project_finding` — removing needs a Finding/StableFinding schema change.
+4. **Global-arrival-cohort solver** (the "full" redesign, deferred): only if the
+   FIXPOINT ever becomes the bottleneck (currently 9.35s, fine).
+5. **Depth-semantics**: the 22,511 reached terminals include deep-chain findings
+   (arguably spurious SCC artifacts from no-depth-bound); a depth bound would cut
+   count + improve precision, but the user chose no-caps. Revisit only if the deep
+   findings prove noise on real triage.
+
+MEASUREMENT GOTCHAS (recorded so a fresh session doesn't re-learn them):
+`ALSEM_TRACE_DETAIL=hot` ALONE (not `stages,hot` — parse falls to Stages, gating
+off Hot counters). Detached `Start-Process`+sentinel (logs/run-det-d1only.ps1)
+survives the harness reaping background bash at ~30-90min. span names are BARE not
+cat-prefixed; `serde_json` sorts object keys (grep individual keys).
