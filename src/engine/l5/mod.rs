@@ -71,6 +71,12 @@ pub(crate) mod d1_liveness;
 // terminal-op). `process_group` stays the differential oracle; nothing wires
 // `solve_group` into `detect_d1` yet (D3+).
 pub(crate) mod d1_dataflow;
+// d1 cohort redesign Task C1 — the terminal bitmap-cohort SINK (`TerminalSink`,
+// `GroupBitmap`, `ContextKey`) that replaces `d1_dataflow::emit_lane_aggregates`'s
+// per-(loop, terminal) witness materialization. Exercised by the `d1_dataflow`
+// differential only; `detect_d1` stays on the old (`emit_lane_aggregates`) path
+// until the cohort cutover, so goldens are byte-stable.
+pub(crate) mod d1_cohort;
 // Shared event-flow substrate (al-sem `src/engine/event-flow.ts`) the d43/d44/d45
 // event-flow detectors consume. NO detectors yet — index + query + fan-out +
 // chain-walk substrate only.

@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`d1_cohort` — terminal bitmap-COHORT sink (`TerminalSink`) + `score_batch_to_sink`
+  emission** (`src/engine/l5/d1_cohort.rs`, `src/engine/l5/d1_dataflow.rs`, Task C1;
+  `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`).
+  The correctness spine + speed-critical change of the cohort redesign: replaces the
+  per-`(loop, terminal)` witness materialization (`emit_lane_aggregates` — 3.2M builds,
+  each a ~28k-hop predecessor walk, the ~8-hour Base App 8020 cost) with terminal
+  bitmap cohorts. `GroupBitmap` is a dense-lazy loop-set bitmap over `GroupIx`;
+  `ContextKey { severity, verdict, depth_bucket, unc }` is the per-`(terminal, class)`
+  identity (excludes loop); `TerminalSink` maps, per terminal, `ContextKey → GroupBitmap`
+  (which loops realize each class) + one bitmap per verdict (for `reachable_verdicts`).
+  `score_batch_to_sink` runs the SAME fixpoint + SAME running-best scan as `solve_batch`
+  but EMITS each lane's winner into the sink — no witness built. Because `best[lane]`
+  already picks ONE winner per `(terminal, loop)`, each loop lands in exactly ONE
+  `ContextKey` per terminal (the disjointness invariant, `insert`-asserted) — no
+  bitmap subtraction needed. A Hot-tier census (`emit_liveness_census`: ΣNeed /
+  max_need / nodes_with_need / static_reach_facts=6·nodes / static_value_facts=18·ΣNeed,
+  wired in `search_loops`; `emit_finalize_census`: total_cohorts / unique reached
+  terminals) is zero-cost when tracing is off. Proven by the `score_batch_to_sink_matches_old`
+  differential (7 fixtures — multi-group, physical-vs-temp, flowfield, 80-group
+  multi-batch, depth straddle, direct+transitive, uncertain-winner): `decompress(sink)`
+  equals `solve_batch`'s aggregates EXACTLY on coverage + verdict + depth_bucket + unc
+  + reachable_verdicts (witness NOT compared — it becomes a bounded representative in a
+  later task). `detect_d1` stays on the `solve_batch`/`emit_lane_aggregates` path, so all
+  five golden families are BYTE-IDENTICAL (`scripts/check-goldens` green, no regen).
 - **`d1_dataflow` — 64-lane BATCH solver (`solve_batch`) + call-SCC condensation
   (`condense`)** (`src/engine/l5/d1_dataflow.rs`, Task D3;
   `docs/superpowers/plans/2026-07-20-d1-dataflow-solver.md`,

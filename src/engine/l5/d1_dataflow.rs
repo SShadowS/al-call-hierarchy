@@ -68,6 +68,7 @@ use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
+use crate::engine::l5::d1_cohort::{BestRefLite, ContextKey, GroupIx, TerminalSink};
 use crate::engine::l5::d1_graph::{D1Graph, D1Seed, D1Terminal, NodeIx, edge_kind_binding_ok};
 use crate::engine::l5::d1_liveness::{Liveness, ParamTransfer};
 use crate::engine::l5::d1_reach::{
@@ -2209,6 +2210,483 @@ pub(crate) fn solve_batch<'a>(
     out
 }
 
+// ===========================================================================
+// Task C1 — the terminal bitmap-COHORT emission (`score_batch_to_sink`).
+//
+// The cohort-redesign SINK path: the SAME fixpoint + SAME running-best scan as
+// `solve_batch` above, but the winner per (lane, terminal) is EMITTED into a
+// [`TerminalSink`] cohort (a `ContextKey` + the loop's bit) instead of a
+// materialized `LoopTerminalAgg` witness. This is the speed-critical change —
+// no per-(loop, terminal) witness build, no ~28k-hop predecessor walk. `detect_d1`
+// stays on the `solve_batch`/`emit_lane_aggregates` path (goldens byte-stable);
+// this path is exercised ONLY by the `score_batch_to_sink_matches_old` differential
+// below until the cohort cutover, which proves `decompress(sink)` equals the old
+// aggregates on verdict / depth_bucket / unc / coverage / reachable_verdicts.
+// ===========================================================================
+
+/// Emit one cohort winner per PRESENT lane at one terminal key into `sink`:
+/// intern the terminal, then for each lane whose running-best is set, set the
+/// loop bit in the winner's [`ContextKey`] cohort + record each reaching verdict
+/// for `reachable_verdicts`. Mirrors [`emit_lane_aggregates`]'s
+/// present-lane-only iteration EXACTLY (a terminal with zero present lanes is
+/// never interned — it produces no aggregate in the old path either). The
+/// winner's `unc` bit is recovered from `rank.2` (the `unc == false` preference,
+/// `0` iff the winning fact/path is uncertain — identical to the old
+/// `!uncertainties.is_empty()`), and the representative's hop count from
+/// `rank.3` (`-(hops)`).
+fn sink_emit<'a>(
+    sink: &mut TerminalSink<'a>,
+    key: (&'a str, &'a str),
+    batch_base: usize,
+    lanes: usize,
+    best: &[Option<BestRef<'a>>; BATCH_WIDTH],
+    vmask: &[u64; 4],
+) {
+    if !best.iter().take(lanes).any(|b| b.is_some()) {
+        return;
+    }
+    let tix = sink.terminal_ix(key);
+    for (lane, slot) in best.iter().enumerate().take(lanes) {
+        let Some(b) = slot else {
+            continue;
+        };
+        let group = (batch_base + lane) as GroupIx;
+        let ctx = ContextKey {
+            severity: b.severity,
+            verdict: b.verdict,
+            depth_bucket: b.depth_bucket,
+            unc: b.rank.2 == 0,
+        };
+        let reachable = [
+            (vmask[0] >> lane) & 1 == 1,
+            (vmask[1] >> lane) & 1 == 1,
+            (vmask[2] >> lane) & 1 == 1,
+            (vmask[3] >> lane) & 1 == 1,
+        ];
+        let rep = BestRefLite {
+            hops: (-b.rank.3) as u32,
+        };
+        sink.insert(tix, group, ctx, reachable, rep);
+    }
+}
+
+/// Solve a BATCH of up to [`BATCH_WIDTH`] loop groups (as [`solve_batch`]) but
+/// emit the per-(lane, terminal) winners into `sink` as bitmap cohorts instead
+/// of materializing `LoopTerminalAgg` witnesses. `batch_base` = `bi *
+/// BATCH_WIDTH` (the batch index times the width): group `i` in `batch` is the
+/// GLOBAL group index `batch_base + i` — the same dense group id
+/// `search_loops`'s sorted `groups` vector assigns, so the sink's loop bits
+/// index that vector.
+///
+/// The fixpoint (seed + SCC drain) and the terminal-outer running-best scan are
+/// REPRODUCED verbatim from `solve_batch` — the redesign changes ONLY the
+/// emission, so keeping the scan identical is the correctness spine. The
+/// `score_batch_to_sink_matches_old` differential decompresses the sink and
+/// asserts equality with `solve_batch`'s aggregates.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn score_batch_to_sink<'a>(
+    graph: &D1Graph<'a>,
+    liveness: &Liveness,
+    scc: &CallScc,
+    seeds: &[D1Seed<'a>],
+    direct_ops: &[DirectOp<'a>],
+    ctx: &'a DetectorContext,
+    cw: &ClosedWorldTempParams,
+    plan: &TerminalPlan<'a>,
+    batch: &[GroupSpec<'a>],
+    batch_base: usize,
+    sink: &mut TerminalSink<'a>,
+) {
+    assert!(
+        batch.len() <= BATCH_WIDTH,
+        "a batch holds at most {BATCH_WIDTH} lanes"
+    );
+    let n_nodes = graph.node_ids.len();
+    let mut solver = BatchSolver::new(n_nodes);
+
+    let trace_hot = crate::engine::perf_trace::enabled(crate::engine::perf_trace::Detail::Hot);
+    let mut pops: u64 = 0;
+    let mut max_worklist: usize = 0;
+    if trace_hot {
+        crate::engine::perf_trace::counter_delta("d1.cohort.batch_seq", 1);
+    }
+
+    let unc_by_node: Vec<bool> = graph
+        .node_ids
+        .iter()
+        .map(|id| node_has_uncertainty(ctx, id))
+        .collect();
+    let expandable: Vec<bool> = graph
+        .node_ids
+        .iter()
+        .map(|id| ctx.routine_by_id.contains_key(id))
+        .collect();
+
+    let mut pending: Vec<Vec<Proposal>> = (0..scc.members.len()).map(|_| Vec::new()).collect();
+
+    // Rule 1: seed every lane's frontier (IDENTICAL to `solve_batch`).
+    for (lane, group) in batch.iter().enumerate() {
+        let bit = 1u64 << lane;
+        let root = root_state(group.loop_routine.id.as_str(), cw);
+        for &si in &group.seed_indices {
+            let seed = &seeds[si];
+            let entry = seed.entry;
+            let entry_id = graph.node_ids[entry as usize];
+            let binding_ok = edge_kind_binding_ok(seed.entry_edge_kind);
+            let entry_temp = cross_hop(
+                &root,
+                seed.loop_routine,
+                seed.callsite.id.as_str(),
+                entry_id,
+                binding_ok,
+                cw,
+            );
+            let depth = seed.seed_depth.min(2);
+            let unc = unc_by_node[entry as usize];
+            let entry_scc = scc.scc_of[entry as usize] as usize;
+            pending[entry_scc].push(Proposal::Reach {
+                node: entry,
+                depth,
+                unc,
+                mask: bit,
+                hops: 0,
+                pred: ReachPredB::Seed {
+                    seed_index: si as u32,
+                },
+            });
+            for (slot, &p) in liveness.need[entry as usize].iter().enumerate() {
+                let class = lookup(&entry_temp, p);
+                pending[entry_scc].push(Proposal::Value {
+                    node: entry,
+                    slot: slot as u16,
+                    class,
+                    depth,
+                    unc,
+                    mask: bit,
+                    hops: 0,
+                    pred: ValuePredB::Seed {
+                        seed_index: si as u32,
+                    },
+                });
+            }
+        }
+    }
+
+    // Rules 2-3: least-fixpoint over the SCC condensation (IDENTICAL).
+    for &scc_id in &scc.topo_order {
+        let mut queue = HopQueue::new();
+        for prop in std::mem::take(&mut pending[scc_id as usize]) {
+            queue.push(prop);
+        }
+        if trace_hot && queue.len() > max_worklist {
+            max_worklist = queue.len();
+        }
+        while let Some(prop) = queue.pop() {
+            if trace_hot {
+                pops += 1;
+                let wl = queue.len();
+                if wl > max_worklist {
+                    max_worklist = wl;
+                }
+            }
+            match prop {
+                Proposal::Reach {
+                    node,
+                    depth,
+                    unc,
+                    mask,
+                    hops,
+                    pred,
+                } => {
+                    let (idx, new_bits) = solver.commit_reach(node, depth, unc, mask, hops, pred);
+                    if new_bits == 0 || !expandable[node as usize] {
+                        continue;
+                    }
+                    for (k, edge) in graph.edges[node as usize].iter().enumerate() {
+                        let m = edge.to;
+                        let d2 = (depth + edge.loop_depth).min(2);
+                        let u2 = unc || unc_by_node[m as usize];
+                        let rnb = solver.reach_new_bits(m, d2, u2, new_bits);
+                        if rnb != 0 {
+                            route(
+                                Proposal::Reach {
+                                    node: m,
+                                    depth: d2,
+                                    unc: u2,
+                                    mask: rnb,
+                                    hops: hops + 1,
+                                    pred: ReachPredB::Hop {
+                                        pred: idx as u32,
+                                        from_node: node,
+                                        edge_k: k as u32,
+                                    },
+                                },
+                                scc_id,
+                                &scc.scc_of,
+                                &mut queue,
+                                &mut pending,
+                            );
+                        }
+                        for (callee_slot, transfer) in
+                            liveness.edge_transfers[node as usize][k].iter().enumerate()
+                        {
+                            if let ParamTransfer::Const(pt) = transfer {
+                                let vnb = solver.value_new_bits(
+                                    m,
+                                    callee_slot as u16,
+                                    *pt,
+                                    d2,
+                                    u2,
+                                    new_bits,
+                                );
+                                if vnb != 0 {
+                                    route(
+                                        Proposal::Value {
+                                            node: m,
+                                            slot: callee_slot as u16,
+                                            class: *pt,
+                                            depth: d2,
+                                            unc: u2,
+                                            mask: vnb,
+                                            hops: hops + 1,
+                                            pred: ValuePredB::HopFromReach {
+                                                pred: idx as u32,
+                                                from_node: node,
+                                                edge_k: k as u32,
+                                            },
+                                        },
+                                        scc_id,
+                                        &scc.scc_of,
+                                        &mut queue,
+                                        &mut pending,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Proposal::Value {
+                    node,
+                    slot,
+                    class,
+                    depth,
+                    unc,
+                    mask,
+                    hops,
+                    pred,
+                } => {
+                    let (idx, new_bits) =
+                        solver.commit_value(node, slot, class, depth, unc, mask, hops, pred);
+                    if new_bits == 0 || !expandable[node as usize] {
+                        continue;
+                    }
+                    for (k, edge) in graph.edges[node as usize].iter().enumerate() {
+                        let m = edge.to;
+                        let d2 = (depth + edge.loop_depth).min(2);
+                        let u2 = unc || unc_by_node[m as usize];
+                        for (callee_slot, transfer) in
+                            liveness.edge_transfers[node as usize][k].iter().enumerate()
+                        {
+                            if let ParamTransfer::Copy { caller_slot } = transfer
+                                && *caller_slot == slot
+                            {
+                                let vnb = solver.value_new_bits(
+                                    m,
+                                    callee_slot as u16,
+                                    class,
+                                    d2,
+                                    u2,
+                                    new_bits,
+                                );
+                                if vnb != 0 {
+                                    route(
+                                        Proposal::Value {
+                                            node: m,
+                                            slot: callee_slot as u16,
+                                            class,
+                                            depth: d2,
+                                            unc: u2,
+                                            mask: vnb,
+                                            hops: hops + 1,
+                                            pred: ValuePredB::HopFromValue {
+                                                pred: idx as u32,
+                                                from_node: node,
+                                                edge_k: k as u32,
+                                            },
+                                        },
+                                        scc_id,
+                                        &scc.scc_of,
+                                        &mut queue,
+                                        &mut pending,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if trace_hot {
+        let reach_facts = solver.reach_facts.len() as u64;
+        let value_facts = solver.value_facts.len() as u64;
+        let max_worklist = max_worklist as u64;
+        let lanes = batch.len() as u64;
+        let total_pops = pops;
+        crate::engine::perf_trace::instant_lazy("d1.cohort", "batch_summary", || {
+            serde_json::json!({
+                "lanes": lanes,
+                "pops": total_pops,
+                "max_worklist": max_worklist,
+                "reach_facts": reach_facts,
+                "value_facts": value_facts,
+            })
+        });
+    }
+
+    // Rules 4-7: score terminals + select winner PER LANE, then EMIT the winner
+    // as a cohort (no witness). The running-best scan is byte-for-byte the same
+    // as `solve_batch`'s; only the terminal loop's tail (`sink_emit` vs
+    // `emit_lane_aggregates`) differs.
+    let _scoring_span = crate::engine::perf_trace::span("d1.cohort", "scoring");
+    let lanes = batch.len();
+
+    let mut direct_by_key: HashMap<(&'a str, &'a str), Vec<DirectCand<'a>>> = HashMap::new();
+    for (lane, group) in batch.iter().enumerate() {
+        let root = root_state(group.loop_routine.id.as_str(), cw);
+        for &di in &group.direct_indices {
+            let d = &direct_ops[di];
+            let op = d.op;
+            let owner = d.routine;
+            let base_pt = resolve_terminal(op, &root, owner.id.as_str(), cw);
+            let verdict = flowfield_verdict(base_pt, op, &ctx.table_by_id);
+            let local_depth = op.loop_stack.len() as i64;
+            let depth_bucket = local_depth.min(2);
+            let is_singleton = is_setup_singleton_get(op, Some(owner), &ctx.table_by_id);
+            let severity = severity_for(op, verdict, depth_bucket, is_singleton);
+            direct_by_key
+                .entry((owner.id.as_str(), op.id.as_str()))
+                .or_default()
+                .push(DirectCand {
+                    lane,
+                    verdict,
+                    severity,
+                    depth_bucket,
+                    rank: rank5(severity, verdict, false, 0, depth_bucket),
+                    routine: owner,
+                    loop_info: d.loop_info,
+                    op,
+                    local_depth,
+                });
+        }
+    }
+
+    let mut consumed_direct_keys: HashSet<(&'a str, &'a str)> = HashSet::new();
+
+    for entry in &plan.entries {
+        let node = entry.node;
+        if solver.reach_at[node as usize].is_empty() && solver.value_at[node as usize].is_empty() {
+            continue;
+        }
+        let key = (entry.owner.id.as_str(), entry.op.id.as_str());
+        let mut best: [Option<BestRef<'a>>; BATCH_WIDTH] = [None; BATCH_WIDTH];
+        let mut vmask = [0u64; 4];
+
+        if let Some(cands) = direct_by_key.get(&key) {
+            for c in cands {
+                fold_direct(c, &mut best, &mut vmask);
+            }
+            consumed_direct_keys.insert(key);
+        }
+
+        match &entry.read {
+            ReadPlan::Reach {
+                verdict,
+                sev_by_bucket,
+            } => {
+                let verdict = *verdict;
+                for &ri in &solver.reach_at[node as usize] {
+                    let f = &solver.reach_facts[ri];
+                    let db = (f.depth + entry.local_depth).min(2);
+                    let severity = sev_by_bucket[db as usize];
+                    vmask[verdict as usize] |= f.mask;
+                    let sev_r = sev_rank(severity);
+                    let q = verdict.quality();
+                    let unc_pref = if f.unc { 0 } else { 1 };
+                    let hops = &solver.reach_hops[ri];
+                    let mut m = f.mask;
+                    while m != 0 {
+                        let lane = m.trailing_zeros() as usize;
+                        m &= m - 1;
+                        let rank = (sev_r, q, unc_pref, -(hops[lane] as i64), db);
+                        if best[lane].is_none_or(|b| rank > b.rank) {
+                            best[lane] = Some(BestRef {
+                                rank,
+                                verdict,
+                                severity,
+                                depth_bucket: db,
+                                source: BestSource::Reach { fact_ix: ri },
+                            });
+                        }
+                    }
+                }
+            }
+            ReadPlan::Value {
+                slot,
+                verdict_by_class,
+                sev_by_class_bucket,
+            } => {
+                let slot = *slot;
+                for &vi in &solver.value_at[node as usize] {
+                    let f = &solver.value_facts[vi];
+                    if f.slot != slot {
+                        continue;
+                    }
+                    let ci = f.class as usize;
+                    let verdict = verdict_by_class[ci];
+                    let db = (f.depth + entry.local_depth).min(2);
+                    let severity = sev_by_class_bucket[ci][db as usize];
+                    vmask[verdict as usize] |= f.mask;
+                    let sev_r = sev_rank(severity);
+                    let q = verdict.quality();
+                    let unc_pref = if f.unc { 0 } else { 1 };
+                    let hops = &solver.value_hops[vi];
+                    let mut m = f.mask;
+                    while m != 0 {
+                        let lane = m.trailing_zeros() as usize;
+                        m &= m - 1;
+                        let rank = (sev_r, q, unc_pref, -(hops[lane] as i64), db);
+                        if best[lane].is_none_or(|b| rank > b.rank) {
+                            best[lane] = Some(BestRef {
+                                rank,
+                                verdict,
+                                severity,
+                                depth_bucket: db,
+                                source: BestSource::Value { fact_ix: vi },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        sink_emit(sink, key, batch_base, lanes, &best, &vmask);
+    }
+
+    for (key, cands) in &direct_by_key {
+        if consumed_direct_keys.contains(key) {
+            continue;
+        }
+        let mut best: [Option<BestRef<'a>>; BATCH_WIDTH] = [None; BATCH_WIDTH];
+        let mut vmask = [0u64; 4];
+        for c in cands {
+            fold_direct(c, &mut best, &mut vmask);
+        }
+        sink_emit(sink, *key, batch_base, lanes, &best, &vmask);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3461,5 +3939,350 @@ mod tests {
         // The two dataflow engines agree with the oracle on all six components
         // (now including the canonical, discovery-independent depth_bucket).
         assert_agrees(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    // === Task C1: the terminal bitmap-COHORT differential (the spine) ======
+    // For every fixture, run BOTH the old `solve_batch`/`emit_lane_aggregates`
+    // path (Vec<LoopTerminalAgg>) AND the new `score_batch_to_sink` cohort path
+    // over the SAME chunked batches. DECOMPRESS the sink — for each (loop=group,
+    // terminal) recover its ctx (verdict, depth_bucket, unc) + reachable_verdicts
+    // — and assert it EQUALS the old aggregate's on coverage + verdict +
+    // depth_bucket + unc + reachable_verdicts. Witness is NOT compared
+    // (representative, bounded). Non-vacuous (asserts > 0 pairs).
+
+    /// The decompressed / old per-(loop, terminal) tuple compared by the
+    /// differential: (winner verdict, depth_bucket, unc, reachable_verdicts).
+    type CohortRow = (TempVerdict, i64, bool, Vec<TempVerdict>);
+
+    fn assert_sink_matches_old(
+        graph: &D1Graph,
+        seeds: &[D1Seed],
+        direct_ops: &[DirectOp],
+        ctx: &DetectorContext,
+        cw: &ClosedWorldTempParams,
+    ) {
+        use crate::engine::l5::d1_cohort::{
+            TerminalSink, emit_finalize_census, emit_liveness_census, reachable_verdicts_of,
+        };
+
+        let liveness = compute_liveness(graph, ctx, cw);
+        // Exercise the Hot-tier census helpers (no-ops with tracing off, but this
+        // keeps them compiled + called on the C1 path).
+        emit_liveness_census(&liveness, graph.node_ids.len());
+        let scc = condense(graph);
+        let plan = build_terminal_plan(graph, &liveness, ctx, cw);
+
+        // Group EXACTLY as `search_loops` does (sorted BTreeMap order == the
+        // global lane/group assignment).
+        let mut groups: BTreeMap<(&str, &str), GroupSpec> = BTreeMap::new();
+        for (i, seed) in seeds.iter().enumerate() {
+            groups
+                .entry((seed.loop_routine.id.as_str(), seed.loop_id))
+                .or_insert_with(|| GroupSpec {
+                    loop_routine: seed.loop_routine,
+                    loop_id: seed.loop_id,
+                    loop_info: seed.loop_info,
+                    seed_indices: Vec::new(),
+                    direct_indices: Vec::new(),
+                })
+                .seed_indices
+                .push(i);
+        }
+        for (i, d) in direct_ops.iter().enumerate() {
+            groups
+                .entry((d.routine.id.as_str(), d.loop_id))
+                .or_insert_with(|| GroupSpec {
+                    loop_routine: d.routine,
+                    loop_id: d.loop_id,
+                    loop_info: d.loop_info,
+                    seed_indices: Vec::new(),
+                    direct_indices: Vec::new(),
+                })
+                .direct_indices
+                .push(i);
+        }
+        let group_vec: Vec<GroupSpec> = groups.into_values().collect();
+
+        // (loop_routine_id, loop_id) -> the GLOBAL group index (its position in
+        // the sorted group vector == `batch_base + lane`).
+        let mut group_ix: HashMap<(String, String), u32> = HashMap::new();
+        for (i, g) in group_vec.iter().enumerate() {
+            group_ix.insert((g.loop_routine.id.clone(), g.loop_id.to_string()), i as u32);
+        }
+
+        // OLD path: aggregate via `solve_batch` per chunk.
+        let mut old_aggs: Vec<LoopTerminalAgg> = Vec::new();
+        for chunk in group_vec.chunks(BATCH_WIDTH) {
+            old_aggs.extend(solve_batch(
+                graph, &liveness, &scc, seeds, direct_ops, ctx, cw, &plan, chunk,
+            ));
+        }
+
+        // NEW path: emit into the cohort sink per chunk (batch_base = bi * WIDTH).
+        let mut sink = TerminalSink::new(plan.entries.len(), group_vec.len());
+        for (bi, chunk) in group_vec.chunks(BATCH_WIDTH).enumerate() {
+            score_batch_to_sink(
+                graph,
+                &liveness,
+                &scc,
+                seeds,
+                direct_ops,
+                ctx,
+                cw,
+                &plan,
+                chunk,
+                bi * BATCH_WIDTH,
+                &mut sink,
+            );
+        }
+        let cohorts = sink.finalize();
+        emit_finalize_census(&cohorts);
+
+        // DECOMPRESS the sink: (group, owner_id, op_id) -> the cohort tuple.
+        let mut new_map: HashMap<(u32, String, String), CohortRow> = HashMap::new();
+        for tc in &cohorts {
+            let (owner, op) = tc.key;
+            for (ck, bm, _rep) in &tc.cohorts {
+                for g in bm.iter() {
+                    let reachable = reachable_verdicts_of(&tc.verdict_sets, g);
+                    let prev = new_map.insert(
+                        (g, owner.to_string(), op.to_string()),
+                        (ck.verdict, ck.depth_bucket, ck.unc, reachable),
+                    );
+                    assert!(
+                        prev.is_none(),
+                        "sink decompress: loop {g} appears twice at terminal {owner}/{op} \
+                         (disjointness — a loop must land in ONE ctx per terminal)"
+                    );
+                }
+            }
+        }
+
+        // OLD tuples: one per (loop, terminal). `unc` is recovered the same way
+        // the existing solve_group/solve_batch differentials do (component 6 ==
+        // the winner path crossed an uncertain node == non-empty uncertainty
+        // union).
+        let mut old_map: HashMap<(u32, String, String), CohortRow> = HashMap::new();
+        for a in &old_aggs {
+            let g = *group_ix
+                .get(&(a.loop_routine.id.clone(), a.loop_id.to_string()))
+                .expect("every aggregate's loop is a known group");
+            let owner = a.terminal.owner.id.clone();
+            let op = a.terminal.op.id.clone();
+            let unc = !a.uncertainties.is_empty();
+            let prev = old_map.insert(
+                (g, owner, op),
+                (a.verdict, a.depth_bucket, unc, a.reachable_verdicts.clone()),
+            );
+            assert!(
+                prev.is_none(),
+                "old aggregates hold exactly one per (loop, terminal)"
+            );
+        }
+
+        assert!(
+            !old_map.is_empty(),
+            "differential must be non-vacuous (> 0 (loop, terminal) pairs)"
+        );
+
+        // Coverage: the (loop, terminal) key sets are identical.
+        let old_keys: std::collections::BTreeSet<_> = old_map.keys().cloned().collect();
+        let new_keys: std::collections::BTreeSet<_> = new_map.keys().cloned().collect();
+        assert_eq!(
+            old_keys, new_keys,
+            "coverage: sink (loop, terminal) pairs differ from the old aggregates"
+        );
+
+        // verdict / depth_bucket / unc / reachable_verdicts identical per pair.
+        for (k, ov) in &old_map {
+            assert_eq!(
+                &new_map[k], ov,
+                "decompressed cohort tuple diverged from the old aggregate at (loop, terminal) {k:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sink_matches_old_multi_group() {
+        let (routines, graph_edges, summaries) = multi_group_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let r4_idx = routines.iter().position(|r| r.id == "R4").unwrap();
+        let direct_ops = vec![DirectOp {
+            routine: &routines[r4_idx],
+            loop_id: routines[r4_idx].loops[0].id.as_str(),
+            loop_info: &routines[r4_idx].loops[0],
+            op: &routines[r4_idx].record_operations[0],
+        }];
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &direct_ops, &ctx, &cw);
+    }
+
+    #[test]
+    fn sink_matches_old_temp_vs_physical() {
+        let (routines, graph_edges, summaries) = temp_vs_physical_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    #[test]
+    fn sink_matches_old_flowfield_tie() {
+        let (routines, graph_edges, summaries) = flowfield_tie_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    #[test]
+    fn sink_matches_old_many_groups_multi_batch() {
+        // 80 groups -> two chunks (64 + 16): exercises `batch_base` threading +
+        // cross-batch terminal interning (shared terminal T reached in both).
+        let (routines, graph_edges, summaries) = many_groups_fixture(80);
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        assert_eq!(seeds.len(), 80);
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    #[test]
+    fn sink_matches_old_depth_straddle() {
+        let (routines, graph_edges, summaries) = straddle_fixture();
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &[], &ctx, &cw);
+    }
+
+    #[test]
+    fn sink_matches_old_direct_and_transitive() {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        r.record_operations = vec![record_op(
+            "R/T",
+            "FindSet",
+            "Rec",
+            Some("t/R"),
+            vec!["R/loop0".to_string()],
+            false,
+        )];
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![call_site("A/csR", "R", vec!["A/loop0".to_string()])];
+        let routines = vec![r, a];
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![edge_kind("A", "R", "A/csR", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = [
+            ("A".to_string(), db_summary("A", "t/A")),
+            ("R".to_string(), db_summary("R", "t/R")),
+        ]
+        .into_iter()
+        .collect();
+
+        let ctx = minimal_ctx(&routines, graph_edges, summaries);
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let direct_ops = vec![DirectOp {
+            routine: &routines[0],
+            loop_id: routines[0].loops[0].id.as_str(),
+            loop_info: &routines[0].loops[0],
+            op: &routines[0].record_operations[0],
+        }];
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &direct_ops, &ctx, &cw);
+    }
+
+    #[test]
+    fn sink_matches_old_uncertain_winner() {
+        use crate::engine::l4::summary::Uncertainty;
+
+        // The deep A->X->Y->T route wins on severity; node X is uncertain, so the
+        // winner's `unc` bit is TRUE — the one fixture that drives component 6 to
+        // true, proving the cohort ctx `unc` matches the old `!uncertainties`.
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![
+            call_site("A/csT", "T", vec![]),
+            call_site("A/csX", "X", vec!["A/loop0".to_string()]),
+        ];
+        let x = routine("X", "procedure");
+        let y = routine("Y", "procedure");
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+        let routines = vec![r, a, x, y, t];
+
+        let mut graph_edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        graph_edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        graph_edges.insert(
+            "A".to_string(),
+            vec![
+                edge_kind("A", "T", "A/csT", "direct"),
+                edge_kind("A", "X", "A/csX", "direct"),
+            ],
+        );
+        graph_edges.insert(
+            "X".to_string(),
+            vec![edge_kind("X", "Y", "X/csY", "direct")],
+        );
+        graph_edges.insert(
+            "Y".to_string(),
+            vec![edge_kind("Y", "T", "Y/csT", "direct")],
+        );
+        let summaries: HashMap<String, FullRoutineSummary> = ["A", "X", "Y", "T"]
+            .iter()
+            .map(|id| (id.to_string(), db_summary(id, &format!("t/{id}"))))
+            .collect();
+
+        let mut ctx = minimal_ctx(&routines, graph_edges, summaries);
+        ctx.uncertainties_by_node.insert(
+            "X".to_string(),
+            vec![Uncertainty {
+                kind: "dynamic-dispatch".to_string(),
+                callsite_id: None,
+                operation_id: None,
+                routine_id: Some("X".to_string()),
+                interface_name: None,
+            }],
+        );
+
+        let workspace = ws(&routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(&ctx, &workspace, &mut memo);
+        let cw = ClosedWorldTempParams::new();
+        assert_sink_matches_old(&graph, &seeds, &[], &ctx, &cw);
     }
 }

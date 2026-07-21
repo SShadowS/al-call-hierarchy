@@ -689,6 +689,9 @@ pub(crate) fn search_loops<'a>(
     let g_lv = crate::engine::perf_trace::span("d1", "compute_liveness");
     let liveness = compute_liveness(graph, ctx, cw);
     drop(g_lv);
+    // Hot-tier static-cost census (ΣNeed / static fact bounds) — zero cost off,
+    // no effect on the emitted aggregates (goldens unaffected).
+    crate::engine::l5::d1_cohort::emit_liveness_census(&liveness, graph.node_ids.len());
     let g_cd = crate::engine::perf_trace::span("d1", "condense");
     let scc = condense(graph);
     drop(g_cd);
@@ -728,6 +731,7 @@ pub(crate) fn search_loops<'a>(
     let mut cumulative_ms: u64 = 0;
     for (bi, batch) in groups.chunks(BATCH_WIDTH).enumerate() {
         let t0 = trace_hot.then(std::time::Instant::now);
+        let n_before = out.len();
         out.extend(solve_batch(
             graph, &liveness, &scc, seeds, direct_ops, ctx, cw, &plan, batch,
         ));
@@ -735,6 +739,15 @@ pub(crate) fn search_loops<'a>(
             cumulative_ms += t0.elapsed().as_millis() as u64;
             crate::engine::perf_trace::counter("d1.reach.batches_done", (bi + 1) as u64);
             crate::engine::perf_trace::counter("d1.reach.cumulative_ms", cumulative_ms);
+            // OUTPUT-VOLUME signal: cumulative + per-batch (loop, terminal-op)
+            // aggregate count. Tens of millions ⇒ the run is OUTPUT-BOUND (one
+            // context per reaching loop at Base-App reachability density), not
+            // compute-bound.
+            crate::engine::perf_trace::counter("d1.reach.aggregates_so_far", out.len() as u64);
+            crate::engine::perf_trace::counter(
+                "d1.reach.batch_aggregates",
+                (out.len() - n_before) as u64,
+            );
         }
     }
 
