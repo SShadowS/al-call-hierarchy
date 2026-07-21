@@ -16,8 +16,17 @@ use std::collections::HashMap;
 
 use al_call_hierarchy::engine::l4::summary::RoutineSummary;
 use al_call_hierarchy::engine::l4::summary_runner::{
-    compute_summaries_v2_with_leaves, compute_summaries_with_leaves,
+    FieldIndex, compute_summaries_v2_with_leaves, compute_summaries_with_leaves,
 };
+
+// Task 9 (l4-summary-fixpoint-redesign): the CDO_WS/ENFORCE_CDO_WS gating helper
+// lives in `tests/common/cdo.rs` (shared with `program_resolve_harness.rs` and
+// siblings) — separate test-binary crates can't `use` each other's `mod`s, so
+// every CDO-gated test file includes it via `#[path]`. See that file's doc
+// comment for the skip/panic contract.
+#[path = "common/cdo.rs"]
+mod cdo;
+use cdo::cdo_ws_or_enforce;
 
 /// Compare v2 against the old Jacobi solver over the COMPLETE `RoutineSummary`,
 /// with no fixed leaves.
@@ -91,6 +100,236 @@ fn parity_fixed_leaf_in_scc() {
 #[test]
 fn parity_missing_routine_in_scc() {
     assert_parity("missing_routine_in_scc");
+}
+
+// ---------------------------------------------------------------------------
+// Task 9: the real-corpus whole-program v2 parity gate.
+// ---------------------------------------------------------------------------
+
+/// Returns a short, focused description of the FIRST field at which two
+/// `RoutineSummary`s diverge — used by [`cdo_whole_program_v2_parity`]'s
+/// mismatch diagnostic instead of dumping both complete summaries raw (a real
+/// workspace's `db_effects`/`uncertainties` lists can be long; this walks each
+/// list element-by-element and reports only the first differing entry, or a
+/// length mismatch, whichever comes first).
+fn first_diff_field(old: &RoutineSummary, new: &RoutineSummary) -> String {
+    if old.db_effects.len() != new.db_effects.len() {
+        return format!(
+            "db_effects length differs: old={} new={}",
+            old.db_effects.len(),
+            new.db_effects.len()
+        );
+    }
+    for (i, (o, n)) in old.db_effects.iter().zip(new.db_effects.iter()).enumerate() {
+        if o != n {
+            return format!("db_effects[{i}] differs: old={o:?} new={n:?}");
+        }
+    }
+    if old.in_recursive_cycle != new.in_recursive_cycle {
+        return format!(
+            "in_recursive_cycle differs: old={} new={}",
+            old.in_recursive_cycle, new.in_recursive_cycle
+        );
+    }
+    if old.has_unresolved_calls != new.has_unresolved_calls {
+        return format!(
+            "has_unresolved_calls differs: old={} new={}",
+            old.has_unresolved_calls, new.has_unresolved_calls
+        );
+    }
+    if old.uncertainties.len() != new.uncertainties.len() {
+        return format!(
+            "uncertainties length differs: old={} new={}",
+            old.uncertainties.len(),
+            new.uncertainties.len()
+        );
+    }
+    for (i, (o, n)) in old
+        .uncertainties
+        .iter()
+        .zip(new.uncertainties.iter())
+        .enumerate()
+    {
+        if o != n {
+            return format!("uncertainties[{i}] differs: old={o:?} new={n:?}");
+        }
+    }
+    if old.parameter_roles.len() != new.parameter_roles.len() {
+        return format!(
+            "parameter_roles length differs: old={} new={}",
+            old.parameter_roles.len(),
+            new.parameter_roles.len()
+        );
+    }
+    for (i, (o, n)) in old
+        .parameter_roles
+        .iter()
+        .zip(new.parameter_roles.iter())
+        .enumerate()
+    {
+        if o != n {
+            return format!("parameter_roles[{i}] differs: old={o:?} new={n:?}");
+        }
+    }
+    "RoutineSummary != by derived PartialEq but no per-field comparison above caught it \
+     (should be unreachable — report as an engine bug)"
+        .to_string()
+}
+
+/// The real-workspace parity gate (Task 9, l4-summary-fixpoint-redesign Phase 1
+/// capstone): assembles a REAL Business Central workspace (`CDO_WS`) into the
+/// exact `(routines, graph, scc, upgraded_bindings, fields, leaf_summaries)`
+/// tuple both `compute_summaries_with_leaves` (old JACOBI) and
+/// `compute_summaries_v2_with_leaves` (new closed-form solver) take, runs BOTH
+/// over the SAME inputs, and asserts complete-`RoutineSummary` parity — incl.
+/// `db_effects` (and its `record_variable_id`), `uncertainties`,
+/// `has_unresolved_calls`, `parameter_roles`, `in_recursive_cycle` — for EVERY
+/// routine in the workspace.
+///
+/// This is the ONLY place Phase 1's synthetic-fixture parity (all ten fixtures
+/// in this file use `record_variable_id: None`) gets checked at real scale: a
+/// real workspace's `L3RecordOperation.record_variable_id` is frequently
+/// `Some(..)`, so this is where a `record_variable_id` divergence between the
+/// two solvers would actually surface.
+///
+/// ## Assembly
+///
+/// The six inputs are built by replaying — in the SAME order, via the SAME
+/// public functions — exactly the sequence `build_detector_context`'s
+/// `CORE_SUMMARIES` substrate uses (`src/engine/l5/detector_context.rs`,
+/// roughly lines 236-517): `SymbolTable::build` → `resolve_calls` (no deps, no
+/// fetched apps — matches the source-only detector-context path) →
+/// `build_event_graph` → `build_combined_graph` → a Tarjan SCC over
+/// `graph.edges_by_from` → the `(tableId, lowercased field name) -> fieldId`
+/// `FieldIndex`. `leaf_summaries` is the empty map, exactly like
+/// `build_detector_context`'s own `compute_summaries(...)` call (which always
+/// passes `&no_leaves` — see `summary_runner::compute_summaries`). This makes
+/// the graph/SCC/bindings/fields fed to both solvers here BYTE-IDENTICAL to
+/// what a real `alsem`/`aldump` run feeds the production `compute_summaries`
+/// call — not a hand-built graph — while still calling the two solver entry
+/// points directly (so this test, not `DetectorContext`, owns the comparison).
+///
+/// ## record_variable_id out-of-contract proof
+///
+/// `PDbEffect` (`src/engine/l4/summary.rs:211`, the serde-projected `DbEffect`)
+/// OMITS `record_variable_id` — it is carried on the internal `DbEffect` (used
+/// by `RoutineSummary`/this differential) but never reaches the projected
+/// surface any consumer serializes. A repo-wide grep for readers —
+/// ```text
+/// rg -n "record_variable_id" src/engine/l5 src/engine/l4 | rg -v "None|test_support|: Option<String>"
+/// ```
+/// — turns up ONLY: (a) `DbEffect`/`RoutineSummary` CONSTRUCTOR sites in
+/// `summary_runner.rs` (old solver) and `db_effect_solver.rs` (new solver) —
+/// i.e. the two solvers this test already differentials against each other,
+/// and (b) same-NAMED-but-different fields on unrelated structs
+/// (`L3RecordOperation.record_variable_id` read by `capability_cone.rs` /
+/// `cfg_walker.rs`, `PCallArgumentBinding.source_record_variable_id` read by
+/// `d37.rs`/`d40.rs`, `CapabilityExtra::Table.record_variable_id` read by
+/// `snapshot.rs` — all capability-cone-family fields, never
+/// `RoutineSummary.db_effects[].record_variable_id`). Zero hits read the
+/// summary's `DbEffect.record_variable_id` back out. The complete-`RoutineSummary`
+/// `assert_eq!` below already guards the field regardless of this proof — this
+/// doc comment just records WHY a hypothetical divergence there could not reach
+/// any l5 consumer today.
+///
+/// Skips (no-op) when `CDO_WS` is unset; PANICS when `ENFORCE_CDO_WS=1` is set
+/// alongside a missing/invalid `CDO_WS` (`tests/common/cdo.rs`). Run against a
+/// real workspace with:
+/// ```text
+/// CDO_WS=<path> cargo test -p al-call-hierarchy --test l4_summary_differential cdo_ -- --nocapture
+/// ```
+#[test]
+fn cdo_whole_program_v2_parity() {
+    use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
+    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+    use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
+    use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
+
+    let Some(ws_path) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    let resolved = assemble_and_resolve_workspace_default(&ws_path)
+        .expect("assemble_and_resolve_workspace_default must succeed on CDO_WS");
+    let ws = &resolved.workspace;
+
+    // --- Assemble the SAME (graph, scc, upgraded_bindings, fields) the
+    // detector-context CORE_SUMMARIES path builds — see the doc comment above. ---
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+    let event_graph = build_event_graph(&ws.routines, &symbols);
+    let graph = build_combined_graph(ws, &calls, &event_graph);
+
+    let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, list) in &graph.edges_by_from {
+        scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+    }
+    let scc = tarjan_scc(&SccInputGraph {
+        nodes: &graph.nodes,
+        edges_by_from: &scc_adjacency,
+    });
+
+    let mut field_index: FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+
+    let leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+
+    // --- Run BOTH solvers over the identical inputs. ---
+    let (old, _trace, _cap_diagnostics) = compute_summaries_with_leaves(
+        &ws.routines,
+        &graph,
+        &scc,
+        &calls.upgraded_bindings,
+        &field_index,
+        false,
+        &leaf_summaries,
+    );
+    let new = compute_summaries_v2_with_leaves(
+        &ws.routines,
+        &graph,
+        &scc,
+        &calls.upgraded_bindings,
+        &field_index,
+        &leaf_summaries,
+    );
+
+    assert_eq!(
+        old.len(),
+        new.len(),
+        "cdo_whole_program_v2_parity: routine count mismatch (old={}, new={})",
+        old.len(),
+        new.len()
+    );
+
+    let mut mismatches: Vec<String> = Vec::new();
+    for (id, old_s) in &old {
+        match new.get(id) {
+            None => mismatches.push(format!("{id}: missing from v2 output")),
+            Some(new_s) if old_s != new_s => {
+                mismatches.push(format!("{id}: {}", first_diff_field(old_s, new_s)));
+            }
+            Some(_) => {}
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "cdo_whole_program_v2_parity: {} of {} routine(s) diverged between old and v2:\n{}",
+        mismatches.len(),
+        old.len(),
+        mismatches.join("\n")
+    );
 }
 
 /// Fixture builders for the differential harness above. Each named fixture
