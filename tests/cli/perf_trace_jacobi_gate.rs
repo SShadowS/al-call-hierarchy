@@ -24,6 +24,24 @@
 //! `ALSEM_TRACE_SCC_MIN=3` (above the SCC's size) proves the decoupling: the
 //! per-SCC span must be ABSENT (2 < 3) while `jacobi.pass` counters must be
 //! PRESENT (the SCC is genuinely recursive, tier is enabled).
+//!
+//! RETIRED at the l4-summary-fixpoint-redesign CUTOVER (Task 10). The `alsem
+//! analyze` production path now resolves db-effect summaries through the
+//! closed-form v2 solver (`compute_summaries_v2` at `detector_context.rs`),
+//! which runs NO db_effects JACOBI — its roles-only fixpoint
+//! (`run_one_scc_roles`) deliberately drops the `Detail::Jacobi` per-pass
+//! (`jacobi.pass`) / per-SCC-span (`jacobi.scc.*`) instrumentation, and the
+//! db_effects path is closed-form (no per-pass trajectory at all). So the
+//! population counters these tests assert are, by design, absent on the analyze
+//! path. The split-gate fix they gated still lives in the OLD `run_one_scc`
+//! (retained as the differential oracle in `tests/l4_summary_differential.rs`),
+//! but that solver is no longer reachable from a trace-emitting CLI (`aldump`,
+//! its only other consumer via `run_and_project`, wires no trace sink). These
+//! per-pass-trajectory gates are therefore obsolete on the production path;
+//! `#[ignore]`d (not deleted) pending an orchestrator decision on whether to
+//! fully retire them or re-express the split-gate coverage against the old
+//! solver directly. See the plan's Task 10 Step 2 ("update/retire the
+//! trace-oracle test").
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -54,6 +72,9 @@ fn trace_events(path: &std::path::Path) -> Vec<serde_json::Value> {
 }
 
 #[test]
+#[ignore = "RETIRED at l4-summary-fixpoint-redesign cutover: alsem analyze now runs the \
+            closed-form v2 solver (no db_effects JACOBI), so Detail::Jacobi jacobi.pass/jacobi.scc.* \
+            counters are absent on the production path by design. See module doc."]
 fn jacobi_pass_counters_fire_below_scc_min_while_span_stays_gated() {
     let ws = fixture("ws-recursive");
     assert!(ws.is_dir(), "fixture missing: {}", ws.display());
@@ -107,6 +128,9 @@ fn jacobi_pass_counters_fire_below_scc_min_while_span_stays_gated() {
 /// span and the per-pass counters must fire — the size gate only ever removes
 /// the span, never the population data.
 #[test]
+#[ignore = "RETIRED at l4-summary-fixpoint-redesign cutover: alsem analyze now runs the \
+            closed-form v2 solver (no db_effects JACOBI), so Detail::Jacobi jacobi.pass/jacobi.scc.* \
+            counters are absent on the production path by design. See module doc."]
 fn jacobi_span_also_fires_once_scc_min_is_at_or_below_actual_size() {
     let ws = fixture("ws-recursive");
     assert!(ws.is_dir(), "fixture missing: {}", ws.display());

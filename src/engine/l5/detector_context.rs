@@ -34,7 +34,7 @@ use crate::engine::l4::capability_cone::{
 use crate::engine::l4::combined_graph::{CombinedGraph, build_combined_graph};
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
-use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries};
+use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2};
 use crate::engine::l5::entry_points::AccessModifier;
 use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
@@ -507,7 +507,11 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                     .or_insert_with(|| field.id.clone());
             }
         }
-        let (core_summaries, _trace, summarize_diagnostics) = compute_summaries(
+        // v2 db-effect solver (Phase-1-parity). `summarize_diagnostics` now carries
+        // the ROLES fixpoint's cap-hit backstop (empty on the corpus — roles
+        // converge); the db_effects path is closed-form and never caps. `_trace` is
+        // always empty (v2 is trace-free).
+        let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_v2(
             &ws.routines,
             &graph,
             &scc,
@@ -647,7 +651,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 pub(crate) fn build_detector_context_cross_app(
     base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
 ) -> DetectorContext<'_> {
-    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
+    use crate::engine::l4::summary_runner::compute_summaries_v2_with_leaves;
 
     let ws_routines = &base.ws_routines;
     let dep_routine_ids = &base.dep_routine_ids;
@@ -766,9 +770,11 @@ pub(crate) fn build_detector_context_cross_app(
             .push(ue.uncertainty.clone());
     }
 
-    // Core summaries (JACOBI WITH dep leaves) for the path-walker uncertainty union +
-    // parameter roles — same as project_r3a5_cross_app's core.
-    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_with_leaves(
+    // Core summaries (v2 db-effect solver WITH dep leaves, Phase-1-parity) for the
+    // path-walker uncertainty union + parameter roles — same as
+    // project_r3a5_cross_app's core. `summarize_diagnostics` carries the roles
+    // fixpoint's cap-hit backstop (empty on the corpus); `_trace` is always empty.
+    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_v2_with_leaves(
         ws_routines,
         &graph,
         &base.combined_scc,

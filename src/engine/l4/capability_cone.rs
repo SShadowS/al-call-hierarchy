@@ -2074,7 +2074,7 @@ fn compute_uncertainty_coverage_reasons(
     graph: &CombinedGraph,
     calls: &crate::engine::l3::call_resolver::ResolvedCalls,
 ) -> HashMap<String, BTreeSet<String>> {
-    use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries};
+    use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2};
 
     // Tarjan SCC over the COMBINED graph (summary substrate — distinct from the
     // typed-edge SCC the cone walks).
@@ -2097,7 +2097,9 @@ fn compute_uncertainty_coverage_reasons(
         }
     }
 
-    let (summaries, _, _) = compute_summaries(
+    // v2 db-effect solver (Phase-1-parity; empty trace + roles-cap diagnostics —
+    // both ignored here). Only `uncertainties` are read below.
+    let (summaries, _, _) = compute_summaries_v2(
         &ws.routines,
         graph,
         &scc,
@@ -2563,7 +2565,7 @@ pub fn project_r3a5_cross_app(
     model_instance_id: &str,
     fixture_name: &str,
 ) -> R3a5FullSummaryProjection {
-    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
+    use crate::engine::l4::summary_runner::compute_summaries_v2_with_leaves;
 
     let empty = R3a5FullSummaryProjection {
         fixture_name: fixture_name.to_string(),
@@ -2583,8 +2585,9 @@ pub fn project_r3a5_cross_app(
     let event_graph = &base.event_graph;
     let direct_full = &base.direct_full;
 
-    // From-scratch core (JACOBI) + cone over the assembled base.
-    let (core_summaries, _, _) = compute_summaries_with_leaves(
+    // From-scratch core (v2 db-effect solver, Phase-1-parity) + cone over the
+    // assembled base. Trace + roles-cap diagnostics ignored here.
+    let (core_summaries, _, _) = compute_summaries_v2_with_leaves(
         ws_routines,
         graph,
         &base.combined_scc,
