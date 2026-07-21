@@ -20,9 +20,11 @@
 use std::collections::{BTreeMap, HashMap};
 
 use super::combined_graph::CombinedGraph;
+use super::db_effect_solver::solve_scc_db_effects;
 use super::effect_lattice::{
     EffectPresence, effect_key_of, join_presence, merge_via_owned, via_for_edge_kind,
 };
+use super::effect_universe::EffectUniverse;
 use super::scc::SccResult;
 use super::summary::{
     DbEffect, FieldList, PRoutineSummaryCore, RecordRoleSummary, RoutineSummary, SummaryChangeKey,
@@ -1017,14 +1019,35 @@ pub fn compute_summaries_with_leaves(
 // compute_summaries_v2 — the new-solver seam (l4-summary-fixpoint-redesign).
 // ---------------------------------------------------------------------------
 
-/// v2 db-effect solver seam. Task 1 (differential-harness scaffolding)
-/// delegates to the old JACOBI solver so the differential harness
-/// (`tests/l4_summary_differential.rs`) is green from day one; Tasks 2-8 replace
-/// the db-effect / uncertainty / has_unresolved_calls computation with the new
-/// `db_effect_solver`, keeping `parameter_roles` sourced from the old
-/// `compose_routine`. Drops the `(traces, diagnostics)` tuple the old fn returns
-/// — the v2 path has no trajectory artifact to report (`RawSccTrace` is not a
-/// contract per Phase 1's Global Constraints); diagnostics are handled in Task 10.
+/// v2 db-effect solver seam (l4-summary-fixpoint-redesign Task 8). Computes
+/// `db_effects` / `uncertainties` / `has_unresolved_calls` via the new
+/// closed-form `db_effect_solver` (effective-SCC re-decomposition + PD
+/// reachability + closed-form union + via + side-facts), while `parameter_roles`
+/// and `in_recursive_cycle` are harvested from the EXISTING per-SCC path
+/// (`run_one_scc`, the old JACOBI transfer function — Phase 1 does NOT redesign
+/// roles). The two are assembled into one `RoutineSummary` per routine.
+///
+/// STRICT PARITY (Phase 1): the result MUST equal the old
+/// [`compute_summaries_with_leaves`] over the complete `RoutineSummary`, per
+/// routine — enforced by `tests/l4_summary_differential.rs`. Drops the
+/// `(traces, diagnostics)` tuple: the v2 path has no trajectory artifact
+/// (`RawSccTrace` is not a contract per Phase 1's Global Constraints);
+/// diagnostics are handled at cutover (Task 10).
+///
+/// ## Assembly discipline
+///
+/// Two settled maps are threaded through the reverse-topological SCC walk:
+///   - `old_final_map` feeds `run_one_scc` (roles) AND the new solver's
+///     `settled` argument — so the new solver reproduces the old summary GIVEN
+///     the old predecessor summaries (the cleanest induction, and the exact
+///     shape the sub-solver oracle tests use). It carries the OLD db_effects.
+///   - `v2_map` is the assembled output (new db-triple + old roles /
+///     in_recursive_cycle), pre-seeded with the fixed leaves so its key set
+///     matches the old solver's `final_map` exactly.
+///
+/// For each Tarjan SCC, `run_one_scc` and `solve_scc_db_effects` BOTH read
+/// `old_final_map` as their predecessor view (before it is updated with this
+/// SCC), then this SCC's members are assembled member-by-member.
 pub fn compute_summaries_v2_with_leaves(
     routines: &[L3Routine],
     graph: &CombinedGraph,
@@ -1033,16 +1056,117 @@ pub fn compute_summaries_v2_with_leaves(
     fields: &FieldIndex,
     leaf_summaries: &HashMap<String, RoutineSummary>,
 ) -> HashMap<String, RoutineSummary> {
-    let (map, _trace, _diag) = compute_summaries_with_leaves(
-        routines,
-        graph,
-        scc,
-        upgraded_bindings,
-        fields,
-        false,
-        leaf_summaries,
-    );
-    map
+    // --- Scaffolding: mirror compute_summaries_with_leaves exactly. ---
+    let routines_by_id: HashMap<String, &L3Routine> =
+        routines.iter().map(|r| (r.id.clone(), r)).collect();
+
+    let body_avail_by_id: HashMap<String, bool> = routines
+        .iter()
+        .map(|r| (r.id.clone(), r.body_available))
+        .collect();
+
+    // Base intraprocedural summaries for NON-LEAF routines only (a leaf carries
+    // its own summary; its EMPTY merged features must never overwrite it).
+    let base_summaries: HashMap<String, RoutineSummary> = routines
+        .iter()
+        .filter(|r| !leaf_summaries.contains_key(&r.id))
+        .map(|r| {
+            (
+                r.id.clone(),
+                base_intraprocedural_summary(r, &routines_by_id, fields),
+            )
+        })
+        .collect();
+
+    let stable_map: HashMap<String, String> = routines
+        .iter()
+        .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
+        .collect();
+
+    let mut uncertainty_edges_by_from: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, ue) in graph.uncertainty_edges.iter().enumerate() {
+        uncertainty_edges_by_from
+            .entry(ue.from.clone())
+            .or_default()
+            .push(i);
+    }
+
+    // A member is RECOMPUTED (contributes to an effective SCC) iff it is neither
+    // a fixed leaf NOR missing from the workspace — the exact predicate the old
+    // `run_one_scc` uses when it seeds `in_progress` from `base_summaries`.
+    let is_recomputed =
+        |id: &str| -> bool { !leaf_summaries.contains_key(id) && routines_by_id.contains_key(id) };
+
+    // `old_final_map`: OLD-summary predecessor view (roles + old db_effects) fed
+    // to run_one_scc AND to the new solver's `settled`. `v2_map`: the assembled
+    // output. Pre-seed leaves into BOTH.
+    let mut old_final_map: HashMap<String, RoutineSummary> = HashMap::new();
+    let mut v2_map: HashMap<String, RoutineSummary> = HashMap::new();
+    for (id, summary) in leaf_summaries {
+        old_final_map.insert(id.clone(), summary.clone());
+        v2_map.insert(id.clone(), summary.clone());
+    }
+
+    // One workspace-wide interned effect universe, threaded across every SCC.
+    let mut universe = EffectUniverse::new();
+
+    for scc_entry in &scc.sccs {
+        // Roles + in_recursive_cycle from the existing JACOBI path. Reads
+        // `old_final_map` as its predecessor view (this SCC not yet inserted).
+        let old_out = run_one_scc(
+            scc_entry,
+            &old_final_map,
+            &SccComputeCtx {
+                routines_by_id: &routines_by_id,
+                base_summaries: &base_summaries,
+                upgraded_bindings,
+                graph,
+                body_avail_by_id: &body_avail_by_id,
+                stable_map: &stable_map,
+                leaf_summaries,
+                uncertainty_edges_by_from: &uncertainty_edges_by_from,
+            },
+            false,
+        );
+
+        // New db-triple. Reads the SAME predecessor view (`old_final_map`); its
+        // internal feed-forward layers this SCC's sibling effective SCCs on top.
+        let triple = solve_scc_db_effects(
+            scc_entry,
+            graph,
+            &routines_by_id,
+            &old_final_map,
+            &base_summaries,
+            upgraded_bindings,
+            &uncertainty_edges_by_from,
+            &mut universe,
+            &is_recomputed,
+        );
+
+        // Assemble each member: NEW db_effects/uncertainties/has_unresolved,
+        // OLD parameter_roles + in_recursive_cycle. `old_out.summaries` defines
+        // the exact member set (== the solver's recomputed set); a missing
+        // triple entry falls back to empty (which would fail the differential
+        // loudly rather than silently masking a dropped member).
+        for (id, old_summary) in old_out.summaries {
+            let (db_effects, uncertainties, has_unresolved_calls) =
+                triple.get(&id).cloned().unwrap_or_default();
+            let assembled = RoutineSummary {
+                routine_id: old_summary.routine_id.clone(),
+                db_effects,
+                in_recursive_cycle: old_summary.in_recursive_cycle,
+                has_unresolved_calls,
+                uncertainties,
+                parameter_roles: old_summary.parameter_roles.clone(),
+            };
+            v2_map.insert(id.clone(), assembled);
+            // Advance the predecessor view for the next SCC with the OLD summary
+            // (so run_one_scc / the solver keep seeing old-shaped predecessors).
+            old_final_map.insert(id, old_summary);
+        }
+    }
+
+    v2_map
 }
 
 /// The SHARED per-SCC compute context — the workspace-wide lookup structures the

@@ -981,6 +981,375 @@ pub fn solve_side_facts(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Task 8: one-shot per-SCC assembly — build effective SCCs, run PD → union →
+// via → side-facts, materialize each member's `Vec<DbEffect>`, and return the
+// per-member (db_effects, uncertainties, has_unresolved_calls) triple.
+// ---------------------------------------------------------------------------
+
+/// Convert a `TempStateKind` (universe identity form) back to the `TempState`
+/// carried on a materialized [`DbEffect`]. The two enums are field-for-field
+/// identical; this is the inverse of [`TempState::to_kind`].
+fn kind_to_temp_state(kind: &TempStateKind) -> TempState {
+    match kind {
+        TempStateKind::Known(v) => TempState::Known(*v),
+        TempStateKind::ParameterDependent(i) => TempState::ParameterDependent(*i),
+        TempStateKind::Unknown => TempState::Unknown,
+    }
+}
+
+/// Build the `operation_id -> record_variable_id` map used to attribute a
+/// materialized effect's `record_variable_id`.
+///
+/// `record_variable_id` is a NON-KEY payload (excluded from `effect_key` /
+/// `EffectIdentity`) that the OLD `compose_routine` fold carries UNCHANGED from
+/// the effect's originating record operation: a base effect keeps its own
+/// `op.record_variable_id`, and every inherited/PD-substituted effect keeps the
+/// callee effect's payload (`..e.clone()` at `summary_runner.rs:414,422`). Since
+/// `operation_id` is part of `effect_key` (`effect_lattice.rs:133`), any two
+/// effects that collide on `effect_key` share an `operation_id` and therefore
+/// trace back to the SAME originating record operation — so they carry the SAME
+/// `record_variable_id`. A PD-substituted effect re-keys only its temp fragment,
+/// leaving `op`/`table_id`/`operation_id`/`record_variable_id` untouched, so it
+/// too maps back to its origin's payload by `operation_id`. Keying the payload
+/// by `operation_id` therefore reproduces the old fold's winner EXACTLY (base
+/// last-write / inherited first-wins collapse to one value per `operation_id`),
+/// without needing to replay the fold's iteration order.
+fn build_rvid_by_opid(
+    base_summaries: &HashMap<String, RoutineSummary>,
+    settled: &HashMap<String, RoutineSummary>,
+) -> HashMap<String, Option<String>> {
+    let mut map: HashMap<String, Option<String>> = HashMap::new();
+    for s in base_summaries.values().chain(settled.values()) {
+        for e in &s.db_effects {
+            map.entry(e.operation_id.clone())
+                .or_insert_with(|| e.record_variable_id.clone());
+        }
+    }
+    map
+}
+
+/// Attribute `via` to the present effects [`reconstruct_via`] deliberately
+/// leaves UNMAPPED — the PD-substitution image of a callee's
+/// `ParameterDependent` effect (its "DEFERRED" case, see that fn's doc). The
+/// OLD JACOBI fold (`compose_routine`, `summary_runner.rs:404-439`) gives EVERY
+/// inherited effect — terminal-by-identity OR PD-substituted — the SAME
+/// `via_for_edge_kind(edge.kind)`, max-merged on a same-key collision. This pass
+/// closes the PD-substituted half: for each member's ACTUAL out-edge, re-apply
+/// `substitute_pd_temp_state` to every `ParameterDependent` callee effect (read
+/// from an intra-effective-SCC callee's presence set, or from a settled
+/// successor/leaf's `db_effects`), and — if the produced identity is present in
+/// the caller — merge the edge-kind `via` in.
+///
+/// Combined with `reconstruct_via`'s base-`"direct"` seed and its
+/// terminal-by-identity fold, the resulting `via_map` covers the EXACT set of
+/// contributors the old fold folds (base + every callee effect over every
+/// out-edge). Because `merge_via`'s 5 ranks are a bijection with its 5 canonical
+/// strings (`effect_lattice.rs:161-170`; no two distinct strings share a rank),
+/// the max-merge is order-INDEPENDENT — so splitting the contributor set across
+/// two passes yields byte-identical `via` to the old single fold.
+#[allow(clippy::too_many_arguments)]
+fn attribute_pd_substituted_via(
+    eff: &Scc,
+    graph: &CombinedGraph,
+    presence: &SccPresence,
+    settled: &HashMap<String, RoutineSummary>,
+    routines_by_id: &HashMap<String, &L3Routine>,
+    universe: &EffectUniverse,
+    via_map: &mut HashMap<(String, EffectId), String>,
+) {
+    let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
+
+    for m in &eff.members {
+        let Some(m_bits) = presence.by_member.get(m) else {
+            continue;
+        };
+        let Some(caller_routine) = routines_by_id.get(m.as_str()) else {
+            continue;
+        };
+        for edge in graph.edges_by_from.get(m).into_iter().flatten() {
+            let via = via_for_edge_kind(&edge.kind);
+
+            // The callee's PD effects, as `(op, table_id, operation_id,
+            // pd_index)`. Intra-effective-SCC callee → read from presence (its
+            // PD-typed set bits); settled successor/leaf → read from its
+            // materialized `db_effects`.
+            let mut callee_pd: Vec<(String, String, String, u32)> = Vec::new();
+            if member_set.contains(edge.to.as_str()) {
+                if let Some(callee_bits) = presence.by_member.get(&edge.to) {
+                    for cid in iter_set_bits(callee_bits) {
+                        let identity = universe.identity(cid);
+                        if let TempStateKind::ParameterDependent(i) = &identity.temp {
+                            callee_pd.push((
+                                identity.op.clone(),
+                                identity.table_id.clone(),
+                                identity.operation_id.clone(),
+                                *i,
+                            ));
+                        }
+                    }
+                }
+            } else if let Some(callee_summary) = settled.get(&edge.to) {
+                for e in &callee_summary.db_effects {
+                    if let TempState::ParameterDependent(i) = &e.temp_state {
+                        callee_pd.push((
+                            e.op.clone(),
+                            e.table_id.clone(),
+                            e.operation_id.clone(),
+                            *i,
+                        ));
+                    }
+                }
+            }
+
+            for (op, table_id, operation_id, pd_index) in callee_pd {
+                let outcome = substitute_pd_temp_state(edge, pd_index, caller_routine);
+                let produced = EffectIdentity {
+                    op,
+                    table_id,
+                    operation_id,
+                    temp: outcome.to_kind(),
+                };
+                // The produced identity is present iff Step A / the closed-form
+                // union already interned it (a PD fact or a terminal emission);
+                // `get` (never `intern`) keeps this pass read-only over the
+                // universe, and an absent id simply means the effect never
+                // survived into `m`'s presence, so there is nothing to attribute.
+                if let Some(pid) = universe.get(&produced)
+                    && has_bit(m_bits, pid)
+                {
+                    merge_via_into(via_map, m, pid, via);
+                }
+            }
+        }
+    }
+}
+
+/// Materialize ONE member's `Vec<DbEffect>` from its presence bitset, in the
+/// deterministic `(effect_key, operation_id)` order the old solver produced
+/// (`summary_runner.rs:507-510`). Each effect's `via` comes from `via_map`
+/// (base-`direct` / terminal-inherited from [`reconstruct_via`], PD-substituted
+/// from [`attribute_pd_substituted_via`]); `record_variable_id` from
+/// `rvid_by_opid`; `temp_state` decoded from the interned identity.
+fn materialize_member_db_effects(
+    member: &str,
+    bits: &[u64],
+    via_map: &HashMap<(String, EffectId), String>,
+    universe: &EffectUniverse,
+    rvid_by_opid: &HashMap<String, Option<String>>,
+) -> Vec<DbEffect> {
+    // Collect the member's SET bits and sort by (effect_key, operation_id) —
+    // scanning only the member's own present effects, not the whole
+    // (workspace-wide) universe, while reproducing `universe.sorted_order()`'s
+    // key exactly.
+    let mut present: Vec<EffectId> = iter_set_bits(bits).collect();
+    present.sort_by(|&a, &b| {
+        universe
+            .effect_key(a)
+            .cmp(&universe.effect_key(b))
+            .then_with(|| {
+                universe
+                    .identity(a)
+                    .operation_id
+                    .cmp(&universe.identity(b).operation_id)
+            })
+    });
+
+    let mut out: Vec<DbEffect> = Vec::with_capacity(present.len());
+    for id in present {
+        let identity = universe.identity(id);
+        let effect_key = universe.effect_key(id);
+        // Every present effect is attributed by reconstruct_via +
+        // attribute_pd_substituted_via (base direct, terminal-inherited, or
+        // PD-substituted). The `"inherited"` fallback (rank 0, the old fold's
+        // own default `via_for_edge_kind` value) is a defensive floor only —
+        // the differential matrix would surface any genuinely-missing via.
+        let via = via_map
+            .get(&(member.to_string(), id))
+            .cloned()
+            .unwrap_or_else(|| "inherited".to_string());
+        let record_variable_id = rvid_by_opid.get(&identity.operation_id).cloned().flatten();
+        out.push(DbEffect {
+            effect_key,
+            operation_id: identity.operation_id.clone(),
+            op: identity.op.clone(),
+            table_id: identity.table_id.clone(),
+            record_variable_id,
+            temp_state: kind_to_temp_state(&identity.temp),
+            via,
+        });
+    }
+    out
+}
+
+/// Solve ONE effective SCC end-to-end (PD → union → via → side-facts →
+/// materialize) against a `settled` map that already carries every
+/// topologically-later sibling's solved summary. Returns each member's
+/// `(db_effects, uncertainties, has_unresolved_calls)`.
+#[allow(clippy::too_many_arguments)]
+fn solve_one_effective_scc(
+    eff: &Scc,
+    graph: &CombinedGraph,
+    routines_by_id: &HashMap<String, &L3Routine>,
+    settled: &HashMap<String, RoutineSummary>,
+    base_summaries: &HashMap<String, RoutineSummary>,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
+    universe: &mut EffectUniverse,
+    rvid_by_opid: &HashMap<String, Option<String>>,
+) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
+    // Step A: PD substitution as reachability.
+    let (pd_facts, terminal_emissions) =
+        solve_pd_reachability(eff, graph, routines_by_id, settled, upgraded_bindings);
+
+    // Steps B/C: closed-form terminal union + per-member presence.
+    let presence = closed_form_union(
+        eff,
+        graph,
+        routines_by_id,
+        settled,
+        base_summaries,
+        &pd_facts,
+        &terminal_emissions,
+        universe,
+    );
+
+    // Step D: via reconstruction (base + terminal-inherited) then the
+    // PD-substituted via attribution reconstruct_via defers to Task 8 (carry 2).
+    let mut via_map = reconstruct_via(eff, graph, &presence, base_summaries, settled, universe);
+    attribute_pd_substituted_via(
+        eff,
+        graph,
+        &presence,
+        settled,
+        routines_by_id,
+        universe,
+        &mut via_map,
+    );
+
+    // Side-facts: uncertainties + has_unresolved_calls.
+    let side = solve_side_facts(
+        eff,
+        graph,
+        routines_by_id,
+        settled,
+        base_summaries,
+        uncertainty_edges_by_from,
+    );
+
+    let mut out: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
+    for m in &eff.members {
+        let db_effects = match presence.by_member.get(m) {
+            Some(bits) => materialize_member_db_effects(m, bits, &via_map, universe, rvid_by_opid),
+            None => Vec::new(),
+        };
+        let uncertainties = side.uncertainties.get(m).cloned().unwrap_or_default();
+        let has_unresolved = side.has_unresolved.get(m).copied().unwrap_or(false);
+        out.insert(m.clone(), (db_effects, uncertainties, has_unresolved));
+    }
+    out
+}
+
+/// One-shot per-Tarjan-SCC db-effect solve. Re-decomposes `scc_entry` into its
+/// effective SCCs (Task 3), then — in `tarjan_scc`'s reverse-topological order —
+/// solves each with PD reachability (Task 4) → closed-form union (Task 5) → via
+/// (Task 6) + PD-substituted via attribution → side-facts (Task 7), and
+/// materializes every member's `Vec<DbEffect>` (sorted `(effect_key,
+/// operation_id)`, with reconstructed `via` + `record_variable_id`). Returns the
+/// per-member `(db_effects, uncertainties, has_unresolved_calls)` triple.
+///
+/// ## Inter-effective-SCC feed-forward (the redesign's INTEGRATION crux)
+///
+/// `effective_sccs` can split ONE recursive Tarjan SCC into several sibling
+/// effective SCCs (a fixed leaf / missing routine severing a cycle into DAG
+/// pieces). Each sub-solver is correct only GIVEN a `settled` map holding every
+/// callee it reads (`settled[callee].db_effects` / `.uncertainties` /
+/// `.has_unresolved_calls`). A LATER sibling can call an EARLIER-processed one,
+/// so — exactly like the old `run_one_scc` loop feeding `final_map` forward —
+/// each solved effective SCC's per-member results are inserted (as a
+/// `RoutineSummary` carrying the db_effects/uncertainties/has_unresolved the
+/// sub-solvers consume) into a LOCAL settled view before the next sibling runs.
+/// The common case (one effective SCC — every singleton and simple self-loop)
+/// skips the clone and reads the caller's `settled` directly.
+#[allow(clippy::too_many_arguments)]
+pub fn solve_scc_db_effects(
+    scc_entry: &Scc,
+    graph: &CombinedGraph,
+    routines_by_id: &HashMap<String, &L3Routine>,
+    settled: &HashMap<String, RoutineSummary>,
+    base_summaries: &HashMap<String, RoutineSummary>,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
+    universe: &mut EffectUniverse,
+    is_recomputed: &dyn Fn(&str) -> bool,
+) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
+    let eff_sccs = effective_sccs(scc_entry, graph, is_recomputed);
+    let mut results: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
+    if eff_sccs.is_empty() {
+        return results;
+    }
+
+    // `record_variable_id` origins for every operation_id reachable in this
+    // SCC's effects live in `base_summaries` (all non-leaf routine bases) ∪
+    // `settled` (leaves + already-processed successors); a fed-forward sibling's
+    // effects only re-key operation_ids already covered here, so this map never
+    // needs rebuilding mid-loop.
+    let rvid_by_opid = build_rvid_by_opid(base_summaries, settled);
+
+    if eff_sccs.len() == 1 {
+        // Fast path: no inter-effective-SCC dependency, read `settled` directly.
+        let solved = solve_one_effective_scc(
+            &eff_sccs[0],
+            graph,
+            routines_by_id,
+            settled,
+            base_summaries,
+            upgraded_bindings,
+            uncertainty_edges_by_from,
+            universe,
+            &rvid_by_opid,
+        );
+        results.extend(solved);
+        return results;
+    }
+
+    // General path: feed each solved sibling forward (reverse-topo order).
+    let mut local_settled: HashMap<String, RoutineSummary> = settled.clone();
+    for eff in &eff_sccs {
+        let solved = solve_one_effective_scc(
+            eff,
+            graph,
+            routines_by_id,
+            &local_settled,
+            base_summaries,
+            upgraded_bindings,
+            uncertainty_edges_by_from,
+            universe,
+            &rvid_by_opid,
+        );
+        for (id, (db_effects, uncertainties, has_unresolved)) in &solved {
+            // Feed-forward summary: only db_effects/uncertainties/
+            // has_unresolved_calls are read by the sub-solvers; roles /
+            // in_recursive_cycle are irrelevant to them (the assembler in
+            // `summary_runner` sets the member's real in_recursive_cycle from
+            // `scc_entry.recursive`).
+            local_settled.insert(
+                id.clone(),
+                RoutineSummary {
+                    routine_id: id.clone(),
+                    db_effects: db_effects.clone(),
+                    in_recursive_cycle: scc_entry.recursive,
+                    has_unresolved_calls: *has_unresolved,
+                    uncertainties: uncertainties.clone(),
+                    parameter_roles: Vec::new(),
+                },
+            );
+        }
+        results.extend(solved);
+    }
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
