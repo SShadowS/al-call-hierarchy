@@ -2473,8 +2473,19 @@ fn build_cohort_rep<'a>(
         },
         BestSource::Reach { fact_ix } => {
             let tn = term_node.expect("a Reach winner requires the terminal node");
-            let (hops, _seed) = collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
-            let uncertainties = path_uncertainties(&hops, tn, graph, ctx);
+            // Uncertainty union is EMPTY unless the winning path is uncertain
+            // (`unc` == OR of node-has-uncertainty along the path; `unc == false`
+            // ⇒ no path node contributes an uncertainty ⇒ `path_uncertainties`
+            // returns empty). So the O(chain) full-chain walk + union is skipped
+            // for every CERTAIN cohort (the majority) — byte-identical, and the
+            // dominant 8020 cost (3.2M→34,861 cohorts, but each still walked the
+            // full ~28k-hop chain here regardless of `unc`).
+            let uncertainties = if b.rank.2 == 0 {
+                let (hops, _seed) = collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
+                path_uncertainties(&hops, tn, graph, ctx)
+            } else {
+                Vec::new()
+            };
             let witness = representative_witness(
                 solver,
                 graph,
@@ -2495,9 +2506,14 @@ fn build_cohort_rep<'a>(
         }
         BestSource::Value { fact_ix } => {
             let tn = term_node.expect("a Value winner requires the terminal node");
-            let (hops, _seed) =
-                collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix);
-            let uncertainties = path_uncertainties(&hops, tn, graph, ctx);
+            // See the Reach arm: skip the O(chain) walk + union for certain paths.
+            let uncertainties = if b.rank.2 == 0 {
+                let (hops, _seed) =
+                    collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix);
+                path_uncertainties(&hops, tn, graph, ctx)
+            } else {
+                Vec::new()
+            };
             let witness = representative_witness(
                 solver,
                 graph,

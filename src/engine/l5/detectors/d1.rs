@@ -1910,6 +1910,7 @@ pub fn detect_d1(
     // cutover): ONE bounded representative witness per (terminal, ContextKey)
     // class instead of one full witness per (loop, terminal). Winner selection is
     // byte-identical to the old aggregate path — see `search_loops_cohorts`.
+    let g_scl = pt::span("d1", "search_loops_cohorts");
     let run = search_loops_cohorts(
         &graph,
         &seeds,
@@ -1917,6 +1918,7 @@ pub fn detect_d1(
         ctx,
         &ctx.closed_world_temp_params,
     );
+    drop(g_scl);
 
     // `d1.cohort` census (Hot-tier, measurement-only — zero cost when disabled).
     if pt::enabled(pt::Detail::Hot) {
@@ -1932,7 +1934,9 @@ pub fn detect_d1(
 
     // (4) Assemble ONE compressed terminal-centric finding per reached terminal;
     // the run-level loop-set registry is built as cohorts are interned.
+    let g_asm = pt::span("d1", "assemble_cohort_findings");
     let (mut findings, registry) = assemble_cohort_findings(&run, ctx, &role_by_routine);
+    drop(g_asm);
 
     // downgradedSetupSingleton: counted POST-assembly by rootCause text (mirrors
     // the old post-merge count, d1.ts:439) — unchanged.
@@ -1949,6 +1953,7 @@ pub fn detect_d1(
     // routine; the compressed report carries the SAME population as its loops'
     // catalog entries, so decompress every cohort's `loop_set` → loop routine id
     // via the run catalog (one loop routine per reaching loop — identical set).
+    let g_g7 = pt::span("d1", "g7_down_confidence");
     let mut down_confidenced_dead_routine = 0u64;
     if !findings.is_empty() {
         let dead = crate::engine::l5::detectors::d14::provably_dead_routine_ids(resolved, ctx);
@@ -1975,11 +1980,14 @@ pub fn detect_d1(
         }
     }
 
+    drop(g_g7);
     // Fingerprint: rootCauseKey + terminal primary location + affected tables —
     // all UNCHANGED by the cutover, so the edit-stable identity is preserved.
+    let g_fp = pt::span("d1", "fingerprint_pass");
     for f in &mut findings {
         f.fingerprint = Some(fp_index.fingerprint_of(f));
     }
+    drop(g_fp);
     // Deterministic output order by the terminal-based id.
     findings.sort_by(|a, b| a.id.cmp(&b.id));
 
