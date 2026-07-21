@@ -688,7 +688,14 @@ fn compose_routine(
 /// symbolic dependency, never inventing it); never yields `Known(true)` unless
 /// the binding source is itself `Known(true)`. A PD chasing itself around a
 /// recursive cycle stays PD (monotone) and the fixed point converges.
-fn substitute_pd_temp_state(
+///
+/// `pub(crate)` (not module-private): shared verbatim with
+/// `db_effect_solver::solve_pd_reachability`, which walks THIS SAME per-edge
+/// transition as a semi-naive product-graph reachability worklist instead of
+/// `compose_routine`'s JACOBI fold — ONE substitution implementation for both,
+/// so the new solver is guaranteed to match the old one's PD semantics exactly
+/// (l4-summary-fixpoint-redesign Task 4).
+pub(crate) fn substitute_pd_temp_state(
     edge: &super::combined_graph::CombinedEdge,
     callee_param_index: u32,
     routine: &L3Routine,
