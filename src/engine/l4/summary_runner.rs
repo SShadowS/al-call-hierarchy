@@ -519,10 +519,66 @@ fn compose_routine(
         v
     };
 
-    // parameterRoles: cross-call exit-effect composition.
+    // parameterRoles: cross-call exit-effect composition + branch-aware walker.
+    // Extracted to `compose_roles_only` — shared verbatim with the roles-only
+    // fixpoint (`run_one_scc_roles`) so the v2 role harvest matches this oracle
+    // byte-for-byte. The roles slice is db_effects-INDEPENDENT: it reads only
+    // base/callee `parameter_roles` (never db_effects/uncertainties), which is
+    // why the v2 path can harvest it WITHOUT running the old db_effects Jacobi.
+    let parameter_roles = compose_roles_only(
+        routine,
+        &base.parameter_roles,
+        snapshot,
+        final_map,
+        upgraded_bindings,
+        graph,
+        body_avail_by_id,
+    );
+
+    RoutineSummary {
+        routine_id: routine.id.clone(),
+        db_effects,
+        in_recursive_cycle: base.in_recursive_cycle,
+        has_unresolved_calls,
+        uncertainties,
+        parameter_roles,
+    }
+}
+
+/// Compute ONLY a routine's `parameter_roles` — the cross-call exit-effect
+/// composition (§c1b) plus the branch-aware `walk_param` path analysis
+/// (§c1a/§c1b). This is the roles slice of [`compose_routine`], extracted so the
+/// roles-only fixpoint ([`run_one_scc_roles`]) and the full transfer function
+/// share ONE implementation (DRY — guarantees the v2 role harvest matches the
+/// old oracle byte-for-byte).
+///
+/// **db_effects-INDEPENDENT by construction.** The seed is `base_roles`; the
+/// cross-call fold reads only callee `parameter_roles`; and
+/// `cfg_walker::walk_param` reads only callee `parameter_roles` (verified:
+/// `cfg_walker.rs` contains ZERO `db_effects` references). This function
+/// therefore never constructs a `db_effects_by_key` set — dropping that fold
+/// from the v2 role harvest (so the ~729s db_effects Jacobi no longer runs there)
+/// is exactly Task 8b's perf win.
+///
+/// `snapshot` is the FROZEN prior-pass map (JACOBI reads go here); `final_map` is
+/// the settled summaries for already-processed SCCs. Callee `parameter_roles` are
+/// read via `snapshot.get(id).or_else(|| final_map.get(id))`.
+#[allow(clippy::too_many_arguments)]
+fn compose_roles_only(
+    routine: &L3Routine,
+    base_roles: &[RecordRoleSummary],
+    snapshot: &HashMap<String, RoutineSummary>,
+    final_map: &HashMap<String, RoutineSummary>,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    graph: &CombinedGraph,
+    body_avail_by_id: &HashMap<String, bool>,
+) -> Vec<RecordRoleSummary> {
+    // For non-recursive SCCs `snapshot` is empty; reads fall through to `final_map`.
+    let lookup =
+        |id: &str| -> Option<&RoutineSummary> { snapshot.get(id).or_else(|| final_map.get(id)) };
+
     // Deep-copy the base parameterRoles so we can mutate them independently.
-    let mut parameter_roles: Vec<RecordRoleSummary> =
-        base.parameter_roles.iter().map(clone_role).collect();
+    let mut parameter_roles: Vec<RecordRoleSummary> = base_roles.iter().map(clone_role).collect();
 
     // Cross-call exit-effect composition (spec §(c1b)).
     // `binding_resolution` and `callee_parameter_is_var` live in the upgraded-
@@ -656,14 +712,7 @@ fn compose_routine(
         }
     }
 
-    RoutineSummary {
-        routine_id: routine.id.clone(),
-        db_effects,
-        in_recursive_cycle: base.in_recursive_cycle,
-        has_unresolved_calls,
-        uncertainties,
-        parameter_roles,
-    }
+    parameter_roles
 }
 
 /// Substitute a callee effect's `ParameterDependent(callee_param_index)` temp
@@ -1019,13 +1068,17 @@ pub fn compute_summaries_with_leaves(
 // compute_summaries_v2 — the new-solver seam (l4-summary-fixpoint-redesign).
 // ---------------------------------------------------------------------------
 
-/// v2 db-effect solver seam (l4-summary-fixpoint-redesign Task 8). Computes
+/// v2 db-effect solver seam (l4-summary-fixpoint-redesign Tasks 8 + 8b). Computes
 /// `db_effects` / `uncertainties` / `has_unresolved_calls` via the new
 /// closed-form `db_effect_solver` (effective-SCC re-decomposition + PD
-/// reachability + closed-form union + via + side-facts), while `parameter_roles`
-/// and `in_recursive_cycle` are harvested from the EXISTING per-SCC path
-/// (`run_one_scc`, the old JACOBI transfer function — Phase 1 does NOT redesign
-/// roles). The two are assembled into one `RoutineSummary` per routine.
+/// reachability + closed-form union + via + side-facts), and `parameter_roles`
+/// via the roles-ONLY fixpoint [`run_one_scc_roles`] (Task 8b). The OLD full
+/// [`run_one_scc`] / [`compute_summaries_with_leaves`] — which ran the ~729s
+/// db_effects JACOBI — NO LONGER run on this path; they survive only as the
+/// differential ORACLE in `tests/l4_summary_differential.rs`. `in_recursive_cycle`
+/// mirrors `run_one_scc`'s rule (`true` for every member of a recursive Tarjan
+/// SCC) sourced directly from `scc_entry.recursive`. The two are assembled into
+/// one `RoutineSummary` per routine.
 ///
 /// STRICT PARITY (Phase 1): the result MUST equal the old
 /// [`compute_summaries_with_leaves`] over the complete `RoutineSummary`, per
@@ -1036,18 +1089,16 @@ pub fn compute_summaries_with_leaves(
 ///
 /// ## Assembly discipline
 ///
-/// Two settled maps are threaded through the reverse-topological SCC walk:
-///   - `old_final_map` feeds `run_one_scc` (roles) AND the new solver's
-///     `settled` argument — so the new solver reproduces the old summary GIVEN
-///     the old predecessor summaries (the cleanest induction, and the exact
-///     shape the sub-solver oracle tests use). It carries the OLD db_effects.
-///   - `v2_map` is the assembled output (new db-triple + old roles /
-///     in_recursive_cycle), pre-seeded with the fixed leaves so its key set
-///     matches the old solver's `final_map` exactly.
-///
-/// For each Tarjan SCC, `run_one_scc` and `solve_scc_db_effects` BOTH read
-/// `old_final_map` as their predecessor view (before it is updated with this
-/// SCC), then this SCC's members are assembled member-by-member.
+/// ONE settled map (`v2_map`) is threaded through the reverse-topological SCC
+/// walk, pre-seeded with the fixed leaves, and fed as the predecessor view to
+/// BOTH [`run_one_scc_roles`] (which reads settled callee `parameter_roles`) and
+/// `solve_scc_db_effects` (which reads settled successor `db_effects` /
+/// `uncertainties`). v2's assembled facts are byte-identical to the old solver's
+/// (Phase-1 parity), so feeding v2 forward is byte-identical to the retired
+/// two-map design that fed the old JACOBI's summaries forward — but WITHOUT
+/// running that JACOBI. For each Tarjan SCC, the roles fixpoint and the db-effect
+/// solver BOTH read `v2_map` as their predecessor view (before it is updated with
+/// this SCC), then this SCC's members are assembled member-by-member.
 pub fn compute_summaries_v2_with_leaves(
     routines: &[L3Routine],
     graph: &CombinedGraph,
@@ -1097,45 +1148,45 @@ pub fn compute_summaries_v2_with_leaves(
     let is_recomputed =
         |id: &str| -> bool { !leaf_summaries.contains_key(id) && routines_by_id.contains_key(id) };
 
-    // `old_final_map`: OLD-summary predecessor view (roles + old db_effects) fed
-    // to run_one_scc AND to the new solver's `settled`. `v2_map`: the assembled
-    // output. Pre-seed leaves into BOTH.
-    let mut old_final_map: HashMap<String, RoutineSummary> = HashMap::new();
+    // ONE settled map — the assembled v2 output — fed forward as the predecessor
+    // view to BOTH the roles fixpoint and the db-effect solver. v2's db_effects /
+    // uncertainties / roles are byte-identical to the old solver's (Phase-1
+    // parity), so feeding v2 forward equals the retired two-map design that fed
+    // the old JACOBI's summaries forward — without running that JACOBI. Pre-seed
+    // the fixed leaves so the key set matches the old solver's `final_map` exactly.
     let mut v2_map: HashMap<String, RoutineSummary> = HashMap::new();
     for (id, summary) in leaf_summaries {
-        old_final_map.insert(id.clone(), summary.clone());
         v2_map.insert(id.clone(), summary.clone());
     }
+
+    // The loop-invariant per-SCC context (roles fixpoint reads it).
+    let ctx = SccComputeCtx {
+        routines_by_id: &routines_by_id,
+        base_summaries: &base_summaries,
+        upgraded_bindings,
+        graph,
+        body_avail_by_id: &body_avail_by_id,
+        stable_map: &stable_map,
+        leaf_summaries,
+        uncertainty_edges_by_from: &uncertainty_edges_by_from,
+    };
 
     // One workspace-wide interned effect universe, threaded across every SCC.
     let mut universe = EffectUniverse::new();
 
     for scc_entry in &scc.sccs {
-        // Roles + in_recursive_cycle from the existing JACOBI path. Reads
-        // `old_final_map` as its predecessor view (this SCC not yet inserted).
-        let old_out = run_one_scc(
-            scc_entry,
-            &old_final_map,
-            &SccComputeCtx {
-                routines_by_id: &routines_by_id,
-                base_summaries: &base_summaries,
-                upgraded_bindings,
-                graph,
-                body_avail_by_id: &body_avail_by_id,
-                stable_map: &stable_map,
-                leaf_summaries,
-                uncertainty_edges_by_from: &uncertainty_edges_by_from,
-            },
-            false,
-        );
+        // parameter_roles from the roles-ONLY fixpoint (the old db_effects JACOBI
+        // is NOT run). Reads `v2_map` as its predecessor view (this SCC not yet
+        // inserted).
+        let roles_out = run_one_scc_roles(scc_entry, &v2_map, &ctx);
 
-        // New db-triple. Reads the SAME predecessor view (`old_final_map`); its
-        // internal feed-forward layers this SCC's sibling effective SCCs on top.
+        // New db-triple. Reads the SAME predecessor view (`v2_map`); its internal
+        // feed-forward layers this SCC's sibling effective SCCs on top.
         let triple = solve_scc_db_effects(
             scc_entry,
             graph,
             &routines_by_id,
-            &old_final_map,
+            &v2_map,
             &base_summaries,
             upgraded_bindings,
             &uncertainty_edges_by_from,
@@ -1143,26 +1194,25 @@ pub fn compute_summaries_v2_with_leaves(
             &is_recomputed,
         );
 
-        // Assemble each member: NEW db_effects/uncertainties/has_unresolved,
-        // OLD parameter_roles + in_recursive_cycle. `old_out.summaries` defines
-        // the exact member set (== the solver's recomputed set); a missing
-        // triple entry falls back to empty (which would fail the differential
-        // loudly rather than silently masking a dropped member).
-        for (id, old_summary) in old_out.summaries {
+        // Assemble each member: NEW db_effects/uncertainties/has_unresolved from
+        // the solver, roles from the roles-only fixpoint, in_recursive_cycle from
+        // the Tarjan SCC's own `recursive` flag (run_one_scc's rule: true for
+        // every member of a recursive SCC). `roles_out` defines the exact member
+        // set (== the solver's recomputed set); a missing triple entry falls back
+        // to empty (which fails the differential loudly rather than silently
+        // masking a dropped member).
+        for (id, parameter_roles) in roles_out {
             let (db_effects, uncertainties, has_unresolved_calls) =
                 triple.get(&id).cloned().unwrap_or_default();
             let assembled = RoutineSummary {
-                routine_id: old_summary.routine_id.clone(),
+                routine_id: id.clone(),
                 db_effects,
-                in_recursive_cycle: old_summary.in_recursive_cycle,
+                in_recursive_cycle: scc_entry.recursive,
                 has_unresolved_calls,
                 uncertainties,
-                parameter_roles: old_summary.parameter_roles.clone(),
+                parameter_roles,
             };
-            v2_map.insert(id.clone(), assembled);
-            // Advance the predecessor view for the next SCC with the OLD summary
-            // (so run_one_scc / the solver keep seeing old-shaped predecessors).
-            old_final_map.insert(id, old_summary);
+            v2_map.insert(id, assembled);
         }
     }
 
@@ -1591,6 +1641,251 @@ pub fn run_one_scc(
         trace,
         cap_diagnostics,
     }
+}
+
+// ---------------------------------------------------------------------------
+// run_one_scc_roles — the roles-ONLY per-SCC fixpoint (v2 role harvest).
+// ---------------------------------------------------------------------------
+
+/// The roles-only convergence signal: EXACTLY the `parameter_roles` component of
+/// [`summary_change_key`] for a stable-projected summary carrying these roles.
+/// `db_effects` / `uncertainties` are irrelevant to that component, so a
+/// roles-only summary (both empty) yields the identical roles slice. Routing
+/// through the SAME `summary_change_key` the old full fixpoint uses GUARANTEES the
+/// roles change signal is byte-identical to what `run_one_scc` compares on for
+/// roles — this is not a re-invented key.
+fn roles_change_key(
+    routine_id: &str,
+    roles: &[RecordRoleSummary],
+    stable_map: &HashMap<String, String>,
+) -> Vec<Vec<String>> {
+    let summary = RoutineSummary {
+        routine_id: routine_id.to_string(),
+        db_effects: Vec::new(),
+        in_recursive_cycle: false,
+        has_unresolved_calls: false,
+        uncertainties: Vec::new(),
+        parameter_roles: roles.iter().map(clone_role).collect(),
+    };
+    let proj = project_summary_to_stable(routine_id, &summary, stable_map);
+    summary_change_key(&proj).parameter_roles
+}
+
+/// Compute ONE SCC's settled `parameter_roles` per member — the roles-ONLY
+/// fixpoint that replaces the full [`run_one_scc`] on the v2 path (Task 8b). It
+/// runs [`compose_roles_only`] (NOT `compose_routine`), so the old db_effects
+/// JACOBI — which materialized ~9k-effect string sets every pass — is never run
+/// during the v2 role harvest. Convergence is driven by the roles change signal
+/// ONLY ([`roles_change_key`], == the old `summary_change_key`'s `parameter_roles`
+/// slice).
+///
+/// ## Why this converges to the old fixpoint's EXACT roles
+///
+/// `parameter_roles` are db_effects-INDEPENDENT: [`compose_roles_only`] seeds from
+/// `base_roles`, and both the cross-call fold and `cfg_walker::walk_param` read
+/// ONLY callee `parameter_roles` — never callee `db_effects` / `uncertainties` /
+/// `has_unresolved_calls` (verified: `cfg_walker.rs` has zero `db_effects`
+/// references). So a member's roles are a pure function of its callees' roles. The
+/// old full fixpoint's roles trajectory (round-by-round) is therefore IDENTICAL to
+/// a roles-only Jacobi's: the extra recomputes the old fixpoint does when a
+/// callee's db_effects churn (with roles unchanged) are provable no-ops for roles.
+/// Dirtying a caller on the roles-slice change (rather than the whole-summary
+/// change) reproduces the same per-round roles as full-Jacobi-on-roles, which
+/// equals the roles subsystem of full-Jacobi-on-the-whole-summary. Cap parity: the
+/// same `MAX_FIXED_POINT_ITERATIONS` bound — if roles never settle, the old
+/// whole-summary fixpoint cannot settle either (roles are one of its convergence
+/// components), so both stop at round `MAX` with the same round-`MAX` roles.
+///
+/// Mirrors [`run_one_scc`]'s structure (JACOBI freeze/dirty-frontier discipline)
+/// exactly, but carries roles-only summaries and drops the trace / cap-diagnostic
+/// / cap-hit-uncertainty machinery (those belong to the db/uncertainty facts the
+/// v2 solver owns, not to roles).
+fn run_one_scc_roles(
+    scc_entry: &super::scc::Scc,
+    predecessor_final_map: &HashMap<String, RoutineSummary>,
+    ctx: &SccComputeCtx,
+) -> Vec<(String, Vec<RecordRoleSummary>)> {
+    let leaf_summaries = ctx.leaf_summaries;
+
+    // A roles-carrying, db_effects-EMPTY RoutineSummary — the only shape the
+    // snapshot / in_progress maps need to feed callee `parameter_roles` to callers.
+    fn roles_summary(id: &str, roles: Vec<RecordRoleSummary>) -> RoutineSummary {
+        RoutineSummary {
+            routine_id: id.to_string(),
+            db_effects: Vec::new(),
+            in_recursive_cycle: false,
+            has_unresolved_calls: false,
+            uncertainties: Vec::new(),
+            parameter_roles: roles,
+        }
+    }
+
+    if !scc_entry.recursive {
+        // Non-recursive SCC: single pass (mirrors run_one_scc's early return set).
+        let id = match scc_entry.members.first() {
+            Some(id) => id,
+            None => return Vec::new(),
+        };
+        if leaf_summaries.contains_key(id) {
+            return Vec::new();
+        }
+        let routine = match ctx.routines_by_id.get(id) {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+        let base_roles = ctx
+            .base_summaries
+            .get(id)
+            .map(|b| b.parameter_roles.as_slice())
+            .unwrap_or(&[]);
+        let empty_snapshot: HashMap<String, RoutineSummary> = HashMap::new();
+        let roles = compose_roles_only(
+            routine,
+            base_roles,
+            &empty_snapshot,
+            predecessor_final_map,
+            ctx.upgraded_bindings,
+            ctx.graph,
+            ctx.body_avail_by_id,
+        );
+        return vec![(id.clone(), roles)];
+    }
+
+    // Recursive SCC — JACOBI fixed-point on roles only.
+    //
+    // Seed in_progress with base roles (leaves excluded: read from predecessor).
+    let mut in_progress: HashMap<String, RoutineSummary> = HashMap::new();
+    for id in &scc_entry.members {
+        if leaf_summaries.contains_key(id) {
+            continue;
+        }
+        if let Some(base) = ctx.base_summaries.get(id) {
+            in_progress.insert(
+                id.clone(),
+                roles_summary(id, base.parameter_roles.iter().map(clone_role).collect()),
+            );
+        }
+    }
+
+    // Per-member cached roles change key of the CURRENT in_progress value. Seeded
+    // from the base roles so the first round compares composed-vs-base exactly as
+    // run_one_scc's `fp(snapshot == base)` did — but on the roles slice only.
+    let mut key_cache: HashMap<String, Vec<Vec<String>>> = HashMap::new();
+    for id in &scc_entry.members {
+        if leaf_summaries.contains_key(id) {
+            continue;
+        }
+        if let Some(s) = in_progress.get(id) {
+            key_cache.insert(
+                id.clone(),
+                roles_change_key(id, &s.parameter_roles, ctx.stable_map),
+            );
+        }
+    }
+
+    // Intra-SCC dependents: for each member m, the members that CALL it. Roles read
+    // callees EXCLUSIVELY through `edges_by_from[from].to` (the cross-call fold AND
+    // the cfg walker both resolve callees that way), so these edges capture every
+    // intra-SCC roles dependency — identical to run_one_scc's dependents graph.
+    let member_set: std::collections::HashSet<&String> = scc_entry.members.iter().collect();
+    let mut dependents: HashMap<&String, Vec<&String>> = HashMap::new();
+    for m in &scc_entry.members {
+        if let Some(edges) = ctx.graph.edges_by_from.get(m) {
+            for e in edges {
+                if member_set.contains(&e.to) {
+                    dependents.entry(&e.to).or_default().push(m);
+                }
+            }
+        }
+    }
+
+    // Dirty frontier. First round: every non-leaf member dirty.
+    let mut dirty: std::collections::BTreeSet<String> = scc_entry
+        .members
+        .iter()
+        .filter(|m| !leaf_summaries.contains_key(*m))
+        .cloned()
+        .collect();
+
+    let mut iterations = 0usize;
+    let mut changed = true;
+
+    while changed {
+        changed = false;
+        iterations += 1;
+
+        // JACOBI: freeze prior-pass state via mem::take; recomputed members
+        // accumulate in next_pass; unchanged members carried back by move.
+        let snapshot: HashMap<String, RoutineSummary> = std::mem::take(&mut in_progress);
+        let mut next_pass: HashMap<String, RoutineSummary> = HashMap::new();
+        let mut next_dirty: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+        for id in &scc_entry.members {
+            if leaf_summaries.contains_key(id) {
+                continue;
+            }
+            if !dirty.contains(id) {
+                // No callee's ROLES changed last round ⇒ compose_roles_only(m,
+                // snapshot) is a deterministic function of the same role inputs ⇒
+                // bit-identical roles. Skip; the value is carried in the merge below.
+                continue;
+            }
+            let routine = match ctx.routines_by_id.get(id) {
+                Some(r) => r,
+                None => continue,
+            };
+            let base_roles = ctx
+                .base_summaries
+                .get(id)
+                .map(|b| b.parameter_roles.as_slice())
+                .unwrap_or(&[]);
+            let next_roles = compose_roles_only(
+                routine,
+                base_roles,
+                &snapshot,             // FROZEN: all reads from the prior pass
+                predecessor_final_map, // settled summaries for already-processed SCCs
+                ctx.upgraded_bindings,
+                ctx.graph,
+                ctx.body_avail_by_id,
+            );
+            let next_key = roles_change_key(id, &next_roles, ctx.stable_map);
+            let member_changed = key_cache.get(id) != Some(&next_key);
+            if member_changed {
+                changed = true;
+                key_cache.insert(id.clone(), next_key);
+                if let Some(deps) = dependents.get(id) {
+                    for dep in deps {
+                        next_dirty.insert((*dep).clone());
+                    }
+                }
+            }
+            next_pass.insert(id.clone(), roles_summary(id, next_roles));
+        }
+
+        // Carry over members not recomputed this round; recomputed members
+        // overwrite. Bit-identical to a full-Jacobi `in_progress = next_pass`.
+        let mut merged = snapshot;
+        for (k, v) in next_pass {
+            merged.insert(k, v);
+        }
+        in_progress = merged;
+        dirty = next_dirty;
+
+        if iterations >= MAX_FIXED_POINT_ITERATIONS {
+            // Same cap as run_one_scc. Roles-only convergence cannot outlast the
+            // old whole-summary fixpoint (roles are one of its components), so a
+            // cap-hit here mirrors a cap-hit there with the same round-MAX roles.
+            break;
+        }
+    }
+
+    let mut out: Vec<(String, Vec<RecordRoleSummary>)> = Vec::new();
+    for id in &scc_entry.members {
+        if let Some(s) = in_progress.remove(id) {
+            out.push((id.clone(), s.parameter_roles));
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
