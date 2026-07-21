@@ -23,6 +23,7 @@ use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
 use crate::engine::l4::effect_lattice::TempStateKind;
+use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{RoutineSummary, TempState};
 use crate::engine::l4::summary_runner::{
@@ -335,6 +336,197 @@ pub fn solve_pd_reachability(
     });
 
     (pd_facts, terminal_emissions)
+}
+
+// ---------------------------------------------------------------------------
+// Steps B/C: closed-form terminal union + per-member presence assembly.
+// ---------------------------------------------------------------------------
+
+/// OR one interned [`EffectId`] into a presence bitset, growing the backing
+/// `Vec<u64>` if the id's word isn't yet allocated. Bit `n % 64` of word
+/// `n / 64` for `EffectId(n)` — the layout the Task 5 brief specifies, shared
+/// by every later task (`reconstruct_via`, `solve_scc_db_effects`) that reads
+/// or writes a [`SccPresence`] bitset.
+pub(crate) fn set_bit(bits: &mut Vec<u64>, id: EffectId) {
+    let word = (id.0 / 64) as usize;
+    if bits.len() <= word {
+        bits.resize(word + 1, 0);
+    }
+    bits[word] |= 1u64 << (id.0 % 64);
+}
+
+/// True iff `id`'s bit is set in `bits`. An id past the end of `bits` is
+/// simply absent (never grows `bits` — read-only). Not yet read by production
+/// code (Task 5 only WRITES `SccPresence`; `reconstruct_via`/
+/// `solve_scc_db_effects` — Tasks 6/8 — are the intended readers) — kept
+/// `pub(crate)` and exercised directly by this task's own tests.
+#[allow(dead_code)]
+pub(crate) fn has_bit(bits: &[u64], id: EffectId) -> bool {
+    let word = (id.0 / 64) as usize;
+    word < bits.len() && (bits[word] & (1u64 << (id.0 % 64))) != 0
+}
+
+/// Per-member db-effect PRESENCE sets for one effective SCC — a bitset over
+/// the shared [`EffectUniverse`], indexed by [`EffectId`]`.0` (see [`set_bit`]).
+pub struct SccPresence {
+    pub by_member: HashMap<String, Vec<u64>>,
+}
+
+/// Intern a TERMINAL (`Known`/`Unknown` only) [`DbEffect`](crate::engine::l4::summary::DbEffect)
+/// and OR its id into `bits`. A `ParameterDependent` effect is silently
+/// skipped — Step A already accounts for it (as a retained [`PdFact`] or a
+/// [`TerminalEmission`]); folding it here under its UNSUBSTITUTED index would
+/// double-count under the wrong identity.
+fn intern_terminal_db_effect(
+    universe: &mut EffectUniverse,
+    bits: &mut Vec<u64>,
+    op: &str,
+    table_id: &str,
+    operation_id: &str,
+    temp_state: &TempState,
+) {
+    let temp = match temp_state {
+        TempState::Known(v) => TempStateKind::Known(*v),
+        TempState::Unknown => TempStateKind::Unknown,
+        TempState::ParameterDependent(_) => return,
+    };
+    let identity = EffectIdentity {
+        op: op.to_string(),
+        table_id: table_id.to_string(),
+        operation_id: operation_id.to_string(),
+        temp,
+    };
+    let id = universe.intern(&identity);
+    set_bit(bits, id);
+}
+
+/// Compute per-member db-effect PRESENCE sets for one effective SCC (`eff`):
+///
+/// ```text
+/// C =  union(member terminal (Known/Unknown) base effects)
+///    ∪ union(ACTUAL outgoing-edge successor terminal sets)   // successors in `settled`
+///    ∪ union(terminal emissions from Step A / solve_pd_reachability)
+/// effects[v] = C ∪ (member-v PD facts from Step A)   // PD facts are per-member, NOT shared
+/// ```
+///
+/// The exploit: within a strongly-connected effective SCC every member
+/// reaches every other, so the TERMINAL (identity-transferred) union `C` is
+/// IDENTICAL for every member — computed ONCE, over the whole membership, as
+/// a single bitset — rather than folded edge-by-edge per member the way the
+/// old JACOBI `compose_routine` fold does it. Only the `ParameterDependent`
+/// facts differ per member (Step A already computed them per-member, because
+/// PD re-symbolizes along the SPECIFIC chain of caller bindings reaching that
+/// member — it does not transfer by identity).
+///
+/// `C`'s three sources (all TERMINAL — `Known`/`Unknown` — effects; a `PD`
+/// effect is skipped wherever it's seen, whether in a member's own base
+/// summary or a settled successor's, because Step A already turned every PD
+/// outcome into either a per-member [`PdFact`] or a shared [`TerminalEmission`]):
+///   1. Each member's OWN base ([`base_summaries`], falling back to
+///      [`base_intraprocedural_summary`] if a member is missing from it —
+///      mirrors Step A's own Seed 1 fallback).
+///   2. TERMINAL effects of successors reached over an ACTUAL out-edge
+///      (`graph.edges_by_from[member]`) from ANY member of `eff`, where the
+///      successor is already `settled` (a previously-processed effective SCC
+///      or a fixed leaf) — an edge to another member of `eff` itself is
+///      intra-component, not yet settled, and is skipped here (source 1 +
+///      Step A already cover it via the strong-connectivity closure).
+///   3. Every `terminal_emissions` entry from Step A, regardless of which
+///      member it landed on — by the same strong-connectivity argument, once
+///      any member's PD chain resolves to a terminal value the whole SCC
+///      shares it.
+#[allow(clippy::too_many_arguments)]
+pub fn closed_form_union(
+    eff: &Scc,
+    graph: &CombinedGraph,
+    routines_by_id: &HashMap<String, &L3Routine>,
+    settled: &HashMap<String, RoutineSummary>,
+    base_summaries: &HashMap<String, RoutineSummary>,
+    pd_facts: &[PdFact],
+    terminal_emissions: &[TerminalEmission],
+    universe: &mut EffectUniverse,
+) -> SccPresence {
+    let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
+    let empty_fields = FieldIndex::new();
+
+    let mut c: Vec<u64> = Vec::new();
+
+    // Source 1: each member's own base terminal effects.
+    for m in &eff.members {
+        let owned_base = match base_summaries.get(m) {
+            Some(b) => Some(b.clone()),
+            None => routines_by_id
+                .get(m.as_str())
+                .map(|r| base_intraprocedural_summary(r, routines_by_id, &empty_fields)),
+        };
+        let Some(base) = owned_base else {
+            continue; // effective_sccs already excludes missing members; defensive only.
+        };
+        for e in &base.db_effects {
+            intern_terminal_db_effect(
+                universe,
+                &mut c,
+                &e.op,
+                &e.table_id,
+                &e.operation_id,
+                &e.temp_state,
+            );
+        }
+    }
+
+    // Source 2: terminal effects of settled successors, reached over an
+    // actual out-edge from any member of `eff`.
+    for m in &eff.members {
+        for e in graph.edges_by_from.get(m).into_iter().flatten() {
+            if member_set.contains(e.to.as_str()) {
+                continue; // intra-effective-SCC; not settled yet.
+            }
+            let Some(callee) = settled.get(&e.to) else {
+                continue; // unresolved / not (yet) settled.
+            };
+            for effect in &callee.db_effects {
+                intern_terminal_db_effect(
+                    universe,
+                    &mut c,
+                    &effect.op,
+                    &effect.table_id,
+                    &effect.operation_id,
+                    &effect.temp_state,
+                );
+            }
+        }
+    }
+
+    // Source 3: Step A's terminal emissions, shared across the whole SCC.
+    for t in terminal_emissions {
+        let identity = EffectIdentity {
+            op: t.base.0.clone(),
+            table_id: t.base.1.clone(),
+            operation_id: t.base.2.clone(),
+            temp: t.temp.clone(),
+        };
+        let id = universe.intern(&identity);
+        set_bit(&mut c, id);
+    }
+
+    // effects[v] = C ∪ member-v's own retained PD facts (NOT shared).
+    let mut by_member: HashMap<String, Vec<u64>> = HashMap::with_capacity(eff.members.len());
+    for m in &eff.members {
+        let mut bits = c.clone();
+        for f in pd_facts.iter().filter(|f| &f.routine_id == m) {
+            let identity = EffectIdentity {
+                op: f.base.0.clone(),
+                table_id: f.base.1.clone(),
+                operation_id: f.base.2.clone(),
+                temp: TempStateKind::ParameterDependent(f.param_index),
+            };
+            let id = universe.intern(&identity);
+            set_bit(&mut bits, id);
+        }
+        by_member.insert(m.clone(), bits);
+    }
+
+    SccPresence { by_member }
 }
 
 #[cfg(test)]
@@ -933,6 +1125,303 @@ mod tests {
         assert_eq!(
             terminals.iter().cloned().collect::<HashSet<_>>(),
             expected_terminals
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Steps B/C: closed-form terminal union + per-member presence (Task 5).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn recursive_members_share_terminal_union_plus_own_pd() {
+        // A<->B; A has base Known(true) effect e1; B has base Unknown effect
+        // e2; B has a PD fact (from Step A) on b only. Expect: A and B both
+        // contain {e1,e2}; only B additionally carries its PD-keyed effect.
+        let a_effect_key = effect_key_of("Insert", "t1", "a_op1", &TempStateKind::Known(true));
+        let b_effect_key = effect_key_of("Modify", "t2", "b_op1", &TempStateKind::Unknown);
+
+        let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        base_summaries.insert(
+            "a".to_string(),
+            RoutineSummary {
+                routine_id: "a".to_string(),
+                db_effects: vec![DbEffect {
+                    effect_key: a_effect_key,
+                    operation_id: "a_op1".to_string(),
+                    op: "Insert".to_string(),
+                    table_id: "t1".to_string(),
+                    record_variable_id: None,
+                    temp_state: TempState::Known(true),
+                    via: "direct".to_string(),
+                }],
+                in_recursive_cycle: true,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+        base_summaries.insert(
+            "b".to_string(),
+            RoutineSummary {
+                routine_id: "b".to_string(),
+                db_effects: vec![DbEffect {
+                    effect_key: b_effect_key,
+                    operation_id: "b_op1".to_string(),
+                    op: "Modify".to_string(),
+                    table_id: "t2".to_string(),
+                    record_variable_id: None,
+                    temp_state: TempState::Unknown,
+                    via: "direct".to_string(),
+                }],
+                in_recursive_cycle: true,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a"), pd_routine("b")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(
+            &["a", "b"],
+            vec![pd_edge("a", "b", "a_cs1"), pd_edge("b", "a", "b_cs1")],
+        );
+        let eff = Scc {
+            members: vec!["a".into(), "b".into()],
+            recursive: true,
+        };
+        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let pd_facts = vec![PdFact {
+            routine_id: "b".to_string(),
+            base: ("Delete".to_string(), "t3".to_string(), "b_op3".to_string()),
+            param_index: 0,
+        }];
+        let terminal_emissions: Vec<TerminalEmission> = Vec::new();
+        let mut universe = EffectUniverse::new();
+
+        let presence = closed_form_union(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &pd_facts,
+            &terminal_emissions,
+            &mut universe,
+        );
+
+        let e1 = universe.intern(&EffectIdentity {
+            op: "Insert".to_string(),
+            table_id: "t1".to_string(),
+            operation_id: "a_op1".to_string(),
+            temp: TempStateKind::Known(true),
+        });
+        let e2 = universe.intern(&EffectIdentity {
+            op: "Modify".to_string(),
+            table_id: "t2".to_string(),
+            operation_id: "b_op1".to_string(),
+            temp: TempStateKind::Unknown,
+        });
+        let epd = universe.intern(&EffectIdentity {
+            op: "Delete".to_string(),
+            table_id: "t3".to_string(),
+            operation_id: "b_op3".to_string(),
+            temp: TempStateKind::ParameterDependent(0),
+        });
+
+        let a_bits = presence.by_member.get("a").expect("a present");
+        let b_bits = presence.by_member.get("b").expect("b present");
+
+        assert!(has_bit(a_bits, e1), "a must carry e1 (own base)");
+        assert!(has_bit(a_bits, e2), "a must carry e2 (shared SCC closure)");
+        assert!(!has_bit(a_bits, epd), "a must NOT carry b's own PD fact");
+
+        assert!(has_bit(b_bits, e1), "b must carry e1 (shared SCC closure)");
+        assert!(has_bit(b_bits, e2), "b must carry e2 (own base)");
+        assert!(has_bit(b_bits, epd), "b must carry its own PD fact");
+    }
+
+    #[test]
+    fn settled_successor_terminal_contributes_to_c_but_its_pd_effect_does_not() {
+        // `a` (a singleton effective SCC) calls an already-settled successor
+        // `ext` over an actual out-edge. `ext`'s Known effect must join `a`'s
+        // presence set (transfers by identity); `ext`'s ParameterDependent
+        // effect must NOT — Step A already owns PD outcomes, and re-adding it
+        // here (under its unsubstituted callee-frame index) would be wrong.
+        let known_key = effect_key_of("Insert", "t4", "ext_op1", &TempStateKind::Known(true));
+        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
+        settled.insert(
+            "ext".to_string(),
+            RoutineSummary {
+                routine_id: "ext".to_string(),
+                db_effects: vec![
+                    DbEffect {
+                        effect_key: known_key,
+                        operation_id: "ext_op1".to_string(),
+                        op: "Insert".to_string(),
+                        table_id: "t4".to_string(),
+                        record_variable_id: None,
+                        temp_state: TempState::Known(true),
+                        via: "direct".to_string(),
+                    },
+                    DbEffect {
+                        effect_key: effect_key_of(
+                            "Delete",
+                            "t5",
+                            "ext_op2",
+                            &TempStateKind::ParameterDependent(0),
+                        ),
+                        operation_id: "ext_op2".to_string(),
+                        op: "Delete".to_string(),
+                        table_id: "t5".to_string(),
+                        record_variable_id: None,
+                        temp_state: TempState::ParameterDependent(0),
+                        via: "direct".to_string(),
+                    },
+                ],
+                in_recursive_cycle: false,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
+        let eff = Scc {
+            members: vec!["a".into()],
+            recursive: false,
+        };
+        let base_summaries: HashMap<String, RoutineSummary> = HashMap::new(); // "a" falls back to base_intraprocedural_summary (no own effects).
+        let pd_facts: Vec<PdFact> = Vec::new();
+        let terminal_emissions: Vec<TerminalEmission> = Vec::new();
+        let mut universe = EffectUniverse::new();
+
+        let presence = closed_form_union(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &pd_facts,
+            &terminal_emissions,
+            &mut universe,
+        );
+
+        let known_id = universe.intern(&EffectIdentity {
+            op: "Insert".to_string(),
+            table_id: "t4".to_string(),
+            operation_id: "ext_op1".to_string(),
+            temp: TempStateKind::Known(true),
+        });
+        let a_bits = presence.by_member.get("a").expect("a present");
+        assert!(
+            has_bit(a_bits, known_id),
+            "a must carry ext's settled terminal effect"
+        );
+
+        let pd_identity = EffectIdentity {
+            op: "Delete".to_string(),
+            table_id: "t5".to_string(),
+            operation_id: "ext_op2".to_string(),
+            temp: TempStateKind::ParameterDependent(0),
+        };
+        assert_eq!(
+            universe.get(&pd_identity),
+            None,
+            "ext's PD effect must never be interned by closed_form_union at all"
+        );
+    }
+
+    #[test]
+    fn base_pd_effect_is_skipped_from_c() {
+        // A member's OWN base summary carrying a raw ParameterDependent
+        // db_effect entry (as opposed to a Step-A-retained PdFact) must NOT
+        // contribute to `C` — only its Known/Unknown siblings do.
+        let known_key = effect_key_of("Insert", "t1", "a_op1", &TempStateKind::Known(true));
+        let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        base_summaries.insert(
+            "a".to_string(),
+            RoutineSummary {
+                routine_id: "a".to_string(),
+                db_effects: vec![
+                    DbEffect {
+                        effect_key: known_key,
+                        operation_id: "a_op1".to_string(),
+                        op: "Insert".to_string(),
+                        table_id: "t1".to_string(),
+                        record_variable_id: None,
+                        temp_state: TempState::Known(true),
+                        via: "direct".to_string(),
+                    },
+                    DbEffect {
+                        effect_key: effect_key_of(
+                            "Delete",
+                            "t9",
+                            "a_op9",
+                            &TempStateKind::ParameterDependent(3),
+                        ),
+                        operation_id: "a_op9".to_string(),
+                        op: "Delete".to_string(),
+                        table_id: "t9".to_string(),
+                        record_variable_id: None,
+                        temp_state: TempState::ParameterDependent(3),
+                        via: "direct".to_string(),
+                    },
+                ],
+                in_recursive_cycle: false,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(&["a"], Vec::new());
+        let eff = Scc {
+            members: vec!["a".into()],
+            recursive: false,
+        };
+        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let pd_facts: Vec<PdFact> = Vec::new();
+        let terminal_emissions: Vec<TerminalEmission> = Vec::new();
+        let mut universe = EffectUniverse::new();
+
+        let presence = closed_form_union(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &pd_facts,
+            &terminal_emissions,
+            &mut universe,
+        );
+
+        let known_id = universe.intern(&EffectIdentity {
+            op: "Insert".to_string(),
+            table_id: "t1".to_string(),
+            operation_id: "a_op1".to_string(),
+            temp: TempStateKind::Known(true),
+        });
+        let a_bits = presence.by_member.get("a").expect("a present");
+        assert!(
+            has_bit(a_bits, known_id),
+            "a must carry its own Known effect"
+        );
+
+        let pd_identity = EffectIdentity {
+            op: "Delete".to_string(),
+            table_id: "t9".to_string(),
+            operation_id: "a_op9".to_string(),
+            temp: TempStateKind::ParameterDependent(3),
+        };
+        assert_eq!(
+            universe.get(&pd_identity),
+            None,
+            "the member's own base PD effect must never be interned by closed_form_union"
         );
     }
 }
