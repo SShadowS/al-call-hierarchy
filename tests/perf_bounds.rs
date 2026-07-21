@@ -256,6 +256,40 @@ mod release_checks {
     // exact run log.
     const COMPUTE_ALL_SCALING_FACTOR: u32 = 7;
 
+    // `compute_summaries_v2` (l4-summary-fixpoint-redesign Task 11) — the
+    // closed-form db-effect solver `build_detector_context` calls for every
+    // `alsem analyze`/`aldump` run (`src/engine/l5/detector_context.rs:514`).
+    // This is a GENUINELY NEW gate: no prior CDO re-measurement exists for
+    // it (the 8020-corpus before/after numbers this task's plan asks for are
+    // a SEPARATE re-measurement the coordinator runs against the real
+    // workspace, not this synthetic corpus). Per this task's brief, an
+    // order-of-magnitude REGRESSION tripwire is the goal, not a tight
+    // target, so the bound below is a generous multiple of the measured
+    // baseline rather than the file's usual 3x CLAUDE.md-target convention
+    // (there is no CLAUDE.md row for this operation).
+    //
+    // Measured median ~38.1ms on this machine (release, dev machine,
+    // 2026-07-22; 5 timed samples over a warmed-up 100-file / 1000-routine
+    // perf_support corpus — samples ranged 32.8-46.7ms, see the task report
+    // for the exact log). Bound set to ~10x that baseline: generous enough
+    // to absorb machine-to-machine variance and ordinary noise, tight enough
+    // that a true order-of-magnitude regression still trips it.
+    //
+    // The corpus size here is DELIBERATELY smaller than every other bound in
+    // this file (which use the 1000-file corpus): a 1000-file / 10,000-routine
+    // run of the SAME (all-singleton-SCC, non-recursive) corpus measured
+    // ~4.5s median — a ~120x cost increase for a 10x routine-count increase,
+    // i.e. worse than linear, on a graph with ZERO recursive SCCs. That
+    // scaling shape is a real observation worth flagging to whoever owns the
+    // closed-form solver's algorithmic complexity next (see the task report's
+    // Concerns section) but is NOT something this task's brief asks this gate
+    // to fix — Task 11 is measure-and-gate only, and the recursive-SCC
+    // pathology this redesign actually targets is proven separately by the
+    // coordinator's real-workspace (8020) before/after re-measurement, not by
+    // this synthetic, non-recursive corpus. 100 files keeps this gate's own
+    // CI cost small while still exercising a real (non-trivial) call graph.
+    const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(400); // ~10x ~38.1ms measured baseline
+
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
         samples[samples.len() / 2]
@@ -818,6 +852,120 @@ mod release_checks {
             "rung-2 signature-edit median {m:?} exceeds corpus-relative bound {RUNG2_SYNTHETIC_BOUND:?} \
              (samples: {samples:?}) — this is a real regression on THIS corpus even though it \
              may still be under the looser CDO-anchored bound"
+        );
+    }
+
+    /// `compute_summaries_v2` (l4-summary-fixpoint-redesign Task 11) — the
+    /// closed-form db-effect solver `build_detector_context` calls for every
+    /// `alsem analyze`/`aldump` run (`src/engine/l5/detector_context.rs:514`'s
+    /// `context.compute_summaries` span). Builds the SAME `(routines, graph,
+    /// scc, upgraded_bindings, fields)` substrate that path builds, via the
+    /// SAME public functions in the SAME order — mirrors
+    /// `tests/l4_summary_differential.rs`'s `cdo_whole_program_v2_parity`
+    /// assembly, just over the synthetic perf_support corpus instead of a
+    /// real `CDO_WS` workspace (not reproducible in this sandbox — see
+    /// CLAUDE.md's Testing Philosophy & Goldens).
+    ///
+    /// The perf_support corpus has NO recursive SCC (`Proc1..Proc{N-2}` form
+    /// a straight-line local call chain — see that module's own doc), so
+    /// this gate only exercises the common closed-form (non-recursive) path;
+    /// the recursive-SCC pathology this redesign fixed is proven separately
+    /// by the coordinator's real-workspace 8020 before/after re-measurement,
+    /// not this gate. It is still a real regression tripwire for the whole
+    /// assembly-plus-solve cost on a 100-file, real-call-graph corpus (a
+    /// deliberately smaller corpus than every other bound in this file uses
+    /// — see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own doc for why).
+    #[test]
+    fn compute_summaries_v2_within_bound() {
+        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
+        use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
+        use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
+        use al_call_hierarchy::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2};
+        use std::collections::HashMap;
+
+        let dir = corpus_dir(100);
+        let resolved = assemble_and_resolve_workspace_default(dir.path()).expect(
+            "assemble_and_resolve_workspace_default must succeed on the perf_support corpus",
+        );
+        let ws = &resolved.workspace;
+
+        // Assemble the SAME substrate `build_detector_context`'s
+        // CORE_SUMMARIES path builds (`detector_context.rs:498-521`): symbol
+        // table -> resolve_calls (no deps, no fetched apps — matches the
+        // source-only detector-context path) -> event graph -> combined
+        // graph -> a Tarjan SCC over `graph.edges_by_from` -> the field
+        // index. `leaf_summaries` is not needed here: `compute_summaries_v2`
+        // (no `_with_leaves`) always passes the empty map, exactly like
+        // `build_detector_context`'s own call.
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+        let no_deps: Vec<DeclaredDependency> = Vec::new();
+        let no_fetched: Vec<String> = Vec::new();
+        let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+        let event_graph = build_event_graph(&ws.routines, &symbols);
+        let graph = build_combined_graph(ws, &calls, &event_graph);
+
+        let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+        for (from, list) in &graph.edges_by_from {
+            scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+        }
+        let scc = tarjan_scc(&SccInputGraph {
+            nodes: &graph.nodes,
+            edges_by_from: &scc_adjacency,
+        });
+
+        let mut field_index: FieldIndex = HashMap::new();
+        for table in &ws.tables {
+            for field in &table.fields {
+                field_index
+                    .entry((table.id.clone(), field.name.to_lowercase()))
+                    .or_insert_with(|| field.id.clone());
+            }
+        }
+
+        // Warm-up (also proves the solver runs clean before timing it).
+        let (warm, _trace, _diag) = compute_summaries_v2(
+            &ws.routines,
+            &graph,
+            &scc,
+            &calls.upgraded_bindings,
+            &field_index,
+            false,
+        );
+        assert!(
+            !warm.is_empty(),
+            "sanity: compute_summaries_v2 must produce summaries for a 100-file workspace"
+        );
+
+        let mut samples = Vec::with_capacity(5);
+        for _ in 0..5 {
+            let start = Instant::now();
+            let (result, _trace, _diag) = compute_summaries_v2(
+                &ws.routines,
+                &graph,
+                &scc,
+                &calls.upgraded_bindings,
+                &field_index,
+                false,
+            );
+            samples.push(start.elapsed());
+            assert!(
+                !result.is_empty(),
+                "sanity: compute_summaries_v2 must produce summaries"
+            );
+        }
+        let m = median(samples.clone());
+        println!(
+            "[perf_bounds] compute_summaries_v2(100): median={m:?} bound={COMPUTE_SUMMARIES_V2_BOUND:?} \
+             samples={samples:?}"
+        );
+        assert!(
+            m <= COMPUTE_SUMMARIES_V2_BOUND,
+            "compute_summaries_v2 median {m:?} exceeds order-of-magnitude bound \
+             {COMPUTE_SUMMARIES_V2_BOUND:?} (samples: {samples:?})"
         );
     }
 }
