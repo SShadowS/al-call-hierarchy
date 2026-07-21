@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
-use crate::engine::l4::effect_lattice::TempStateKind;
+use crate::engine::l4::effect_lattice::{TempStateKind, merge_via, via_for_edge_kind};
 use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
@@ -356,11 +356,11 @@ pub(crate) fn set_bit(bits: &mut Vec<u64>, id: EffectId) {
 }
 
 /// True iff `id`'s bit is set in `bits`. An id past the end of `bits` is
-/// simply absent (never grows `bits` — read-only). Not yet read by production
-/// code (Task 5 only WRITES `SccPresence`; `reconstruct_via`/
-/// `solve_scc_db_effects` — Tasks 6/8 — are the intended readers) — kept
-/// `pub(crate)` and exercised directly by this task's own tests.
-#[allow(dead_code)]
+/// simply absent (never grows `bits` — read-only). Read by [`reconstruct_via`]
+/// (Task 6) — checking whether a candidate target identity actually survived
+/// into a member's final presence before crediting an edge's `via` to it —
+/// and by `solve_scc_db_effects` (Task 8); also exercised directly by this
+/// module's own tests.
 pub(crate) fn has_bit(bits: &[u64], id: EffectId) -> bool {
     let word = (id.0 / 64) as usize;
     word < bits.len() && (bits[word] & (1u64 << (id.0 % 64))) != 0
@@ -531,6 +531,220 @@ pub fn closed_form_union(
     }
 
     SccPresence { by_member }
+}
+
+// ---------------------------------------------------------------------------
+// Step D: via reconstruction post-pass.
+// ---------------------------------------------------------------------------
+
+/// The 5 canonical `via` strings [`via_for_edge_kind`]/[`merge_via`]
+/// (`effect_lattice.rs`) and `base_intraprocedural_summary`
+/// (`summary_runner.rs:162`) ever produce, in descending rank order. A
+/// DEFENSIVE canonicalization guard only — production code in this module
+/// never manufactures anything else — but `merge_via`'s own tie-break
+/// (`via_rank(a) >= via_rank(b) ? a : b`) keeps its FIRST argument on a rank
+/// tie, so an unchecked bogus string fed in as `a` would otherwise beat a
+/// real `"inherited"` (also rank 0) outright. [`merge_via_into`] asserts
+/// against this list before a candidate is ever allowed to compete.
+const CANONICAL_VIAS: [&str; 5] = [
+    "direct",
+    "implicit-trigger",
+    "event-subscriber",
+    "dynamic",
+    "inherited",
+];
+
+fn is_canonical_via(via: &str) -> bool {
+    CANONICAL_VIAS.contains(&via)
+}
+
+/// Merge `via` into `via_map[(member, id)]` using [`merge_via`]'s max-rank,
+/// first-wins-on-tie semantics — asserting `via` is canonical (see
+/// [`CANONICAL_VIAS`]) BEFORE it is allowed to compete for the slot, so a
+/// future bug that threads a raw/un-vetted string through this post-pass
+/// fails loudly in debug builds rather than silently winning a rank-0 tie
+/// against a real `"inherited"`. A `debug_assert!`, not a hard panic — a
+/// canonicalization backstop, per this repo's "engine never throws in
+/// production" rule; `via_for_edge_kind`/`merge_via` themselves are
+/// structurally incapable of producing anything non-canonical (see their own
+/// doc comments), so this can only ever fire if a FUTURE caller misuses this
+/// helper directly.
+fn merge_via_into(
+    via_map: &mut HashMap<(String, EffectId), String>,
+    member: &str,
+    id: EffectId,
+    via: &str,
+) {
+    debug_assert!(
+        is_canonical_via(via),
+        "reconstruct_via: non-canonical via string {via:?} — refusing to let \
+         it compete in the max-rank merge (must be one of {CANONICAL_VIAS:?})"
+    );
+    let key = (member.to_string(), id);
+    let merged = match via_map.get(&key) {
+        Some(existing) => merge_via(existing.as_str(), via).to_string(),
+        None => via.to_string(),
+    };
+    via_map.insert(key, merged);
+}
+
+/// Bit-scan iterator over the SET bits of one presence bitset, yielding
+/// `EffectId`s in ascending order. Cost is proportional to the number of set
+/// bits, not `universe.len()` — [`reconstruct_via`]'s per-edge callee scan
+/// must stay cheap even when the shared, workspace-wide universe holds many
+/// thousands of identities that have nothing to do with this callee.
+fn iter_set_bits(bits: &[u64]) -> impl Iterator<Item = EffectId> + '_ {
+    bits.iter().enumerate().flat_map(|(word_idx, &word)| {
+        let mut remaining = word;
+        std::iter::from_fn(move || {
+            if remaining == 0 {
+                None
+            } else {
+                let bit = remaining.trailing_zeros();
+                remaining &= remaining - 1;
+                Some(EffectId((word_idx as u32) * 64 + bit))
+            }
+        })
+    })
+}
+
+/// Reconstruct the per-`(member, EffectId)` `via` provenance in ONE
+/// post-pass over the FINAL presence sets, for one effective SCC (`eff`).
+///
+/// The old JACOBI fold (`compose_routine`, `summary_runner.rs:404-439`) never
+/// lets `via` propagate transitively: every callee effect's `via` is
+/// REPLACED with `via_for_edge_kind(edge.kind)` the moment it's folded into
+/// the caller, and a same-`effect_key` collision resolves by `merge_via`
+/// (max rank, first-wins-on-tie). Because of that replacement rule, the
+/// FINAL `via` for a present effect can be reconstructed with only ONE hop
+/// per contributing edge — no multi-hop trajectory tracking needed:
+///
+/// ```text
+/// via(m,k) = max( base_via(m,k)               if k ∈ base(m)  [always "direct"],
+///                  via_for_edge_kind(e.kind)   for every ACTUAL edge e=(m,c)
+///                                              and every effect k' ∈ set(c)
+///                                              with T_e(k') = k )
+/// ```
+///
+/// ## Coverage
+///
+/// COMPLETE for:
+///   - base-seeded via (`"direct"`, for every present `EffectId` that is one
+///     of `m`'s own base `db_effects` — terminal OR `ParameterDependent`;
+///     both always carry `via="direct"` — `base_intraprocedural_summary`,
+///     `summary_runner.rs:162`).
+///   - inherited via for TERMINAL (`Known`/`Unknown`) effects, over EVERY
+///     actual out-edge, whether the callee is another member of `eff` (read
+///     from `presence`) or an already-`settled` successor/fixed leaf (read
+///     from its `RoutineSummary.db_effects`) — a terminal effect transfers
+///     by IDENTITY (`T_e` is the identity function), so no per-edge
+///     argument-binding data is needed to know which target `EffectId` an
+///     edge contributes to.
+///
+/// DEFERRED (documented, not silently wrong — see task-6-report.md) for:
+///   - inherited via on a `ParameterDependent`-typed present effect that
+///     arose from an out-edge SUBSTITUTION (re-symbolizing through the
+///     caller's own argument binding, `substitute_pd_temp_state`) rather
+///     than from `m`'s own base. `T_e` for a PD-typed callee fact IS that
+///     substitution table, which needs the CALLER'S OWN `L3Routine`
+///     (specifically the call site matching `edge.callsite_id`) to resolve —
+///     data this function's signature (per the plan/brief, verbatim) does
+///     not carry. Task 8's `solve_scc_db_effects` DOES have `routines_by_id`
+///     and `upgraded_bindings` in scope; it must either extend this function
+///     or run an equivalent substitution-aware pass over PD-typed presence
+///     bits before materializing `DbEffect.via`.
+pub fn reconstruct_via(
+    eff: &Scc,
+    graph: &CombinedGraph,
+    presence: &SccPresence,
+    base_summaries: &HashMap<String, RoutineSummary>,
+    settled: &HashMap<String, RoutineSummary>,
+    universe: &EffectUniverse,
+) -> HashMap<(String, EffectId), String> {
+    let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
+    let mut via_map: HashMap<(String, EffectId), String> = HashMap::new();
+
+    // Init: base effects seed "direct" for every present EffectId that is
+    // one of the member's OWN base db_effects (terminal or PD — both always
+    // carry via="direct"; base_intraprocedural_summary, summary_runner.rs:162).
+    for m in &eff.members {
+        let Some(bits) = presence.by_member.get(m) else {
+            continue; // no presence recorded for this member; nothing to seed.
+        };
+        let Some(base) = base_summaries.get(m) else {
+            // Every real routine has a precomputed base summary — see
+            // compose_routine's own "this fallback is dead" note
+            // (summary_runner.rs:365-369). reconstruct_via's signature
+            // carries no routines_by_id to recompute one on the fly, so a
+            // missing entry is skipped defensively rather than faked.
+            continue;
+        };
+        for e in &base.db_effects {
+            let identity = EffectIdentity {
+                op: e.op.clone(),
+                table_id: e.table_id.clone(),
+                operation_id: e.operation_id.clone(),
+                temp: e.temp_state.to_kind(),
+            };
+            if let Some(id) = universe.get(&identity)
+                && has_bit(bits, id)
+            {
+                merge_via_into(&mut via_map, m, id, "direct");
+            }
+        }
+    }
+
+    // Fold: every actual out-edge contributes via_for_edge_kind(edge.kind)
+    // to every TERMINAL effect it carries from the callee's set that is ALSO
+    // present in the caller's own final presence (identity transfer — see
+    // the "DEFERRED" doc section above for why PD-typed callee facts are
+    // skipped here).
+    for m in &eff.members {
+        let Some(m_bits) = presence.by_member.get(m) else {
+            continue;
+        };
+        for edge in graph.edges_by_from.get(m).into_iter().flatten() {
+            let via = via_for_edge_kind(&edge.kind);
+            if member_set.contains(edge.to.as_str()) {
+                let Some(callee_bits) = presence.by_member.get(&edge.to) else {
+                    continue;
+                };
+                for id in iter_set_bits(callee_bits) {
+                    if !matches!(
+                        universe.identity(id).temp,
+                        TempStateKind::Known(_) | TempStateKind::Unknown
+                    ) {
+                        continue; // PD-typed: deferred, see doc above.
+                    }
+                    if has_bit(m_bits, id) {
+                        merge_via_into(&mut via_map, m, id, via);
+                    }
+                }
+            } else if let Some(callee_summary) = settled.get(&edge.to) {
+                for e in &callee_summary.db_effects {
+                    if !matches!(e.temp_state, TempState::Known(_) | TempState::Unknown) {
+                        continue; // PD-typed: deferred, see doc above.
+                    }
+                    let identity = EffectIdentity {
+                        op: e.op.clone(),
+                        table_id: e.table_id.clone(),
+                        operation_id: e.operation_id.clone(),
+                        temp: e.temp_state.to_kind(),
+                    };
+                    if let Some(id) = universe.get(&identity)
+                        && has_bit(m_bits, id)
+                    {
+                        merge_via_into(&mut via_map, m, id, via);
+                    }
+                }
+            }
+            // `else`: edge.to is neither an eff member nor settled — the
+            // Step-B/C closed-form union already treats it as unresolved
+            // (no contribution to presence), so there is nothing to fold.
+        }
+    }
+
+    via_map
 }
 
 #[cfg(test)]
@@ -1486,5 +1700,215 @@ mod tests {
             has_bit(b_bits, emitted_id),
             "terminal emission must be shared into EVERY member's presence, not just the one it landed on"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Step D: via reconstruction post-pass (Task 6).
+    // -----------------------------------------------------------------------
+
+    /// An edge with an explicit `kind` (unlike [`pd_edge`], which always
+    /// hardcodes `"direct"`) — Task 6's fixtures need to control edge kind
+    /// directly since `via_for_edge_kind` dispatches on it.
+    fn kind_edge(from: &str, to: &str, kind: &str) -> CombinedEdge {
+        CombinedEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            kind: kind.to_string(),
+            callsite_id: None,
+            operation_id: None,
+            event_id: Some("evt".to_string()),
+            subscriber_app_id: None,
+            resolution: "resolved".to_string(),
+        }
+    }
+
+    #[test]
+    fn base_effect_seeds_direct_and_beats_a_colliding_event_dispatch_self_loop() {
+        // `a` is a singleton recursive SCC (self-loop, kind="event-dispatch").
+        // Its own base effect X is ALSO reachable via the self-loop (the
+        // whole SCC's closed-form union is shared with itself) — via
+        // reconstruction must max-merge base's "direct" (rank 4) against the
+        // self-loop's "event-subscriber" (rank 2, via_for_edge_kind of
+        // "event-dispatch") and keep "direct".
+        let x_key = effect_key_of("Insert", "t1", "op1", &TempStateKind::Known(true));
+        let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        base_summaries.insert(
+            "a".to_string(),
+            RoutineSummary {
+                routine_id: "a".to_string(),
+                db_effects: vec![DbEffect {
+                    effect_key: x_key,
+                    operation_id: "op1".to_string(),
+                    op: "Insert".to_string(),
+                    table_id: "t1".to_string(),
+                    record_variable_id: None,
+                    temp_state: TempState::Known(true),
+                    via: "direct".to_string(),
+                }],
+                in_recursive_cycle: true,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(&["a"], vec![kind_edge("a", "a", "event-dispatch")]);
+        let eff = Scc {
+            members: vec!["a".into()],
+            recursive: true,
+        };
+        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let pd_facts: Vec<PdFact> = Vec::new();
+        let terminal_emissions: Vec<TerminalEmission> = Vec::new();
+        let mut universe = EffectUniverse::new();
+
+        let presence = closed_form_union(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &pd_facts,
+            &terminal_emissions,
+            &mut universe,
+        );
+
+        let via_map = reconstruct_via(
+            &eff,
+            &graph,
+            &presence,
+            &base_summaries,
+            &settled,
+            &universe,
+        );
+
+        let x_id = universe
+            .get(&EffectIdentity {
+                op: "Insert".to_string(),
+                table_id: "t1".to_string(),
+                operation_id: "op1".to_string(),
+                temp: TempStateKind::Known(true),
+            })
+            .expect("X must already be interned by closed_form_union");
+
+        assert_eq!(
+            via_map.get(&("a".to_string(), x_id)).map(String::as_str),
+            Some("direct"),
+            "a base-owned effect must win over a colliding event-dispatch self-loop"
+        );
+    }
+
+    #[test]
+    fn non_owner_member_inherits_via_edge_kind_not_direct() {
+        // a<->b recursive SCC. `a` owns base effect X. `b` has no base
+        // effects of its own — it only sees X via the closed-form union
+        // shared across the SCC. `a`'s via(X) must be "direct" (its own
+        // base); `b`'s via(X) must be "event-subscriber" (via_for_edge_kind
+        // of the b->a "event-dispatch" edge that actually carries X into
+        // `b`'s presence) — `b` never owns X, so it can never earn "direct".
+        let x_key = effect_key_of("Insert", "t1", "op1", &TempStateKind::Known(true));
+        let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        base_summaries.insert(
+            "a".to_string(),
+            RoutineSummary {
+                routine_id: "a".to_string(),
+                db_effects: vec![DbEffect {
+                    effect_key: x_key,
+                    operation_id: "op1".to_string(),
+                    op: "Insert".to_string(),
+                    table_id: "t1".to_string(),
+                    record_variable_id: None,
+                    temp_state: TempState::Known(true),
+                    via: "direct".to_string(),
+                }],
+                in_recursive_cycle: true,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+        base_summaries.insert(
+            "b".to_string(),
+            RoutineSummary {
+                routine_id: "b".to_string(),
+                db_effects: Vec::new(),
+                in_recursive_cycle: true,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+
+        let routines = vec![pd_routine("a"), pd_routine("b")];
+        let rbid = pd_routines_by_id(&routines);
+        let graph = pd_graph(
+            &["a", "b"],
+            vec![
+                pd_edge("a", "b", "a_cs1"),
+                kind_edge("b", "a", "event-dispatch"),
+            ],
+        );
+        let eff = Scc {
+            members: vec!["a".into(), "b".into()],
+            recursive: true,
+        };
+        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let pd_facts: Vec<PdFact> = Vec::new();
+        let terminal_emissions: Vec<TerminalEmission> = Vec::new();
+        let mut universe = EffectUniverse::new();
+
+        let presence = closed_form_union(
+            &eff,
+            &graph,
+            &rbid,
+            &settled,
+            &base_summaries,
+            &pd_facts,
+            &terminal_emissions,
+            &mut universe,
+        );
+
+        let via_map = reconstruct_via(
+            &eff,
+            &graph,
+            &presence,
+            &base_summaries,
+            &settled,
+            &universe,
+        );
+
+        let x_id = universe
+            .get(&EffectIdentity {
+                op: "Insert".to_string(),
+                table_id: "t1".to_string(),
+                operation_id: "op1".to_string(),
+                temp: TempStateKind::Known(true),
+            })
+            .expect("X must already be interned by closed_form_union");
+
+        assert_eq!(
+            via_map.get(&("a".to_string(), x_id)).map(String::as_str),
+            Some("direct"),
+            "a owns X in its own base"
+        );
+        assert_eq!(
+            via_map.get(&("b".to_string(), x_id)).map(String::as_str),
+            Some("event-subscriber"),
+            "b only inherits X via the b->a event-dispatch edge, never direct"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-canonical via string")]
+    fn canonicalization_guard_rejects_bogus_via_string() {
+        // A rank-0 bogus string must NOT be allowed to silently win a tie
+        // against a real "inherited" (also rank 0) — merge_via's own
+        // tie-break keeps its FIRST argument, so an unchecked bogus value
+        // passed through would otherwise win outright. merge_via_into must
+        // refuse it before it ever gets to compete.
+        let mut via_map: HashMap<(String, EffectId), String> = HashMap::new();
+        merge_via_into(&mut via_map, "a", EffectId(0), "totally-bogus-via");
     }
 }
