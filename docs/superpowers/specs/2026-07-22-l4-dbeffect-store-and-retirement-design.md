@@ -1,6 +1,6 @@
-# L4 db-effect Store Redesign + Old-Solver Retirement — Design Spec (rev 2)
+# L4 db-effect Store Redesign + Old-Solver Retirement — Design Spec (rev 4)
 
-**Date:** 2026-07-22 (rev 2 — incorporates round-1 review by gpt-5.6-sol + claude-fable-5)
+**Date:** 2026-07-22 (rev 4 — incorporates 3 review rounds by gpt-5.6-sol + claude-fable-5)
 **Status:** design — pre-implementation
 **Follows:** `2026-07-21-l4-summary-fixpoint-redesign-design.md` (Phase 1, done-on-branch: the
 closed-form v2 db-effect solver, byte-identical to the old Jacobi). This Phase-1.5 sub-arc (A)
@@ -93,12 +93,21 @@ reassignment:
   embedded in `effect_key`, so the secondary key is vacuous — keep it belt-and-braces. Preserve
   lexical `effect_key` ordering exactly (e.g. `p10 < p2` bytewise) — do NOT substitute a structured
   numeric temp comparator. The projection layer re-sorts by stable-projected keys (a second parity net).
-- ⟨rev3⟩ **Universe-freeze lifecycle (explicit):** (1) build with growable `Vec<u64>` / sparse
-  builders during PD discovery; (2) finish ALL PD-variant discovery (terminal effects never revert to
-  PD, so discovery terminates); (3) freeze universe length `U`; (4) resize dense sets to
-  `ceil(U/64)` `Box<[u64]>`, zero + validate tail bits; (5) compute the cached `effect_key` per id
-  and `key_rank`; (6) rebuild dense `rank_lut`/cardinality; (7) build shared sets + hash-cons; (8)
-  build reverse indexes. No key-order EffectId remap step exists.
+- ⟨rev4⟩ **Universe-freeze lifecycle (explicit):** (1) during solving, build with growable
+  `Vec<u64>` / sparse builders; ⟨rev4 P0⟩ (2) **complete ALL identity discovery before freeze — not
+  just PD.** Explicitly collect + intern every identity source: (a) every direct base Known/Unknown
+  effect of every routine, (b) every retained fixed-leaf identity, terminal AND PD, (c) every
+  retained per-routine PD fact, (d) every PD→Known/Unknown terminal emission. (Terminals never revert
+  to PD, so discovery terminates.) (3) freeze universe length `U`; **after freeze no `intern()` may
+  create an id — shared-set/closure construction uses CHECKED lookup and a debug-assert/test fails on
+  a missing identity** (guards against a terminal discovered post-freeze); (4) resize dense sets to
+  `ceil(U/64)` `Box<[u64]>`, zero + validate tail bits; (5) compute cached `effect_key` per id +
+  `key_rank`; (6) build dense `rank_lut`/cardinality; (7) build shared sets + hash-cons + per-set
+  cached `ordered_ids`; (8) build reverse indexes. No key-order EffectId remap step exists.
+- ⟨rev4⟩ **`key_rank` availability window:** through Steps 1-2 the solver still materializes per-SCC
+  mid-solve, and ordering there uses the Step-1 cached-`&str` sort. `key_rank` is computed only at
+  freeze (post-solve) and drives ordering ONLY for post-freeze output/projection (Step 3+, once
+  feed-forward is on ids). Do not consult `key_rank` mid-solve — it does not exist yet.
 
 ### Step 2 — compact rows + u8 via
 - Per-routine row: `{ terminal_base: EffectSetId, pd_delta: Range, base_via: Range, delta_via: Range }`
@@ -140,7 +149,8 @@ reassignment:
 - `EffectSetId` arena of hash-consed sets (`HybridEffectSet`: `Sparse(Box<[EffectId]>)` below a
   ~256-entry threshold, `Dense{ words: Box<[u64]>, rank_lut, cardinality }` above — ⟨rev⟩ `words`
   length = `ceil(frozen_universe_len / 64)`, NEVER a hardcoded `[u64;143]`; zero + validate tail bits
-  on cache load; rebuild `rank_lut`/cardinality after any remap). All members of one effective SCC
+  on cache load; build `rank_lut`/cardinality once at freeze — ⟨rev4⟩ there is NO EffectId remap, so
+  no post-remap rebuild). All members of one effective SCC
   record ONE `EffectSetId` (this IS `closed_form_union`'s `C` — stop cloning per member). Per-member
   `pd_delta` = member PD facts not in the base (mandatory — `effects[v] = C ∪ member-v PD`).
 - ⟨rev⟩ Invariants (test them): deltas sorted ascending + unique + exactly `delta \ base`; via arrays
@@ -151,6 +161,11 @@ reassignment:
   ORDERED merge by `key_rank`, NOT base-then-delta append and NOT raw-EffectId order** — PD and
   terminal variants of the same base effect interleave in `(effect_key, operation_id)` order (temp is
   the last key fragment).
+- ⟨rev4 P1⟩ **Cache a `ordered_ids: Box<[EffectId]>` per `EffectSetId`** (the base's members sorted by
+  `key_rank`), built once when the set is interned — so the 797-member base is NOT re-sorted per
+  routine. Each routine's `pd_delta` is likewise stored/kept in `key_rank` order. The base∪delta
+  emit is then a linear O(result) two-way merge of two already-ranked runs. Via lookup still uses the
+  EffectId-based membership ordinal (storage order), independent of the emit order.
 - ⟨rev3⟩ **When a routine's `terminal_base` is canonicalized to a shared `EffectSetId` in Step 3,
   REBUILD its `base_via` range** so the via bytes stay aligned to the shared set's ordinal order (a
   Step-2→3 set-id swap without rebuilding `base_via` silently misaligns provenance — the "via arrays
@@ -181,10 +196,11 @@ reassignment:
 - **Down** (routine→effects): `base[routine_set[r]] ∪ delta[r]` ordered-merge by `key_rank`,
   O(result). "Does R touch table X?" = `table_to_sccs[X].contains(class_of[r]) ||
   table_to_delta_routines[X].contains(r)` — no set decompression. **Up** (table/effect→routines):
-  iterate postings, expand via `class_members`, merge delta routines. ⟨rev3⟩ Expanding sorted class
-  postings does NOT yield globally-sorted `RoutineIx` — for deterministic paging use a result bitmap
-  or k-way merge, or explicitly declare postings unordered + a sort layer. Return count/top-N/paged (a
-  50k-routine result is not low-latency regardless of index speed).
+  iterate postings, expand via `class_members`, merge delta routines. ⟨rev4 P1, DECIDED⟩ Expanding
+  sorted class postings does NOT yield globally-sorted `RoutineIx`, so for deterministic paging
+  **build a temporary routine bitmap** (~12.5KB for ~100k routines), set bits while expanding classes
+  + delta postings, then iterate ascending `RoutineIx` for count/top-N/paging. (One method, not a
+  menu.)
 
 ### Public API
 - `SummaryBundle { summaries: Vec<CompactRoutineSummary>, effects: EffectStore }` with
@@ -200,6 +216,10 @@ reassignment:
   per-run/per-workspace dense index — adding one earlier-sorting effect renumbers later ids and would
   change fingerprints for unchanged routines). Raw `EffectId` is for same-universe ephemeral equality
   only.
+- ⟨rev4 P1⟩ **Projection sort tie-break:** the projection re-sorts by stable-projected keys; when two
+  internal identities collapse to an equal `(projected_effect_key, projected_operation_id)`, tie-break
+  by the internal `key_rank` — sort key `(projected_effect_key, projected_operation_id,
+  key_rank[EffectId])` — to reproduce the existing stable-sort order exactly.
 
 ---
 
