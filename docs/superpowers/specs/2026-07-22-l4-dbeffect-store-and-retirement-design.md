@@ -75,7 +75,13 @@ Lowest-risk, independently landable, removes the 10⁸ `format!` allocs WITHOUT 
 reassignment:
 - Intern `RoutineIx(u32)` once workspace-wide (kills String-hashing in `presence.by_member`,
   `PdState`, the via map, feed-forward, and `solve_side_facts`'s per-member String clone — fold that
-  in here too). `EffectId(u32)` already exists.
+  in here too). `EffectId(u32)` already exists. ⟨rev4⟩ Assign `RoutineIx` in a CANONICAL deterministic
+  order (e.g. sorted stable-routine-id) so ascending-`RoutineIx` paging is stable across repeated
+  builds, not merely within one loaded store.
+- ⟨rev4⟩ Make the freeze STRUCTURAL, not conventional: a typestate split
+  `GrowingEffectUniverse::freeze() -> FrozenEffectUniverse`, where `FrozenEffectUniverse` has NO
+  `intern` method (only checked `get`). Post-freeze identity creation is then a compile error, not a
+  runtime-assert.
 - **Cache each effect's `effect_key` once** (a `Vec<String>` parallel to the universe's `by_id`, or
   interned `Box<str>`), computed at first sight — NOT recomputed per comparison. `materialize_member_db_effects`
   then sorts a member's present ids by the cached `&str` (+ `operation_id` tie-break), O(k log k)
@@ -153,7 +159,8 @@ reassignment:
   no post-remap rebuild). All members of one effective SCC
   record ONE `EffectSetId` (this IS `closed_form_union`'s `C` — stop cloning per member). Per-member
   `pd_delta` = member PD facts not in the base (mandatory — `effects[v] = C ∪ member-v PD`).
-- ⟨rev⟩ Invariants (test them): deltas sorted ascending + unique + exactly `delta \ base`; via arrays
+- ⟨rev⟩ Invariants (test them): ⟨rev4⟩ deltas physically sorted by `key_rank`, unique by `EffectId`,
+  exactly `delta \ base`; via arrays
   exactly parallel; sparse and dense iterators both yield ascending-`EffectId` order (storage order);
   hash-consing compares logical contents (canonical content hash over the sorted id sequence
   regardless of repr, with full equality on hash collision); threshold conversion preserves
