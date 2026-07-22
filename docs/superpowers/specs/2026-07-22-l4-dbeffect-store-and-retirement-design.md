@@ -80,16 +80,25 @@ reassignment:
   interned `Box<str>`), computed at first sight — NOT recomputed per comparison. `materialize_member_db_effects`
   then sorts a member's present ids by the cached `&str` (+ `operation_id` tie-break), O(k log k)
   `&str` compares, zero allocation. This alone removes almost all of the 517s.
-- ⟨rev⟩ Do NOT reassign EffectIds to sorted order in Step 1 — that requires a post-solve global
-  freeze and a remap that rewrites every stored bitset word-layout, delta list, via table, and the
-  hash-consed set arena (dedup hashes are id-dependent). If adopted at all, that remap is a Step-3
-  post-solve pass with that stated blast radius. Step 1 keeps intern-order ids + cached-key sort.
-- ⟨rev⟩ Order correctness (confirmed by both reviewers): iterating a member's present ids in
-  `(effect_key, operation_id)` order reproduces the legacy `Vec<DbEffect>` order byte-for-byte (each
-  member's sequence is a subsequence of the global key order). `operation_id` is embedded in
-  `effect_key`, so the secondary key is vacuous — keep it belt-and-braces. Preserve lexical
-  `effect_key` ordering exactly (e.g. `p10 < p2` bytewise) — do NOT substitute a structured numeric
-  temp comparator. The projection layer re-sorts by stable-projected keys (a second parity net).
+- ⟨rev3⟩ **NEVER reassign EffectIds.** EffectIds stay intern-order forever (no remap — a remap would
+  rewrite every bitset word-layout, delta, via table, and hash-cons key). Instead, at universe freeze,
+  compute ONE `key_rank: Vec<u32>` (`EffectId → rank under (effect_key, operation_id)`, from the
+  cached keys). This resolves the round-1 order/no-remap tension: intern order and key order differ,
+  so **all ordered iteration and the base∪delta ordered-merge (Step 3) sort by `key_rank`, NOT by raw
+  `EffectId`.** Bitset storage/membership stays keyed by `EffectId` (word `id/64`); only the OUTPUT
+  ordering uses `key_rank`. Materialization walks a set's members and orders them by `key_rank[id]`.
+- ⟨rev⟩ Order correctness (confirmed by both reviewers): emitting a member's present ids in
+  `key_rank` order (== `(effect_key, operation_id)` order) reproduces the legacy `Vec<DbEffect>` order
+  byte-for-byte (each member's sequence is a subsequence of the global key order). `operation_id` is
+  embedded in `effect_key`, so the secondary key is vacuous — keep it belt-and-braces. Preserve
+  lexical `effect_key` ordering exactly (e.g. `p10 < p2` bytewise) — do NOT substitute a structured
+  numeric temp comparator. The projection layer re-sorts by stable-projected keys (a second parity net).
+- ⟨rev3⟩ **Universe-freeze lifecycle (explicit):** (1) build with growable `Vec<u64>` / sparse
+  builders during PD discovery; (2) finish ALL PD-variant discovery (terminal effects never revert to
+  PD, so discovery terminates); (3) freeze universe length `U`; (4) resize dense sets to
+  `ceil(U/64)` `Box<[u64]>`, zero + validate tail bits; (5) compute the cached `effect_key` per id
+  and `key_rank`; (6) rebuild dense `rank_lut`/cardinality; (7) build shared sets + hash-cons; (8)
+  build reverse indexes. No key-order EffectId remap step exists.
 
 ### Step 2 — compact rows + u8 via
 - Per-routine row: `{ terminal_base: EffectSetId, pd_delta: Range, base_via: Range, delta_via: Range }`
@@ -135,12 +144,21 @@ reassignment:
   record ONE `EffectSetId` (this IS `closed_form_union`'s `C` — stop cloning per member). Per-member
   `pd_delta` = member PD facts not in the base (mandatory — `effects[v] = C ∪ member-v PD`).
 - ⟨rev⟩ Invariants (test them): deltas sorted ascending + unique + exactly `delta \ base`; via arrays
-  exactly parallel; sparse and dense iterators both yield ascending-EffectId order; hash-consing
-  compares logical contents (canonical content hash over the sorted id sequence regardless of repr,
-  with full equality on hash collision); threshold conversion preserves cardinality/order; ranges
-  bounds-checked on deserialize. **Merged base∪delta iteration is an ORDERED merge by global key
-  rank, NOT base-then-delta append** — PD and terminal variants of the same base effect interleave in
-  `(effect_key, operation_id)` order (temp is the last key fragment).
+  exactly parallel; sparse and dense iterators both yield ascending-`EffectId` order (storage order);
+  hash-consing compares logical contents (canonical content hash over the sorted id sequence
+  regardless of repr, with full equality on hash collision); threshold conversion preserves
+  cardinality/order; ranges bounds-checked on deserialize. **Merged base∪delta OUTPUT iteration is an
+  ORDERED merge by `key_rank`, NOT base-then-delta append and NOT raw-EffectId order** — PD and
+  terminal variants of the same base effect interleave in `(effect_key, operation_id)` order (temp is
+  the last key fragment).
+- ⟨rev3⟩ **When a routine's `terminal_base` is canonicalized to a shared `EffectSetId` in Step 3,
+  REBUILD its `base_via` range** so the via bytes stay aligned to the shared set's ordinal order (a
+  Step-2→3 set-id swap without rebuilding `base_via` silently misaligns provenance — the "via arrays
+  exactly parallel" invariant must be re-established against the shared set).
+- ⟨rev3⟩ **Fixed leaves get a singleton `EffectClassIx` each.** Effect classes = effective SCCs (fixed
+  leaves/missing removed) PLUS one singleton class per RETAINED fixed leaf — normalize the leaf's own
+  settled summary into `terminal_base` + `pd_delta` preserving its OWN via values, so leaves support
+  down/up queries, `class_of[routine]`, and projection like any routine. Missing routines get no row.
 - Feed-forward reads settled callees' `(EffectSetId, delta)`, not materialized Strings — eliminates
   per-edge re-intern and the `settled.clone()` in the multi-effective-SCC path.
 - 7.1M memberships collapse to ~82k SetId refs + tiny deltas (⟨rev⟩ presence collapses; the u8 via
@@ -156,27 +174,32 @@ reassignment:
   effect transpose uses `EffectClassIx`. **Ancestor-scoped hover** ("callers of R that touch X") uses
   `GraphSccIx` for the reverse-DAG BFS — effective-SCC leaf-removal changes reachability semantics,
   so ancestor traversal must not use the effect-sharing DAG. Maintain both.
-- ⟨rev⟩ **Table posting disjointness:** at effect level `delta = delta \ base` keeps SCC-expansion
-  and delta-routines disjoint. At TABLE level a routine may hit table X via a base effect AND a
-  distinct PD delta effect — so add to `table_to_delta_routines[X]` ONLY when the base does not
-  already touch X, OR dedup during up-query merge. State the invariant.
-- **Down** (routine→effects): `base[routine_set[r]] ∪ delta[r]` ordered-merge, O(result). "Does R
-  touch table X?" = `table_to_sccs[X].contains(class_of[r]) || table_to_delta_routines[X].contains(r)`
-  — no set decompression. **Up** (table/effect→routines): iterate postings, expand via
-  `class_members`, merge delta routines. Return count/top-N/paged (a 50k-routine result is not
-  low-latency regardless of index speed).
+- ⟨rev3⟩ **Table posting — ONE disjoint contract** (not "disjoint OR dedup"): `table_to_delta_routines[T]`
+  contains R **iff** `delta(R)` touches T **AND** `base(class(R))` does NOT touch T. Then table-SCC
+  expansion and delta postings are disjoint by construction; test the invariant. (At effect level
+  `delta = delta \ base` already makes them disjoint.)
+- **Down** (routine→effects): `base[routine_set[r]] ∪ delta[r]` ordered-merge by `key_rank`,
+  O(result). "Does R touch table X?" = `table_to_sccs[X].contains(class_of[r]) ||
+  table_to_delta_routines[X].contains(r)` — no set decompression. **Up** (table/effect→routines):
+  iterate postings, expand via `class_members`, merge delta routines. ⟨rev3⟩ Expanding sorted class
+  postings does NOT yield globally-sorted `RoutineIx` — for deterministic paging use a result bitmap
+  or k-way merge, or explicitly declare postings unordered + a sort layer. Return count/top-N/paged (a
+  50k-routine result is not low-latency regardless of index speed).
 
 ### Public API
 - `SummaryBundle { summaries: Vec<CompactRoutineSummary>, effects: EffectStore }` with
   `db_effects(routine) -> impl Iterator<Item = DbEffectRef<'_>>` (borrows dictionary strings). Owned
   `DbEffect` only when a legacy caller asks. aldump/fingerprint/diff **stream** their projection to
   the writer — never build 7.1M owned `PDbEffect`s in RAM.
-- ⟨rev⟩ **Fingerprints hash STABLE-projected key material** (op/table/operation as stable ids,
-  projected `effect_key`, temp, canonical via) exactly as `stable_summary_fingerprint` does today —
-  NOT raw `EffectId` (a per-run/per-workspace dense index: adding one earlier-sorting effect
-  renumbers later ids and would change fingerprints for unchanged routines, breaking cross-run/version
-  stability and byte-identity). Streaming is fine; the hashed bytes must be identity-derived, not
-  index-derived. Raw `EffectId` is for same-universe ephemeral equality only.
+- ⟨rev3⟩ **Fingerprints: EXACT byte-preservation of the existing sequence.** `stable_summary_fingerprint`
+  today encodes each effect as `projected_effect_key + ":" + via` (verified: it hashes only that, not
+  op/table/operation/temp separately — those are already inside `effect_key`). The requirement is
+  byte-identical output — so STREAM that exact existing logical sequence (projected key `:` via), do
+  NOT expand into an op/table/operation/temp tuple (that would change the fingerprint bytes). The
+  hashed bytes must be identity-derived (stable-projected keys), NEVER raw `EffectId` (a
+  per-run/per-workspace dense index — adding one earlier-sorting effect renumbers later ids and would
+  change fingerprints for unchanged routines). Raw `EffectId` is for same-universe ephemeral equality
+  only.
 
 ---
 
@@ -193,7 +216,7 @@ case. Then, in one final task:
    NOT `stable_summary_fingerprint` (it omits internal fields). This becomes the post-retirement
    regression anchor. ⟨rev⟩ Record the pre-deletion commit/tag in the spec so the old oracle is one
    `git checkout` away for forensic re-differencing.
-2. **Cut `run_and_project`** (`summary.rs:795`) off old → v2. v2 is trace-free; the R3a-2 trace
+2. **Cut `run_and_project`** (`summary.rs` ~838, pipeline call ~869) off old → v2. v2 is trace-free; the R3a-2 trace
    goldens encoding the 58-pass trajectory retire → inspect the diff (re-point to final-semantics or
    retire the dump mode). Never blind-regen.
 3. **Delete the R3b Salsa incrementality experiment** (`src/engine/l4/incremental/` + `tests/r3/r3b_*`)
@@ -225,16 +248,28 @@ case. Then, in one final task:
   ⟨rev⟩ if the residual is uncertainties/roles cloning in `settled`, name and address it, don't assume
   db_effects was 100% of the 40GB.
 - **Staged, lowest-risk-first & each independently landable:** Step 1 (intern + cached-key sort) →
-  re-measure (most of 517s gone); Step 2 (compact rows + u8 via) → re-measure (most of 40GB gone);
-  Step 3 (shared SetId + deltas + feed-forward on ids); Step 4 (inverted index). Then Part B
-  (retirement). Each step differential-gated against old.
+  re-measure (most of 517s gone); Step 2 (compact rows + u8 via) → re-measure (⟨rev3⟩ compute-time
+  drops, but a chunk of the RSS win arrives only at Step 3 — through Steps 1-2 the solver still
+  materializes per-SCC `Vec<DbEffect>` mid-solve and feed-forward still clones settled Strings; the
+  797-member `c.clone()` + settled-map strings survive until Step 3 reads `(EffectSetId, delta)`. Do
+  NOT bill Step 2 for the full 40GB); Step 3 (shared SetId + deltas + feed-forward on ids →
+  re-measure: the RSS win lands here); Step 4 (inverted index). Then Part B (retirement).
+- ⟨rev3⟩ Each step is differential-gated against old on FIXTURES + generated small-graphs; the CDO
+  differential leg (~729s/40GB on the old solver, `CDO_WS`-gated) is opt-in per step but **MANDATORY
+  before Part B** — a step "gated on fixtures only" is not proven.
+- ⟨rev3⟩ Add a debug/test assertion counting present effects with NO attributed via (the `"inherited"`
+  floor must never silently hide a real provenance gap).
 
 ---
 
 ## Risks & open questions ⟨rev⟩
 
-1. **Step-1/Step-3 remap** — if EffectIds are ever reassigned to sorted order, the remap rewrites all
-   bitsets/deltas/via/hash-cons entries; the design avoids this by using cached-key sort in Step 1.
+1. ⟨rev3, RESOLVED⟩ **EffectId order** — EffectIds are NEVER reassigned (no remap); storage is
+   EffectId-keyed, OUTPUT order is by a frozen `key_rank[EffectId]`. This removes the round-1
+   order/no-remap contradiction without a rewrite of bitsets/deltas/via/hash-cons.
+8. ⟨rev3⟩ **Fixed leaves** — each retained fixed leaf is a singleton `EffectClassIx` with a normalized
+   base+delta+via row; missing routines get no row. (Do not leave leaves classless — they answer
+   queries.)
 2. **PD-via accumulation** — the mask trick is terminal-only; the PD half must record every transition
    and gate on final presence (keep the integerized post-pass unless proven equivalent).
 3. **Fingerprint identity** — must be stable-projected keys, never raw EffectId.
