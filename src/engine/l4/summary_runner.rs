@@ -1197,14 +1197,23 @@ pub fn compute_summaries_v2_with_leaves_core(
     // O(N^2) in routine count. Hoisting it here makes it O(total) ONCE.
     let rvid_by_opid = build_rvid_by_opid(&base_summaries, leaf_summaries);
 
+    // Phase-split attribution (observability only): accumulate wall time spent in
+    // the roles-only fixpoint vs the closed-form db-effect solver across all SCCs,
+    // emitted once after the loop. Instant::now() is ~20ns; the per-SCC overhead is
+    // negligible and the aggregate is only serialized when a tracer is active.
+    let mut roles_us: u128 = 0;
+    let mut db_us: u128 = 0;
+
     for scc_entry in &scc.sccs {
         // parameter_roles from the roles-ONLY fixpoint (the old db_effects JACOBI
         // is NOT run). Reads `v2_map` as its predecessor view (this SCC not yet
         // inserted).
+        let _roles_t = std::time::Instant::now();
         let RolesSccOut {
             roles,
             cap_hit_stable_members,
         } = run_one_scc_roles(scc_entry, &v2_map, &ctx);
+        roles_us += _roles_t.elapsed().as_micros();
 
         // Surface the roles fixpoint's cap-hit as a summarize-stage diagnostic,
         // byte-identical to the OLD solver's message shape (severity/stage/text).
@@ -1225,6 +1234,7 @@ pub fn compute_summaries_v2_with_leaves_core(
         // `body_avail_by_id`/`rvid_by_opid` are the workspace-wide, run-invariant
         // maps built once above — NOT rebuilt per SCC (see their own
         // construction comments for the O(N^2) this replaces).
+        let _db_t = std::time::Instant::now();
         let triple = solve_scc_db_effects(
             scc_entry,
             graph,
@@ -1238,6 +1248,7 @@ pub fn compute_summaries_v2_with_leaves_core(
             &is_recomputed,
             &rvid_by_opid,
         );
+        db_us += _db_t.elapsed().as_micros();
 
         // Assemble each member: NEW db_effects/uncertainties/has_unresolved from
         // the solver, roles from the roles-only fixpoint, in_recursive_cycle from
@@ -1275,6 +1286,17 @@ pub fn compute_summaries_v2_with_leaves_core(
             v2_map.insert(id, assembled);
         }
     }
+
+    // Phase-split attribution: roles-only fixpoint vs closed-form db-effect solver.
+    // Emitted once (tracer-gated; no-op off-trace) so `context.compute_summaries`'s
+    // cost can be attributed without per-SCC span spam.
+    pt::instant_lazy("l4", "compute_summaries_v2_phase_split", || {
+        json!({
+            "roles_ms": (roles_us / 1000) as u64,
+            "db_solver_ms": (db_us / 1000) as u64,
+            "sccs": scc.sccs.len(),
+        })
+    });
 
     (v2_map, diagnostics)
 }
