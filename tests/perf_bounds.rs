@@ -259,36 +259,40 @@ mod release_checks {
     // `compute_summaries_v2` (l4-summary-fixpoint-redesign Task 11) — the
     // closed-form db-effect solver `build_detector_context` calls for every
     // `alsem analyze`/`aldump` run (`src/engine/l5/detector_context.rs:514`).
-    // This is a GENUINELY NEW gate: no prior CDO re-measurement exists for
-    // it (the 8020-corpus before/after numbers this task's plan asks for are
-    // a SEPARATE re-measurement the coordinator runs against the real
-    // workspace, not this synthetic corpus). Per this task's brief, an
-    // order-of-magnitude REGRESSION tripwire is the goal, not a tight
-    // target, so the bound below is a generous multiple of the measured
-    // baseline rather than the file's usual 3x CLAUDE.md-target convention
-    // (there is no CLAUDE.md row for this operation).
     //
-    // Measured median ~38.1ms on this machine (release, dev machine,
-    // 2026-07-22; 5 timed samples over a warmed-up 100-file / 1000-routine
-    // perf_support corpus — samples ranged 32.8-46.7ms, see the task report
-    // for the exact log). Bound set to ~10x that baseline: generous enough
+    // Task 11 originally gated this at a DELIBERATELY SMALLER 100-file corpus
+    // (median ~38.1ms) because `solve_scc_db_effects` called
+    // `build_rvid_by_opid(base_summaries, settled)` ONCE PER TARJAN SCC —
+    // `build_rvid_by_opid` scans ALL of `base_summaries`/`settled` (every
+    // routine in the WHOLE workspace), so that per-SCC call was
+    // O(total-workspace-db_effects) paid N times over N SCCs: O(N^2) in
+    // routine count. Measured on the SAME (all-singleton-SCC, non-recursive)
+    // corpus at the time: 100->1000 files (1000->10,000 routines) cost ~120x
+    // time for a 10x routine-count increase — worse than linear on a graph
+    // with ZERO recursive SCCs, i.e. an algorithmic defect, not corpus noise.
+    //
+    // Task 11b (this fix) hoists `build_rvid_by_opid` OUT of the per-SCC loop
+    // — built ONCE, before `compute_summaries_v2_with_leaves_core`'s
+    // per-Tarjan-SCC loop, from `base_summaries ∪ leaf_summaries` (see that
+    // fn's doc for the completeness argument) — and does the SAME for a
+    // second O(N^2) cost found alongside it: `solve_side_facts` used to
+    // rebuild its own workspace-wide `body_avail_by_id` map on EVERY call
+    // (once per effective SCC), also now hoisted once and threaded in. With
+    // both fixed, this gate is restored to the file's STANDARD 1000-file
+    // corpus size (matching every other bound in this file) rather than the
+    // 100-file dodge.
+    //
+    // Re-measured median ~76ms on this machine (release, dev machine,
+    // 2026-07-22; 5 timed samples over a warmed-up 1000-file / 10,000-routine
+    // perf_support corpus — samples ranged ~68-86ms; a SEPARATE scratch
+    // measurement at 100->1000->4000 files showed time ratios of ~16.8x/~5.5x
+    // against routine-count ratios of 10x/4x — dramatically closer to linear
+    // than the ~120x/~16x an O(N^2) solver would produce at those same
+    // ratios, see the task report for the full log). Bound set to 3x that
+    // baseline, the file's usual CLAUDE.md-target convention: generous enough
     // to absorb machine-to-machine variance and ordinary noise, tight enough
     // that a true order-of-magnitude regression still trips it.
-    //
-    // The corpus size here is DELIBERATELY smaller than every other bound in
-    // this file (which use the 1000-file corpus): a 1000-file / 10,000-routine
-    // run of the SAME (all-singleton-SCC, non-recursive) corpus measured
-    // ~4.5s median — a ~120x cost increase for a 10x routine-count increase,
-    // i.e. worse than linear, on a graph with ZERO recursive SCCs. That
-    // scaling shape is a real observation worth flagging to whoever owns the
-    // closed-form solver's algorithmic complexity next (see the task report's
-    // Concerns section) but is NOT something this task's brief asks this gate
-    // to fix — Task 11 is measure-and-gate only, and the recursive-SCC
-    // pathology this redesign actually targets is proven separately by the
-    // coordinator's real-workspace (8020) before/after re-measurement, not by
-    // this synthetic, non-recursive corpus. 100 files keeps this gate's own
-    // CI cost small while still exercising a real (non-trivial) call graph.
-    const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(400); // ~10x ~38.1ms measured baseline
+    const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(230); // 3x ~76ms measured baseline
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
@@ -871,10 +875,11 @@ mod release_checks {
     /// this gate only exercises the common closed-form (non-recursive) path;
     /// the recursive-SCC pathology this redesign fixed is proven separately
     /// by the coordinator's real-workspace 8020 before/after re-measurement,
-    /// not this gate. It is still a real regression tripwire for the whole
-    /// assembly-plus-solve cost on a 100-file, real-call-graph corpus (a
-    /// deliberately smaller corpus than every other bound in this file uses
-    /// — see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own doc for why).
+    /// not this gate. Restored (Task 11b) to the file's STANDARD 1000-file
+    /// corpus size — matching every other bound in this file — now that the
+    /// O(N^2) `build_rvid_by_opid`/`body_avail_by_id` per-SCC rebuilds are
+    /// hoisted out (see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own doc); the
+    /// 100-file dodge is no longer needed.
     #[test]
     fn compute_summaries_v2_within_bound() {
         use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
@@ -886,7 +891,7 @@ mod release_checks {
         use al_call_hierarchy::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2};
         use std::collections::HashMap;
 
-        let dir = corpus_dir(100);
+        let dir = corpus_dir(1000);
         let resolved = assemble_and_resolve_workspace_default(dir.path()).expect(
             "assemble_and_resolve_workspace_default must succeed on the perf_support corpus",
         );
@@ -937,7 +942,7 @@ mod release_checks {
         );
         assert!(
             !warm.is_empty(),
-            "sanity: compute_summaries_v2 must produce summaries for a 100-file workspace"
+            "sanity: compute_summaries_v2 must produce summaries for a 1000-file workspace"
         );
 
         let mut samples = Vec::with_capacity(5);
@@ -959,12 +964,12 @@ mod release_checks {
         }
         let m = median(samples.clone());
         println!(
-            "[perf_bounds] compute_summaries_v2(100): median={m:?} bound={COMPUTE_SUMMARIES_V2_BOUND:?} \
+            "[perf_bounds] compute_summaries_v2(1000): median={m:?} bound={COMPUTE_SUMMARIES_V2_BOUND:?} \
              samples={samples:?}"
         );
         assert!(
             m <= COMPUTE_SUMMARIES_V2_BOUND,
-            "compute_summaries_v2 median {m:?} exceeds order-of-magnitude bound \
+            "compute_summaries_v2 median {m:?} exceeds 3x-target bound \
              {COMPUTE_SUMMARIES_V2_BOUND:?} (samples: {samples:?})"
         );
     }
