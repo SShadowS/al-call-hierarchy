@@ -20,7 +20,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use super::combined_graph::CombinedGraph;
-use super::db_effect_solver::solve_scc_db_effects;
+use super::db_effect_solver::{build_rvid_by_opid, solve_scc_db_effects};
 use super::effect_lattice::{
     EffectPresence, effect_key_of, join_presence, merge_via_owned, via_for_edge_kind,
 };
@@ -1187,6 +1187,16 @@ pub fn compute_summaries_v2_with_leaves_core(
     // backstop. Empty on every real SCC (roles converge) — see [`RolesSccOut`].
     let mut diagnostics: Vec<SummarizeDiagnostic> = Vec::new();
 
+    // `record_variable_id` origins for every `operation_id` that can ever
+    // appear on ANY assembled summary live in `base_summaries` (all non-leaf
+    // routine bases) ∪ `leaf_summaries` (every leaf's own final summary) —
+    // see `build_rvid_by_opid`'s doc for the completeness argument. Built
+    // ONCE, here, BEFORE the per-Tarjan-SCC loop below — NOT per SCC. This
+    // used to be rebuilt inside `solve_scc_db_effects` on every call (once
+    // per Tarjan SCC), an O(total-workspace-db_effects) cost paid N times —
+    // O(N^2) in routine count. Hoisting it here makes it O(total) ONCE.
+    let rvid_by_opid = build_rvid_by_opid(&base_summaries, leaf_summaries);
+
     for scc_entry in &scc.sccs {
         // parameter_roles from the roles-ONLY fixpoint (the old db_effects JACOBI
         // is NOT run). Reads `v2_map` as its predecessor view (this SCC not yet
@@ -1212,6 +1222,9 @@ pub fn compute_summaries_v2_with_leaves_core(
 
         // New db-triple. Reads the SAME predecessor view (`v2_map`); its internal
         // feed-forward layers this SCC's sibling effective SCCs on top.
+        // `body_avail_by_id`/`rvid_by_opid` are the workspace-wide, run-invariant
+        // maps built once above — NOT rebuilt per SCC (see their own
+        // construction comments for the O(N^2) this replaces).
         let triple = solve_scc_db_effects(
             scc_entry,
             graph,
@@ -1220,8 +1233,10 @@ pub fn compute_summaries_v2_with_leaves_core(
             &base_summaries,
             upgraded_bindings,
             &uncertainty_edges_by_from,
+            &body_avail_by_id,
             &mut universe,
             &is_recomputed,
+            &rvid_by_opid,
         );
 
         // Assemble each member: NEW db_effects/uncertainties/has_unresolved from

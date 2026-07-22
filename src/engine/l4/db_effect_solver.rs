@@ -843,19 +843,25 @@ pub fn solve_side_facts(
     settled: &HashMap<String, RoutineSummary>,
     base_summaries: &HashMap<String, RoutineSummary>,
     uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
+    body_avail_by_id: &HashMap<String, bool>,
 ) -> SideFacts {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
     let empty_fields = FieldIndex::new();
 
     // Workspace-wide body-availability, for the opaque-callee guard — mirrors
     // `compute_summaries_with_leaves`'s own `body_avail_by_id` construction
-    // (`summary_runner.rs:872-875`); built HERE from `routines_by_id` since
-    // this function's signature (per the plan/brief, verbatim) carries no
-    // separate `body_avail_by_id` parameter.
-    let body_avail_by_id: HashMap<&str, bool> = routines_by_id
-        .iter()
-        .map(|(id, r)| (id.as_str(), r.body_available))
-        .collect();
+    // (`summary_runner.rs:872-875`). Threaded in by the caller
+    // (`compute_summaries_v2_with_leaves_core` -> `solve_scc_db_effects` ->
+    // `solve_one_effective_scc`), built ONCE for the whole run rather than
+    // recomputed from `routines_by_id` on every call — this function used to
+    // rebuild its own `HashMap<&str, bool>` copy of the SAME workspace-wide
+    // data on EVERY invocation (once per effective SCC, i.e. once per Tarjan
+    // SCC in the common case), an O(total-routines) cost paid O(N) times —
+    // the second O(N²) cost found alongside `build_rvid_by_opid`'s (see that
+    // fn's doc). `routines_by_id` is still threaded through for the
+    // `base_intraprocedural_summary` fallback below (a missing `base_summaries`
+    // entry), which needs the actual `&L3Routine`, not just its `body_available`
+    // flag.
 
     // Per-member entries PRODUCED AT that member (base + its own opaque-callee
     // + its own uncertainty-edge entries, regardless of kind) — `produced_at(m)`
@@ -1015,12 +1021,30 @@ fn kind_to_temp_state(kind: &TempStateKind) -> TempState {
 /// by `operation_id` therefore reproduces the old fold's winner EXACTLY (base
 /// last-write / inherited first-wins collapse to one value per `operation_id`),
 /// without needing to replay the fold's iteration order.
-fn build_rvid_by_opid(
+///
+/// Built from `base_summaries ∪ leaf_summaries` — **not** the growing `settled`
+/// map — and, critically, built ONCE for the whole workspace by the caller
+/// (`compute_summaries_v2_with_leaves_core`), never per-Tarjan-SCC. Every
+/// `operation_id` that can ever appear on ANY assembled `RoutineSummary`
+/// (leaf, singleton, or SCC member) originates at some routine's OWN base
+/// intraprocedural record operation: `base_summaries` holds that base summary
+/// for every NON-leaf routine, and `leaf_summaries` holds the already-final
+/// summary for every leaf (a leaf has no separate "base" — its own db_effects
+/// ARE its base, by construction). Every routine in the workspace is in
+/// exactly one of those two maps (`base_summaries` is built by filtering OUT
+/// `leaf_summaries.contains_key`), so their union already covers every
+/// `operation_id` origin that will ever exist — a later-settled SCC's
+/// materialized effects only ever re-key an operation_id already covered
+/// here (identity transfer, or a PD substitution that leaves
+/// `operation_id`/`record_variable_id` untouched); they never mint a new one.
+/// This map therefore never needs rebuilding once `base_summaries` and
+/// `leaf_summaries` are fixed for the run.
+pub(crate) fn build_rvid_by_opid(
     base_summaries: &HashMap<String, RoutineSummary>,
-    settled: &HashMap<String, RoutineSummary>,
+    leaf_summaries: &HashMap<String, RoutineSummary>,
 ) -> HashMap<String, Option<String>> {
     let mut map: HashMap<String, Option<String>> = HashMap::new();
-    for s in base_summaries.values().chain(settled.values()) {
+    for s in base_summaries.values().chain(leaf_summaries.values()) {
         for e in &s.db_effects {
             map.entry(e.operation_id.clone())
                 .or_insert_with(|| e.record_variable_id.clone());
@@ -1195,6 +1219,7 @@ fn solve_one_effective_scc(
     base_summaries: &HashMap<String, RoutineSummary>,
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
+    body_avail_by_id: &HashMap<String, bool>,
     universe: &mut EffectUniverse,
     rvid_by_opid: &HashMap<String, Option<String>>,
 ) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
@@ -1235,6 +1260,7 @@ fn solve_one_effective_scc(
         settled,
         base_summaries,
         uncertainty_edges_by_from,
+        body_avail_by_id,
     );
 
     let mut out: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
@@ -1271,6 +1297,18 @@ fn solve_one_effective_scc(
 /// sub-solvers consume) into a LOCAL settled view before the next sibling runs.
 /// The common case (one effective SCC — every singleton and simple self-loop)
 /// skips the clone and reads the caller's `settled` directly.
+///
+/// `rvid_by_opid` and `body_avail_by_id` are BOTH workspace-wide, run-invariant
+/// maps built ONCE by the caller (`compute_summaries_v2_with_leaves_core`)
+/// BEFORE its per-Tarjan-SCC loop, not rebuilt here — see
+/// [`build_rvid_by_opid`]'s doc for why `rvid_by_opid` is complete from
+/// `base_summaries ∪ leaf_summaries` alone. Building either one PER CALL to
+/// this function (as this module used to do for `rvid_by_opid`, and as
+/// [`solve_side_facts`] used to do internally for `body_avail_by_id`) is an
+/// O(total-workspace-routines) cost paid once per Tarjan SCC — O(N²) total
+/// over N SCCs; threading the already-built map in makes this function's own
+/// cost O(this SCC's members), the SAME complexity class as the rest of the
+/// per-SCC solve.
 #[allow(clippy::too_many_arguments)]
 pub fn solve_scc_db_effects(
     scc_entry: &Scc,
@@ -1280,21 +1318,16 @@ pub fn solve_scc_db_effects(
     base_summaries: &HashMap<String, RoutineSummary>,
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
+    body_avail_by_id: &HashMap<String, bool>,
     universe: &mut EffectUniverse,
     is_recomputed: &dyn Fn(&str) -> bool,
+    rvid_by_opid: &HashMap<String, Option<String>>,
 ) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
     let eff_sccs = effective_sccs(scc_entry, graph, is_recomputed);
     let mut results: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
     if eff_sccs.is_empty() {
         return results;
     }
-
-    // `record_variable_id` origins for every operation_id reachable in this
-    // SCC's effects live in `base_summaries` (all non-leaf routine bases) ∪
-    // `settled` (leaves + already-processed successors); a fed-forward sibling's
-    // effects only re-key operation_ids already covered here, so this map never
-    // needs rebuilding mid-loop.
-    let rvid_by_opid = build_rvid_by_opid(base_summaries, settled);
 
     if eff_sccs.len() == 1 {
         // Fast path: no inter-effective-SCC dependency, read `settled` directly.
@@ -1306,8 +1339,9 @@ pub fn solve_scc_db_effects(
             base_summaries,
             upgraded_bindings,
             uncertainty_edges_by_from,
+            body_avail_by_id,
             universe,
-            &rvid_by_opid,
+            rvid_by_opid,
         );
         results.extend(solved);
         return results;
@@ -1324,8 +1358,9 @@ pub fn solve_scc_db_effects(
             base_summaries,
             upgraded_bindings,
             uncertainty_edges_by_from,
+            body_avail_by_id,
             universe,
-            &rvid_by_opid,
+            rvid_by_opid,
         );
         for (id, (db_effects, uncertainties, has_unresolved)) in &solved {
             // Feed-forward summary: only db_effects/uncertainties/
@@ -1631,6 +1666,17 @@ mod tests {
 
     fn pd_routines_by_id(routines: &[L3Routine]) -> HashMap<String, &L3Routine> {
         routines.iter().map(|r| (r.id.clone(), r)).collect()
+    }
+
+    /// Workspace-wide `body_available` map, as
+    /// `compute_summaries_v2_with_leaves_core` builds it once for the whole
+    /// run and threads down to [`solve_side_facts`] — see that fn's doc for
+    /// why it is no longer built internally per call.
+    fn pd_body_avail(routines_by_id: &HashMap<String, &L3Routine>) -> HashMap<String, bool> {
+        routines_by_id
+            .iter()
+            .map(|(id, r)| (id.clone(), r.body_available))
+            .collect()
     }
 
     #[test]
@@ -2579,6 +2625,7 @@ mod tests {
         };
         let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
         let uncertainty_edges_by_from = index_uncertainty_edges(&graph);
+        let body_avail_by_id = pd_body_avail(&rbid);
 
         let facts = solve_side_facts(
             &eff,
@@ -2587,6 +2634,7 @@ mod tests {
             &settled,
             &base_summaries,
             &uncertainty_edges_by_from,
+            &body_avail_by_id,
         );
 
         let a_uncertainties = facts.uncertainties.get("a").expect("a present");
@@ -2638,6 +2686,7 @@ mod tests {
         };
         let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
         let uncertainty_edges_by_from = index_uncertainty_edges(&graph);
+        let body_avail_by_id = pd_body_avail(&rbid);
 
         let facts = solve_side_facts(
             &eff,
@@ -2646,6 +2695,7 @@ mod tests {
             &settled,
             &base_summaries,
             &uncertainty_edges_by_from,
+            &body_avail_by_id,
         );
 
         let a_uncertainties = facts.uncertainties.get("a").expect("a present");
@@ -2712,6 +2762,7 @@ mod tests {
             recursive: true,
         };
         let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+        let body_avail_by_id = pd_body_avail(&rbid);
 
         let facts = solve_side_facts(
             &eff,
@@ -2720,6 +2771,7 @@ mod tests {
             &settled,
             &base_summaries,
             &uncertainty_edges_by_from,
+            &body_avail_by_id,
         );
 
         let a_u = facts.uncertainties.get("a").expect("a present");
@@ -2839,6 +2891,7 @@ mod tests {
                 base_intraprocedural_summary(r, &rbid, &fields),
             );
         }
+        let body_avail_by_id = pd_body_avail(&rbid);
 
         let facts = solve_side_facts(
             &eff,
@@ -2847,6 +2900,7 @@ mod tests {
             &settled,
             &base_summaries,
             &uncertainty_edges_by_from,
+            &body_avail_by_id,
         );
 
         for m in ["a", "b"] {
