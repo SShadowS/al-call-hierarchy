@@ -100,6 +100,10 @@ Cheapest tier that fits; escalate on BLOCKED. Turn-count beats token price — d
 
 ## External review + questions — pi_ask (gpt-5.6-sol + claude-fable-5)
 
+**Prefer the `panel-review` skill** (`Skill(panel-review)`) — it encodes this exact protocol
+(parallel fan-out, evidence contract, source-verify pi's claims, continuation threads). The notes
+below are the fallback if the skill isn't loaded.
+
 Load pi tools once: `ToolSearch "select:mcp__pi__pi_ask,mcp__pi__pi_models,mcp__pi__pi_cleanup"`.
 Use `mcp__pi__pi_ask` for: (a) an adversarial design/impl review of the CRUX tasks **A3 and B1**
 before marking them complete; (b) any genuine design question or BLOCKED state during any task.
@@ -114,6 +118,10 @@ before marking them complete; (b) any genuine design question or BLOCKED state d
   signal. Fold confirmed findings; record the review file paths in the ledger.
 
 ## Measurement discipline (the 8020 re-measures)
+
+**Prefer the `perf-probe` skill** (`Skill(perf-probe)`) — it encodes this whole protocol (release-fast
+build, detached launch + sentinel, hot trace, phase-split read, the reaping/stale-binary/kill-both
+traps). The notes below are the fallback if the skill isn't loaded.
 
 The 8020 corpus (~22 min full, ~11 min trimmed) is the perf proof. Gotchas learned the hard way:
 - **Build `release-fast` fresh** before each measure (`cargo build --profile release-fast --bin alsem`),
@@ -159,6 +167,11 @@ above) as the real-workspace leg; if neither is available, mark the CDO leg SKIP
 proceed (do not fabricate a result).
 
 ## Guardrails (non-negotiable)
+
+- **Local hooks enforce two of these automatically** (don't be surprised): a `PreToolUse` guard BLOCKS
+  any gate/test piped through `| tail` (redirect + grep instead); a `PostToolUse` reminder fires on
+  edits under `tests/*-goldens/` / `tests/r0-corpus/` / `src/engine/l5/detectors/` to regen the WHOLE
+  golden set. rustfmt-per-file also runs on `.rs` edits automatically.
 
 - Never `git add -A` — stage only intended paths. Never push. Never merge to master without explicit
   user request (the finishing step presents options and STOPS).
