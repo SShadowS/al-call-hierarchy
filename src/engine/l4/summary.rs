@@ -2,7 +2,9 @@
 //!
 //! Ports al-sem's `src/model/summary.ts` (RoutineSummary / DbEffect /
 //! Uncertainty / RecordRoleSummary) and `scripts/r3a2-projection.ts`
-//! (projectR3a2 / projectR3a2Trace / stable-id mapping).
+//! (projectR3a2 / stable-id mapping). The per-pass Jacobi fingerprint TRACE
+//! projection retired with the old Jacobi solver (Part B); the closed-form v2
+//! `EffectStore` solver has no per-pass trajectory to trace.
 //!
 //! HARD-FORBIDDEN in the R3a-2 projection: `capabilityFactsDirect` /
 //! `capabilityFactsInherited` / `coverage` (R3a-3 cone), `fieldEffects`
@@ -12,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::effect_lattice::{EffectPresence, TempStateKind, effect_key_of};
-use super::summary_runner::compute_summaries;
+use super::summary_runner::compute_summaries_v2_with_leaves_core;
 use crate::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
 use crate::engine::l3::event_graph::build_event_graph;
 use crate::engine::l3::l3_workspace::L3Resolved;
@@ -314,35 +316,6 @@ pub struct PRoutineSummaryCore {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct R3a2Projection {
     pub summaries: Vec<PRoutineSummaryCore>,
-}
-
-// ---------------------------------------------------------------------------
-// Fingerprint TRACE types (R3a-2 JACOBI proof, Rev 2 #3).
-// ---------------------------------------------------------------------------
-
-/// One projected fixed-point pass of a recursive SCC.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PSccTracePass {
-    pub iteration: usize,
-    pub changed: bool,
-    /// Stable per-pass fingerprint — sorted by stable routineId.
-    pub fingerprint: String,
-}
-
-/// The full per-recursive-SCC trace.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PSccTrace {
-    #[serde(rename = "sccId")]
-    pub scc_id: String,
-    pub members: Vec<String>,
-    pub iterations: usize,
-    pub passes: Vec<PSccTracePass>,
-}
-
-/// The R3a-2 fingerprint trace — one PSccTrace per recursive SCC.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct R3a2Trace {
-    pub traces: Vec<PSccTrace>,
 }
 
 // ---------------------------------------------------------------------------
@@ -728,32 +701,20 @@ pub fn summary_change_key(s: &PRoutineSummaryCore) -> SummaryChangeKey {
 // Top-level projection entry points.
 // ---------------------------------------------------------------------------
 
-/// Run the full pipeline (assemble + call-resolve + combined-graph + JACOBI
-/// fixed-point) and project the post-computeSummaries model to the R3a-2
-/// stable comparison surface. No trace hook (zero cost).
+/// Run the full pipeline (assemble + call-resolve + combined-graph + the v2
+/// closed-form `EffectStore` solver) and project the post-computeSummaries model
+/// to the R3a-2 stable comparison surface.
 pub fn project_r3a2(resolved: &L3Resolved) -> R3a2Projection {
-    let (summaries, _) = run_and_project(resolved, false);
-    R3a2Projection { summaries }
-}
-
-/// Same as `project_r3a2` but ALSO collects the per-recursive-SCC fingerprint
-/// TRACE (the JACOBI proof oracle). More expensive than `project_r3a2`.
-pub fn project_r3a2_with_trace(resolved: &L3Resolved) -> (R3a2Projection, R3a2Trace) {
-    let (summaries, traces) = run_and_project(resolved, true);
-    let trace = R3a2Trace {
-        traces: traces.unwrap_or_default(),
-    };
-    (R3a2Projection { summaries }, trace)
+    R3a2Projection {
+        summaries: run_and_project(resolved),
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Internal: run the pipeline and collect the projection.
 // ---------------------------------------------------------------------------
 
-fn run_and_project(
-    resolved: &L3Resolved,
-    collect_trace: bool,
-) -> (Vec<PRoutineSummaryCore>, Option<Vec<PSccTrace>>) {
+fn run_and_project(resolved: &L3Resolved) -> Vec<PRoutineSummaryCore> {
     let ws = &resolved.workspace;
     let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
     let no_deps: Vec<DeclaredDependency> = Vec::new();
@@ -788,17 +749,21 @@ fn run_and_project(
         }
     }
 
-    // Run the JACOBI fixed-point, optionally collecting the trace. This is the
-    // R3a-2 trace-oracle projection (test/golden tooling), not the production
-    // detect/gate envelope — `detector_context::build_detector_context` is the
-    // path that threads cap-hit diagnostics into `DetectorContext`.
-    let (final_summaries, raw_traces, _cap_diagnostics) = compute_summaries(
+    // Run the v2 closed-form `EffectStore` solver (no fixed leaves — this is the
+    // source-only R3a-2 projection). Byte-identical `RoutineSummary` output to
+    // the retired Jacobi solver (proven by the frozen-baseline differential),
+    // so this projection is unchanged. Not the production detect/gate envelope —
+    // `detector_context::build_detector_context` is the path that threads cap-hit
+    // diagnostics into `DetectorContext`.
+    let no_leaves: std::collections::HashMap<String, RoutineSummary> =
+        std::collections::HashMap::new();
+    let (final_summaries, _cap_diagnostics) = compute_summaries_v2_with_leaves_core(
         &ws.routines,
         &graph,
         &scc,
         &calls.upgraded_bindings,
         &field_index,
-        collect_trace,
+        &no_leaves,
     );
 
     let map = build_routine_stable_map(&ws.routines);
@@ -810,73 +775,7 @@ fn run_and_project(
         .collect();
     projected.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
 
-    // Project traces (if collected).
-    let traces = if collect_trace {
-        Some(project_raw_scc_traces(raw_traces, &map))
-    } else {
-        Some(Vec::new())
-    };
-
-    (projected, traces)
-}
-
-/// Project a list of `RawSccTrace`s (per-recursive-SCC JACOBI traces, already in
-/// internal-id form) to the stable [`PSccTrace`] form — the SAME projection the
-/// R3a-2 trace golden carries. Exposed so the R3b Salsa `scc_summaries` path can
-/// reproduce the byte-identical per-iteration fingerprint trace THROUGH the Salsa
-/// query (the cyclic-fixed-point-through-Salsa proof). The output is sorted by
-/// `sccId` (deterministic).
-pub fn project_raw_scc_traces(
-    raw_traces: Vec<crate::engine::l4::summary_runner::RawSccTrace>,
-    map: &std::collections::HashMap<String, String>,
-) -> Vec<PSccTrace> {
-    let mut t: Vec<PSccTrace> = raw_traces
-        .into_iter()
-        .map(|raw| {
-            let stable_members: Vec<String> = raw
-                .members
-                .iter()
-                .map(|m| stable_routine_id(m, map))
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            let scc_id = stable_members.join(",");
-            let passes: Vec<PSccTracePass> = raw
-                .passes
-                .into_iter()
-                .map(|p| {
-                    // Sort members by stable routineId for a deterministic fingerprint.
-                    let mut sorted: Vec<&PRoutineSummaryCore> = p.member_summaries.iter().collect();
-                    sorted.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-                    let fp = serde_json::to_string(
-                        &sorted
-                            .iter()
-                            .map(|s| {
-                                serde_json::Value::Array(vec![
-                                    serde_json::Value::String(s.routine_id.clone()),
-                                    serde_json::Value::String(stable_summary_fingerprint(s)),
-                                ])
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                    .unwrap_or_default();
-                    PSccTracePass {
-                        iteration: p.iteration,
-                        changed: p.changed,
-                        fingerprint: fp,
-                    }
-                })
-                .collect();
-            PSccTrace {
-                scc_id,
-                members: stable_members,
-                iterations: passes.len(),
-                passes,
-            }
-        })
-        .collect();
-    t.sort_by(|a, b| a.scc_id.cmp(&b.scc_id));
-    t
+    projected
 }
 
 #[cfg(test)]

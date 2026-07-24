@@ -9,8 +9,6 @@ mod r3a1_vectors;
 mod r3a2_branch_aware;
 mod r3a2_differential;
 mod r3a2_oracles;
-mod r3a2_trace_differential;
-mod r3a2_trace_vectors;
 mod r3a2_vectors;
 mod r3a3_differential;
 mod r3a3_oracles;

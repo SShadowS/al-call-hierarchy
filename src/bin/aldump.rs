@@ -48,7 +48,7 @@ fn usage() -> ExitCode {
         "usage: aldump [--l2 | --l3-record-types | --l3-call-graph | --l3-call-graph-stats | \
          --l3-call-graph-stats-cross-app | --l3-unknown-breakdown | --l3-unknown-breakdown-cross-app | \
          --l3-event-graph | --l3-coverage | --r2.5a-merged-index | --l3-cross-app | \
-         --r3a1-combined-graph | --r3a2-summary-core | --r3a2-trace | --r3a3-cone-coverage | \
+         --r3a1-combined-graph | --r3a2-summary-core | --r3a3-cone-coverage | \
          --r3a4-dep-hooks | --r3a5-cross-app-summary | --r4-findings | \
          --r4f-root-classifications | --r4f-return-summaries | --r4f-snapshot | \
          --r4f-digest-effects | --r4f-scoped-guarantees | --program-call-graph-stats | \
@@ -76,7 +76,6 @@ fn main() -> ExitCode {
     let mut l3_cross_app = false;
     let mut r3a1_combined_graph = false;
     let mut r3a2_summary_core = false;
-    let mut r3a2_trace = false;
     let mut r3a3_cone_coverage = false;
     let mut r3a4_dep_hooks = false;
     let mut r3a5_cross_app_summary = false;
@@ -157,10 +156,6 @@ fn main() -> ExitCode {
             r3a2_summary_core = true;
             continue;
         }
-        if arg == "--r3a2-trace" {
-            r3a2_trace = true;
-            continue;
-        }
         if arg == "--r3a3-cone-coverage" {
             r3a3_cone_coverage = true;
             continue;
@@ -226,7 +221,6 @@ fn main() -> ExitCode {
         l3_cross_app,
         r3a1_combined_graph,
         r3a2_summary_core,
-        r3a2_trace,
         r3a3_cone_coverage,
         r3a4_dep_hooks,
         r3a5_cross_app_summary,
@@ -255,7 +249,7 @@ fn main() -> ExitCode {
             "aldump: error: --l2 / --l3-record-types / --l3-call-graph / --l3-call-graph-stats / \
              --l3-call-graph-stats-cross-app / --l3-unknown-breakdown / \
              --l3-event-graph / --l3-coverage / --r2.5a-merged-index / --l3-cross-app / \
-             --r3a1-combined-graph / --r3a2-summary-core / --r3a2-trace / --r3a3-cone-coverage / \
+             --r3a1-combined-graph / --r3a2-summary-core / --r3a3-cone-coverage / \
              --r3a4-dep-hooks / --r3a5-cross-app-summary / --r4f-return-summaries / \
              --graphify-export / --graphify-export-fragments / --integration-points are mutually exclusive"
         );
@@ -635,36 +629,6 @@ fn main() -> ExitCode {
                 eprintln!(
                     "aldump: error: failed to serialize R4-F root-classification projection: {e}"
                 );
-                ExitCode::FAILURE
-            }
-        };
-    }
-
-    if r3a2_trace {
-        // R3a-2 JACOBI fingerprint TRACE: run the same SOURCE-ONLY pipeline but ALSO
-        // collect the per-recursive-SCC fingerprint trace the fixed-point loop produces
-        // (the per-iteration stable fingerprint sequence + iteration count + per-pass
-        // `changed`), in the SAME shape/key-order as the al-sem
-        // `<fixture>.r3a2-trace.golden.json`. Proves JACOBI parity (frozen prior-pass
-        // snapshot, not Gauss-Seidel).
-        //
-        // Task T0.1: a fail-closed/empty layout is a genuine tool failure — exits
-        // non-zero with no stdout output.
-        let Some(resolved) = assemble_and_resolve_workspace_default(&workspace) else {
-            eprintln!(
-                "aldump: error: fail-closed/empty layout at {} — cannot compute R3a-2 trace",
-                workspace.display()
-            );
-            return ExitCode::FAILURE;
-        };
-        let trace = al_call_hierarchy::engine::l4::summary::project_r3a2_with_trace(&resolved).1;
-        return match serde_json::to_string_pretty(&trace) {
-            Ok(json) => {
-                println!("{json}");
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                eprintln!("aldump: error: failed to serialize R3a-2 trace: {e}");
                 ExitCode::FAILURE
             }
         };
