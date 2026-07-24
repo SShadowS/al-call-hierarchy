@@ -24,10 +24,13 @@
 //!     separate heap allocation distinct from the container it lives in — the
 //!     Vec header itself is a further 24 B living in the PARENT struct, not
 //!     counted twice here (see the "no double-counting" note below).
-//!   - **`heap_bytes`** — content actually pointed to: `String::len()` (never
-//!     capacity — a length-only convention, per instruction), recursing
-//!     through every `Option`/`Box`/enum payload (`ValueSource`,
-//!     `CapabilityExtra`) to their own owned strings.
+//!   - **`heap_bytes`** — content actually pointed to and OWNED:
+//!     `String::len()` (never capacity — a length-only convention, per
+//!     instruction), recursing through every `Option`/`Box`/enum payload
+//!     (`ValueSource`, `CapabilityExtra`) to their own owned strings. A
+//!     `&'static str` field is NOT counted (⟨C1 Task 4⟩ — see
+//!     [`capability_fact_heap_bytes`]): its bytes live once in the binary's
+//!     read-only data, not once per value.
 //!
 //! No double-counting, by construction. `FullRoutineSummary` embeds its
 //! `Option<CoverageRecord>` and its `Vec<CapabilityFact>`/`Option<Vec<_>>`
@@ -143,19 +146,22 @@ pub(crate) fn capability_extra_heap_bytes(e: &CapabilityExtra) -> u64 {
     }
 }
 
-/// Owned heap bytes for one [`CapabilityFact`] — every `String`/`Option<String>`
-/// field plus the recursive `resource_arg_source`/`extra` payloads. Does NOT
-/// include `size_of::<CapabilityFact>()` itself (that is the caller's
-/// `struct_bytes` line, counted once per element in the owning `Vec`'s backing
-/// buffer).
+/// Owned heap bytes for one [`CapabilityFact`] — every OWNED
+/// `String`/`Option<String>` field plus the recursive
+/// `resource_arg_source`/`extra` payloads. Does NOT include
+/// `size_of::<CapabilityFact>()` itself (that is the caller's `struct_bytes`
+/// line, counted once per element in the owning `Vec`'s backing buffer).
+///
+/// ⟨C1 Task 4⟩ `op` / `resource_kind` / `confidence` / `provenance` / `via` are
+/// deliberately NOT counted any more: they are `&'static str` since Task 4, so
+/// their content lives once in the binary's read-only data and is shared by
+/// every fact in the process. Charging each fact for its length would inflate
+/// this total with bytes no fact owns — and would hide exactly the allocation
+/// the shrink removed. Their 16 B pointer+len pair is already inside
+/// `size_of::<CapabilityFact>()`.
 pub(crate) fn capability_fact_heap_bytes(f: &CapabilityFact) -> u64 {
     f.subject.len() as u64
-        + f.op.len() as u64
-        + f.resource_kind.len() as u64
         + f.resource_id.as_ref().map_or(0, |s| s.len() as u64)
-        + f.confidence.len() as u64
-        + f.provenance.len() as u64
-        + f.via.len() as u64
         + f.witness_operation_id
             .as_ref()
             .map_or(0, |s| s.len() as u64)
@@ -271,9 +277,10 @@ pub fn emit_full_census(
     eprintln!("[C1_CONE_CENSUS] C1 residual census — context.capability_cones");
     eprintln!(
         "[C1_CONE_CENSUS] convention: struct_bytes=count*size_of::<T>() (own backing-buffer \
-         footprint); heap_bytes=owned String content (len(), not capacity), recursing through \
-         Option/Box/enum payloads. Lines marked [informational] are NOT in grand_total (see \
-         module doc — they are already embedded inline in a struct counted elsewhere)."
+         footprint); heap_bytes=OWNED String content (len(), not capacity), recursing through \
+         Option/Box/enum payloads — a &'static str field owns nothing and is NOT counted \
+         (C1 Task 4). Lines marked [informational] are NOT in grand_total (see module doc — \
+         they are already embedded inline in a struct counted elsewhere)."
     );
     eprintln!("[C1_CONE_CENSUS] routine_count={routine_count}");
     eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
