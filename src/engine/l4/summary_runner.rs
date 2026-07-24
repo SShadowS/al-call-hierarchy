@@ -24,6 +24,7 @@ use super::db_effect_solver::{build_rvid_by_opid, solve_scc_db_effects};
 use super::effect_lattice::{
     EffectPresence, effect_key_of, join_presence, merge_via_owned, via_for_edge_kind,
 };
+use super::effect_store::{SummaryBundle, SummaryBundleBuilder};
 use super::effect_universe::EffectUniverse;
 use super::routine_interner::RoutineInterner;
 use super::scc::SccResult;
@@ -1085,17 +1086,26 @@ pub fn compute_summaries_with_leaves(
 /// [`compute_summaries_with_leaves`] over the complete `RoutineSummary`, per
 /// routine — enforced by `tests/l4_summary_differential.rs`.
 ///
-/// This is the `_core` assembly: it returns the settled map PLUS any
+/// ⟨Task A2⟩ This is the REAL v2 core (spec Part A Step 2 — "v2 returns the
+/// bundle"): it returns the workspace-complete [`SummaryBundle`] (the compact
+/// db-effect rows, spec Part A Step 2) ALONGSIDE the settled map and any
 /// summarize-stage `SummarizeDiagnostic` raised by the roles fixpoint's
 /// convergence backstop (empty on every real SCC — roles converge). It has NO
 /// trajectory artifact: `RawSccTrace` is not a contract (Phase 1 Global
 /// Constraints), and the v2 db-effect solver is closed-form, so there is no
-/// per-pass trace to emit. The tuple-returning production entry points
-/// [`compute_summaries_v2`] / [`compute_summaries_v2_with_leaves`] wrap this,
-/// returning `(map, /* empty */ Vec<RawSccTrace>, Vec<SummarizeDiagnostic>)` to
-/// match the OLD [`compute_summaries`] / [`compute_summaries_with_leaves`]
-/// signatures so production callers swap the fn name with no other churn. The
-/// differential harness consumes THIS `_core` fn directly (map-only comparison).
+/// per-pass trace to emit.
+///
+/// [`compute_summaries_v2_with_leaves_core`] is a THIN compat shim over this
+/// fn (see its own doc): it drops the bundle after using it to rebuild
+/// `db_effects` from the lazy view, returning the pre-A2
+/// `(HashMap<String, RoutineSummary>, Vec<SummarizeDiagnostic>)` shape so
+/// every existing caller — including the tuple-returning production entry
+/// points [`compute_summaries_v2`] / [`compute_summaries_v2_with_leaves`]
+/// (which wrap `_core`, returning `(map, /* empty */ Vec<RawSccTrace>,
+/// Vec<SummarizeDiagnostic>)` to match the OLD [`compute_summaries`] /
+/// [`compute_summaries_with_leaves`] signatures) and the differential harness
+/// (which calls `_core` directly, map-only comparison) — keeps working with
+/// NO signature churn.
 ///
 /// ## Assembly discipline
 ///
@@ -1108,15 +1118,25 @@ pub fn compute_summaries_with_leaves(
 /// two-map design that fed the old JACOBI's summaries forward — but WITHOUT
 /// running that JACOBI. For each Tarjan SCC, the roles fixpoint and the db-effect
 /// solver BOTH read `v2_map` as their predecessor view (before it is updated with
-/// this SCC), then this SCC's members are assembled member-by-member.
-pub fn compute_summaries_v2_with_leaves_core(
+/// this SCC), then this SCC's members are assembled member-by-member. ⟨Task A2⟩
+/// A `SummaryBundleBuilder` is threaded `&mut` alongside `universe` through the
+/// SAME per-SCC db-effect solve call and frozen into the returned
+/// [`SummaryBundle`] once the loop completes — `v2_map`'s own feed-forward
+/// (`settled`-successor reads) is UNCHANGED by this (see `effect_store.rs`'s
+/// module doc for why materialized `Vec<DbEffect>` feed-forward survives
+/// through A2).
+pub fn compute_summaries_v2_bundle_with_leaves(
     routines: &[L3Routine],
     graph: &CombinedGraph,
     scc: &SccResult,
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     fields: &FieldIndex,
     leaf_summaries: &HashMap<String, RoutineSummary>,
-) -> (HashMap<String, RoutineSummary>, Vec<SummarizeDiagnostic>) {
+) -> (
+    SummaryBundle,
+    HashMap<String, RoutineSummary>,
+    Vec<SummarizeDiagnostic>,
+) {
     // --- Scaffolding: mirror compute_summaries_with_leaves exactly. ---
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
@@ -1199,6 +1219,11 @@ pub fn compute_summaries_v2_with_leaves_core(
     // One workspace-wide interned effect universe, threaded across every SCC.
     let mut universe = EffectUniverse::new();
 
+    // Task A2: the compact db-effect row accumulator (spec Part A Step 2),
+    // threaded `&mut` through the per-SCC solve exactly like `universe` —
+    // frozen into a `SummaryBundle` once the loop below completes.
+    let mut bundle_builder = SummaryBundleBuilder::new();
+
     // Summarize-stage diagnostics raised by the roles fixpoint's convergence
     // backstop. Empty on every real SCC (roles converge) — see [`RolesSccOut`].
     let mut diagnostics: Vec<SummarizeDiagnostic> = Vec::new();
@@ -1264,6 +1289,7 @@ pub fn compute_summaries_v2_with_leaves_core(
             &is_recomputed,
             &rvid_by_opid,
             &routine_interner,
+            &mut bundle_builder,
         );
         db_us += _db_t.elapsed().as_micros();
 
@@ -1315,7 +1341,45 @@ pub fn compute_summaries_v2_with_leaves_core(
         })
     });
 
-    (v2_map, diagnostics)
+    let bundle = bundle_builder.finish(universe, routine_interner, rvid_by_opid);
+    (bundle, v2_map, diagnostics)
+}
+
+/// Compat shim (spec Part A, "Public API"): wraps
+/// [`compute_summaries_v2_bundle_with_leaves`] and rebuilds the legacy
+/// `HashMap<String, RoutineSummary>` shape FROM the bundle's lazy
+/// `db_effects` view, for every routine that has a compact row (i.e. was
+/// RECOMPUTED this run) — proving the lazy view reproduces the SAME
+/// `db_effects` the per-SCC loop already assembled eagerly (both routes
+/// share ONE projection implementation, `effect_store::merge_and_project`;
+/// see `effect_store.rs`'s module doc). A routine with NO row (a fixed leaf,
+/// pre-seeded from `leaf_summaries` and never touched by the solver) is left
+/// exactly as assembled — its `db_effects` never passed through a row at
+/// all, by design (see `SummaryBundle::has_row`'s doc).
+pub fn compute_summaries_v2_with_leaves_core(
+    routines: &[L3Routine],
+    graph: &CombinedGraph,
+    scc: &SccResult,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
+    leaf_summaries: &HashMap<String, RoutineSummary>,
+) -> (HashMap<String, RoutineSummary>, Vec<SummarizeDiagnostic>) {
+    let (bundle, mut map, diagnostics) = compute_summaries_v2_bundle_with_leaves(
+        routines,
+        graph,
+        scc,
+        upgraded_bindings,
+        fields,
+        leaf_summaries,
+    );
+    for (id, summary) in map.iter_mut() {
+        if let Some(rix) = bundle.routine_ix(id)
+            && bundle.has_row(rix)
+        {
+            summary.db_effects = bundle.db_effects(rix).map(|e| e.to_owned()).collect();
+        }
+    }
+    (map, diagnostics)
 }
 
 // ---------------------------------------------------------------------------

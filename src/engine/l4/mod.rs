@@ -14,6 +14,7 @@ pub mod cfg_walker;
 pub mod combined_graph;
 pub mod db_effect_solver;
 pub mod effect_lattice;
+pub mod effect_store;
 pub mod effect_universe;
 /// R3b — the Salsa-backed INCREMENTAL L4 query graph (wraps the from-scratch L4).
 pub mod incremental;

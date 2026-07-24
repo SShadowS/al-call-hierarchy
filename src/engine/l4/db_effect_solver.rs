@@ -22,7 +22,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
-use crate::engine::l4::effect_lattice::{TempStateKind, merge_via, via_for_edge_kind};
+use crate::engine::l4::effect_lattice::{TempStateKind, via_for_edge_kind};
+use crate::engine::l4::effect_store::{SummaryBundleBuilder, ViaRank, project_db_effects};
 use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
 use crate::engine::l4::routine_interner::{RoutineInterner, RoutineIx};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
@@ -569,53 +570,26 @@ pub fn closed_form_union(
 // Step D: via reconstruction post-pass.
 // ---------------------------------------------------------------------------
 
-/// The 5 canonical `via` strings [`via_for_edge_kind`]/[`merge_via`]
-/// (`effect_lattice.rs`) and `base_intraprocedural_summary`
-/// (`summary_runner.rs:162`) ever produce, in descending rank order. A
-/// DEFENSIVE canonicalization guard only — production code in this module
-/// never manufactures anything else — but `merge_via`'s own tie-break
-/// (`via_rank(a) >= via_rank(b) ? a : b`) keeps its FIRST argument on a rank
-/// tie, so an unchecked bogus string fed in as `a` would otherwise beat a
-/// real `"inherited"` (also rank 0) outright. [`merge_via_into`] asserts
-/// against this list before a candidate is ever allowed to compete.
-const CANONICAL_VIAS: [&str; 5] = [
-    "direct",
-    "implicit-trigger",
-    "event-subscriber",
-    "dynamic",
-    "inherited",
-];
-
-fn is_canonical_via(via: &str) -> bool {
-    CANONICAL_VIAS.contains(&via)
-}
-
-/// Merge `via` into `via_map[(member, id)]` using [`merge_via`]'s max-rank,
-/// first-wins-on-tie semantics — asserting `via` is canonical (see
-/// [`CANONICAL_VIAS`]) BEFORE it is allowed to compete for the slot, so a
-/// future bug that threads a raw/un-vetted string through this post-pass
-/// fails loudly in debug builds rather than silently winning a rank-0 tie
-/// against a real `"inherited"`. A `debug_assert!`, not a hard panic — a
-/// canonicalization backstop, per this repo's "engine never throws in
-/// production" rule; `via_for_edge_kind`/`merge_via` themselves are
-/// structurally incapable of producing anything non-canonical (see their own
-/// doc comments), so this can only ever fire if a FUTURE caller misuses this
-/// helper directly.
+/// Merge `via` into `via_map[(member, id)]` using [`ViaRank`]'s max-rank,
+/// first-wins-on-tie semantics (mirrors `effect_lattice::merge_via`'s
+/// `via_rank(a) >= via_rank(b) ? a : b`, `a` = the EXISTING entry). Task A2:
+/// `via` is now a [`ViaRank`] (a closed 5-variant enum) rather than an
+/// arbitrary `&str`, so the OLD canonicalization `debug_assert!` (guarding
+/// against a bogus non-canonical string winning a rank-0 tie against a real
+/// `"inherited"`) is now a COMPILE-TIME guarantee — the type system makes a
+/// non-canonical via unrepresentable, so the runtime guard is no longer
+/// needed (a strict improvement: compile-time > runtime-assert, per this
+/// repo's "engine never throws in production" rule taken one step further).
 fn merge_via_into(
-    via_map: &mut HashMap<(RoutineIx, EffectId), String>,
+    via_map: &mut HashMap<(RoutineIx, EffectId), ViaRank>,
     member: RoutineIx,
     id: EffectId,
-    via: &str,
+    via: ViaRank,
 ) {
-    debug_assert!(
-        is_canonical_via(via),
-        "reconstruct_via: non-canonical via string {via:?} — refusing to let \
-         it compete in the max-rank merge (must be one of {CANONICAL_VIAS:?})"
-    );
     let key = (member, id);
-    let merged = match via_map.get(&key) {
-        Some(existing) => merge_via(existing.as_str(), via).to_string(),
-        None => via.to_string(),
+    let merged = match via_map.get(&key).copied() {
+        Some(existing) if existing >= via => existing,
+        _ => via,
     };
     via_map.insert(key, merged);
 }
@@ -693,9 +667,9 @@ pub fn reconstruct_via(
     settled: &HashMap<String, RoutineSummary>,
     universe: &EffectUniverse,
     interner: &RoutineInterner,
-) -> HashMap<(RoutineIx, EffectId), String> {
+) -> HashMap<(RoutineIx, EffectId), ViaRank> {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
-    let mut via_map: HashMap<(RoutineIx, EffectId), String> = HashMap::new();
+    let mut via_map: HashMap<(RoutineIx, EffectId), ViaRank> = HashMap::new();
 
     // Init: base effects seed "direct" for every present EffectId that is
     // one of the member's OWN base db_effects (terminal or PD — both always
@@ -725,7 +699,7 @@ pub fn reconstruct_via(
             if let Some(id) = universe.get(&identity)
                 && has_bit(bits, id)
             {
-                merge_via_into(&mut via_map, m_ix, id, "direct");
+                merge_via_into(&mut via_map, m_ix, id, ViaRank::Direct);
             }
         }
     }
@@ -743,7 +717,7 @@ pub fn reconstruct_via(
             continue;
         };
         for edge in graph.edges_by_from.get(m).into_iter().flatten() {
-            let via = via_for_edge_kind(&edge.kind);
+            let via = ViaRank::from_str(via_for_edge_kind(&edge.kind));
             if member_set.contains(edge.to.as_str()) {
                 let to_ix = interner
                     .get(&edge.to)
@@ -1044,8 +1018,10 @@ pub fn solve_side_facts(
 
 /// Convert a `TempStateKind` (universe identity form) back to the `TempState`
 /// carried on a materialized [`DbEffect`]. The two enums are field-for-field
-/// identical; this is the inverse of [`TempState::to_kind`].
-fn kind_to_temp_state(kind: &TempStateKind) -> TempState {
+/// identical; this is the inverse of [`TempState::to_kind`]. `pub(crate)`:
+/// also reused by `effect_store::DbEffectRef::to_owned` (DRY — one
+/// implementation of the conversion, not a re-derived copy).
+pub(crate) fn kind_to_temp_state(kind: &TempStateKind) -> TempState {
     match kind {
         TempStateKind::Known(v) => TempState::Known(*v),
         TempStateKind::ParameterDependent(i) => TempState::ParameterDependent(*i),
@@ -1130,7 +1106,7 @@ fn attribute_pd_substituted_via(
     routines_by_id: &HashMap<String, &L3Routine>,
     universe: &EffectUniverse,
     interner: &RoutineInterner,
-    via_map: &mut HashMap<(RoutineIx, EffectId), String>,
+    via_map: &mut HashMap<(RoutineIx, EffectId), ViaRank>,
 ) {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
 
@@ -1145,7 +1121,7 @@ fn attribute_pd_substituted_via(
             continue;
         };
         for edge in graph.edges_by_from.get(m).into_iter().flatten() {
-            let via = via_for_edge_kind(&edge.kind);
+            let via = ViaRank::from_str(via_for_edge_kind(&edge.kind));
 
             // The callee's PD effects, as `(op, table_id, operation_id,
             // pd_index)`. Intra-effective-SCC callee → read from presence (its
@@ -1205,67 +1181,77 @@ fn attribute_pd_substituted_via(
     }
 }
 
-/// Materialize ONE member's `Vec<DbEffect>` from its presence bitset, in the
-/// deterministic `(effect_key, operation_id)` order the old solver produced
-/// (`summary_runner.rs:507-510`). Each effect's `via` comes from `via_map`
+/// Materialize ONE member's compact db-effect row (spec Part A Step 2 —
+/// `effect_store::CompactRoutineSummary`, via [`SummaryBundleBuilder::push_row`])
+/// AND its legacy `Vec<DbEffect>` (in the deterministic `(effect_key,
+/// operation_id)` order the old solver produced, `summary_runner.rs:507-510`),
+/// from its presence bitset. Each effect's `via` comes from `via_map`
 /// (base-`direct` / terminal-inherited from [`reconstruct_via`], PD-substituted
 /// from [`attribute_pd_substituted_via`]); `record_variable_id` from
 /// `rvid_by_opid`; `temp_state` decoded from the interned identity.
 ///
-/// Task A1: the sort key is the universe's CACHED `effect_key` (`&str`
-/// compares, zero allocation — [`EffectUniverse::effect_key_cached`]), not a
-/// `format!`-per-comparison; `via_map` is keyed by [`RoutineIx`], so the
-/// per-effect lookup below is a `u32` copy, never a `member.to_string()`
-/// allocation. This is the fix for the arc's measured 517s/~40GB
-/// materialization cost — no other change in this function alters output.
+/// Task A2: the presence bits split into TERMINAL (`Known`/`Unknown` —
+/// `effect_store`'s `terminal_base`) vs `ParameterDependent` (`pd_delta`) as
+/// they're scanned, with `via` carried as a `Copy` [`ViaRank`] (`u8`) rather
+/// than a cloned `String` — no `format!`/`.to_string()` cost in this scan at
+/// all (only the FINAL legacy-`Vec<DbEffect>` projection, shared with
+/// [`SummaryBundle::db_effects`](crate::engine::l4::effect_store::SummaryBundle::db_effects)
+/// via [`project_db_effects`], allocates strings — see `effect_store.rs`'s
+/// module doc for why that projection still runs eagerly here through A2).
+/// The row is pushed into the workspace-wide `bundle` BEFORE projecting, so
+/// both outputs are built from the IDENTICAL (ids, vias) pieces (no
+/// divergence risk between the two representations).
 fn materialize_member_db_effects(
     member_ix: RoutineIx,
     bits: &[u64],
-    via_map: &HashMap<(RoutineIx, EffectId), String>,
+    via_map: &HashMap<(RoutineIx, EffectId), ViaRank>,
     universe: &EffectUniverse,
     rvid_by_opid: &HashMap<String, Option<String>>,
+    bundle: &mut SummaryBundleBuilder,
 ) -> Vec<DbEffect> {
-    // Collect the member's SET bits and sort by (effect_key, operation_id) —
-    // scanning only the member's own present effects, not the whole
-    // (workspace-wide) universe, while reproducing `universe.sorted_order()`'s
-    // key exactly.
-    let mut present: Vec<EffectId> = iter_set_bits(bits).collect();
-    present.sort_by(|&a, &b| {
-        universe
-            .effect_key_cached(a)
-            .cmp(universe.effect_key_cached(b))
-            .then_with(|| {
-                universe
-                    .identity(a)
-                    .operation_id
-                    .cmp(&universe.identity(b).operation_id)
-            })
-    });
-
-    let mut out: Vec<DbEffect> = Vec::with_capacity(present.len());
-    for id in present {
-        let identity = universe.identity(id);
-        let effect_key = universe.effect_key_cached(id).to_string();
-        // Every present effect is attributed by reconstruct_via +
-        // attribute_pd_substituted_via (base direct, terminal-inherited, or
-        // PD-substituted). The `"inherited"` fallback (rank 0, the old fold's
-        // own default `via_for_edge_kind` value) is a defensive floor only —
-        // the differential matrix would surface any genuinely-missing via.
+    // Scan the member's SET bits ONCE (ascending EffectId/storage order —
+    // `iter_set_bits` is a bit-scan), splitting terminal vs PD as we go.
+    // Every present effect is attributed by reconstruct_via +
+    // attribute_pd_substituted_via (base direct, terminal-inherited, or
+    // PD-substituted). The `Inherited` fallback (rank 0, the old fold's own
+    // default `via_for_edge_kind` value) is a defensive floor only — the
+    // differential matrix would surface any genuinely-missing via.
+    let mut terminal_ids: Vec<EffectId> = Vec::new();
+    let mut terminal_vias: Vec<ViaRank> = Vec::new();
+    let mut delta_ids: Vec<EffectId> = Vec::new();
+    let mut delta_vias: Vec<ViaRank> = Vec::new();
+    for id in iter_set_bits(bits) {
         let via = via_map
             .get(&(member_ix, id))
-            .cloned()
-            .unwrap_or_else(|| "inherited".to_string());
-        let record_variable_id = rvid_by_opid.get(&identity.operation_id).cloned().flatten();
-        out.push(DbEffect {
-            effect_key,
-            operation_id: identity.operation_id.clone(),
-            op: identity.op.clone(),
-            table_id: identity.table_id.clone(),
-            record_variable_id,
-            temp_state: kind_to_temp_state(&identity.temp),
-            via,
-        });
+            .copied()
+            .unwrap_or(ViaRank::Inherited);
+        match universe.identity(id).temp {
+            TempStateKind::Known(_) | TempStateKind::Unknown => {
+                terminal_ids.push(id);
+                terminal_vias.push(via);
+            }
+            TempStateKind::ParameterDependent(_) => {
+                delta_ids.push(id);
+                delta_vias.push(via);
+            }
+        }
     }
+
+    let out = project_db_effects(
+        &terminal_ids,
+        &terminal_vias,
+        &delta_ids,
+        &delta_vias,
+        universe,
+        rvid_by_opid,
+    );
+    bundle.push_row(
+        member_ix,
+        terminal_ids,
+        terminal_vias,
+        delta_ids,
+        delta_vias,
+    );
     out
 }
 
@@ -1286,6 +1272,7 @@ fn solve_one_effective_scc(
     universe: &mut EffectUniverse,
     rvid_by_opid: &HashMap<String, Option<String>>,
     interner: &RoutineInterner,
+    bundle: &mut SummaryBundleBuilder,
 ) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
     // Step A: PD substitution as reachability.
     let (pd_facts, terminal_emissions) = solve_pd_reachability(
@@ -1351,7 +1338,7 @@ fn solve_one_effective_scc(
             .expect("every effective-SCC member is interned at workspace setup");
         let db_effects = match presence.by_member.get(&m_ix) {
             Some(bits) => {
-                materialize_member_db_effects(m_ix, bits, &via_map, universe, rvid_by_opid)
+                materialize_member_db_effects(m_ix, bits, &via_map, universe, rvid_by_opid, bundle)
             }
             None => Vec::new(),
         };
@@ -1409,6 +1396,7 @@ pub fn solve_scc_db_effects(
     is_recomputed: &dyn Fn(&str) -> bool,
     rvid_by_opid: &HashMap<String, Option<String>>,
     interner: &RoutineInterner,
+    bundle: &mut SummaryBundleBuilder,
 ) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
     let eff_sccs = effective_sccs(scc_entry, graph, is_recomputed);
     let mut results: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
@@ -1430,6 +1418,7 @@ pub fn solve_scc_db_effects(
             universe,
             rvid_by_opid,
             interner,
+            bundle,
         );
         results.extend(solved);
         return results;
@@ -1450,6 +1439,7 @@ pub fn solve_scc_db_effects(
             universe,
             rvid_by_opid,
             interner,
+            bundle,
         );
         for (id, (db_effects, uncertainties, has_unresolved)) in &solved {
             // Feed-forward summary: only db_effects/uncertainties/
@@ -2586,10 +2576,8 @@ mod tests {
             .expect("X must already be interned by closed_form_union");
 
         assert_eq!(
-            via_map
-                .get(&(interner.get("a").unwrap(), x_id))
-                .map(String::as_str),
-            Some("direct"),
+            via_map.get(&(interner.get("a").unwrap(), x_id)).copied(),
+            Some(ViaRank::Direct),
             "a base-owned effect must win over a colliding event-dispatch self-loop"
         );
     }
@@ -2686,34 +2674,25 @@ mod tests {
             .expect("X must already be interned by closed_form_union");
 
         assert_eq!(
-            via_map
-                .get(&(interner.get("a").unwrap(), x_id))
-                .map(String::as_str),
-            Some("direct"),
+            via_map.get(&(interner.get("a").unwrap(), x_id)).copied(),
+            Some(ViaRank::Direct),
             "a owns X in its own base"
         );
         assert_eq!(
-            via_map
-                .get(&(interner.get("b").unwrap(), x_id))
-                .map(String::as_str),
-            Some("event-subscriber"),
+            via_map.get(&(interner.get("b").unwrap(), x_id)).copied(),
+            Some(ViaRank::EventSubscriber),
             "b only inherits X via the b->a event-dispatch edge, never direct"
         );
     }
 
-    #[test]
-    #[should_panic(expected = "non-canonical via string")]
-    fn canonicalization_guard_rejects_bogus_via_string() {
-        // A rank-0 bogus string must NOT be allowed to silently win a tie
-        // against a real "inherited" (also rank 0) — merge_via's own
-        // tie-break keeps its FIRST argument, so an unchecked bogus value
-        // passed through would otherwise win outright. merge_via_into must
-        // refuse it before it ever gets to compete.
-        let mut via_map: HashMap<(RoutineIx, EffectId), String> = HashMap::new();
-        let mut interner = RoutineInterner::new();
-        let a_ix = interner.intern("a");
-        merge_via_into(&mut via_map, a_ix, EffectId(0), "totally-bogus-via");
-    }
+    // `canonicalization_guard_rejects_bogus_via_string` (the OLD
+    // `debug_assert!`-based guard test) is REMOVED, not weakened: Task A2
+    // makes `via` a `ViaRank` (a closed 5-variant enum) rather than an
+    // arbitrary `&str`, so "pass a non-canonical via string" is no longer a
+    // representable call — the invariant the old runtime guard checked is
+    // now a COMPILE-TIME guarantee (see `merge_via_into`'s own updated doc).
+    // A test asserting a debug_assert panic for an input the type system no
+    // longer accepts would not compile; there is nothing left to guard.
 
     /// Task A1: `materialize_member_db_effects` sorts a member's present ids
     /// by the UNIVERSE's cached `effect_key` (+ `operation_id` tie-break),
@@ -2745,13 +2724,21 @@ mod tests {
         let mut interner = RoutineInterner::new();
         let m_ix: RoutineIx = interner.intern("m");
 
-        let mut via_map: HashMap<(RoutineIx, EffectId), String> = HashMap::new();
-        via_map.insert((m_ix, zeta_id), "direct".to_string());
-        via_map.insert((m_ix, alpha_id), "direct".to_string());
+        let mut via_map: HashMap<(RoutineIx, EffectId), ViaRank> = HashMap::new();
+        via_map.insert((m_ix, zeta_id), ViaRank::Direct);
+        via_map.insert((m_ix, alpha_id), ViaRank::Direct);
 
         let rvid_by_opid: HashMap<String, Option<String>> = HashMap::new();
+        let mut bundle = SummaryBundleBuilder::new();
 
-        let out = materialize_member_db_effects(m_ix, &bits, &via_map, &universe, &rvid_by_opid);
+        let out = materialize_member_db_effects(
+            m_ix,
+            &bits,
+            &via_map,
+            &universe,
+            &rvid_by_opid,
+            &mut bundle,
+        );
 
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].op, "Alpha", "Alpha sorts before Zeta by effect_key");

@@ -90,6 +90,37 @@ fn parity_via_collision() {
     assert_parity("via_collision");
 }
 
+// ---------------------------------------------------------------------------
+// Task A2 via-rank-merge guards (spec Step 3 test list) — see the fixture
+// doc comments in `mod fixtures` for what each one exercises and why the
+// differential (byte-identical to the untouched OLD solver) is the oracle.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parity_via_collision_edges_reversed() {
+    assert_parity("via_collision_edges_reversed");
+}
+
+#[test]
+fn parity_pd_substituted_via_collision() {
+    assert_parity("pd_substituted_via_collision");
+}
+
+#[test]
+fn parity_pd_substituted_via_collision_reversed() {
+    assert_parity("pd_substituted_via_collision_reversed");
+}
+
+#[test]
+fn parity_direct_terminal_beats_colliding_pd_substitution() {
+    assert_parity("direct_terminal_beats_colliding_pd_substitution");
+}
+
+#[test]
+fn parity_direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition() {
+    assert_parity("direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition");
+}
+
 #[test]
 fn parity_external_successor_pd() {
     assert_parity("external_successor_pd");
@@ -379,6 +410,15 @@ mod fixtures {
             "pd_to_unknown" => pd_to_unknown(),
             "multi_callsite_same_callee" => multi_callsite_same_callee(),
             "via_collision" => via_collision(),
+            "via_collision_edges_reversed" => via_collision_edges_reversed(),
+            "pd_substituted_via_collision" => pd_substituted_via_collision(false),
+            "pd_substituted_via_collision_reversed" => pd_substituted_via_collision(true),
+            "direct_terminal_beats_colliding_pd_substitution" => {
+                direct_terminal_beats_colliding_pd_substitution()
+            }
+            "direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition" => {
+                direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition()
+            }
             "external_successor_pd" => external_successor_pd(),
             "fixed_leaf_in_scc" => fixed_leaf_in_scc(),
             "missing_routine_in_scc" => missing_routine_in_scc(),
@@ -769,6 +809,151 @@ mod fixtures {
         let s = scc(vec![(vec!["callee"], false), (vec!["a"], false)]);
 
         (vec![a, callee], g, s, FieldIndex::new(), HashMap::new())
+    }
+
+    // -----------------------------------------------------------------------
+    // Task A2 via-rank-merge guard fixtures (spec Step 3 test list, lines
+    // 149-152): the "simplest safe v1" chosen for A2 keeps `reconstruct_via`/
+    // `attribute_pd_substituted_via`'s EXISTING traversal structure, only
+    // retyping the via map's VALUE from `String` to `ViaRank` — so these
+    // fixtures pin that the retyped max-rank merge stays byte-identical to
+    // the old solver across the specific collision/order shapes the spec's
+    // Step 2 write-up calls out, not a NEW algorithm discovery (the
+    // differential's byte-for-byte comparison against the untouched OLD
+    // solver is the correctness oracle for every one of them).
+    // -----------------------------------------------------------------------
+
+    /// `via_collision`, but with its two edges added in the OPPOSITE order
+    /// (`event-dispatch` first, `direct` second) — pins that the max-rank
+    /// merge for a TERMINAL effect is order-INDEPENDENT (spec: "first-
+    /// transition rank-0 then a later-transition rank-2/3" / vice versa),
+    /// not an artifact of `graph.edges_by_from`'s insertion order.
+    fn via_collision_edges_reversed() -> FixtureOut {
+        let mut callee = routine("callee");
+        callee.record_operations.push(record_op(
+            "callee_op1",
+            "Insert",
+            "t1",
+            Some(ts_known(true)),
+        ));
+
+        let mut a = routine("a");
+        a.call_sites.push(call_site("a_cs1", "Callee", Vec::new()));
+
+        let g = graph(
+            &["a", "callee"],
+            vec![
+                edge("a", "callee", "event-dispatch", None),
+                edge("a", "callee", "direct", Some("a_cs1")),
+            ],
+        );
+        let s = scc(vec![(vec!["callee"], false), (vec!["a"], false)]);
+
+        (vec![a, callee], g, s, FieldIndex::new(), HashMap::new())
+    }
+
+    /// `a` reaches `b`'s SAME `ParameterDependent(0)` effect via TWO
+    /// callsites of DIFFERENT edge kinds — `"direct"` (`via_for_edge_kind`
+    /// -> `"inherited"`, rank 0) and `"implicit-trigger"` (rank 3) — both
+    /// forwarding `b`'s param 0 to `a`'s own param 0, so BOTH substitute to
+    /// the IDENTICAL produced identity on `a`. Exercises
+    /// `attribute_pd_substituted_via`'s max-rank merge on the PD-substitution
+    /// path specifically (spec item: "two callsites producing the same PD
+    /// state at different ranks"). `reversed` controls edge insertion order
+    /// — both orderings must reach the SAME old-solver-verified result (spec
+    /// item: "first-transition rank-0 then a later-transition rank-2/3").
+    fn pd_substituted_via_collision(reversed: bool) -> FixtureOut {
+        let mut b = routine("b");
+        b.record_operations
+            .push(record_op("b_op1", "Insert", "t2", Some(ts_pd(0))));
+
+        let mut a = routine("a");
+        a.call_sites.push(call_site(
+            "a_cs_direct",
+            "B",
+            vec![arg_binding(0, Some(ts_pd(0)))],
+        ));
+        a.call_sites.push(call_site(
+            "a_cs_trigger",
+            "B",
+            vec![arg_binding(0, Some(ts_pd(0)))],
+        ));
+
+        let mut edges = vec![
+            edge("a", "b", "direct", Some("a_cs_direct")),
+            edge("a", "b", "implicit-trigger", Some("a_cs_trigger")),
+        ];
+        if reversed {
+            edges.reverse();
+        }
+        let g = graph(&["a", "b"], edges);
+        let s = scc(vec![(vec!["b"], false), (vec!["a"], false)]);
+
+        (vec![a, b], g, s, FieldIndex::new(), HashMap::new())
+    }
+
+    /// `a` owns a base `Known(true)` effect at the SAME `(op, table_id,
+    /// operation_id)` triple as `b`'s `ParameterDependent(0)` effect; `a`
+    /// calls `b` over a `"direct"` edge (`via_for_edge_kind` -> `"inherited"`,
+    /// rank 0) binding param 0 to `Known(true)` — the substitution's produced
+    /// identity COLLIDES exactly with `a`'s own base effect. `reconstruct_via`'s
+    /// init seeds `"direct"` (rank 4) for `a`'s own effect BEFORE
+    /// `attribute_pd_substituted_via` runs; the rank-0 `"inherited"`
+    /// contribution from the colliding edge must NOT downgrade it (spec item:
+    /// "a PD→Known colliding with a direct terminal").
+    fn direct_terminal_beats_colliding_pd_substitution() -> FixtureOut {
+        let mut b = routine("b");
+        b.record_operations
+            .push(record_op("shared_op1", "Insert", "t5", Some(ts_pd(0))));
+
+        let mut a = routine("a");
+        a.record_operations.push(record_op(
+            "shared_op1",
+            "Insert",
+            "t5",
+            Some(ts_known(true)),
+        ));
+        a.call_sites.push(call_site(
+            "a_cs1",
+            "B",
+            vec![arg_binding(0, Some(ts_known(true)))],
+        ));
+
+        let g = graph(&["a", "b"], vec![edge("a", "b", "direct", Some("a_cs1"))]);
+        let s = scc(vec![(vec!["b"], false), (vec!["a"], false)]);
+
+        (vec![a, b], g, s, FieldIndex::new(), HashMap::new())
+    }
+
+    /// Same shape as [`direct_terminal_beats_colliding_pd_substitution`], but
+    /// `a`'s own base effect STAYS `ParameterDependent(2)` (rather than
+    /// resolving to `Known`) and the substitution's produced identity is ALSO
+    /// `ParameterDependent(2)` — exercising the collision on the PD/delta
+    /// storage path (spec item: "a PD→PD colliding with a direct PD").
+    /// Because `a`'s own base PD(2) fact (Step A Seed 1) and the
+    /// edge-substituted PD(2) fact (Step A Seed 2, forwarding `a`'s own
+    /// param 2 through the `a -> b` edge) are the IDENTICAL `PdState`, this
+    /// ALSO exercises the spec's "a duplicate transition where
+    /// `visited.insert` is false" item — Step A's worklist dedup must not
+    /// lose either the fact or (independently) its via attribution.
+    fn direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition() -> FixtureOut {
+        let mut b = routine("b");
+        b.record_operations
+            .push(record_op("shared_op2", "Insert", "t6", Some(ts_pd(0))));
+
+        let mut a = routine("a");
+        a.record_operations
+            .push(record_op("shared_op2", "Insert", "t6", Some(ts_pd(2))));
+        a.call_sites.push(call_site(
+            "a_cs1",
+            "B",
+            vec![arg_binding(0, Some(ts_pd(2)))],
+        ));
+
+        let g = graph(&["a", "b"], vec![edge("a", "b", "direct", Some("a_cs1"))]);
+        let s = scc(vec![(vec!["b"], false), (vec!["a"], false)]);
+
+        (vec![a, b], g, s, FieldIndex::new(), HashMap::new())
     }
 
     /// `ext` is an already-settled successor SCC (processed BEFORE the recursive
