@@ -721,11 +721,31 @@ impl SummaryBundle {
         self.interner.get(routine_id)
     }
 
+    /// The routine id for an interned [`RoutineIx`] — the inverse of
+    /// [`Self::routine_ix`]. Panics if `ix` was never produced by this
+    /// bundle's interner (mirrors [`RoutineInterner::name`]'s own contract);
+    /// every `RoutineIx` in circulation is expected to have come from this
+    /// bundle. A4's [`crate::engine::l4::reverse_index::graph_scc_of`] uses
+    /// this to bridge a `RoutineIx` back to the string id
+    /// [`crate::engine::l4::scc::SccResult::scc_id_by_routine`] is keyed by.
+    pub fn routine_id(&self, ix: RoutineIx) -> &str {
+        self.interner.name(ix)
+    }
+
     /// True iff `r` has a compact row (was recomputed this run OR is a retained
     /// fixed leaf — spec ⟨rev3⟩ "fixed leaves get a singleton class"). A
     /// missing routine gets no row.
     pub fn has_row(&self, r: RoutineIx) -> bool {
         self.summaries.contains_key(&r)
+    }
+
+    /// Every routine with a compact row, in unspecified (`HashMap`) order —
+    /// A4's reverse-index build iterates this once to group routines by their
+    /// shared [`EffectSetId`] and to walk each routine's own delta. Callers
+    /// needing a deterministic order sort the result themselves (A4's build
+    /// pass sorts each class's members ascending by [`RoutineIx`]).
+    pub fn routines_with_rows(&self) -> impl Iterator<Item = RoutineIx> + '_ {
+        self.summaries.keys().copied()
     }
 
     /// The hash-consed set store (for A4's reverse index + queries).
@@ -738,6 +758,18 @@ impl SummaryBundle {
     /// consumes.
     pub fn terminal_base(&self, r: RoutineIx) -> Option<EffectSetId> {
         self.summaries.get(&r).map(|row| row.terminal_base)
+    }
+
+    /// A routine's OWN `pd_delta` ids — `key_rank`-sorted, unique, exactly
+    /// `delta \ base` (spec Step 3 invariant) — for A4's reverse transpose,
+    /// which needs the raw delta ids (not the merged `db_effects` view) to
+    /// build `effect_to_delta_routines`/`table_to_delta_routines`. Empty for
+    /// a routine with no row.
+    pub fn pd_delta_ids(&self, r: RoutineIx) -> &[EffectId] {
+        match self.summaries.get(&r) {
+            Some(row) => &self.delta_pool[row.pd_delta.start as usize..row.pd_delta.end as usize],
+            None => &[],
+        }
     }
 
     /// The lazy `DbEffect` view for one routine — an O(result) two-way merge
