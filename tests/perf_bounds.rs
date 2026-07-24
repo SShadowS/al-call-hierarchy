@@ -1120,9 +1120,21 @@ mod release_checks {
     /// the one the l4-summary / db-effect-store redesign actually rewrote
     /// (517s -> 11.3s, 24 GB -> 0.47 GB) — was guarded ONLY by a manual
     /// real-workspace 8020 re-measurement nobody runs in CI. A change
-    /// reintroducing a per-SCC workspace-wide rebuild or an eager per-member
-    /// `Vec<DbEffect>` re-materialization would have shipped green through
-    /// every automated gate.
+    /// reintroducing a per-SCC workspace-wide rebuild, or an eager per-member
+    /// `Vec<DbEffect>` re-materialization INSIDE the solver itself, would have
+    /// shipped green through every automated gate.
+    ///
+    /// ⟨fix wave finding 2⟩ Precisely: this gate (like
+    /// [`compute_summaries_v2_within_bound`]) calls `compute_summaries_v2_bundle`
+    /// DIRECTLY — it catches a re-materialization reintroduced inside that
+    /// solver, but NOT `build_detector_context`'s own call site regressing to a
+    /// DIFFERENT, materializing entry point (`compute_summaries_v2` /
+    /// `compute_summaries_v2_with_leaves_core`), since neither L4 gate ever
+    /// touches that call site. That entry-point regression is guarded
+    /// separately, by a `debug_assert!` in `build_detector_context`
+    /// (`src/engine/l5/detector_context.rs`) plus a normal (non-release,
+    /// non-timing) test exercising it — see
+    /// `core_summaries_stay_lean_while_the_bundle_carries_the_db_effect_rows`.
     ///
     /// Measures the SAME entry point (`compute_summaries_v2_bundle`) over the
     /// SAME substrate assembly ([`L4Substrate`]), differing only in the corpus:

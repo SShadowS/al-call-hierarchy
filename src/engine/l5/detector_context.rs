@@ -672,6 +672,25 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         );
         drop(_summaries_span);
 
+        // ⟨fix wave finding 2⟩ `compute_summaries_v2_bundle` is the LEAN entry point
+        // (⟨Task B1⟩ — see its own doc): `core_summaries`' `db_effects` field stays
+        // EMPTY, with the real rows living compactly in `db_effect_bundle` instead.
+        // Neither `perf_bounds.rs` L4 gate would notice this call site regressing to
+        // a materializing entry point (`compute_summaries_v2` /
+        // `compute_summaries_v2_with_leaves_core`, or an inline rebuild of their
+        // db_effects-filling loop) — both gates call `compute_summaries_v2_bundle`
+        // directly, bypassing this call site entirely. This assert is what catches
+        // THAT regression: deterministic, machine-independent, no timing involved.
+        // See `core_summaries_stay_lean_while_the_bundle_carries_the_db_effect_rows`
+        // (this module's test module) for the corpus that exercises it for real.
+        debug_assert!(
+            core_summaries.values().all(|s| s.db_effects.is_empty()),
+            "build_detector_context's core_summaries must carry EMPTY db_effects — a \
+             non-empty row means this call site regressed to a materializing summary \
+             entry point, reintroducing the ~24 GB / ~74 s per-routine Vec<DbEffect> \
+             re-materialization ⟨Task B1⟩ (commit a0cd348) removed"
+        );
+
         // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
         // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
         // uncertainties FIRST, then the combined-graph edge uncertainties (converted
@@ -1198,6 +1217,64 @@ page 50811 "CP Wizard"
                 .values()
                 .any(|s| ctx.cone_derived.touches_table(&s.routine_id)),
             "at least one surviving routine must still reach the table write"
+        );
+    }
+
+    /// ⟨fix wave FIX 1, final-branch-review finding 2⟩ Discriminates the call-site
+    /// regression the review flagged: both `perf_bounds` L4 gates call
+    /// `compute_summaries_v2_bundle` directly, so neither would notice if
+    /// `build_detector_context` stopped calling it. On a fixture guaranteed to
+    /// produce a REAL db-effect population (`Setup.Insert()` — `Insert` is
+    /// db-touching, `summary_runner::is_db_touching`), this test proves the bundle
+    /// side of the B1 invariant is populated; the production `debug_assert!` right
+    /// after `compute_summaries_v2_bundle` in `build_detector_context` proves the
+    /// `core_summaries` side stays empty — and is exercised for REAL here (not
+    /// vacuously, the way it would be against an empty workspace). If the call
+    /// site ever regresses to a materializing entry point, that debug_assert
+    /// panics and this test fails (verified by temporarily re-pointing the call
+    /// site — see `.superpowers/sdd/minors-report.md`'s Fix wave section for the
+    /// before/after run).
+    #[test]
+    fn core_summaries_stay_lean_while_the_bundle_carries_the_db_effect_rows() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50900 "FX1 Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+codeunit 50900 "FX1 Touch"
+{
+    procedure Touch()
+    var
+        Setup: Record "FX1 Setup";
+    begin
+        Setup.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/FX1Touch.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "11111111-0000-0000-0000-0000000fx001");
+        // CORE_SUMMARIES alone is enough to reach the `compute_summaries_v2_bundle`
+        // call (gated independently of SUMMARIES — see `build_detector_context`'s
+        // own doc), so this test does not need the cone/SUMMARIES substrate at all.
+        let ctx = build_detector_context(&resolved, substrate::CORE_SUMMARIES);
+
+        let bundle = ctx
+            .db_effect_bundle
+            .as_ref()
+            .expect("CORE_SUMMARIES was demanded — the bundle must exist");
+        let any_row_has_effects = bundle
+            .routines_with_rows()
+            .any(|rix| bundle.db_effects(rix).next().is_some());
+        assert!(
+            any_row_has_effects,
+            "fixture precondition: `Setup.Insert()` must produce at least one compact \
+             db_effects row in the bundle, or the debug_assert in \
+             `build_detector_context` is never exercised against a real effect"
         );
     }
 }
