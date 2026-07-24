@@ -20,7 +20,3 @@ mod r3a4_oracles;
 mod r3a4_vectors;
 mod r3a5_differential;
 mod r3a5_oracles;
-mod r3b_incremental_equality;
-mod r3b_incremental_nondeterminism;
-mod r3b_minimality;
-mod r3b_wrapped_parity;

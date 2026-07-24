@@ -2323,7 +2323,6 @@ pub(crate) struct R3a5CrossAppBase {
     pub event_graph: EventGraph,
     pub objects: Vec<crate::engine::l3::l3_workspace::L3Object>,
     pub tables: Vec<crate::engine::l3::l3_workspace::L3Table>,
-    pub app_guid: String,
     /// Fixed-leaf (dep) RETAINED summaries.
     pub leaf_summaries: HashMap<String, crate::engine::l4::summary::RoutineSummary>,
     /// Per-routine direct capability facts (full, ordered).
@@ -2522,20 +2521,6 @@ fn build_cross_app_base_from_cross(
         direct_full.insert(r.id.clone(), facts);
     }
 
-    // The primary (workspace) app guid — the "source" entry in the apps ledger,
-    // else the first non-dep routine's app guid (cosmetic: the AppContext identity).
-    let app_guid = cross
-        .apps
-        .iter()
-        .find(|(_, kind)| kind == "source")
-        .map(|(g, _)| g.clone())
-        .or_else(|| {
-            ws.routines
-                .iter()
-                .find(|r| !dep_routine_ids.contains(&r.id))
-                .map(|r| r.app_guid.clone())
-        })
-        .unwrap_or_default();
     Some(R3a5CrossAppBase {
         ws_routines: ws.routines.clone(),
         dep_routine_ids,
@@ -2546,7 +2531,6 @@ fn build_cross_app_base_from_cross(
         field_index,
         upgraded_bindings: calls.upgraded_bindings.clone(),
         event_graph,
-        app_guid,
         leaf_summaries: dep_retained.summaries,
         direct_full,
         direct_coverage,
@@ -3035,74 +3019,6 @@ pub fn build_r3a3_source_only_base(resolved: &L3Resolved) -> R3a3SourceBase {
         cones,
         routine_to_stable,
     }
-}
-
-/// The R3a-3 PROJECTION TAIL — project the per-routine cone results into the
-/// stable cone/coverage surface. A pure function of its parts, shared by the
-/// from-scratch `project_r3a3` AND the R3b Salsa wrap (which demands the cone via
-/// the Salsa `cones` query). Only routines WITH a cone entry are emitted (parity
-/// with `project_r3a3`). `event_graph` provides the stable event-id projection.
-pub(crate) fn project_r3a3_from_parts(
-    ws_routines: &[L3Routine],
-    cones: &HashMap<String, ConeResultPub>,
-    direct_full: &HashMap<String, Vec<CapabilityFact>>,
-    event_graph: &EventGraph,
-    map: &HashMap<String, String>,
-) -> R3a3Projection {
-    let event_by_id: HashMap<String, &EventSymbol> = event_graph
-        .events
-        .iter()
-        .map(|e| (e.id.clone(), e))
-        .collect();
-
-    let mut summaries: Vec<PRoutineConeCoverage> = Vec::new();
-    for r in ws_routines {
-        let Some(cone) = cones.get(&r.id) else {
-            continue;
-        };
-
-        let empty_facts: Vec<CapabilityFact> = Vec::new();
-        let mut direct_facts: Vec<PCapabilityFact> = direct_full
-            .get(&r.id)
-            .unwrap_or(&empty_facts)
-            .iter()
-            .map(|f| project_capability_fact(f, map, &event_by_id))
-            .collect();
-        direct_facts.sort_by_key(capability_fact_sort_key);
-
-        let mut inherited_facts: Vec<PCapabilityFact> = cone
-            .inherited
-            .iter()
-            .map(|f| project_capability_fact(f, map, &event_by_id))
-            .collect();
-        inherited_facts.sort_by_key(capability_fact_sort_key);
-
-        let mut reasons = cone.coverage.reasons.clone();
-        reasons.sort();
-        let mut unknown_targets: Vec<String> = cone
-            .coverage
-            .unknown_targets
-            .iter()
-            .map(|t| stable_routine_id(t, map))
-            .collect();
-        unknown_targets.sort();
-
-        summaries.push(PRoutineConeCoverage {
-            routine_id: stable_routine_id(&r.id, map),
-            capability_facts_direct: direct_facts,
-            capability_facts_inherited: inherited_facts,
-            coverage: PCoverageRecord {
-                subject: stable_routine_id(&cone.coverage.subject, map),
-                direct_status: cone.coverage.direct_status.clone(),
-                inherited_status: cone.coverage.inherited_status.clone(),
-                reasons,
-                unknown_targets,
-            },
-        });
-    }
-    summaries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-
-    R3a3Projection { summaries }
 }
 
 // ===========================================================================
