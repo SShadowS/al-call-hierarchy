@@ -18,9 +18,12 @@
 //! a sorted `Vec` / `BTreeSet`. No `HashMap` iteration order reaches output.
 
 pub mod capability_query;
-// ⟨C1⟩ The dual-run parity oracle: per routine, every derived cone predicate vs.
-// its raw `capability_facts_inherited` computation. Opt-in via `C1_CONE_PARITY=1`.
-pub mod cone_parity;
+// ⟨C1 Task 3⟩ `cone_parity` — the dual-run derived-vs-raw oracle — is GONE. It
+// compared each derived predicate against the raw `capability_facts_inherited`
+// Vec; Task 3 stops building that Vec on every path that had one, so the oracle's
+// raw side would have degraded to direct-only and false-alarmed on every routine.
+// Its one Vec-independent test (the G-18 collision / `ConeDerivedStore::forget`
+// pin) was RELOCATED to `detector_context`'s test module, not deleted.
 // G-19 — closed-world temp inference for `local` routines (the proven
 // `(routine, param)` set the d1/d3/d10 temp gates consult).
 pub mod closed_world_temp;

@@ -1689,8 +1689,8 @@ struct InheritedConeResult {
 ///
 /// ⟨C1⟩ `direct_raw` is the RAW, un-deduped per-routine direct-fact map (the
 /// same Vec `FullRoutineSummary.capability_facts_direct` holds). It is the SELF
-/// half of the derived fold: `reachable_iter` scans every direct fact, so the
-/// fold must too — unlike the inherited half, which folds key-deduped
+/// half of the derived fold: the reachable sequence scans every direct fact, so
+/// the fold must too — unlike the inherited half, which folds key-deduped
 /// representatives. `mode` decides which of the two outputs is produced.
 #[allow(clippy::too_many_arguments)]
 fn compose_inherited_cones(
@@ -1762,7 +1762,8 @@ fn compose_inherited_cones(
             };
             if mode.wants_derived() {
                 // The SELF half — the routine's RAW direct facts, one fold each
-                // (they are stored un-deduped and `reachable_iter` scans them all).
+                // (they are stored un-deduped and the reachable sequence scans
+                // every one of them).
                 if let Some(own) = direct_raw.get(m) {
                     for f in own {
                         derived.fold_fact(f);
@@ -1848,7 +1849,7 @@ pub struct ConeOutcome {
 /// ⟨C1⟩ `mode` selects the output(s). `direct_in` doubles as the derived fold's
 /// SELF half — it is the raw, un-deduped direct-fact Vec every caller also stores
 /// on `FullRoutineSummary.capability_facts_direct` (verified at all three call
-/// sites), which is exactly what `reachable_iter` scans.
+/// sites), which is exactly the self half of the reachable sequence.
 pub fn compose_cone_over_graph(
     graph: &CombinedGraph,
     nodes: &[String],
@@ -2681,15 +2682,17 @@ pub fn project_r3a5_cross_app(
         &base.field_index,
         &base.leaf_summaries,
     );
-    // ⟨C1⟩ `Both` — this projection path consumes the RAW cone (its exact
-    // `sort_inherited` byte order is the golden surface); the derived substrate
-    // rides along unread, which keeps the fold exercised by the r3a5 fixtures.
+    // ⟨C1 Task 3⟩ `RawOnly` — this projection path consumes the RAW cone (its
+    // exact `sort_inherited` byte order IS the R3a-5 golden surface, Global
+    // Constraint 7). It never reads `ConeOutcome::derived`, so folding one here
+    // was build-then-drop; `RawOnly` skips the fold outright. The raw Vec and its
+    // ordering are untouched.
     let cones = compose_cone_over_graph(
         graph,
         &base.nodes,
         &base.direct_full,
         &base.direct_coverage,
-        ConeOutput::Both,
+        ConeOutput::RawOnly,
     )
     .cones;
 
@@ -2959,9 +2962,9 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
         direct_full.insert(r.id.clone(), facts);
     }
 
-    // ⟨C1⟩ `Both` — this projection consumes the RAW cone (its `sort_inherited`
-    // byte order IS the R3a-3 golden surface); the derived store rides along
-    // unread so the fold stays exercised by the r3a3 fixtures.
+    // ⟨C1 Task 3⟩ `RawOnly` — this projection consumes the RAW cone (its
+    // `sort_inherited` byte order IS the R3a-3 golden surface, Global Constraint
+    // 7) and discards the derived store. Folding one was build-then-drop.
     let (cones, _derived) = compose_inherited_cones(
         &g,
         &scc,
@@ -2969,7 +2972,7 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
         &direct_full,
         &cov,
         &routine_ids,
-        ConeOutput::Both,
+        ConeOutput::RawOnly,
     );
 
     // ── Project ───────────────────────────────────────────────────────────
@@ -3123,14 +3126,15 @@ pub fn build_r3a3_source_only_base(resolved: &L3Resolved) -> R3a3SourceBase {
     }
 
     let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
-    // ⟨C1⟩ `Both` — the snapshot/digest/prove derivers read the RAW cone off this
-    // base; the derived substrate rides along unread (see `project_r3a5_cross_app`).
+    // ⟨C1 Task 3⟩ `RawOnly` — the snapshot/digest/prove derivers read the RAW
+    // cone off this base and never touch `ConeOutcome::derived` (see
+    // `project_r3a5_cross_app`). Raw bytes and ordering unchanged.
     let cones = compose_cone_over_graph(
         &graph,
         &nodes,
         &direct_full,
         &direct_coverage,
-        ConeOutput::Both,
+        ConeOutput::RawOnly,
     )
     .cones;
 

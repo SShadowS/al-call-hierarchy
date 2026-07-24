@@ -92,10 +92,11 @@ pub struct DetectorContext<'a> {
     /// ⟨C1⟩ The compact DERIVED capability-cone substrate — per-routine presence
     /// flags + interned table/event id-sets folded during the same cone walk that
     /// produces `summaries`, with zero `retag` clones. Every analyze-path consumer
-    /// of `capability_facts_inherited` reads only a derived predicate off it, so
-    /// this row is a sufficient replacement (proven per routine by
-    /// `cone_parity::assert_cone_parity` under `C1_CONE_PARITY=1` while both
-    /// representations exist). Parked here — next to `db_effect_bundle` — because
+    /// of the old `capability_facts_inherited` Vec reads only a derived predicate
+    /// off it, so this row REPLACES that Vec outright: since C1 Task 3 the analyze
+    /// path composes under `ConeOutput::DerivedOnly` and the raw Vec is never
+    /// built (`summaries[*].inherited_raw()` panics there — see
+    /// `FullRoutineSummary`). Parked here — next to `db_effect_bundle` — because
     /// the rows are `Range<u32>` windows into pools this store owns; a row alone
     /// is meaningless. EMPTY when the `SUMMARIES` substrate was not demanded.
     pub cone_derived: ConeDerivedStore,
@@ -244,12 +245,24 @@ impl DetectorContext<'_> {
 ///     `uncertainties_by_node` / `parameter_roles_by_routine` / `summarize_diagnostics`.
 ///   - `TRANSACTION_SPANS` — `transaction_spans`.
 ///   - `CLOSED_WORLD_TEMP` — `closed_world_temp_params`.
+///
+/// ⟨C1 Task 3⟩ `demanded` additionally carries the policy-only
+/// `RAW_INHERITED_FACTS` bit (NOT part of `substrate::ALL` — see its doc). Without
+/// it the cone composes under [`ConeOutput::DerivedOnly`]: the per-routine raw
+/// `Vec<CapabilityFact>` is never allocated (it cost ~10.9 GB on the 8020 corpus)
+/// and every summary carries `capability_facts_inherited: None`. With it the cone
+/// composes under [`ConeOutput::Both`] — the derived substrate AND the raw Vecs,
+/// byte-identical to the pre-Task-3 build.
 pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorContext<'_> {
     use crate::engine::l5::registry::substrate;
     let ws = &resolved.workspace;
     // TRANSACTION_SPANS folds over the summaries map, so demand summaries whenever
     // either bit is set (see `compute_transaction_spans`).
     let need_summaries = demanded & (substrate::SUMMARIES | substrate::TRANSACTION_SPANS) != 0;
+    // ⟨C1 Task 3 — R1⟩ The gate is a MODE threaded into the cone walk, not a
+    // post-hoc check: the raw Vec is allocated INSIDE `compose_inherited_cones`,
+    // so a check here could only discard it — zero memory win.
+    let want_raw_inherited = demanded & substrate::RAW_INHERITED_FACTS != 0;
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
     // `symbols` feeds BOTH spans below (resolve_calls here, build_event_graph in
@@ -300,12 +313,15 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             coverage_in.insert(r.id.clone(), (status, reasons));
             direct_full.insert(r.id.clone(), facts);
         }
-        // ⟨C1⟩ `Both` — the raw inherited Vec (what every current consumer
-        // reads) AND the derived substrate, folded in the same walk. Task 3
-        // flips this to `DerivedOnly` unless the policy-only
-        // `RAW_INHERITED_FACTS` bit is set.
-        let outcome =
-            compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in, ConeOutput::Both);
+        // ⟨C1 Task 3⟩ `DerivedOnly` — the compact substrate only; the per-routine
+        // raw inherited `Vec<CapabilityFact>` is never allocated. `Both` only when
+        // the policy-only `RAW_INHERITED_FACTS` bit is demanded.
+        let mode = if want_raw_inherited {
+            ConeOutput::Both
+        } else {
+            ConeOutput::DerivedOnly
+        };
+        let outcome = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in, mode);
         let mut cones = outcome.cones;
         cone_derived = outcome.derived;
 
@@ -355,24 +371,27 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 Some(c) => (c.inherited, Some(c.coverage)),
                 None => (Vec::new(), None),
             };
+            // ⟨C1 Task 3⟩ `Some(inherited)` ONLY under `RAW_INHERITED_FACTS`;
+            // `None` records "never materialized" so `inherited_raw()` panics
+            // instead of answering "empty cone" (R6). Note the `Some(Vec::new())`
+            // case is REAL and must stay distinct from `None`: the G-18 collision
+            // arm above yields a drained (empty) cone entry, which the policy path
+            // must still read as a materialized-but-empty cone, exactly as it did
+            // before this task.
             summaries.insert(
                 r.id.clone(),
-                FullRoutineSummary {
-                    routine_id: r.id.clone(),
-                    capability_facts_direct: direct.unwrap_or_default(),
-                    capability_facts_inherited: inherited,
+                FullRoutineSummary::new(
+                    r.id.clone(),
+                    direct.unwrap_or_default(),
+                    want_raw_inherited.then_some(inherited),
                     coverage,
-                },
+                ),
             );
         }
         summaries
     } else {
         HashMap::new()
     };
-    // ⟨C1⟩ The S1 dual-run gate: while BOTH representations exist, prove per
-    // routine that every derived predicate equals its raw-Vec computation.
-    // Opt-in (`C1_CONE_PARITY=1`); panics on the first divergence.
-    crate::engine::l5::cone_parity::assert_cone_parity_if_enabled(&summaries, &cone_derived);
     drop(_cones_span);
 
     // --- Eager indexes -----------------------------------------------------
@@ -749,38 +768,43 @@ pub(crate) fn build_detector_context_cross_app(
     let graph = base.graph.clone();
 
     // Cone over the merged graph (direct facts/coverage already assembled in `base`).
-    // ⟨C1⟩ `Both`, exactly as the source-only builder — see its note.
+    // ⟨C1 Task 3⟩ `DerivedOnly`, unconditionally. Unlike the source-only builder
+    // there is no mode choice to make here: this context is reachable ONLY from
+    // `registry::run_detectors_cross_app` (its single caller), i.e. from the
+    // detector path, and no detector reads raw inherited facts. The one consumer
+    // that does — `gate::policy` — builds its context through the SOURCE-ONLY
+    // `build_detector_context` (`gate/policy/pipeline.rs`), never this one. Adding
+    // a `demanded` parameter here would therefore only add a branch that no caller
+    // can ever take.
     let outcome = compose_cone_over_graph(
         &base.graph,
         &base.nodes,
         &base.direct_full,
         &base.direct_coverage,
-        ConeOutput::Both,
+        ConeOutput::DerivedOnly,
     );
     let cones = outcome.cones;
     let cone_derived = outcome.derived;
     let empty_facts: Vec<CapabilityFact> = Vec::new();
     let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
     for r in ws_routines {
+        // ⟨C1 Task 3, carry #2⟩ The `inherited` FIELD POPULATION is gone; the
+        // `cones.get()` is NOT. Switching this to `cones.remove()` would import
+        // the G-18 routine-id-collision degeneracy that the source-only builder
+        // accepts and this builder does not — a real output change, not a
+        // refactor. `coverage` still comes off the same borrowed entry.
         let cone = cones.get(&r.id);
-        let inherited = cone.map(|c| c.inherited.clone()).unwrap_or_default();
         let coverage = cone.map(|c| c.coverage.clone());
         summaries.insert(
             r.id.clone(),
-            FullRoutineSummary {
-                routine_id: r.id.clone(),
-                capability_facts_direct: base
-                    .direct_full
-                    .get(&r.id)
-                    .unwrap_or(&empty_facts)
-                    .clone(),
-                capability_facts_inherited: inherited,
+            FullRoutineSummary::new(
+                r.id.clone(),
+                base.direct_full.get(&r.id).unwrap_or(&empty_facts).clone(),
+                None,
                 coverage,
-            },
+            ),
         );
     }
-    // ⟨C1⟩ The same per-routine dual-run gate the source-only builder runs.
-    crate::engine::l5::cone_parity::assert_cone_parity_if_enabled(&summaries, &cone_derived);
 
     // --- Eager indexes (over the merged routine/object/table sets) ---------
     let routine_by_id: HashMap<&str, &L3Routine> =
@@ -1007,6 +1031,129 @@ mod tests {
         assert!(
             ctx.ordering_facts.get().is_some(),
             "first access must memoize"
+        );
+    }
+
+    /// ⟨C1 Task 3, carry #1⟩ RELOCATED from the retired `l5::cone_parity`'s test
+    /// module (that file's raw-vs-derived oracle died with the raw Vec; this test
+    /// never depended on the Vec and is the ONLY unconditional pin on
+    /// [`ConeDerivedStore::forget`], so it moves rather than dies). Its parity
+    /// tail — `assert_cone_parity(&ctx.summaries, &ctx.cone_derived)` — is gone
+    /// with the oracle; the degeneracy assertions below are the part that pinned
+    /// real behaviour.
+    ///
+    /// Two page actions each declaring `trigger OnAction()` COLLIDE on one
+    /// internal routine id (`compute_routine_id` carries no member discriminator
+    /// — gap G-18). `build_detector_context` assembles summaries by `remove()`-ing
+    /// each routine's cone entry, so the second occurrence gets nothing and the
+    /// summary that SURVIVES is fully degenerate. The derived row must be dropped
+    /// to match, or every colliding trigger in a real BC workspace would silently
+    /// change output now that detectors read the row instead of the Vec.
+    #[test]
+    fn colliding_routine_ids_leave_summary_and_derived_row_equally_degenerate() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50811 "CP Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50811 "CP Wizard"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action(First)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+            action(Second)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+        }
+    }
+
+    local procedure Touch()
+    var
+        Setup: Record "CP Setup";
+    begin
+        Setup.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/CPWizard.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "11111111-0000-0000-0000-0000000cp001");
+        let ctx = build_detector_context(&resolved, substrate::SUMMARIES);
+
+        // ⟨carry #1, re-review finding N-B⟩ Without this the whole test would pass
+        // identically on an EMPTY store — every `flags_of` would read the empty
+        // row and every `writes_tables_of` would be empty for the trivial reason,
+        // silently voiding what it pins.
+        assert!(
+            !ctx.cone_derived.is_empty(),
+            "precondition: the derived store must actually hold rows, or the \
+             degeneracy assertions below are vacuous"
+        );
+
+        // The collision is real: two routines share one id, so the routine list
+        // is longer than the summaries map.
+        let ids: BTreeSet<&str> = resolved
+            .workspace
+            .routines
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
+        assert!(
+            ids.len() < resolved.workspace.routines.len(),
+            "fixture precondition: the two OnAction triggers must collide on one routine id"
+        );
+
+        // The colliding id's summary is degenerate — and its derived row matches.
+        // ⟨Task 3⟩ The degeneracy predicate no longer mentions
+        // `capability_facts_inherited`: under `DerivedOnly` it is `None` for EVERY
+        // routine, so it discriminates nothing. `direct.is_empty() &&
+        // coverage.is_none()` is exactly the condition `build_detector_context`'s
+        // `forget` arm keys on.
+        let degenerate: Vec<&String> = ctx
+            .summaries
+            .iter()
+            .filter(|(_, s)| s.capability_facts_direct.is_empty() && s.coverage.is_none())
+            .map(|(id, _)| id)
+            .collect();
+        assert!(
+            !degenerate.is_empty(),
+            "fixture precondition: the collision must produce a degenerate summary"
+        );
+        for id in &degenerate {
+            assert_eq!(
+                ctx.cone_derived.flags_of(id),
+                0,
+                "{id}: a degenerate summary must carry an empty derived row"
+            );
+            assert!(ctx.cone_derived.writes_tables_of(id).is_empty());
+        }
+
+        // And a NON-degenerate routine still carries its folded row — the other
+        // half of the pin (`forget` must drop exactly the degenerate rows, not
+        // wipe the store).
+        assert!(
+            ctx.summaries
+                .values()
+                .any(|s| ctx.cone_derived.touches_table(&s.routine_id)),
+            "at least one surviving routine must still reach the table write"
         );
     }
 }

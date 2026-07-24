@@ -388,6 +388,11 @@ pub fn run_events_fanout(opts: &EventsFanoutOptions) -> EventsRunResult {
     }
 
     // Build detector context to get event_flow_indexes + summaries + event_graph.
+    // ⟨C1 Task 3 — R2/R3 caller classification⟩ DERIVED-ONLY: plain `ALL`, no
+    // `RAW_INHERITED_FACTS`. `ctx.summaries` reaches only `compute_fanout`, which
+    // reads `sum.coverage.as_ref().map(|c| c.inherited_status)` and NOTHING else
+    // off the summary (`l5/event_flow.rs`'s `capabilityComposition` roll-up) —
+    // coverage is composed under every output mode. No fact Vec is touched.
     let ctx = build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
     let ix = &ctx.event_flow_indexes;
 
@@ -529,6 +534,9 @@ pub fn run_events_chains(opts: &EventsChainsOptions) -> EventsRunResult {
     // NOTE: `opts.coverage_policy` is intentionally UNUSED here — al-sem
     // `events-chains.ts` validates it but never applies it to the chain report.
 
+    // ⟨C1 Task 3 — R2/R3 caller classification⟩ DERIVED-ONLY: plain `ALL`. The
+    // chain report reads ONLY `ctx.event_flow_indexes`; `ctx.summaries` is never
+    // consulted on this path at all.
     let ctx = build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
     let ix = &ctx.event_flow_indexes;
 

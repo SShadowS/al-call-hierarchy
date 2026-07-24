@@ -40,7 +40,15 @@ pub fn cone_store_of(summaries: &HashMap<String, FullRoutineSummary>) -> ConeDer
              every derived-store consumer looks the row up by routine_id, not the map key",
             s.routine_id
         );
-        b.fold_routine(&s.routine_id, s.reachable_iter());
+        // ⟨C1 Task 3⟩ `reachable_iter()` is gone (R6 — it would have silently
+        // yielded a direct-only view once the analyze path stopped materializing
+        // the inherited Vec). Fixture summaries always own their inherited facts,
+        // so the chain is spelled out here; `inherited_raw()` panics loudly if a
+        // fixture ever forgets to supply them.
+        b.fold_routine(
+            &s.routine_id,
+            s.capability_facts_direct.iter().chain(s.inherited_raw()),
+        );
     }
     b.finish()
 }
@@ -214,18 +222,17 @@ pub fn coverage(inherited_status: &str) -> CoverageRecord {
 }
 
 /// A `FullRoutineSummary` from direct + inherited facts + optional coverage.
+/// ⟨C1 Task 3⟩ Fixture summaries are always MATERIALIZED (`Some(inherited)`) —
+/// they carry their inherited facts as INPUT rather than as a cone output, so
+/// `inherited_raw()` is always legal on them. A test that wants the derived-only
+/// shape builds it with `FullRoutineSummary::new(.., None, ..)` directly.
 pub fn summary(
     routine_id: &str,
     direct: Vec<CapabilityFact>,
     inherited: Vec<CapabilityFact>,
     cov: Option<CoverageRecord>,
 ) -> FullRoutineSummary {
-    FullRoutineSummary {
-        routine_id: routine_id.to_string(),
-        capability_facts_direct: direct,
-        capability_facts_inherited: inherited,
-        coverage: cov,
-    }
+    FullRoutineSummary::new(routine_id.to_string(), direct, Some(inherited), cov)
 }
 
 // ---------------------------------------------------------------------------

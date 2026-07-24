@@ -9,11 +9,16 @@
 //! occurred. This module is that derived view, computed by folding the SAME
 //! reachable representatives the `retag` sites already visit, with zero clones.
 //!
+//! ⟨Task 3⟩ It is no longer a parallel view: the analyze path composes under
+//! [`ConeOutput::DerivedOnly`] and the raw Vec is not built at all. The only
+//! survivors of the raw path are the projection/`prove`/`digest`/`policy`
+//! surfaces, which ask for it explicitly.
+//!
 //! ## What one row summarizes
 //!
 //! A row is a fold over the routine's REACHABLE cone — `own direct ∪ inherited
-//! representatives` — exactly the sequence `FullRoutineSummary::reachable_iter`
-//! yields:
+//! representatives`, i.e. the sequence the retired `FullRoutineSummary::
+//! reachable_iter` used to yield:
 //!   - `flags` — presence bits OR-merged over the cone (table / commit / http / file).
 //!   - `table_writes_all` — insert|modify|delete on `resource_kind == "table"`
 //!     with a `resource_id`, INCLUDING known-temp. Backs `writes_tables_of`.
@@ -43,8 +48,8 @@
 //! representative — not on "any physical fact exists". Folding raw reachable
 //! facts instead of the key-winners would flip that whenever a temp fact wins a
 //! key. The self half is the mirror image: `capability_facts_direct` is stored
-//! RAW (un-deduped) and `reachable_iter` scans every one of them, so the self
-//! half must fold the raw Vec, not the key-deduped `direct` map.
+//! RAW (un-deduped) and the reachable sequence scans every one of them, so the
+//! self half must fold the raw Vec, not the key-deduped `direct` map.
 //!
 //! ## Storage (pooled, not per-routine trees)
 //!
@@ -75,7 +80,7 @@ pub const MAY_COMMIT: u8 = 1 << 1;
 pub const TOUCHES_HTTP: u8 = 1 << 2;
 /// `resource_kind == "file"` — the other half. `{http, file}` is the COMPLETE IO
 /// vocabulary — see [`io_kind_bit`], the ONE definition; `d48::is_io_resource_kind`
-/// and `cone_parity`'s oracle replica both route through it.
+/// routes through it too.
 pub const TOUCHES_FILE: u8 = 1 << 3;
 
 /// `op == "insert"`.
@@ -101,10 +106,10 @@ pub fn write_op_bit(op: &str) -> Option<u8> {
 /// The IO-presence flag bit for `resource_kind`, or `None` when `kind` is not
 /// an IO resource kind. `{http, file}` is the COMPLETE IO vocabulary — the ONE
 /// definition of "is this IO". ⟨C1 Task 2 fix I1⟩ Before this fix, the fold's
-/// `"http"`/`"file"` arms, `d48::is_io_resource_kind`, and `cone_parity`'s
-/// oracle replica each hardcoded the same two-kind set independently; a fourth
-/// IO kind added to only one of them would silently desync the pruning gate
-/// from the terminal producer. All three now route through this function.
+/// `"http"`/`"file"` arms and `d48::is_io_resource_kind` each hardcoded the same
+/// two-kind set independently; a fourth IO kind added to only one of them would
+/// silently desync the pruning gate from the terminal producer. Both now route
+/// through this function.
 pub fn io_kind_bit(kind: &str) -> Option<u8> {
     match kind {
         "http" => Some(TOUCHES_HTTP),
@@ -541,8 +546,8 @@ impl ConeDerivedBuilder {
     /// The production cone does NOT use this: its inherited half must fold
     /// key-deduped representatives, not a flat reachable list (see the module
     /// docs' dedup-asymmetry note). It exists for callers that already hold the
-    /// literal reachable sequence — hand-built fixture summaries, whose
-    /// `capability_facts_inherited` IS the input rather than a cone output.
+    /// literal reachable sequence — hand-built fixture summaries, whose inherited
+    /// facts ARE the input rather than a cone output.
     ///
     /// ⟨fix M3⟩ `#[cfg(test)]` + `pub(crate)` make that a STRUCTURAL guarantee
     /// rather than just a doc warning: the misuse this guards against (folding a
@@ -924,18 +929,18 @@ mod tests {
                     unknown_targets: Vec::new(),
                 })
             };
-            let complete_summary = FullRoutineSummary {
-                routine_id: "r/complete".to_string(),
-                capability_facts_direct: Vec::new(),
-                capability_facts_inherited: Vec::new(),
-                coverage: cov("complete"),
-            };
-            let partial_summary = FullRoutineSummary {
-                routine_id: "r/partial".to_string(),
-                capability_facts_direct: Vec::new(),
-                capability_facts_inherited: Vec::new(),
-                coverage: cov("partial"),
-            };
+            // ⟨C1 Task 3⟩ `None` inherited — the DERIVED-ONLY shape the analyze
+            // path now produces. The two tri-states must resolve entirely off the
+            // store's flags + the summary's coverage, never touching a raw Vec
+            // (`inherited_raw()` would panic if they did).
+            let complete_summary = FullRoutineSummary::new(
+                "r/complete".to_string(),
+                Vec::new(),
+                None,
+                cov("complete"),
+            );
+            let partial_summary =
+                FullRoutineSummary::new("r/partial".to_string(), Vec::new(), None, cov("partial"));
             assert_eq!(
                 touches_db_derived(&out.derived, &complete_summary),
                 EffectPresence::No,
@@ -1061,12 +1066,11 @@ mod tests {
     /// Vec's length. Nothing else asserts that equality, and it now carries
     /// d8's and d50's `>= 3`-distinct-table gates: a future change to
     /// `freeze_masked` that ever left a duplicate id in a window would move
-    /// those gates with no named cause, and `cone_parity`'s oracle would NOT
-    /// catch it (it compares the resolved Vec against the raw helper, and both
-    /// would carry the same duplicate).
-    ///
-    /// This test, not `cone_parity.rs`, is where the pin belongs — the oracle
-    /// is retired the next task, this invariant is not.
+    /// those gates with no named cause. The retired `cone_parity` oracle would
+    /// NOT have caught it either (it compared the resolved Vec against the raw
+    /// helper, and both would have carried the same duplicate) — which is why
+    /// this test, not that one, was always the right home for the pin. ⟨Task 3⟩
+    /// The oracle is now gone; this invariant is not.
     ///
     /// The fixture writes THREE distinct tables and repeats one exact
     /// `(table, op)` pair (`insert t/A` twice, straight in the RAW direct
@@ -1122,6 +1126,68 @@ mod tests {
         // Also hold for the absent-row case (an id the store never folded).
         assert_eq!(out.derived.writes_tables_count_of("r/absent"), 0);
         assert_eq!(out.derived.writes_physical_tables_count_of("r/absent"), 0);
+    }
+
+    // -- the drop rules -------------------------------------------------------
+
+    /// ⟨C1 Task 3⟩ RELOCATED PINS. `l5::capability_query`'s raw
+    /// `writes_tables_of` / `writes_physical_tables_of` / `publishes_events_of`
+    /// are deleted with the raw Vec (R6), and their unit tests went with them.
+    /// The drop rules those tests pinned are properties of the FOLD now, so they
+    /// are re-pinned here against the store:
+    ///   - a fact with NO `resource_id` is dropped from every id-set (its
+    ///     resource identity is unresolved);
+    ///   - a table READ is not a table WRITE;
+    ///   - a foreign `resource_kind` never enters the table sets, and a
+    ///     non-`publish` op never enters the event set;
+    ///   - a known-temp write counts in the temp-INCLUSIVE set but not the
+    ///     physical one, while `unknown`/absent temp_state stays physical
+    ///     (suppression-direction safe).
+    #[test]
+    fn fold_drops_unresolved_ids_foreign_kinds_and_known_temp_writes() {
+        let graph = graph_of(Vec::new());
+        let nodes: Vec<String> = vec!["r/x".to_string()];
+        let mut direct_in: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
+        direct_in.insert(
+            "r/x".to_string(),
+            vec![
+                fact("r/x", "insert", "table", Some("t/B")), // write, kept
+                fact("r/x", "modify", "table", Some("t/A")), // write, kept
+                fact("r/x", "modify", "table", Some("t/A")), // dup → deduped
+                fact("r/x", "delete", "table", None),        // no resource_id → dropped
+                fact("r/x", "read", "table", Some("t/C")),   // read → not a write
+                fact("r/x", "insert", "event", Some("e/X")), // foreign kind → no table
+                fact("r/x", "publish", "event", Some("e/B")),
+                fact("r/x", "publish", "event", Some("e/A")),
+                fact("r/x", "publish", "event", Some("e/A")), // dup
+                fact("r/x", "publish", "event", None),        // no resource_id → dropped
+                fact("r/x", "subscribe", "event", Some("e/Z")), // wrong op → dropped
+                fact("r/x", "publish", "table", Some("t/Q")), // publish on a table: not an event
+                temp_fact("r/x", "insert", "t/Temp", "known", Some(true)), // temp
+                temp_fact("r/x", "insert", "t/Phys", "known", Some(false)), // physical
+                temp_fact("r/x", "insert", "t/Unk", "unknown", None), // physical (unknown)
+            ],
+        );
+        let coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
+
+        let out =
+            compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in, ConeOutput::Both);
+
+        // `t/C` is a read, `t/Q`'s op is `publish` (not a write op) — neither is a
+        // write. `e/X`'s kind is `event`, so it never reaches the table sets.
+        assert_eq!(
+            out.derived.writes_tables_of("r/x"),
+            vec!["t/A", "t/B", "t/Phys", "t/Temp", "t/Unk"]
+        );
+        // The known-temp write is the ONLY one dropped from the physical set.
+        assert_eq!(
+            out.derived.writes_physical_tables_of("r/x"),
+            vec!["t/A", "t/B", "t/Phys", "t/Unk"]
+        );
+        // Reads: only the genuine `read` on a non-temp table.
+        assert_eq!(out.derived.physical_table_reads_of("r/x"), vec!["t/C"]);
+        // Events: `publish` + `event` + a resource_id, deduped and sorted.
+        assert_eq!(out.derived.publishes_events_of("r/x"), vec!["e/A", "e/B"]);
     }
 
     // -- interner invariants ---------------------------------------------------
