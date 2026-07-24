@@ -264,18 +264,32 @@ fn codeunit_source(i: usize, file_count: usize) -> String {
 /// 8 is the smallest value for which the three strides `+1`/`+3`/`+5` are all
 /// distinct and none is the identity, so every member has three real, distinct
 /// intra-cycle out-edges.
+///
+/// ⟨fix wave FIX 3⟩ Unused in `tests/lsp/perf_support_smoke.rs`'s compilation of
+/// this `#[path]`-included module (that crate has no recursive-corpus test) —
+/// per-item, not blanket, so the EXISTING corpus below keeps its dead-code
+/// signal. See that file's module-doc comment.
+#[allow(dead_code)]
 pub const RECURSIVE_CYCLE_PROCS: usize = 8;
 
 /// Files per cross-file ring in the recursive corpus — the default
 /// `tests/perf_bounds.rs`'s gate uses. Each ring is one recursive SCC of
 /// `RECURSIVE_RING_FILES * RECURSIVE_CYCLE_PROCS` members, so a
 /// `file_count`-file corpus yields `file_count / RECURSIVE_RING_FILES` such
-/// SCCs. Both axes matter and 100 was chosen to keep both non-trivial: SCC
-/// SIZE is what a per-member re-materialization multiplies against the
-/// terminal-union size, and SCC COUNT is what a per-SCC workspace-wide rebuild
-/// multiplies against the workspace size. See
-/// `tests/perf_bounds.rs`'s `RECURSIVE_SCC_BOUND` for the measured separation
-/// this size buys.
+/// SCCs.
+///
+/// ⟨fix wave finding 3⟩ Only the SCC-SIZE axis is genuinely stressed at the
+/// gated corpus size (400 files / ring 100): a per-member re-materialization
+/// multiplies against the 800-member/1,600-effect terminal union, which is
+/// exactly what the redesign rewrote. The SCC-COUNT axis is NOT — 400 files x
+/// 8 procs = 3,200 routines land in just 4 SCCs, so a reintroduced per-SCC
+/// workspace-wide rebuild costs ~4 x 3,200 map probes, microseconds against a
+/// ~190ms solve and far below this gate's 3.44x detection threshold. The
+/// COUNT axis is instead covered by the EXISTING non-recursive corpus (1,000
+/// files x 10 routines ≈ 10,000 singleton SCCs) — the two corpora are
+/// complementary, not redundant; see `tests/perf_bounds.rs`'s
+/// `RECURSIVE_SCC_BOUND` for the measured size-axis separation this value buys.
+#[allow(dead_code)]
 pub const RECURSIVE_RING_FILES: usize = 100;
 
 /// The db-touching record operations the recursive corpus emits, in the order
@@ -284,6 +298,7 @@ pub const RECURSIVE_RING_FILES: usize = 100;
 /// `engine::l4::summary_runner::is_db_touching` — so each call site becomes a
 /// real `DbEffect` — and (b) valid AL as a bare, argument-free statement, so
 /// the corpus parses and resolves without needing per-op argument shapes.
+#[allow(dead_code)]
 pub const RECURSIVE_DB_OPS: &[&str] = &[
     "FindSet",
     "FindFirst",
@@ -299,22 +314,27 @@ pub const RECURSIVE_DB_OPS: &[&str] = &[
 /// range from [`OBJECT_ID_BASE`] so the two corpora could coexist in one
 /// directory without an ID collision (they never do today; each generator
 /// writes its own dir).
+#[allow(dead_code)]
 const RECURSIVE_OBJECT_ID_BASE: u32 = 51000;
 
 /// Object ID and name of the single table every recursive-corpus routine
 /// operates on. One shared table keeps each `DbEffect`'s `table_id` resolved
 /// (rather than the `"unknown"` fallback), while the per-call-site operation id
 /// still makes every one of the `2 * members` effects distinct.
+#[allow(dead_code)]
 const RECURSIVE_TABLE_ID: u32 = 50990;
+#[allow(dead_code)]
 const RECURSIVE_TABLE_NAME: &str = "PerfRecTable";
 
 /// Deterministic object name for recursive-corpus file index `i`.
+#[allow(dead_code)]
 pub fn recursive_object_name(i: usize) -> String {
     format!("RecCU{i:05}")
 }
 
 /// Deterministic file name (without directory) for recursive-corpus file
 /// index `i`.
+#[allow(dead_code)]
 pub fn recursive_file_name(i: usize) -> String {
     format!("{}.al", recursive_object_name(i))
 }
@@ -329,6 +349,7 @@ pub fn recursive_file_name(i: usize) -> String {
 /// declared variable pointing at ITSELF is a different, needlessly exotic
 /// shape) — that ring's SCC is then just the file's own
 /// [`RECURSIVE_CYCLE_PROCS`]-member cycle, still recursive.
+#[allow(dead_code)]
 pub fn generate_recursive_corpus(dir: &Path, file_count: usize, ring_files: usize) -> usize {
     assert!(ring_files >= 1, "ring_files must be at least 1");
     fs::write(dir.join("PerfRecTable.al"), recursive_table_source())
@@ -341,6 +362,7 @@ pub fn generate_recursive_corpus(dir: &Path, file_count: usize, ring_files: usiz
     file_count + 1
 }
 
+#[allow(dead_code)]
 fn recursive_table_source() -> String {
     let mut s = format!("table {RECURSIVE_TABLE_ID} \"{RECURSIVE_TABLE_NAME}\"\n{{\n");
     s.push_str("    fields\n");
@@ -357,6 +379,7 @@ fn recursive_table_source() -> String {
 /// The next file in `i`'s cross-file ring, or `None` when `i`'s ring holds
 /// exactly one file. Rings are contiguous blocks of `ring_files` files; the
 /// final block may be shorter when `file_count` is not a multiple.
+#[allow(dead_code)]
 fn recursive_ring_successor(i: usize, file_count: usize, ring_files: usize) -> Option<usize> {
     let ring_start = (i / ring_files) * ring_files;
     let ring_len = ring_files.min(file_count - ring_start);
@@ -366,6 +389,7 @@ fn recursive_ring_successor(i: usize, file_count: usize, ring_files: usize) -> O
     Some(ring_start + (i - ring_start + 1) % ring_len)
 }
 
+#[allow(dead_code)]
 fn recursive_codeunit_source(i: usize, file_count: usize, ring_files: usize) -> String {
     let name = recursive_object_name(i);
     let id = RECURSIVE_OBJECT_ID_BASE + i as u32;
