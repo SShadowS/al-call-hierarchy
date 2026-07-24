@@ -23,3 +23,15 @@ a live oracle:
 `al-sem-OBOLETE` is a frozen, read-only archive checkout — it is never a live
 oracle for this repo. This tree is vendored so `tests/cli_c_policy_differential.rs`
 is self-contained and requires no sibling al-sem checkout.
+
+## `ws-policy-commit-inherited-trigger` — NOT vendored
+
+Added by the C1 Task 3 review fix wave (finding I-1). Authored fresh for this
+repo, not copied from al-sem — every one of the 10 fixtures above matches its
+rule on the routine's own **direct** fact; none exercises the **inherited**
+half of a capability cone (a fact that reaches the matched root only through a
+callee). `no-commit-in-triggers` (`root.kinds: trigger-table`, `capability.op:
+commit`) matches here purely via `Table.al`'s `OnInsert` trigger calling
+`Helper.al`'s `PostAndCommit`, which is the one that calls `Commit()` — without
+`select_facts` reading the inherited half (`policy_engine.rs`'s
+`s.inherited_raw()`), this fixture's golden would go from a match to a pass.

@@ -263,6 +263,18 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // post-hoc check: the raw Vec is allocated INSIDE `compose_inherited_cones`,
     // so a check here could only discard it — zero memory win.
     let want_raw_inherited = demanded & substrate::RAW_INHERITED_FACTS != 0;
+    // ⟨C1 Task 3 review fix M-1⟩ `RAW_INHERITED_FACTS` without `SUMMARIES` (nor
+    // `TRANSACTION_SPANS`) is a SILENT no-op: `need_summaries` would be false, the
+    // block below never runs, `summaries` stays empty, and `select_facts` (which
+    // reads through `summaries`) then returns an empty fact list for every
+    // routine — the exact silent-empty outcome R6 was designed to foreclose,
+    // reached through a different door. No current caller does this (`R2`'s table
+    // above), but a future one could; fail loudly instead of degrading quietly.
+    debug_assert!(
+        !want_raw_inherited || need_summaries,
+        "RAW_INHERITED_FACTS demanded without SUMMARIES/TRANSACTION_SPANS — the raw \
+         cone would silently build empty; OR in substrate::SUMMARIES alongside it"
+    );
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
     // `symbols` feeds BOTH spans below (resolve_calls here, build_event_graph in

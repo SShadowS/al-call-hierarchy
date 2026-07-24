@@ -83,6 +83,15 @@ impl FullRoutineSummary {
 
     /// True when the raw inherited facts were materialized — i.e. when
     /// [`inherited_raw`](Self::inherited_raw) will not panic.
+    ///
+    /// ⟨C1 Task 3 review fix M-3⟩ `#[cfg(test)]`-only: it had zero non-test
+    /// callers, and it is precisely the API a future caller could use to branch
+    /// on presence and silently skip the missing half — the same silent partial
+    /// answer R6's panic-on-read was designed to foreclose, reached through a
+    /// different door. Tests/diagnostics that need to assert "was this bit
+    /// demanded" may still use it; production code must call `inherited_raw`
+    /// (or the derived-substrate queries) and let it panic.
+    #[cfg(test)]
     pub fn has_inherited_raw(&self) -> bool {
         self.capability_facts_inherited.is_some()
     }

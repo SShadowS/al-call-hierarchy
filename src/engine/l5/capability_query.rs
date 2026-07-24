@@ -109,12 +109,16 @@ pub fn reachable_coverage<'a>(s: &'a FullRoutineSummary, _kind: Option<&str>) ->
 // `ctx.cone_derived`. No consumer routes an id-set through this module.
 // ===========================================================================
 
-/// [`touches_db_of`] over the derived substrate.
+/// `touches_db_of` over the derived substrate. (`touches_db_of` is
+/// `#[cfg(test)]`-only, so this cannot be an intra-doc link under a non-test
+/// build — see M-2 in the C1 Task 3 review.)
 pub fn touches_db_derived(store: &ConeDerivedStore, s: &FullRoutineSummary) -> EffectPresence {
     presence(store.touches_table(&s.routine_id), s)
 }
 
-/// [`may_commit`] over the derived substrate.
+/// `may_commit` over the derived substrate. (`may_commit` is `#[cfg(test)]`-only,
+/// so this cannot be an intra-doc link under a non-test build — see M-2 in the
+/// C1 Task 3 review.)
 pub fn may_commit_derived(store: &ConeDerivedStore, s: &FullRoutineSummary) -> EffectPresence {
     presence(store.may_commit_flag(&s.routine_id), s)
 }

@@ -14,8 +14,10 @@
 //! workspace-relative (`auto:al-sem.policy.yaml`, since Task 3.1's fix), so it
 //! is independent of the fixture's physical path.
 //!
-//! ## Coverage (33 goldens)
-//!   - 8 default fixtures × {human, json, sarif} = 24
+//! ## Coverage (36 goldens)
+//!   - 9 default-corpus fixtures × {human, json, sarif} = 27 (8 vendored + 1
+//!     `ws-policy-commit-inherited-trigger`, the C1 Task 3 review fix-wave
+//!     addition pinning an INHERITED-fact match — see PROVENANCE.md)
 //!   - 1 custom fixture × {human, json, sarif}   = 3
 //!   - 1 no-policy fixture × json                = 1
 //!   - 2 explain rules × .explain.txt            = 2
@@ -113,6 +115,9 @@ const DEFAULT_CORPUS: &[&str] = &[
     "ws-policy-install-business-write",
     "ws-policy-api-isolated-storage",
     "ws-policy-api-ledger-write",
+    // C1 Task 3 review fix wave (finding I-1) — NOT vendored, see PROVENANCE.md.
+    // The only fixture whose matched fact is INHERITED rather than direct.
+    "ws-policy-commit-inherited-trigger",
 ];
 
 fn check_text(fixture: &str, format: &str, no_policy: bool) -> String {
