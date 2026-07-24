@@ -1373,15 +1373,17 @@ pub fn compute_summaries_v2_bundle_with_leaves(
 
 /// Compat shim (spec Part A, "Public API"): wraps
 /// [`compute_summaries_v2_bundle_with_leaves`] and rebuilds the legacy
-/// `HashMap<String, RoutineSummary>` shape FROM the bundle's lazy
-/// `db_effects` view, for every routine that has a compact row (i.e. was
-/// RECOMPUTED this run) — proving the lazy view reproduces the SAME
-/// `db_effects` the per-SCC loop already assembled eagerly (both routes
-/// share ONE projection implementation, `effect_store::merge_and_project`;
-/// see `effect_store.rs`'s module doc). A routine with NO row (a fixed leaf,
-/// pre-seeded from `leaf_summaries` and never touched by the solver) is left
-/// exactly as assembled — its `db_effects` never passed through a row at
-/// all, by design (see `SummaryBundle::has_row`'s doc).
+/// `HashMap<String, RoutineSummary>` shape FROM the bundle's lazy `db_effects`
+/// view, for every routine that has a compact row — proving the lazy view
+/// reproduces the SAME `db_effects` the per-SCC solve recorded. A row exists for
+/// both RECOMPUTED routines AND every RETAINED fixed leaf: `seed_fixed_leaf_rows`
+/// normalizes each fixed leaf into a singleton-class compact row (spec ⟨rev3⟩)
+/// before the solve loop, so its `db_effects` here are re-projected through the
+/// SAME `db_effects` path (one projection impl, `SummaryBundle::project_row`),
+/// preserving the leaf's own per-effect `via`. Only a routine with NO compact
+/// row (e.g. a routine present in an SCC but absent from the workspace routine
+/// set — never interned, so no row) keeps its already-assembled `db_effects`
+/// untouched (see `SummaryBundle::has_row`'s doc).
 pub fn compute_summaries_v2_with_leaves_core(
     routines: &[L3Routine],
     graph: &CombinedGraph,

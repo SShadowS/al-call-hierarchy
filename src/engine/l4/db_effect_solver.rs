@@ -1211,22 +1211,23 @@ fn attribute_pd_substituted_via(
     }
 }
 
-/// Materialize ONE member's compact db-effect row (spec Part A Step 2 —
+/// Record ONE member's compact db-effect row (spec Part A Step 2 —
 /// `effect_store::CompactRoutineSummary`, via [`SummaryBundleBuilder::push_row`])
-/// AND its legacy `Vec<DbEffect>` (in the deterministic `(effect_key,
-/// operation_id)` order the old solver produced, `summary_runner.rs:507-510`),
-/// from its presence bitset. Each effect's `via` comes from `via_map`
-/// (base-`direct` / terminal-inherited from [`reconstruct_via`], PD-substituted
-/// from [`attribute_pd_substituted_via`]); `record_variable_id` from
-/// `rvid_by_opid`; `temp_state` decoded from the interned identity.
+/// from its presence bitset. Returns nothing: NO `Vec<DbEffect>` is
+/// materialized — feed-forward is on ids (the bundle) and the owned projection
+/// is lazy ([`SummaryBundle::db_effects`](crate::engine::l4::effect_store::SummaryBundle::db_effects)),
+/// which resolves `record_variable_id` (from the bundle's `rvid_by_opid`),
+/// `effect_key`, and `temp_state` from the frozen universe at that time. Each
+/// effect's `via` comes from `via_map` (base-`direct` / terminal-inherited from
+/// [`reconstruct_via`], PD-substituted from [`attribute_pd_substituted_via`]).
 ///
 /// Task A3: `via` is carried as a `Copy` [`ViaRank`] (`u8`); the terminal half
 /// is the SHARED `terminal_set` (never re-listed per member), and only this
-/// member's PD delta ids/vias are per-member. NO `Vec<DbEffect>` is
-/// materialized — feed-forward is on ids (the bundle) and the owned projection
-/// is lazy ([`SummaryBundle::db_effects`](crate::engine::l4::effect_store::SummaryBundle::db_effects)).
-/// `base_via` is built parallel to `iter_set_bits(terminal_union)` (ascending
-/// EffectId storage order); `finish` reorders it to `key_rank` order.
+/// member's PD delta ids/vias are per-member. `base_via` is built parallel to
+/// `iter_set_bits(terminal_union)` (ascending EffectId storage order) and
+/// `finish` KEEPS it in that storage order (it is the shared set's
+/// `ordinal_of`-parallel via column — spec:175); only the per-row PD delta is
+/// reordered to `key_rank` order.
 fn materialize_member_row(
     member_ix: RoutineIx,
     presence: &SccPresence,

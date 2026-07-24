@@ -137,6 +137,19 @@ fn parity_missing_routine_in_scc() {
     assert_parity("missing_routine_in_scc");
 }
 
+/// Item-8 (A3 store fix wave): a fixed leaf in an SCC carrying ≥2 OWN effects
+/// at DIFFERENT vias — structurally exercises the multi-effect fixed-leaf
+/// seed→project round-trip (`seed_fixed_leaf_rows` interns the leaf's own
+/// effects + vias, `SummaryBundle::project_row` re-emits them), so the
+/// per-effect via mapping through the compact store is tested independent of
+/// the data-dependent single-effect `fixed_leaf_in_scc` above. The differential
+/// (byte-identical to the untouched OLD solver) is the oracle.
+#[test]
+fn parity_multi_effect_fixed_leaf_in_scc() {
+    let leaves = fixtures::multi_effect_fixed_leaf_in_scc_leaves();
+    assert_parity_with_leaves("multi_effect_fixed_leaf_in_scc", &leaves);
+}
+
 // ---------------------------------------------------------------------------
 // Task 9: the real-corpus whole-program v2 parity gate.
 // ---------------------------------------------------------------------------
@@ -421,6 +434,7 @@ mod fixtures {
             }
             "external_successor_pd" => external_successor_pd(),
             "fixed_leaf_in_scc" => fixed_leaf_in_scc(),
+            "multi_effect_fixed_leaf_in_scc" => multi_effect_fixed_leaf_in_scc(),
             "missing_routine_in_scc" => missing_routine_in_scc(),
             other => panic!("fixtures::build: unknown fixture {other:?}"),
         }
@@ -1033,6 +1047,80 @@ mod fixtures {
                     temp_state: TempState::Known(true),
                     via: "direct".to_string(),
                 }],
+                in_recursive_cycle: false,
+                has_unresolved_calls: false,
+                uncertainties: Vec::new(),
+                parameter_roles: Vec::new(),
+            },
+        );
+        leaves
+    }
+
+    /// Same 3-member cycle `a -> b -> c -> a` as [`fixed_leaf_in_scc`], with `c`
+    /// a FIXED LEAF — but `c`'s settled summary carries TWO own effects at
+    /// DIFFERENT vias (see [`multi_effect_fixed_leaf_in_scc_leaves`]): an
+    /// `Insert`/`direct` and a `Modify`/`event-subscriber`. `a`/`b` inherit both
+    /// through the feed-forward, and `c` itself projects its multi-effect
+    /// singleton row — so the per-effect via round-trip is exercised for a
+    /// non-trivial leaf, not just the single-effect case.
+    fn multi_effect_fixed_leaf_in_scc() -> FixtureOut {
+        let mut a = routine("a");
+        a.call_sites.push(call_site("a_cs1", "B", Vec::new()));
+
+        let mut b = routine("b");
+        b.call_sites.push(call_site("b_cs1", "C", Vec::new()));
+
+        let mut c = routine("c");
+        c.call_sites.push(call_site("c_cs1", "A", Vec::new()));
+
+        let g = graph(
+            &["a", "b", "c"],
+            vec![
+                edge("a", "b", "direct", Some("a_cs1")),
+                edge("b", "c", "direct", Some("b_cs1")),
+                edge("c", "a", "direct", Some("c_cs1")),
+            ],
+        );
+        let s = scc(vec![(vec!["a", "b", "c"], true)]);
+
+        (vec![a, b, c], g, s, FieldIndex::new(), HashMap::new())
+    }
+
+    /// The fixed-leaf summary for `multi_effect_fixed_leaf_in_scc`'s `c`: TWO
+    /// settled effects at DIFFERENT vias — `Insert`/`Known(true)` on `t3` via
+    /// `"direct"` and `Modify`/`Known(false)` on `t4` via `"event-subscriber"`.
+    /// Listed in `(effect_key, operation_id)` order (`Insert|..` < `Modify|..`)
+    /// so a pass-through OLD solver and the round-tripping v2 agree on emit
+    /// order; the point of the fixture is that the two DISTINCT vias survive the
+    /// compact-store round-trip attached to the correct effect.
+    pub fn multi_effect_fixed_leaf_in_scc_leaves() -> HashMap<String, RoutineSummary> {
+        let insert_key = effect_key_of("Insert", "t3", "c_op1", &TempStateKind::Known(true));
+        let modify_key = effect_key_of("Modify", "t4", "c_op2", &TempStateKind::Known(false));
+        let mut leaves = HashMap::new();
+        leaves.insert(
+            "c".to_string(),
+            RoutineSummary {
+                routine_id: "c".to_string(),
+                db_effects: vec![
+                    DbEffect {
+                        effect_key: insert_key,
+                        operation_id: "c_op1".to_string(),
+                        op: "Insert".to_string(),
+                        table_id: "t3".to_string(),
+                        record_variable_id: None,
+                        temp_state: TempState::Known(true),
+                        via: "direct".to_string(),
+                    },
+                    DbEffect {
+                        effect_key: modify_key,
+                        operation_id: "c_op2".to_string(),
+                        op: "Modify".to_string(),
+                        table_id: "t4".to_string(),
+                        record_variable_id: None,
+                        temp_state: TempState::Known(false),
+                        via: "event-subscriber".to_string(),
+                    },
+                ],
                 in_recursive_cycle: false,
                 has_unresolved_calls: false,
                 uncertainties: Vec::new(),

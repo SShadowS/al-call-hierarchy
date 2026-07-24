@@ -197,34 +197,45 @@ const RANK_LUT_BLOCK: usize = 8;
 
 impl HybridEffectSet {
     /// Build from a presence bitset, choosing sparse/dense by cardinality.
-    /// `frozen_len` is the universe length at freeze — dense `words` are sized
-    /// `ceil(frozen_len / 64)` and tail bits past `frozen_len` are validated
-    /// zero (a set never carries a bit for an id that does not exist).
+    /// `frozen_len` is the universe length at freeze — the set is canonicalized
+    /// into an in-range, tail-masked word array sized `ceil(frozen_len / 64)`
+    /// FIRST, then BOTH the cardinality and the chosen repr are derived from
+    /// that same array — so cardinality can never disagree with the stored
+    /// words (⟨item-9 hardening⟩). Out-of-range words and last-word tail bits
+    /// past `frozen_len` are unreachable by construction (ids are minted
+    /// pre-freeze), so keep the loud `debug_assert` AND mask them for release
+    /// soundness.
     fn from_bits(bits: &[u64], frozen_len: usize) -> Self {
-        let card = popcount(bits);
+        let n_words = frozen_len.div_ceil(64);
+        let mut words = vec![0u64; n_words];
+        for (i, w) in bits.iter().enumerate() {
+            if i < n_words {
+                words[i] = *w;
+            } else {
+                debug_assert_eq!(*w, 0, "set carries a bit past the frozen universe length");
+            }
+        }
+        // Tail bits in the last word past `frozen_len` are masked (not just
+        // asserted) so a stray high bit can never survive into a Dense set's
+        // words or inflate the cardinality in a release build.
+        let tail = frozen_len % 64;
+        if tail != 0 && n_words > 0 {
+            let mask = (1u64 << tail) - 1;
+            debug_assert_eq!(
+                words[n_words - 1] & !mask,
+                0,
+                "set carries a tail bit past the frozen universe length"
+            );
+            words[n_words - 1] &= mask;
+        }
+        // Cardinality is computed from the in-range/tail-masked words, so it
+        // agrees with the stored words by construction (both reprs iterate the
+        // same `words`).
+        let card = words.iter().map(|w| w.count_ones()).sum::<u32>();
         if card < SPARSE_THRESHOLD {
-            let ids: Vec<EffectId> = iter_set_bits(bits).collect();
+            let ids: Vec<EffectId> = iter_set_bits(&words).collect();
             HybridEffectSet::Sparse(ids.into_boxed_slice())
         } else {
-            let n_words = frozen_len.div_ceil(64);
-            let mut words = vec![0u64; n_words];
-            for (i, w) in bits.iter().enumerate() {
-                if i < n_words {
-                    words[i] = *w;
-                } else {
-                    debug_assert_eq!(*w, 0, "set carries a bit past the frozen universe length");
-                }
-            }
-            // Validate tail bits in the last word past `frozen_len` are zero.
-            let tail = frozen_len % 64;
-            if tail != 0 && n_words > 0 {
-                let mask = (1u64 << tail) - 1;
-                debug_assert_eq!(
-                    words[n_words - 1] & !mask,
-                    0,
-                    "set carries a tail bit past the frozen universe length"
-                );
-            }
             let rank_lut = Self::build_rank_lut(&words);
             HybridEffectSet::Dense {
                 words: words.into_boxed_slice(),
@@ -274,11 +285,14 @@ impl HybridEffectSet {
     }
 
     /// The membership ordinal of `id` (its 0-based position in ascending
-    /// EffectId order), or `None` if absent. Dense uses `rank_lut` +
-    /// `count_ones` for O(1); sparse binary-searches. This is the storage-order
-    /// ordinal the future reverse-index (A4) uses for `base_via[ordinal]`
-    /// point queries — the A3 projection instead uses the cached `ordered_ids`
-    /// merge, so this is exercised by tests today.
+    /// EffectId / storage order), or `None` if absent. Dense uses `rank_lut` +
+    /// `count_ones` for O(1); sparse binary-searches. A row's `base_via` is
+    /// stored in this SAME storage order (parallel to [`Self::iter`]), so
+    /// `base_via[ordinal_of(id)]` returns exactly `id`'s via — the contract
+    /// A4's reverse-index hover point-query relies on (spec:175). A3's
+    /// `project_row` emits in `key_rank` order instead, remapping through the
+    /// set's cached `ordered_storage_ord` permutation; this ordinal is the
+    /// point-query primitive, exercised directly by tests today.
     pub fn ordinal_of(&self, id: EffectId) -> Option<u32> {
         match self {
             HybridEffectSet::Sparse(ids) => ids.binary_search(&id).ok().map(|i| i as u32),
@@ -330,6 +344,15 @@ pub struct EffectStore {
     /// operation_id)`) order — built ONCE at intern, so a shared 797-member
     /// base is never re-sorted per routine (spec ⟨rev4 P1⟩).
     ordered: Vec<Box<[EffectId]>>,
+    /// Per `EffectSetId`, PARALLEL to `ordered`: `ordered_storage_ord[k]` is the
+    /// STORAGE-order (ascending-EffectId) ordinal of `ordered[k]`. A row's
+    /// `base_via` is stored in storage order (so A4's `base_via[ordinal_of(id)]`
+    /// point query is correct — spec:175); `project_row` emits in `key_rank`
+    /// order and reads each emitted base id's via in O(1) via
+    /// `base_via[ordered_storage_ord[k]]`. Built once per set (a precomputed
+    /// key_rank→storage permutation), so the base is never re-scanned per
+    /// routine.
+    ordered_storage_ord: Vec<Box<[u32]>>,
     /// content-hash → candidate `EffectSetId`s (collision list; full equality
     /// resolves a hash collision).
     dedup: HashMap<u64, Vec<u32>>,
@@ -341,6 +364,7 @@ impl EffectStore {
             universe,
             sets: Vec::new(),
             ordered: Vec::new(),
+            ordered_storage_ord: Vec::new(),
             dedup: HashMap::new(),
         }
     }
@@ -365,11 +389,20 @@ impl EffectStore {
         }
         let id = EffectSetId(self.sets.len() as u32);
         let set = HybridEffectSet::from_bits(bits, self.universe.len());
-        // ordered_ids: members sorted by key_rank (a total order, no ties).
-        let mut ordered: Vec<EffectId> = set.iter().collect();
-        ordered.sort_by_key(|&e| self.universe.key_rank(e));
+        // `storage_ids` is the set's members in ascending EffectId (storage)
+        // order — the index of each id in this Vec IS its storage ordinal
+        // (matches `HybridEffectSet::ordinal_of`).
+        let storage_ids: Vec<EffectId> = set.iter().collect();
+        // Permute storage ordinals into key_rank order (a total order, no
+        // ties): `perm[k]` = storage ordinal of the k-th key_rank id. This is
+        // both the `ordered_ids` cache AND the key_rank→storage permutation
+        // `project_row` uses to read a storage-order `base_via`.
+        let mut perm: Vec<u32> = (0..storage_ids.len() as u32).collect();
+        perm.sort_by_key(|&s| self.universe.key_rank(storage_ids[s as usize]));
+        let ordered: Vec<EffectId> = perm.iter().map(|&s| storage_ids[s as usize]).collect();
         self.sets.push(set);
         self.ordered.push(ordered.into_boxed_slice());
+        self.ordered_storage_ord.push(perm.into_boxed_slice());
         self.dedup.entry(hash).or_default().push(id.0);
         id
     }
@@ -395,6 +428,15 @@ impl EffectStore {
         &self.ordered[id.0 as usize]
     }
 
+    /// The storage-order ordinal of each `ordered_ids(id)` position — PARALLEL
+    /// to `ordered_ids(id)`. `ordered_storage_ord(id)[k]` is the ascending-
+    /// EffectId ordinal of `ordered_ids(id)[k]`, so a caller holding a
+    /// storage-order per-membership array (a row's `base_via`) reads it at a
+    /// key_rank emit position `k` in O(1): `base_via[ordered_storage_ord[k]]`.
+    pub fn ordered_storage_ord(&self, id: EffectSetId) -> &[u32] {
+        &self.ordered_storage_ord[id.0 as usize]
+    }
+
     /// Number of distinct hash-consed sets.
     pub fn set_count(&self) -> usize {
         self.sets.len()
@@ -407,10 +449,13 @@ impl EffectStore {
 
 /// One compact per-routine db-effect row. `terminal_base` is a SHARED,
 /// hash-consed [`EffectSetId`] (`closed_form_union`'s `C`); `base_via` is
-/// per-row, in `key_rank` order PARALLEL to `ordered_ids(terminal_base)`;
-/// `pd_delta`/`delta_via` are this routine's OWN PD facts (== `delta \ base`),
-/// also `key_rank`-sorted and parallel. All three ranges are CSR slices into
-/// the [`SummaryBundle`]'s pooled global arrays.
+/// per-row, in STORAGE (ascending-EffectId) order PARALLEL to the shared set's
+/// `iter()`/`ordinal_of` — so A4's `base_via[ordinal_of(id)]` point query is
+/// correct (spec:175), and `project_row` remaps to `key_rank` emit order via
+/// `ordered_storage_ord(terminal_base)`. `pd_delta`/`delta_via` are this
+/// routine's OWN PD facts (== `delta \ base`), `key_rank`-sorted and parallel
+/// (per-row, so no shared-ordinal contract applies). All three ranges are CSR
+/// slices into the [`SummaryBundle`]'s pooled global arrays.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactRoutineSummary {
     pub terminal_base: EffectSetId,
@@ -458,8 +503,10 @@ impl DbEffectRef<'_> {
 
 /// One routine's raw, pre-canonicalization row: a [`SetRef`] into the
 /// terminal-set arena + per-membership via/PD arrays in STORAGE order
-/// (ascending EffectId — `finish` reorders them to `key_rank` order once the
-/// universe is frozen).
+/// (ascending EffectId). `finish` keeps `base_via` in storage order (it is the
+/// SHARED set's `ordinal_of`-parallel via column — spec:175) and reorders only
+/// the per-row `pd_delta`/`delta_via` to `key_rank` order once the universe is
+/// frozen.
 #[derive(Debug)]
 struct RawRow {
     terminal_set: SetRef,
@@ -500,9 +547,10 @@ impl SummaryBundleBuilder {
     }
 
     /// Record one routine's compact row. `base_via` MUST be parallel to
-    /// `iter_set_bits(arena[terminal_set])` (ascending EffectId); `pd_delta`
-    /// MUST be ascending-EffectId with `delta_via` parallel — `finish` reorders
-    /// both to `key_rank` order.
+    /// `iter_set_bits(arena[terminal_set])` (ascending EffectId) — `finish`
+    /// keeps it in that storage order (parallel to the shared set's
+    /// `ordinal_of`). `pd_delta` MUST be ascending-EffectId with `delta_via`
+    /// parallel — `finish` reorders the PD pair to `key_rank` order.
     pub fn push_row(
         &mut self,
         routine_ix: RoutineIx,
@@ -551,9 +599,11 @@ impl SummaryBundleBuilder {
 
     /// Freeze into an immutable [`SummaryBundle`] (spec lifecycle steps 5-7):
     /// hash-cons the terminal-set arena into the [`EffectStore`], then rewrite
-    /// every row's `terminal_base` `SetRef` → [`EffectSetId`] and reorder its
-    /// per-membership via/PD arrays from STORAGE order to `key_rank` order,
-    /// pooling them into the bundle's global CSR arrays.
+    /// every row's `terminal_base` `SetRef` → [`EffectSetId`]. `base_via` is
+    /// pooled in STORAGE order (parallel to the shared set's `ordinal_of`, so
+    /// A4's `base_via[ordinal_of(id)]` point query is correct — spec:175); only
+    /// the per-row `pd_delta`/`delta_via` pair is reordered to `key_rank` order.
+    /// All are pooled into the bundle's global CSR arrays.
     pub fn finish(
         self,
         universe: FrozenEffectUniverse,
@@ -578,15 +628,19 @@ impl SummaryBundleBuilder {
         for (ix, raw) in self.rows {
             let setid = setref_to_setid[raw.terminal_set.0 as usize];
 
-            // base_via: parallel to arena[terminal_set] storage order
-            // (ascending EffectId). Reorder to key_rank order so it stays
-            // parallel to ordered_ids(setid) — the ⟨rev3⟩ "rebuild base_via on
-            // canonicalization" invariant (a set-id swap must re-align via).
-            let storage_ids = &self.arena[raw.terminal_set.0 as usize];
-            let base_via_kr = reorder_via_to_key_rank(store.universe(), storage_ids, &raw.base_via);
-            let base_via = push_via(&mut via_pool, &base_via_kr);
+            // base_via: KEPT in storage order (ascending EffectId). Storage
+            // order is content-derived, so `raw.base_via` — built parallel to
+            // arena[terminal_set]'s ascending-EffectId order — is already
+            // aligned to the shared set's `iter()`/`ordinal_of` (the two hold
+            // the identical id set; that is why they hash-consed). The ⟨rev3⟩
+            // "rebuild base_via on canonicalization" alignment is thus satisfied
+            // with no permutation, and A4's `base_via[ordinal_of(id)]` point
+            // query is correct (spec:175). `project_row` maps this to key_rank
+            // emit order via the set's cached `ordered_storage_ord`.
+            let base_via = push_via(&mut via_pool, &raw.base_via);
 
-            // pd_delta: sort by key_rank, permute delta_via in parallel.
+            // pd_delta: per-row (not shared), sort by key_rank, permute
+            // delta_via in parallel.
             let (pd_sorted, delta_via_sorted) =
                 sort_pd_by_key_rank(store.universe(), &raw.pd_delta, &raw.delta_via);
             let pd_delta = push_ids(&mut delta_pool, &pd_sorted);
@@ -612,25 +666,6 @@ impl SummaryBundleBuilder {
             rvid_by_opid,
         }
     }
-}
-
-/// Reorder a `base_via` array (parallel to `storage_ids` in ascending-EffectId
-/// order) into `key_rank` order — so it stays parallel to a set's cached
-/// `ordered_ids`. No ties in `key_rank`, so the permutation is total.
-fn reorder_via_to_key_rank(
-    universe: &FrozenEffectUniverse,
-    storage_bits: &[u64],
-    base_via: &[ViaRank],
-) -> Vec<ViaRank> {
-    let storage_ids: Vec<EffectId> = iter_set_bits(storage_bits).collect();
-    debug_assert_eq!(storage_ids.len(), base_via.len());
-    let mut pairs: Vec<(u32, ViaRank)> = storage_ids
-        .iter()
-        .zip(base_via.iter())
-        .map(|(&id, &v)| (universe.key_rank(id), v))
-        .collect();
-    pairs.sort_by_key(|p| p.0);
-    pairs.into_iter().map(|p| p.1).collect()
 }
 
 /// Sort a routine's PD facts by `key_rank`, permuting `delta_via` in parallel.
@@ -720,11 +755,18 @@ impl SummaryBundle {
 
     fn project_row(&self, row: &CompactRoutineSummary) -> Vec<DbEffectRef<'_>> {
         let base_ids = self.effects.ordered_ids(row.terminal_base);
+        // `base_storage_ord[k]` = storage ordinal of the k-th key_rank base id.
+        // `base_via` is stored in STORAGE order, so the via of the base id
+        // emitted at key_rank position `k` is `base_via[base_storage_ord[k]]`.
+        let base_storage_ord = self.effects.ordered_storage_ord(row.terminal_base);
         let base_via = &self.via_pool[row.base_via.start as usize..row.base_via.end as usize];
         let pd_ids = &self.delta_pool[row.pd_delta.start as usize..row.pd_delta.end as usize];
         let pd_via = &self.via_pool[row.delta_via.start as usize..row.delta_via.end as usize];
         debug_assert_eq!(base_ids.len(), base_via.len());
+        debug_assert_eq!(base_ids.len(), base_storage_ord.len());
         debug_assert_eq!(pd_ids.len(), pd_via.len());
+
+        let base_via_at = |k: usize| base_via[base_storage_ord[k] as usize];
 
         let universe = self.effects.universe();
         let mut out: Vec<DbEffectRef<'_>> = Vec::with_capacity(base_ids.len() + pd_ids.len());
@@ -735,7 +777,7 @@ impl SummaryBundle {
         // (effect_key, operation_id) order.
         while i < base_ids.len() && j < pd_ids.len() {
             if universe.key_rank(base_ids[i]) <= universe.key_rank(pd_ids[j]) {
-                out.push(self.make_ref(base_ids[i], base_via[i]));
+                out.push(self.make_ref(base_ids[i], base_via_at(i)));
                 i += 1;
             } else {
                 out.push(self.make_ref(pd_ids[j], pd_via[j]));
@@ -743,7 +785,7 @@ impl SummaryBundle {
             }
         }
         while i < base_ids.len() {
-            out.push(self.make_ref(base_ids[i], base_via[i]));
+            out.push(self.make_ref(base_ids[i], base_via_at(i)));
             i += 1;
         }
         while j < pd_ids.len() {
@@ -1006,6 +1048,67 @@ mod tests {
         );
         assert_eq!(got[2].temp_state, TempState::Known(true));
         assert_eq!(got[2].record_variable_id, Some("Rec".to_string()));
+    }
+
+    /// The A4 reverse-index point-query contract (spec:175): a row's `base_via`
+    /// is stored in STORAGE order, so `base_via[set.ordinal_of(id)]` returns
+    /// exactly that id's via — independent of the key_rank emit order. This
+    /// fails under a key_rank-ordered `base_via` whenever storage order !=
+    /// key_rank order (the normal case), so it pins the storage-order fix.
+    #[test]
+    fn base_via_is_storage_order_for_ordinal_point_query() {
+        let mut u = GrowingEffectUniverse::new();
+        // Intern OUT of key order so storage (EffectId) order != key_rank order:
+        // Zeta(id0) then Alpha(id1); key order is Alpha < Zeta.
+        let zeta = u.intern(&ident("Zeta", "t", "op1", TempStateKind::Known(true)));
+        let alpha = u.intern(&ident("Alpha", "t", "op2", TempStateKind::Known(true)));
+
+        let mut interner = RoutineInterner::new();
+        let r = interner.intern("r");
+        let mut b = SummaryBundleBuilder::new();
+        // base_via parallel to ascending-EffectId storage order [zeta, alpha]:
+        // zeta -> Direct, alpha -> EventSubscriber.
+        let set = b.push_terminal_set(bits_of(&[zeta, alpha]));
+        b.push_row(
+            r,
+            set,
+            vec![ViaRank::Direct, ViaRank::EventSubscriber],
+            vec![],
+            vec![],
+        );
+        let rvid: HashMap<String, Option<String>> = HashMap::new();
+        let bundle = b.finish(u.freeze(), interner, rvid);
+
+        // The A4 point query: index the STORAGE-order base_via with the set's
+        // storage-order ordinal. (Tests reach the bundle's private fields as a
+        // child module.)
+        let row = bundle.summaries.get(&r).unwrap();
+        let base_via = &bundle.via_pool[row.base_via.start as usize..row.base_via.end as usize];
+        let set = bundle.effects().set(row.terminal_base);
+        assert_eq!(
+            base_via[set.ordinal_of(zeta).unwrap() as usize],
+            ViaRank::Direct,
+            "zeta's via read back via its storage ordinal"
+        );
+        assert_eq!(
+            base_via[set.ordinal_of(alpha).unwrap() as usize],
+            ViaRank::EventSubscriber,
+            "alpha's via read back via its storage ordinal"
+        );
+
+        // And the key_rank emit order is unchanged (byte-parity preserved):
+        // Alpha (event-subscriber) before Zeta (direct).
+        let got: Vec<(String, String)> = bundle
+            .db_effects(r)
+            .map(|e| (e.op.to_string(), e.via.as_str().to_string()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("Alpha".to_string(), "event-subscriber".to_string()),
+                ("Zeta".to_string(), "direct".to_string()),
+            ]
+        );
     }
 
     /// A row's stored `pd_delta` is `key_rank`-sorted, unique by EffectId, and
