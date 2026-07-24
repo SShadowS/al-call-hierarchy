@@ -304,19 +304,9 @@ impl ConeDerivedStore {
         self.rows.get(routine_id).unwrap_or(&EMPTY_ROW)
     }
 
-    /// Number of folded rows (one per routine the cone visited).
-    pub fn len(&self) -> usize {
-        self.rows.len()
-    }
-
     /// True when no row was folded (e.g. a `RawOnly` composition).
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
-    }
-
-    /// The id interner — for callers that need to resolve raw [`ResId`]s.
-    pub fn interner(&self) -> &ResInterner {
-        &self.interner
     }
 
     /// Drop this routine's row, so it reads as the empty row again.
@@ -334,12 +324,6 @@ impl ConeDerivedStore {
     /// routines per workspace), only the row lookup is removed.
     pub fn forget(&mut self, routine_id: &str) {
         self.rows.remove(routine_id);
-    }
-
-    /// Every routine id with a folded row (iteration order unspecified — never
-    /// let it reach output).
-    pub fn routine_ids(&self) -> impl Iterator<Item = &str> {
-        self.rows.keys().map(|s| s.as_str())
     }
 
     /// This routine's presence flags.
