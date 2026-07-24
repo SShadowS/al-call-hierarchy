@@ -14,7 +14,16 @@
 //! counts) under a plain `cargo test` (debug profile) too — every ordinary
 //! `cargo test` run, not just `cargo test --release --test perf_bounds`.
 
+// The recursive-SCC half of `perf_support` (`generate_recursive_corpus` and
+// friends — final-branch-review M-6) exists for `tests/perf_bounds.rs`'s
+// release-only L4 gate and has no LSP-surface contract to pin here, so those
+// items are legitimately unused in THIS crate's compilation of the
+// `#[path]`-included module tree — mirrors `benches/engine_stages.rs`'s and
+// `benches/lsp_pipeline.rs`'s identical `#[allow(dead_code)]` on the same
+// module. The generator's own shape contract is asserted by that gate, before
+// it times anything (see `recursive_scc_db_effects_within_bound`).
 #[path = "../perf_support/mod.rs"]
+#[allow(dead_code)]
 mod perf_support;
 
 use al_call_hierarchy::lsp::encoding::PositionEncoding;
