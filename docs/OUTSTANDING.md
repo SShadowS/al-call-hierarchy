@@ -164,8 +164,17 @@ the bottom, CHANGELOG, and git log.
   interleaved complexity-class assertions. Give compute_all the same load-stable
   treatment if it flakes again
 
-- [ ] **L4 db-effect RSS consumer-migration — remove the analyze-path
-  materialization shim** (`src/engine/l4/summary_runner.rs`
+- [x] **L4 db-effect RSS consumer-migration — remove the analyze-path
+  materialization shim** — DONE 2026-07-24 (`a0cd348`, Part B B1-migrate). The
+  analyze path (`build_detector_context` + the cross-app builder) now consumes
+  the LEAN bundle entry points, and the compact `SummaryBundle` rides on
+  `DetectorContext.db_effect_bundle` so `db_effects` stays queryable without the
+  per-routine `Vec<DbEffect>` expansion. MEASURED (8020, `release-fast`, full
+  detector set): `context.compute_summaries` `rss_delta` 24 250 MB → **477 MB**
+  (24 GB → 0.47 GB — the sub-GB target), span wall 87 s → 15.7 s, whole-process
+  peak 39.9 GB → 18.1 GB, `analyze.total` 620 s → 366 s. The shim itself is
+  UNCHANGED and still serves the projection + differential. Original item:
+  (`src/engine/l4/summary_runner.rs`
   `compute_summaries_v2_bundle_with_leaves` → `_core`; the follow-up the L4 store
   redesign B1 explicitly deferred). B1 deleted the old Jacobi solver and flipped
   the differential to a frozen baseline, but the shim that re-expands the shared
@@ -181,11 +190,22 @@ the bottom, CHANGELOG, and git log.
   `ReverseEffectIndex`, keeping a materializing path ONLY for the projection +
   differential. Expected: −24 GB, `compute_summaries` ~87 s → ~13 s. No wake
   condition — buildable now.
-- [ ] **C1 — `context.capability_cones` base-assembly RSS** (~16 GB on 8020;
-  `compose_cone_over_graph`, a separate pre-existing cost, NOT the db-effect
-  store). Diagnosis: `.superpowers/sdd/C1-cones-diagnosis.md`. Whole-process
-  "<1 GB" is only approachable after BOTH the RSS consumer-migration (−24 GB) and
-  C1 (−~11 GB) land.
+- [x] **C1 — `context.capability_cones` base-assembly RSS** — DONE 2026-07-24
+  (Tasks 1–4, plan `docs/superpowers/plans/2026-07-24-c1-cone-derived-substrate.md`;
+  see the CHANGELOG `Changed` entry for the full shape). Diagnosis:
+  `.superpowers/sdd/C1-cones-diagnosis.md`; residual attribution:
+  `.superpowers/sdd/c1-residual-census.md`. The compact `ConeDerivedStore`
+  replaced the per-routine raw inherited-fact Vec on the analyze path
+  (`ConeOutput::DerivedOnly`), and the SCC walk stopped materializing cones no
+  predecessor will ever read. MEASURED (8020, `release-fast`, d8-only shape):
+  span `rss_delta` 10 941 MB → 2 151 MB and whole-process peak 17 055 MB →
+  9 593 MB at Task 3; the `C1_CONE_CENSUS=1` byte census then took the
+  root-SCC cone residual (1 598.87 MB, 74% of what was left) to 0 at Task 4.
+  Output byte-identical throughout (five golden families + l4 differential 17/17
+  + DO `analyze` and `policy check`). Whole-process peak is now floored by the
+  L3 spans (`l3.assemble_resolve` ~3.4 GB, `l3.parse_project_parallel` ~2.8 GB),
+  not by cones — "<1 GB whole-process" needs those next, and is NOT reachable by
+  B1 + C1 alone.
 - [ ] **A future incremental L4 path over the new `EffectStore`** (a redesign, NOT
   a re-port of the deleted R3b). The reusable design intent — fine-grained Salsa
   query topology, SCC-identity rules (interned sorted-member `SccKey`), fixed-leaf

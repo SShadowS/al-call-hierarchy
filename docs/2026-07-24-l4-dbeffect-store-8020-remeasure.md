@@ -57,23 +57,75 @@ against. Trace attribution (per-span `rss_mb`):
 
 The analyze path never *reads* those `db_effects` (no detector under `src/engine/gate/` or
 `src/engine/l5/` reads `RoutineSummary.db_effects`; it consumes only `.uncertainties` /
-`.parameter_roles` / capability facts). So the 24 GB — and the ~74 s to build it — are waste on the
-analyze path, held only for the oracle.
+`.parameter_roles` / capability facts). So the 24 GB — and the ~74 s to build it — were waste on the
+analyze path, held only for the oracle. (**Since fixed at B1** — the analyze path no longer calls the
+shim at all; see the next section for the measured outcome. The shim itself survives, unchanged, for
+the projection + differential callers that really do read `db_effects`.)
 
-## RSS win — deferred (by design + user decision, 2026-07-24)
+## RSS win — LANDED at B1 (was "deferred" when this section was first written)
 
-The db-effect RSS win (the 24 GB) requires a **consumer migration** (point the analyze path at the
-bundle's borrowing view), which is only possible once the old-solver oracle is gone. Per the plan's
-sequencing and the user's decision it is **folded into Part B (B1)**: after B1 deletes the old Jacobi
-and flips the differential to a frozen baseline, the analyze path consumes the `SummaryBundle` lazily
+> **Superseded.** This section originally recorded the db-effect RSS win as *deferred by design*.
+> It has since **landed** — B1's consumer migration shipped and was re-measured. The prediction
+> below is kept only because the measured outcome is checked against it.
+
+The db-effect RSS win (the 24 GB) required a **consumer migration** (point the analyze path at the
+bundle's borrowing view), which was only possible once the old-solver oracle was gone. Per the plan's
+sequencing and the user's decision it was **folded into Part B (B1)**: after B1 deleted the old Jacobi
+and flipped the differential to a frozen baseline, the analyze path consumes the `SummaryBundle` lazily
 (projection + the differential keep a materializing path; `db_effects` stays queryable via the
-bundle + the A4 `ReverseEffectIndex`). Expected at B1: `compute_summaries` ~87 s → ~13 s and −24 GB.
+bundle + the A4 `ReverseEffectIndex`). Predicted at B1: `compute_summaries` ~87 s → ~13 s and −24 GB.
 
-The remaining **~16 GB is `context.capability_cones`** — a separate, pre-existing base-assembly cost
-(cone propagation, `compose_cone_over_graph`), NOT the db-effect store. Per the user's decision it is
-tackled as a follow-up task (C1) — diagnosis in `.superpowers/sdd/C1-cones-diagnosis.md`. Whole-process
-peak is floored by cones + the ~5 GB workspace IR, so the literal "<1 GB whole-process" target is only
-approachable after both B1 (−24 GB) and C1 (−~11 GB) land.
+**Measured at B1** (8020, `release-fast` @`a0cd348`, FULL detector set, EXIT=0, WALL 620 s → 366 s):
+
+| metric | post-Part-A | post-B1 (measured) |
+|---|---:|---:|
+| `context.compute_summaries` `rss_delta` | 24 250 MB | **477 MB** (24 GB → 0.47 GB — sub-GB target hit) |
+| `context.compute_summaries` wall | 87 s | **15.7 s** (the ~74 s shim materialization is gone) |
+| whole-process peak working set | 39.9 GB | **18.1 GB** |
+
+The prediction held on both axes. What remained after B1 was **~10 GB in
+`context.capability_cones`** (`rss_delta` 9 989 MB on that same full-detector run) — a separate,
+pre-existing base-assembly cost (cone propagation, `compose_cone_over_graph`), NOT the db-effect
+store. That became follow-up task C1 (diagnosis in `.superpowers/sdd/C1-cones-diagnosis.md`).
+
+## C1 — `context.capability_cones` (the remaining cone cost)
+
+Measured in the **d8-only** run shape (`--detector d8-commit-in-transaction`), which is what every
+C1 measurement uses; that shape reads the pre-C1 cone span at 10 941 MB where B1's full-43-detector
+run read 9 989 MB — a run-shape/allocator difference, not a discrepancy. Compare C1 numbers only
+against other C1 numbers.
+
+| metric (8020, d8-only, `release-fast`) | pre-C1 | post-C1 Task 3 | post-C1 Task 4 |
+|---|---:|---:|---:|
+| `context.capability_cones` `rss_delta` | 10 941 MB | 2 151 MB | *controller re-measure pending* |
+| whole-process peak working set | 17 055 MB | 9 593 MB | *controller re-measure pending* |
+
+- **Task 3** stopped materializing the per-routine raw `Vec<CapabilityFact>` inherited cone on the
+  analyze path (`ConeOutput::DerivedOnly` — the compact `ConeDerivedStore` carries every analyze
+  consumer): −8.8 GB on the span, −7.5 GB whole-process peak.
+- **Task 4** closed the residual the `C1_CONE_CENSUS=1` byte census then attributed
+  (`.superpowers/sdd/c1-residual-census.md`): 74% of the 2 151 MB was `fact_cones` entries for
+  call-graph **root** SCCs that the walk's refcount-free could never reach. Census, same corpus,
+  before → after:
+
+  | census line | before (41d418a) | after |
+  |---|---:|---:|
+  | `fact_cones` residual at walk exit | 17 864 SCCs / 2 224 901 entries / **1 598.87 MB** | **0 / 0 / 0.00 MB** |
+  | `direct_in` transient duplicate | 79.66 MB | *structure deleted* |
+  | `direct` dedup-keyed walk input | 63.70 MB (held to function exit) | 58.33 MB (dropped at last use) |
+  | `capability_facts_direct` (retained) | 71.56 MB | 64.61 MB |
+  | `size_of::<CapabilityFact>()` | 408 B | 368 B |
+  | `grand_total_bytes` (retained after the build) | 157.74 MB | 150.79 MB |
+
+  The census is a deterministic BYTE count of specific structures, not an RSS measurement — the
+  authoritative post-Task-4 8020 RSS/peak re-measure is the controller's and is not recorded here
+  yet. (`capability_facts_direct`'s "after" additionally reflects the census's own Task-4 fix:
+  a `&'static str` field's content is shared program-wide and is no longer charged per fact. The
+  like-for-like number under the OLD accounting is 67.42 MB.)
+
+Whole-process peak is floored by the cones plus the ~5 GB workspace IR (`l3.assemble_resolve`
+3 386 MB and `l3.parse_project_parallel` 2 771 MB are the largest spans post-Task-3), so the literal
+"<1 GB whole-process" target is not reachable by B1 + C1 alone — those L3 spans are the next floor.
 
 ## perf gate (Step 3)
 
@@ -82,4 +134,5 @@ re-measured: medians 57.2 / 80.0 / 67.8 / 71.3 ms — overlapping the prior ~76 
 materially different (the store redesign's win is on dense **recursive** SCCs, which this corpus
 lacks by construction), so the 230 ms (3×) bound is kept, comment updated to record the re-measure
 (commit `0f397d8`). No memory assertion added — deferred to post-B1, when the db_effects RSS actually
-drops.
+drops. **Still not added** now that B1 (and C1) have landed: the gate remains wall-clock-only, so no
+in-repo test would catch a re-materialization regression by memory. Open item.

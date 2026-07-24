@@ -408,6 +408,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt` stamp).
 
 ### Removed
+- **The raw inherited-cone read API + the `cone_parity` dual-run oracle**
+  (`src/engine/l5/capability_query.rs`, `src/engine/l5/full_summary.rs`,
+  `src/engine/l5/cone_parity.rs` [deleted], `feat/l4-summary-redesign`, Part C
+  C1 Task 3). With every analyze consumer on the derived substrate (entry under
+  `Changed`), the helpers that walked the raw `Vec<CapabilityFact>` have zero
+  production callers and are deleted: `find_capabilities`, `has_capability`,
+  `writes_tables_of`, `writes_physical_tables_of`, `publishes_events_of`, plus
+  `FullRoutineSummary::reachable`/`reachable_iter`. `touches_db_of`/`may_commit`
+  survive `#[cfg(test)]`-only as fixture oracles.
+  `FullRoutineSummary::capability_facts_inherited` is now a PRIVATE
+  `Option<Vec<_>>` read through `inherited_raw()`, which **panics** when the cone
+  ran `DerivedOnly` — a missed consumer is loud, never a silent direct-only
+  answer. `cone_parity` (the `C1_CONE_PARITY=1` derived-vs-raw dual-run oracle
+  that guarded Tasks 1–2) goes with them: under `DerivedOnly` its raw side would
+  degrade to direct-only and every check would false-alarm. Its one
+  Vec-independent test — the G-18 colliding-routine-id pin on
+  `ConeDerivedStore::forget` — was RELOCATED into `detector_context`'s test
+  module and hardened with the `!cone_derived.is_empty()` precondition it
+  lacked. `C1_CONE_CENSUS=1` (`src/engine/l4/cone_census.rs`) is a different,
+  still-live diagnostic: a byte census, not a parity oracle.
 - **The old L4 Jacobi db-effects solver + the R3b Salsa incremental experiment +
   the R3a-2 Jacobi trace dump mode — ONE summary path remains**
   (`src/engine/l4/summary_runner.rs`, `src/engine/l4/summary.rs`,
@@ -619,6 +639,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **L4 capability cones — the compact `ConeDerivedStore` substrate replaces the
+  per-routine inherited-fact Vec, and the SCC walk stops holding cones nothing
+  will read** (`feat/l4-summary-redesign`, Part C C1 Tasks 1–4;
+  `docs/superpowers/plans/2026-07-24-c1-cone-derived-substrate.md`;
+  `src/engine/l4/cone_derived.rs` (new), `src/engine/l4/capability_cone.rs`,
+  `src/engine/l4/cone_census.rs` (new, diagnostic), `src/engine/l5/detector_context.rs`,
+  `src/engine/l5/capability_query.rs` + the migrated detectors,
+  `src/engine/l5/full_summary.rs`). `context.capability_cones` was the analyze
+  path's largest remaining span at **10 941 MB** of `rss_delta` on the 8020
+  corpus (8020 files / 84 035 routines / d8-only shape) because every routine
+  owned a `Vec<CapabilityFact>` holding its whole reachable cone — `retag`
+  value-cloned every reachable downstream fact into every ancestor's Vec. Four
+  changes, each output-neutral:
+  1. **A compact derived substrate** (`ConeDerivedStore`) is folded during the
+     SAME cone walk — per-routine presence flags plus interned table/event
+     id-set windows (`Range<u32>` into shared pools), with zero `retag` clones.
+  2. **Every analyze-path consumer reads it** (`ctx.cone_derived`): each of them
+     only ever wanted a derived predicate (`touches_db`/`may_commit`/
+     `writes_tables`/`publishes_events`/IO kinds), never the fact objects.
+  3. **The raw Vec is no longer built on the analyze path.** The cone composes
+     under `ConeOutput::DerivedOnly`; `capability_facts_inherited` is
+     `Option<Vec<_>>` and `None` means *never materialized*, so
+     `inherited_raw()` PANICS rather than silently answering "empty cone". The
+     raw path survives behind the policy-only `RAW_INHERITED_FACTS` demand bit
+     (deliberately NOT part of `substrate::ALL`) for `gate::policy`, the
+     projection, `aldump`, `prove` and `digest`, whose byte output and
+     `sort_inherited` order are unchanged.
+  4. **The SCC walk stops materializing cones that can never be read.** A cone
+     is consumed only by an SCC's PREDECESSORS, and the walk's refcount-free
+     fires only when a predecessor finishes — so a call-graph ROOT's cone (no
+     predecessors, never anyone's successor) was built in full and held until
+     the walk returned: 17 864 root SCCs / 2 224 901 fact entries / **1 598.87
+     MB** on the 8020 corpus. A root's cone is now never built. The walk's dead
+     inputs are dropped at last use instead of at their block's end
+     (`direct_in` — a byte-identical duplicate of `direct_full`, 79.66 MB —
+     is deleted outright; `adjacency`, `direct`, `cov`, `routine_ids`, `nodes`,
+     `coverage_in` are dropped), and `CapabilityFact`'s five closed vocabularies
+     (`op`/`resource_kind`/`confidence`/`provenance`/`via`) became `&'static
+     str`, taking the struct 408 → 368 B and removing 5 allocations per fact.
+  **Measured** (8020, `release-fast`, d8-only): `context.capability_cones`
+  `rss_delta` 10 941 MB → **2 151 MB** after change 3, whole-process peak
+  17 055 MB → **9 593 MB**; the `C1_CONE_CENSUS=1` byte census then attributed
+  74% of that 2 151 MB residual to the root-cone hold, which change 4 takes to
+  **0 bytes** (census before/after and the corpus-level numbers in
+  `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`; the post-Task-4
+  whole-process RSS re-measure is not in this entry). **Output-neutral
+  throughout**: all five golden families byte-identical with zero golden files
+  touched at every task, the l4 summary differential 17/17, and DO-workspace
+  `alsem analyze --format json --deterministic` (sha256
+  `a674dae34cf10f1388ae6d5310fe90f537ae36f4e045e474158d5c673d3bbf3f`) plus
+  `alsem policy check --format json --deterministic` (sha256
+  `6a6cff4245245e627b5fbf6f322879ef7996787d12d305d73ac45c1ee60d4586`)
+  byte-identical, stdout and stderr, from before Task 1 through Task 4.
 - **L4 analyze path consumes the `SummaryBundle` lazily — the ~24 GB / ~74 s
   db-effects RSS rematerialization is GONE** (`feat/l4-summary-redesign`, Part B
   B1; `src/engine/l4/summary_runner.rs`, `src/engine/l5/detector_context.rs`).
