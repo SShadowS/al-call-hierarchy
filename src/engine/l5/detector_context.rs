@@ -386,15 +386,17 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             // condition either way, since `direct` is what the surviving summary
             // actually stores.
             //
-            // ⟨final-branch-review M-2⟩ This assert is now the ONLY guard on that
-            // divergence. Task 2 had added a second, reverse one — the parity
-            // oracle's "the store cannot hold a row `summaries` does not" check —
-            // and Task 3 deleted it along with `cone_parity.rs` itself, which is
-            // also what returned `ConeDerivedStore`'s `routine_ids()`/`interner()`/
-            // `len()` to zero callers (deleted at M-2). The extra-row direction
-            // that check covered is structurally unreachable while `nodes` is built
-            // from `ws.routines`; if that ever stops being true, this assert is
-            // what has to catch it, and only in a debug build.
+            // ⟨final-branch-review M-2, corrected per fix wave finding 1⟩ Task 2 had
+            // added a second, reverse guard — the parity oracle's "the store cannot
+            // hold a row `summaries` does not" check — and Task 3 deleted it along
+            // with `cone_parity.rs` itself, which is also what returned
+            // `ConeDerivedStore`'s `routine_ids()`/`interner()`/`len()` to zero
+            // callers (deleted at M-2). That extra-row direction has NO guard today:
+            // this assert only sees ids present in `ws.routines` (it lives inside the
+            // `for r in &ws.routines` loop above), so a superset `nodes` — e.g. a
+            // future widening of the cone input to dep routines — would produce rows
+            // this loop never visits, and this assert would never fire against them,
+            // in debug or otherwise.
             debug_assert_eq!(
                 cone_entry.is_none(),
                 direct.is_none(),
