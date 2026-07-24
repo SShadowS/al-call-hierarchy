@@ -292,7 +292,19 @@ mod release_checks {
     // baseline, the file's usual CLAUDE.md-target convention: generous enough
     // to absorb machine-to-machine variance and ordinary noise, tight enough
     // that a true order-of-magnitude regression still trips it.
-    const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(230); // 3x ~76ms measured baseline
+    //
+    // Re-measured post-A3-store (l4-db-effect-store-redesign, commit f9673f7,
+    // 2026-07-24): 4 independent 5-sample runs gave medians 57.2ms/80.0ms/
+    // 67.8ms/71.3ms (individual samples ranged ~53-86ms) — squarely
+    // overlapping the 2026-07-22 ~76ms baseline above, i.e. NOT materially
+    // different. Expected: the A1-A4 store redesign's win is concentrated on
+    // dense recursive SCCs (8020 corpus: db_solver 109s->10s), while this
+    // perf_support corpus is deliberately non-recursive (straight-line call
+    // chains, see `compute_summaries_v2_within_bound`'s own doc), so the
+    // closed-form non-recursive path exercised here was never expected to
+    // move. Bound left at 230ms (3x ~76ms) rather than tightened, per that
+    // baseline's still-current headroom rationale.
+    const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(230); // 3x ~76ms measured baseline (re-measured post-A3-store 2026-07-24, unchanged)
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
