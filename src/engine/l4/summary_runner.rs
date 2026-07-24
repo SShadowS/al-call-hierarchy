@@ -165,8 +165,9 @@ pub fn base_intraprocedural_summary(
 
 /// Compute RecordRoleSummary per record parameter. Mirrors al-sem
 /// `computeRecordRolesCtx`. Path-aware facts (requiresLoadedAtEntry etc.) are
-/// populated as "unknown" here; `compose_routine` overwrites them with the
-/// flat-walker facts (which need the current fixed-point `lookup`).
+/// populated as "unknown" here; [`compose_roles_only`] overwrites them with the
+/// flat-walker facts (which need the current fixpoint `lookup`) — the role the
+/// retired `compose_routine` played in the pre-`b4181d8` tree.
 fn compute_record_roles(routine: &L3Routine, fields: &FieldIndex) -> Vec<RecordRoleSummary> {
     let mut out: Vec<RecordRoleSummary> = Vec::new();
     for param in &routine.parameters {
@@ -281,7 +282,7 @@ fn compute_record_roles(routine: &L3Routine, fields: &FieldIndex) -> Vec<RecordR
             may_assign_record,
             may_use_record_ref,
             // Path-aware entry-req + exit-effect facts are "unknown" until
-            // `compose_routine` runs the flat walker with the current lookup.
+            // `compose_roles_only` runs the flat walker with the current lookup.
             requires_loaded_at_entry: EffectPresence::Unknown,
             required_loaded_fields_at_entry: FieldList::Unknown,
             mutates_before_load: EffectPresence::Unknown,
@@ -520,9 +521,9 @@ fn compose_roles_only(
 /// `pub(crate)` (not module-private): shared verbatim with
 /// `db_effect_solver::solve_pd_reachability`, which walks THIS SAME per-edge
 /// transition as a semi-naive product-graph reachability worklist instead of
-/// `compose_routine`'s JACOBI fold — ONE substitution implementation for both,
-/// so the new solver is guaranteed to match the old one's PD semantics exactly
-/// (l4-summary-fixpoint-redesign Task 4).
+/// the retired `compose_routine`'s JACOBI fold — ONE substitution
+/// implementation, carried over unchanged, so the closed-form solver matches the
+/// old PD semantics exactly (l4-summary-fixpoint-redesign Task 4).
 pub(crate) fn substitute_pd_temp_state(
     edge: &super::combined_graph::CombinedEdge,
     callee_param_index: u32,
@@ -678,7 +679,8 @@ pub fn compute_summaries_v2_bundle_with_leaves(
     HashMap<String, RoutineSummary>,
     Vec<SummarizeDiagnostic>,
 ) {
-    // --- Scaffolding: mirror compute_summaries_with_leaves exactly. ---
+    // --- Scaffolding: mirrors what the retired `compute_summaries_with_leaves`
+    // built (in the pre-`b4181d8` tree). ---
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
 
@@ -732,8 +734,9 @@ pub fn compute_summaries_v2_bundle_with_leaves(
     }
 
     // A member is RECOMPUTED (contributes to an effective SCC) iff it is neither
-    // a fixed leaf NOR missing from the workspace — the exact predicate the old
-    // `run_one_scc` uses when it seeds `in_progress` from `base_summaries`.
+    // a fixed leaf NOR missing from the workspace — the exact predicate the
+    // retired `run_one_scc` used when it seeded `in_progress` from
+    // `base_summaries`.
     let is_recomputed =
         |id: &str| -> bool { !leaf_summaries.contains_key(id) && routines_by_id.contains_key(id) };
 
@@ -1058,9 +1061,9 @@ pub struct SummarizeDiagnostic {
 /// [`summary_change_key`] for a stable-projected summary carrying these roles.
 /// `db_effects` / `uncertainties` are irrelevant to that component, so a
 /// roles-only summary (both empty) yields the identical roles slice. Routing
-/// through the SAME `summary_change_key` the old full fixpoint uses GUARANTEES the
-/// roles change signal is byte-identical to what `run_one_scc` compares on for
-/// roles — this is not a re-invented key.
+/// through the SAME `summary_change_key` the old full fixpoint used GUARANTEES the
+/// roles change signal is byte-identical to what the retired `run_one_scc`
+/// compared on for roles — this is not a re-invented key.
 fn roles_change_key(
     routine_id: &str,
     roles: &[RecordRoleSummary],
@@ -1158,7 +1161,8 @@ fn run_one_scc_roles(
     }
 
     if !scc_entry.recursive {
-        // Non-recursive SCC: single pass (mirrors run_one_scc's early return set).
+        // Non-recursive SCC: single pass (mirrors the retired run_one_scc's
+        // early return set).
         let id = match scc_entry.members.first() {
             Some(id) => id,
             None => return RolesSccOut::converged(Vec::new()),
@@ -1223,7 +1227,8 @@ fn run_one_scc_roles(
     // Intra-SCC dependents: for each member m, the members that CALL it. Roles read
     // callees EXCLUSIVELY through `edges_by_from[from].to` (the cross-call fold AND
     // the cfg walker both resolve callees that way), so these edges capture every
-    // intra-SCC roles dependency — identical to run_one_scc's dependents graph.
+    // intra-SCC roles dependency — identical to the retired run_one_scc's
+    // dependents graph.
     let member_set: std::collections::HashSet<&String> = scc_entry.members.iter().collect();
     let mut dependents: HashMap<&String, Vec<&String>> = HashMap::new();
     for m in &scc_entry.members {
@@ -1313,7 +1318,8 @@ fn run_one_scc_roles(
         dirty = next_dirty;
 
         if iterations >= MAX_FIXED_POINT_ITERATIONS {
-            // Same cap as run_one_scc. Roles-only convergence cannot outlast the
+            // Same cap the retired run_one_scc used. Roles-only convergence
+            // cannot outlast the
             // old whole-summary fixpoint (roles are one of its components), so a
             // cap-hit here mirrors a cap-hit there with the same round-MAX roles.
             // Record the honesty signal EXACTLY as the old `run_one_scc` did

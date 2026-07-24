@@ -260,8 +260,8 @@ mod release_checks {
     // re-pointed at the LEAN bundle entry point post-B1-migrate, final
     // whole-branch review M-3) — the closed-form db-effect solver
     // `build_detector_context` actually calls for every `alsem analyze`/
-    // `aldump` run (`src/engine/l5/detector_context.rs:655`, inside the
-    // `context.compute_summaries` span opened at `:634`). Both it and the
+    // `aldump` run (`build_detector_context`'s own call, inside its
+    // `context.compute_summaries` span). Both it and the
     // materializing `compute_summaries_v2`/`_with_leaves_core` shims share
     // the SAME core (`compute_summaries_v2_bundle_with_leaves`), so the
     // Task 11/11b history below applies to this gate unchanged.
@@ -884,8 +884,8 @@ mod release_checks {
     /// `build_detector_context` stopped calling at Task B1 `a0cd348`) — the
     /// closed-form db-effect solver `build_detector_context` actually calls
     /// for every `alsem analyze`/`aldump` run
-    /// (`src/engine/l5/detector_context.rs:655`, inside the
-    /// `context.compute_summaries` span opened at `:634`). Builds the SAME
+    /// (`build_detector_context`'s own call, inside its
+    /// `context.compute_summaries` span). Builds the SAME
     /// `(routines, graph, scc, upgraded_bindings, fields)` substrate that
     /// path builds, via the SAME public functions in the SAME order —
     /// mirrors `tests/l4_summary_differential.rs`'s

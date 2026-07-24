@@ -179,9 +179,10 @@ pub struct DetectorContext<'a> {
     /// Built by `closed_world_temp::prove_closed_world_temp_params`; EVERY
     /// uncertainty fails the proof (the firing direction) — see module docs.
     pub closed_world_temp_params: crate::engine::l5::closed_world_temp::ClosedWorldTempParams,
-    /// L4 summarize-stage diagnostics — presently just the JACOBI fixed-point
-    /// cap-hit (`summary_runner::run_one_scc`). Harvested from the SAME
-    /// `compute_summaries*` call this module already makes for
+    /// L4 summarize-stage diagnostics — presently just the roles-fixpoint
+    /// cap-hit raised by `summary_runner::run_one_scc_roles` (the roles-only
+    /// fixpoint that replaced the retired Jacobi `run_one_scc` at `b4181d8`).
+    /// Harvested from the SAME `compute_summaries*` call this module already makes for
     /// `uncertainties_by_node`/`parameter_roles_by_routine` — not recomputed.
     /// Empty for every workspace whose SCCs converge, which is the overwhelming
     /// common case (additive: `run_detectors` folds this into the "summarize"

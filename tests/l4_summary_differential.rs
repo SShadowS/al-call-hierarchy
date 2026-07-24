@@ -944,7 +944,8 @@ mod fixtures {
     /// SCC below it) carrying a `ParameterDependent(0)` op; the self-recursive
     /// `a` calls both itself and `ext` — the `ext` edge substitutes through `a`'s
     /// own binding while `ext`'s summary is read from the PREDECESSOR final map,
-    /// not the in-SCC snapshot (`compose_routine`'s `lookup` fallback).
+    /// not the in-SCC snapshot (the retired `compose_routine`'s `lookup`
+    /// fallback, in the pre-`b4181d8` tree).
     fn external_successor_pd() -> FixtureOut {
         let mut ext = routine("ext");
         ext.record_operations
