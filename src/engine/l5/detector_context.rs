@@ -314,14 +314,23 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             }
         }
         let empty_pub: Vec<&EventSymbol> = Vec::new();
+        // ⟨C1 Task 4⟩ ONE direct-facts map, not two. This used to build a
+        // second, byte-identical `direct_in` (a `facts.clone()` per routine)
+        // purely to hand to the cone walk, which takes it by shared reference
+        // and only reads it — 79.66 MB of pure duplicate on the 8020 corpus,
+        // held for the rest of this block because Rust frees a local at its
+        // block's end, not at its last use. `direct_full` is not drained until
+        // the summary loop below, well after the walk's borrow ends, so the
+        // walk can simply read it. (Every OTHER `compose_cone_over_graph` call
+        // site — `project_r3a3`, `project_r3a5_cross_app`,
+        // `build_detector_context_cross_app` — already passed its `direct_full`
+        // directly; this was the one straggler.)
         let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
-        let mut direct_in: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
         let mut coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
         let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
         for r in &ws.routines {
             let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
             let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
-            direct_in.insert(r.id.clone(), facts.clone());
             coverage_in.insert(r.id.clone(), (status, reasons));
             direct_full.insert(r.id.clone(), facts);
         }
@@ -333,16 +342,15 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         } else {
             ConeOutput::DerivedOnly
         };
-        let outcome = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in, mode);
+        let outcome = compose_cone_over_graph(&graph, &nodes, &direct_full, &coverage_in, mode);
         let mut cones = outcome.cones;
         cone_derived = outcome.derived;
-
-        // ⟨C1 census⟩ `direct_in`'s last real use is the call above — from here
-        // to the end of this block it is dead but Rust will not free it until
-        // the block's scope ends (a few dozen lines below), so it stays a live,
-        // full duplicate of the direct-facts population for the rest of this
-        // span. See `cone_census::emit_direct_in_residual`'s doc.
-        crate::engine::l4::cone_census::emit_direct_in_residual(&direct_in);
+        // ⟨C1 Task 4⟩ Both cone inputs are dead here; free them before the
+        // summary assembly below rather than at this block's closing brace
+        // (`nodes` is one more full copy of every routine id, `coverage_in` one
+        // more copy of every routine's direct status + reasons).
+        drop(nodes);
+        drop(coverage_in);
 
         // `cones` and `direct_full` are locally owned and dead after this loop, so
         // move their payloads into the summaries instead of cloning them out.

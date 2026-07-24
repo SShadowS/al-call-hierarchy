@@ -385,49 +385,12 @@ pub fn emit_full_census(
     eprintln!("[C1_CONE_CENSUS] ==================================================");
 }
 
-/// Emit a diagnostic for `direct_in` — the `HashMap<String, Vec<CapabilityFact>>`
-/// `build_detector_context` clones alongside `direct_full` (one clone feeds
-/// `compose_cone_over_graph`, the other is moved into the final summaries) but
-/// then keeps ALIVE, UNUSED, for the rest of the `if need_summaries` block —
-/// Rust drops a local at the END of its owning scope, not at its last real use.
-/// This reports what that dead-but-resident duplicate is holding, right after
-/// its last real use (the `compose_cone_over_graph` call) — NOT part of
-/// [`emit_full_census`]'s `grand_total_bytes` (it is a candidate explanation
-/// for the SPAN's `rss_delta` exceeding that live-structure total, since a
-/// point-sampled `working_set` at span-close reflects whatever the OS-level
-/// allocator has NOT returned since freed, not merely what Rust considers
-/// live at that instant).
-pub fn emit_direct_in_residual(direct_in: &HashMap<String, Vec<CapabilityFact>>) {
-    if !enabled() {
-        return;
-    }
-    let mut struct_bytes: u64 = 0;
-    let mut heap_bytes: u64 = 0;
-    let mut fact_count: u64 = 0;
-    for facts in direct_in.values() {
-        let (sb, hb) = facts_bytes(facts);
-        struct_bytes += sb;
-        heap_bytes += hb;
-        fact_count += facts.len() as u64;
-    }
-    let key_heap_bytes: u64 = direct_in.keys().map(|k| k.len() as u64).sum();
-    let total = struct_bytes + heap_bytes + key_heap_bytes;
-    eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
-    eprintln!(
-        "[C1_CONE_CENSUS] section: direct_in transient duplicate (detector_context.rs build_detector_context)"
-    );
-    eprintln!(
-        "[C1_CONE_CENSUS]   NOT part of grand_total_bytes — this is a SEPARATE, already-dead-but-\
-         not-yet-dropped allocation at the point of its last real use (the `compose_cone_over_graph` \
-         call). Rust frees it at the enclosing block's end, a few dozen lines later, still inside \
-         the same context.capability_cones span."
-    );
-    eprintln!(
-        "[C1_CONE_CENSUS]   entries={} fact_count={fact_count} key_heap_bytes={key_heap_bytes} struct_bytes={struct_bytes} heap_bytes={heap_bytes}",
-        direct_in.len()
-    );
-    eprintln!(
-        "[C1_CONE_CENSUS]   direct_in_total_bytes={total} ({:.2} MB)  # a duplicate of the capability_facts_direct total above, held past its last use",
-        mb(total)
-    );
-}
+// ⟨C1 Task 4⟩ `emit_direct_in_residual` lived here: a census of the
+// `direct_in` map `build_detector_context` cloned alongside `direct_full` (one
+// copy fed `compose_cone_over_graph`, the other was moved into the summaries)
+// and then held, dead, for the rest of the `if need_summaries` block — 79.66 MB
+// of pure duplicate on the 8020 corpus. Task 4 deleted the clone itself: the
+// walk now reads `direct_full` directly, so there is no second map left to
+// measure. Removed rather than kept pointing at `direct_full`, which is a
+// LIVE structure already reported by [`emit_full_census`]'s
+// `capability_facts_direct` section.

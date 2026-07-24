@@ -1722,8 +1722,37 @@ fn compose_inherited_cones(
         let scc_entry = &scc.sccs[i];
         let succ_ids = succ_sccs.get(i).unwrap_or(&empty_succ);
 
-        let fcone = fact_cone_for_scc(&scc_entry.members, succ_ids, &fact_cones, direct);
-        fact_cones.insert(i, fcone);
+        // ⟨C1 Task 4⟩ An SCC's cone is read by exactly ONE kind of consumer: a
+        // PREDECESSOR of that SCC. `fact_cone_for_scc` reads `fact_cones[y]`
+        // only for `y ∈ succ_sccs[j]`, and both per-routine walks
+        // (`inherited_facts_for_singleton` / `inherited_facts_by_bfs`) read a
+        // cone only for a routine whose SCC differs from the subject's — never
+        // the subject's own (`build_succ_sccs` excludes self, and the BFS
+        // treats a same-SCC hop as a sibling and expands it instead of pulling
+        // a cone; a non-recursive singleton has no self-edge by `tarjan_scc`'s
+        // `recursive` rule, so it cannot reach its own id either). So SCC `i`'s
+        // cone is never read while `i` itself is being processed.
+        //
+        // `remaining_uses[i]` is the number of SCCs holding `i` as a successor,
+        // decremented once per predecessor as that predecessor finishes. Tarjan
+        // emits callees before callers, so none of `i`'s predecessors has run
+        // yet when `i` is reached: `remaining_uses[i] == 0` here means `i` is a
+        // call-graph ROOT (nothing calls it) and NOTHING will ever read its
+        // cone. Building it is pure waste — on the 8020 corpus that was 17,864
+        // root SCCs holding 2,224,901 fact entries (~1,599 MB) alive for the
+        // whole walk, because the refcount-free below fires only for a
+        // successor and a root is nobody's successor. (Even if the emission
+        // order were ever NOT reverse-topological, a zero here would still mean
+        // every predecessor has already run and already read whatever this map
+        // held, so skipping stays sound.)
+        let root_scc = remaining_uses[i] == 0;
+        if !root_scc {
+            let fcone = fact_cone_for_scc(&scc_entry.members, succ_ids, &fact_cones, direct);
+            fact_cones.insert(i, fcone);
+        }
+        // The coverage cone is ALWAYS computed — `ccone` is what this SCC's own
+        // members' `CoverageRecord`s are built from below — but a root's copy is
+        // never published for the same reason.
         let ccone = coverage_cone_for_scc(
             &scc_entry.members,
             succ_ids,
@@ -1731,7 +1760,9 @@ fn compose_inherited_cones(
             cov,
             &g.unresolved_sources,
         );
-        cov_cones.insert(i, ccone.clone());
+        if !root_scc {
+            cov_cones.insert(i, ccone.clone());
+        }
 
         let recursive = scc_entry.recursive;
         for m in &scc_entry.members {
@@ -1807,15 +1838,30 @@ fn compose_inherited_cones(
         }
     }
 
+    // ⟨C1 Task 4⟩ Both maps MUST be empty here. Every non-root SCC's cone is
+    // refcount-freed by its last predecessor (each of its predecessors runs
+    // exactly once and decrements exactly once, so the counter always reaches
+    // 0), and a root's cone is never inserted at all (see `root_scc` above). A
+    // non-empty map means a cone escaped both mechanisms — the 1,599 MB leak
+    // this task closed, returning.
+    debug_assert!(
+        fact_cones.is_empty() && cov_cones.is_empty(),
+        "cone leak: {} fact cone(s) / {} coverage cone(s) survived the SCC walk",
+        fact_cones.len(),
+        cov_cones.len()
+    );
+
     // ⟨C1 census⟩ `C1_CONE_CENSUS=1` — report what's LEFT in `fact_cones`/
-    // `cov_cones` at function exit. An SCC with no caller (a true call-graph
-    // root — an entry point / public API nothing else in the workspace calls)
-    // never has its refcount driven to zero by the loop above, so its cone
-    // survives until these two locals drop at this function's return. This is
-    // NOT a peak sample — mid-walk, before earlier SCCs were refcount-freed,
-    // the maps could have held more — but it is a cheap, non-invasive proxy:
-    // true per-insert/remove incremental byte tracking (the only way to get a
-    // real peak) is the invasive plumbing this diagnostic deliberately skips.
+    // `cov_cones` at function exit. BEFORE Task 4 this measured the root-SCC
+    // residual — an SCC with no caller (a true call-graph root: an entry point
+    // / public API nothing else in the workspace calls) never had its refcount
+    // driven to zero by the loop above, so its cone survived until these two
+    // locals dropped at this function's return (17,864 SCCs / 1,598.87 MB on
+    // the 8020 corpus). Task 4 stopped building a root's cone in the first
+    // place, so this census now reports ZERO — kept as the cheap standing
+    // check that it stays that way (the release-profile counterpart of the
+    // `debug_assert!` above). It was never a peak sample either way: mid-walk,
+    // before earlier SCCs were refcount-freed, the maps hold more.
     if cone_census::enabled() {
         let mut fc_entries: u64 = 0;
         let mut fc_bytes: u64 = 0;
@@ -1919,6 +1965,10 @@ pub fn compose_cone_over_graph(
         nodes: &g.nodes,
         edges_by_from: &adjacency,
     });
+    // ⟨C1 Task 4⟩ `adjacency` is a whole second copy of every edge target id
+    // (`g.outgoing` still holds the originals) and is dead the moment Tarjan
+    // returns. Rust would otherwise hold it for the entire cone walk below.
+    drop(adjacency);
 
     // Per-routine dedup-keyed direct facts (canonical rep per key) + direct
     // coverage + the routine-id set — mirrors the assembly in project_r3a3.
@@ -1958,11 +2008,10 @@ pub fn compose_cone_over_graph(
 
     // ⟨C1 census⟩ `direct` — the SCC walk's per-routine DEDUP-KEYED direct-fact
     // map (`inherited_fact_key` -> canonical rep) — is alive for the whole
-    // `compose_inherited_cones` call above (borrowed throughout) and is about
-    // to drop at this function's own return, a THIRD copy of the direct-facts
-    // population alongside `direct_in` (raw duplicate, see
-    // `cone_census::emit_direct_in_residual`) and the `capability_facts_direct`
-    // ultimately stored in `summaries`.
+    // `compose_inherited_cones` call above (borrowed throughout), a SECOND copy
+    // of the direct-facts population alongside the caller's own raw map (which
+    // becomes `capability_facts_direct` in `summaries`). Task 4 drops it at
+    // last use, immediately below, instead of at this function's return.
     if cone_census::enabled() {
         let mut inner_entries: u64 = 0;
         let mut struct_bytes: u64 = 0;
@@ -1993,6 +2042,15 @@ pub fn compose_cone_over_graph(
             total as f64 / 1_048_576.0
         );
     }
+
+    // ⟨C1 Task 4⟩ Last use of all three walk inputs was the call above (the
+    // census read `direct` one more time). `direct` measured 63.70 MB on the
+    // 8020 corpus and `routine_ids` is a full extra copy of every routine id;
+    // freeing them here — rather than at this function's closing brace — keeps
+    // them out of the peak that the `ConeOutcome` rebuild below adds to.
+    drop(direct);
+    drop(cov);
+    drop(routine_ids);
 
     ConeOutcome {
         cones: cones
