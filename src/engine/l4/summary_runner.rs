@@ -25,6 +25,7 @@ use super::effect_lattice::{
     EffectPresence, effect_key_of, join_presence, merge_via_owned, via_for_edge_kind,
 };
 use super::effect_universe::EffectUniverse;
+use super::routine_interner::RoutineInterner;
 use super::scc::SccResult;
 use super::summary::{
     DbEffect, FieldList, PRoutineSummaryCore, RecordRoleSummary, RoutineSummary, SummaryChangeKey,
@@ -1143,6 +1144,21 @@ pub fn compute_summaries_v2_with_leaves_core(
         .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
         .collect();
 
+    // Task A1: intern every workspace routine id once, up front, in the
+    // CANONICAL `stable_routine_id`-sorted order (spec rev4) — so ascending
+    // `RoutineIx` is stable across repeated builds of the SAME workspace, not
+    // merely self-consistent within one run. Covers every routine (leaf AND
+    // non-leaf) — the db-effect solver's per-member maps
+    // (`SccPresence::by_member`, the via map, `PdState`,
+    // `solve_side_facts`'s per-member maps) only ever key by a member of some
+    // effective SCC, and every such member is guaranteed present here (it
+    // came from `routines_by_id`, built from this SAME `routines` slice).
+    let routine_interner = RoutineInterner::build_canonical(
+        routines
+            .iter()
+            .map(|r| (r.id.as_str(), r.stable_routine_id.as_str())),
+    );
+
     let mut uncertainty_edges_by_from: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, ue) in graph.uncertainty_edges.iter().enumerate() {
         uncertainty_edges_by_from
@@ -1247,6 +1263,7 @@ pub fn compute_summaries_v2_with_leaves_core(
             &mut universe,
             &is_recomputed,
             &rvid_by_opid,
+            &routine_interner,
         );
         db_us += _db_t.elapsed().as_micros();
 

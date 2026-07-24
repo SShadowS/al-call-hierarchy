@@ -42,6 +42,11 @@ pub struct EffectIdentity {
 pub struct EffectUniverse {
     by_identity: HashMap<EffectIdentity, EffectId>,
     by_id: Vec<EffectIdentity>,
+    /// Cached `effect_key` per id, parallel to `by_id` — computed ONCE, at
+    /// `intern()` time, never recomputed per lookup/comparison. Task A1: the
+    /// fix for `materialize_member_db_effects`'s old `format!`-per-comparison
+    /// sort key (the dominant cost the arc's motivation measures).
+    keys: Vec<String>,
 }
 
 impl Default for EffectUniverse {
@@ -55,6 +60,7 @@ impl EffectUniverse {
         EffectUniverse {
             by_identity: HashMap::new(),
             by_id: Vec::new(),
+            keys: Vec::new(),
         }
     }
 
@@ -66,8 +72,15 @@ impl EffectUniverse {
             return id;
         }
         let id = EffectId(self.by_id.len() as u32);
+        let key = effect_key_of(
+            &identity.op,
+            &identity.table_id,
+            &identity.operation_id,
+            &identity.temp,
+        );
         self.by_id.push(identity.clone());
         self.by_identity.insert(identity.clone(), id);
+        self.keys.push(key);
         id
     }
 
@@ -102,15 +115,18 @@ impl EffectUniverse {
         ids.sort_by(|&a, &b| {
             let ia = self.identity(a);
             let ib = self.identity(b);
-            self.effect_key(a)
-                .cmp(&self.effect_key(b))
+            self.effect_key_cached(a)
+                .cmp(self.effect_key_cached(b))
                 .then_with(|| ia.operation_id.cmp(&ib.operation_id))
         });
         ids
     }
 
-    /// The full `effect_key` string for an id — lazy, computed only when
-    /// needed for materialization/projection/sorting (never stored per-id).
+    /// The full `effect_key` string for an id — allocating, recomputed on
+    /// every call. Kept as the reference implementation for compat / as a
+    /// cross-check oracle against [`Self::effect_key_cached`] (see this
+    /// module's `effect_key_cached_matches_effect_key` test); production
+    /// hot paths (materialization sort) use the cached form instead.
     pub fn effect_key(&self, id: EffectId) -> String {
         let identity = self.identity(id);
         effect_key_of(
@@ -119,6 +135,14 @@ impl EffectUniverse {
             &identity.operation_id,
             &identity.temp,
         )
+    }
+
+    /// The cached `effect_key` for an id — computed once, at `intern()` time
+    /// (see the `keys` field), never recomputed per lookup/comparison. `&str`
+    /// compares, zero allocation — the fix for `materialize_member_db_effects`'s
+    /// old `format!`-per-comparison sort key.
+    pub fn effect_key_cached(&self, id: EffectId) -> &str {
+        &self.keys[id.0 as usize]
     }
 }
 
@@ -152,6 +176,32 @@ mod tests {
         let mut expected = keys.clone();
         expected.sort();
         assert_eq!(keys, expected, "sorted_order yields effect_key ascending");
+    }
+
+    #[test]
+    fn effect_key_cached_matches_effect_key() {
+        // `effect_key_cached` (computed once at `intern()` time, stored in a
+        // parallel `Vec<String>`) must return the SAME string as the
+        // allocating `effect_key()` reference implementation, for a sample
+        // of several interned identities — the correctness net for the
+        // materialization-sort caching fix (Task A1).
+        let mut u = EffectUniverse::new();
+        let a = EffectIdentity {
+            op: "Insert".into(),
+            table_id: "t2".into(),
+            operation_id: "op9".into(),
+            temp: TempStateKind::Known(true),
+        };
+        let b = EffectIdentity {
+            op: "Modify".into(),
+            table_id: "t1".into(),
+            operation_id: "op1".into(),
+            temp: TempStateKind::Unknown,
+        };
+        let ia = u.intern(&a);
+        let ib = u.intern(&b);
+        assert_eq!(u.effect_key_cached(ia), u.effect_key(ia));
+        assert_eq!(u.effect_key_cached(ib), u.effect_key(ib));
     }
 
     #[test]

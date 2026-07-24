@@ -24,6 +24,7 @@ use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
 use crate::engine::l4::effect_lattice::{TempStateKind, merge_via, via_for_edge_kind};
 use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
+use crate::engine::l4::routine_interner::{RoutineInterner, RoutineIx};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{
     DbEffect, RoutineSummary, TempState, Uncertainty, dedupe_uncertainties, uncertainty_key,
@@ -129,38 +130,44 @@ pub struct PdFact {
 
 /// One product-graph state: `(routine, base identity, param_index)` — a
 /// `PdFact` pre-materialization. Plain tuple internally so the worklist/visited
-/// set never allocates a `PdFact` just to check membership.
-type PdState = (String, (String, String, String), u32);
+/// set never allocates a `PdFact` just to check membership. Task A1: `routine`
+/// is a [`RoutineIx`] (a `Copy` `u32`), not a `String` — every member of an
+/// effective SCC is already interned (see [`RoutineInterner::build_canonical`]),
+/// so this worklist never hashes/clones a routine id string mid-solve.
+/// `PdFact`/`TerminalEmission` (the OUTPUT of this module) stay `String`-keyed —
+/// only the internal solve state changes representation.
+type PdState = (RoutineIx, (String, String, String), u32);
 
 /// Apply one `substitute_pd_temp_state` outcome to the worklist: a
 /// `ParameterDependent(j)` result inserts (and, if unseen, enqueues) a new
 /// state at `at_routine`; a `Known`/`Unknown` result emits a [`TerminalEmission`]
 /// and stops (terminal states transfer by identity thereafter — Task 5).
 fn apply_pd_transition(
-    at_routine: &str,
+    at_routine: RoutineIx,
     base: &(String, String, String),
     outcome: TempState,
+    interner: &RoutineInterner,
     visited: &mut HashSet<PdState>,
     worklist: &mut VecDeque<PdState>,
     terminals: &mut HashSet<TerminalEmission>,
 ) {
     match outcome {
         TempState::ParameterDependent(j) => {
-            let state: PdState = (at_routine.to_string(), base.clone(), j);
+            let state: PdState = (at_routine, base.clone(), j);
             if visited.insert(state.clone()) {
                 worklist.push_back(state);
             }
         }
         TempState::Known(v) => {
             terminals.insert(TerminalEmission {
-                routine_id: at_routine.to_string(),
+                routine_id: interner.name(at_routine).to_string(),
                 base: base.clone(),
                 temp: TempStateKind::Known(v),
             });
         }
         TempState::Unknown => {
             terminals.insert(TerminalEmission {
-                routine_id: at_routine.to_string(),
+                routine_id: interner.name(at_routine).to_string(),
                 base: base.clone(),
                 temp: TempStateKind::Unknown,
             });
@@ -210,6 +217,7 @@ pub fn solve_pd_reachability(
     routines_by_id: &HashMap<String, &L3Routine>,
     settled: &HashMap<String, RoutineSummary>,
     _upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    interner: &RoutineInterner,
 ) -> (Vec<PdFact>, Vec<TerminalEmission>) {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
 
@@ -219,6 +227,9 @@ pub fn solve_pd_reachability(
     // (caller, w) pair (distinct callsites) are each kept independently — they
     // can carry different bindings and so substitute differently (the
     // multi-callsite-same-callee shape `compose_routine` already handles).
+    // Stays keyed by `&str` (the graph's own id shape) — `w` is converted via
+    // `interner.name(w)` at the ONE lookup site below (the worklist pop),
+    // rather than rebuilding this whole index as `RoutineIx`-keyed.
     let mut callers_by_callee: HashMap<&str, Vec<(&str, &CombinedEdge)>> = HashMap::new();
     for v in &eff.members {
         for e in graph.edges_by_from.get(v).into_iter().flatten() {
@@ -245,11 +256,14 @@ pub fn solve_pd_reachability(
         let Some(routine) = routines_by_id.get(m) else {
             continue; // effective_sccs already excludes missing members; defensive only.
         };
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
         let base = base_intraprocedural_summary(routine, routines_by_id, &empty_fields);
         for e in &base.db_effects {
             if let TempState::ParameterDependent(i) = &e.temp_state {
                 let base_id = (e.op.clone(), e.table_id.clone(), e.operation_id.clone());
-                let state: PdState = (m.clone(), base_id, *i);
+                let state: PdState = (m_ix, base_id, *i);
                 if visited.insert(state.clone()) {
                     worklist.push_back(state);
                 }
@@ -263,6 +277,9 @@ pub fn solve_pd_reachability(
         let Some(caller_routine) = routines_by_id.get(m) else {
             continue;
         };
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
         for e in graph.edges_by_from.get(m).into_iter().flatten() {
             if member_set.contains(e.to.as_str()) {
                 continue; // intra-effective-SCC; handled by the worklist below.
@@ -279,9 +296,10 @@ pub fn solve_pd_reachability(
                     );
                     let outcome = substitute_pd_temp_state(e, *j, caller_routine);
                     apply_pd_transition(
-                        m,
+                        m_ix,
                         &base_id,
                         outcome,
+                        interner,
                         &mut visited,
                         &mut worklist,
                         &mut terminals,
@@ -295,16 +313,20 @@ pub fn solve_pd_reachability(
     // SCC caller edge INTO its routine, substitute through the CALLER's own
     // binding for the callee param this state's index refers to.
     while let Some((w, base_id, idx)) = worklist.pop_front() {
-        if let Some(callers) = callers_by_callee.get(w.as_str()) {
+        if let Some(callers) = callers_by_callee.get(interner.name(w)) {
             for (v, edge) in callers {
                 let Some(caller_routine) = routines_by_id.get(*v) else {
                     continue;
                 };
+                let v_ix = interner
+                    .get(v)
+                    .expect("every effective-SCC member is interned at workspace setup");
                 let outcome = substitute_pd_temp_state(edge, idx, caller_routine);
                 apply_pd_transition(
-                    v,
+                    v_ix,
                     &base_id,
                     outcome,
+                    interner,
                     &mut visited,
                     &mut worklist,
                     &mut terminals,
@@ -318,8 +340,8 @@ pub fn solve_pd_reachability(
     // the requested sort key, so a plain `.sort()` suffices.
     let mut pd_facts: Vec<PdFact> = visited
         .into_iter()
-        .map(|(routine_id, base, param_index)| PdFact {
-            routine_id,
+        .map(|(routine_ix, base, param_index)| PdFact {
+            routine_id: interner.name(routine_ix).to_string(),
             base,
             param_index,
         })
@@ -370,8 +392,12 @@ pub(crate) fn has_bit(bits: &[u64], id: EffectId) -> bool {
 
 /// Per-member db-effect PRESENCE sets for one effective SCC — a bitset over
 /// the shared [`EffectUniverse`], indexed by [`EffectId`]`.0` (see [`set_bit`]).
+/// Task A1: keyed by [`RoutineIx`] rather than the member's raw `String` id —
+/// kills the per-member `String`-hashing this bitset's own construction and
+/// every later reader (`reconstruct_via`, `attribute_pd_substituted_via`,
+/// `solve_scc_db_effects`) used to pay.
 pub struct SccPresence {
-    pub by_member: HashMap<String, Vec<u64>>,
+    pub by_member: HashMap<RoutineIx, Vec<u64>>,
 }
 
 /// Intern a TERMINAL (`Known`/`Unknown` only) [`DbEffect`](crate::engine::l4::summary::DbEffect)
@@ -447,6 +473,7 @@ pub fn closed_form_union(
     pd_facts: &[PdFact],
     terminal_emissions: &[TerminalEmission],
     universe: &mut EffectUniverse,
+    interner: &RoutineInterner,
 ) -> SccPresence {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
     let empty_fields = FieldIndex::new();
@@ -516,8 +543,11 @@ pub fn closed_form_union(
     }
 
     // effects[v] = C ∪ member-v's own retained PD facts (NOT shared).
-    let mut by_member: HashMap<String, Vec<u64>> = HashMap::with_capacity(eff.members.len());
+    let mut by_member: HashMap<RoutineIx, Vec<u64>> = HashMap::with_capacity(eff.members.len());
     for m in &eff.members {
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
         let mut bits = c.clone();
         for f in pd_facts.iter().filter(|f| &f.routine_id == m) {
             let identity = EffectIdentity {
@@ -529,7 +559,7 @@ pub fn closed_form_union(
             let id = universe.intern(&identity);
             set_bit(&mut bits, id);
         }
-        by_member.insert(m.clone(), bits);
+        by_member.insert(m_ix, bits);
     }
 
     SccPresence { by_member }
@@ -572,8 +602,8 @@ fn is_canonical_via(via: &str) -> bool {
 /// doc comments), so this can only ever fire if a FUTURE caller misuses this
 /// helper directly.
 fn merge_via_into(
-    via_map: &mut HashMap<(String, EffectId), String>,
-    member: &str,
+    via_map: &mut HashMap<(RoutineIx, EffectId), String>,
+    member: RoutineIx,
     id: EffectId,
     via: &str,
 ) {
@@ -582,7 +612,7 @@ fn merge_via_into(
         "reconstruct_via: non-canonical via string {via:?} — refusing to let \
          it compete in the max-rank merge (must be one of {CANONICAL_VIAS:?})"
     );
-    let key = (member.to_string(), id);
+    let key = (member, id);
     let merged = match via_map.get(&key) {
         Some(existing) => merge_via(existing.as_str(), via).to_string(),
         None => via.to_string(),
@@ -662,15 +692,19 @@ pub fn reconstruct_via(
     base_summaries: &HashMap<String, RoutineSummary>,
     settled: &HashMap<String, RoutineSummary>,
     universe: &EffectUniverse,
-) -> HashMap<(String, EffectId), String> {
+    interner: &RoutineInterner,
+) -> HashMap<(RoutineIx, EffectId), String> {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
-    let mut via_map: HashMap<(String, EffectId), String> = HashMap::new();
+    let mut via_map: HashMap<(RoutineIx, EffectId), String> = HashMap::new();
 
     // Init: base effects seed "direct" for every present EffectId that is
     // one of the member's OWN base db_effects (terminal or PD — both always
     // carry via="direct"; base_intraprocedural_summary, summary_runner.rs:162).
     for m in &eff.members {
-        let Some(bits) = presence.by_member.get(m) else {
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
+        let Some(bits) = presence.by_member.get(&m_ix) else {
             continue; // no presence recorded for this member; nothing to seed.
         };
         let Some(base) = base_summaries.get(m) else {
@@ -691,7 +725,7 @@ pub fn reconstruct_via(
             if let Some(id) = universe.get(&identity)
                 && has_bit(bits, id)
             {
-                merge_via_into(&mut via_map, m, id, "direct");
+                merge_via_into(&mut via_map, m_ix, id, "direct");
             }
         }
     }
@@ -702,13 +736,19 @@ pub fn reconstruct_via(
     // the "DEFERRED" doc section above for why PD-typed callee facts are
     // skipped here).
     for m in &eff.members {
-        let Some(m_bits) = presence.by_member.get(m) else {
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
+        let Some(m_bits) = presence.by_member.get(&m_ix) else {
             continue;
         };
         for edge in graph.edges_by_from.get(m).into_iter().flatten() {
             let via = via_for_edge_kind(&edge.kind);
             if member_set.contains(edge.to.as_str()) {
-                let Some(callee_bits) = presence.by_member.get(&edge.to) else {
+                let to_ix = interner
+                    .get(&edge.to)
+                    .expect("every intra-effective-SCC callee is interned at workspace setup");
+                let Some(callee_bits) = presence.by_member.get(&to_ix) else {
                     continue;
                 };
                 for id in iter_set_bits(callee_bits) {
@@ -719,7 +759,7 @@ pub fn reconstruct_via(
                         continue; // PD-typed: deferred, see doc above.
                     }
                     if has_bit(m_bits, id) {
-                        merge_via_into(&mut via_map, m, id, via);
+                        merge_via_into(&mut via_map, m_ix, id, via);
                     }
                 }
             } else if let Some(callee_summary) = settled.get(&edge.to) {
@@ -736,7 +776,7 @@ pub fn reconstruct_via(
                     if let Some(id) = universe.get(&identity)
                         && has_bit(m_bits, id)
                     {
-                        merge_via_into(&mut via_map, m, id, via);
+                        merge_via_into(&mut via_map, m_ix, id, via);
                     }
                 }
             }
@@ -782,8 +822,8 @@ fn is_callsite_local_kind(kind: &str) -> bool {
 /// sorted by [`uncertainty_key`], via [`dedupe_uncertainties`]) and
 /// `has_unresolved_calls`.
 pub struct SideFacts {
-    pub uncertainties: HashMap<String, Vec<Uncertainty>>,
-    pub has_unresolved: HashMap<String, bool>,
+    pub uncertainties: HashMap<RoutineIx, Vec<Uncertainty>>,
+    pub has_unresolved: HashMap<RoutineIx, bool>,
 }
 
 /// Solve BOTH side-facts for one effective SCC (`eff`) in a single closed-form
@@ -836,6 +876,7 @@ pub struct SideFacts {
 /// LAST so it wins any same-key tie against `shared_uncertainties` (last
 /// write wins — [`dedupe_uncertainties`]'s own semantics), keeping a
 /// member's OWN payload authoritative for a key it itself produced.
+#[allow(clippy::too_many_arguments)]
 pub fn solve_side_facts(
     eff: &Scc,
     graph: &CombinedGraph,
@@ -844,6 +885,7 @@ pub fn solve_side_facts(
     base_summaries: &HashMap<String, RoutineSummary>,
     uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
     body_avail_by_id: &HashMap<String, bool>,
+    interner: &RoutineInterner,
 ) -> SideFacts {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
     let empty_fields = FieldIndex::new();
@@ -865,8 +907,9 @@ pub fn solve_side_facts(
 
     // Per-member entries PRODUCED AT that member (base + its own opaque-callee
     // + its own uncertainty-edge entries, regardless of kind) — `produced_at(m)`
-    // in the doc above.
-    let mut own_by_member: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+    // in the doc above. Task A1: keyed by `RoutineIx`, killing the per-member
+    // `m.clone()` String allocation this map used to pay on every insert.
+    let mut own_by_member: HashMap<RoutineIx, Vec<Uncertainty>> = HashMap::new();
     // The SCC-wide shared union of the PROPAGATABLE (non-callsite-local) part
     // — `shared_uncertainties` in the doc above — keyed by `uncertainty_key`
     // so a legitimate duplicate (the same source reached via two different
@@ -968,17 +1011,23 @@ pub fn solve_side_facts(
         if local_hu {
             shared_has_unresolved = true;
         }
-        own_by_member.insert(m.clone(), own);
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
+        own_by_member.insert(m_ix, own);
     }
 
     let shared_vec: Vec<Uncertainty> = shared.into_values().collect();
-    let mut uncertainties: HashMap<String, Vec<Uncertainty>> = HashMap::new();
-    let mut has_unresolved: HashMap<String, bool> = HashMap::new();
+    let mut uncertainties: HashMap<RoutineIx, Vec<Uncertainty>> = HashMap::new();
+    let mut has_unresolved: HashMap<RoutineIx, bool> = HashMap::new();
     for m in &eff.members {
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
         let mut all = shared_vec.clone();
-        all.extend(own_by_member.remove(m).unwrap_or_default());
-        uncertainties.insert(m.clone(), dedupe_uncertainties(all));
-        has_unresolved.insert(m.clone(), shared_has_unresolved);
+        all.extend(own_by_member.remove(&m_ix).unwrap_or_default());
+        uncertainties.insert(m_ix, dedupe_uncertainties(all));
+        has_unresolved.insert(m_ix, shared_has_unresolved);
     }
 
     SideFacts {
@@ -1080,12 +1129,16 @@ fn attribute_pd_substituted_via(
     settled: &HashMap<String, RoutineSummary>,
     routines_by_id: &HashMap<String, &L3Routine>,
     universe: &EffectUniverse,
-    via_map: &mut HashMap<(String, EffectId), String>,
+    interner: &RoutineInterner,
+    via_map: &mut HashMap<(RoutineIx, EffectId), String>,
 ) {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
 
     for m in &eff.members {
-        let Some(m_bits) = presence.by_member.get(m) else {
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
+        let Some(m_bits) = presence.by_member.get(&m_ix) else {
             continue;
         };
         let Some(caller_routine) = routines_by_id.get(m.as_str()) else {
@@ -1100,7 +1153,10 @@ fn attribute_pd_substituted_via(
             // materialized `db_effects`.
             let mut callee_pd: Vec<(String, String, String, u32)> = Vec::new();
             if member_set.contains(edge.to.as_str()) {
-                if let Some(callee_bits) = presence.by_member.get(&edge.to) {
+                let to_ix = interner
+                    .get(&edge.to)
+                    .expect("every intra-effective-SCC callee is interned at workspace setup");
+                if let Some(callee_bits) = presence.by_member.get(&to_ix) {
                     for cid in iter_set_bits(callee_bits) {
                         let identity = universe.identity(cid);
                         if let TempStateKind::ParameterDependent(i) = &identity.temp {
@@ -1142,7 +1198,7 @@ fn attribute_pd_substituted_via(
                 if let Some(pid) = universe.get(&produced)
                     && has_bit(m_bits, pid)
                 {
-                    merge_via_into(via_map, m, pid, via);
+                    merge_via_into(via_map, m_ix, pid, via);
                 }
             }
         }
@@ -1155,10 +1211,17 @@ fn attribute_pd_substituted_via(
 /// (base-`direct` / terminal-inherited from [`reconstruct_via`], PD-substituted
 /// from [`attribute_pd_substituted_via`]); `record_variable_id` from
 /// `rvid_by_opid`; `temp_state` decoded from the interned identity.
+///
+/// Task A1: the sort key is the universe's CACHED `effect_key` (`&str`
+/// compares, zero allocation — [`EffectUniverse::effect_key_cached`]), not a
+/// `format!`-per-comparison; `via_map` is keyed by [`RoutineIx`], so the
+/// per-effect lookup below is a `u32` copy, never a `member.to_string()`
+/// allocation. This is the fix for the arc's measured 517s/~40GB
+/// materialization cost — no other change in this function alters output.
 fn materialize_member_db_effects(
-    member: &str,
+    member_ix: RoutineIx,
     bits: &[u64],
-    via_map: &HashMap<(String, EffectId), String>,
+    via_map: &HashMap<(RoutineIx, EffectId), String>,
     universe: &EffectUniverse,
     rvid_by_opid: &HashMap<String, Option<String>>,
 ) -> Vec<DbEffect> {
@@ -1169,8 +1232,8 @@ fn materialize_member_db_effects(
     let mut present: Vec<EffectId> = iter_set_bits(bits).collect();
     present.sort_by(|&a, &b| {
         universe
-            .effect_key(a)
-            .cmp(&universe.effect_key(b))
+            .effect_key_cached(a)
+            .cmp(universe.effect_key_cached(b))
             .then_with(|| {
                 universe
                     .identity(a)
@@ -1182,14 +1245,14 @@ fn materialize_member_db_effects(
     let mut out: Vec<DbEffect> = Vec::with_capacity(present.len());
     for id in present {
         let identity = universe.identity(id);
-        let effect_key = universe.effect_key(id);
+        let effect_key = universe.effect_key_cached(id).to_string();
         // Every present effect is attributed by reconstruct_via +
         // attribute_pd_substituted_via (base direct, terminal-inherited, or
         // PD-substituted). The `"inherited"` fallback (rank 0, the old fold's
         // own default `via_for_edge_kind` value) is a defensive floor only —
         // the differential matrix would surface any genuinely-missing via.
         let via = via_map
-            .get(&(member.to_string(), id))
+            .get(&(member_ix, id))
             .cloned()
             .unwrap_or_else(|| "inherited".to_string());
         let record_variable_id = rvid_by_opid.get(&identity.operation_id).cloned().flatten();
@@ -1222,10 +1285,17 @@ fn solve_one_effective_scc(
     body_avail_by_id: &HashMap<String, bool>,
     universe: &mut EffectUniverse,
     rvid_by_opid: &HashMap<String, Option<String>>,
+    interner: &RoutineInterner,
 ) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
     // Step A: PD substitution as reachability.
-    let (pd_facts, terminal_emissions) =
-        solve_pd_reachability(eff, graph, routines_by_id, settled, upgraded_bindings);
+    let (pd_facts, terminal_emissions) = solve_pd_reachability(
+        eff,
+        graph,
+        routines_by_id,
+        settled,
+        upgraded_bindings,
+        interner,
+    );
 
     // Steps B/C: closed-form terminal union + per-member presence.
     let presence = closed_form_union(
@@ -1237,11 +1307,20 @@ fn solve_one_effective_scc(
         &pd_facts,
         &terminal_emissions,
         universe,
+        interner,
     );
 
     // Step D: via reconstruction (base + terminal-inherited) then the
     // PD-substituted via attribution reconstruct_via defers to Task 8 (carry 2).
-    let mut via_map = reconstruct_via(eff, graph, &presence, base_summaries, settled, universe);
+    let mut via_map = reconstruct_via(
+        eff,
+        graph,
+        &presence,
+        base_summaries,
+        settled,
+        universe,
+        interner,
+    );
     attribute_pd_substituted_via(
         eff,
         graph,
@@ -1249,6 +1328,7 @@ fn solve_one_effective_scc(
         settled,
         routines_by_id,
         universe,
+        interner,
         &mut via_map,
     );
 
@@ -1261,16 +1341,22 @@ fn solve_one_effective_scc(
         base_summaries,
         uncertainty_edges_by_from,
         body_avail_by_id,
+        interner,
     );
 
     let mut out: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
     for m in &eff.members {
-        let db_effects = match presence.by_member.get(m) {
-            Some(bits) => materialize_member_db_effects(m, bits, &via_map, universe, rvid_by_opid),
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
+        let db_effects = match presence.by_member.get(&m_ix) {
+            Some(bits) => {
+                materialize_member_db_effects(m_ix, bits, &via_map, universe, rvid_by_opid)
+            }
             None => Vec::new(),
         };
-        let uncertainties = side.uncertainties.get(m).cloned().unwrap_or_default();
-        let has_unresolved = side.has_unresolved.get(m).copied().unwrap_or(false);
+        let uncertainties = side.uncertainties.get(&m_ix).cloned().unwrap_or_default();
+        let has_unresolved = side.has_unresolved.get(&m_ix).copied().unwrap_or(false);
         out.insert(m.clone(), (db_effects, uncertainties, has_unresolved));
     }
     out
@@ -1322,6 +1408,7 @@ pub fn solve_scc_db_effects(
     universe: &mut EffectUniverse,
     is_recomputed: &dyn Fn(&str) -> bool,
     rvid_by_opid: &HashMap<String, Option<String>>,
+    interner: &RoutineInterner,
 ) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
     let eff_sccs = effective_sccs(scc_entry, graph, is_recomputed);
     let mut results: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
@@ -1342,6 +1429,7 @@ pub fn solve_scc_db_effects(
             body_avail_by_id,
             universe,
             rvid_by_opid,
+            interner,
         );
         results.extend(solved);
         return results;
@@ -1361,6 +1449,7 @@ pub fn solve_scc_db_effects(
             body_avail_by_id,
             universe,
             rvid_by_opid,
+            interner,
         );
         for (id, (db_effects, uncertainties, has_unresolved)) in &solved {
             // Feed-forward summary: only db_effects/uncertainties/
@@ -1668,6 +1757,17 @@ mod tests {
         routines.iter().map(|r| (r.id.clone(), r)).collect()
     }
 
+    /// A `RoutineInterner` covering every fixture routine, built the SAME way
+    /// `compute_summaries_v2_with_leaves_core` builds the workspace-wide one
+    /// (canonical `stable_routine_id` order — Task A1).
+    fn pd_interner(routines: &[L3Routine]) -> RoutineInterner {
+        RoutineInterner::build_canonical(
+            routines
+                .iter()
+                .map(|r| (r.id.as_str(), r.stable_routine_id.as_str())),
+        )
+    }
+
     /// Workspace-wide `body_available` map, as
     /// `compute_summaries_v2_with_leaves_core` builds it once for the whole
     /// run and threads down to [`solve_side_facts`] — see that fn's doc for
@@ -1704,6 +1804,7 @@ mod tests {
 
         let routines = vec![a, b, c];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(
             &["a", "b", "c"],
             vec![pd_edge("b", "c", "b_cs1"), pd_edge("a", "b", "a_cs1")],
@@ -1715,7 +1816,8 @@ mod tests {
         let settled: HashMap<String, RoutineSummary> = HashMap::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
-        let (pd_facts, terminals) = solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub);
+        let (pd_facts, terminals) =
+            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
 
         let base = ("Insert".to_string(), "t1".to_string(), "c_op1".to_string());
         let expected_facts: HashSet<PdFact> = [
@@ -1766,6 +1868,7 @@ mod tests {
 
         let routines = vec![callee, caller];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(
             &["callee", "caller"],
             vec![pd_edge("caller", "callee", "caller_cs1")],
@@ -1777,7 +1880,8 @@ mod tests {
         let settled: HashMap<String, RoutineSummary> = HashMap::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
-        let (pd_facts, terminals) = solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub);
+        let (pd_facts, terminals) =
+            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
 
         let base = (
             "Insert".to_string(),
@@ -1828,6 +1932,7 @@ mod tests {
 
         let routines = vec![callee, caller];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(
             &["callee", "caller"],
             vec![pd_edge("caller", "callee", "caller_cs1")],
@@ -1839,7 +1944,8 @@ mod tests {
         let settled: HashMap<String, RoutineSummary> = HashMap::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
-        let (pd_facts, terminals) = solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub);
+        let (pd_facts, terminals) =
+            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
 
         let base = (
             "Insert".to_string(),
@@ -1887,6 +1993,7 @@ mod tests {
 
         let routines = vec![a];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_ext_cs")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -1926,7 +2033,8 @@ mod tests {
         );
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
-        let (pd_facts, terminals) = solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub);
+        let (pd_facts, terminals) =
+            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
 
         let expected_facts: HashSet<PdFact> = [PdFact {
             routine_id: "a".to_string(),
@@ -1963,6 +2071,7 @@ mod tests {
 
         let routines = vec![a];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a"], vec![pd_edge("a", "a", "a_cs1")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -1971,7 +2080,8 @@ mod tests {
         let settled: HashMap<String, RoutineSummary> = HashMap::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
-        let (pd_facts, terminals) = solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub);
+        let (pd_facts, terminals) =
+            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
 
         let base = ("Insert".to_string(), "t1".to_string(), "a_op1".to_string());
         let expected_facts: HashSet<PdFact> = [PdFact {
@@ -2053,6 +2163,7 @@ mod tests {
 
         let routines = vec![pd_routine("a"), pd_routine("b")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(
             &["a", "b"],
             vec![pd_edge("a", "b", "a_cs1"), pd_edge("b", "a", "b_cs1")],
@@ -2079,6 +2190,7 @@ mod tests {
             &pd_facts,
             &terminal_emissions,
             &mut universe,
+            &interner,
         );
 
         let e1 = universe.intern(&EffectIdentity {
@@ -2100,8 +2212,14 @@ mod tests {
             temp: TempStateKind::ParameterDependent(0),
         });
 
-        let a_bits = presence.by_member.get("a").expect("a present");
-        let b_bits = presence.by_member.get("b").expect("b present");
+        let a_bits = presence
+            .by_member
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
+        let b_bits = presence
+            .by_member
+            .get(&interner.get("b").unwrap())
+            .expect("b present");
 
         assert!(has_bit(a_bits, e1), "a must carry e1 (own base)");
         assert!(has_bit(a_bits, e2), "a must carry e2 (shared SCC closure)");
@@ -2159,6 +2277,7 @@ mod tests {
 
         let routines = vec![pd_routine("a")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -2178,6 +2297,7 @@ mod tests {
             &pd_facts,
             &terminal_emissions,
             &mut universe,
+            &interner,
         );
 
         let known_id = universe.intern(&EffectIdentity {
@@ -2186,7 +2306,10 @@ mod tests {
             operation_id: "ext_op1".to_string(),
             temp: TempStateKind::Known(true),
         });
-        let a_bits = presence.by_member.get("a").expect("a present");
+        let a_bits = presence
+            .by_member
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
         assert!(
             has_bit(a_bits, known_id),
             "a must carry ext's settled terminal effect"
@@ -2250,6 +2373,7 @@ mod tests {
 
         let routines = vec![pd_routine("a")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a"], Vec::new());
         let eff = Scc {
             members: vec!["a".into()],
@@ -2269,6 +2393,7 @@ mod tests {
             &pd_facts,
             &terminal_emissions,
             &mut universe,
+            &interner,
         );
 
         let known_id = universe.intern(&EffectIdentity {
@@ -2277,7 +2402,10 @@ mod tests {
             operation_id: "a_op1".to_string(),
             temp: TempStateKind::Known(true),
         });
-        let a_bits = presence.by_member.get("a").expect("a present");
+        let a_bits = presence
+            .by_member
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
         assert!(
             has_bit(a_bits, known_id),
             "a must carry its own Known effect"
@@ -2307,6 +2435,7 @@ mod tests {
         // scope (no base effect, no settled-successor effect).
         let routines = vec![pd_routine("a"), pd_routine("b")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(
             &["a", "b"],
             vec![pd_edge("a", "b", "a_cs1"), pd_edge("b", "a", "b_cs1")],
@@ -2334,6 +2463,7 @@ mod tests {
             &pd_facts,
             &terminal_emissions,
             &mut universe,
+            &interner,
         );
 
         let emitted_id = universe.intern(&EffectIdentity {
@@ -2343,8 +2473,14 @@ mod tests {
             temp: TempStateKind::Known(true),
         });
 
-        let a_bits = presence.by_member.get("a").expect("a present");
-        let b_bits = presence.by_member.get("b").expect("b present");
+        let a_bits = presence
+            .by_member
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
+        let b_bits = presence
+            .by_member
+            .get(&interner.get("b").unwrap())
+            .expect("b present");
         assert!(
             has_bit(a_bits, emitted_id),
             "terminal emission must land on the member it was recorded against"
@@ -2407,6 +2543,7 @@ mod tests {
 
         let routines = vec![pd_routine("a")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a"], vec![kind_edge("a", "a", "event-dispatch")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -2426,6 +2563,7 @@ mod tests {
             &pd_facts,
             &terminal_emissions,
             &mut universe,
+            &interner,
         );
 
         let via_map = reconstruct_via(
@@ -2435,6 +2573,7 @@ mod tests {
             &base_summaries,
             &settled,
             &universe,
+            &interner,
         );
 
         let x_id = universe
@@ -2447,7 +2586,9 @@ mod tests {
             .expect("X must already be interned by closed_form_union");
 
         assert_eq!(
-            via_map.get(&("a".to_string(), x_id)).map(String::as_str),
+            via_map
+                .get(&(interner.get("a").unwrap(), x_id))
+                .map(String::as_str),
             Some("direct"),
             "a base-owned effect must win over a colliding event-dispatch self-loop"
         );
@@ -2496,6 +2637,7 @@ mod tests {
 
         let routines = vec![pd_routine("a"), pd_routine("b")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(
             &["a", "b"],
             vec![
@@ -2521,6 +2663,7 @@ mod tests {
             &pd_facts,
             &terminal_emissions,
             &mut universe,
+            &interner,
         );
 
         let via_map = reconstruct_via(
@@ -2530,6 +2673,7 @@ mod tests {
             &base_summaries,
             &settled,
             &universe,
+            &interner,
         );
 
         let x_id = universe
@@ -2542,12 +2686,16 @@ mod tests {
             .expect("X must already be interned by closed_form_union");
 
         assert_eq!(
-            via_map.get(&("a".to_string(), x_id)).map(String::as_str),
+            via_map
+                .get(&(interner.get("a").unwrap(), x_id))
+                .map(String::as_str),
             Some("direct"),
             "a owns X in its own base"
         );
         assert_eq!(
-            via_map.get(&("b".to_string(), x_id)).map(String::as_str),
+            via_map
+                .get(&(interner.get("b").unwrap(), x_id))
+                .map(String::as_str),
             Some("event-subscriber"),
             "b only inherits X via the b->a event-dispatch edge, never direct"
         );
@@ -2561,8 +2709,53 @@ mod tests {
         // tie-break keeps its FIRST argument, so an unchecked bogus value
         // passed through would otherwise win outright. merge_via_into must
         // refuse it before it ever gets to compete.
-        let mut via_map: HashMap<(String, EffectId), String> = HashMap::new();
-        merge_via_into(&mut via_map, "a", EffectId(0), "totally-bogus-via");
+        let mut via_map: HashMap<(RoutineIx, EffectId), String> = HashMap::new();
+        let mut interner = RoutineInterner::new();
+        let a_ix = interner.intern("a");
+        merge_via_into(&mut via_map, a_ix, EffectId(0), "totally-bogus-via");
+    }
+
+    /// Task A1: `materialize_member_db_effects` sorts a member's present ids
+    /// by the UNIVERSE's cached `effect_key` (+ `operation_id` tie-break),
+    /// keyed by `RoutineIx` rather than a `String` clone per lookup. Interns
+    /// the two identities in an order that DELIBERATELY does not match key
+    /// order (Zeta before Alpha — EffectId(0)=Zeta, EffectId(1)=Alpha) so a
+    /// correct sort must actually reorder rather than happening to agree
+    /// with intern order.
+    #[test]
+    fn materialize_member_db_effects_sorts_by_cached_key_via_routine_ix() {
+        let mut universe = EffectUniverse::new();
+        let zeta_id = universe.intern(&EffectIdentity {
+            op: "Zeta".to_string(),
+            table_id: "t1".to_string(),
+            operation_id: "op1".to_string(),
+            temp: TempStateKind::Known(true),
+        });
+        let alpha_id = universe.intern(&EffectIdentity {
+            op: "Alpha".to_string(),
+            table_id: "t1".to_string(),
+            operation_id: "op1".to_string(),
+            temp: TempStateKind::Known(true),
+        });
+
+        let mut bits: Vec<u64> = Vec::new();
+        set_bit(&mut bits, zeta_id);
+        set_bit(&mut bits, alpha_id);
+
+        let mut interner = RoutineInterner::new();
+        let m_ix: RoutineIx = interner.intern("m");
+
+        let mut via_map: HashMap<(RoutineIx, EffectId), String> = HashMap::new();
+        via_map.insert((m_ix, zeta_id), "direct".to_string());
+        via_map.insert((m_ix, alpha_id), "direct".to_string());
+
+        let rvid_by_opid: HashMap<String, Option<String>> = HashMap::new();
+
+        let out = materialize_member_db_effects(m_ix, &bits, &via_map, &universe, &rvid_by_opid);
+
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].op, "Alpha", "Alpha sorts before Zeta by effect_key");
+        assert_eq!(out[1].op, "Zeta");
     }
 
     // -----------------------------------------------------------------------
@@ -2618,6 +2811,7 @@ mod tests {
 
         let routines = vec![pd_routine("a"), pd_routine("ext")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -2635,9 +2829,13 @@ mod tests {
             &base_summaries,
             &uncertainty_edges_by_from,
             &body_avail_by_id,
+            &interner,
         );
 
-        let a_uncertainties = facts.uncertainties.get("a").expect("a present");
+        let a_uncertainties = facts
+            .uncertainties
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
         assert!(
             a_uncertainties.iter().any(|u| u.kind == "parse-incomplete"),
             "generic non-filtered kind must propagate: {a_uncertainties:?}"
@@ -2647,7 +2845,10 @@ mod tests {
             "callsite-local kind must be filtered from the inherited union: {a_uncertainties:?}"
         );
         assert_eq!(
-            facts.has_unresolved.get("a").copied(),
+            facts
+                .has_unresolved
+                .get(&interner.get("a").unwrap())
+                .copied(),
             Some(false),
             "no local/opaque/edge trigger fired; ext itself is not unresolved"
         );
@@ -2679,6 +2880,7 @@ mod tests {
 
         let routines = vec![pd_routine("a"), ext];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -2696,16 +2898,26 @@ mod tests {
             &base_summaries,
             &uncertainty_edges_by_from,
             &body_avail_by_id,
+            &interner,
         );
 
-        let a_uncertainties = facts.uncertainties.get("a").expect("a present");
+        let a_uncertainties = facts
+            .uncertainties
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
         assert!(
             a_uncertainties
                 .iter()
                 .any(|u| u.kind == "opaque-callee" && u.callsite_id.as_deref() == Some("a_cs1")),
             "expected an opaque-callee uncertainty keyed by the edge's callsite_id: {a_uncertainties:?}"
         );
-        assert_eq!(facts.has_unresolved.get("a").copied(), Some(true));
+        assert_eq!(
+            facts
+                .has_unresolved
+                .get(&interner.get("a").unwrap())
+                .copied(),
+            Some(true)
+        );
     }
 
     #[test]
@@ -2737,6 +2949,7 @@ mod tests {
 
         let routines = vec![pd_routine("a"), pd_routine("b"), pd_routine("ext")];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
         let mut graph = pd_graph(
             &["a", "b", "ext"],
             vec![
@@ -2772,10 +2985,17 @@ mod tests {
             &base_summaries,
             &uncertainty_edges_by_from,
             &body_avail_by_id,
+            &interner,
         );
 
-        let a_u = facts.uncertainties.get("a").expect("a present");
-        let b_u = facts.uncertainties.get("b").expect("b present");
+        let a_u = facts
+            .uncertainties
+            .get(&interner.get("a").unwrap())
+            .expect("a present");
+        let b_u = facts
+            .uncertainties
+            .get(&interner.get("b").unwrap())
+            .expect("b present");
 
         assert!(
             a_u.iter().any(|u| u.kind == "parse-incomplete"),
@@ -2800,8 +3020,20 @@ mod tests {
         // and that boolean is OR-shared across the whole strongly-connected
         // effective SCC, so `b` inherits `true` too even though `b` owns no
         // uncertainty-edge of its own.
-        assert_eq!(facts.has_unresolved.get("a").copied(), Some(true));
-        assert_eq!(facts.has_unresolved.get("b").copied(), Some(true));
+        assert_eq!(
+            facts
+                .has_unresolved
+                .get(&interner.get("a").unwrap())
+                .copied(),
+            Some(true)
+        );
+        assert_eq!(
+            facts
+                .has_unresolved
+                .get(&interner.get("b").unwrap())
+                .copied(),
+            Some(true)
+        );
     }
 
     #[test]
@@ -2823,6 +3055,7 @@ mod tests {
 
         let routines = vec![a, b, ext];
         let rbid = pd_routines_by_id(&routines);
+        let interner = pd_interner(&routines);
 
         let mut graph = pd_graph(
             &["a", "b", "ext"],
@@ -2901,19 +3134,21 @@ mod tests {
             &base_summaries,
             &uncertainty_edges_by_from,
             &body_avail_by_id,
+            &interner,
         );
 
         for m in ["a", "b"] {
             let old_summary = old_map
                 .get(m)
                 .unwrap_or_else(|| panic!("old solver missing {m}"));
+            let m_ix = interner.get(m).expect("routine present");
             assert_eq!(
-                facts.uncertainties.get(m).cloned().unwrap_or_default(),
+                facts.uncertainties.get(&m_ix).cloned().unwrap_or_default(),
                 old_summary.uncertainties,
                 "[{m}] uncertainties mismatch vs old compose_routine oracle"
             );
             assert_eq!(
-                facts.has_unresolved.get(m).copied(),
+                facts.has_unresolved.get(&m_ix).copied(),
                 Some(old_summary.has_unresolved_calls),
                 "[{m}] has_unresolved_calls mismatch vs old compose_routine oracle"
             );
