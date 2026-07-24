@@ -10,8 +10,8 @@
 //! case. Part B has now retired the old solver, so this harness asserts
 //! `v2 == frozen-baseline`: a committed complete-internal snapshot captured from
 //! v2 while old still existed (`tests/l4-summary-baseline/`, see its `README.md`
-//! for provenance + the pre-deletion commit `f295ef8` for forensic
-//! re-differencing).
+//! for provenance + the pre-deletion tag `l4-pre-jacobi-deletion` (`f295ef8`) for
+//! forensic re-differencing).
 //!
 //! ## Capture provenance (spec Part B.1)
 //!

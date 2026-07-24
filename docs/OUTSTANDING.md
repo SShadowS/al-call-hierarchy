@@ -235,6 +235,43 @@ the bottom, CHANGELOG, and git log.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
+- [ ] **`compute_routine_id` member-discriminator gap — colliding same-name
+  triggers lose their entire capability cone** — `compute_routine_id`
+  (`src/engine/l2/scope.rs`) keys app/object-type/number/kind/name/signature
+  with NO member discriminator, so two same-name same-signature triggers in
+  one object (e.g. any page with two actions each declaring `trigger
+  OnAction()` — ordinary in real BC) collide on one routine id.
+  `build_detector_context` drains its cone maps with `remove()`, so the
+  SECOND occurrence's summary is fully degenerate (no direct facts, no
+  inherited facts, no coverage) and that routine loses its **entire**
+  capability cone; `ConeDerivedStore::forget`
+  (`src/engine/l5/detector_context.rs:361-396`,
+  `src/engine/l4/cone_derived.rs:322-337`) freezes the loss in place
+  deliberately — this arc's own parity oracle discovered it and chose not to
+  fix it because fixing it moves goldens. Note `build_detector_context_cross_app`
+  reads with `get()` and never has the accident, which is itself evidence the
+  `remove()` is an accident rather than a decision. This is the SAME
+  `compute_routine_id` collision family as `docs/engine-gaps.md`'s **G-18**
+  (which fixed a different symptom — d1's cross-body loop misattribution —
+  and correctly remains marked FIXED); this cone-loss symptom is separate and
+  still open. Fix options: a member discriminator on `compute_routine_id`, or
+  dedup `ws.routines` upstream of the cone walk. **Wake:** the next time
+  goldens are being rebaselined anyway (the fix moves them), or a
+  misattributed production finding on an object with colliding same-name
+  triggers.
+- [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
+  built and tested but has zero production callers** — built at A4 with
+  wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +
+  migrate) and deliberately did NOT wire it (eager construction would add
+  unconsumed cost to every `analyze` run — the right call), so the stated
+  wake condition passed without being met. Every `ReverseEffectIndex::build`
+  call site is inside its own `#[cfg(test)]` module; its only other mentions
+  in the codebase are two doc comments (`summary_runner.rs`,
+  `detector_context.rs`). It has never executed against real data — no
+  golden, no DO run, no CDO run reaches it — so its 7 self-consistency tests
+  are its entire correctness evidence. **Wake:** the first db-effect-reading
+  consumer (originally planned: VSCode hover) or a future `finding`/query
+  surface that needs an effect/table ↔ routine lookup.
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
   app's parse only (deps parse once in the fresh pass); on DO that's 407 files of a
   dep-dominated 4.8 s resolve → sub-second saving. Live BOM divergence (DO has 4

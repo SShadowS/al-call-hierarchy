@@ -256,9 +256,15 @@ mod release_checks {
     // exact run log.
     const COMPUTE_ALL_SCALING_FACTOR: u32 = 7;
 
-    // `compute_summaries_v2` (l4-summary-fixpoint-redesign Task 11) — the
-    // closed-form db-effect solver `build_detector_context` calls for every
-    // `alsem analyze`/`aldump` run (`src/engine/l5/detector_context.rs:514`).
+    // `compute_summaries_v2_bundle` (l4-summary-fixpoint-redesign Task 11;
+    // re-pointed at the LEAN bundle entry point post-B1-migrate, final
+    // whole-branch review M-3) — the closed-form db-effect solver
+    // `build_detector_context` actually calls for every `alsem analyze`/
+    // `aldump` run (`src/engine/l5/detector_context.rs:655`, inside the
+    // `context.compute_summaries` span opened at `:634`). Both it and the
+    // materializing `compute_summaries_v2`/`_with_leaves_core` shims share
+    // the SAME core (`compute_summaries_v2_bundle_with_leaves`), so the
+    // Task 11/11b history below applies to this gate unchanged.
     //
     // Task 11 originally gated this at a DELIBERATELY SMALLER 100-file corpus
     // (median ~38.1ms) because `solve_scc_db_effects` called
@@ -871,16 +877,22 @@ mod release_checks {
         );
     }
 
-    /// `compute_summaries_v2` (l4-summary-fixpoint-redesign Task 11) — the
-    /// closed-form db-effect solver `build_detector_context` calls for every
-    /// `alsem analyze`/`aldump` run (`src/engine/l5/detector_context.rs:514`'s
-    /// `context.compute_summaries` span). Builds the SAME `(routines, graph,
-    /// scc, upgraded_bindings, fields)` substrate that path builds, via the
-    /// SAME public functions in the SAME order — mirrors
-    /// `tests/l4_summary_differential.rs`'s `cdo_whole_program_v2_parity`
-    /// assembly, just over the synthetic perf_support corpus instead of a
-    /// real `CDO_WS` workspace (not reproducible in this sandbox — see
-    /// CLAUDE.md's Testing Philosophy & Goldens).
+    /// `compute_summaries_v2_bundle` (l4-summary-fixpoint-redesign Task 11;
+    /// re-pointed post-B1-migrate at the LEAN bundle entry point,
+    /// final-whole-branch-review finding M-3 — this test previously measured
+    /// the materializing `compute_summaries_v2` compat shim, which
+    /// `build_detector_context` stopped calling at Task B1 `a0cd348`) — the
+    /// closed-form db-effect solver `build_detector_context` actually calls
+    /// for every `alsem analyze`/`aldump` run
+    /// (`src/engine/l5/detector_context.rs:655`, inside the
+    /// `context.compute_summaries` span opened at `:634`). Builds the SAME
+    /// `(routines, graph, scc, upgraded_bindings, fields)` substrate that
+    /// path builds, via the SAME public functions in the SAME order —
+    /// mirrors `tests/l4_summary_differential.rs`'s
+    /// `cdo_whole_program_v2_parity` assembly, just over the synthetic
+    /// perf_support corpus instead of a real `CDO_WS` workspace (not
+    /// reproducible in this sandbox — see CLAUDE.md's Testing Philosophy &
+    /// Goldens).
     ///
     /// The perf_support corpus has NO recursive SCC (`Proc1..Proc{N-2}` form
     /// a straight-line local call chain — see that module's own doc), so
@@ -900,7 +912,9 @@ mod release_checks {
         use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
         use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
         use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
-        use al_call_hierarchy::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2};
+        use al_call_hierarchy::engine::l4::summary_runner::{
+            FieldIndex, compute_summaries_v2_bundle,
+        };
         use std::collections::HashMap;
 
         let dir = corpus_dir(1000);
@@ -910,13 +924,14 @@ mod release_checks {
         let ws = &resolved.workspace;
 
         // Assemble the SAME substrate `build_detector_context`'s
-        // CORE_SUMMARIES path builds (`detector_context.rs:498-521`): symbol
-        // table -> resolve_calls (no deps, no fetched apps — matches the
-        // source-only detector-context path) -> event graph -> combined
-        // graph -> a Tarjan SCC over `graph.edges_by_from` -> the field
-        // index. `leaf_summaries` is not needed here: `compute_summaries_v2`
-        // (no `_with_leaves`) always passes the empty map, exactly like
-        // `build_detector_context`'s own call.
+        // CORE_SUMMARIES path builds (`detector_context.rs:571-581` the SCC,
+        // `:638-645` the field index): symbol table -> resolve_calls (no
+        // deps, no fetched apps — matches the source-only detector-context
+        // path) -> event graph -> combined graph -> a Tarjan SCC over
+        // `graph.edges_by_from` -> the field index. `leaf_summaries` is not
+        // needed here: `compute_summaries_v2_bundle` (no `_with_leaves`)
+        // always passes the empty map, exactly like `build_detector_context`'s
+        // own call (`:655`).
         let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
         let no_deps: Vec<DeclaredDependency> = Vec::new();
         let no_fetched: Vec<String> = Vec::new();
@@ -944,7 +959,12 @@ mod release_checks {
         }
 
         // Warm-up (also proves the solver runs clean before timing it).
-        let (warm, _diag) = compute_summaries_v2(
+        // `compute_summaries_v2_bundle` returns the compact `SummaryBundle`
+        // alongside the settled map — the bundle itself is not queried here
+        // (no consumer in this gate needs the lazy per-routine db_effects
+        // projection), only the map's non-emptiness, same sanity check the
+        // materializing shim's gate used.
+        let (_warm_bundle, warm, _diag) = compute_summaries_v2_bundle(
             &ws.routines,
             &graph,
             &scc,
@@ -953,13 +973,13 @@ mod release_checks {
         );
         assert!(
             !warm.is_empty(),
-            "sanity: compute_summaries_v2 must produce summaries for a 1000-file workspace"
+            "sanity: compute_summaries_v2_bundle must produce summaries for a 1000-file workspace"
         );
 
         let mut samples = Vec::with_capacity(5);
         for _ in 0..5 {
             let start = Instant::now();
-            let (result, _diag) = compute_summaries_v2(
+            let (_bundle, result, _diag) = compute_summaries_v2_bundle(
                 &ws.routines,
                 &graph,
                 &scc,
@@ -969,17 +989,17 @@ mod release_checks {
             samples.push(start.elapsed());
             assert!(
                 !result.is_empty(),
-                "sanity: compute_summaries_v2 must produce summaries"
+                "sanity: compute_summaries_v2_bundle must produce summaries"
             );
         }
         let m = median(samples.clone());
         println!(
-            "[perf_bounds] compute_summaries_v2(1000): median={m:?} bound={COMPUTE_SUMMARIES_V2_BOUND:?} \
+            "[perf_bounds] compute_summaries_v2_bundle(1000): median={m:?} bound={COMPUTE_SUMMARIES_V2_BOUND:?} \
              samples={samples:?}"
         );
         assert!(
             m <= COMPUTE_SUMMARIES_V2_BOUND,
-            "compute_summaries_v2 median {m:?} exceeds 3x-target bound \
+            "compute_summaries_v2_bundle median {m:?} exceeds 3x-target bound \
              {COMPUTE_SUMMARIES_V2_BOUND:?} (samples: {samples:?})"
         );
     }

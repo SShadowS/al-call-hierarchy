@@ -23,10 +23,13 @@ as a digest).
 
 ## Provenance — captured at parity with the old Jacobi solver
 
-- **Pre-deletion commit (old oracle one `git checkout` away):** `f295ef8`
-  (`docs(l4): 8020/CDO re-measure note — Part A store redesign`), the HEAD of
-  `feat/l4-summary-redesign` immediately before Part B began. `git checkout
-  f295ef8 -- src/engine/l4/summary_runner.rs` restores the old
+- **Pre-deletion tag (old oracle one `git checkout` away):** `l4-pre-jacobi-deletion`
+  (an annotated tag pointing at `f295ef8`, `docs(l4): 8020/CDO re-measure note —
+  Part A store redesign`), the HEAD of `feat/l4-summary-redesign` immediately
+  before Part B began. Citing the tag rather than the bare SHA keeps this
+  instruction reachable across a squash-merge, which would otherwise leave
+  `f295ef8` unreferenced by any branch and eligible for GC. `git checkout
+  l4-pre-jacobi-deletion -- src/engine/l4/summary_runner.rs` restores the old
   `compute_summaries_with_leaves` for forensic re-differencing.
 - The baselines were regenerated from **v2** while the old solver still existed.
   In the same working tree the differential's `cross_check_v2_equals_old_*`
@@ -45,5 +48,5 @@ CDO_WS=<path> REGEN_TEMP_GOLDENS=1 cargo test -p al-call-hierarchy --test l4_sum
 ```
 
 Regen is a **measurement**, never a blind bless — inspect the diff and
-root-cause any movement before committing (the old solver is at `f295ef8` for
-re-differencing).
+root-cause any movement before committing (the old solver is at the
+`l4-pre-jacobi-deletion` tag, `f295ef8`, for re-differencing).

@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a frozen `key_rank` — ids are never reassigned), an SCC-shared `EffectSetId`
   hash-conses the terminal sets, and a lazy `DbEffect` view reproduces the
   byte-identical `Vec<DbEffect>` per routine on demand. `ReverseEffectIndex` is
-  the bidirectional hover/query index (effect/table ↔ routine). Proven
+  the bidirectional hover/query index (effect/table ↔ routine) — built and
+  unit-tested (7 self-consistency tests) but **not yet wired to a production
+  consumer**; wiring was deliberately deferred to the first hover/query
+  consumer that needs it (see `docs/OUTSTANDING.md`). Proven
   byte-identical to the old Jacobi solver over the complete `RoutineSummary` on
   the fixtures + generated small-graph shapes + the CDO whole-program case
   (`tests/l4_summary_differential.rs`).
@@ -663,9 +666,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      `Option<Vec<_>>` and `None` means *never materialized*, so
      `inherited_raw()` PANICS rather than silently answering "empty cone". The
      raw path survives behind the policy-only `RAW_INHERITED_FACTS` demand bit
-     (deliberately NOT part of `substrate::ALL`) for `gate::policy`, the
-     projection, `aldump`, `prove` and `digest`, whose byte output and
-     `sort_inherited` order are unchanged.
+     (deliberately NOT part of `substrate::ALL`) for `gate::policy` — the sole
+     caller that ORs the bit into a `build_detector_context` demand — plus the
+     R3a-3/R3a-5 cone `projection`s (`aldump`'s
+     `--r3a3-cone-coverage`/`--r3a5-cross-app-summary` modes), which build
+     their raw cone directly via `ConeOutput::RawOnly` outside the demand-bit
+     mechanism entirely. Their byte output and `sort_inherited` order are
+     unchanged. `prove` and `digest` are NOT in this list: both already run
+     `DerivedOnly` (plain `substrate::ALL`, no `RAW_INHERITED_FACTS`), reading
+     only `ctx.transaction_spans`, which is derived-substrate-backed.
   4. **The SCC walk stops materializing cones that can never be read.** A cone
      is consumed only by an SCC's PREDECESSORS, and the walk's refcount-free
      fires only when a predecessor finishes — so a call-graph ROOT's cone (no
