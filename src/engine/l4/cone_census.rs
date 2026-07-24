@@ -85,9 +85,12 @@ fn mb(bytes: u64) -> f64 {
 
 // ---------------------------------------------------------------------------
 // Recursive heap-byte accounting for one `CapabilityFact` (shared with the
-// `fact_cones`/`cov_cones` residual census in `capability_cone.rs` and the
-// `direct_in` transient-duplicate census in `detector_context.rs` — one
-// definition so all three census sites agree on what a fact "costs").
+// `fact_cones`/`cov_cones` residual census AND the `direct` dedup-keyed
+// census, both in `capability_cone.rs` — one definition so both census sites
+// agree on what a fact "costs"). A third call site, the `direct_in`
+// transient-duplicate census in `detector_context.rs`, was deleted alongside
+// `direct_in` itself (Task 4) — see the tombstone below at
+// `emit_direct_in_residual`'s old location.
 // ---------------------------------------------------------------------------
 
 /// Owned heap bytes reachable from one [`ValueSource`] (recurses through

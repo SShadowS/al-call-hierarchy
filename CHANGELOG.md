@@ -692,6 +692,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `alsem policy check --format json --deterministic` (sha256
   `6a6cff4245245e627b5fbf6f322879ef7996787d12d305d73ac45c1ee60d4586`)
   byte-identical, stdout and stderr, from before Task 1 through Task 4.
+  **Review fix-wave** (`.superpowers/sdd/task-4-review.md`): added
+  `debug_assert_ne!`/`debug_assert!` at all four `fact_cones`/`cov_cones` read
+  sites (`inherited_facts_for_singleton`, `inherited_facts_by_bfs`,
+  `fact_cone_for_scc`, `coverage_cone_for_scc`) so a future change that ever
+  pulls a root SCC's (never-built) cone panics in debug builds instead of
+  silently returning an empty/foreign cone — proved to fire by temporarily
+  inverting one assertion, confirming `cone_derived`'s unit tests panic, then
+  reverting to green. Also corrected two stale post-D2 census texts
+  (`capability_cone.rs`'s own stderr and `cone_census.rs`'s module comment
+  both still said "three" copies/sites after `direct_in`'s deletion left
+  two), fixed the `CapabilityFact` struct doc's field count/list (six owned
+  fields, not three, `extra` included), tracked the plan doc this entry cites
+  (`docs/superpowers/plans/2026-07-24-c1-cone-derived-substrate.md` was
+  untracked), and corrected two `OUTSTANDING.md` overclaims: the census only
+  MEASURED the root-cone residual reaching 0 (Task 4's code change caused
+  it), and the post-Task-4 whole-process re-measure — now taken — shows
+  whole-process peak 9 593 MB → **7 787 MB** and wall 196 s → 127 s, with the
+  largest remaining spans (`l3.assemble_resolve` 3 381 MB,
+  `l3.parse_project_parallel` 2 770 MB) outside this arc entirely.
 - **L4 analyze path consumes the `SummaryBundle` lazily — the ~24 GB / ~74 s
   db-effects RSS rematerialization is GONE** (`feat/l4-summary-redesign`, Part B
   B1; `src/engine/l4/summary_runner.rs`, `src/engine/l5/detector_context.rs`).

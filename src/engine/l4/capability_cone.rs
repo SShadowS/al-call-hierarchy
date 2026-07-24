@@ -119,9 +119,10 @@ pub struct CapabilityFact {
     /// nothing but 5 heap allocations and 5 memcpys per fact — on every one of
     /// the millions of `CapabilityFact` clones the cone merge performs. As
     /// `&'static str` they are pointer copies into the binary's read-only data
-    /// and the struct itself is 40 B smaller. The three genuinely-open fields
-    /// (`subject`, `resource_id`, `witness_*`, `resource_arg_source`) stay
-    /// owned. `salsa::Update` still derives: its `UpdateDispatch` falls back to
+    /// and the struct itself is 40 B smaller. The six genuinely-open fields
+    /// (`subject`, `resource_id`, `resource_arg_source`, `witness_operation_id`,
+    /// `witness_callsite_id`, `extra`) stay owned. `salsa::Update` still
+    /// derives: its `UpdateDispatch` falls back to
     /// the `PartialEq` comparison for any `'static + PartialEq` field, and a
     /// `&'static str` — unlike the `&'db T` salsa's own doc warns about — can
     /// never dangle or change under a revision.
@@ -1447,6 +1448,13 @@ fn inherited_facts_for_singleton<'g>(
         dist: usize,
         edge: &'g TypedOutEdge,
     }
+    // ⟨C1 Task 4 hardening⟩ A root SCC's cone is never built
+    // (`compose_inherited_cones`'s `root_scc` skip) — the only thing keeping
+    // this walk from ever looking one up is that a non-recursive singleton
+    // has no self-edge, so `edge.to` can never land back in `subject`'s own
+    // SCC. Assert it: a silent `None` here (via the `let else` below) would
+    // read as "no inherited facts from this hop" instead of the bug it is.
+    let my_scc = scc_id_by_routine.get(subject).copied();
     let mut best: BTreeMap<String, Best<'g>> = BTreeMap::new();
     let out_edges: &'g [TypedOutEdge] =
         g.outgoing.get(subject).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -1454,6 +1462,14 @@ fn inherited_facts_for_singleton<'g>(
         let Some(yj) = scc_id_by_routine.get(&edge.to) else {
             continue;
         };
+        debug_assert_ne!(
+            Some(*yj),
+            my_scc,
+            "inherited_facts_for_singleton({subject:?}): out-edge to {:?} maps back to \
+             the subject's own SCC — a root SCC's cone is never built, so this would \
+             silently look up a missing/foreign cone instead of panicking",
+            edge.to
+        );
         let Some(ycone) = cones.get(yj) else {
             continue;
         };
@@ -1571,7 +1587,20 @@ fn inherited_facts_by_bfs<'g>(
             }
         } else {
             // downstream entry: pull its whole cone, do NOT recurse.
-            let ycone = scc_id_by_routine.get(&id).and_then(|yj| cones.get(yj));
+            let their_scc = scc_id_by_routine.get(&id).copied();
+            // ⟨C1 Task 4 hardening⟩ This branch is reached only when the `if`
+            // above already found `their_scc != my_scc` — i.e. never for the
+            // subject's own (root-eligible) SCC. Assert it explicitly, right
+            // at the read, so a future change to the branch condition above
+            // trips loudly here instead of silently returning an
+            // empty/foreign cone for a root SCC that was never built.
+            debug_assert_ne!(
+                their_scc, my_scc,
+                "inherited_facts_by_bfs({subject:?}): downstream branch reached with a \
+                 same-SCC hop ({id:?}) — a root SCC's cone is never built, so pulling it \
+                 here would silently drop inherited facts instead of panicking",
+            );
+            let ycone = their_scc.and_then(|yj| cones.get(&yj));
             if let Some(ycone) = ycone {
                 for (key, entry) in ycone {
                     if !seen.contains(key) {
@@ -1635,6 +1664,18 @@ fn fact_cone_for_scc(
         }
     }
     for y in succ_ids {
+        // ⟨C1 Task 4 hardening⟩ `y` is a successor of the SCC being built, and
+        // `compose_inherited_cones` processes SCCs in an order where every
+        // successor has already run (Tarjan emits callees before callers) —
+        // successors are provably non-root, so their cone was built and has
+        // not yet been refcount-freed. A miss here is always a bug (the
+        // refcount-free fired before this, its only intended predecessor,
+        // read the cone), not a legitimate "not built yet" case.
+        debug_assert!(
+            fact_cones.contains_key(y),
+            "fact_cone_for_scc: successor SCC {y} has no fact cone — successors are \
+             provably non-root, so this cone should have been built and not yet freed"
+        );
         if let Some(yc) = fact_cones.get(y) {
             for (key, entry) in yc {
                 merge_cone(
@@ -1678,6 +1719,14 @@ fn coverage_cone_for_scc(
         }
     }
     for y in succ_ids {
+        // ⟨C1 Task 4 hardening⟩ Same successor-non-root invariant as
+        // `fact_cone_for_scc` above — a miss here is always a bug, never a
+        // legitimate "not built yet".
+        debug_assert!(
+            cov_cones.contains_key(y),
+            "coverage_cone_for_scc: successor SCC {y} has no coverage cone — successors \
+             are provably non-root, so this cone should have been built and not yet freed"
+        );
         if let Some(yc) = cov_cones.get(y) {
             if !yc.complete {
                 complete = false;
@@ -2049,8 +2098,8 @@ pub fn compose_cone_over_graph(
         eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
         eprintln!(
             "[C1_CONE_CENSUS] section: `direct` dedup-keyed facts map (compose_cone_over_graph's \
-             own SCC-walk input — alive for the whole cone walk, a THIRD copy alongside direct_in \
-             and the final capability_facts_direct; NOT part of any grand_total_bytes)"
+             own SCC-walk input — alive for the whole cone walk, a SECOND copy alongside the \
+             final capability_facts_direct; NOT part of any grand_total_bytes)"
         );
         eprintln!(
             "[C1_CONE_CENSUS]   outer_entries={} inner_entries={inner_entries} outer_key_heap_bytes={outer_key_bytes} struct_bytes={struct_bytes} heap_bytes={heap_bytes}",

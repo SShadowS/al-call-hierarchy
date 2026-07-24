@@ -197,15 +197,24 @@ the bottom, CHANGELOG, and git log.
   `.superpowers/sdd/c1-residual-census.md`. The compact `ConeDerivedStore`
   replaced the per-routine raw inherited-fact Vec on the analyze path
   (`ConeOutput::DerivedOnly`), and the SCC walk stopped materializing cones no
-  predecessor will ever read. MEASURED (8020, `release-fast`, d8-only shape):
-  span `rss_delta` 10 941 MB → 2 151 MB and whole-process peak 17 055 MB →
-  9 593 MB at Task 3; the `C1_CONE_CENSUS=1` byte census then took the
-  root-SCC cone residual (1 598.87 MB, 74% of what was left) to 0 at Task 4.
-  Output byte-identical throughout (five golden families + l4 differential 17/17
-  + DO `analyze` and `policy check`). Whole-process peak is now floored by the
-  L3 spans (`l3.assemble_resolve` ~3.4 GB, `l3.parse_project_parallel` ~2.8 GB),
-  not by cones — "<1 GB whole-process" needs those next, and is NOT reachable by
-  B1 + C1 alone.
+  predecessor will ever read — it is Task 4's code change (not building a root
+  SCC's cone at all) that takes the root-SCC residual to 0; the
+  `C1_CONE_CENSUS=1` byte census only MEASURES that it stayed at 0, it did not
+  cause it. MEASURED (8020, `release-fast`, `d8-commit-in-transaction`-only
+  shape, EXITCODE=0): span `rss_delta` 10 941 MB (pre-C1) → 2 151 MB (Task 3) →
+  2 195 MB (Task 4); whole-process peak 17 055 MB → 9 593 MB (Task 3) →
+  **7 787 MB (Task 4)**; wall 213 s → 196 s → 127 s. The span's own `rss_delta`
+  barely moved Task 3→4 despite the ~1.8 GB peak drop: `rss_delta` is working
+  set at span end minus span start, and the root cones were always freed
+  inside the span either way (when `compose_inherited_cones` returned) — they
+  lived in the PEAK, which is where Task 4's saving shows up, not in the
+  delta. Output byte-identical throughout (five golden families + l4
+  differential 17/17 + DO `analyze` and `policy check`). Post-Task-4 the
+  largest remaining spans are all OUTSIDE this arc — `l3.assemble_resolve`
+  3 381 MB, `l3.parse_project_parallel` 2 770 MB, `context.symbols_resolve_calls`
+  1 723 MB, `gate.coverage` 1 157 MB — so the cone span is no longer the
+  dominant consumer, but the arc did NOT reach sub-GB whole-process: the
+  remaining ~7.8 GB peak is L3-substrate work, not reachable by B1 + C1 alone.
 - [ ] **A future incremental L4 path over the new `EffectStore`** (a redesign, NOT
   a re-port of the deleted R3b). The reusable design intent — fine-grained Salsa
   query topology, SCC-identity rules (interned sorted-member `SccKey`), fixed-leaf
