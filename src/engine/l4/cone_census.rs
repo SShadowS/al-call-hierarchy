@@ -29,7 +29,7 @@
 //!     instruction), recursing through every `Option`/`Box`/enum payload
 //!     (`ValueSource`, `CapabilityExtra`) to their own owned strings. A
 //!     `&'static str` field is NOT counted (⟨C1 Task 4⟩ — see
-//!     [`capability_fact_heap_bytes`]): its bytes live once in the binary's
+//!     `capability_fact_heap_bytes`): its bytes live once in the binary's
 //!     read-only data, not once per value.
 //!
 //! No double-counting, by construction. `FullRoutineSummary` embeds its
