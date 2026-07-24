@@ -66,8 +66,10 @@ fn is_transaction_managing(routine_id: &str, ctx: &DetectorContext) -> bool {
     let Some(summary) = ctx.summaries.get(routine_id) else {
         return false;
     };
-    // ⟨C1 Task 2⟩ The same temp-INCLUSIVE write set, read off the folded cone row.
-    ctx.cone_derived.writes_tables_of(&summary.routine_id).len() >= TRANSACTION_THRESHOLD_TABLES
+    // ⟨C1 Task 2 fix M2⟩ The count alone — avoids resolving and allocating one
+    // `String` per table just to discard it. `is_transaction_managing` runs
+    // per routine, so this matters at scale.
+    ctx.cone_derived.writes_tables_count_of(&summary.routine_id) >= TRANSACTION_THRESHOLD_TABLES
 }
 
 /// Returns true when the routine containing an explicit Commit() is eligible for the

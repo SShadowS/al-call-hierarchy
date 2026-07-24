@@ -33,10 +33,10 @@ fn is_transaction_managing(routine_id: &str, ctx: &DetectorContext) -> bool {
     let Some(summary) = ctx.summaries.get(routine_id) else {
         return false;
     };
-    // ⟨C1 Task 2⟩ Same physical-write set, read off the folded cone row.
+    // ⟨C1 Task 2 fix M2⟩ The count alone — avoids resolving and allocating one
+    // `String` per table just to discard it.
     ctx.cone_derived
-        .writes_physical_tables_of(&summary.routine_id)
-        .len()
+        .writes_physical_tables_count_of(&summary.routine_id)
         >= TRANSACTION_THRESHOLD_TABLES
 }
 

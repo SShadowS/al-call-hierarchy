@@ -14,14 +14,20 @@
 //!
 //! The raw side is computed HERE, independently: `capability_query`'s helpers for
 //! the shared predicates, and hand-replicated copies of d44's and d48's own
-//! closures for theirs — so the oracle re-derives the detector's view rather than
-//! echoing a shared helper that could itself be wrong.
+//! closures for theirs — so the oracle re-derives the detector's GROUPING and
+//! FILTERING logic independently of the derived fold. Honestly stated, it is
+//! NOT independent of the predicates both sides call through by design —
+//! `fact_is_known_temp`, the write-op vocabulary (`write_op_bit`), and the
+//! IO-kind vocabulary (`io_kind_bit`) are each a SINGLE definition shared by
+//! both sides, so a bug in one of those would pass this oracle on both sides
+//! at once. The five golden families (see CLAUDE.md's Testing Philosophy &
+//! Goldens) are the remaining backstop for that residual risk.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 use crate::engine::l4::capability_cone::CapabilityFact;
-use crate::engine::l4::cone_derived::ConeDerivedStore;
+use crate::engine::l4::cone_derived::{ConeDerivedStore, io_kind_bit};
 use crate::engine::l5::capability_query::{
     fact_is_known_temp, may_commit, may_commit_derived, publishes_events_of, touches_db_derived,
     touches_db_of, writes_physical_tables_of, writes_tables_of,
@@ -56,6 +62,23 @@ pub fn assert_cone_parity(
     // Deterministic order so a divergence reproduces identically run-to-run.
     let mut ids: Vec<&str> = summaries.keys().map(|s| s.as_str()).collect();
     ids.sort_unstable();
+
+    // ⟨fix I2⟩ The reverse direction: every row the store HOLDS must correspond
+    // to a routine `summaries` also has. Without this, a store row for an id
+    // `summaries` lacks is invisible to the per-id loop below (which only ever
+    // asks the store about ids `summaries` already knows), and d48 is the one
+    // consumer that queries the store without first proving membership in
+    // `summaries` — so a divergence here would silently change d48's pruning
+    // while this oracle stayed green.
+    let mut store_ids: Vec<&str> = store.routine_ids().collect();
+    store_ids.sort_unstable();
+    for id in &store_ids {
+        assert!(
+            summaries.contains_key(*id),
+            "C1 cone parity FAILED\n  routine:   {id}\n  the derived store holds a row for \
+             this routine, but `summaries` does not — see review finding I2"
+        );
+    }
 
     for id in &ids {
         let s = &summaries[*id];
@@ -187,13 +210,15 @@ fn d44_raw_reads(s: &FullRoutineSummary) -> BTreeSet<String> {
         .collect()
 }
 
-/// d48's `routine_touches_external_io` over `direct ∪ inherited`, with its own
-/// `is_io_resource_kind` (`{http, file}`).
+/// d48's `routine_touches_external_io` over `direct ∪ inherited`.
+/// ⟨C1 Task 2 fix I1⟩ Routed through `cone_derived::io_kind_bit` instead of a
+/// third hardcoded `{http, file}` pair — the prior copy would have kept
+/// agreeing with a future d48/derived desync instead of catching it.
 fn raw_touches_external_io(s: &FullRoutineSummary) -> bool {
     s.capability_facts_direct
         .iter()
         .chain(s.capability_facts_inherited.iter())
-        .any(|f| f.resource_kind == "http" || f.resource_kind == "file")
+        .any(|f| io_kind_bit(&f.resource_kind).is_some())
 }
 
 #[cfg(test)]

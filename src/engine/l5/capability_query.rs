@@ -1,9 +1,11 @@
 //! Capability-query helpers — faithful port of al-sem
 //! `src/detectors/capability-query.ts`.
 //!
-//! Pure functions over a `FullRoutineSummary`. Every helper reads
+//! Pure functions over a `FullRoutineSummary`. Most helpers read
 //! `reachable(s) = capability_facts_direct ∪ capability_facts_inherited` and
-//! returns a derived view. The tri-state helpers honour G6 coverage semantics:
+//! return a derived view; the two exceptions are `touches_db_derived` /
+//! `may_commit_derived`, which additionally take a `&ConeDerivedStore` — see
+//! the `⟨C1 Task 2⟩` block below for why. The tri-state helpers honour G6 coverage semantics:
 //! when a fact is absent AND the inherited cone is not "complete", they return
 //! `Unknown` rather than `No` (absence of evidence is not evidence of absence
 //! when the cone is partial / coverage data is missing).

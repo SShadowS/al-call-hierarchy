@@ -668,8 +668,10 @@ struct D1Policy<'a> {
     /// on the first `"table"` fact) and every later probe of that routine is an
     /// O(1) memo hit. ⟨C1 Task 2⟩ The first probe is now itself O(1) (a folded
     /// presence flag), but the memo is retained: it is part of this struct's
-    /// shape, costs nothing, and the walk's hot path is unchanged. `expand` only
-    /// has `&self`, hence `RefCell` for the lazy fill. Keys borrow from
+    /// shape and the walk's hot path is unchanged. ⟨fix M1⟩ Not free, though:
+    /// it now trades what used to be an O(cone-size) scan for one hash-map
+    /// insert per distinct routine — a net win, not a costless one. `expand`
+    /// only has `&self`, hence `RefCell` for the lazy fill. Keys borrow from
     /// `summaries` (owned by `ctx`), which outlives the walk. The probe is a pure
     /// function of the (immutable) summary + store, so the answer is stable for
     /// the run.

@@ -30,7 +30,11 @@ const D44_MAX_PER_EVENT: usize = 32;
 
 struct SubWrite {
     subscriber: String,
-    op: String,
+    // ⟨C1 Task 2 fix M4⟩ `decode_op_mask` already yields `&'static str`; keeping
+    // this field a borrow instead of `.to_string()`-ing it avoids one
+    // allocation per (subscriber, table, op) that `op_union` (below) only
+    // ever borrows straight back.
+    op: &'static str,
 }
 
 pub fn detect_d44(
@@ -84,7 +88,7 @@ pub fn detect_d44(
                 for op in ops {
                     entry.push(SubWrite {
                         subscriber: sub.clone(),
-                        op: op.to_string(),
+                        op,
                     });
                 }
             }
@@ -99,7 +103,7 @@ pub fn detect_d44(
         candidates += 1;
         let (event_id, table_id) = split_once_pipe(key);
         let sub_list: Vec<&str> = unique_subs.iter().copied().collect();
-        let op_union: BTreeSet<&str> = writes.iter().map(|w| w.op.as_str()).collect();
+        let op_union: BTreeSet<&str> = writes.iter().map(|w| w.op).collect();
         let op_union: Vec<&str> = op_union.into_iter().collect();
         let Some(first_id) = sub_list.first().copied() else {
             continue;

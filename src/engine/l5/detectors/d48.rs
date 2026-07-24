@@ -29,7 +29,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l4::capability_cone::CapabilityExtra;
 use crate::engine::l4::combined_graph::CombinedEdge;
-use crate::engine::l4::cone_derived::ConeDerivedStore;
+use crate::engine::l4::cone_derived::{ConeDerivedStore, io_kind_bit};
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -47,9 +47,12 @@ const BOUNDS: WalkBounds = WalkBounds {
     max_nodes: 500,
 };
 
-/// IO resource kinds D48 targets.
+/// IO resource kinds D48 targets. ⟨C1 Task 2 fix I1⟩ Routed through
+/// `cone_derived::io_kind_bit` — the ONE definition of "is this IO" — so this
+/// (the direct-terminal producer) and `routine_touches_external_io` (the
+/// walk-pruning gate, below) cannot desync on a future third IO kind.
 fn is_io_resource_kind(kind: &str) -> bool {
-    kind == "http" || kind == "file"
+    io_kind_bit(kind).is_some()
 }
 
 fn severity_for_io_kind(kind: &str) -> &'static str {

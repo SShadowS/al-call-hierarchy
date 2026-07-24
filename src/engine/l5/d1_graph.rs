@@ -108,9 +108,18 @@ pub(crate) fn edge_kind_binding_ok(kind: &str) -> bool {
 /// ⟨C1 Task 2⟩ The presence half now reads the folded cone flag
 /// ([`touches_db_derived`]) instead of scanning the routine's raw reachable
 /// facts; the absence half is unchanged (`coverage.inherited_status`, read off
-/// the same `summary`). The memo itself is retained: it is caller-owned and
-/// shared with `d1`'s own later probes, so removing it would change a signature
-/// this task has no reason to touch.
+/// the same `summary`). The memo itself is retained: `build_d1_graph`'s own
+/// seed ladder and BFS edge expansion each call this once per edge, and many
+/// edges share the same target routine, so the memo still pays for itself
+/// within that one call. ⟨fix M1⟩ `detect_d1` does NOT read this memo again
+/// after `build_d1_graph` returns — the prior wording claiming it is "shared
+/// with `d1`'s own later probes" was false.
+///
+/// The memo's value is a function of `(store, summary)`, not of `summary`
+/// alone, but nothing here binds it to the store it was filled from — never
+/// reuse one `touches_db_memo` map across two `DetectorContext`s /
+/// `ConeDerivedStore`s, or a stale entry would silently answer for the wrong
+/// workspace's cone flags.
 fn memoized_touches_db<'a>(
     store: &ConeDerivedStore,
     memo: &mut HashMap<&'a str, EffectPresence>,

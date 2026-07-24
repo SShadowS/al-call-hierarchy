@@ -30,7 +30,17 @@ use crate::engine::l5::full_summary::FullRoutineSummary;
 pub fn cone_store_of(summaries: &HashMap<String, FullRoutineSummary>) -> ConeDerivedStore {
     let mut b = ConeDerivedBuilder::default();
     for (id, s) in summaries {
-        b.fold_routine(id, s.reachable_iter());
+        // ⟨fix M3⟩ Fold keyed by `s.routine_id`, not the map key `id` — every
+        // consumer (`ConeDerivedStore::row` and friends) looks the row up by
+        // `summary.routine_id`, so a fixture whose map key diverges from its
+        // own `routine_id` must still fold under the id callers will query.
+        debug_assert_eq!(
+            id, &s.routine_id,
+            "cone_store_of: fixture map key {id:?} must equal summary.routine_id {:?} — \
+             every derived-store consumer looks the row up by routine_id, not the map key",
+            s.routine_id
+        );
+        b.fold_routine(&s.routine_id, s.reachable_iter());
     }
     b.finish()
 }

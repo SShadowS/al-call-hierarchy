@@ -74,7 +74,8 @@ pub const MAY_COMMIT: u8 = 1 << 1;
 /// `resource_kind == "http"` — half of d48's `routine_touches_external_io`.
 pub const TOUCHES_HTTP: u8 = 1 << 2;
 /// `resource_kind == "file"` — the other half. `{http, file}` is the COMPLETE IO
-/// vocabulary (`d48::is_io_resource_kind`).
+/// vocabulary — see [`io_kind_bit`], the ONE definition; `d48::is_io_resource_kind`
+/// and `cone_parity`'s oracle replica both route through it.
 pub const TOUCHES_FILE: u8 = 1 << 3;
 
 /// `op == "insert"`.
@@ -93,6 +94,21 @@ pub fn write_op_bit(op: &str) -> Option<u8> {
         "insert" => Some(OP_INSERT),
         "modify" => Some(OP_MODIFY),
         "delete" => Some(OP_DELETE),
+        _ => None,
+    }
+}
+
+/// The IO-presence flag bit for `resource_kind`, or `None` when `kind` is not
+/// an IO resource kind. `{http, file}` is the COMPLETE IO vocabulary — the ONE
+/// definition of "is this IO". ⟨C1 Task 2 fix I1⟩ Before this fix, the fold's
+/// `"http"`/`"file"` arms, `d48::is_io_resource_kind`, and `cone_parity`'s
+/// oracle replica each hardcoded the same two-kind set independently; a fourth
+/// IO kind added to only one of them would silently desync the pruning gate
+/// from the terminal producer. All three now route through this function.
+pub fn io_kind_bit(kind: &str) -> Option<u8> {
+    match kind {
+        "http" => Some(TOUCHES_HTTP),
+        "file" => Some(TOUCHES_FILE),
         _ => None,
     }
 }
@@ -337,6 +353,15 @@ impl ConeDerivedStore {
         ))
     }
 
+    /// `writes_tables_of(routine_id).len()` without resolving or allocating a
+    /// single `String` — the window is already sorted-and-deduped by
+    /// `freeze_ids`, so its length IS the distinct-table count.
+    /// ⟨C1 Task 2 fix M2⟩ For callers (d50) that only need the count.
+    pub fn writes_tables_count_of(&self, routine_id: &str) -> usize {
+        let r = &self.row(routine_id).table_writes_all;
+        (r.end - r.start) as usize
+    }
+
     /// Sorted + deduped PHYSICAL (non-known-temp) written TableIds
     /// (`writes_physical_tables_of`).
     pub fn writes_physical_tables_of(&self, routine_id: &str) -> Vec<String> {
@@ -350,6 +375,16 @@ impl ConeDerivedStore {
             .collect();
         out.sort();
         out
+    }
+
+    /// `writes_physical_tables_of(routine_id).len()` without resolving or
+    /// allocating a single `String` — the window is already sorted-and-deduped
+    /// (`freeze_masked` merges masks for equal ids), so its length IS the
+    /// distinct-table count. ⟨C1 Task 2 fix M2⟩ For callers (d8) that only
+    /// need the count.
+    pub fn writes_physical_tables_count_of(&self, routine_id: &str) -> usize {
+        let r = &self.row(routine_id).physical_table_writes;
+        (r.end - r.start) as usize
     }
 
     /// Sorted + deduped PHYSICAL (non-known-temp) READ TableIds — d44's read set.
@@ -460,8 +495,6 @@ impl ConeDerivedBuilder {
                     self.flags |= MAY_COMMIT;
                 }
             }
-            "http" => self.flags |= TOUCHES_HTTP,
-            "file" => self.flags |= TOUCHES_FILE,
             "event" => {
                 if f.op == "publish"
                     && let Some(rid) = f.resource_id.as_deref()
@@ -470,7 +503,15 @@ impl ConeDerivedBuilder {
                     self.s_events.push(id);
                 }
             }
-            _ => {}
+            // ⟨C1 Task 2 fix I1⟩ Routed through `io_kind_bit` — the ONE
+            // definition of "is this IO" — instead of hardcoding `"http"` /
+            // `"file"` arms here, so a future IO kind added there is
+            // automatically visible to the fold too.
+            kind => {
+                if let Some(bit) = io_kind_bit(kind) {
+                    self.flags |= bit;
+                }
+            }
         }
     }
 
