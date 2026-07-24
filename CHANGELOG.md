@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A recursive-SCC perf corpus + release gate, so the L4 db-effect redesign's
+  headline win has an automated regression guard** (`tests/perf_support/mod.rs`,
+  `tests/perf_bounds.rs`, `chore/l4-post-merge-minors`; final-branch-review
+  finding **M-6**). `compute_summaries_v2_within_bound`'s own doc conceded that
+  the shared perf_support corpus has **no recursive SCC at all** — every Tarjan
+  SCC in it is a singleton — so the recursive path the redesign rewrote (517s →
+  11.3s, 24 GB → 0.47 GB) was protected only by a manual real-workspace 8020
+  re-measurement that CI never runs. `generate_recursive_corpus` adds a SECOND,
+  separate corpus (the existing one is byte-unchanged, so no existing baseline
+  moves): 8 procedures per codeunit forming a dense `+1/+3/+5` intra-file cycle,
+  cross-file rings fusing those into recursive SCCs of
+  `RECURSIVE_RING_FILES * RECURSIVE_CYCLE_PROCS` members, and 2 distinct
+  db-touching record operations per member against a workspace-local table.
+  `recursive_scc_db_effects_within_bound` gates the same
+  `compute_summaries_v2_bundle` entry point over the same substrate assembly
+  (now shared via an `L4Substrate` helper, so the two gates provably differ only
+  in corpus), at 400 files / 4 recursive SCCs of 800 members each, and asserts
+  the corpus's SCC shape and db-effect population EXACTLY **before** timing
+  anything — a corpus that quietly stopped being recursive must fail loudly
+  rather than pass while measuring nothing. The 650ms bound is 3x the measured
+  full-suite median (~215ms, the real unfiltered CI invocation shape; ~123ms
+  isolated) and was calibrated against a MEASURED regression rather than a
+  guess: the still-present materializing `compute_summaries_v2` shim — exactly
+  the eager per-member `Vec<DbEffect>` re-materialization B1 removed — runs
+  15.8x–36.6x slower on this corpus (2.72s at the gated size, 4.2x above the
+  bound), while on the NON-recursive corpus the same two entry points are not
+  materially different at all.
 - **L4 db-effect store redesign — interned columnar `EffectStore` +
   `ReverseEffectIndex`** (`src/engine/l4/effect_store.rs`,
   `src/engine/l4/effect_universe.rs`, `src/engine/l4/reverse_index.rs`,
@@ -411,6 +438,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt` stamp).
 
 ### Removed
+- **`ConeDerivedStore::routine_ids()` / `interner()` / `len()`** — three `pub`
+  methods with zero callers repo-wide (`src/engine/l4/cone_derived.rs`,
+  `chore/l4-post-merge-minors`; final-branch-review finding **M-2**). Task 1 had
+  flagged them dead; Task 2 gave `routine_ids()` a purpose (the reverse-parity
+  check in `cone_parity.rs`); Task 3 deleted `cone_parity.rs` outright, taking
+  the check with it and returning all three to zero callers — silently, because
+  `pub` items in a `pub mod` of a lib crate are exempt from `dead_code`.
+  `is_empty()` (one live caller) stays, and the `*_of` accessors already return
+  resolved `Vec<String>`, so no caller ever needed `interner()`. The
+  `nodes`/`summaries` divergence the deleted reverse check guarded is now
+  covered only by the debug assert in `build_detector_context`, which says so
+  in a comment added alongside this deletion.
 - **The raw inherited-cone read API + the `cone_parity` dual-run oracle**
   (`src/engine/l5/capability_query.rs`, `src/engine/l5/full_summary.rs`,
   `src/engine/l5/cone_parity.rs` [deleted], `feat/l4-summary-redesign`, Part C
@@ -485,6 +524,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **Comments citing symbols the old Jacobi solver's deletion removed** — 34
+  sites across `src/engine/l4/db_effect_solver.rs` (23),
+  `src/engine/l4/summary_runner.rs` (9), `src/engine/l4/capability_cone.rs`,
+  `src/engine/l5/detector_context.rs`, `tests/l4_summary_differential.rs` and
+  `tests/perf_bounds.rs` (`chore/l4-post-merge-minors`; final-branch-review
+  finding **M-5**). The B1 fix wave swept `summary_runner`/`summary`/
+  `detector_context`/`registry`/`r3a2` but never reached `db_effect_solver.rs`,
+  the largest new file. Present-tense references to `compose_routine` /
+  `run_one_scc` / `compute_summaries_with_leaves` are now past-tense and marked
+  retired, and **all 14 surviving `summary_runner.rs:<line>` citations are
+  gone** — every one pointed into deleted code, several at unrelated lines
+  (`:404-439` is now argument binding in `compose_roles_only`; `:902-908` is now
+  the universe-freeze block). Deleted symbols are cited by name plus "in the
+  pre-`b4181d8` tree" rather than a fresh line number that would rot again;
+  citations whose subject is still LIVE are re-pointed at it
+  (`detector_context.summarize_diagnostics` now names `run_one_scc_roles`, which
+  actually raises that diagnostic; the `parameter_roles` composition now names
+  `compose_roles_only`). Comments already phrased as history were left alone.
+  Documentation only — no behaviour change.
+- **`tests/r3a2-goldens/manifest.json`'s `note` field described a retired golden
+  family** (final-branch-review finding **M-7**). The `description` field was
+  correctly rewritten when the trace-fingerprint family was retired with the old
+  solver; the `note` two lines down still explained that family's STABLE-id
+  fingerprint mechanics. That sentence is deleted; the rest of the `note` (the
+  summary-CORE exclusion list, the source-only rule) and every `matrix` oracle
+  number are untouched.
 - **d1 cohort perf polish (Task C8): representative-witness build is now O(M),
   and the R4 findings projection drops a byte-for-byte witness triplication**
   (`src/engine/l5/d1_witness.rs`, `src/engine/l5/d1_dataflow.rs`,
