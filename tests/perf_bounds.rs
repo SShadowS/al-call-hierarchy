@@ -323,10 +323,20 @@ mod release_checks {
     // (8) procedures, fused by cross-file rings of `RECURSIVE_RING_FILES` (100)
     // into 4 recursive SCCs of 800 members each, every member carrying 2
     // distinct db-touching operations — so each SCC's terminal union is 1,600
-    // DISTINCT effects shared across its 800 members. Both axes the redesign
-    // touched are non-trivial here: 4 separate SCCs (a per-SCC workspace-wide
-    // rebuild pays 4x) and 800 members x 1,600 effects each (a per-member
-    // re-materialization pays 1.28M effect clones per SCC).
+    // DISTINCT effects shared across its 800 members.
+    //
+    // ⟨fix wave finding 3⟩ Only the SCC-SIZE axis is genuinely non-trivial here:
+    // 800 members x 1,600 effects each is exactly what a per-member
+    // re-materialization pays for (1.28M effect clones per SCC), which is the
+    // dimension the redesign rewrote. The SCC-COUNT axis is NOT stressed at
+    // this size — 400 files x 8 procs = 3,200 routines land in just 4 SCCs, so
+    // a reintroduced per-SCC workspace-wide rebuild costs ~4 x 3,200 map
+    // probes, microseconds against the ~190ms solve below and far below this
+    // gate's 3.44x detection threshold. The COUNT axis is covered instead by
+    // the EXISTING non-recursive corpus (`COMPUTE_SUMMARIES_V2_BOUND`'s 1,000
+    // files x 10 routines ≈ 10,000 singleton SCCs, restored to that size at
+    // Task 11b for exactly this reason) — the two gates are complementary, not
+    // redundant, and neither supersedes the other.
     //
     // # Why 3x is a real bound here, not theatre
     //
@@ -362,7 +372,25 @@ mod release_checks {
     // itself an isolated-run number, so in the full-suite shape the true margin
     // is wider. Generous enough for machine-to-machine variance; nowhere near
     // generous enough to let the regression through.
-    const RECURSIVE_SCC_BOUND: Duration = Duration::from_millis(650); // 3x ~215ms full-suite baseline
+    //
+    // # This calibration is dev-machine-only (fix wave finding 5)
+    //
+    // Every number above (~123ms isolated, ~215ms worst full-suite median) was
+    // measured on the AUTHOR'S dev machine, not on `.github/workflows/ci.yml`'s
+    // actual runner (a 2-4 vCPU GitHub-hosted box, unfiltered
+    // `cargo test --release --test perf_bounds`, default libtest parallelism —
+    // now a 13th test sharing that binary, holding a core for several seconds).
+    // A CI runner ~2x slower than the dev machine leaves ~1.5x headroom instead
+    // of 3.44x; this file's tightest EXISTING row (`compute_all_within_bound`,
+    // ~1.9x on the dev machine, with a documented flake history — see
+    // `docs/OUTSTANDING.md`) shares that same contention. This is precedented,
+    // not new (`COMPUTE_SUMMARIES_V2_BOUND` above already sits at 2.6x actual),
+    // and the failure mode is a false RED never a silent green — the shape
+    // assertions above are deterministic regardless of timing. But treat the
+    // 3.44x/650ms figures as a hypothesis until the first real CI run confirms
+    // them; if this row flakes red on CI before ANY code regression, read that
+    // as an environment gap in this calibration, not a caught regression.
+    const RECURSIVE_SCC_BOUND: Duration = Duration::from_millis(650); // 3x ~215ms full-suite baseline (dev-machine calibration — see doc above)
 
     /// File count for the recursive corpus — see [`RECURSIVE_SCC_BOUND`].
     const RECURSIVE_CORPUS_FILES: usize = 400;

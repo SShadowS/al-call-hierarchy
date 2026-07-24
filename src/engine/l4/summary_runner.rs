@@ -518,12 +518,16 @@ fn compose_roles_only(
 /// the binding source is itself `Known(true)`. A PD chasing itself around a
 /// recursive cycle stays PD (monotone) and the fixed point converges.
 ///
-/// `pub(crate)` (not module-private): shared verbatim with
-/// `db_effect_solver::solve_pd_reachability`, which walks THIS SAME per-edge
-/// transition as a semi-naive product-graph reachability worklist instead of
-/// the retired `compose_routine`'s JACOBI fold — ONE substitution
-/// implementation, carried over unchanged, so the closed-form solver matches the
-/// old PD semantics exactly (l4-summary-fixpoint-redesign Task 4).
+/// `pub(crate)` (not module-private): `db_effect_solver::solve_pd_reachability`
+/// is its only caller now (three call sites, ALL in `db_effect_solver.rs` —
+/// this module itself has zero), which walks THIS per-edge transition as a
+/// semi-naive product-graph reachability worklist in place of the retired
+/// `compose_routine`'s JACOBI fold. Carried over unchanged from that retired
+/// fold so the closed-form solver matches the old PD semantics exactly
+/// (l4-summary-fixpoint-redesign Task 4); `pub(crate)` exists solely for that
+/// one cross-module caller, not because two solvers share it — moving this
+/// function to sit next to its only caller is a reasonable follow-up, out of
+/// scope here.
 pub(crate) fn substitute_pd_temp_state(
     edge: &super::combined_graph::CombinedEdge,
     callee_param_index: u32,
