@@ -73,7 +73,12 @@ pub fn join_presence(a: EffectPresence, b: EffectPresence) -> EffectPresence {
 
 /// The temp-state key kind. Mirrors al-sem `TempState` (`src/model/entities.ts`).
 /// Used to compute the `tempStateKey` fragment in `effect_key_of`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Derives `Hash` (added for `EffectUniverse`, `src/engine/l4/effect_universe.rs`)
+/// so the structured `EffectIdentity` — which embeds a `TempStateKind` — can be
+/// used as a `HashMap` key for interning; purely additive, no existing use site
+/// relies on `TempStateKind` NOT being `Hash`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TempStateKind {
     /// `{ kind: "known", value: bool }` — statically known true/false.
     Known(bool),

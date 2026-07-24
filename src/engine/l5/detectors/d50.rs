@@ -17,7 +17,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::engine::l3::al_attributes::has_attribute;
 use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine};
-use crate::engine::l5::capability_query::writes_tables_of;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -67,7 +66,10 @@ fn is_transaction_managing(routine_id: &str, ctx: &DetectorContext) -> bool {
     let Some(summary) = ctx.summaries.get(routine_id) else {
         return false;
     };
-    writes_tables_of(summary).len() >= TRANSACTION_THRESHOLD_TABLES
+    // ⟨C1 Task 2 fix M2⟩ The count alone — avoids resolving and allocating one
+    // `String` per table just to discard it. `is_transaction_managing` runs
+    // per routine, so this matters at scale.
+    ctx.cone_derived.writes_tables_count_of(&summary.routine_id) >= TRANSACTION_THRESHOLD_TABLES
 }
 
 /// Returns true when the routine containing an explicit Commit() is eligible for the
@@ -550,6 +552,8 @@ mod tests {
             uncertainties_by_node: HashMap::new(),
             call_site_by_id: HashMap::new(),
             summaries: HashMap::new(),
+            // ⟨C1⟩ No summaries ⇒ no derived cone rows.
+            cone_derived: Default::default(),
             event_flow_indexes: EventFlowIndexes::default(),
             parameter_roles_by_routine: HashMap::new(),
             upgraded_bindings_by_callsite: HashMap::new(),
@@ -563,6 +567,7 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            db_effect_bundle: None,
             fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
                 routines,
                 &[],
@@ -701,6 +706,8 @@ mod tests {
             uncertainties_by_node: HashMap::new(),
             call_site_by_id: HashMap::new(),
             summaries: HashMap::new(),
+            // ⟨C1⟩ No summaries ⇒ no derived cone rows.
+            cone_derived: Default::default(),
             event_flow_indexes: EventFlowIndexes::default(),
             parameter_roles_by_routine: HashMap::new(),
             upgraded_bindings_by_callsite: HashMap::new(),
@@ -714,6 +721,7 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            db_effect_bundle: None,
             // Borrows routines_slice/ws_objects (not yet moved — resolved.workspace
             // below is built from CLONES of both so this borrow stays valid for the
             // ctx's lifetime through the detect_d50 call).

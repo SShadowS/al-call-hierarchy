@@ -1,37 +1,47 @@
 //! Capability-query helpers — faithful port of al-sem
 //! `src/detectors/capability-query.ts`.
 //!
-//! Pure functions over a `FullRoutineSummary`. Every helper reads
-//! `reachable(s) = capability_facts_direct ∪ capability_facts_inherited` and
-//! returns a derived view. The tri-state helpers honour G6 coverage semantics:
-//! when a fact is absent AND the inherited cone is not "complete", they return
-//! `Unknown` rather than `No` (absence of evidence is not evidence of absence
-//! when the cone is partial / coverage data is missing).
+//! Pure functions over a `FullRoutineSummary`. The tri-state helpers honour G6
+//! coverage semantics: when a fact is absent AND the inherited cone is not
+//! "complete", they return `Unknown` rather than `No` (absence of evidence is not
+//! evidence of absence when the cone is partial / coverage data is missing).
 //!
-//! `writes_tables_of` / `publishes_events_of` drop facts with no `resource_id`
-//! and return SORTED + DEDUPED lists. Determinism: both use a `BTreeSet`, so the
-//! output ordering is a stable function of the inputs.
+//! ## ⟨C1 Task 3 — R6⟩ What is left, and what was retired
+//!
+//! The al-sem-shaped RAW helpers — `find_capabilities`, `has_capability`,
+//! `writes_tables_of`, `writes_physical_tables_of`, `publishes_events_of` — all
+//! scanned `reachable(s) = capability_facts_direct ∪ capability_facts_inherited`.
+//! Task 3 stops materializing the inherited half on the analyze path, so those
+//! functions no longer have a correct input: left in place they would keep
+//! compiling and silently return a DIRECT-ONLY view. They are **deleted**, not
+//! demoted. Their production consumers had already moved to the pooled
+//! [`ConeDerivedStore`] equivalents (`store.writes_tables_of(id)` and friends) in
+//! Task 2, and their semantics — sorted, deduped, unresolved-id and foreign-kind
+//! facts dropped, known-temp writes excluded from the physical set — are pinned by
+//! `l4::cone_derived`'s own fold tests.
+//!
+//! What survives:
+//!   - [`touches_db_derived`] / [`may_commit_derived`] — the LIVE tri-states.
+//!     They take a `&ConeDerivedStore` for the presence half and the summary for
+//!     the coverage half (the only two derived queries that need something off the
+//!     summary as well as off the cone).
+//!   - [`reachable_coverage`] — reads `coverage` only; never touched the facts.
+//!   - [`fact_is_known_temp`] — the shared temp gate, re-exported from the fold.
+//!   - `touches_db_of` / `may_commit`, kept `#[cfg(test)]` ONLY: they are the
+//!     raw-scan oracle side of the two tri-states for hand-built fixture
+//!     summaries (which carry their inherited facts as INPUT), notably d1's
+//!     `touches_db_memoized` parity test. They are unreachable from shipping code
+//!     by construction, and on a real derived-only summary they panic through
+//!     `inherited_raw()` rather than answering direct-only.
 
-use std::collections::BTreeSet;
-
-use crate::engine::l4::capability_cone::{CapabilityExtra, CapabilityFact};
+use crate::engine::l4::cone_derived::ConeDerivedStore;
 use crate::engine::l5::full_summary::FullRoutineSummary;
 
-/// True when a capability fact is a write/read on a PROVABLY temporary record
-/// (`extra == Table { temp_state: known/true }`). Such ops are in-memory — they
-/// never touch the physical database, so they cannot create cross-routine /
-/// cross-extension table conflicts or exposure. Mirrors the detector-side
-/// `is_known_temp` gate, lifted to the cone-fact level (the `temp_state` is
-/// preserved across inheritance via `retag`). Suppression-direction safe: only
-/// the exact `known/true` signal qualifies; `Unknown` / parameter-dependent /
-/// absent temp_state keep counting.
-pub fn fact_is_known_temp(f: &CapabilityFact) -> bool {
-    matches!(
-        &f.extra,
-        Some(CapabilityExtra::Table { temp_state: Some(ts), .. })
-            if ts.kind == "known" && ts.value == Some(true)
-    )
-}
+/// True when a capability fact is a write/read on a PROVABLY temporary record.
+/// ⟨C1⟩ The implementation lives in `l4::cone_derived` (the fold applies the same
+/// gate per fact); re-exported here so the raw helpers and the derived fold
+/// cannot drift apart.
+pub use crate::engine::l4::cone_derived::fact_is_known_temp;
 
 /// Tri-state effect presence (al-sem `EffectPresence = "yes" | "no" | "unknown"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,125 +51,38 @@ pub enum EffectPresence {
     Unknown,
 }
 
-/// Table-write ops (al-sem `TABLE_WRITE_OPS = {insert, modify, delete}`).
-fn is_table_write_op(op: &str) -> bool {
-    matches!(op, "insert" | "modify" | "delete")
-}
-
-/// Filter reachable facts (direct + inherited) by an arbitrary predicate.
-/// Returns a fresh `Vec` of references; never mutates the summary. Mirrors
-/// al-sem `findCapabilities`.
-pub fn find_capabilities<P>(s: &FullRoutineSummary, predicate: P) -> Vec<&CapabilityFact>
-where
-    P: Fn(&CapabilityFact) -> bool,
-{
-    s.reachable_iter().filter(|f| predicate(f)).collect()
-}
-
-/// True when at least one reachable fact has the given `(op, resource_kind)`.
-/// Strict discrimination — no fuzzy / substring matching. Mirrors al-sem
-/// `hasCapability`.
-pub fn has_capability(s: &FullRoutineSummary, op: &str, kind: &str) -> bool {
-    s.reachable_iter()
-        .any(|f| f.op == op && f.resource_kind == kind)
-}
-
-/// Sorted + deduped TableIds targeted by any reachable insert/modify/delete fact
-/// on `resource_kind == "table"` with a known `resource_id`. Facts whose table
-/// identity is unresolved (no `resource_id`) are DROPPED. Read facts are NOT
-/// included. Mirrors al-sem `writesTablesOf`.
-pub fn writes_tables_of(s: &FullRoutineSummary) -> Vec<String> {
-    let mut ids: BTreeSet<String> = BTreeSet::new();
-    for f in s.reachable_iter() {
-        if f.resource_kind != "table" {
-            continue;
-        }
-        if !is_table_write_op(&f.op) {
-            continue;
-        }
-        let Some(rid) = &f.resource_id else {
-            continue;
-        };
-        ids.insert(rid.clone());
-    }
-    ids.into_iter().collect()
-}
-
-/// Like `writes_tables_of` but DROPS writes to provably-temporary records
-/// (`fact_is_known_temp`). A temp-table write is in-memory and does no physical
-/// DB work, so it must not inflate the transaction-manager table-count gate (d8)
-/// nor produce cross-extension conflict/exposure findings (d43/d45). Physical /
-/// Unknown / parameter-dependent writes are retained (suppression-direction safe).
-pub fn writes_physical_tables_of(s: &FullRoutineSummary) -> Vec<String> {
-    let mut ids: BTreeSet<String> = BTreeSet::new();
-    for f in s.reachable_iter() {
-        if f.resource_kind != "table" {
-            continue;
-        }
-        if !is_table_write_op(&f.op) {
-            continue;
-        }
-        if fact_is_known_temp(f) {
-            continue;
-        }
-        let Some(rid) = &f.resource_id else {
-            continue;
-        };
-        ids.insert(rid.clone());
-    }
-    ids.into_iter().collect()
-}
-
-/// Returns `Yes` when any reachable fact is a commit on the transaction
-/// resource; `No` when no commit fact AND the inherited cone is "complete";
-/// `Unknown` otherwise (G6 honesty). Mirrors al-sem `mayCommit`.
+/// ⟨C1 Task 3⟩ FIXTURE-ONLY raw oracle for [`may_commit_derived`]: `Yes` when any
+/// fact in `direct ∪ inherited_raw` is a commit on the transaction resource;
+/// otherwise the coverage arm. Mirrors al-sem `mayCommit`.
+///
+/// # Panics
+/// Panics (via `FullRoutineSummary::inherited_raw`) on a summary whose cone ran
+/// `DerivedOnly` — i.e. on anything the production path builds. That is the point:
+/// it can only be applied to hand-built summaries that own their inherited facts.
+#[cfg(test)]
 pub fn may_commit(s: &FullRoutineSummary) -> EffectPresence {
-    for f in s.reachable_iter() {
-        if f.op == "commit" && f.resource_kind == "transaction" {
-            return EffectPresence::Yes;
-        }
-    }
-    if s.inherited_status() == "complete" {
-        EffectPresence::No
-    } else {
-        EffectPresence::Unknown
-    }
+    let found = s
+        .capability_facts_direct
+        .iter()
+        .chain(s.inherited_raw())
+        .any(|f| f.op == "commit" && f.resource_kind == "transaction");
+    presence(found, s)
 }
 
-/// Returns `Yes` when any reachable fact has `resource_kind == "table"`
-/// (regardless of op — read or write); `No` when no such fact AND the inherited
-/// cone is "complete"; `Unknown` otherwise. Mirrors al-sem `touchesDbOf`.
+/// ⟨C1 Task 3⟩ FIXTURE-ONLY raw oracle for [`touches_db_derived`]: `Yes` when any
+/// fact in `direct ∪ inherited_raw` has `resource_kind == "table"` (regardless of
+/// op — read or write); otherwise the coverage arm. Mirrors al-sem `touchesDbOf`.
+///
+/// # Panics
+/// See [`may_commit`].
+#[cfg(test)]
 pub fn touches_db_of(s: &FullRoutineSummary) -> EffectPresence {
-    for f in s.reachable_iter() {
-        if f.resource_kind == "table" {
-            return EffectPresence::Yes;
-        }
-    }
-    if s.inherited_status() == "complete" {
-        EffectPresence::No
-    } else {
-        EffectPresence::Unknown
-    }
-}
-
-/// Sorted + deduped EventIds (plain strings) from reachable `op == "publish"`
-/// facts on `resource_kind == "event"` with a known `resource_id`. Facts whose
-/// event identity is unresolved are DROPPED. Mirrors al-sem `publishesEventsOf`.
-pub fn publishes_events_of(s: &FullRoutineSummary) -> Vec<String> {
-    let mut ids: BTreeSet<String> = BTreeSet::new();
-    for f in s.reachable_iter() {
-        if f.op != "publish" {
-            continue;
-        }
-        if f.resource_kind != "event" {
-            continue;
-        }
-        let Some(rid) = &f.resource_id else {
-            continue;
-        };
-        ids.insert(rid.clone());
-    }
-    ids.into_iter().collect()
+    let found = s
+        .capability_facts_direct
+        .iter()
+        .chain(s.inherited_raw())
+        .any(|f| f.resource_kind == "table");
+    presence(found, s)
 }
 
 /// Returns the routine's inherited coverage status (`coverage.inherited_status`),
@@ -172,31 +95,55 @@ pub fn reachable_coverage<'a>(s: &'a FullRoutineSummary, _kind: Option<&str>) ->
 }
 
 // ===========================================================================
+// ⟨C1⟩ DERIVED-substrate tri-states — the LIVE pair. The presence half reads the
+// folded cone flag instead of scanning raw facts; the absence half is UNCHANGED
+// (`coverage.inherited_status`, which C1 does not touch).
+//
+// ⟨C1 Task 2⟩ These two live HERE, not on the store, because they are the only
+// derived queries that need something off the SUMMARY (`coverage`) as well as
+// off the cone. Everything else a detector reads — the id-sets
+// (`writes_tables_of` / `writes_physical_tables_of` / `physical_table_reads_of`
+// / `physical_table_write_ops_of` / `publishes_events_of`) and the presence
+// flags (`touches_table` / `may_commit_flag` / `touches_io`) — is a pure
+// function of the routine id and is called directly on
+// `ctx.cone_derived`. No consumer routes an id-set through this module.
+// ===========================================================================
+
+/// `touches_db_of` over the derived substrate. (`touches_db_of` is
+/// `#[cfg(test)]`-only, so this cannot be an intra-doc link under a non-test
+/// build — see M-2 in the C1 Task 3 review.)
+pub fn touches_db_derived(store: &ConeDerivedStore, s: &FullRoutineSummary) -> EffectPresence {
+    presence(store.touches_table(&s.routine_id), s)
+}
+
+/// `may_commit` over the derived substrate. (`may_commit` is `#[cfg(test)]`-only,
+/// so this cannot be an intra-doc link under a non-test build — see M-2 in the
+/// C1 Task 3 review.)
+pub fn may_commit_derived(store: &ConeDerivedStore, s: &FullRoutineSummary) -> EffectPresence {
+    presence(store.may_commit_flag(&s.routine_id), s)
+}
+
+/// The shared tri-state arm: present ⇒ `Yes`; absent ⇒ `No` only when the
+/// inherited cone is "complete", else `Unknown` (G6 honesty).
+fn presence(found: bool, s: &FullRoutineSummary) -> EffectPresence {
+    if found {
+        EffectPresence::Yes
+    } else if s.inherited_status() == "complete" {
+        EffectPresence::No
+    } else {
+        EffectPresence::Unknown
+    }
+}
+
+// ===========================================================================
 // Native oracles — ground-truth-free invariants on synthetic inputs.
 // ===========================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::l4::capability_cone::{CapabilityExtra, CapabilityFact};
     use crate::engine::l5::test_support::{coverage, fact, summary};
-
-    #[test]
-    fn writes_tables_is_sorted_deduped_drops_unresolved_and_reads() {
-        let s = summary(
-            "r",
-            vec![
-                fact("insert", "table", Some("t/B")), // write, kept
-                fact("modify", "table", Some("t/A")), // write, kept
-                fact("modify", "table", Some("t/A")), // dup → deduped
-                fact("delete", "table", None),        // no resource_id → dropped
-                fact("read", "table", Some("t/C")),   // read → not a write
-                fact("insert", "event", Some("e/X")), // wrong kind → dropped
-            ],
-            vec![],
-            None,
-        );
-        assert_eq!(writes_tables_of(&s), vec!["t/A", "t/B"]);
-    }
 
     /// Build a `table` write fact carrying a `CapabilityExtra::Table` with the
     /// given temp_state kind/value — for the physical-vs-temp gate tests.
@@ -212,31 +159,6 @@ mod tests {
             op_subtype: Some("Insert".to_string()),
         });
         f
-    }
-
-    #[test]
-    fn writes_physical_drops_known_temp_but_keeps_physical_and_unknown() {
-        let s = summary(
-            "r",
-            vec![
-                temp_table_write_fact("t/Temp", "known", Some(true)), // in-memory → dropped
-                temp_table_write_fact("t/Phys", "known", Some(false)), // not temp → kept
-                temp_table_write_fact("t/Unk", "unknown", None),      // unknown → kept
-                fact("insert", "table", Some("t/Plain")),             // no extra → kept
-            ],
-            vec![],
-            None,
-        );
-        // The faithful port still counts every write (parity unchanged).
-        assert_eq!(
-            writes_tables_of(&s),
-            vec!["t/Phys", "t/Plain", "t/Temp", "t/Unk"]
-        );
-        // The temp-aware variant drops only the provably-temp write.
-        assert_eq!(
-            writes_physical_tables_of(&s),
-            vec!["t/Phys", "t/Plain", "t/Unk"]
-        );
     }
 
     #[test]
@@ -256,17 +178,6 @@ mod tests {
         )));
         // No extra at all → not known-temp.
         assert!(!fact_is_known_temp(&fact("insert", "table", Some("t/A"))));
-    }
-
-    #[test]
-    fn writes_tables_spans_direct_and_inherited() {
-        let s = summary(
-            "r",
-            vec![fact("insert", "table", Some("t/direct"))],
-            vec![fact("modify", "table", Some("t/inherited"))],
-            None,
-        );
-        assert_eq!(writes_tables_of(&s), vec!["t/direct", "t/inherited"]);
     }
 
     #[test]
@@ -311,43 +222,41 @@ mod tests {
         assert_eq!(touches_db_of(&s), EffectPresence::Unknown);
     }
 
+    /// ⟨C1 Task 3⟩ The two surviving raw oracles span `direct ∪ inherited_raw`
+    /// — the property that made them a meaningful oracle side. Pinned here
+    /// because the id-set helpers that used to carry it are deleted.
     #[test]
-    fn publishes_events_sorted_deduped_drops_unresolved() {
+    fn raw_oracles_span_direct_and_inherited() {
+        // The table fact lives ONLY in the inherited half.
         let s = summary(
             "r",
-            vec![
-                fact("publish", "event", Some("e/B")),
-                fact("publish", "event", Some("e/A")),
-                fact("publish", "event", Some("e/A")),   // dup
-                fact("publish", "event", None),          // dropped
-                fact("subscribe", "event", Some("e/Z")), // wrong op
-                fact("publish", "table", Some("t/Q")),   // wrong kind
-            ],
-            vec![],
-            None,
+            vec![fact("send", "http", None)],
+            vec![fact("modify", "table", Some("t/inherited"))],
+            Some(coverage("complete")),
         );
-        assert_eq!(publishes_events_of(&s), vec!["e/A", "e/B"]);
-    }
-
-    #[test]
-    fn has_capability_is_strict() {
-        let s = summary("r", vec![fact("send", "http", None)], vec![], None);
-        assert!(has_capability(&s, "send", "http"));
-        assert!(!has_capability(&s, "send", "table"));
-        assert!(!has_capability(&s, "read", "http"));
-    }
-
-    #[test]
-    fn find_capabilities_filters_reachable() {
+        assert_eq!(touches_db_of(&s), EffectPresence::Yes);
+        // The commit fact likewise.
         let s = summary(
             "r",
-            vec![fact("insert", "table", Some("t/A"))],
-            vec![fact("read", "table", Some("t/B"))],
-            None,
+            vec![fact("send", "http", None)],
+            vec![fact("commit", "transaction", None)],
+            Some(coverage("complete")),
         );
-        let writes = find_capabilities(&s, |f| f.op == "insert");
-        assert_eq!(writes.len(), 1);
-        assert_eq!(writes[0].resource_id.as_deref(), Some("t/A"));
+        assert_eq!(may_commit(&s), EffectPresence::Yes);
+    }
+
+    /// ⟨C1 Task 3 — R6⟩ Applying a raw oracle to a summary whose cone was never
+    /// materialized must PANIC, not quietly answer from the direct half alone.
+    #[test]
+    #[should_panic(expected = "RAW_INHERITED_FACTS")]
+    fn raw_oracle_panics_on_a_derived_only_summary() {
+        let s = FullRoutineSummary::new(
+            "r".to_string(),
+            vec![fact("send", "http", None)],
+            None,
+            Some(coverage("complete")),
+        );
+        let _ = touches_db_of(&s);
     }
 
     #[test]

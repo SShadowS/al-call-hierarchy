@@ -85,7 +85,7 @@ use crate::engine::perf_trace as pt;
 #[cfg(test)]
 use crate::engine::l4::effect_lattice::TempStateKind;
 #[cfg(test)]
-use crate::engine::l5::capability_query::{EffectPresence, touches_db_of};
+use crate::engine::l5::capability_query::{EffectPresence, touches_db_derived};
 #[cfg(test)]
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 #[cfg(test)]
@@ -657,15 +657,24 @@ struct D1Policy<'a> {
     summaries: &'a HashMap<String, crate::engine::l5::full_summary::FullRoutineSummary>,
     edges_by_from: &'a HashMap<String, Vec<CombinedEdge>>,
     call_site_by_id: &'a HashMap<&'a str, &'a crate::engine::l2::features::PCallSite>,
+    /// ⟨C1 Task 2⟩ The derived cone substrate the `touches_db` probe reads. Held
+    /// as a borrow off the same `DetectorContext` that owns `summaries`, so the
+    /// two can never describe different cone walks.
+    cone_derived: &'a crate::engine::l4::cone_derived::ConeDerivedStore,
     /// Per-run memo of `touches_db_of`, keyed by callee routine id. `expand`
     /// probes the same callee's cone once per INCOMING edge across the whole
     /// `walk_evidence` DFS — and cones reach thousands of facts at high graph
-    /// density — so the first probe walks the chain iterator (early-exiting on
-    /// the first `"table"` fact) and every later probe of that routine is an
-    /// O(1) memo hit. `expand` only has `&self`, hence `RefCell` for the lazy
-    /// fill. Keys borrow from `summaries` (owned by `ctx`), which outlives the
-    /// walk. `touches_db_of` is a pure function of the (immutable) summary, so
-    /// the answer is stable for the run.
+    /// density — so the first probe used to walk the chain iterator (early-exiting
+    /// on the first `"table"` fact) and every later probe of that routine is an
+    /// O(1) memo hit. ⟨C1 Task 2⟩ The first probe is now itself O(1) (a folded
+    /// presence flag), but the memo is retained: it is part of this struct's
+    /// shape and the walk's hot path is unchanged. ⟨fix M1⟩ Not free, though:
+    /// it now trades what used to be an O(cone-size) scan for one hash-map
+    /// insert per distinct routine — a net win, not a costless one. `expand`
+    /// only has `&self`, hence `RefCell` for the lazy fill. Keys borrow from
+    /// `summaries` (owned by `ctx`), which outlives the walk. The probe is a pure
+    /// function of the (immutable) summary + store, so the answer is stable for
+    /// the run.
     touches_db_memo: RefCell<HashMap<&'a str, EffectPresence>>,
     /// Per-run memo of the CANONICAL interprocedural walk from a callee entry
     /// (`initial_loop_depth: 0`, empty prefix), keyed by callee routine id.
@@ -685,7 +694,8 @@ struct D1Policy<'a> {
 
 #[cfg(test)]
 impl<'a> D1Policy<'a> {
-    /// `touches_db_of(s)`, memoized once-per-run by the summary's routine id.
+    /// `touches_db_of(s)` — ⟨C1 Task 2⟩ served off the derived cone substrate —
+    /// memoized once-per-run by the summary's routine id.
     fn touches_db_memoized(
         &self,
         s: &'a crate::engine::l5::full_summary::FullRoutineSummary,
@@ -694,7 +704,7 @@ impl<'a> D1Policy<'a> {
             .touches_db_memo
             .borrow_mut()
             .entry(s.routine_id.as_str())
-            .or_insert_with(|| touches_db_of(s))
+            .or_insert_with(|| touches_db_derived(self.cone_derived, s))
     }
 }
 
@@ -958,6 +968,7 @@ pub(crate) fn detect_d1_premerge(resolved: &L3Resolved, ctx: &DetectorContext) -
         summaries: &ctx.summaries,
         edges_by_from: &ctx.graph.edges_by_from,
         call_site_by_id: &ctx.call_site_by_id,
+        cone_derived: &ctx.cone_derived,
         touches_db_memo: RefCell::new(HashMap::new()),
         walk_memo: RefCell::new(HashMap::new()),
     };
@@ -2087,6 +2098,7 @@ fn build_finding_internal(
 #[cfg(test)]
 mod memo_tests {
     use super::*;
+    use crate::engine::l5::capability_query::touches_db_of;
     use crate::engine::l5::full_summary::FullRoutineSummary;
     use crate::engine::l5::test_support::{coverage, edge, fact, routine, summary};
 
@@ -2095,6 +2107,10 @@ mod memo_tests {
     /// `EffectPresence` outcomes — and the cached (second) probe must equal the
     /// first. This is the soundness contract for the per-run memo that replaces
     /// the old per-edge `touches_db_of` call in the `walk_evidence` DFS.
+    ///
+    /// ⟨C1 Task 2⟩ The memo now fills from the DERIVED substrate, so this is
+    /// additionally a raw-vs-derived parity assertion over the same three
+    /// outcomes — the `touches_db_of` side is deliberately still the raw scan.
     #[test]
     fn touches_db_memo_matches_direct_for_every_routine() {
         // Spread covering every EffectPresence branch:
@@ -2138,12 +2154,14 @@ mod memo_tests {
             .map(|s| (s.routine_id.clone(), s))
             .collect();
 
-        // Otherwise-empty indexes — the memo path reads only `summaries`.
+        // Otherwise-empty indexes — the memo path reads only `summaries` and the
+        // derived cone folded from them.
         let routine_by_id: HashMap<&str, &L3Routine> = HashMap::new();
         let table_by_id: HashMap<&str, &L3Table> = HashMap::new();
         let edges_by_from: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
         let call_site_by_id: HashMap<&str, &crate::engine::l2::features::PCallSite> =
             HashMap::new();
+        let cone_derived = crate::engine::l5::test_support::cone_store_of(&summaries);
 
         let policy = D1Policy {
             routine_by_id: &routine_by_id,
@@ -2151,6 +2169,7 @@ mod memo_tests {
             summaries: &summaries,
             edges_by_from: &edges_by_from,
             call_site_by_id: &call_site_by_id,
+            cone_derived: &cone_derived,
             touches_db_memo: RefCell::new(HashMap::new()),
             walk_memo: RefCell::new(HashMap::new()),
         };
@@ -2282,12 +2301,14 @@ mod memo_tests {
         let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
         uncertainties_by_node.insert("D".to_string(), vec![unc]);
 
+        let cone_derived = crate::engine::l5::test_support::cone_store_of(&summaries);
         let policy = D1Policy {
             routine_by_id: &routine_by_id,
             table_by_id: &table_by_id,
             summaries: &summaries,
             edges_by_from: &edges_by_from,
             call_site_by_id: &call_site_by_id,
+            cone_derived: &cone_derived,
             touches_db_memo: RefCell::new(HashMap::new()),
             walk_memo: RefCell::new(HashMap::new()),
         };

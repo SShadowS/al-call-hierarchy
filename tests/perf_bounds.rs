@@ -256,6 +256,62 @@ mod release_checks {
     // exact run log.
     const COMPUTE_ALL_SCALING_FACTOR: u32 = 7;
 
+    // `compute_summaries_v2_bundle` (l4-summary-fixpoint-redesign Task 11;
+    // re-pointed at the LEAN bundle entry point post-B1-migrate, final
+    // whole-branch review M-3) — the closed-form db-effect solver
+    // `build_detector_context` actually calls for every `alsem analyze`/
+    // `aldump` run (`src/engine/l5/detector_context.rs:655`, inside the
+    // `context.compute_summaries` span opened at `:634`). Both it and the
+    // materializing `compute_summaries_v2`/`_with_leaves_core` shims share
+    // the SAME core (`compute_summaries_v2_bundle_with_leaves`), so the
+    // Task 11/11b history below applies to this gate unchanged.
+    //
+    // Task 11 originally gated this at a DELIBERATELY SMALLER 100-file corpus
+    // (median ~38.1ms) because `solve_scc_db_effects` called
+    // `build_rvid_by_opid(base_summaries, settled)` ONCE PER TARJAN SCC —
+    // `build_rvid_by_opid` scans ALL of `base_summaries`/`settled` (every
+    // routine in the WHOLE workspace), so that per-SCC call was
+    // O(total-workspace-db_effects) paid N times over N SCCs: O(N^2) in
+    // routine count. Measured on the SAME (all-singleton-SCC, non-recursive)
+    // corpus at the time: 100->1000 files (1000->10,000 routines) cost ~120x
+    // time for a 10x routine-count increase — worse than linear on a graph
+    // with ZERO recursive SCCs, i.e. an algorithmic defect, not corpus noise.
+    //
+    // Task 11b (this fix) hoists `build_rvid_by_opid` OUT of the per-SCC loop
+    // — built ONCE, before `compute_summaries_v2_with_leaves_core`'s
+    // per-Tarjan-SCC loop, from `base_summaries ∪ leaf_summaries` (see that
+    // fn's doc for the completeness argument) — and does the SAME for a
+    // second O(N^2) cost found alongside it: `solve_side_facts` used to
+    // rebuild its own workspace-wide `body_avail_by_id` map on EVERY call
+    // (once per effective SCC), also now hoisted once and threaded in. With
+    // both fixed, this gate is restored to the file's STANDARD 1000-file
+    // corpus size (matching every other bound in this file) rather than the
+    // 100-file dodge.
+    //
+    // Re-measured median ~76ms on this machine (release, dev machine,
+    // 2026-07-22; 5 timed samples over a warmed-up 1000-file / 10,000-routine
+    // perf_support corpus — samples ranged ~68-86ms; a SEPARATE scratch
+    // measurement at 100->1000->4000 files showed time ratios of ~16.8x/~5.5x
+    // against routine-count ratios of 10x/4x — dramatically closer to linear
+    // than the ~120x/~16x an O(N^2) solver would produce at those same
+    // ratios, see the task report for the full log). Bound set to 3x that
+    // baseline, the file's usual CLAUDE.md-target convention: generous enough
+    // to absorb machine-to-machine variance and ordinary noise, tight enough
+    // that a true order-of-magnitude regression still trips it.
+    //
+    // Re-measured post-A3-store (l4-db-effect-store-redesign, commit f9673f7,
+    // 2026-07-24): 4 independent 5-sample runs gave medians 57.2ms/80.0ms/
+    // 67.8ms/71.3ms (individual samples ranged ~53-86ms) — squarely
+    // overlapping the 2026-07-22 ~76ms baseline above, i.e. NOT materially
+    // different. Expected: the A1-A4 store redesign's win is concentrated on
+    // dense recursive SCCs (8020 corpus: db_solver 109s->10s), while this
+    // perf_support corpus is deliberately non-recursive (straight-line call
+    // chains, see `compute_summaries_v2_within_bound`'s own doc), so the
+    // closed-form non-recursive path exercised here was never expected to
+    // move. Bound left at 230ms (3x ~76ms) rather than tightened, per that
+    // baseline's still-current headroom rationale.
+    const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(230); // 3x ~76ms measured baseline (re-measured post-A3-store 2026-07-24, unchanged)
+
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
         samples[samples.len() / 2]
@@ -818,6 +874,133 @@ mod release_checks {
             "rung-2 signature-edit median {m:?} exceeds corpus-relative bound {RUNG2_SYNTHETIC_BOUND:?} \
              (samples: {samples:?}) — this is a real regression on THIS corpus even though it \
              may still be under the looser CDO-anchored bound"
+        );
+    }
+
+    /// `compute_summaries_v2_bundle` (l4-summary-fixpoint-redesign Task 11;
+    /// re-pointed post-B1-migrate at the LEAN bundle entry point,
+    /// final-whole-branch-review finding M-3 — this test previously measured
+    /// the materializing `compute_summaries_v2` compat shim, which
+    /// `build_detector_context` stopped calling at Task B1 `a0cd348`) — the
+    /// closed-form db-effect solver `build_detector_context` actually calls
+    /// for every `alsem analyze`/`aldump` run
+    /// (`src/engine/l5/detector_context.rs:655`, inside the
+    /// `context.compute_summaries` span opened at `:634`). Builds the SAME
+    /// `(routines, graph, scc, upgraded_bindings, fields)` substrate that
+    /// path builds, via the SAME public functions in the SAME order —
+    /// mirrors `tests/l4_summary_differential.rs`'s
+    /// `cdo_whole_program_v2_parity` assembly, just over the synthetic
+    /// perf_support corpus instead of a real `CDO_WS` workspace (not
+    /// reproducible in this sandbox — see CLAUDE.md's Testing Philosophy &
+    /// Goldens).
+    ///
+    /// The perf_support corpus has NO recursive SCC (`Proc1..Proc{N-2}` form
+    /// a straight-line local call chain — see that module's own doc), so
+    /// this gate only exercises the common closed-form (non-recursive) path;
+    /// the recursive-SCC pathology this redesign fixed is proven separately
+    /// by the coordinator's real-workspace 8020 before/after re-measurement,
+    /// not this gate. Restored (Task 11b) to the file's STANDARD 1000-file
+    /// corpus size — matching every other bound in this file — now that the
+    /// O(N^2) `build_rvid_by_opid`/`body_avail_by_id` per-SCC rebuilds are
+    /// hoisted out (see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own doc); the
+    /// 100-file dodge is no longer needed.
+    #[test]
+    fn compute_summaries_v2_within_bound() {
+        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+        use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
+        use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+        use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
+        use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
+        use al_call_hierarchy::engine::l4::summary_runner::{
+            FieldIndex, compute_summaries_v2_bundle,
+        };
+        use std::collections::HashMap;
+
+        let dir = corpus_dir(1000);
+        let resolved = assemble_and_resolve_workspace_default(dir.path()).expect(
+            "assemble_and_resolve_workspace_default must succeed on the perf_support corpus",
+        );
+        let ws = &resolved.workspace;
+
+        // Assemble the SAME substrate `build_detector_context`'s
+        // CORE_SUMMARIES path builds (`detector_context.rs:571-581` the SCC,
+        // `:638-645` the field index): symbol table -> resolve_calls (no
+        // deps, no fetched apps — matches the source-only detector-context
+        // path) -> event graph -> combined graph -> a Tarjan SCC over
+        // `graph.edges_by_from` -> the field index. `leaf_summaries` is not
+        // needed here: `compute_summaries_v2_bundle` (no `_with_leaves`)
+        // always passes the empty map, exactly like `build_detector_context`'s
+        // own call (`:655`).
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+        let no_deps: Vec<DeclaredDependency> = Vec::new();
+        let no_fetched: Vec<String> = Vec::new();
+        let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+        let event_graph = build_event_graph(&ws.routines, &symbols);
+        let graph = build_combined_graph(ws, &calls, &event_graph);
+
+        let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+        for (from, list) in &graph.edges_by_from {
+            scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+        }
+        let scc = tarjan_scc(&SccInputGraph {
+            nodes: &graph.nodes,
+            edges_by_from: &scc_adjacency,
+        });
+
+        let mut field_index: FieldIndex = HashMap::new();
+        for table in &ws.tables {
+            for field in &table.fields {
+                field_index
+                    .entry((table.id.clone(), field.name.to_lowercase()))
+                    .or_insert_with(|| field.id.clone());
+            }
+        }
+
+        // Warm-up (also proves the solver runs clean before timing it).
+        // `compute_summaries_v2_bundle` returns the compact `SummaryBundle`
+        // alongside the settled map — the bundle itself is not queried here
+        // (no consumer in this gate needs the lazy per-routine db_effects
+        // projection), only the map's non-emptiness, same sanity check the
+        // materializing shim's gate used.
+        let (_warm_bundle, warm, _diag) = compute_summaries_v2_bundle(
+            &ws.routines,
+            &graph,
+            &scc,
+            &calls.upgraded_bindings,
+            &field_index,
+        );
+        assert!(
+            !warm.is_empty(),
+            "sanity: compute_summaries_v2_bundle must produce summaries for a 1000-file workspace"
+        );
+
+        let mut samples = Vec::with_capacity(5);
+        for _ in 0..5 {
+            let start = Instant::now();
+            let (_bundle, result, _diag) = compute_summaries_v2_bundle(
+                &ws.routines,
+                &graph,
+                &scc,
+                &calls.upgraded_bindings,
+                &field_index,
+            );
+            samples.push(start.elapsed());
+            assert!(
+                !result.is_empty(),
+                "sanity: compute_summaries_v2_bundle must produce summaries"
+            );
+        }
+        let m = median(samples.clone());
+        println!(
+            "[perf_bounds] compute_summaries_v2_bundle(1000): median={m:?} bound={COMPUTE_SUMMARIES_V2_BOUND:?} \
+             samples={samples:?}"
+        );
+        assert!(
+            m <= COMPUTE_SUMMARIES_V2_BOUND,
+            "compute_summaries_v2_bundle median {m:?} exceeds 3x-target bound \
+             {COMPUTE_SUMMARIES_V2_BOUND:?} (samples: {samples:?})"
         );
     }
 }

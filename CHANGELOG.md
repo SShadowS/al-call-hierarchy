@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **L4 db-effect store redesign — interned columnar `EffectStore` +
+  `ReverseEffectIndex`** (`src/engine/l4/effect_store.rs`,
+  `src/engine/l4/effect_universe.rs`, `src/engine/l4/reverse_index.rs`,
+  `src/engine/l4/routine_interner.rs`;
+  `docs/superpowers/specs/2026-07-22-l4-dbeffect-store-and-retirement-design.md`,
+  `feat/l4-summary-redesign`, Part A A1–A5). Replaces the per-member
+  `Vec<DbEffect>` materialization that dominated the closed-form v2 solver's
+  constant factors with a shared, interned, columnar store: a
+  `GrowingEffectUniverse` → `FrozenEffectUniverse` typestate interns each
+  distinct effect identity to an `EffectId` (storage EffectId-keyed, OUTPUT order
+  a frozen `key_rank` — ids are never reassigned), an SCC-shared `EffectSetId`
+  hash-conses the terminal sets, and a lazy `DbEffect` view reproduces the
+  byte-identical `Vec<DbEffect>` per routine on demand. `ReverseEffectIndex` is
+  the bidirectional hover/query index (effect/table ↔ routine) — built and
+  unit-tested (7 self-consistency tests) but **not yet wired to a production
+  consumer**; wiring was deliberately deferred to the first hover/query
+  consumer that needs it (see `docs/OUTSTANDING.md`). Proven
+  byte-identical to the old Jacobi solver over the complete `RoutineSummary` on
+  the fixtures + generated small-graph shapes + the CDO whole-program case
+  (`tests/l4_summary_differential.rs`).
 - **`finding`/`d1_cohort` — compressed report schema + loop-set interning
   (`LoopSetId`, `LoopSetRegistry`, `LoopCatalogEntry`, `D1CohortContext`,
   `decompress_cohort_context`)** (`src/engine/l5/finding.rs`,
@@ -391,6 +411,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt` stamp).
 
 ### Removed
+- **The raw inherited-cone read API + the `cone_parity` dual-run oracle**
+  (`src/engine/l5/capability_query.rs`, `src/engine/l5/full_summary.rs`,
+  `src/engine/l5/cone_parity.rs` [deleted], `feat/l4-summary-redesign`, Part C
+  C1 Task 3). With every analyze consumer on the derived substrate (entry under
+  `Changed`), the helpers that walked the raw `Vec<CapabilityFact>` have zero
+  production callers and are deleted: `find_capabilities`, `has_capability`,
+  `writes_tables_of`, `writes_physical_tables_of`, `publishes_events_of`, plus
+  `FullRoutineSummary::reachable`/`reachable_iter`. `touches_db_of`/`may_commit`
+  survive `#[cfg(test)]`-only as fixture oracles.
+  `FullRoutineSummary::capability_facts_inherited` is now a PRIVATE
+  `Option<Vec<_>>` read through `inherited_raw()`, which **panics** when the cone
+  ran `DerivedOnly` — a missed consumer is loud, never a silent direct-only
+  answer. `cone_parity` (the `C1_CONE_PARITY=1` derived-vs-raw dual-run oracle
+  that guarded Tasks 1–2) goes with them: under `DerivedOnly` its raw side would
+  degrade to direct-only and every check would false-alarm. Its one
+  Vec-independent test — the G-18 colliding-routine-id pin on
+  `ConeDerivedStore::forget` — was RELOCATED into `detector_context`'s test
+  module and hardened with the `!cone_derived.is_empty()` precondition it
+  lacked. `C1_CONE_CENSUS=1` (`src/engine/l4/cone_census.rs`) is a different,
+  still-live diagnostic: a byte census, not a parity oracle.
+- **The old L4 Jacobi db-effects solver + the R3b Salsa incremental experiment +
+  the R3a-2 Jacobi trace dump mode — ONE summary path remains**
+  (`src/engine/l4/summary_runner.rs`, `src/engine/l4/summary.rs`,
+  `src/engine/l4/incremental/` [deleted], `src/bin/aldump.rs`,
+  `src/engine/perf_trace.rs`;
+  `docs/superpowers/specs/2026-07-22-l4-dbeffect-store-and-retirement-design.md`
+  Part B, `feat/l4-summary-redesign`, Task B1). Now that the interned columnar
+  `EffectStore` solver (above) is proven byte-identical, the old Jacobi solver is
+  retired: deleted `compose_routine` (the full JACOBI transfer function),
+  `run_one_scc` + `SccComputeOut`, `compute_summaries` /
+  `compute_summaries_with_leaves`, `RawSccTrace` / `RawSccTracePass`, and the
+  `Detail::Jacobi` perf-trace tier + its per-SCC/per-pass instrumentation. KEPT
+  the pieces v2 uses (`compose_roles_only`, `run_one_scc_roles`,
+  `solve_side_facts`, `SccComputeCtx`, `SummarizeDiagnostic`). Also deleted the
+  **R3b Salsa incrementality experiment** (`src/engine/l4/incremental/` + the 4
+  `tests/r3/r3b_*` suites — zero shipping consumers; reusable design intent
+  preserved in `docs/superpowers/notes/2026-07-24-r3b-incremental-l4-design-intent.md`)
+  and the **R3a-2 Jacobi fingerprint TRACE** dump mode (`aldump --r3a2-trace`,
+  `project_r3a2_with_trace`, `R3a2Trace`/`PSccTrace`/`PSccTracePass`,
+  `project_raw_scc_traces`, the 3 `*.r3a2-trace.golden.json` + their tests): the
+  closed-form v2 solver has no per-pass trajectory to trace, and al-sem (the
+  trace's oracle) is retired. The `tests/l4_summary_differential.rs` differential
+  flipped from `v2 == old` to `v2 == frozen complete-internal baseline`
+  (`tests/l4-summary-baseline/`, captured at parity before deletion; pre-deletion
+  commit recorded for forensic re-differencing). The R3a-2 SUMMARY projection
+  (`aldump --r3a2-summary-core`) is unchanged — byte-identical goldens.
 - **7a's rayon `par_iter` group-parallelism in `d1_reach::search_loops`** (Task
   D3; `src/engine/l5/d1_reach.rs`, `feat/d1-reachability`). This was the 42.8 GB
   RSS culprit — 32 concurrent worker threads each materializing a fresh
@@ -576,6 +642,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **L4 capability cones — the compact `ConeDerivedStore` substrate replaces the
+  per-routine inherited-fact Vec, and the SCC walk stops holding cones nothing
+  will read** (`feat/l4-summary-redesign`, Part C C1 Tasks 1–4;
+  `docs/superpowers/plans/2026-07-24-c1-cone-derived-substrate.md`;
+  `src/engine/l4/cone_derived.rs` (new), `src/engine/l4/capability_cone.rs`,
+  `src/engine/l4/cone_census.rs` (new, diagnostic), `src/engine/l5/detector_context.rs`,
+  `src/engine/l5/capability_query.rs` + the migrated detectors,
+  `src/engine/l5/full_summary.rs`). `context.capability_cones` was the analyze
+  path's largest remaining span at **10 941 MB** of `rss_delta` on the 8020
+  corpus (8020 files / 84 035 routines / d8-only shape) because every routine
+  owned a `Vec<CapabilityFact>` holding its whole reachable cone — `retag`
+  value-cloned every reachable downstream fact into every ancestor's Vec. Four
+  changes, each output-neutral:
+  1. **A compact derived substrate** (`ConeDerivedStore`) is folded during the
+     SAME cone walk — per-routine presence flags plus interned table/event
+     id-set windows (`Range<u32>` into shared pools), with zero `retag` clones.
+  2. **Every analyze-path consumer reads it** (`ctx.cone_derived`): each of them
+     only ever wanted a derived predicate (`touches_db`/`may_commit`/
+     `writes_tables`/`publishes_events`/IO kinds), never the fact objects.
+  3. **The raw Vec is no longer built on the analyze path.** The cone composes
+     under `ConeOutput::DerivedOnly`; `capability_facts_inherited` is
+     `Option<Vec<_>>` and `None` means *never materialized*, so
+     `inherited_raw()` PANICS rather than silently answering "empty cone". The
+     raw path survives behind the policy-only `RAW_INHERITED_FACTS` demand bit
+     (deliberately NOT part of `substrate::ALL`) for `gate::policy` — the sole
+     caller that ORs the bit into a `build_detector_context` demand — plus the
+     R3a-3/R3a-5 cone `projection`s (`aldump`'s
+     `--r3a3-cone-coverage`/`--r3a5-cross-app-summary` modes), which build
+     their raw cone directly via `ConeOutput::RawOnly` outside the demand-bit
+     mechanism entirely. Their byte output and `sort_inherited` order are
+     unchanged. `prove` and `digest` are NOT in this list: both already run
+     `DerivedOnly` (plain `substrate::ALL`, no `RAW_INHERITED_FACTS`), reading
+     only `ctx.transaction_spans`, which is derived-substrate-backed.
+  4. **The SCC walk stops materializing cones that can never be read.** A cone
+     is consumed only by an SCC's PREDECESSORS, and the walk's refcount-free
+     fires only when a predecessor finishes — so a call-graph ROOT's cone (no
+     predecessors, never anyone's successor) was built in full and held until
+     the walk returned: 17 864 root SCCs / 2 224 901 fact entries / **1 598.87
+     MB** on the 8020 corpus. A root's cone is now never built. The walk's dead
+     inputs are dropped at last use instead of at their block's end
+     (`direct_in` — a byte-identical duplicate of `direct_full`, 79.66 MB —
+     is deleted outright; `adjacency`, `direct`, `cov`, `routine_ids`, `nodes`,
+     `coverage_in` are dropped), and `CapabilityFact`'s five closed vocabularies
+     (`op`/`resource_kind`/`confidence`/`provenance`/`via`) became `&'static
+     str`, taking the struct 408 → 368 B and removing 5 allocations per fact.
+  **Measured** (8020, `release-fast`, d8-only): `context.capability_cones`
+  `rss_delta` 10 941 MB → **2 151 MB** after change 3, whole-process peak
+  17 055 MB → **9 593 MB**; the `C1_CONE_CENSUS=1` byte census then attributed
+  74% of that 2 151 MB residual to the root-cone hold, which change 4 takes to
+  **0 bytes** (census before/after and the corpus-level numbers in
+  `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`; the post-Task-4
+  whole-process RSS re-measure is not in this entry). **Output-neutral
+  throughout**: all five golden families byte-identical with zero golden files
+  touched at every task, the l4 summary differential 17/17, and DO-workspace
+  `alsem analyze --format json --deterministic` (sha256
+  `a674dae34cf10f1388ae6d5310fe90f537ae36f4e045e474158d5c673d3bbf3f`) plus
+  `alsem policy check --format json --deterministic` (sha256
+  `6a6cff4245245e627b5fbf6f322879ef7996787d12d305d73ac45c1ee60d4586`)
+  byte-identical, stdout and stderr, from before Task 1 through Task 4.
+  **Review fix-wave** (`.superpowers/sdd/task-4-review.md`): added
+  `debug_assert_ne!`/`debug_assert!` at all four `fact_cones`/`cov_cones` read
+  sites (`inherited_facts_for_singleton`, `inherited_facts_by_bfs`,
+  `fact_cone_for_scc`, `coverage_cone_for_scc`) so a future change that ever
+  pulls a root SCC's (never-built) cone panics in debug builds instead of
+  silently returning an empty/foreign cone — proved to fire by temporarily
+  inverting one assertion, confirming `cone_derived`'s unit tests panic, then
+  reverting to green. Also corrected two stale post-D2 census texts
+  (`capability_cone.rs`'s own stderr and `cone_census.rs`'s module comment
+  both still said "three" copies/sites after `direct_in`'s deletion left
+  two), fixed the `CapabilityFact` struct doc's field count/list (six owned
+  fields, not three, `extra` included), tracked the plan doc this entry cites
+  (`docs/superpowers/plans/2026-07-24-c1-cone-derived-substrate.md` was
+  untracked), and corrected two `OUTSTANDING.md` overclaims: the census only
+  MEASURED the root-cone residual reaching 0 (Task 4's code change caused
+  it), and the post-Task-4 whole-process re-measure — now taken — shows
+  whole-process peak 9 593 MB → **7 787 MB** and wall 196 s → 127 s, with the
+  largest remaining spans (`l3.assemble_resolve` 3 381 MB,
+  `l3.parse_project_parallel` 2 770 MB) outside this arc entirely.
+- **L4 analyze path consumes the `SummaryBundle` lazily — the ~24 GB / ~74 s
+  db-effects RSS rematerialization is GONE** (`feat/l4-summary-redesign`, Part B
+  B1; `src/engine/l4/summary_runner.rs`, `src/engine/l5/detector_context.rs`).
+  The analyze path (`build_detector_context` + the cross-app
+  `build_detector_context_cross_app`) now calls the LEAN bundle entry points
+  (`compute_summaries_v2_bundle` / `compute_summaries_v2_bundle_with_leaves`)
+  instead of the materializing shim `compute_summaries_v2` /
+  `compute_summaries_v2_with_leaves_core`: it receives a `core_summaries` map
+  whose `db_effects` are EMPTY (never re-expanded) with `.uncertainties` /
+  `.parameter_roles` fully populated — the only fields any detector reads (no
+  `src/engine/l5/` or `src/engine/gate/` detector reads
+  `RoutineSummary.db_effects`) — and holds the compact `SummaryBundle` on the new
+  `DetectorContext.db_effect_bundle: Option<SummaryBundle>` so the rows stay
+  QUERYABLE on demand (`bundle.db_effects(rix)` / an on-demand
+  `ReverseEffectIndex`) without the eager per-routine `Vec<DbEffect>` expansion.
+  Output-neutral: cli-a analyze goldens byte-identical, the v2==frozen-baseline
+  differential still 17/17 (the materializing shim — kept for the R3a-5
+  projection + differential — is unchanged). This lands the deferred
+  **RSS consumer-migration** the entry below flagged.
+- **L4 `compute_summaries` — the closed-form interned `EffectStore` solver
+  replaced the O(N²)-materialization Jacobi db-effects fixpoint**
+  (`feat/l4-summary-redesign`; 8020-corpus re-measure in
+  `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`). On the 8020 synthetic
+  corpus the db-effect solve (`db_solver_ms`, phase-split) dropped from **~517 s
+  to ~11.8 s** (the old Jacobi it replaced was ~729 s); the SCC-shared
+  `EffectSetId` store collapsed the per-member materialization. The analyze-path
+  `db_effects` **materialization shim** (`summary_runner.rs`) that re-expanded the
+  shared store into owned `Vec<DbEffect>` per routine — the residual
+  `context.compute_summaries` ~24 GB RSS cost — is now bypassed on the analyze
+  path by the B1 consumer-migration above; the shim is retained only for the
+  projection + differential callers that read `db_effects`.
 - **d1 CUTOVER — `detect_d1` emits the compressed terminal-cohort report; the
   per-`(loop, terminal)` witness/context explosion is GONE** (Tasks C5+C6,
   `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`;

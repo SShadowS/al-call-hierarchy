@@ -35,9 +35,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use crate::engine::l2::features::PCallee;
 use crate::engine::l3::l3_workspace::L3Routine;
-use crate::engine::l5::capability_query::{
-    publishes_events_of, reachable_coverage, writes_tables_of,
-};
+use crate::engine::l4::cone_derived::ConeDerivedStore;
+use crate::engine::l5::capability_query::reachable_coverage;
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::ReverseCallGraph;
 
@@ -121,9 +120,15 @@ fn backward_cone(
 /// lines 97-109 / 152-164: a routine with no summary → `coverage_complete` false
 /// and contributes nothing; otherwise union its `writes_tables_of` /
 /// `publishes_events_of` and AND-in its `reachable_coverage == "complete"`.
+/// ⟨C1 Task 2⟩ The write / event id-sets come from the folded cone rows
+/// (`cone_derived`); the `summaries` lookup stays because BOTH remaining
+/// behaviours depend on it — the "no summary ⇒ not complete AND contributes
+/// nothing" arm, and `reachable_coverage`, which reads `coverage` (untouched by
+/// this arc).
 fn aggregate_span(
     visited: &BTreeSet<String>,
     summaries: &HashMap<String, FullRoutineSummary>,
+    cone_derived: &ConeDerivedStore,
 ) -> (Vec<String>, Vec<String>, bool) {
     let mut writes: BTreeSet<String> = BTreeSet::new();
     let mut events: BTreeSet<String> = BTreeSet::new();
@@ -133,10 +138,10 @@ fn aggregate_span(
             coverage_complete = false;
             continue;
         };
-        for t in writes_tables_of(summary) {
+        for t in cone_derived.writes_tables_of(&summary.routine_id) {
             writes.insert(t);
         }
-        for e in publishes_events_of(summary) {
+        for e in cone_derived.publishes_events_of(&summary.routine_id) {
             events.insert(e);
         }
         if reachable_coverage(summary, None) != "complete" {
@@ -182,12 +187,13 @@ fn span_template<'c>(
     commits_by_routine: &BTreeMap<String, Vec<String>>,
     reverse: &ReverseCallGraph,
     summaries: &HashMap<String, FullRoutineSummary>,
+    cone_derived: &ConeDerivedStore,
     cache: &'c mut HashMap<String, SpanTemplate>,
 ) -> &'c SpanTemplate {
     if !cache.contains_key(seed) {
         let visited = backward_cone(seed, commits_by_routine, reverse);
         let (writes_tables, publishes_events, coverage_complete) =
-            aggregate_span(&visited, summaries);
+            aggregate_span(&visited, summaries, cone_derived);
         let span_roots = span_roots_of(&visited, reverse);
         cache.insert(
             seed.to_string(),
@@ -213,11 +219,15 @@ fn span_template<'c>(
 /// `reverse` — the reverse call graph (`build_reverse_call_graph`).
 /// `summaries` — internal RoutineId → its `FullRoutineSummary`; a routine with no
 /// entry behaves like al-sem's `summary === undefined`.
+/// `cone_derived` — ⟨C1 Task 2⟩ the folded cone substrate the span's
+/// `writes_tables` / `publishes_events` unions read; must be the store built
+/// from the SAME cone walk that produced `summaries`.
 pub fn compute_transaction_spans(
     routines: &[L3Routine],
     dep_routine_ids: &BTreeSet<String>,
     reverse: &ReverseCallGraph,
     summaries: &HashMap<String, FullRoutineSummary>,
+    cone_derived: &ConeDerivedStore,
 ) -> Vec<TransactionSpan> {
     let mut spans: Vec<TransactionSpan> = Vec::new();
 
@@ -252,6 +262,7 @@ pub fn compute_transaction_spans(
             &commits_by_routine,
             reverse,
             summaries,
+            cone_derived,
             &mut template_cache,
         );
         // clone the template fields once per OP (same values every op — was a
@@ -293,6 +304,7 @@ pub fn compute_transaction_spans(
                 &commits_by_routine,
                 reverse,
                 summaries,
+                cone_derived,
                 &mut template_cache,
             );
             // commitOperationId uses the callsite id (same opaque-string type at
@@ -323,8 +335,8 @@ mod tests {
     use super::*;
     use crate::engine::l5::reverse_call_graph::build_reverse_call_graph;
     use crate::engine::l5::test_support::{
-        coverage, edge, fact, graph_from_edges, object_run_call_site, op_commit_routine, routine,
-        summary,
+        cone_store_of, coverage, edge, fact, graph_from_edges, object_run_call_site,
+        op_commit_routine, routine, summary,
     };
 
     #[test]
@@ -367,7 +379,13 @@ mod tests {
         );
 
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert_eq!(spans.len(), 1);
         let span = &spans[0];
         assert_eq!(span.seed_kind, SeedKind::ExplicitCommit);
@@ -393,7 +411,13 @@ mod tests {
         let reverse = build_reverse_call_graph(&graph);
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
 
         let inner_span = spans
             .iter()
@@ -440,7 +464,13 @@ mod tests {
         let reverse = build_reverse_call_graph(&graph);
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
 
         let inner_span = spans
             .iter()
@@ -460,7 +490,13 @@ mod tests {
         // No summary entry for "c" → coverage_complete false, no writes/events.
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert_eq!(spans.len(), 1);
         assert!(!spans[0].coverage_complete);
         assert!(spans[0].writes_tables.is_empty());
@@ -479,7 +515,13 @@ mod tests {
             summary("c", vec![], vec![], Some(coverage("partial"))),
         );
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert!(!spans[0].coverage_complete);
     }
 
@@ -495,7 +537,13 @@ mod tests {
         let reverse = build_reverse_call_graph(&graph);
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert_eq!(spans.len(), 1);
         let span = &spans[0];
         assert_eq!(span.seed_kind, SeedKind::CheckedRunImplicit);
@@ -518,7 +566,13 @@ mod tests {
         let reverse = build_reverse_call_graph(&graph);
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert!(spans.is_empty());
     }
 
@@ -529,7 +583,13 @@ mod tests {
         let reverse = build_reverse_call_graph(&graph);
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let deps: BTreeSet<String> = ["c".to_string()].into_iter().collect();
-        let spans = compute_transaction_spans(&routines, &deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert!(spans.is_empty());
     }
 
@@ -546,7 +606,13 @@ mod tests {
         let reverse = build_reverse_call_graph(&graph);
         let summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         let no_deps = BTreeSet::new();
-        let spans = compute_transaction_spans(&routines, &no_deps, &reverse, &summaries);
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].routines_in_span, spans[1].routines_in_span);
         assert_eq!(spans[0].span_roots, spans[1].span_roots);

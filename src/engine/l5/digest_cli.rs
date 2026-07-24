@@ -400,6 +400,11 @@ const TX_UNKNOWN: TransactionContext = "unknown";
 /// Uses the full detector-context substrate (combined graph → summaries → spans).
 /// Mirrors TS: `computeTransactionSpans` + `transactionContextByOperationId` build.
 fn compute_tx_context_map(resolved: &L3Resolved) -> HashMap<String, TransactionContext> {
+    // ⟨C1 Task 3 — R2/R3 caller classification⟩ DERIVED-ONLY: plain `ALL`, no
+    // `RAW_INHERITED_FACTS`. This path reads ONLY `ctx.transaction_spans`, and
+    // `compute_transaction_spans` sources its `writes_tables` / `publishes_events`
+    // from `ctx.cone_derived` (Task 2) and its completeness from
+    // `reachable_coverage` — never from a fact Vec.
     let ctx = build_detector_context(resolved, crate::engine::l5::registry::substrate::ALL);
     let mut map: HashMap<String, TransactionContext> = HashMap::new();
     for span in &ctx.transaction_spans {

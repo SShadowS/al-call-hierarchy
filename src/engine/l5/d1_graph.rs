@@ -31,7 +31,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::engine::l2::features::{PCallSite, PLoop};
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table, L3Workspace};
-use crate::engine::l5::capability_query::{EffectPresence, touches_db_of};
+use crate::engine::l4::cone_derived::ConeDerivedStore;
+use crate::engine::l5::capability_query::{EffectPresence, touches_db_derived};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::d1::edge_target_matches_callsite_callee;
 use crate::engine::l5::detectors::{is_terminator_next, op_targets_virtual_system_table};
@@ -103,13 +104,33 @@ pub(crate) fn edge_kind_binding_ok(kind: &str) -> bool {
 /// `touches_db_of`, memoized once per routine id in the CALLER-owned memo (so
 /// Tasks 3/5 can share one memo across a `build_d1_graph` call and their own
 /// subsequent probes). Mirrors `D1Policy::touches_db_memoized` (d1.rs:617-629).
+///
+/// ⟨C1 Task 2⟩ The presence half now reads the folded cone flag
+/// ([`touches_db_derived`]) instead of scanning the routine's raw reachable
+/// facts; the absence half is unchanged (`coverage.inherited_status`, read off
+/// the same `summary`). ⟨fix N-C⟩ The memo is retained, but not because it
+/// pays for itself: a memo HIT is one `HashMap<&str, _>` lookup, while the
+/// direct alternative (`touches_db_derived` → [`ConeDerivedStore::row`],
+/// `cone_derived.rs:285-287`) is one `HashMap<String, _>` lookup of the same
+/// key bytes plus a `u8` mask test and a field read — the same asymptotics,
+/// and a memo MISS additionally pays for the entry insert. At best a wash,
+/// strictly negative on first touch. ⟨fix M1⟩ `detect_d1` does NOT read this
+/// memo again after `build_d1_graph` returns — the prior wording claiming it
+/// is "shared with `d1`'s own later probes" was false.
+///
+/// The memo's value is a function of `(store, summary)`, not of `summary`
+/// alone, but nothing here binds it to the store it was filled from — never
+/// reuse one `touches_db_memo` map across two `DetectorContext`s /
+/// `ConeDerivedStore`s, or a stale entry would silently answer for the wrong
+/// workspace's cone flags.
 fn memoized_touches_db<'a>(
+    store: &ConeDerivedStore,
     memo: &mut HashMap<&'a str, EffectPresence>,
     summary: &'a FullRoutineSummary,
 ) -> EffectPresence {
     *memo
         .entry(summary.routine_id.as_str())
-        .or_insert_with(|| touches_db_of(summary))
+        .or_insert_with(|| touches_db_derived(store, summary))
 }
 
 /// The filtered terminal-op list for `routine`'s own body. Mirrors
@@ -208,7 +229,7 @@ pub(crate) fn build_d1_graph<'a>(
             let Some(sum) = ctx.summaries.get(&edge.to) else {
                 continue;
             };
-            if memoized_touches_db(touches_db_memo, sum) == EffectPresence::No {
+            if memoized_touches_db(&ctx.cone_derived, touches_db_memo, sum) == EffectPresence::No {
                 continue;
             }
             let entry_id: &'a str = edge.to.as_str();
@@ -258,7 +279,9 @@ pub(crate) fn build_d1_graph<'a>(
                 let Some(sum) = ctx.summaries.get(&e.to) else {
                     continue;
                 };
-                if memoized_touches_db(touches_db_memo, sum) == EffectPresence::No {
+                if memoized_touches_db(&ctx.cone_derived, touches_db_memo, sum)
+                    == EffectPresence::No
+                {
                     continue;
                 }
                 let to_id: &'a str = e.to.as_str();

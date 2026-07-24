@@ -242,8 +242,19 @@ pub fn run_policy_check(opts: &PolicyCheckOptions) -> PolicyCheckOutcome {
             diagnostics: Vec::new(),
         },
         Some(policy) => {
-            let ctx =
-                build_detector_context(&resolved, crate::engine::l5::registry::substrate::ALL);
+            // ⟨C1 Task 3 — R2⟩ The ONE call site that ORs in `RAW_INHERITED_FACTS`.
+            // `policy_engine::select_facts` iterates the real inherited
+            // `CapabilityFact` objects for `facts: inherited | any` rules, so this
+            // path must compose the cone under `ConeOutput::Both`. The bit is
+            // deliberately NOT in `substrate::ALL` — every other `ALL` caller
+            // (`gate/events.rs`, `l5/digest_cli.rs`, `l5/prove.rs`) reads only
+            // coverage / spans / the derived substrate, and folding it into `ALL`
+            // would re-materialize ~10.9 GB of cone Vecs on all of them.
+            let ctx = build_detector_context(
+                &resolved,
+                crate::engine::l5::registry::substrate::ALL
+                    | crate::engine::l5::registry::substrate::RAW_INHERITED_FACTS,
+            );
             let root_classifications = classify_roots(&resolved.workspace);
             let ws = &resolved.workspace;
             let model = PolicyModel::new(

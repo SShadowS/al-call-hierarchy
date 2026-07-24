@@ -1,0 +1,95 @@
+[
+    RoutineSummary {
+        routine_id: "a",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t3|c_op1|t",
+                operation_id: "c_op1",
+                op: "Insert",
+                table_id: "t3",
+                record_variable_id: None,
+                temp_state: Known(
+                    true,
+                ),
+                via: "inherited",
+            },
+            DbEffect {
+                effect_key: "Modify|t4|c_op2|f",
+                operation_id: "c_op2",
+                op: "Modify",
+                table_id: "t4",
+                record_variable_id: None,
+                temp_state: Known(
+                    false,
+                ),
+                via: "inherited",
+            },
+        ],
+        in_recursive_cycle: true,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+    RoutineSummary {
+        routine_id: "b",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t3|c_op1|t",
+                operation_id: "c_op1",
+                op: "Insert",
+                table_id: "t3",
+                record_variable_id: None,
+                temp_state: Known(
+                    true,
+                ),
+                via: "inherited",
+            },
+            DbEffect {
+                effect_key: "Modify|t4|c_op2|f",
+                operation_id: "c_op2",
+                op: "Modify",
+                table_id: "t4",
+                record_variable_id: None,
+                temp_state: Known(
+                    false,
+                ),
+                via: "inherited",
+            },
+        ],
+        in_recursive_cycle: true,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+    RoutineSummary {
+        routine_id: "c",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t3|c_op1|t",
+                operation_id: "c_op1",
+                op: "Insert",
+                table_id: "t3",
+                record_variable_id: None,
+                temp_state: Known(
+                    true,
+                ),
+                via: "direct",
+            },
+            DbEffect {
+                effect_key: "Modify|t4|c_op2|f",
+                operation_id: "c_op2",
+                op: "Modify",
+                table_id: "t4",
+                record_variable_id: None,
+                temp_state: Known(
+                    false,
+                ),
+                via: "event-subscriber",
+            },
+        ],
+        in_recursive_cycle: false,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+]

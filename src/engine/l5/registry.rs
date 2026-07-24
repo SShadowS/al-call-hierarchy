@@ -30,6 +30,8 @@ use crate::engine::perf_trace as pt;
 /// (T3), `fingerprint_index` (T1), and `root_classifications_by_routine`. The four
 /// EXPENSIVE substrates below are built only when some selected detector demands them;
 /// `run_detectors` folds every detector's `requires` into the union it passes here.
+/// A fifth bit, [`substrate::RAW_INHERITED_FACTS`], is NOT a substrate a detector may
+/// demand — it is the policy-only raw-cone escape hatch (see its own doc).
 ///
 /// Skipped substrates leave their ctx fields EMPTY (`HashMap::new()`/`Vec::new()`/
 /// `Default::default()`) — the field TYPES are unchanged, so no detector needs to
@@ -40,12 +42,14 @@ use crate::engine::perf_trace as pt;
 /// entire report — is byte-identical to the pre-W1.0 eager build. The ONLY permitted
 /// output change (decision (a), user-approved) is that a selection NOT demanding
 /// `CORE_SUMMARIES` emits no summarize cap-hit diagnostics (they are harvested from
-/// the same `compute_summaries` call this substrate gates).
+/// the same `compute_summaries_v2` call this substrate gates).
 pub mod substrate {
     /// Capability cones + the per-routine `FullRoutineSummary` map (`ctx.summaries`).
     pub const SUMMARIES: u32 = 1 << 0;
-    /// The second Tarjan SCC + Jacobi CORE summaries → `ctx.uncertainties_by_node`,
-    /// `ctx.parameter_roles_by_routine`, and the `summarize_diagnostics` cap-hit set.
+    /// The second Tarjan SCC + the closed-form v2 CORE summaries →
+    /// `ctx.uncertainties_by_node`, `ctx.parameter_roles_by_routine`, and the
+    /// `summarize_diagnostics` cap-hit set (from the `parameter_roles`-only
+    /// JACOBI fixpoint — the only fixpoint remaining since Task B1).
     pub const CORE_SUMMARIES: u32 = 1 << 1;
     /// Transaction spans (`ctx.transaction_spans`). Requires SUMMARIES internally —
     /// `compute_transaction_spans` folds over the summaries map — so the summaries
@@ -53,8 +57,33 @@ pub mod substrate {
     pub const TRANSACTION_SPANS: u32 = 1 << 2;
     /// Closed-world proven-temp params (`ctx.closed_world_temp_params`).
     pub const CLOSED_WORLD_TEMP: u32 = 1 << 3;
+    /// ⟨C1 Task 3⟩ Materialize the RAW per-routine `capability_facts_inherited`
+    /// `Vec<CapabilityFact>` alongside the compact derived cone substrate — i.e.
+    /// compose the cone under `ConeOutput::Both` instead of `DerivedOnly`.
+    ///
+    /// **POLICY-ONLY, and deliberately NOT part of [`ALL`].** This is the ~10.9 GB
+    /// (8020 corpus, ~100k routines × their full reachable cone) allocation the C1
+    /// arc exists to stop paying: every analyze-path consumer reads a derived
+    /// predicate off `ctx.cone_derived` instead. The ONE consumer that genuinely
+    /// needs the fact objects themselves is `gate::policy`'s `select_facts`
+    /// (rule `facts: inherited | any` iterates real `CapabilityFact`s and matches
+    /// their fields), so `gate/policy/pipeline.rs` passes
+    /// `substrate::ALL | substrate::RAW_INHERITED_FACTS` explicitly.
+    ///
+    /// A summary built WITHOUT this bit carries `capability_facts_inherited:
+    /// None`; `FullRoutineSummary::inherited_raw` then panics rather than
+    /// silently serving a direct-only view (R6).
+    pub const RAW_INHERITED_FACTS: u32 = 1 << 4;
     /// Every substrate — the eager, pre-W1.0 behavior. Full/preset/all-detector runs
     /// and every non-registry `build_detector_context` caller pass this.
+    ///
+    /// ⟨C1 Task 3 — R2⟩ This is an EXPLICIT OR list, not "all bits set", and
+    /// [`RAW_INHERITED_FACTS`] is deliberately **excluded** from it. `ALL` is
+    /// passed verbatim by every non-registry caller (`gate/events.rs`,
+    /// `l5/digest_cli.rs`, `l5/prove.rs`, `gate/policy/pipeline.rs`); folding the
+    /// raw-cone bit in here would re-materialize the whole 10.9 GB on all of
+    /// them. Anything that needs the raw facts ORs the bit in at its own call
+    /// site.
     pub const ALL: u32 = SUMMARIES | CORE_SUMMARIES | TRANSACTION_SPANS | CLOSED_WORLD_TEMP;
 }
 

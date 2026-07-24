@@ -30,6 +30,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::combined_graph::{CombinedGraph, TypedEdge, build_combined_graph};
+use super::cone_census;
+use super::cone_derived::{ConeDerivedBuilder, ConeDerivedStore, ConeOutput};
 use super::scc::{Scc, SccInputGraph, SccResult, tarjan_scc};
 use crate::engine::ids::to_stable_object_id;
 use crate::engine::l2::features::{PCallSite, PCallee, PExpressionInfo, POperationSite};
@@ -109,14 +111,29 @@ pub enum CapabilityExtra {
 #[derive(Debug, Clone, PartialEq, salsa::Update)]
 pub struct CapabilityFact {
     pub subject: String,
-    pub op: String,
-    pub resource_kind: String,
+    /// ⟨C1 Task 4⟩ `op` / `resource_kind` / `confidence` / `provenance` / `via`
+    /// are CLOSED vocabularies — every producer in the engine hands one of a
+    /// fixed set of literals (`map_table_op`, `object_type_to_resource_kind`,
+    /// `confidence_from_source`, `capability_via_for_edge_kind`, and the direct
+    /// extractors' inline literals), so an owned `String` per field bought
+    /// nothing but 5 heap allocations and 5 memcpys per fact — on every one of
+    /// the millions of `CapabilityFact` clones the cone merge performs. As
+    /// `&'static str` they are pointer copies into the binary's read-only data
+    /// and the struct itself is 40 B smaller. The six genuinely-open fields
+    /// (`subject`, `resource_id`, `resource_arg_source`, `witness_operation_id`,
+    /// `witness_callsite_id`, `extra`) stay owned. `salsa::Update` still
+    /// derives: its `UpdateDispatch` falls back to
+    /// the `PartialEq` comparison for any `'static + PartialEq` field, and a
+    /// `&'static str` — unlike the `&'db T` salsa's own doc warns about — can
+    /// never dangle or change under a revision.
+    pub op: &'static str,
+    pub resource_kind: &'static str,
     /// Internal resourceId (TableId / EventId / ObjectId) — projected to stable.
     pub resource_id: Option<String>,
     pub resource_arg_source: Option<ValueSource>,
-    pub confidence: String,
-    pub provenance: String,
-    pub via: String,
+    pub confidence: &'static str,
+    pub provenance: &'static str,
+    pub via: &'static str,
     pub witness_operation_id: Option<String>,
     pub witness_callsite_id: Option<String>,
     pub extra: Option<CapabilityExtra>,
@@ -606,13 +623,13 @@ pub(crate) fn direct_facts_for_routine(
         };
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: cap_op.to_string(),
-            resource_kind: "table".to_string(),
+            op: cap_op,
+            resource_kind: "table",
             resource_id,
             resource_arg_source: None,
-            confidence: confidence.to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence,
+            provenance: "direct",
+            via: "self",
             witness_operation_id: Some(op.id.clone()),
             witness_callsite_id: None,
             extra: Some(CapabilityExtra::Table {
@@ -629,13 +646,13 @@ pub(crate) fn direct_facts_for_routine(
         if op.kind == "commit" {
             facts.push(CapabilityFact {
                 subject: routine.id.clone(),
-                op: "commit".to_string(),
-                resource_kind: "transaction".to_string(),
+                op: "commit",
+                resource_kind: "transaction",
                 resource_id: None,
                 resource_arg_source: None,
-                confidence: "static".to_string(),
-                provenance: "direct".to_string(),
-                via: "self".to_string(),
+                confidence: "static",
+                provenance: "direct",
+                via: "self",
                 witness_operation_id: Some(op.id.clone()),
                 witness_callsite_id: None,
                 extra: None,
@@ -649,16 +666,16 @@ pub(crate) fn direct_facts_for_routine(
             PCallee::ObjectRun { object_kind, .. } => {
                 let object_type = object_kind.clone();
                 let target = classify_value_source(cs.argument_infos.first(), &variables);
-                let confidence = confidence_from_source(&target).to_string();
+                let confidence = confidence_from_source(&target);
                 facts.push(CapabilityFact {
                     subject: routine.id.clone(),
-                    op: "execute".to_string(),
-                    resource_kind: object_type_to_resource_kind(&object_type).to_string(),
+                    op: "execute",
+                    resource_kind: object_type_to_resource_kind(&object_type),
                     resource_id: None,
                     resource_arg_source: Some(target),
                     confidence,
-                    provenance: "direct".to_string(),
-                    via: "self".to_string(),
+                    provenance: "direct",
+                    via: "self",
                     witness_operation_id: None,
                     witness_callsite_id: Some(cs.id.clone()),
                     extra: Some(CapabilityExtra::Dispatch {
@@ -675,16 +692,16 @@ pub(crate) fn direct_facts_for_routine(
                     _ => continue,
                 };
                 let target = classify_value_source(cs.argument_infos.first(), &variables);
-                let confidence = confidence_from_source(&target).to_string();
+                let confidence = confidence_from_source(&target);
                 facts.push(CapabilityFact {
                     subject: routine.id.clone(),
-                    op: "execute".to_string(),
-                    resource_kind: object_type_to_resource_kind(object_type).to_string(),
+                    op: "execute",
+                    resource_kind: object_type_to_resource_kind(object_type),
                     resource_id: None,
                     resource_arg_source: Some(target),
                     confidence,
-                    provenance: "direct".to_string(),
-                    via: "self".to_string(),
+                    provenance: "direct",
+                    via: "self",
                     witness_operation_id: None,
                     witness_callsite_id: Some(cs.id.clone()),
                     extra: Some(CapabilityExtra::Dispatch {
@@ -722,16 +739,16 @@ pub(crate) fn direct_facts_for_routine(
             None => ValueSource::Unknown,
         };
         let body_arg_source = body_info.map(|i| classify_value_source(Some(i), &variables));
-        let confidence = confidence_from_source(&url_source).to_string();
+        let confidence = confidence_from_source(&url_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "send".to_string(),
-            resource_kind: "http".to_string(),
+            op: "send",
+            resource_kind: "http",
             resource_id: None,
             resource_arg_source: Some(url_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: Some(CapabilityExtra::Http {
@@ -758,16 +775,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&event_id_source).to_string();
+        let confidence = confidence_from_source(&event_id_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "log".to_string(),
-            resource_kind: "telemetry".to_string(),
+            op: "log",
+            resource_kind: "telemetry",
             resource_id: None,
             resource_arg_source: Some(event_id_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -789,7 +806,7 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&key_source).to_string();
+        let confidence = confidence_from_source(&key_source);
         // store-write: capture value arg (arg[1]) + scope (arg[2]).
         let (value_arg_source, scope) = if op == "store-write" {
             let value = cs
@@ -803,13 +820,13 @@ pub(crate) fn direct_facts_for_routine(
         };
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: op.to_string(),
-            resource_kind: "isolated-storage".to_string(),
+            op,
+            resource_kind: "isolated-storage",
             resource_id: None,
             resource_arg_source: Some(key_source.clone()),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: Some(CapabilityExtra::Storage {
@@ -833,16 +850,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&url_source).to_string();
+        let confidence = confidence_from_source(&url_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "open".to_string(),
-            resource_kind: "ui".to_string(),
+            op: "open",
+            resource_kind: "ui",
             resource_id: None,
             resource_arg_source: Some(url_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -867,16 +884,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&arg_source).to_string();
+        let confidence = confidence_from_source(&arg_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "write-blob".to_string(),
-            resource_kind: "file".to_string(),
+            op: "write-blob",
+            resource_kind: "file",
             resource_id: None,
             resource_arg_source: Some(arg_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -915,16 +932,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&codeunit_source).to_string();
+        let confidence = confidence_from_source(&codeunit_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "start".to_string(),
-            resource_kind: "background".to_string(),
+            op: "start",
+            resource_kind: "background",
             resource_id: None,
             resource_arg_source: Some(codeunit_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -945,13 +962,13 @@ pub(crate) fn direct_facts_for_routine(
         };
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: op.to_string(),
-            resource_kind: "ui".to_string(),
+            op,
+            resource_kind: "ui",
             resource_id: None,
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -987,13 +1004,13 @@ pub(crate) fn direct_facts_for_routine(
         }
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "ui-window-open".to_string(),
-            resource_kind: "ui".to_string(),
+            op: "ui-window-open",
+            resource_kind: "ui",
             resource_id: None,
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -1009,13 +1026,13 @@ pub(crate) fn direct_facts_for_routine(
     {
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "subscribe".to_string(),
-            resource_kind: "event".to_string(),
+            op: "subscribe",
+            resource_kind: "event",
             resource_id: None,
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: None,
             extra: Some(CapabilityExtra::Event {
@@ -1031,13 +1048,13 @@ pub(crate) fn direct_facts_for_routine(
         if op.kind == "error-call" {
             facts.push(CapabilityFact {
                 subject: routine.id.clone(),
-                op: "error-throw".to_string(),
-                resource_kind: "error".to_string(),
+                op: "error-throw",
+                resource_kind: "error",
                 resource_id: None,
                 resource_arg_source: None,
-                confidence: "static".to_string(),
-                provenance: "direct".to_string(),
-                via: "self".to_string(),
+                confidence: "static",
+                provenance: "direct",
+                via: "self",
                 witness_operation_id: Some(op.id.clone()),
                 witness_callsite_id: None,
                 extra: None,
@@ -1051,13 +1068,13 @@ pub(crate) fn direct_facts_for_routine(
     for evt in publisher_events {
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "publish".to_string(),
-            resource_kind: "event".to_string(),
+            op: "publish",
+            resource_kind: "event",
             resource_id: Some(evt.id.clone()),
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: None,
             extra: Some(CapabilityExtra::Event {
@@ -1360,8 +1377,8 @@ fn merge_cone(dst: &mut ConeFacts, key: String, entry: ConeFactEntry) {
 fn retag(rep: &CapabilityFact, subject: &str, edge: &TypedOutEdge) -> CapabilityFact {
     CapabilityFact {
         subject: subject.to_string(),
-        provenance: "inherited".to_string(),
-        via: capability_via_for_edge_kind(&edge.kind).to_string(),
+        provenance: "inherited",
+        via: capability_via_for_edge_kind(&edge.kind),
         witness_callsite_id: edge.callsite.clone(),
         ..rep.clone()
     }
@@ -1370,14 +1387,19 @@ fn retag(rep: &CapabilityFact, subject: &str, edge: &TypedOutEdge) -> Capability
 /// Sort key for the final capabilityFactsInherited array. Mirrors
 /// `inheritedOutputSortKey`.
 fn inherited_output_sort_key(f: &CapabilityFact) -> String {
+    // ⟨C1 Task 4⟩ Borrowed throughout — `join` copies into the one output
+    // String either way, so the seven per-call clones this used to make were
+    // pure waste (this runs once per fact per `sort_inherited`). Byte-identical:
+    // `as_deref().unwrap_or_default()` is `""` for `None`, exactly what
+    // `clone().unwrap_or_default()` produced.
     [
-        f.op.clone(),
-        f.resource_kind.clone(),
-        f.resource_id.clone().unwrap_or_default(),
-        f.confidence.clone(),
-        f.via.clone(),
-        f.witness_callsite_id.clone().unwrap_or_default(),
-        f.witness_operation_id.clone().unwrap_or_default(),
+        f.op,
+        f.resource_kind,
+        f.resource_id.as_deref().unwrap_or_default(),
+        f.confidence,
+        f.via,
+        f.witness_callsite_id.as_deref().unwrap_or_default(),
+        f.witness_operation_id.as_deref().unwrap_or_default(),
     ]
     .join("|")
 }
@@ -1406,23 +1428,48 @@ struct CoverageCone {
 }
 
 /// Singleton non-recursive fast path. Mirrors `inheritedFactsForSingleton`.
-fn inherited_facts_for_singleton(
+///
+/// ⟨C1⟩ `best` holds BORROWED representatives/edges (it used to clone both on
+/// every win): the winners' fields are read identically whether borrowed or
+/// cloned, and only the survivors are cloned — by `retag`, and only when `mode`
+/// wants the raw Vec. Under [`ConeOutput::DerivedOnly`] neither the `retag`
+/// clone nor `sort_inherited`'s allocation happens; the fold over the SAME
+/// `best.values()` key-winners still runs.
+fn inherited_facts_for_singleton<'g>(
     subject: &str,
-    g: &TypedEdgeGraph,
+    g: &'g TypedEdgeGraph,
     scc_id_by_routine: &HashMap<String, usize>,
-    cones: &HashMap<usize, ConeFacts>,
+    cones: &'g HashMap<usize, ConeFacts>,
+    mode: ConeOutput,
+    derived: &mut ConeDerivedBuilder,
 ) -> Vec<CapabilityFact> {
-    struct Best {
-        rep: CapabilityFact,
+    struct Best<'g> {
+        rep: &'g CapabilityFact,
         dist: usize,
-        edge: TypedOutEdge,
+        edge: &'g TypedOutEdge,
     }
-    let mut best: BTreeMap<String, Best> = BTreeMap::new();
-    let empty: Vec<TypedOutEdge> = Vec::new();
-    for edge in g.outgoing.get(subject).unwrap_or(&empty) {
+    // ⟨C1 Task 4 hardening⟩ A root SCC's cone is never built
+    // (`compose_inherited_cones`'s `root_scc` skip) — the only thing keeping
+    // this walk from ever looking one up is that a non-recursive singleton
+    // has no self-edge, so `edge.to` can never land back in `subject`'s own
+    // SCC. Assert it: a silent `None` here (via the `let else` below) would
+    // read as "no inherited facts from this hop" instead of the bug it is.
+    let my_scc = scc_id_by_routine.get(subject).copied();
+    let mut best: BTreeMap<String, Best<'g>> = BTreeMap::new();
+    let out_edges: &'g [TypedOutEdge] =
+        g.outgoing.get(subject).map(|v| v.as_slice()).unwrap_or(&[]);
+    for edge in out_edges {
         let Some(yj) = scc_id_by_routine.get(&edge.to) else {
             continue;
         };
+        debug_assert_ne!(
+            Some(*yj),
+            my_scc,
+            "inherited_facts_for_singleton({subject:?}): out-edge to {:?} maps back to \
+             the subject's own SCC — a root SCC's cone is never built, so this would \
+             silently look up a missing/foreign cone instead of panicking",
+            edge.to
+        );
         let Some(ycone) = cones.get(yj) else {
             continue;
         };
@@ -1434,36 +1481,53 @@ fn inherited_facts_for_singleton(
                 None => true,
                 Some(cur) => {
                     cand_dist < cur.dist
-                        || (cand_dist == cur.dist && edge_sort_key(edge) < edge_sort_key(&cur.edge))
+                        || (cand_dist == cur.dist && edge_sort_key(edge) < edge_sort_key(cur.edge))
                 }
             };
             if wins {
                 best.insert(
                     key.clone(),
                     Best {
-                        rep: entry.rep.clone(),
+                        rep: &entry.rep,
                         dist: cand_dist,
-                        edge: edge.clone(),
+                        edge,
                     },
                 );
             }
         }
     }
+    if mode.wants_derived() {
+        for b in best.values() {
+            derived.fold_fact(b.rep);
+        }
+    }
+    if !mode.wants_raw() {
+        return Vec::new();
+    }
     let out: Vec<CapabilityFact> = best
         .values()
-        .map(|b| retag(&b.rep, subject, &b.edge))
+        .map(|b| retag(b.rep, subject, b.edge))
         .collect();
     sort_inherited(out)
 }
 
 /// Set-correct path for routines in recursive SCCs. Mirrors
 /// `inheritedFactsByBfs`.
-fn inherited_facts_by_bfs(
+///
+/// ⟨C1⟩ The `seen`-deduped representatives this walk visits are the derived
+/// fold's inherited source. Note the asymmetry R3 pins: a SIBLING member's facts
+/// come from the key-deduped `direct` map (not its raw Vec), while a downstream
+/// SCC contributes its cone entries. Under [`ConeOutput::DerivedOnly`] the
+/// `retag` clones and `sort_inherited` are skipped; the walk (and therefore the
+/// fold) is unchanged.
+fn inherited_facts_by_bfs<'g>(
     subject: &str,
-    g: &TypedEdgeGraph,
-    direct: &RoutineDirectFacts,
+    g: &'g TypedEdgeGraph,
+    direct: &'g RoutineDirectFacts,
     scc_id_by_routine: &HashMap<String, usize>,
-    cones: &HashMap<usize, ConeFacts>,
+    cones: &'g HashMap<usize, ConeFacts>,
+    mode: ConeOutput,
+    derived: &mut ConeDerivedBuilder,
 ) -> Vec<CapabilityFact> {
     let my_scc = scc_id_by_routine.get(subject).copied();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -1471,21 +1535,34 @@ fn inherited_facts_by_bfs(
     let mut visited: BTreeSet<String> = BTreeSet::new();
     visited.insert(subject.to_string());
 
-    struct QI {
+    struct QI<'g> {
         id: String,
-        first_hop: TypedOutEdge,
+        first_hop: &'g TypedOutEdge,
     }
-    let mut queue: std::collections::VecDeque<QI> = std::collections::VecDeque::new();
-    let empty: Vec<TypedOutEdge> = Vec::new();
-    for edge in g.outgoing.get(subject).unwrap_or(&empty) {
+    let mut queue: std::collections::VecDeque<QI<'g>> = std::collections::VecDeque::new();
+    let out_edges = |id: &str| -> &'g [TypedOutEdge] {
+        g.outgoing.get(id).map(|v| v.as_slice()).unwrap_or(&[])
+    };
+    for edge in out_edges(subject) {
         if !visited.contains(&edge.to) {
             visited.insert(edge.to.clone());
             queue.push_back(QI {
                 id: edge.to.clone(),
-                first_hop: edge.clone(),
+                first_hop: edge,
             });
         }
     }
+    // One emission helper so the raw push and the derived fold can never drift
+    // apart on WHICH representative they consume.
+    let mut emit =
+        |rep: &CapabilityFact, first_hop: &TypedOutEdge, out: &mut Vec<CapabilityFact>| {
+            if mode.wants_derived() {
+                derived.fold_fact(rep);
+            }
+            if mode.wants_raw() {
+                out.push(retag(rep, subject, first_hop));
+            }
+        };
     while let Some(item) = queue.pop_front() {
         let id = item.id;
         let first_hop = item.first_hop;
@@ -1495,31 +1572,47 @@ fn inherited_facts_by_bfs(
                 for (key, rep) in byk {
                     if !seen.contains(key) {
                         seen.insert(key.clone());
-                        out.push(retag(rep, subject, &first_hop));
+                        emit(rep, first_hop, &mut out);
                     }
                 }
             }
-            for edge in g.outgoing.get(&id).unwrap_or(&empty) {
+            for edge in out_edges(&id) {
                 if !visited.contains(&edge.to) {
                     visited.insert(edge.to.clone());
                     queue.push_back(QI {
                         id: edge.to.clone(),
-                        first_hop: first_hop.clone(),
+                        first_hop,
                     });
                 }
             }
         } else {
             // downstream entry: pull its whole cone, do NOT recurse.
-            let ycone = scc_id_by_routine.get(&id).and_then(|yj| cones.get(yj));
+            let their_scc = scc_id_by_routine.get(&id).copied();
+            // ⟨C1 Task 4 hardening⟩ This branch is reached only when the `if`
+            // above already found `their_scc != my_scc` — i.e. never for the
+            // subject's own (root-eligible) SCC. Assert it explicitly, right
+            // at the read, so a future change to the branch condition above
+            // trips loudly here instead of silently returning an
+            // empty/foreign cone for a root SCC that was never built.
+            debug_assert_ne!(
+                their_scc, my_scc,
+                "inherited_facts_by_bfs({subject:?}): downstream branch reached with a \
+                 same-SCC hop ({id:?}) — a root SCC's cone is never built, so pulling it \
+                 here would silently drop inherited facts instead of panicking",
+            );
+            let ycone = their_scc.and_then(|yj| cones.get(&yj));
             if let Some(ycone) = ycone {
                 for (key, entry) in ycone {
                     if !seen.contains(key) {
                         seen.insert(key.clone());
-                        out.push(retag(&entry.rep, subject, &first_hop));
+                        emit(&entry.rep, first_hop, &mut out);
                     }
                 }
             }
         }
+    }
+    if !mode.wants_raw() {
+        return Vec::new();
     }
     sort_inherited(out)
 }
@@ -1571,6 +1664,18 @@ fn fact_cone_for_scc(
         }
     }
     for y in succ_ids {
+        // ⟨C1 Task 4 hardening⟩ `y` is a successor of the SCC being built, and
+        // `compose_inherited_cones` processes SCCs in an order where every
+        // successor has already run (Tarjan emits callees before callers) —
+        // successors are provably non-root, so their cone was built and has
+        // not yet been refcount-freed. A miss here is always a bug (the
+        // refcount-free fired before this, its only intended predecessor,
+        // read the cone), not a legitimate "not built yet" case.
+        debug_assert!(
+            fact_cones.contains_key(y),
+            "fact_cone_for_scc: successor SCC {y} has no fact cone — successors are \
+             provably non-root, so this cone should have been built and not yet freed"
+        );
         if let Some(yc) = fact_cones.get(y) {
             for (key, entry) in yc {
                 merge_cone(
@@ -1614,6 +1719,14 @@ fn coverage_cone_for_scc(
         }
     }
     for y in succ_ids {
+        // ⟨C1 Task 4 hardening⟩ Same successor-non-root invariant as
+        // `fact_cone_for_scc` above — a miss here is always a bug, never a
+        // legitimate "not built yet".
+        debug_assert!(
+            cov_cones.contains_key(y),
+            "coverage_cone_for_scc: successor SCC {y} has no coverage cone — successors \
+             are provably non-root, so this cone should have been built and not yet freed"
+        );
         if let Some(yc) = cov_cones.get(y) {
             if !yc.complete {
                 complete = false;
@@ -1642,15 +1755,24 @@ struct InheritedConeResult {
 /// Compute capabilityFactsInherited + coverage for EVERY routine via a single
 /// fused bottom-up SCC-cone pass. Mirrors `composeInheritedCones`. The engine
 /// never throws: on internal inconsistency it still returns whatever it built.
+///
+/// ⟨C1⟩ `direct_raw` is the RAW, un-deduped per-routine direct-fact map (the
+/// same Vec `FullRoutineSummary.capability_facts_direct` holds). It is the SELF
+/// half of the derived fold: the reachable sequence scans every direct fact, so
+/// the fold must too — unlike the inherited half, which folds key-deduped
+/// representatives. `mode` decides which of the two outputs is produced.
 #[allow(clippy::too_many_arguments)]
 fn compose_inherited_cones(
     g: &TypedEdgeGraph,
     scc: &SccResult,
     direct: &RoutineDirectFacts,
+    direct_raw: &HashMap<String, Vec<CapabilityFact>>,
     cov: &RoutineDirectCoverage,
     routine_ids: &BTreeSet<String>,
-) -> HashMap<String, InheritedConeResult> {
+    mode: ConeOutput,
+) -> (HashMap<String, InheritedConeResult>, ConeDerivedStore) {
     let mut out: HashMap<String, InheritedConeResult> = HashMap::new();
+    let mut derived = ConeDerivedBuilder::default();
 
     let succ_sccs = build_succ_sccs(g, &scc.sccs, &scc.scc_id_by_routine);
     let mut remaining_uses: Vec<usize> = scc.sccs.iter().map(|_| 0usize).collect();
@@ -1668,8 +1790,37 @@ fn compose_inherited_cones(
         let scc_entry = &scc.sccs[i];
         let succ_ids = succ_sccs.get(i).unwrap_or(&empty_succ);
 
-        let fcone = fact_cone_for_scc(&scc_entry.members, succ_ids, &fact_cones, direct);
-        fact_cones.insert(i, fcone);
+        // ⟨C1 Task 4⟩ An SCC's cone is read by exactly ONE kind of consumer: a
+        // PREDECESSOR of that SCC. `fact_cone_for_scc` reads `fact_cones[y]`
+        // only for `y ∈ succ_sccs[j]`, and both per-routine walks
+        // (`inherited_facts_for_singleton` / `inherited_facts_by_bfs`) read a
+        // cone only for a routine whose SCC differs from the subject's — never
+        // the subject's own (`build_succ_sccs` excludes self, and the BFS
+        // treats a same-SCC hop as a sibling and expands it instead of pulling
+        // a cone; a non-recursive singleton has no self-edge by `tarjan_scc`'s
+        // `recursive` rule, so it cannot reach its own id either). So SCC `i`'s
+        // cone is never read while `i` itself is being processed.
+        //
+        // `remaining_uses[i]` is the number of SCCs holding `i` as a successor,
+        // decremented once per predecessor as that predecessor finishes. Tarjan
+        // emits callees before callers, so none of `i`'s predecessors has run
+        // yet when `i` is reached: `remaining_uses[i] == 0` here means `i` is a
+        // call-graph ROOT (nothing calls it) and NOTHING will ever read its
+        // cone. Building it is pure waste — on the 8020 corpus that was 17,864
+        // root SCCs holding 2,224,901 fact entries (~1,599 MB) alive for the
+        // whole walk, because the refcount-free below fires only for a
+        // successor and a root is nobody's successor. (Even if the emission
+        // order were ever NOT reverse-topological, a zero here would still mean
+        // every predecessor has already run and already read whatever this map
+        // held, so skipping stays sound.)
+        let root_scc = remaining_uses[i] == 0;
+        if !root_scc {
+            let fcone = fact_cone_for_scc(&scc_entry.members, succ_ids, &fact_cones, direct);
+            fact_cones.insert(i, fcone);
+        }
+        // The coverage cone is ALWAYS computed — `ccone` is what this SCC's own
+        // members' `CoverageRecord`s are built from below — but a root's copy is
+        // never published for the same reason.
         let ccone = coverage_cone_for_scc(
             &scc_entry.members,
             succ_ids,
@@ -1677,18 +1828,49 @@ fn compose_inherited_cones(
             cov,
             &g.unresolved_sources,
         );
-        cov_cones.insert(i, ccone.clone());
+        if !root_scc {
+            cov_cones.insert(i, ccone.clone());
+        }
 
         let recursive = scc_entry.recursive;
         for m in &scc_entry.members {
             if !routine_ids.contains(m) {
                 continue;
             }
+            if mode.wants_derived() {
+                derived.begin_routine();
+            }
             let inherited = if recursive {
-                inherited_facts_by_bfs(m, g, direct, &scc.scc_id_by_routine, &fact_cones)
+                inherited_facts_by_bfs(
+                    m,
+                    g,
+                    direct,
+                    &scc.scc_id_by_routine,
+                    &fact_cones,
+                    mode,
+                    &mut derived,
+                )
             } else {
-                inherited_facts_for_singleton(m, g, &scc.scc_id_by_routine, &fact_cones)
+                inherited_facts_for_singleton(
+                    m,
+                    g,
+                    &scc.scc_id_by_routine,
+                    &fact_cones,
+                    mode,
+                    &mut derived,
+                )
             };
+            if mode.wants_derived() {
+                // The SELF half — the routine's RAW direct facts, one fold each
+                // (they are stored un-deduped and the reachable sequence scans
+                // every one of them).
+                if let Some(own) = direct_raw.get(m) {
+                    for f in own {
+                        derived.fold_fact(f);
+                    }
+                }
+                derived.finish_routine(m);
+            }
             let d_status = cov
                 .get(m)
                 .map(|c| c.direct_status.clone())
@@ -1724,7 +1906,74 @@ fn compose_inherited_cones(
         }
     }
 
-    out
+    // ⟨C1 Task 4⟩ Both maps MUST be empty here. Every non-root SCC's cone is
+    // refcount-freed by its last predecessor (each of its predecessors runs
+    // exactly once and decrements exactly once, so the counter always reaches
+    // 0), and a root's cone is never inserted at all (see `root_scc` above). A
+    // non-empty map means a cone escaped both mechanisms — the 1,599 MB leak
+    // this task closed, returning.
+    debug_assert!(
+        fact_cones.is_empty() && cov_cones.is_empty(),
+        "cone leak: {} fact cone(s) / {} coverage cone(s) survived the SCC walk",
+        fact_cones.len(),
+        cov_cones.len()
+    );
+
+    // ⟨C1 census⟩ `C1_CONE_CENSUS=1` — report what's LEFT in `fact_cones`/
+    // `cov_cones` at function exit. BEFORE Task 4 this measured the root-SCC
+    // residual — an SCC with no caller (a true call-graph root: an entry point
+    // / public API nothing else in the workspace calls) never had its refcount
+    // driven to zero by the loop above, so its cone survived until these two
+    // locals dropped at this function's return (17,864 SCCs / 1,598.87 MB on
+    // the 8020 corpus). Task 4 stopped building a root's cone in the first
+    // place, so this census now reports ZERO — kept as the cheap standing
+    // check that it stays that way (the release-profile counterpart of the
+    // `debug_assert!` above). It was never a peak sample either way: mid-walk,
+    // before earlier SCCs were refcount-freed, the maps hold more.
+    if cone_census::enabled() {
+        let mut fc_entries: u64 = 0;
+        let mut fc_bytes: u64 = 0;
+        for cone in fact_cones.values() {
+            for (key, entry) in cone {
+                fc_entries += 1;
+                fc_bytes += key.len() as u64
+                    + std::mem::size_of::<ConeFactEntry>() as u64
+                    + cone_census::capability_fact_heap_bytes(&entry.rep);
+            }
+        }
+        let mut cc_reasons: u64 = 0;
+        let mut cc_reasons_bytes: u64 = 0;
+        let mut cc_unknown: u64 = 0;
+        let mut cc_unknown_bytes: u64 = 0;
+        for cone in cov_cones.values() {
+            cc_reasons += cone.reasons.len() as u64;
+            cc_reasons_bytes += cone.reasons.iter().map(|s| s.len() as u64).sum::<u64>();
+            cc_unknown += cone.unknown_targets.len() as u64;
+            cc_unknown_bytes += cone
+                .unknown_targets
+                .iter()
+                .map(|s| s.len() as u64)
+                .sum::<u64>();
+        }
+        eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
+        eprintln!(
+            "[C1_CONE_CENSUS] section: fact_cones/cov_cones residual at compose_inherited_cones \
+             exit (root SCCs only, never refcount-freed — NOT a peak sample, NOT part of any \
+             grand_total_bytes)"
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   fact_cones_residual_sccs={} fact_cones_residual_entries={fc_entries} fact_cones_residual_bytes={fc_bytes} ({:.2} MB)",
+            fact_cones.len(),
+            fc_bytes as f64 / 1_048_576.0
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   cov_cones_residual_sccs={} cov_cones_residual_reasons={cc_reasons} reasons_bytes={cc_reasons_bytes} cov_cones_residual_unknown_targets={cc_unknown} unknown_targets_bytes={cc_unknown_bytes} ({:.2} MB total)",
+            cov_cones.len(),
+            (cc_reasons_bytes + cc_unknown_bytes) as f64 / 1_048_576.0
+        );
+    }
+
+    (out, derived.finish())
 }
 
 // ===========================================================================
@@ -1743,6 +1992,18 @@ pub struct ConeResultPub {
     pub coverage: CoverageRecord,
 }
 
+/// What one cone composition produced: the per-routine RAW cone results and the
+/// compact derived substrate. Which halves are populated is decided by the
+/// [`ConeOutput`] mode — see its variants.
+pub struct ConeOutcome {
+    /// Per-routine inherited facts + coverage. Under
+    /// [`ConeOutput::DerivedOnly`] every `inherited` Vec is empty (never built);
+    /// `coverage` is always populated (it is not the memory problem).
+    pub cones: HashMap<String, ConeResultPub>,
+    /// The compact derived substrate. Empty under [`ConeOutput::RawOnly`].
+    pub derived: ConeDerivedStore,
+}
+
 /// Compute every routine's `capabilityFactsInherited` + `coverage` over the given
 /// combined graph (typed edges already folded, incl. any injected intra-app dep
 /// edges) + the per-routine direct facts + direct coverage. The `nodes` list is
@@ -1751,12 +2012,18 @@ pub struct ConeResultPub {
 ///
 /// This is the EXACT cone substrate `project_r3a3` / `project_r3a5_cross_app`
 /// build inline; factored out so the R3b Salsa layer wraps it without re-porting.
+///
+/// ⟨C1⟩ `mode` selects the output(s). `direct_in` doubles as the derived fold's
+/// SELF half — it is the raw, un-deduped direct-fact Vec every caller also stores
+/// on `FullRoutineSummary.capability_facts_direct` (verified at all three call
+/// sites), which is exactly the self half of the reachable sequence.
 pub fn compose_cone_over_graph(
     graph: &CombinedGraph,
     nodes: &[String],
     direct_in: &HashMap<String, Vec<CapabilityFact>>,
     coverage_in: &HashMap<String, (String, Vec<String>)>,
-) -> HashMap<String, ConeResultPub> {
+    mode: ConeOutput,
+) -> ConeOutcome {
     let g = build_typed_edge_graph(graph, nodes);
     let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
     for (from, list) in &g.outgoing {
@@ -1766,6 +2033,10 @@ pub fn compose_cone_over_graph(
         nodes: &g.nodes,
         edges_by_from: &adjacency,
     });
+    // ⟨C1 Task 4⟩ `adjacency` is a whole second copy of every edge target id
+    // (`g.outgoing` still holds the originals) and is dead the moment Tarjan
+    // returns. Rust would otherwise hold it for the entire cone walk below.
+    drop(adjacency);
 
     // Per-routine dedup-keyed direct facts (canonical rep per key) + direct
     // coverage + the routine-id set — mirrors the assembly in project_r3a3.
@@ -1800,19 +2071,70 @@ pub fn compose_cone_over_graph(
         }
     }
 
-    let cones = compose_inherited_cones(&g, &scc, &direct, &cov, &routine_ids);
-    cones
-        .into_iter()
-        .map(|(id, r)| {
-            (
-                id,
-                ConeResultPub {
-                    inherited: r.inherited,
-                    coverage: r.coverage,
-                },
-            )
-        })
-        .collect()
+    let (cones, derived) =
+        compose_inherited_cones(&g, &scc, &direct, direct_in, &cov, &routine_ids, mode);
+
+    // ⟨C1 census⟩ `direct` — the SCC walk's per-routine DEDUP-KEYED direct-fact
+    // map (`inherited_fact_key` -> canonical rep) — is alive for the whole
+    // `compose_inherited_cones` call above (borrowed throughout), a SECOND copy
+    // of the direct-facts population alongside the caller's own raw map (which
+    // becomes `capability_facts_direct` in `summaries`). Task 4 drops it at
+    // last use, immediately below, instead of at this function's return.
+    if cone_census::enabled() {
+        let mut inner_entries: u64 = 0;
+        let mut struct_bytes: u64 = 0;
+        let mut heap_bytes: u64 = 0;
+        let mut outer_key_bytes: u64 = 0;
+        for (outer_key, byk) in &direct {
+            outer_key_bytes += outer_key.len() as u64;
+            for (inner_key, fact) in byk {
+                inner_entries += 1;
+                struct_bytes += std::mem::size_of::<CapabilityFact>() as u64;
+                heap_bytes +=
+                    inner_key.len() as u64 + cone_census::capability_fact_heap_bytes(fact);
+            }
+        }
+        let total = struct_bytes + heap_bytes + outer_key_bytes;
+        eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
+        eprintln!(
+            "[C1_CONE_CENSUS] section: `direct` dedup-keyed facts map (compose_cone_over_graph's \
+             own SCC-walk input — alive for the whole cone walk, a SECOND copy alongside the \
+             final capability_facts_direct; NOT part of any grand_total_bytes)"
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   outer_entries={} inner_entries={inner_entries} outer_key_heap_bytes={outer_key_bytes} struct_bytes={struct_bytes} heap_bytes={heap_bytes}",
+            direct.len()
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   direct_dedup_total_bytes={total} ({:.2} MB)  # BTreeMap node overhead NOT modeled (only key+value payload bytes) — a further under-count",
+            total as f64 / 1_048_576.0
+        );
+    }
+
+    // ⟨C1 Task 4⟩ Last use of all three walk inputs was the call above (the
+    // census read `direct` one more time). `direct` measured 63.70 MB on the
+    // 8020 corpus and `routine_ids` is a full extra copy of every routine id;
+    // freeing them here — rather than at this function's closing brace — keeps
+    // them out of the peak that the `ConeOutcome` rebuild below adds to.
+    drop(direct);
+    drop(cov);
+    drop(routine_ids);
+
+    ConeOutcome {
+        cones: cones
+            .into_iter()
+            .map(|(id, r)| {
+                (
+                    id,
+                    ConeResultPub {
+                        inherited: r.inherited,
+                        coverage: r.coverage,
+                    },
+                )
+            })
+            .collect(),
+        derived,
+    }
 }
 
 // ===========================================================================
@@ -2020,15 +2342,15 @@ pub(crate) fn project_capability_fact(
     event_by_id: &HashMap<String, &EventSymbol>,
 ) -> PCapabilityFact {
     PCapabilityFact {
-        op: f.op.clone(),
-        resource_kind: f.resource_kind.clone(),
-        confidence: f.confidence.clone(),
-        provenance: f.provenance.clone(),
-        via: f.via.clone(),
+        op: f.op.to_string(),
+        resource_kind: f.resource_kind.to_string(),
+        confidence: f.confidence.to_string(),
+        provenance: f.provenance.to_string(),
+        via: f.via.to_string(),
         resource_id: f
             .resource_id
             .as_ref()
-            .map(|r| stable_resource_id(r, &f.resource_kind, event_by_id)),
+            .map(|r| stable_resource_id(r, f.resource_kind, event_by_id)),
         resource_arg_source: f.resource_arg_source.as_ref().map(project_value_source),
         witness_operation_id: f
             .witness_operation_id
@@ -2074,7 +2396,7 @@ fn compute_uncertainty_coverage_reasons(
     graph: &CombinedGraph,
     calls: &crate::engine::l3::call_resolver::ResolvedCalls,
 ) -> HashMap<String, BTreeSet<String>> {
-    use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries};
+    use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2};
 
     // Tarjan SCC over the COMBINED graph (summary substrate — distinct from the
     // typed-edge SCC the cone walks).
@@ -2097,13 +2419,14 @@ fn compute_uncertainty_coverage_reasons(
         }
     }
 
-    let (summaries, _, _) = compute_summaries(
+    // v2 db-effect solver (roles-cap diagnostics ignored here). Only
+    // `uncertainties` are read below.
+    let (summaries, _) = compute_summaries_v2(
         &ws.routines,
         graph,
         &scc,
         &calls.upgraded_bindings,
         &field_index,
-        false,
     );
 
     let mut out: HashMap<String, BTreeSet<String>> = HashMap::new();
@@ -2321,7 +2644,6 @@ pub(crate) struct R3a5CrossAppBase {
     pub event_graph: EventGraph,
     pub objects: Vec<crate::engine::l3::l3_workspace::L3Object>,
     pub tables: Vec<crate::engine::l3::l3_workspace::L3Table>,
-    pub app_guid: String,
     /// Fixed-leaf (dep) RETAINED summaries.
     pub leaf_summaries: HashMap<String, crate::engine::l4::summary::RoutineSummary>,
     /// Per-routine direct capability facts (full, ordered).
@@ -2520,20 +2842,6 @@ fn build_cross_app_base_from_cross(
         direct_full.insert(r.id.clone(), facts);
     }
 
-    // The primary (workspace) app guid — the "source" entry in the apps ledger,
-    // else the first non-dep routine's app guid (cosmetic: the AppContext identity).
-    let app_guid = cross
-        .apps
-        .iter()
-        .find(|(_, kind)| kind == "source")
-        .map(|(g, _)| g.clone())
-        .or_else(|| {
-            ws.routines
-                .iter()
-                .find(|r| !dep_routine_ids.contains(&r.id))
-                .map(|r| r.app_guid.clone())
-        })
-        .unwrap_or_default();
     Some(R3a5CrossAppBase {
         ws_routines: ws.routines.clone(),
         dep_routine_ids,
@@ -2544,7 +2852,6 @@ fn build_cross_app_base_from_cross(
         field_index,
         upgraded_bindings: calls.upgraded_bindings.clone(),
         event_graph,
-        app_guid,
         leaf_summaries: dep_retained.summaries,
         direct_full,
         direct_coverage,
@@ -2563,7 +2870,7 @@ pub fn project_r3a5_cross_app(
     model_instance_id: &str,
     fixture_name: &str,
 ) -> R3a5FullSummaryProjection {
-    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
+    use crate::engine::l4::summary_runner::compute_summaries_v2_with_leaves_core;
 
     let empty = R3a5FullSummaryProjection {
         fixture_name: fixture_name.to_string(),
@@ -2583,18 +2890,29 @@ pub fn project_r3a5_cross_app(
     let event_graph = &base.event_graph;
     let direct_full = &base.direct_full;
 
-    // From-scratch core (JACOBI) + cone over the assembled base.
-    let (core_summaries, _, _) = compute_summaries_with_leaves(
+    // From-scratch core (v2 db-effect solver, Phase-1-parity) + cone over the
+    // assembled base. Trace + roles-cap diagnostics ignored here.
+    let (core_summaries, _) = compute_summaries_v2_with_leaves_core(
         ws_routines,
         graph,
         &base.combined_scc,
         &base.upgraded_bindings,
         &base.field_index,
-        false,
         &base.leaf_summaries,
     );
-    let cones =
-        compose_cone_over_graph(graph, &base.nodes, &base.direct_full, &base.direct_coverage);
+    // ⟨C1 Task 3⟩ `RawOnly` — this projection path consumes the RAW cone (its
+    // exact `sort_inherited` byte order IS the R3a-5 golden surface, Global
+    // Constraint 7). It never reads `ConeOutcome::derived`, so folding one here
+    // was build-then-drop; `RawOnly` skips the fold outright. The raw Vec and its
+    // ordering are untouched.
+    let cones = compose_cone_over_graph(
+        graph,
+        &base.nodes,
+        &base.direct_full,
+        &base.direct_coverage,
+        ConeOutput::RawOnly,
+    )
+    .cones;
 
     project_r3a5_from_parts(
         ws_routines,
@@ -2862,7 +3180,18 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
         direct_full.insert(r.id.clone(), facts);
     }
 
-    let cones = compose_inherited_cones(&g, &scc, &direct, &cov, &routine_ids);
+    // ⟨C1 Task 3⟩ `RawOnly` — this projection consumes the RAW cone (its
+    // `sort_inherited` byte order IS the R3a-3 golden surface, Global Constraint
+    // 7) and discards the derived store. Folding one was build-then-drop.
+    let (cones, _derived) = compose_inherited_cones(
+        &g,
+        &scc,
+        &direct,
+        &direct_full,
+        &cov,
+        &routine_ids,
+        ConeOutput::RawOnly,
+    );
 
     // ── Project ───────────────────────────────────────────────────────────
     let map: HashMap<String, String> = ws
@@ -3015,7 +3344,17 @@ pub fn build_r3a3_source_only_base(resolved: &L3Resolved) -> R3a3SourceBase {
     }
 
     let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
-    let cones = compose_cone_over_graph(&graph, &nodes, &direct_full, &direct_coverage);
+    // ⟨C1 Task 3⟩ `RawOnly` — the snapshot/digest/prove derivers read the RAW
+    // cone off this base and never touch `ConeOutcome::derived` (see
+    // `project_r3a5_cross_app`). Raw bytes and ordering unchanged.
+    let cones = compose_cone_over_graph(
+        &graph,
+        &nodes,
+        &direct_full,
+        &direct_coverage,
+        ConeOutput::RawOnly,
+    )
+    .cones;
 
     let routine_to_stable: HashMap<String, String> = ws
         .routines
@@ -3032,74 +3371,6 @@ pub fn build_r3a3_source_only_base(resolved: &L3Resolved) -> R3a3SourceBase {
         cones,
         routine_to_stable,
     }
-}
-
-/// The R3a-3 PROJECTION TAIL — project the per-routine cone results into the
-/// stable cone/coverage surface. A pure function of its parts, shared by the
-/// from-scratch `project_r3a3` AND the R3b Salsa wrap (which demands the cone via
-/// the Salsa `cones` query). Only routines WITH a cone entry are emitted (parity
-/// with `project_r3a3`). `event_graph` provides the stable event-id projection.
-pub(crate) fn project_r3a3_from_parts(
-    ws_routines: &[L3Routine],
-    cones: &HashMap<String, ConeResultPub>,
-    direct_full: &HashMap<String, Vec<CapabilityFact>>,
-    event_graph: &EventGraph,
-    map: &HashMap<String, String>,
-) -> R3a3Projection {
-    let event_by_id: HashMap<String, &EventSymbol> = event_graph
-        .events
-        .iter()
-        .map(|e| (e.id.clone(), e))
-        .collect();
-
-    let mut summaries: Vec<PRoutineConeCoverage> = Vec::new();
-    for r in ws_routines {
-        let Some(cone) = cones.get(&r.id) else {
-            continue;
-        };
-
-        let empty_facts: Vec<CapabilityFact> = Vec::new();
-        let mut direct_facts: Vec<PCapabilityFact> = direct_full
-            .get(&r.id)
-            .unwrap_or(&empty_facts)
-            .iter()
-            .map(|f| project_capability_fact(f, map, &event_by_id))
-            .collect();
-        direct_facts.sort_by_key(capability_fact_sort_key);
-
-        let mut inherited_facts: Vec<PCapabilityFact> = cone
-            .inherited
-            .iter()
-            .map(|f| project_capability_fact(f, map, &event_by_id))
-            .collect();
-        inherited_facts.sort_by_key(capability_fact_sort_key);
-
-        let mut reasons = cone.coverage.reasons.clone();
-        reasons.sort();
-        let mut unknown_targets: Vec<String> = cone
-            .coverage
-            .unknown_targets
-            .iter()
-            .map(|t| stable_routine_id(t, map))
-            .collect();
-        unknown_targets.sort();
-
-        summaries.push(PRoutineConeCoverage {
-            routine_id: stable_routine_id(&r.id, map),
-            capability_facts_direct: direct_facts,
-            capability_facts_inherited: inherited_facts,
-            coverage: PCoverageRecord {
-                subject: stable_routine_id(&cone.coverage.subject, map),
-                direct_status: cone.coverage.direct_status.clone(),
-                inherited_status: cone.coverage.inherited_status.clone(),
-                reasons,
-                unknown_targets,
-            },
-        });
-    }
-    summaries.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
-
-    R3a3Projection { summaries }
 }
 
 // ===========================================================================

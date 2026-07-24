@@ -32,9 +32,11 @@ use crate::engine::l4::capability_cone::{
     CapabilityFact, compose_cone_over_graph, direct_facts_for_routine,
 };
 use crate::engine::l4::combined_graph::{CombinedGraph, build_combined_graph};
+use crate::engine::l4::cone_derived::{ConeDerivedStore, ConeOutput};
+use crate::engine::l4::effect_store::SummaryBundle;
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
-use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries};
+use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_bundle};
 use crate::engine::l5::entry_points::AccessModifier;
 use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
@@ -87,6 +89,17 @@ pub struct DetectorContext<'a> {
     pub call_site_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Per-routine `FullRoutineSummary` (direct + inherited facts + coverage).
     pub summaries: HashMap<String, FullRoutineSummary>,
+    /// ⟨C1⟩ The compact DERIVED capability-cone substrate — per-routine presence
+    /// flags + interned table/event id-sets folded during the same cone walk that
+    /// produces `summaries`, with zero `retag` clones. Every analyze-path consumer
+    /// of the old `capability_facts_inherited` Vec reads only a derived predicate
+    /// off it, so this row REPLACES that Vec outright: since C1 Task 3 the analyze
+    /// path composes under `ConeOutput::DerivedOnly` and the raw Vec is never
+    /// built (`summaries[*].inherited_raw()` panics there — see
+    /// `FullRoutineSummary`). Parked here — next to `db_effect_bundle` — because
+    /// the rows are `Range<u32>` windows into pools this store owns; a row alone
+    /// is meaningless. EMPTY when the `SUMMARIES` substrate was not demanded.
+    pub cone_derived: ConeDerivedStore,
     /// The shared event-flow indexes (publisher/subscriber lookup tables) the
     /// d43/d44/d45 event-flow detectors consume. al-sem builds this LAZILY
     /// (`ctx.getEventFlowIndexes()`, memoized); the Rust port builds it EAGERLY
@@ -174,6 +187,17 @@ pub struct DetectorContext<'a> {
     /// common case (additive: `run_detectors` folds this into the "summarize"
     /// slot of the analyze/detect diagnostics envelope).
     pub summarize_diagnostics: Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
+    /// ⟨Task B1⟩ The workspace-complete compact db-effect store the analyze path's
+    /// v2 solve produced, held HERE instead of eagerly re-materialized into
+    /// per-routine `Vec<DbEffect>`. No current detector reads `RoutineSummary.db_effects`
+    /// (the analyze path consumes only `.uncertainties` / `.parameter_roles`), so the
+    /// old compat-shim materialization was pure waste (~24 GB / ~74 s on 8020). The
+    /// rows stay QUERYABLE on demand — `bundle.db_effects(rix)` (lazy projection) or an
+    /// `l4::reverse_index::ReverseEffectIndex` built from this bundle — so a future
+    /// db-effect-reading detector/hover can query them lazily WITHOUT resurrecting the
+    /// eager expansion. `None` when the `CORE_SUMMARIES` substrate was not demanded
+    /// (the summary solve is skipped entirely — no bundle exists to hold).
+    pub db_effect_bundle: Option<SummaryBundle>,
     /// The shared finding-fingerprint index (routine/object id maps + the
     /// internal→stable routine-id substitution map). Built ONCE per run —
     /// previously every detector rebuilt it (54 × ~2 String clones per routine).
@@ -215,16 +239,42 @@ impl DetectorContext<'_> {
 /// substrates are:
 ///   - `SUMMARIES` — capability cones + `summaries` (also built for `TRANSACTION_SPANS`,
 ///     which folds over the summaries map internally).
-///   - `CORE_SUMMARIES` — second Tarjan + Jacobi core summaries →
+///   - `CORE_SUMMARIES` — second Tarjan + the closed-form v2 core summaries
+///     (`db_effects`/`uncertainties` via `compute_summaries_v2`, `parameter_roles`
+///     via its own JACOBI-disciplined roles-only fixpoint) →
 ///     `uncertainties_by_node` / `parameter_roles_by_routine` / `summarize_diagnostics`.
 ///   - `TRANSACTION_SPANS` — `transaction_spans`.
 ///   - `CLOSED_WORLD_TEMP` — `closed_world_temp_params`.
+///
+/// ⟨C1 Task 3⟩ `demanded` additionally carries the policy-only
+/// `RAW_INHERITED_FACTS` bit (NOT part of `substrate::ALL` — see its doc). Without
+/// it the cone composes under [`ConeOutput::DerivedOnly`]: the per-routine raw
+/// `Vec<CapabilityFact>` is never allocated (it cost ~10.9 GB on the 8020 corpus)
+/// and every summary carries `capability_facts_inherited: None`. With it the cone
+/// composes under [`ConeOutput::Both`] — the derived substrate AND the raw Vecs,
+/// byte-identical to the pre-Task-3 build.
 pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorContext<'_> {
     use crate::engine::l5::registry::substrate;
     let ws = &resolved.workspace;
     // TRANSACTION_SPANS folds over the summaries map, so demand summaries whenever
     // either bit is set (see `compute_transaction_spans`).
     let need_summaries = demanded & (substrate::SUMMARIES | substrate::TRANSACTION_SPANS) != 0;
+    // ⟨C1 Task 3 — R1⟩ The gate is a MODE threaded into the cone walk, not a
+    // post-hoc check: the raw Vec is allocated INSIDE `compose_inherited_cones`,
+    // so a check here could only discard it — zero memory win.
+    let want_raw_inherited = demanded & substrate::RAW_INHERITED_FACTS != 0;
+    // ⟨C1 Task 3 review fix M-1⟩ `RAW_INHERITED_FACTS` without `SUMMARIES` (nor
+    // `TRANSACTION_SPANS`) is a SILENT no-op: `need_summaries` would be false, the
+    // block below never runs, `summaries` stays empty, and `select_facts` (which
+    // reads through `summaries`) then returns an empty fact list for every
+    // routine — the exact silent-empty outcome R6 was designed to foreclose,
+    // reached through a different door. No current caller does this (`R2`'s table
+    // above), but a future one could; fail loudly instead of degrading quietly.
+    debug_assert!(
+        !want_raw_inherited || need_summaries,
+        "RAW_INHERITED_FACTS demanded without SUMMARIES/TRANSACTION_SPANS — the raw \
+         cone would silently build empty; OR in substrate::SUMMARIES alongside it"
+    );
 
     // --- L3→L4 substrate (source-only: no deps) ----------------------------
     // `symbols` feeds BOTH spans below (resolve_calls here, build_event_graph in
@@ -250,6 +300,9 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // some selected detector demands SUMMARIES (or TRANSACTION_SPANS, which folds
     // over the summaries map). Skipped ⇒ empty `summaries` map.
     let _cones_span = pt::span("context", "context.capability_cones");
+    // ⟨C1⟩ Assigned inside the block below (kept a separate binding so the whole
+    // cone-assembly block stays at its original indentation).
+    let mut cone_derived = ConeDerivedStore::default();
     let summaries: HashMap<String, FullRoutineSummary> = if need_summaries {
         let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
         for evt in &event_graph.events {
@@ -261,35 +314,105 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             }
         }
         let empty_pub: Vec<&EventSymbol> = Vec::new();
+        // ⟨C1 Task 4⟩ ONE direct-facts map, not two. This used to build a
+        // second, byte-identical `direct_in` (a `facts.clone()` per routine)
+        // purely to hand to the cone walk, which takes it by shared reference
+        // and only reads it — 79.66 MB of pure duplicate on the 8020 corpus,
+        // held for the rest of this block because Rust frees a local at its
+        // block's end, not at its last use. `direct_full` is not drained until
+        // the summary loop below, well after the walk's borrow ends, so the
+        // walk can simply read it. (Every OTHER `compose_cone_over_graph` call
+        // site — `project_r3a3`, `project_r3a5_cross_app`,
+        // `build_detector_context_cross_app` — already passed its `direct_full`
+        // directly; this was the one straggler.)
         let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
-        let mut direct_in: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
         let mut coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
         let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
         for r in &ws.routines {
             let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
             let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
-            direct_in.insert(r.id.clone(), facts.clone());
             coverage_in.insert(r.id.clone(), (status, reasons));
             direct_full.insert(r.id.clone(), facts);
         }
-        let mut cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
+        // ⟨C1 Task 3⟩ `DerivedOnly` — the compact substrate only; the per-routine
+        // raw inherited `Vec<CapabilityFact>` is never allocated. `Both` only when
+        // the policy-only `RAW_INHERITED_FACTS` bit is demanded.
+        let mode = if want_raw_inherited {
+            ConeOutput::Both
+        } else {
+            ConeOutput::DerivedOnly
+        };
+        let outcome = compose_cone_over_graph(&graph, &nodes, &direct_full, &coverage_in, mode);
+        let mut cones = outcome.cones;
+        cone_derived = outcome.derived;
+        // ⟨C1 Task 4⟩ Both cone inputs are dead here; free them before the
+        // summary assembly below rather than at this block's closing brace
+        // (`nodes` is one more full copy of every routine id, `coverage_in` one
+        // more copy of every routine's direct status + reasons).
+        drop(nodes);
+        drop(coverage_in);
 
         // `cones` and `direct_full` are locally owned and dead after this loop, so
         // move their payloads into the summaries instead of cloning them out.
         let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         for r in &ws.routines {
-            let (inherited, coverage) = match cones.remove(&r.id) {
+            let cone_entry = cones.remove(&r.id);
+            let direct = direct_full.remove(&r.id);
+            // ⟨C1⟩ Two AL routines can COLLIDE on one internal routine id (two
+            // same-name triggers in one object — gap G-18; `compute_routine_id`
+            // has no member discriminator). Both `remove`s above are then
+            // consumed by the FIRST occurrence, so the summary the second
+            // occurrence writes — the one that survives the map insert — is
+            // fully degenerate: no direct facts, no inherited facts, no
+            // coverage. The derived row is keyed by id and holds the FULL fold,
+            // so it must be dropped to match the summary this context will
+            // actually hold. (PRE-EXISTING behaviour, reproduced deliberately:
+            // losing a colliding routine's whole cone is a real precision
+            // defect, but it is what today's detector output encodes — see the
+            // C1 Task 1 report. `build_detector_context_cross_app` reads its
+            // cone with `get()`, so it never has this accident and needs no
+            // such adjustment.)
+            //
+            // ⟨fix M1⟩ `cone_entry.is_none() <=> direct.is_none()` today: both maps
+            // are built from the same `ws.routines` iteration and drained by the
+            // same per-id `remove()`, so a collision empties them together, never
+            // just one. Assert that invariant instead of merely relying on it —
+            // if a future change ever filters `nodes` (dep routines, bodyless
+            // routines, …) while `direct_full` kept every routine, the OLD `||`
+            // would zero a row whose surviving summary still carries direct
+            // facts, a silent findings loss once the parity oracle is retired.
+            // Keying on `direct.is_none()` alone is the correct long-term
+            // condition either way, since `direct` is what the surviving summary
+            // actually stores.
+            debug_assert_eq!(
+                cone_entry.is_none(),
+                direct.is_none(),
+                "cones and direct_full must collide identically — a mismatch means \
+                 `nodes` (cone input) and `ws.routines` (direct_full's source) have \
+                 silently diverged"
+            );
+            if direct.is_none() {
+                cone_derived.forget(&r.id);
+            }
+            let (inherited, coverage) = match cone_entry {
                 Some(c) => (c.inherited, Some(c.coverage)),
                 None => (Vec::new(), None),
             };
+            // ⟨C1 Task 3⟩ `Some(inherited)` ONLY under `RAW_INHERITED_FACTS`;
+            // `None` records "never materialized" so `inherited_raw()` panics
+            // instead of answering "empty cone" (R6). Note the `Some(Vec::new())`
+            // case is REAL and must stay distinct from `None`: the G-18 collision
+            // arm above yields a drained (empty) cone entry, which the policy path
+            // must still read as a materialized-but-empty cone, exactly as it did
+            // before this task.
             summaries.insert(
                 r.id.clone(),
-                FullRoutineSummary {
-                    routine_id: r.id.clone(),
-                    capability_facts_direct: direct_full.remove(&r.id).unwrap_or_default(),
-                    capability_facts_inherited: inherited,
+                FullRoutineSummary::new(
+                    r.id.clone(),
+                    direct.unwrap_or_default(),
+                    want_raw_inherited.then_some(inherited),
                     coverage,
-                },
+                ),
             );
         }
         summaries
@@ -297,6 +420,12 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         HashMap::new()
     };
     drop(_cones_span);
+
+    // ⟨C1 census⟩ `C1_CONE_CENSUS=1` — one-shot byte census of what the cone
+    // build just left resident (`summaries` + `cone_derived`), emitted after
+    // the span closes so the census's own (modest) bookkeeping never pollutes
+    // the span's own `rss_delta` measurement. No-op when the env var is unset.
+    crate::engine::l4::cone_census::emit_full_census(&summaries, &cone_derived);
 
     // --- Eager indexes -----------------------------------------------------
     let routine_by_id: HashMap<&str, &L3Routine> =
@@ -372,6 +501,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 &dep_routine_ids,
                 &reverse_call_graph,
                 &summaries,
+                &cone_derived,
             )
         } else {
             Vec::new()
@@ -417,20 +547,26 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // The CORE `RoutineSummary.uncertainties` is dropped by `FullRoutineSummary`
     // (the cone path keeps only facts + coverage), so we recompute the core
     // summaries here from the SAME combined graph the cone used: Tarjan SCC over
-    // `graph.edges_by_from`, then the Jacobi fixed point (`compute_summaries`).
+    // `graph.edges_by_from`, then the closed-form v2 solver (`compute_summaries_v2`).
     // This is the only place that needs the core uncertainties; the union is
     // assembled once and exposed on `uncertainties_by_node`.
     //
-    // SUBSTRATE-GATED on CORE_SUMMARIES. This is the second Tarjan + Jacobi pass —
-    // the most expensive substrate. Skipped ⇒ `uncertainties_by_node` /
+    // SUBSTRATE-GATED on CORE_SUMMARIES. This is the second Tarjan + v2-solver
+    // pass — the most expensive substrate. Skipped ⇒ `uncertainties_by_node` /
     // `parameter_roles_by_routine` / `summarize_diagnostics` are all empty, which by
     // decision (a) means a substrate-skipping run emits no summarize cap-hit
-    // diagnostics (they are only ever produced by this `compute_summaries` call).
+    // diagnostics (they are only ever produced by this `compute_summaries_v2` call).
     #[allow(clippy::type_complexity)]
-    let (uncertainties_by_node, parameter_roles_by_routine, summarize_diagnostics): (
+    let (
+        uncertainties_by_node,
+        parameter_roles_by_routine,
+        summarize_diagnostics,
+        db_effect_bundle,
+    ): (
         HashMap<String, Vec<Uncertainty>>,
         HashMap<String, Vec<RecordRoleSummary>>,
         Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
+        Option<SummaryBundle>,
     ) = if demanded & substrate::CORE_SUMMARIES != 0 {
         let scc = {
             let _s = pt::span("context", "context.core_scc_tarjan");
@@ -498,7 +634,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         let _summaries_span = pt::span("context", "context.compute_summaries");
         // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
         // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
-        // but `compute_summaries` takes it.
+        // but `compute_summaries_v2` takes it.
         let mut field_index: FieldIndex = HashMap::new();
         for table in &ws.tables {
             for field in &table.fields {
@@ -507,13 +643,21 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                     .or_insert_with(|| field.id.clone());
             }
         }
-        let (core_summaries, _trace, summarize_diagnostics) = compute_summaries(
+        // v2 db-effect solver — ⟨Task B1⟩ the LEAN bundle entry point: it returns the
+        // compact `SummaryBundle` PLUS a `core_summaries` map whose `db_effects` are
+        // EMPTY (never re-materialized) while `.uncertainties` / `.parameter_roles` are
+        // fully populated — the only fields this path reads below. The db-effect rows
+        // stay queryable on demand via `db_effect_bundle` (held on the ctx). This drops
+        // the compat shim's ~24 GB / ~74 s per-routine `Vec<DbEffect>` expansion that no
+        // detector consumed. `summarize_diagnostics` carries the ROLES fixpoint's
+        // cap-hit backstop (empty on the corpus — roles converge); the db_effects path
+        // is closed-form and never caps.
+        let (db_effect_bundle, core_summaries, summarize_diagnostics) = compute_summaries_v2_bundle(
             &ws.routines,
             &graph,
             &scc,
             &calls.upgraded_bindings,
             &field_index,
-            false,
         );
         drop(_summaries_span);
 
@@ -559,9 +703,10 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             uncertainties_by_node,
             parameter_roles_by_routine,
             summarize_diagnostics,
+            Some(db_effect_bundle),
         )
     } else {
-        (HashMap::new(), HashMap::new(), Vec::new())
+        (HashMap::new(), HashMap::new(), Vec::new(), None)
     };
 
     let _final_indexes_span = pt::span("context", "context.final_indexes");
@@ -574,7 +719,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 
     // Expose the resolver's post-upgrade bindings (the `upgradeBindings` side
     // table) keyed by callsite id — the join target for d37/d39 which read
-    // `binding.bindingResolution` / `binding.calleeParameterIsVar`. `compute_summaries`
+    // `binding.bindingResolution` / `binding.calleeParameterIsVar`. `compute_summaries_v2`
     // above was the last reader of `calls.upgraded_bindings`, so move it out here.
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
         std::mem::take(&mut calls.upgraded_bindings);
@@ -611,6 +756,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         uncertainties_by_node,
         call_site_by_id,
         summaries,
+        cone_derived,
         event_flow_indexes,
         parameter_roles_by_routine,
         upgraded_bindings_by_callsite,
@@ -625,6 +771,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         ordering_source: Some(resolved),
         closed_world_temp_params,
         summarize_diagnostics,
+        db_effect_bundle,
         fingerprint_index,
         cross_extension_subscribers,
     }
@@ -647,37 +794,48 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 pub(crate) fn build_detector_context_cross_app(
     base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
 ) -> DetectorContext<'_> {
-    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
+    use crate::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
 
     let ws_routines = &base.ws_routines;
     let dep_routine_ids = &base.dep_routine_ids;
     let graph = base.graph.clone();
 
     // Cone over the merged graph (direct facts/coverage already assembled in `base`).
-    let cones = compose_cone_over_graph(
+    // ⟨C1 Task 3⟩ `DerivedOnly`, unconditionally. Unlike the source-only builder
+    // there is no mode choice to make here: this context is reachable ONLY from
+    // `registry::run_detectors_cross_app` (its single caller), i.e. from the
+    // detector path, and no detector reads raw inherited facts. The one consumer
+    // that does — `gate::policy` — builds its context through the SOURCE-ONLY
+    // `build_detector_context` (`gate/policy/pipeline.rs`), never this one. Adding
+    // a `demanded` parameter here would therefore only add a branch that no caller
+    // can ever take.
+    let outcome = compose_cone_over_graph(
         &base.graph,
         &base.nodes,
         &base.direct_full,
         &base.direct_coverage,
+        ConeOutput::DerivedOnly,
     );
+    let cones = outcome.cones;
+    let cone_derived = outcome.derived;
     let empty_facts: Vec<CapabilityFact> = Vec::new();
     let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
     for r in ws_routines {
+        // ⟨C1 Task 3, carry #2⟩ The `inherited` FIELD POPULATION is gone; the
+        // `cones.get()` is NOT. Switching this to `cones.remove()` would import
+        // the G-18 routine-id-collision degeneracy that the source-only builder
+        // accepts and this builder does not — a real output change, not a
+        // refactor. `coverage` still comes off the same borrowed entry.
         let cone = cones.get(&r.id);
-        let inherited = cone.map(|c| c.inherited.clone()).unwrap_or_default();
         let coverage = cone.map(|c| c.coverage.clone());
         summaries.insert(
             r.id.clone(),
-            FullRoutineSummary {
-                routine_id: r.id.clone(),
-                capability_facts_direct: base
-                    .direct_full
-                    .get(&r.id)
-                    .unwrap_or(&empty_facts)
-                    .clone(),
-                capability_facts_inherited: inherited,
+            FullRoutineSummary::new(
+                r.id.clone(),
+                base.direct_full.get(&r.id).unwrap_or(&empty_facts).clone(),
+                None,
                 coverage,
-            },
+            ),
         );
     }
 
@@ -732,6 +890,7 @@ pub(crate) fn build_detector_context_cross_app(
         dep_routine_ids,
         &reverse_call_graph,
         &summaries,
+        &cone_derived,
     );
 
     let event_flow_indexes =
@@ -766,17 +925,22 @@ pub(crate) fn build_detector_context_cross_app(
             .push(ue.uncertainty.clone());
     }
 
-    // Core summaries (JACOBI WITH dep leaves) for the path-walker uncertainty union +
-    // parameter roles — same as project_r3a5_cross_app's core.
-    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_with_leaves(
-        ws_routines,
-        &graph,
-        &base.combined_scc,
-        &base.upgraded_bindings,
-        &base.field_index,
-        false,
-        &base.leaf_summaries,
-    );
+    // Core summaries (v2 db-effect solver WITH dep leaves) for the path-walker
+    // uncertainty union + parameter roles — same as project_r3a5_cross_app's core.
+    // ⟨Task B1⟩ the LEAN bundle entry point: `core_summaries` carries EMPTY
+    // `db_effects` (never re-materialized) with `.uncertainties` / `.parameter_roles`
+    // populated — the only fields read below — while the compact rows stay queryable
+    // via `db_effect_bundle` (held on the ctx). `summarize_diagnostics` carries the
+    // roles fixpoint's cap-hit backstop (empty on the corpus).
+    let (db_effect_bundle, core_summaries, summarize_diagnostics) =
+        compute_summaries_v2_bundle_with_leaves(
+            ws_routines,
+            &graph,
+            &base.combined_scc,
+            &base.upgraded_bindings,
+            &base.field_index,
+            &base.leaf_summaries,
+        );
 
     let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
     for r in ws_routines {
@@ -849,6 +1013,7 @@ pub(crate) fn build_detector_context_cross_app(
         uncertainties_by_node,
         call_site_by_id,
         summaries,
+        cone_derived,
         event_flow_indexes,
         parameter_roles_by_routine,
         upgraded_bindings_by_callsite,
@@ -862,6 +1027,7 @@ pub(crate) fn build_detector_context_cross_app(
         ordering_source: None,
         closed_world_temp_params,
         summarize_diagnostics,
+        db_effect_bundle: Some(db_effect_bundle),
         fingerprint_index,
         cross_extension_subscribers,
     }
@@ -898,6 +1064,129 @@ mod tests {
         assert!(
             ctx.ordering_facts.get().is_some(),
             "first access must memoize"
+        );
+    }
+
+    /// ⟨C1 Task 3, carry #1⟩ RELOCATED from the retired `l5::cone_parity`'s test
+    /// module (that file's raw-vs-derived oracle died with the raw Vec; this test
+    /// never depended on the Vec and is the ONLY unconditional pin on
+    /// [`ConeDerivedStore::forget`], so it moves rather than dies). Its parity
+    /// tail — `assert_cone_parity(&ctx.summaries, &ctx.cone_derived)` — is gone
+    /// with the oracle; the degeneracy assertions below are the part that pinned
+    /// real behaviour.
+    ///
+    /// Two page actions each declaring `trigger OnAction()` COLLIDE on one
+    /// internal routine id (`compute_routine_id` carries no member discriminator
+    /// — gap G-18). `build_detector_context` assembles summaries by `remove()`-ing
+    /// each routine's cone entry, so the second occurrence gets nothing and the
+    /// summary that SURVIVES is fully degenerate. The derived row must be dropped
+    /// to match, or every colliding trigger in a real BC workspace would silently
+    /// change output now that detectors read the row instead of the Vec.
+    #[test]
+    fn colliding_routine_ids_leave_summary_and_derived_row_equally_degenerate() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50811 "CP Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50811 "CP Wizard"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action(First)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+            action(Second)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+        }
+    }
+
+    local procedure Touch()
+    var
+        Setup: Record "CP Setup";
+    begin
+        Setup.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/CPWizard.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "11111111-0000-0000-0000-0000000cp001");
+        let ctx = build_detector_context(&resolved, substrate::SUMMARIES);
+
+        // ⟨carry #1, re-review finding N-B⟩ Without this the whole test would pass
+        // identically on an EMPTY store — every `flags_of` would read the empty
+        // row and every `writes_tables_of` would be empty for the trivial reason,
+        // silently voiding what it pins.
+        assert!(
+            !ctx.cone_derived.is_empty(),
+            "precondition: the derived store must actually hold rows, or the \
+             degeneracy assertions below are vacuous"
+        );
+
+        // The collision is real: two routines share one id, so the routine list
+        // is longer than the summaries map.
+        let ids: BTreeSet<&str> = resolved
+            .workspace
+            .routines
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
+        assert!(
+            ids.len() < resolved.workspace.routines.len(),
+            "fixture precondition: the two OnAction triggers must collide on one routine id"
+        );
+
+        // The colliding id's summary is degenerate — and its derived row matches.
+        // ⟨Task 3⟩ The degeneracy predicate no longer mentions
+        // `capability_facts_inherited`: under `DerivedOnly` it is `None` for EVERY
+        // routine, so it discriminates nothing. `direct.is_empty() &&
+        // coverage.is_none()` is exactly the condition `build_detector_context`'s
+        // `forget` arm keys on.
+        let degenerate: Vec<&String> = ctx
+            .summaries
+            .iter()
+            .filter(|(_, s)| s.capability_facts_direct.is_empty() && s.coverage.is_none())
+            .map(|(id, _)| id)
+            .collect();
+        assert!(
+            !degenerate.is_empty(),
+            "fixture precondition: the collision must produce a degenerate summary"
+        );
+        for id in &degenerate {
+            assert_eq!(
+                ctx.cone_derived.flags_of(id),
+                0,
+                "{id}: a degenerate summary must carry an empty derived row"
+            );
+            assert!(ctx.cone_derived.writes_tables_of(id).is_empty());
+        }
+
+        // And a NON-degenerate routine still carries its folded row — the other
+        // half of the pin (`forget` must drop exactly the degenerate rows, not
+        // wipe the store).
+        assert!(
+            ctx.summaries
+                .values()
+                .any(|s| ctx.cone_derived.touches_table(&s.routine_id)),
+            "at least one surviving routine must still reach the table write"
         );
     }
 }

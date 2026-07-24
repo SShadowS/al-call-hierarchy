@@ -32,8 +32,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine, L3Table};
 use crate::engine::l4::combined_graph::CombinedEdge;
+use crate::engine::l4::cone_derived::ConeDerivedStore;
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
-use crate::engine::l5::capability_query::{EffectPresence, touches_db_of, writes_tables_of};
+use crate::engine::l5::capability_query::{EffectPresence, touches_db_derived};
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
@@ -104,6 +105,8 @@ struct D2Policy<'a> {
     summaries: &'a HashMap<String, crate::engine::l5::full_summary::FullRoutineSummary>,
     edges_by_from: &'a HashMap<String, Vec<CombinedEdge>>,
     call_site_by_id: &'a HashMap<&'a str, &'a crate::engine::l2::features::PCallSite>,
+    /// ⟨C1 Task 2⟩ The derived cone substrate `expand`'s `touchesDb` gate reads.
+    cone_derived: &'a ConeDerivedStore,
 }
 
 impl<'a> WalkPolicy for D2Policy<'a> {
@@ -144,7 +147,7 @@ impl<'a> WalkPolicy for D2Policy<'a> {
                     return false;
                 }
                 match self.summaries.get(&e.to) {
-                    Some(s) => touches_db_of(s) != EffectPresence::No,
+                    Some(s) => touches_db_derived(self.cone_derived, s) != EffectPresence::No,
                     None => false,
                 }
             })
@@ -301,6 +304,7 @@ pub fn detect_d2(
         summaries: &ctx.summaries,
         edges_by_from: &ctx.graph.edges_by_from,
         call_site_by_id: &ctx.call_site_by_id,
+        cone_derived: &ctx.cone_derived,
     };
 
     let mut findings: Vec<Finding> = Vec::new();
@@ -400,7 +404,7 @@ pub fn detect_d2(
                 let Some(sub_summary) = ctx.summaries.get(&sub_routine.id) else {
                     continue;
                 };
-                if touches_db_of(sub_summary) == EffectPresence::No {
+                if touches_db_derived(&ctx.cone_derived, sub_summary) == EffectPresence::No {
                     continue;
                 }
 
@@ -432,7 +436,7 @@ pub fn detect_d2(
                 for u in &sub_summary_uncertainties(ctx, &sub_routine.id) {
                     uncertainties.push(u.clone());
                 }
-                for t in writes_tables_of(sub_summary) {
+                for t in ctx.cone_derived.writes_tables_of(&sub_summary.routine_id) {
                     affected_tables.insert(t);
                 }
                 let sub_object_name = ctx

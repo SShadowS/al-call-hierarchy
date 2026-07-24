@@ -16,7 +16,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::{fact_is_known_temp, find_capabilities};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::event_flow::event_kind_of;
 use crate::engine::l5::finding::{
@@ -29,14 +28,13 @@ use super::{anchor_of, group_and_cap};
 const DETECTOR: &str = "d44-event-multi-subscriber-overlap";
 const D44_MAX_PER_EVENT: usize = 32;
 
-/// `WRITE_OPS = {insert, modify, delete}`.
-fn is_write_op(op: &str) -> bool {
-    matches!(op, "insert" | "modify" | "delete")
-}
-
 struct SubWrite {
     subscriber: String,
-    op: String,
+    // ⟨C1 Task 2 fix M4⟩ `decode_op_mask` already yields `&'static str`; keeping
+    // this field a borrow instead of `.to_string()`-ing it avoids one
+    // allocation per (subscriber, table, op) that `op_union` (below) only
+    // ever borrows straight back.
+    op: &'static str,
 }
 
 pub fn detect_d44(
@@ -77,18 +75,24 @@ pub fn detect_d44(
             let Some(summary) = ctx.summaries.get(&r.id) else {
                 continue;
             };
-            let writes = find_capabilities(summary, |f| {
-                f.resource_kind == "table"
-                    && is_write_op(&f.op)
-                    && f.resource_id.is_some()
-                    && !fact_is_known_temp(f)
-            });
-            for w in writes {
-                let key = format!("{event_id}|{}", w.resource_id.as_deref().unwrap());
-                grouped.entry(key).or_default().push(SubWrite {
-                    subscriber: sub.clone(),
-                    op: w.op.clone(),
-                });
+            // ⟨C1 Task 2⟩ The same set of (table, op) pairs the per-fact
+            // `find_capabilities(table ∧ write ∧ resource_id ∧ ¬known-temp)`
+            // scan USED to produce (that helper and the raw Vec it scanned are
+            // both retired as of Task 3), read off the folded cone row.
+            // `unique_subs` and `op_union` below are both `BTreeSet`s, so
+            // collapsing duplicate facts on the SAME (table, op) into one entry
+            // is invisible.
+            for (table_id, ops) in ctx
+                .cone_derived
+                .physical_table_write_ops_of(&summary.routine_id)
+            {
+                let entry = grouped.entry(format!("{event_id}|{table_id}")).or_default();
+                for op in ops {
+                    entry.push(SubWrite {
+                        subscriber: sub.clone(),
+                        op,
+                    });
+                }
             }
         }
     }
@@ -101,7 +105,7 @@ pub fn detect_d44(
         candidates += 1;
         let (event_id, table_id) = split_once_pipe(key);
         let sub_list: Vec<&str> = unique_subs.iter().copied().collect();
-        let op_union: BTreeSet<&str> = writes.iter().map(|w| w.op.as_str()).collect();
+        let op_union: BTreeSet<&str> = writes.iter().map(|w| w.op).collect();
         let op_union: Vec<&str> = op_union.into_iter().collect();
         let Some(first_id) = sub_list.first().copied() else {
             continue;
@@ -179,29 +183,24 @@ pub fn detect_d44(
             let Some(summary) = ctx.summaries.get(&r.id) else {
                 continue;
             };
-            let write_facts = find_capabilities(summary, |f| {
-                f.resource_kind == "table"
-                    && is_write_op(&f.op)
-                    && f.resource_id.is_some()
-                    && !fact_is_known_temp(f)
-            });
-            for w in write_facts {
-                let k = format!("{event_id}|{}", w.resource_id.as_deref().unwrap());
+            // ⟨C1 Task 2⟩ Both sides are subscriber SETS per (event, table), so
+            // only the distinct table ids matter — the folded row's write / read
+            // id-sets are exactly those.
+            for table_id in ctx
+                .cone_derived
+                .writes_physical_tables_of(&summary.routine_id)
+            {
                 writers_by_event_table
-                    .entry(k)
+                    .entry(format!("{event_id}|{table_id}"))
                     .or_default()
                     .insert(sub.clone());
             }
-            let read_facts = find_capabilities(summary, |f| {
-                f.resource_kind == "table"
-                    && f.op == "read"
-                    && f.resource_id.is_some()
-                    && !fact_is_known_temp(f)
-            });
-            for rd in read_facts {
-                let k = format!("{event_id}|{}", rd.resource_id.as_deref().unwrap());
+            for table_id in ctx
+                .cone_derived
+                .physical_table_reads_of(&summary.routine_id)
+            {
                 readers_by_event_table
-                    .entry(k)
+                    .entry(format!("{event_id}|{table_id}"))
                     .or_default()
                     .insert(sub.clone());
             }

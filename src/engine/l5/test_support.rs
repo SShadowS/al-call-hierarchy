@@ -16,8 +16,42 @@ use crate::engine::l2::features::{
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::capability_cone::{CapabilityFact, CoverageRecord};
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
+use crate::engine::l4::cone_derived::{ConeDerivedBuilder, ConeDerivedStore};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::full_summary::FullRoutineSummary;
+
+/// ⟨C1⟩ The derived cone substrate for a set of hand-built summaries — each
+/// routine's literal `reachable()` sequence folded into a row. Fixture summaries
+/// carry their `capability_facts_inherited` as INPUT (there is no cone walk and
+/// so no key-dedup), so folding the flat reachable list is exactly right here —
+/// unlike the production path, which must fold key-deduped representatives.
+/// Every hand-built `DetectorContext` uses this so its `cone_derived` field can
+/// never silently disagree with its `summaries`.
+pub fn cone_store_of(summaries: &HashMap<String, FullRoutineSummary>) -> ConeDerivedStore {
+    let mut b = ConeDerivedBuilder::default();
+    for (id, s) in summaries {
+        // ⟨fix M3⟩ Fold keyed by `s.routine_id`, not the map key `id` — every
+        // consumer (`ConeDerivedStore::row` and friends) looks the row up by
+        // `summary.routine_id`, so a fixture whose map key diverges from its
+        // own `routine_id` must still fold under the id callers will query.
+        debug_assert_eq!(
+            id, &s.routine_id,
+            "cone_store_of: fixture map key {id:?} must equal summary.routine_id {:?} — \
+             every derived-store consumer looks the row up by routine_id, not the map key",
+            s.routine_id
+        );
+        // ⟨C1 Task 3⟩ `reachable_iter()` is gone (R6 — it would have silently
+        // yielded a direct-only view once the analyze path stopped materializing
+        // the inherited Vec). Fixture summaries always own their inherited facts,
+        // so the chain is spelled out here; `inherited_raw()` panics loudly if a
+        // fixture ever forgets to supply them.
+        b.fold_routine(
+            &s.routine_id,
+            s.capability_facts_direct.iter().chain(s.inherited_raw()),
+        );
+    }
+    b.finish()
+}
 
 /// A throwaway anchor (positions are irrelevant to the L5 query substrate).
 pub fn dummy_anchor() -> PAnchor {
@@ -160,16 +194,20 @@ pub fn object_run_call_site(id: &str, object_kind: &str, return_used: Option<boo
 
 /// A capability fact with the given op / resource kind / optional resource id.
 /// Other fields are defaulted (they do not affect any L5 query helper).
-pub fn fact(op: &str, resource_kind: &str, resource_id: Option<&str>) -> CapabilityFact {
+pub fn fact(
+    op: &'static str,
+    resource_kind: &'static str,
+    resource_id: Option<&str>,
+) -> CapabilityFact {
     CapabilityFact {
         subject: "r".to_string(),
-        op: op.to_string(),
-        resource_kind: resource_kind.to_string(),
+        op,
+        resource_kind,
         resource_id: resource_id.map(|s| s.to_string()),
         resource_arg_source: None,
-        confidence: "static".to_string(),
-        provenance: "direct".to_string(),
-        via: "self".to_string(),
+        confidence: "static",
+        provenance: "direct",
+        via: "self",
         witness_operation_id: None,
         witness_callsite_id: None,
         extra: None,
@@ -188,18 +226,17 @@ pub fn coverage(inherited_status: &str) -> CoverageRecord {
 }
 
 /// A `FullRoutineSummary` from direct + inherited facts + optional coverage.
+/// ⟨C1 Task 3⟩ Fixture summaries are always MATERIALIZED (`Some(inherited)`) —
+/// they carry their inherited facts as INPUT rather than as a cone output, so
+/// `inherited_raw()` is always legal on them. A test that wants the derived-only
+/// shape builds it with `FullRoutineSummary::new(.., None, ..)` directly.
 pub fn summary(
     routine_id: &str,
     direct: Vec<CapabilityFact>,
     inherited: Vec<CapabilityFact>,
     cov: Option<CoverageRecord>,
 ) -> FullRoutineSummary {
-    FullRoutineSummary {
-        routine_id: routine_id.to_string(),
-        capability_facts_direct: direct,
-        capability_facts_inherited: inherited,
-        coverage: cov,
-    }
+    FullRoutineSummary::new(routine_id.to_string(), direct, Some(inherited), cov)
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +392,9 @@ pub fn minimal_ctx<'a>(
         uncertainty_edges_by_from: HashMap::new(),
         uncertainties_by_node: HashMap::new(),
         call_site_by_id,
+        // ⟨C1⟩ Fold BEFORE the move so the derived substrate always mirrors this
+        // context's own summaries.
+        cone_derived: cone_store_of(&summaries),
         summaries,
         event_flow_indexes: crate::engine::l5::event_flow::EventFlowIndexes::default(),
         parameter_roles_by_routine: HashMap::new(),
@@ -369,6 +409,7 @@ pub fn minimal_ctx<'a>(
         ordering_source: None,
         closed_world_temp_params: Default::default(),
         summarize_diagnostics: Vec::new(),
+        db_effect_bundle: None,
         fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(routines, &[]),
         cross_extension_subscribers: std::collections::BTreeMap::new(),
     }

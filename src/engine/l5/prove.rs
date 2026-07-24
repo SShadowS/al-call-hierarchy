@@ -831,6 +831,10 @@ pub fn format_prove_human(
 // ---------------------------------------------------------------------------
 
 fn compute_tx_context_map(resolved: &L3Resolved) -> HashMap<String, &'static str> {
+    // ⟨C1 Task 3 — R2/R3 caller classification⟩ DERIVED-ONLY: plain `ALL`, no
+    // `RAW_INHERITED_FACTS`. Same shape as `digest_cli::compute_tx_context_map` —
+    // only `ctx.transaction_spans` is read, and spans are derived-substrate-backed
+    // since Task 2.
     let ctx = build_detector_context(resolved, crate::engine::l5::registry::substrate::ALL);
     let mut map: HashMap<String, &'static str> = HashMap::new();
     for span in &ctx.transaction_spans {

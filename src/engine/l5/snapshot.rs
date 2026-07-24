@@ -1091,13 +1091,13 @@ fn derive_identity_table(resolved: &L3Resolved) -> SnapshotIdentityTable {
 fn snapshot_fact(f: &CapabilityFact, subject: &str) -> SnapshotCapabilityFact {
     SnapshotCapabilityFact {
         subject: subject.to_string(),
-        op: f.op.clone(),
-        resource_kind: f.resource_kind.clone(),
+        op: f.op.to_string(),
+        resource_kind: f.resource_kind.to_string(),
         resource_id: f.resource_id.clone(),
         resource_arg_source: f.resource_arg_source.as_ref().map(snap_value_source),
-        confidence: f.confidence.clone(),
-        provenance: f.provenance.clone(),
-        via: f.via.clone(),
+        confidence: f.confidence.to_string(),
+        provenance: f.provenance.to_string(),
+        via: f.via.to_string(),
         witness_operation_id: f.witness_operation_id.clone(),
         witness_callsite_id: f.witness_callsite_id.clone(),
         extra: f.extra.as_ref().map(snap_capability_extra),

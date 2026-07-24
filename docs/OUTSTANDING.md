@@ -164,8 +164,114 @@ the bottom, CHANGELOG, and git log.
   interleaved complexity-class assertions. Give compute_all the same load-stable
   treatment if it flakes again
 
+- [x] **L4 db-effect RSS consumer-migration — remove the analyze-path
+  materialization shim** — DONE 2026-07-24 (`a0cd348`, Part B B1-migrate). The
+  analyze path (`build_detector_context` + the cross-app builder) now consumes
+  the LEAN bundle entry points, and the compact `SummaryBundle` rides on
+  `DetectorContext.db_effect_bundle` so `db_effects` stays queryable without the
+  per-routine `Vec<DbEffect>` expansion. MEASURED (8020, `release-fast`, full
+  detector set): `context.compute_summaries` `rss_delta` 24 250 MB → **477 MB**
+  (24 GB → 0.47 GB — the sub-GB target), span wall 87 s → 15.7 s, whole-process
+  peak 39.9 GB → 18.1 GB, `analyze.total` 620 s → 366 s. The shim itself is
+  UNCHANGED and still serves the projection + differential. Original item:
+  (`src/engine/l4/summary_runner.rs`
+  `compute_summaries_v2_bundle_with_leaves` → `_core`; the follow-up the L4 store
+  redesign B1 explicitly deferred). B1 deleted the old Jacobi solver and flipped
+  the differential to a frozen baseline, but the shim that re-expands the shared
+  `EffectStore` into an owned `Vec<DbEffect>` per routine (so the returned
+  `HashMap<String, RoutineSummary>` keeps the legacy shape) STAYS — the projection
+  (`summary.rs::project_r3a2`) and the differential still need materialized
+  `db_effects`. Measured cost (8020,
+  `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`): `context.compute_summaries`
+  ~87 s + ~24 GB peak RSS is dominated by this shim, and the analyze path never
+  READS `RoutineSummary.db_effects` (detectors consume only `.uncertainties` /
+  `.parameter_roles` / capability facts — verified grep). Migrate the analyze path
+  (`detector_context` / `gate`) to the bundle's borrowing view + the A4
+  `ReverseEffectIndex`, keeping a materializing path ONLY for the projection +
+  differential. Expected: −24 GB, `compute_summaries` ~87 s → ~13 s. No wake
+  condition — buildable now.
+- [x] **C1 — `context.capability_cones` base-assembly RSS** — DONE 2026-07-24
+  (Tasks 1–4, plan `docs/superpowers/plans/2026-07-24-c1-cone-derived-substrate.md`;
+  see the CHANGELOG `Changed` entry for the full shape). Diagnosis:
+  `.superpowers/sdd/C1-cones-diagnosis.md`; residual attribution:
+  `.superpowers/sdd/c1-residual-census.md`. The compact `ConeDerivedStore`
+  replaced the per-routine raw inherited-fact Vec on the analyze path
+  (`ConeOutput::DerivedOnly`), and the SCC walk stopped materializing cones no
+  predecessor will ever read — it is Task 4's code change (not building a root
+  SCC's cone at all) that takes the root-SCC residual to 0; the
+  `C1_CONE_CENSUS=1` byte census only MEASURES that it stayed at 0, it did not
+  cause it. MEASURED (8020, `release-fast`, `d8-commit-in-transaction`-only
+  shape, EXITCODE=0): span `rss_delta` 10 941 MB (pre-C1) → 2 151 MB (Task 3) →
+  2 195 MB (Task 4); whole-process peak 17 055 MB → 9 593 MB (Task 3) →
+  **7 787 MB (Task 4)**; wall 213 s → 196 s → 127 s. The span's own `rss_delta`
+  barely moved Task 3→4 despite the ~1.8 GB peak drop: `rss_delta` is working
+  set at span end minus span start, and the root cones were always freed
+  inside the span either way (when `compose_inherited_cones` returned) — they
+  lived in the PEAK, which is where Task 4's saving shows up, not in the
+  delta. Output byte-identical throughout (five golden families + l4
+  differential 17/17 + DO `analyze` and `policy check`). Post-Task-4 the
+  largest remaining spans are all OUTSIDE this arc — `l3.assemble_resolve`
+  3 381 MB, `l3.parse_project_parallel` 2 770 MB, `context.symbols_resolve_calls`
+  1 723 MB, `gate.coverage` 1 157 MB — so the cone span is no longer the
+  dominant consumer, but the arc did NOT reach sub-GB whole-process: the
+  remaining ~7.8 GB peak is L3-substrate work, not reachable by B1 + C1 alone.
+- [ ] **A future incremental L4 path over the new `EffectStore`** (a redesign, NOT
+  a re-port of the deleted R3b). The reusable design intent — fine-grained Salsa
+  query topology, SCC-identity rules (interned sorted-member `SccKey`), fixed-leaf
+  successor handling, deterministic sorted member-order, the demand-order /
+  DB-provenance / fixpoint-schedule / `RUST_HASH_SEED` nondeterminism invariants,
+  and the strict-subset minimal-invalidation fixtures — is preserved in
+  `docs/superpowers/notes/2026-07-24-r3b-incremental-l4-design-intent.md`. Wake: a
+  real incremental-analyze consumer.
+- [ ] **`salsa` derive-only dependency** — after the R3b `incremental/` deletion
+  (Task B1), nothing in the crate consumes `#[salsa::db]`/`#[salsa::input]`/
+  `#[salsa::tracked]`/`#[salsa::interned]` any more; the only surviving usage is
+  `#[derive(salsa::Update)]` on a handful of `l4` types (`summary.rs`,
+  `combined_graph.rs`, `scc.rs`, `capability_cone.rs`). A full salsa-ectomy
+  (drop the derives + the `Cargo.toml` dep) is a legitimate future cleanup — not
+  urgent, no correctness or perf stake, just dead-weight-dependency hygiene.
+  Wake: convenient piggyback on an unrelated touch of those types, or a
+  dependency-audit pass.
+
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
+- [ ] **`compute_routine_id` member-discriminator gap — colliding same-name
+  triggers lose their entire capability cone** — `compute_routine_id`
+  (`src/engine/l2/scope.rs`) keys app/object-type/number/kind/name/signature
+  with NO member discriminator, so two same-name same-signature triggers in
+  one object (e.g. any page with two actions each declaring `trigger
+  OnAction()` — ordinary in real BC) collide on one routine id.
+  `build_detector_context` drains its cone maps with `remove()`, so the
+  SECOND occurrence's summary is fully degenerate (no direct facts, no
+  inherited facts, no coverage) and that routine loses its **entire**
+  capability cone; `ConeDerivedStore::forget`
+  (`src/engine/l5/detector_context.rs:361-396`,
+  `src/engine/l4/cone_derived.rs:322-337`) freezes the loss in place
+  deliberately — this arc's own parity oracle discovered it and chose not to
+  fix it because fixing it moves goldens. Note `build_detector_context_cross_app`
+  reads with `get()` and never has the accident, which is itself evidence the
+  `remove()` is an accident rather than a decision. This is the SAME
+  `compute_routine_id` collision family as `docs/engine-gaps.md`'s **G-18**
+  (which fixed a different symptom — d1's cross-body loop misattribution —
+  and correctly remains marked FIXED); this cone-loss symptom is separate and
+  still open. Fix options: a member discriminator on `compute_routine_id`, or
+  dedup `ws.routines` upstream of the cone walk. **Wake:** the next time
+  goldens are being rebaselined anyway (the fix moves them), or a
+  misattributed production finding on an object with colliding same-name
+  triggers.
+- [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
+  built and tested but has zero production callers** — built at A4 with
+  wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +
+  migrate) and deliberately did NOT wire it (eager construction would add
+  unconsumed cost to every `analyze` run — the right call), so the stated
+  wake condition passed without being met. Every `ReverseEffectIndex::build`
+  call site is inside its own `#[cfg(test)]` module; its only other mentions
+  in the codebase are two doc comments (`summary_runner.rs`,
+  `detector_context.rs`). It has never executed against real data — no
+  golden, no DO run, no CDO run reaches it — so its 7 self-consistency tests
+  are its entire correctness evidence. **Wake:** the first db-effect-reading
+  consumer (originally planned: VSCode hover) or a future `finding`/query
+  surface that needs an effect/table ↔ routine lookup.
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
   app's parse only (deps parse once in the fresh pass); on DO that's 407 files of a
   dep-dominated 4.8 s resolve → sub-second saving. Live BOM divergence (DO has 4

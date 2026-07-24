@@ -14,7 +14,7 @@
 //! Within-detector sort by `a.id.cmp(&b.id)` (byte order).
 
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::{EffectPresence, may_commit};
+use crate::engine::l5::capability_query::{EffectPresence, may_commit_derived};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -49,7 +49,7 @@ pub fn detect_d35(
         // summaryCommits = summary None → "unknown" else may_commit(summary).
         let summary_commits: &str = match ctx.summaries.get(&routine.id) {
             None => "unknown",
-            Some(s) => match may_commit(s) {
+            Some(s) => match may_commit_derived(&ctx.cone_derived, s) {
                 EffectPresence::Yes => "yes",
                 EffectPresence::No => "no",
                 EffectPresence::Unknown => "unknown",

@@ -81,19 +81,32 @@ fn passes_coverage_gate(coverage_status: Option<&str>, gate: &str) -> bool {
 /// `factSortKey(f)` — joins 8 fields with `|`, undefined→"".
 fn fact_sort_key(f: &CapabilityFact) -> String {
     [
-        f.op.as_str(),
-        f.resource_kind.as_str(),
+        f.op,
+        f.resource_kind,
         f.resource_id.as_deref().unwrap_or(""),
         f.witness_operation_id.as_deref().unwrap_or(""),
-        f.confidence.as_str(),
-        f.provenance.as_str(),
-        f.via.as_str(),
+        f.confidence,
+        f.provenance,
+        f.via,
         f.witness_callsite_id.as_deref().unwrap_or(""),
     ]
     .join("|")
 }
 
 /// Select facts for a rule's `facts` mode. al-sem `selectFacts`.
+///
+/// ⟨C1 Task 3⟩ This is the ONE consumer that genuinely needs the RAW inherited
+/// `CapabilityFact` objects (it matches their `op`/`resource_kind`/`resource_id`/
+/// `confidence`/… fields against the rule predicate), so the `policy` pipeline
+/// builds its context with `substrate::ALL | substrate::RAW_INHERITED_FACTS`.
+///
+/// # Panics
+/// The `inherited` / `any` modes panic (via `FullRoutineSummary::inherited_raw`)
+/// when handed a context built WITHOUT that bit. Deliberate: silently returning
+/// the direct-only subset would quietly under-report every `facts: any` rule on
+/// every routine — a policy gate that passes because it never saw the evidence is
+/// worse than one that fails loudly. `facts: direct` is unaffected: it never
+/// reads the inherited half, so it stays correct under either mode.
 fn select_facts<'a>(
     rule: &Rule,
     summary: Option<&'a FullRoutineSummary>,
@@ -101,12 +114,12 @@ fn select_facts<'a>(
     let Some(s) = summary else { return Vec::new() };
     match rule.facts.as_deref().unwrap_or("any") {
         "direct" => s.capability_facts_direct.iter().collect(),
-        "inherited" => s.capability_facts_inherited.iter().collect(),
+        "inherited" => s.inherited_raw().iter().collect(),
         // "any"
         _ => s
             .capability_facts_direct
             .iter()
-            .chain(s.capability_facts_inherited.iter())
+            .chain(s.inherited_raw())
             .collect(),
     }
 }

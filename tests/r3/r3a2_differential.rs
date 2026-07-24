@@ -29,7 +29,10 @@
 //! ≥1 cross-call parameterRole exit-effect; the 4 reachable via-kinds present + `dynamic`
 //! absent; ≥1 recursive-SCC routine + ≥1 recursive SCC. An oracle cross-check asserts the
 //! corpus-wide Rust matrix equals the al-sem `manifest.json` matrix block (ground truth).
-//! (The ≥2-iteration JACOBI requirement is asserted in `r3a2_trace_differential.rs`.)
+//! (The ≥2-iteration JACOBI requirement was asserted in the now-deleted
+//! `r3a2_trace_differential.rs`, retired with the old Jacobi db-effect solver —
+//! see `tests/l4_summary_differential.rs`'s module doc for its replacement,
+//! the frozen-baseline anchor over the closed-form v2 solver.)
 //!
 //! ## Divergence comparison
 //!
