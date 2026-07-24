@@ -449,6 +449,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 &dep_routine_ids,
                 &reverse_call_graph,
                 &summaries,
+                &cone_derived,
             )
         } else {
             Vec::new()
@@ -832,6 +833,7 @@ pub(crate) fn build_detector_context_cross_app(
         dep_routine_ids,
         &reverse_call_graph,
         &summaries,
+        &cone_derived,
     );
 
     let event_flow_indexes =

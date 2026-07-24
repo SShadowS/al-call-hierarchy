@@ -17,7 +17,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::engine::l3::al_attributes::has_attribute;
 use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine};
-use crate::engine::l5::capability_query::writes_tables_of;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -67,7 +66,8 @@ fn is_transaction_managing(routine_id: &str, ctx: &DetectorContext) -> bool {
     let Some(summary) = ctx.summaries.get(routine_id) else {
         return false;
     };
-    writes_tables_of(summary).len() >= TRANSACTION_THRESHOLD_TABLES
+    // ⟨C1 Task 2⟩ The same temp-INCLUSIVE write set, read off the folded cone row.
+    ctx.cone_derived.writes_tables_of(&summary.routine_id).len() >= TRANSACTION_THRESHOLD_TABLES
 }
 
 /// Returns true when the routine containing an explicit Commit() is eligible for the

@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::L3Resolved;
-use crate::engine::l5::capability_query::{EffectPresence, may_commit};
+use crate::engine::l5::capability_query::{EffectPresence, may_commit_derived};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -112,7 +112,7 @@ pub fn detect_d34(
             let Some(callee_summary) = ctx.summaries.get(callee_id) else {
                 continue;
             };
-            if may_commit(callee_summary) != EffectPresence::Yes {
+            if may_commit_derived(&ctx.cone_derived, callee_summary) != EffectPresence::Yes {
                 continue;
             }
 

@@ -168,6 +168,19 @@ pub fn reachable_coverage<'a>(s: &'a FullRoutineSummary, _kind: Option<&str>) ->
 // the presence half reads the folded cone flag instead of scanning the raw
 // reachable facts; the absence half is UNCHANGED (`coverage.inherited_status`,
 // which C1 does not touch). Proven equal per routine by `cone_parity`.
+//
+// ⟨C1 Task 2⟩ These two live HERE, not on the store, because they are the only
+// derived queries that need something off the SUMMARY (`coverage`) as well as
+// off the cone. Everything else a detector reads — the id-sets
+// (`writes_tables_of` / `writes_physical_tables_of` / `physical_table_reads_of`
+// / `physical_table_write_ops_of` / `publishes_events_of`) and the presence
+// flags (`touches_table` / `may_commit_flag` / `touches_io`) — is a pure
+// function of the routine id and is called directly on
+// `ctx.cone_derived`. No consumer routes an id-set through this module.
+//
+// The RAW helpers above are deliberately still raw: `cone_parity` computes its
+// oracle side with them, so rewriting them over the store would turn the Task-3
+// proof into a tautology. R6 retires them with the raw Vec, not here.
 // ===========================================================================
 
 /// [`touches_db_of`] over the derived substrate.

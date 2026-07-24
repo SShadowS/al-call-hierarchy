@@ -29,6 +29,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l4::capability_cone::CapabilityExtra;
 use crate::engine::l4::combined_graph::CombinedEdge;
+use crate::engine::l4::cone_derived::ConeDerivedStore;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
@@ -121,14 +122,14 @@ fn direct_io_terminals_for(routine: &L3Routine, summary: &FullRoutineSummary) ->
 
 /// `routineTouchesExternalIo` — REACHABLE (direct ∪ inherited) facts contain any
 /// http/file kind. Prunes the walk.
-fn routine_touches_external_io(summary: Option<&FullRoutineSummary>) -> bool {
-    let Some(s) = summary else {
-        return false;
-    };
-    s.capability_facts_direct
-        .iter()
-        .chain(s.capability_facts_inherited.iter())
-        .any(|f| is_io_resource_kind(&f.resource_kind))
+///
+/// ⟨C1 Task 2⟩ Reads the folded cone presence flag instead of scanning the raw
+/// `direct ∪ inherited` chain. [`ConeDerivedStore::touches_io`] is `{http, file}`
+/// — the COMPLETE IO vocabulary [`is_io_resource_kind`] tests — and an unfolded
+/// routine reads as the empty row, reproducing the old `None ⇒ false` arm for a
+/// callee with no summary at all.
+fn routine_touches_external_io(store: &ConeDerivedStore, routine_id: &str) -> bool {
+    store.touches_io(routine_id)
 }
 
 /// The terminal-step note: `"<KIND> <method>"` or just `"<KIND>"`. al-sem
@@ -146,7 +147,8 @@ fn io_method_note(io_kind: &str, method_name: Option<&str>) -> String {
 /// witness callsite id stashed in `op_id`.
 struct D48Policy<'a> {
     routine_by_id: &'a HashMap<&'a str, &'a L3Routine>,
-    summaries: &'a HashMap<String, FullRoutineSummary>,
+    /// ⟨C1 Task 2⟩ The derived cone substrate `expand`'s IO pruning gate reads.
+    cone_derived: &'a ConeDerivedStore,
     edges_by_from: &'a HashMap<String, Vec<CombinedEdge>>,
     io_terminals_by_routine: &'a HashMap<String, Vec<IoTerminal>>,
     call_site_by_id: &'a HashMap<&'a str, &'a crate::engine::l2::features::PCallSite>,
@@ -177,7 +179,7 @@ impl<'a> WalkPolicy for D48Policy<'a> {
                 if e.kind == "event-dispatch" {
                     return false;
                 }
-                routine_touches_external_io(self.summaries.get(&e.to))
+                routine_touches_external_io(self.cone_derived, &e.to)
             })
             .cloned()
             .collect()
@@ -289,7 +291,7 @@ pub fn detect_d48(
 
     let policy = D48Policy {
         routine_by_id: &ctx.routine_by_id,
-        summaries: &ctx.summaries,
+        cone_derived: &ctx.cone_derived,
         edges_by_from: &ctx.graph.edges_by_from,
         io_terminals_by_routine: &io_terminals_by_routine,
         call_site_by_id: &ctx.call_site_by_id,
@@ -427,7 +429,7 @@ pub fn detect_d48(
                 skipped_dynamic_dispatch += 1;
                 continue;
             }
-            if !routine_touches_external_io(ctx.summaries.get(&edge.to)) {
+            if !routine_touches_external_io(&ctx.cone_derived, &edge.to) {
                 continue;
             }
 
