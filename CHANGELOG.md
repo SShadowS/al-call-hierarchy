@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **A recursive-SCC perf corpus + release gate, so the L4 db-effect redesign's
-  headline win has an automated regression guard** (`tests/perf_support/mod.rs`,
-  `tests/perf_bounds.rs`, `chore/l4-post-merge-minors`; final-branch-review
-  finding **M-6**). `compute_summaries_v2_within_bound`'s own doc conceded that
-  the shared perf_support corpus has **no recursive SCC at all** — every Tarjan
-  SCC in it is a singleton — so the recursive path the redesign rewrote (517s →
-  11.3s, 24 GB → 0.47 GB) was protected only by a manual real-workspace 8020
+- **A recursive-SCC perf corpus + release gate for the SOLVER's own internal
+  cost** (`tests/perf_support/mod.rs`, `tests/perf_bounds.rs`,
+  `chore/l4-post-merge-minors`; final-branch-review finding **M-6**).
+  `compute_summaries_v2_within_bound`'s own doc conceded that the shared
+  perf_support corpus has **no recursive SCC at all** — every Tarjan SCC in it
+  is a singleton — so the recursive path the redesign rewrote (517s → 11.3s,
+  24 GB → 0.47 GB) was protected only by a manual real-workspace 8020
   re-measurement that CI never runs. `generate_recursive_corpus` adds a SECOND,
   separate corpus (the existing one is byte-unchanged, so no existing baseline
   moves): 8 procedures per codeunit forming a dense `+1/+3/+5` intra-file cycle,
@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   15.8x–36.6x slower on this corpus (2.72s at the gated size, 4.2x above the
   bound), while on the NON-recursive corpus the same two entry points are not
   materially different at all.
+  **Scope, precisely (fix wave findings 2 and 4):** this is a WALL-CLOCK gate
+  over the solver called directly — it re-guards a re-materialization
+  reintroduced INSIDE `compute_summaries_v2_bundle`, and its 650ms bound
+  observes elapsed time only, never memory (the 24 GB → 0.47 GB figure stays
+  anchored to the manual 8020 measurement, not this gate). It does NOT observe
+  `build_detector_context`'s own call site regressing to a DIFFERENT,
+  materializing entry point — see the companion `Fixed` entry below for that
+  guard.
 - **L4 db-effect store redesign — interned columnar `EffectStore` +
   `ReverseEffectIndex`** (`src/engine/l4/effect_store.rs`,
   `src/engine/l4/effect_universe.rs`, `src/engine/l4/reverse_index.rs`,
@@ -524,6 +532,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **Post-merge review fix wave on `chore/l4-post-merge-minors`**
+  (`src/engine/l5/detector_context.rs`, `tests/perf_support/mod.rs`,
+  `tests/lsp/perf_support_smoke.rs`, `tests/perf_bounds.rs`,
+  `src/engine/l4/summary_runner.rs`; `.superpowers/sdd/minors-review.md`).
+  - **The call-site regression the M-6 gate cannot see now has its own guard**
+    (finding 2): `build_detector_context` gained a `debug_assert!` right after
+    its `compute_summaries_v2_bundle` call, pinning that `core_summaries`'
+    `db_effects` stay empty (the LEAN ⟨Task B1⟩ invariant) — deterministic,
+    no timing, runs under plain `cargo test`. A new test,
+    `core_summaries_stay_lean_while_the_bundle_carries_the_db_effect_rows`,
+    exercises it against a REAL db-touching fixture (not vacuously). Both
+    `perf_bounds` L4 gates call `compute_summaries_v2_bundle` directly, so
+    neither would have noticed this call site regressing to a materializing
+    entry point (`compute_summaries_v2`/`compute_summaries_v2_with_leaves_core`)
+    — this assert is what catches that specific regression.
+  - **The M-2 seam comment overclaimed its own coverage** (finding 1):
+    `detector_context.rs`'s `debug_assert_eq!` comment said it was "the ONLY
+    guard" on the cone/direct-facts divergence the deleted I2 parity check
+    used to cover; in fact it only ever sees ids already in `ws.routines` (it
+    lives inside that loop), so the extra-row direction I2 guarded is still
+    UNGUARDED, not covered. Comment corrected to say so.
+  - **A blanket `#[allow(dead_code)]` on `tests/lsp/perf_support_smoke.rs`'s
+    `perf_support` module include silenced the last remaining dead-code signal
+    on the shared corpus generator** (finding 6): replaced with per-item
+    `#[allow(dead_code)]` on exactly the recursive-corpus items (which applies
+    at every `#[path]` include site), so an unused item in the EXISTING
+    (non-recursive) corpus still warns here.
+  - **Four doc/comment honesty corrections** (findings 3, 4, 5, 7): the
+    recursive corpus's SCC-COUNT axis is NOT non-trivially stressed at the
+    gated size (only SCC-SIZE is — the existing 1,000-file non-recursive
+    corpus covers COUNT instead, complementary not redundant;
+    `tests/perf_support/mod.rs`, `tests/perf_bounds.rs`); the `RECURSIVE_SCC_BOUND`
+    calibration is recorded as dev-machine-only, with the first real CI run as
+    the actual test (`tests/perf_bounds.rs`); and `summary_runner.rs`'s
+    `substitute_pd_temp_state` doc no longer reads as if two live solvers share
+    it (`db_effect_solver.rs` is its only caller now, zero call sites remain in
+    `summary_runner.rs` itself).
 - **Comments citing symbols the old Jacobi solver's deletion removed** — 34
   sites across `src/engine/l4/db_effect_solver.rs` (23),
   `src/engine/l4/summary_runner.rs` (9), `src/engine/l4/capability_cone.rs`,
