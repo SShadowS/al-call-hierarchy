@@ -14,6 +14,22 @@
 //! counts) under a plain `cargo test` (debug profile) too — every ordinary
 //! `cargo test` run, not just `cargo test --release --test perf_bounds`.
 
+// The recursive-SCC half of `perf_support` (`generate_recursive_corpus` and
+// friends — final-branch-review M-6) exists for `tests/perf_bounds.rs`'s
+// release-only L4 gate and has no LSP-surface contract to pin here, so those
+// items are legitimately unused in THIS crate's compilation of the
+// `#[path]`-included module tree.
+//
+// ⟨fix wave FIX 3, finding 6⟩ Each recursive-corpus item carries its OWN
+// `#[allow(dead_code)]` (in `tests/perf_support/mod.rs` itself) rather than a
+// blanket allow on this `mod` declaration. `benches/lsp_pipeline.rs` and
+// `benches/engine_stages.rs` still carry a blanket allow at their own include
+// sites, but THIS was the last include site where an unused item in the
+// EXISTING (non-recursive) corpus would still warn — a blanket allow here
+// would have silenced that signal for every dead helper, present or future,
+// not just the recursive ones. The generator's own recursive shape contract is
+// asserted by that release gate, before it times anything (see
+// `recursive_scc_db_effects_within_bound`).
 #[path = "../perf_support/mod.rs"]
 mod perf_support;
 

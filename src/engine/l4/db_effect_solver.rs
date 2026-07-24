@@ -1,8 +1,8 @@
 //! L4 summary-fixpoint redesign (Phase 1) — the interned-bitvector db-effect solver.
 //!
-//! Step 0: effective-SCC re-decomposition. `run_one_scc` (the old Jacobi solver, see
-//! `summary_runner.rs`) excludes fixed leaves AND routines missing from
-//! `routines_by_id` when it builds a Tarjan SCC's per-member equation graph. Removing
+//! Step 0: effective-SCC re-decomposition. The retired `run_one_scc` (the old
+//! Jacobi solver, deleted at `b4181d8`) excluded fixed leaves AND routines missing
+//! from `routines_by_id` when it built a Tarjan SCC's per-member equation graph. Removing
 //! those nodes from a strongly-connected component's induced subgraph can SPLIT one
 //! cycle into several DAG-shaped pieces — e.g. `a -> b -> c -> a` with `b` excluded
 //! degrades to `c -> a`, no cycle at all. The old solver never re-ran Tarjan on that
@@ -14,8 +14,8 @@
 //! closed-form union task (Task 5). Step A solves PD substitution as semi-naive
 //! reachability over `(base_effect_id, routine, PD(param_index))` product nodes,
 //! reusing `summary_runner::substitute_pd_temp_state` (the SAME per-edge
-//! transition `compose_routine`'s JACOBI fold already uses) so both solvers agree
-//! on PD semantics by construction, not by re-derivation.
+//! transition the retired `compose_routine` JACOBI fold used) so this solver
+//! inherits the old PD semantics by construction, not by re-derivation.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -189,7 +189,8 @@ fn apply_pd_transition(
 ///      member's OUT-edges: an edge to a routine NOT in `eff` is resolved
 ///      through `settled` (the predecessor final map — already-processed
 ///      successor SCCs AND fixed leaves both live there, exactly like
-///      `compose_routine`'s `lookup` falling through to `final_map`), and any
+///      the retired `compose_routine`'s `lookup` falling through to
+///      `final_map`), and any
 ///      `ParameterDependent` effect on that settled summary is substituted
 ///      through the edge immediately (it can only be seeded once — the
 ///      external callee's summary never changes while this SCC is solved).
@@ -212,7 +213,8 @@ fn apply_pd_transition(
 /// resolves purely from `PCallArgumentBinding.source_temp_state` on the
 /// caller's own call site, never consulting the upgraded-bindings side table
 /// (that table only feeds the SEPARATE cross-call `parameter_roles`
-/// composition in `compose_routine`) — kept in the signature for parity with
+/// composition, today in `summary_runner::compose_roles_only`) — kept in the
+/// signature for parity with
 /// the plan's other Step functions / Task 8's uniform per-SCC ctx wiring.
 pub fn solve_pd_reachability(
     eff: &Scc,
@@ -230,7 +232,7 @@ pub fn solve_pd_reachability(
     // `caller -> w` is a real combined-graph edge. Multiple edges for the same
     // (caller, w) pair (distinct callsites) are each kept independently — they
     // can carry different bindings and so substitute differently (the
-    // multi-callsite-same-callee shape `compose_routine` already handles).
+    // multi-callsite-same-callee shape the retired `compose_routine` handled).
     // Stays keyed by `&str` (the graph's own id shape) — `w` is converted via
     // `interner.name(w)` at the ONE lookup site below (the worklist pop),
     // rather than rebuilding this whole index as `RoutineIx`-keyed.
@@ -462,7 +464,7 @@ fn intern_terminal_db_effect(
 /// reaches every other, so the TERMINAL (identity-transferred) union `C` is
 /// IDENTICAL for every member — computed ONCE, over the whole membership, as
 /// a single bitset — rather than folded edge-by-edge per member the way the
-/// old JACOBI `compose_routine` fold does it. Only the `ParameterDependent`
+/// retired JACOBI `compose_routine` fold did it. Only the `ParameterDependent`
 /// facts differ per member (Step A already computed them per-member, because
 /// PD re-symbolizes along the SPECIFIC chain of caller bindings reaching that
 /// member — it does not transfer by identity).
@@ -622,10 +624,10 @@ fn merge_via_into(
 /// Reconstruct the per-`(member, EffectId)` `via` provenance in ONE
 /// post-pass over the FINAL presence sets, for one effective SCC (`eff`).
 ///
-/// The old JACOBI fold (`compose_routine`, `summary_runner.rs:404-439`) never
-/// lets `via` propagate transitively: every callee effect's `via` is
-/// REPLACED with `via_for_edge_kind(edge.kind)` the moment it's folded into
-/// the caller, and a same-`effect_key` collision resolves by `merge_via`
+/// The retired JACOBI fold (`compose_routine`, in the pre-`b4181d8` tree) never
+/// let `via` propagate transitively: every callee effect's `via` was
+/// REPLACED with `via_for_edge_kind(edge.kind)` the moment it was folded into
+/// the caller, and a same-`effect_key` collision resolved by `merge_via`
 /// (max rank, first-wins-on-tie). Because of that replacement rule, the
 /// FINAL `via` for a present effect can be reconstructed with only ONE hop
 /// per contributing edge — no multi-hop trajectory tracking needed:
@@ -642,8 +644,7 @@ fn merge_via_into(
 /// COMPLETE for:
 ///   - base-seeded via (`"direct"`, for every present `EffectId` that is one
 ///     of `m`'s own base `db_effects` — terminal OR `ParameterDependent`;
-///     both always carry `via="direct"` — `base_intraprocedural_summary`,
-///     `summary_runner.rs:162`).
+///     both always carry `via="direct"` — see `base_intraprocedural_summary`).
 ///   - inherited via for TERMINAL (`Known`/`Unknown`) effects, over EVERY
 ///     actual out-edge, whether the callee is another member of `eff` (read
 ///     from `presence`) or an already-`settled` successor/fixed leaf (read
@@ -728,11 +729,11 @@ pub fn reconstruct_via(
         let mut rank_bits: [Vec<u64>; 5] = Default::default();
 
         // Base seed: every one of `m`'s own base db_effects — terminal OR
-        // PD, both always carry via="direct" (base_intraprocedural_summary,
-        // summary_runner.rs:162) — contributes to the `Direct` group.
-        // Every real routine has a precomputed base summary — see
-        // compose_routine's own "this fallback is dead" note
-        // (summary_runner.rs:365-369); reconstruct_via's signature carries
+        // PD, both always carry via="direct" (base_intraprocedural_summary)
+        // — contributes to the `Direct` group.
+        // Every real routine has a precomputed base summary — see the retired
+        // `compose_routine`'s own "this fallback is dead" note (in the
+        // pre-`b4181d8` tree); reconstruct_via's signature carries
         // no routines_by_id to recompute one on the fly, so a missing entry
         // contributes nothing here, same as before.
         if let Some(base) = base_summaries.get(m) {
@@ -804,20 +805,20 @@ pub fn reconstruct_via(
 // reachability).
 // ---------------------------------------------------------------------------
 
-/// The 4 uncertainty kinds `compose_routine`'s inherited-union fold SKIPS
-/// (`summary_runner.rs:442-454`) when folding a CALLEE's uncertainties into a
-/// CALLER — each describes a resolution failure AT one specific callsite (a
+/// The 4 uncertainty kinds the retired `compose_routine`'s inherited-union fold
+/// SKIPPED (in the pre-`b4181d8` tree) when folding a CALLEE's uncertainties
+/// into a CALLER — each describes a resolution failure AT one specific callsite (a
 /// `member-not-found`/`external-target`/`ambiguous-overload` dispatch
 /// failure, or a zero/multi-impl `interface-open-world` dispatch), so it must
 /// never be attributed to a caller of the routine that owns that callsite.
 /// Every real producer of these 4 kinds is a to-less
 /// [`UncertaintyEdge`](crate::engine::l4::combined_graph::UncertaintyEdge)
 /// (`combined_graph.rs:260,272,299,304`) — folded into its OWN routine's
-/// uncertainties unconditionally (`summary_runner.rs:488-502`, no kind
-/// filter on the way IN) — so a routine that owns one of these always keeps
+/// uncertainties unconditionally (no kind filter on the way IN, in that same
+/// retired fold) — so a routine that owns one of these always keeps
 /// it in its own final `uncertainties`; it simply never propagates further
 /// when some OTHER routine inherits from it. Checked generically by KIND
-/// here (matching `compose_routine`'s own `matches!`), not by assuming only
+/// here (matching that retired fold's own `matches!`), not by assuming only
 /// uncertainty-edges ever produce these kinds, so a future producer is still
 /// filtered correctly on the inherited side without touching this function.
 fn is_callsite_local_kind(kind: &str) -> bool {
@@ -836,22 +837,21 @@ pub struct SideFacts {
 }
 
 /// Solve BOTH side-facts for one effective SCC (`eff`) in a single closed-form
-/// pass, reproducing the OLD JACOBI `compose_routine`'s fold
-/// (`summary_runner.rs:351-502`) EXACTLY at its FIXED POINT — not its
-/// iteration.
+/// pass, reproducing the retired JACOBI `compose_routine` fold (in the
+/// pre-`b4181d8` tree) EXACTLY at its FIXED POINT — not its iteration.
 ///
 /// ## Why one shared value converges for the WHOLE effective SCC
 ///
 /// `has_unresolved_calls` propagates from callee to caller UNCONDITIONALLY —
-/// no kind filter at all (`summary_runner.rs:456-458`, `481-482`, `500`).
+/// no kind filter at all (that retired fold had none).
 /// `uncertainties` propagates too, but only for kinds that are NOT one of the
-/// 4 [`is_callsite_local_kind`] kinds (`summary_runner.rs:442-454`). Both are
+/// 4 [`is_callsite_local_kind`] kinds. Both are
 /// otherwise the same closure argument: an effective SCC is, by
 /// `tarjan_scc`'s own contract, STRONGLY CONNECTED — every member can reach
 /// every other member via a path of intra-effective-SCC edges (verified at
-/// the JACOBI level too: `run_one_scc` seeds `in_progress` with EVERY
-/// non-leaf member's BASE summary before the first pass, `summary_runner.rs
-/// :1196-1206`, so an intra-SCC `lookup` never actually sees "no summary yet"
+/// the JACOBI level too: the retired `run_one_scc` seeded `in_progress` with
+/// EVERY non-leaf member's BASE summary before the first pass, so an intra-SCC
+/// `lookup` never actually saw "no summary yet"
 /// at any pass — only a truly external, never-settled target can trigger the
 /// unresolved-lookup branch). Unrolling the JACOBI fixed point along an
 /// intra-SCC path shows that whatever a member `w` produces LOCALLY (its own
@@ -900,8 +900,8 @@ pub fn solve_side_facts(
     let empty_fields = FieldIndex::new();
 
     // Workspace-wide body-availability, for the opaque-callee guard — mirrors
-    // `compute_summaries_with_leaves`'s own `body_avail_by_id` construction
-    // (`summary_runner.rs:872-875`). Threaded in by the caller
+    // `compute_summaries_v2_bundle_with_leaves`'s own `body_avail_by_id`
+    // construction. Threaded in by the caller
     // (`compute_summaries_v2_with_leaves_core` -> `solve_scc_db_effects` ->
     // `solve_one_effective_scc`), built ONCE for the whole run rather than
     // recomputed from `routines_by_id` on every call — this function used to
@@ -976,8 +976,8 @@ pub fn solve_side_facts(
             // this same outer loop, so nothing further is needed for that
             // case beyond the opaque-callee check below, which applies
             // uniformly to every edge that reaches here (exactly like
-            // `compose_routine`, which never special-cases an intra-SCC
-            // target for this check either).
+            // the retired `compose_routine`, which never special-cased an
+            // intra-SCC target for this check either).
             let callee_opaque = !body_avail_by_id
                 .get(edge.to.as_str())
                 .copied()
@@ -1068,10 +1068,10 @@ pub(crate) fn kind_to_temp_state(kind: &TempStateKind) -> TempState {
 /// materialized effect's `record_variable_id`.
 ///
 /// `record_variable_id` is a NON-KEY payload (excluded from `effect_key` /
-/// `EffectIdentity`) that the OLD `compose_routine` fold carries UNCHANGED from
-/// the effect's originating record operation: a base effect keeps its own
+/// `EffectIdentity`) that the retired `compose_routine` fold carried UNCHANGED
+/// from the effect's originating record operation: a base effect keeps its own
 /// `op.record_variable_id`, and every inherited/PD-substituted effect keeps the
-/// callee effect's payload (`..e.clone()` at `summary_runner.rs:414,422`). Since
+/// callee effect's payload (its `..e.clone()`, in the pre-`b4181d8` tree). Since
 /// `operation_id` is part of `effect_key` (`effect_lattice.rs:133`), any two
 /// effects that collide on `effect_key` share an `operation_id` and therefore
 /// trace back to the SAME originating record operation — so they carry the SAME
@@ -1116,7 +1116,7 @@ pub(crate) fn build_rvid_by_opid(
 /// Attribute `via` to the present effects [`reconstruct_via`] deliberately
 /// leaves UNMAPPED — the PD-substitution image of a callee's
 /// `ParameterDependent` effect (its "DEFERRED" case, see that fn's doc). The
-/// OLD JACOBI fold (`compose_routine`, `summary_runner.rs:404-439`) gives EVERY
+/// retired JACOBI fold (`compose_routine`, in the pre-`b4181d8` tree) gave EVERY
 /// inherited effect — terminal-by-identity OR PD-substituted — the SAME
 /// `via_for_edge_kind(edge.kind)`, max-merged on a same-key collision. This pass
 /// closes the PD-substituted half: for each member's ACTUAL out-edge, re-apply
@@ -1127,7 +1127,7 @@ pub(crate) fn build_rvid_by_opid(
 ///
 /// Combined with `reconstruct_via`'s base-`"direct"` seed and its
 /// terminal-by-identity fold, the resulting `via_map` covers the EXACT set of
-/// contributors the old fold folds (base + every callee effect over every
+/// contributors the old fold folded (base + every callee effect over every
 /// out-edge). Because `merge_via`'s 5 ranks are a bijection with its 5 canonical
 /// strings (`effect_lattice.rs:161-170`; no two distinct strings share a rank),
 /// the max-merge is order-INDEPENDENT — so splitting the contributor set across
@@ -2162,7 +2162,7 @@ mod tests {
     fn self_loop_pd_to_known() {
         // `a` calls itself; its own base op is PD(0), and its self-callsite
         // binds param 0 to Known(true) — the seed IS `a`'s own retained
-        // PdFact (compose_routine seeds base db_effects verbatim, unsubstituted)
+        // PdFact (the retired compose_routine seeded base db_effects verbatim)
         // AND the self-edge substitution independently emits a Known terminal.
         let mut a = pd_routine("a");
         a.record_operations
@@ -2834,7 +2834,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Build the `from`-indexed uncertainty-edge lookup exactly like
-    /// `compute_summaries_with_leaves` does (`summary_runner.rs:902-908`), so
+    /// `compute_summaries_v2_bundle_with_leaves` does, so
     /// a test's hand-built `graph.uncertainty_edges` and its
     /// `uncertainty_edges_by_from` argument stay consistent with each other.
     fn index_uncertainty_edges(graph: &CombinedGraph) -> HashMap<String, Vec<usize>> {
@@ -3085,7 +3085,7 @@ mod tests {
             "b must NOT inherit a's callsite-local uncertainty: {b_u:?}"
         );
         // `a`'s uncertainty-edge (regardless of its FILTERED kind) sets
-        // has_unresolved_calls unconditionally (`summary_runner.rs:500` sets
+        // has_unresolved_calls unconditionally (the retired Jacobi fold set
         // it for EVERY uncertainty edge, with no kind check at all — unlike
         // the uncertainties filter, this boolean is never callsite-local),
         // and that boolean is OR-shared across the whole strongly-connected

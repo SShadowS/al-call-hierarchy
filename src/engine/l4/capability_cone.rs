@@ -2469,7 +2469,8 @@ fn compute_uncertainty_coverage_reasons(
 //     `EMPTY_FEATURES`) plus their RETAINED summary (the dep's own `via:"direct"`
 //     dbEffects) + RETAINED direct capability facts (the dep's own intrinsic
 //     facts), recovered from each dep's embedded-source analysis (the R3a-4
-//     producer path). Dep routines are LEAVES (compute_summaries_with_leaves).
+//     producer path). Dep routines are LEAVES (the `_with_leaves` solver entry
+//     point, today `compute_summaries_v2_bundle_with_leaves`).
 //   - injectIntraAppCallEdges adds the dep intra-app `direct-call` edges to the
 //     typed-edge graph so the cone propagates the dep's `capabilityFactsDirect`
 //     through intra-dep chains AND to primary callers.

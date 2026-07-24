@@ -260,8 +260,8 @@ mod release_checks {
     // re-pointed at the LEAN bundle entry point post-B1-migrate, final
     // whole-branch review M-3) — the closed-form db-effect solver
     // `build_detector_context` actually calls for every `alsem analyze`/
-    // `aldump` run (`src/engine/l5/detector_context.rs:655`, inside the
-    // `context.compute_summaries` span opened at `:634`). Both it and the
+    // `aldump` run (`build_detector_context`'s own call, inside its
+    // `context.compute_summaries` span). Both it and the
     // materializing `compute_summaries_v2`/`_with_leaves_core` shims share
     // the SAME core (`compute_summaries_v2_bundle_with_leaves`), so the
     // Task 11/11b history below applies to this gate unchanged.
@@ -311,6 +311,89 @@ mod release_checks {
     // move. Bound left at 230ms (3x ~76ms) rather than tightened, per that
     // baseline's still-current headroom rationale.
     const COMPUTE_SUMMARIES_V2_BOUND: Duration = Duration::from_millis(230); // 3x ~76ms measured baseline (re-measured post-A3-store 2026-07-24, unchanged)
+
+    // `recursive_scc_db_effects_within_bound` (final-branch-review M-6) — the
+    // RECURSIVE-SCC counterpart to `COMPUTE_SUMMARIES_V2_BOUND` above, whose
+    // corpus is entirely non-recursive and therefore cannot see the redesign's
+    // headline win at all. See that test's own doc for why the gap mattered and
+    // `tests/perf_support/mod.rs`'s "A SECOND, separate corpus" section for the
+    // corpus shape.
+    //
+    // Corpus: [`RECURSIVE_CORPUS_FILES`] (400) files x `RECURSIVE_CYCLE_PROCS`
+    // (8) procedures, fused by cross-file rings of `RECURSIVE_RING_FILES` (100)
+    // into 4 recursive SCCs of 800 members each, every member carrying 2
+    // distinct db-touching operations — so each SCC's terminal union is 1,600
+    // DISTINCT effects shared across its 800 members.
+    //
+    // ⟨fix wave finding 3⟩ Only the SCC-SIZE axis is genuinely non-trivial here:
+    // 800 members x 1,600 effects each is exactly what a per-member
+    // re-materialization pays for (1.28M effect clones per SCC), which is the
+    // dimension the redesign rewrote. The SCC-COUNT axis is NOT stressed at
+    // this size — 400 files x 8 procs = 3,200 routines land in just 4 SCCs, so
+    // a reintroduced per-SCC workspace-wide rebuild costs ~4 x 3,200 map
+    // probes, microseconds against the ~190ms solve below and far below this
+    // gate's 3.44x detection threshold. The COUNT axis is covered instead by
+    // the EXISTING non-recursive corpus (`COMPUTE_SUMMARIES_V2_BOUND`'s 1,000
+    // files x 10 routines ≈ 10,000 singleton SCCs, restored to that size at
+    // Task 11b for exactly this reason) — the two gates are complementary, not
+    // redundant, and neither supersedes the other.
+    //
+    // # Why 3x is a real bound here, not theatre
+    //
+    // The bound was calibrated against a MEASURED regression rather than a
+    // guess. `compute_summaries_v2` — the still-present MATERIALIZING shim,
+    // which is exactly "the eager per-member `Vec<DbEffect>` re-materialization"
+    // the B1 lean path removed — was timed on this same corpus alongside the
+    // lean `compute_summaries_v2_bundle` (release, dev machine, 2026-07-25):
+    //
+    //   files=200 ring=100 (2 x 800):  lean  58.2ms | eager   917.8ms  (15.8x)
+    //   files=200 ring=200 (1 x 1600): lean  96.3ms | eager  2106.4ms  (21.9x)
+    //   files=400 ring=100 (4 x 800):  lean 122.8ms | eager  2721.8ms  (22.2x)  <-- this gate
+    //   files=400 ring=200 (2 x 1600): lean 191.9ms | eager  7028.5ms  (36.6x)
+    //
+    // On the NON-recursive 1000-file corpus the same two entry points are "not
+    // materially different" (see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own
+    // post-A3-store re-measurement note) — which is precisely why that gate
+    // could never have caught this class of regression, and this one can.
+    //
+    // # Which baseline the 3x is taken over
+    //
+    // The 122.8ms above is an ISOLATED (`-- recursive_scc`-filtered) median.
+    // Run in the REAL CI invocation shape — `cargo test --release --test
+    // perf_bounds` with no filter, 12 tests sharing the machine — this row's
+    // median across 5 back-to-back full runs was 189.7 / 201.4 / 154.4 / 200.2
+    // / 214.6ms. This file has already learned twice (see
+    // [`COMPUTE_ALL_SCALING_FACTOR`]'s v2 and v3 history) that a bound tuned on
+    // a filtered run is tuned on the wrong shape, so the 3x is taken over the
+    // WORST full-run median, ~215ms: bound 650ms.
+    //
+    // That still leaves the gate decisive. A real re-materialization regression
+    // measures ~2.72s on this corpus — 4.2x ABOVE the bound, and that figure is
+    // itself an isolated-run number, so in the full-suite shape the true margin
+    // is wider. Generous enough for machine-to-machine variance; nowhere near
+    // generous enough to let the regression through.
+    //
+    // # This calibration is dev-machine-only (fix wave finding 5)
+    //
+    // Every number above (~123ms isolated, ~215ms worst full-suite median) was
+    // measured on the AUTHOR'S dev machine, not on `.github/workflows/ci.yml`'s
+    // actual runner (a 2-4 vCPU GitHub-hosted box, unfiltered
+    // `cargo test --release --test perf_bounds`, default libtest parallelism —
+    // now a 13th test sharing that binary, holding a core for several seconds).
+    // A CI runner ~2x slower than the dev machine leaves ~1.5x headroom instead
+    // of 3.44x; this file's tightest EXISTING row (`compute_all_within_bound`,
+    // ~1.9x on the dev machine, with a documented flake history — see
+    // `docs/OUTSTANDING.md`) shares that same contention. This is precedented,
+    // not new (`COMPUTE_SUMMARIES_V2_BOUND` above already sits at 2.6x actual),
+    // and the failure mode is a false RED never a silent green — the shape
+    // assertions above are deterministic regardless of timing. But treat the
+    // 3.44x/650ms figures as a hypothesis until the first real CI run confirms
+    // them; if this row flakes red on CI before ANY code regression, read that
+    // as an environment gap in this calibration, not a caught regression.
+    const RECURSIVE_SCC_BOUND: Duration = Duration::from_millis(650); // 3x ~215ms full-suite baseline (dev-machine calibration — see doc above)
+
+    /// File count for the recursive corpus — see [`RECURSIVE_SCC_BOUND`].
+    const RECURSIVE_CORPUS_FILES: usize = 400;
 
     fn median(mut samples: Vec<Duration>) -> Duration {
         samples.sort();
@@ -365,12 +448,128 @@ mod release_checks {
         dir
     }
 
+    /// As [`corpus_dir`], but writes the RECURSIVE-SCC corpus instead (M-6) —
+    /// see `tests/perf_support/mod.rs`'s "A SECOND, separate corpus" doc
+    /// section. A separate directory, so the non-recursive corpus every other
+    /// bound in this file measures stays byte-identical.
+    fn recursive_corpus_dir(file_count: usize, ring_files: usize) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        write_minimal_app_json(dir.path());
+        perf_support::generate_recursive_corpus(dir.path(), file_count, ring_files);
+        dir
+    }
+
     /// Build a batch-built `LspSnapshot` over a fresh `file_count`-file
     /// corpus, for the query-handler bounds checks below.
     fn build_snapshot(file_count: usize) -> (TempDir, LspSnapshot) {
         let dir = corpus_dir(file_count);
         let snap = LspSnapshot::build_full(dir.path()).expect("build_full");
         (dir, snap)
+    }
+
+    /// The `(routines, graph, scc, upgraded_bindings, fields)` substrate the
+    /// L4 db-effect gates below solve over — assembled by the SAME public
+    /// functions in the SAME order as `build_detector_context`'s CORE_SUMMARIES
+    /// path (its own SCC + field-index construction, in that order):
+    /// symbol table -> `resolve_calls` (no deps, no fetched apps —
+    /// matching the source-only detector-context path) -> event graph ->
+    /// combined graph -> a Tarjan SCC over `graph.edges_by_from` -> the field
+    /// index. Mirrors `tests/l4_summary_differential.rs`'s
+    /// `cdo_whole_program_v2_parity` assembly, just over a synthetic
+    /// perf_support corpus instead of a real `CDO_WS` workspace (not
+    /// reproducible in this sandbox — see CLAUDE.md's Testing Philosophy &
+    /// Goldens).
+    ///
+    /// Shared by [`compute_summaries_v2_within_bound`] and
+    /// [`recursive_scc_db_effects_within_bound`] so the two gates provably
+    /// measure the same entry point over the same assembly, differing ONLY in
+    /// the corpus they are pointed at.
+    struct L4Substrate {
+        resolved: al_call_hierarchy::engine::l3::l3_workspace::L3Resolved,
+        calls: al_call_hierarchy::engine::l3::call_resolver::ResolvedCalls,
+        graph: al_call_hierarchy::engine::l4::combined_graph::CombinedGraph,
+        scc: al_call_hierarchy::engine::l4::scc::SccResult,
+        field_index: al_call_hierarchy::engine::l4::summary_runner::FieldIndex,
+    }
+
+    impl L4Substrate {
+        fn assemble(workspace: &Path) -> Self {
+            use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+            use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
+            use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+            use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+            use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
+            use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
+            use al_call_hierarchy::engine::l4::summary_runner::FieldIndex;
+            use std::collections::HashMap;
+
+            let resolved = assemble_and_resolve_workspace_default(workspace).expect(
+                "assemble_and_resolve_workspace_default must succeed on a perf_support corpus",
+            );
+            let (graph, scc, calls, field_index) = {
+                let ws = &resolved.workspace;
+                let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+                let no_deps: Vec<DeclaredDependency> = Vec::new();
+                let no_fetched: Vec<String> = Vec::new();
+                let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+
+                let event_graph = build_event_graph(&ws.routines, &symbols);
+                let graph = build_combined_graph(ws, &calls, &event_graph);
+
+                let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+                for (from, list) in &graph.edges_by_from {
+                    scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+                }
+                let scc = tarjan_scc(&SccInputGraph {
+                    nodes: &graph.nodes,
+                    edges_by_from: &scc_adjacency,
+                });
+
+                let mut field_index: FieldIndex = HashMap::new();
+                for table in &ws.tables {
+                    for field in &table.fields {
+                        field_index
+                            .entry((table.id.clone(), field.name.to_lowercase()))
+                            .or_insert_with(|| field.id.clone());
+                    }
+                }
+                (graph, scc, calls, field_index)
+            };
+            Self {
+                resolved,
+                calls,
+                graph,
+                scc,
+                field_index,
+            }
+        }
+
+        /// One `compute_summaries_v2_bundle` solve — the LEAN bundle entry
+        /// point `build_detector_context` calls for every `alsem analyze` /
+        /// `aldump` run (`build_detector_context`'s own call, inside its
+        /// `context.compute_summaries` span).
+        /// `leaf_summaries` is not threaded in: `compute_summaries_v2_bundle`
+        /// (no `_with_leaves`) always passes the empty map, exactly like
+        /// `build_detector_context`'s own call.
+        #[allow(clippy::type_complexity)]
+        fn solve(
+            &self,
+        ) -> (
+            al_call_hierarchy::engine::l4::effect_store::SummaryBundle,
+            std::collections::HashMap<
+                String,
+                al_call_hierarchy::engine::l4::summary::RoutineSummary,
+            >,
+            Vec<al_call_hierarchy::engine::l4::summary_runner::SummarizeDiagnostic>,
+        ) {
+            al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle(
+                &self.resolved.workspace.routines,
+                &self.graph,
+                &self.scc,
+                &self.calls.upgraded_bindings,
+                &self.field_index,
+            )
+        }
     }
 
     /// As [`build_snapshot`], but also returns the workspace `ParsedUnit` an
@@ -884,8 +1083,8 @@ mod release_checks {
     /// `build_detector_context` stopped calling at Task B1 `a0cd348`) — the
     /// closed-form db-effect solver `build_detector_context` actually calls
     /// for every `alsem analyze`/`aldump` run
-    /// (`src/engine/l5/detector_context.rs:655`, inside the
-    /// `context.compute_summaries` span opened at `:634`). Builds the SAME
+    /// (`build_detector_context`'s own call, inside its
+    /// `context.compute_summaries` span). Builds the SAME
     /// `(routines, graph, scc, upgraded_bindings, fields)` substrate that
     /// path builds, via the SAME public functions in the SAME order —
     /// mirrors `tests/l4_summary_differential.rs`'s
@@ -896,67 +1095,18 @@ mod release_checks {
     ///
     /// The perf_support corpus has NO recursive SCC (`Proc1..Proc{N-2}` form
     /// a straight-line local call chain — see that module's own doc), so
-    /// this gate only exercises the common closed-form (non-recursive) path;
-    /// the recursive-SCC pathology this redesign fixed is proven separately
-    /// by the coordinator's real-workspace 8020 before/after re-measurement,
-    /// not this gate. Restored (Task 11b) to the file's STANDARD 1000-file
-    /// corpus size — matching every other bound in this file — now that the
-    /// O(N^2) `build_rvid_by_opid`/`body_avail_by_id` per-SCC rebuilds are
-    /// hoisted out (see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own doc); the
-    /// 100-file dodge is no longer needed.
+    /// this gate only exercises the common closed-form (non-recursive) path.
+    /// [`recursive_scc_db_effects_within_bound`] below covers the RECURSIVE
+    /// path over `perf_support`'s second, recursive-SCC corpus (M-6).
+    /// Restored (Task 11b) to the file's STANDARD 1000-file corpus size —
+    /// matching every other bound in this file — now that the O(N^2)
+    /// `build_rvid_by_opid`/`body_avail_by_id` per-SCC rebuilds are hoisted
+    /// out (see [`COMPUTE_SUMMARIES_V2_BOUND`]'s own doc); the 100-file dodge
+    /// is no longer needed.
     #[test]
     fn compute_summaries_v2_within_bound() {
-        use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-        use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
-        use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-        use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
-        use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
-        use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
-        use al_call_hierarchy::engine::l4::summary_runner::{
-            FieldIndex, compute_summaries_v2_bundle,
-        };
-        use std::collections::HashMap;
-
         let dir = corpus_dir(1000);
-        let resolved = assemble_and_resolve_workspace_default(dir.path()).expect(
-            "assemble_and_resolve_workspace_default must succeed on the perf_support corpus",
-        );
-        let ws = &resolved.workspace;
-
-        // Assemble the SAME substrate `build_detector_context`'s
-        // CORE_SUMMARIES path builds (`detector_context.rs:571-581` the SCC,
-        // `:638-645` the field index): symbol table -> resolve_calls (no
-        // deps, no fetched apps — matches the source-only detector-context
-        // path) -> event graph -> combined graph -> a Tarjan SCC over
-        // `graph.edges_by_from` -> the field index. `leaf_summaries` is not
-        // needed here: `compute_summaries_v2_bundle` (no `_with_leaves`)
-        // always passes the empty map, exactly like `build_detector_context`'s
-        // own call (`:655`).
-        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-        let no_deps: Vec<DeclaredDependency> = Vec::new();
-        let no_fetched: Vec<String> = Vec::new();
-        let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-
-        let event_graph = build_event_graph(&ws.routines, &symbols);
-        let graph = build_combined_graph(ws, &calls, &event_graph);
-
-        let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
-        for (from, list) in &graph.edges_by_from {
-            scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
-        }
-        let scc = tarjan_scc(&SccInputGraph {
-            nodes: &graph.nodes,
-            edges_by_from: &scc_adjacency,
-        });
-
-        let mut field_index: FieldIndex = HashMap::new();
-        for table in &ws.tables {
-            for field in &table.fields {
-                field_index
-                    .entry((table.id.clone(), field.name.to_lowercase()))
-                    .or_insert_with(|| field.id.clone());
-            }
-        }
+        let sub = L4Substrate::assemble(dir.path());
 
         // Warm-up (also proves the solver runs clean before timing it).
         // `compute_summaries_v2_bundle` returns the compact `SummaryBundle`
@@ -964,13 +1114,7 @@ mod release_checks {
         // (no consumer in this gate needs the lazy per-routine db_effects
         // projection), only the map's non-emptiness, same sanity check the
         // materializing shim's gate used.
-        let (_warm_bundle, warm, _diag) = compute_summaries_v2_bundle(
-            &ws.routines,
-            &graph,
-            &scc,
-            &calls.upgraded_bindings,
-            &field_index,
-        );
+        let (_warm_bundle, warm, _diag) = sub.solve();
         assert!(
             !warm.is_empty(),
             "sanity: compute_summaries_v2_bundle must produce summaries for a 1000-file workspace"
@@ -979,13 +1123,7 @@ mod release_checks {
         let mut samples = Vec::with_capacity(5);
         for _ in 0..5 {
             let start = Instant::now();
-            let (_bundle, result, _diag) = compute_summaries_v2_bundle(
-                &ws.routines,
-                &graph,
-                &scc,
-                &calls.upgraded_bindings,
-                &field_index,
-            );
+            let (_bundle, result, _diag) = sub.solve();
             samples.push(start.elapsed());
             assert!(
                 !result.is_empty(),
@@ -1001,6 +1139,125 @@ mod release_checks {
             m <= COMPUTE_SUMMARIES_V2_BOUND,
             "compute_summaries_v2_bundle median {m:?} exceeds 3x-target bound \
              {COMPUTE_SUMMARIES_V2_BOUND:?} (samples: {samples:?})"
+        );
+    }
+
+    /// The RECURSIVE-SCC counterpart to [`compute_summaries_v2_within_bound`]
+    /// (final-branch-review finding **M-6**). That gate's own doc conceded the
+    /// perf_support corpus has no recursive SCC at all, so the recursive path —
+    /// the one the l4-summary / db-effect-store redesign actually rewrote
+    /// (517s -> 11.3s, 24 GB -> 0.47 GB) — was guarded ONLY by a manual
+    /// real-workspace 8020 re-measurement nobody runs in CI. A change
+    /// reintroducing a per-SCC workspace-wide rebuild, or an eager per-member
+    /// `Vec<DbEffect>` re-materialization INSIDE the solver itself, would have
+    /// shipped green through every automated gate.
+    ///
+    /// ⟨fix wave finding 2⟩ Precisely: this gate (like
+    /// [`compute_summaries_v2_within_bound`]) calls `compute_summaries_v2_bundle`
+    /// DIRECTLY — it catches a re-materialization reintroduced inside that
+    /// solver, but NOT `build_detector_context`'s own call site regressing to a
+    /// DIFFERENT, materializing entry point (`compute_summaries_v2` /
+    /// `compute_summaries_v2_with_leaves_core`), since neither L4 gate ever
+    /// touches that call site. That entry-point regression is guarded
+    /// separately, by a `debug_assert!` in `build_detector_context`
+    /// (`src/engine/l5/detector_context.rs`) plus a normal (non-release,
+    /// non-timing) test exercising it — see
+    /// `core_summaries_stay_lean_while_the_bundle_carries_the_db_effect_rows`.
+    ///
+    /// Measures the SAME entry point (`compute_summaries_v2_bundle`) over the
+    /// SAME substrate assembly ([`L4Substrate`]), differing only in the corpus:
+    /// `generate_recursive_corpus` (see `tests/perf_support/mod.rs`'s "A SECOND,
+    /// separate corpus" doc) gives
+    /// [`RECURSIVE_CORPUS_FILES`]`/`[`perf_support::RECURSIVE_RING_FILES`] = 4
+    /// cross-file rings, each ONE recursive SCC of
+    /// `RECURSIVE_RING_FILES * RECURSIVE_CYCLE_PROCS` = 800 members, every
+    /// member carrying 2 distinct db-touching operations (so a 1,600-effect
+    /// terminal union shared across each SCC's 800 members).
+    ///
+    /// [`RECURSIVE_SCC_BOUND`]'s doc carries the measured lean-vs-materializing
+    /// separation this corpus buys (22.2x at this size) and the full-suite
+    /// baseline the 3x is taken over — that measurement, not a guess, is what
+    /// makes the bound a real gate.
+    ///
+    /// # The shape assertions are the load-bearing part
+    ///
+    /// A timing bound over a corpus that quietly stopped being recursive would
+    /// pass while measuring nothing — the exact failure mode M-6 is about. So
+    /// this gate asserts the corpus's SCC shape and its db-effect population
+    /// BEFORE it times anything, and those assertions are exact (not "at
+    /// least something"): a future edit to the generator that flattens the
+    /// cycles fails here loudly rather than silently turning the gate into
+    /// theatre.
+    #[test]
+    fn recursive_scc_db_effects_within_bound() {
+        let dir = recursive_corpus_dir(RECURSIVE_CORPUS_FILES, perf_support::RECURSIVE_RING_FILES);
+        let sub = L4Substrate::assemble(dir.path());
+
+        // --- Shape assertion 1: the corpus really is recursive, at the exact
+        // expected size. ---
+        let expected_scc_size =
+            perf_support::RECURSIVE_RING_FILES * perf_support::RECURSIVE_CYCLE_PROCS;
+        let expected_scc_count = RECURSIVE_CORPUS_FILES / perf_support::RECURSIVE_RING_FILES;
+        let recursive_sccs: Vec<usize> = sub
+            .scc
+            .sccs
+            .iter()
+            .filter(|s| s.recursive)
+            .map(|s| s.members.len())
+            .collect();
+        assert_eq!(
+            recursive_sccs.len(),
+            expected_scc_count,
+            "recursive corpus must yield exactly one recursive SCC per cross-file ring \
+             (got sizes {recursive_sccs:?})"
+        );
+        assert!(
+            recursive_sccs.iter().all(|&n| n == expected_scc_size),
+            "every recursive SCC must hold {expected_scc_size} members \
+             (RECURSIVE_RING_FILES * RECURSIVE_CYCLE_PROCS); got {recursive_sccs:?}"
+        );
+
+        // --- Shape assertion 2: those SCCs carry a real db-effect population.
+        // Every member of a recursive SCC shares the SCC's terminal union, so
+        // each one projects `2 * members` effects (2 db ops per generated
+        // procedure). This is the dimension the retired Jacobi solver
+        // re-materialized per member per pass; if it ever reads ~0 the gate is
+        // timing an empty solve. ---
+        let (bundle, settled, _diag) = sub.solve();
+        assert!(!settled.is_empty(), "sanity: solver must produce summaries");
+        let recursive_member = settled
+            .iter()
+            .find(|(_, s)| s.in_recursive_cycle)
+            .map(|(id, _)| id.clone())
+            .expect("recursive corpus must settle at least one in-recursive-cycle routine");
+        let ix = bundle
+            .routine_ix(&recursive_member)
+            .expect("a settled routine is interned in the bundle");
+        let projected = bundle.db_effects(ix).count();
+        assert_eq!(
+            projected,
+            2 * expected_scc_size,
+            "each recursive-SCC member must project the SCC's whole terminal union \
+             (2 db ops x {expected_scc_size} members); got {projected}"
+        );
+
+        let mut samples = Vec::with_capacity(5);
+        for _ in 0..5 {
+            let start = Instant::now();
+            let (_bundle, result, _diag) = sub.solve();
+            samples.push(start.elapsed());
+            assert!(!result.is_empty(), "sanity: solver must produce summaries");
+        }
+        let m = median(samples.clone());
+        println!(
+            "[perf_bounds] recursive_scc_db_effects({RECURSIVE_CORPUS_FILES} files, \
+             {expected_scc_count} x {expected_scc_size}-member recursive SCCs): median={m:?} \
+             bound={RECURSIVE_SCC_BOUND:?} samples={samples:?}"
+        );
+        assert!(
+            m <= RECURSIVE_SCC_BOUND,
+            "recursive-SCC db-effect solve median {m:?} exceeds 3x-baseline bound \
+             {RECURSIVE_SCC_BOUND:?} (samples: {samples:?})"
         );
     }
 }
