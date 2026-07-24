@@ -1,21 +1,26 @@
-//! L4 JACOBI fixed-point summary runner (R3a-2).
+//! L4 summary runner (R3a-2).
 //!
-//! Ports al-sem's `src/engine/summary-runner.ts` (`computeSummaries` /
+//! Originally ported al-sem's `src/engine/summary-runner.ts` (`computeSummaries` /
 //! `runSummaries` — the SCC walk, the per-SCC JACOBI fixed-point loop,
 //! the fingerprint, the `composeRoutineCtx`, the parameterRoles cross-call
 //! composition) and `src/engine/summary-engine.ts`
-//! (`baseIntraproceduralSummaryCtx` / `computeRecordRolesCtx`).
+//! (`baseIntraproceduralSummaryCtx` / `computeRecordRolesCtx`). Since Task B1
+//! (l4-dbeffect-store-and-retirement), `db_effects` / `uncertainties` /
+//! `has_unresolved_calls` are computed by the closed-form v2 `EffectStore`
+//! solver ([`compute_summaries_v2`]) — that JACOBI transfer function and its
+//! per-pass fingerprint TRACE oracle (R3a-2 Rev 2 #3) are retired along with it.
 //!
-//! ## JACOBI discipline (THE LOAD-BEARING CORRECTNESS RULE)
+//! ## JACOBI discipline still governs the roles-ONLY fixpoint
 //!
-//! Each pass FREEZES the entire prior-pass summary map; ALL reads within a
-//! pass see the frozen snapshot; writes go to a NEW map; maps swap at end of
-//! pass. This is JACOBI, NOT Gauss-Seidel. The trace oracle (R3a-2 Rev 2 #3)
-//! captures the per-pass fingerprint sequence — it diverges under Gauss-Seidel
-//! because the trajectory differs (different iteration count, different per-pass
-//! `changed`). The `snapshot` inside the loop MUST be the frozen PRIOR-pass
-//! state (taken by `mem::take`, so reads cannot see this pass's writes); the
-//! next-pass accumulator must ONLY be written, never read, during a pass.
+//! `parameter_roles` is still computed by a per-SCC JACOBI fixed-point loop
+//! ([`run_one_scc_roles`]) — the ONE fixpoint remaining in this file. Each pass
+//! FREEZES the entire prior-pass roles map; ALL reads within a pass see the
+//! frozen snapshot; writes go to a NEW map; maps swap at end of pass. This is
+//! JACOBI, NOT Gauss-Seidel — the `snapshot` inside the loop MUST be the frozen
+//! PRIOR-pass state (taken by `mem::take`, so reads cannot see this pass's
+//! writes); the next-pass accumulator must ONLY be written, never read, during
+//! a pass. There is no trace oracle for this fixpoint (roles convergence is
+//! checked by [`roles_change_key`], not a per-pass fingerprint sequence).
 
 use std::collections::HashMap;
 
@@ -1314,7 +1319,8 @@ fn run_one_scc_roles(
 }
 
 // ---------------------------------------------------------------------------
-// Project one internal RoutineSummary to stable form (for the trace oracle).
+// Project one internal RoutineSummary to stable form (for the roles-only
+// fixpoint's `roles_change_key` convergence signal — see that fn above).
 // ---------------------------------------------------------------------------
 
 fn project_summary_to_stable(

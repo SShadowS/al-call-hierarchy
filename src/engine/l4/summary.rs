@@ -499,9 +499,11 @@ pub fn project_routine_summary_core_pub(
 }
 
 /// Public alias used by `summary_runner` to project an internal summary to
-/// stable form for the JACOBI trace oracle.  The `routine_id` arg is ignored
-/// (the id comes from `s.routine_id`); it exists only for call-site symmetry
-/// with the internal helper.
+/// stable form for the roles-only fixpoint's `roles_change_key` convergence
+/// signal (the trace oracle this originally served retired with the old
+/// Jacobi solver — see `summary_runner`'s module doc). The `routine_id` arg
+/// is ignored (the id comes from `s.routine_id`); it exists only for
+/// call-site symmetry with the internal helper.
 pub fn project_routine_summary_core_internal(
     _routine_id: &str,
     s: &RoutineSummary,

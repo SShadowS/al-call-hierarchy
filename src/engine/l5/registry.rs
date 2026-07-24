@@ -40,12 +40,14 @@ use crate::engine::perf_trace as pt;
 /// entire report — is byte-identical to the pre-W1.0 eager build. The ONLY permitted
 /// output change (decision (a), user-approved) is that a selection NOT demanding
 /// `CORE_SUMMARIES` emits no summarize cap-hit diagnostics (they are harvested from
-/// the same `compute_summaries` call this substrate gates).
+/// the same `compute_summaries_v2` call this substrate gates).
 pub mod substrate {
     /// Capability cones + the per-routine `FullRoutineSummary` map (`ctx.summaries`).
     pub const SUMMARIES: u32 = 1 << 0;
-    /// The second Tarjan SCC + Jacobi CORE summaries → `ctx.uncertainties_by_node`,
-    /// `ctx.parameter_roles_by_routine`, and the `summarize_diagnostics` cap-hit set.
+    /// The second Tarjan SCC + the closed-form v2 CORE summaries →
+    /// `ctx.uncertainties_by_node`, `ctx.parameter_roles_by_routine`, and the
+    /// `summarize_diagnostics` cap-hit set (from the `parameter_roles`-only
+    /// JACOBI fixpoint — the only fixpoint remaining since Task B1).
     pub const CORE_SUMMARIES: u32 = 1 << 1;
     /// Transaction spans (`ctx.transaction_spans`). Requires SUMMARIES internally —
     /// `compute_transaction_spans` folds over the summaries map — so the summaries

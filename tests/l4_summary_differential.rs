@@ -85,6 +85,21 @@ fn assert_parity_with_leaves(name: &str, leaves: &HashMap<String, RoutineSummary
     // irrelevant here (and empty on every fixture — roles converge).
     let (new, _diags) =
         compute_summaries_v2_with_leaves_core(&routines, &graph, &scc, &ub, &fields, leaves);
+    // `canonical()` serializes `new.values()` sorted by `routine_id`, dropping the
+    // map key — so before relying on it, check the key IS the value's
+    // `routine_id` for every entry. This makes the value-only comparison below
+    // provably no weaker than the retired `assert_eq!(v2_map, old_map)` (which
+    // compared keys AND values): the key is recoverable from the value, so
+    // nothing the old whole-map equality checked is lost.
+    for (k, v) in &new {
+        assert_eq!(
+            &v.routine_id, k,
+            "[{name}] map key {k:?} must equal the summary's routine_id {:?} — canonical() \
+             keys identity on routine_id, so this invariant is what makes it no weaker than \
+             the old HashMap equality",
+            v.routine_id
+        );
+    }
     let actual = canonical(&new);
     let path = baseline_dir().join(format!("{name}.baseline.txt"));
 
@@ -218,8 +233,9 @@ fn sha256_hex(s: &str) -> String {
 }
 
 /// The PERMANENT CDO whole-program regression anchor (spec Part B.1): the CDO v2
-/// output is too large (18k+ routines) to commit as a readable baseline, so it
-/// is frozen as a **SHA-256 digest** over the canonical complete-`RoutineSummary`
+/// output is too large (the source-only workspace's ~3685-routine population) to
+/// commit as a readable baseline, so it is frozen as a **SHA-256 digest** over
+/// the canonical complete-`RoutineSummary`
 /// serialization (`tests/l4-summary-baseline/cdo-whole-program-digest.txt`).
 ///
 /// The digest was captured (`REGEN_TEMP_GOLDENS=1`) while the old solver still
@@ -284,6 +300,19 @@ fn cdo_whole_program_v2_matches_frozen_digest() {
         &field_index,
         &leaf_summaries,
     );
+
+    // Same key↔routine_id invariant as `assert_parity_with_leaves` — see its
+    // comment for why this makes `canonical()`'s value-only serialization no
+    // weaker than a full `HashMap` equality over keys AND values.
+    for (k, v) in &new {
+        assert_eq!(
+            &v.routine_id, k,
+            "map key {k:?} must equal the summary's routine_id {:?} — canonical() keys \
+             identity on routine_id, so this invariant is what makes it no weaker than the \
+             old HashMap equality",
+            v.routine_id
+        );
+    }
 
     let digest = sha256_hex(&canonical(&new));
     let path = baseline_dir().join("cdo-whole-program-digest.txt");

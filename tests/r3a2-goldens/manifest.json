@@ -1,5 +1,5 @@
 {
-  "description": "R3a-2 summary-CORE + per-recursive-SCC fingerprint-TRACE goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.r3a2.golden.json is the ALLOWLISTED projection of the per-routine RoutineSummary CORE (dbEffects / uncertainties / parameterRoles / inRecursiveCycle / hasUnresolvedCalls), captured POST-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the dump NEVER runs the dep hooks). Each <fixture>.r3a2-trace.golden.json (present only when the fixture has ≥1 recursive SCC) is the per-recursive-SCC fingerprint TRACE: the per-iteration stable fingerprint sequence + iteration count + the per-pass `changed` flag that the JACOBI fixed-point loop produced. The Rust port must reproduce the SAME trace → proves JACOBI parity (frozen prior-pass snapshot, not Gauss-Seidel). All ids in stable form (StableRoutineId / StableTableId / StableFieldId / stable operationId / callsiteId). See scripts/r3a2-projection.ts.",
+  "description": "R3a-2 summary-CORE goldens — ground truth for the al-sem → Rust differential harness. Each <fixture>.r3a2.golden.json is the ALLOWLISTED projection of the per-routine RoutineSummary CORE (dbEffects / uncertainties / parameterRoles / inRecursiveCycle / hasUnresolvedCalls), captured POST-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the dump NEVER runs the dep hooks). All ids in stable form (StableRoutineId / StableTableId / StableFieldId / stable operationId / callsiteId). See scripts/r3a2-projection.ts. NOTE: this manifest historically also referenced a per-recursive-SCC fingerprint-TRACE golden family (<fixture>.r3a2-trace.golden.json, tracking the JACOBI per-pass fingerprint trajectory) plus its Rust consumers (r3a2_trace_differential.rs / r3a2_trace_vectors.rs); all retired together with the old Jacobi db-effect solver (Task B1, l4-dbeffect-store-and-retirement) — the closed-form v2 solver that replaced it has no per-pass trajectory to trace. The summary-CORE goldens above remain the live oracle (see tests/l4_summary_differential.rs for the solver's own frozen-baseline anchor).",
   "capturePoint": "post-computeSummaries (indexWorkspace → resolveModel → buildCombinedGraph → computeSummaries; the final mutated routine.summary CORE; NO dep hooks)",
   "note": "R3a-2 is the summary CORE only. EXCLUDED (later gates): capabilityFactsDirect/Inherited + coverage (R3a-3, the cone), fieldEffects (lazy/detector), the dep hooks (R3a-4), full cross-app (R3a-5). computeSummaries DOES attach capabilityFacts*/coverage to each summary after the fixed point converges; the projection's strict allowlist drops them. The trace fingerprint is computed in STABLE-id space (al-sem's internal summaryFingerprint embeds internal RoutineIds/ObjectIds and is not id-portable); the internal→stable map is an order-preserving bijection, so the stable fingerprint changes iff the internal one does → the trajectory (iteration count + per-pass `changed`) is identical. Source-only: .app-bearing fixtures are EXCLUDED.",
   "alSemGitSha": "11c0530ae48e869507f551f328269eb37cce2c2c",
@@ -1329,7 +1329,6 @@
     {
       "fixture": "ws-d7-event-cycle",
       "goldenFile": "ws-d7-event-cycle.r3a2.golden.json",
-      "traceFile": "ws-d7-event-cycle.r3a2-trace.golden.json",
       "matrix": {
         "routineCount": 6,
         "routinesWithInheritedEffects": 0,
@@ -1462,7 +1461,6 @@
     {
       "fixture": "ws-event-cycle",
       "goldenFile": "ws-event-cycle.r3a2.golden.json",
-      "traceFile": "ws-event-cycle.r3a2-trace.golden.json",
       "matrix": {
         "routineCount": 5,
         "routinesWithInheritedEffects": 0,
@@ -3021,7 +3019,6 @@
     {
       "fixture": "ws-recursive",
       "goldenFile": "ws-recursive.r3a2.golden.json",
-      "traceFile": "ws-recursive.r3a2-trace.golden.json",
       "matrix": {
         "routineCount": 2,
         "routinesWithInheritedEffects": 1,

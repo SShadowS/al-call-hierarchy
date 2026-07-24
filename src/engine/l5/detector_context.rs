@@ -215,7 +215,9 @@ impl DetectorContext<'_> {
 /// substrates are:
 ///   - `SUMMARIES` — capability cones + `summaries` (also built for `TRANSACTION_SPANS`,
 ///     which folds over the summaries map internally).
-///   - `CORE_SUMMARIES` — second Tarjan + Jacobi core summaries →
+///   - `CORE_SUMMARIES` — second Tarjan + the closed-form v2 core summaries
+///     (`db_effects`/`uncertainties` via `compute_summaries_v2`, `parameter_roles`
+///     via its own JACOBI-disciplined roles-only fixpoint) →
 ///     `uncertainties_by_node` / `parameter_roles_by_routine` / `summarize_diagnostics`.
 ///   - `TRANSACTION_SPANS` — `transaction_spans`.
 ///   - `CLOSED_WORLD_TEMP` — `closed_world_temp_params`.
@@ -417,15 +419,15 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // The CORE `RoutineSummary.uncertainties` is dropped by `FullRoutineSummary`
     // (the cone path keeps only facts + coverage), so we recompute the core
     // summaries here from the SAME combined graph the cone used: Tarjan SCC over
-    // `graph.edges_by_from`, then the Jacobi fixed point (`compute_summaries`).
+    // `graph.edges_by_from`, then the closed-form v2 solver (`compute_summaries_v2`).
     // This is the only place that needs the core uncertainties; the union is
     // assembled once and exposed on `uncertainties_by_node`.
     //
-    // SUBSTRATE-GATED on CORE_SUMMARIES. This is the second Tarjan + Jacobi pass —
-    // the most expensive substrate. Skipped ⇒ `uncertainties_by_node` /
+    // SUBSTRATE-GATED on CORE_SUMMARIES. This is the second Tarjan + v2-solver
+    // pass — the most expensive substrate. Skipped ⇒ `uncertainties_by_node` /
     // `parameter_roles_by_routine` / `summarize_diagnostics` are all empty, which by
     // decision (a) means a substrate-skipping run emits no summarize cap-hit
-    // diagnostics (they are only ever produced by this `compute_summaries` call).
+    // diagnostics (they are only ever produced by this `compute_summaries_v2` call).
     #[allow(clippy::type_complexity)]
     let (uncertainties_by_node, parameter_roles_by_routine, summarize_diagnostics): (
         HashMap<String, Vec<Uncertainty>>,
@@ -498,7 +500,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         let _summaries_span = pt::span("context", "context.compute_summaries");
         // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
         // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
-        // but `compute_summaries` takes it.
+        // but `compute_summaries_v2` takes it.
         let mut field_index: FieldIndex = HashMap::new();
         for table in &ws.tables {
             for field in &table.fields {
@@ -576,7 +578,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 
     // Expose the resolver's post-upgrade bindings (the `upgradeBindings` side
     // table) keyed by callsite id — the join target for d37/d39 which read
-    // `binding.bindingResolution` / `binding.calleeParameterIsVar`. `compute_summaries`
+    // `binding.bindingResolution` / `binding.calleeParameterIsVar`. `compute_summaries_v2`
     // above was the last reader of `calls.upgraded_bindings`, so move it out here.
     let upgraded_bindings_by_callsite: HashMap<String, Vec<UpgradedBinding>> =
         std::mem::take(&mut calls.upgraded_bindings);

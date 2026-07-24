@@ -194,6 +194,15 @@ the bottom, CHANGELOG, and git log.
   and the strict-subset minimal-invalidation fixtures — is preserved in
   `docs/superpowers/notes/2026-07-24-r3b-incremental-l4-design-intent.md`. Wake: a
   real incremental-analyze consumer.
+- [ ] **`salsa` derive-only dependency** — after the R3b `incremental/` deletion
+  (Task B1), nothing in the crate consumes `#[salsa::db]`/`#[salsa::input]`/
+  `#[salsa::tracked]`/`#[salsa::interned]` any more; the only surviving usage is
+  `#[derive(salsa::Update)]` on a handful of `l4` types (`summary.rs`,
+  `combined_graph.rs`, `scc.rs`, `capability_cone.rs`). A full salsa-ectomy
+  (drop the derives + the `Cargo.toml` dep) is a legitimate future cleanup — not
+  urgent, no correctness or perf stake, just dead-weight-dependency hygiene.
+  Wake: convenient piggyback on an unrelated touch of those types, or a
+  dependency-audit pass.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 

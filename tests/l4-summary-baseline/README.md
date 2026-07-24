@@ -17,8 +17,9 @@ via, `record_variable_id`), `uncertainties`, `has_unresolved_calls`,
 NOT the `stable_summary_fingerprint` (which omits internal fields).
 
 `cdo-whole-program-digest.txt` is the SHA-256 (hex) over the same canonical
-`{:#?}` rendering of the CDO whole-program v2 output (18k+ routines — too large
-to commit readably, so frozen as a digest).
+`{:#?}` rendering of the CDO whole-program v2 output (the DO source-only
+workspace's ~3685-routine population — too large to commit readably, so frozen
+as a digest).
 
 ## Provenance — captured at parity with the old Jacobi solver
 
