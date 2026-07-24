@@ -20,12 +20,12 @@
 use std::collections::{BTreeMap, HashMap};
 
 use super::combined_graph::CombinedGraph;
-use super::db_effect_solver::{build_rvid_by_opid, solve_scc_db_effects};
+use super::db_effect_solver::{build_rvid_by_opid, seed_fixed_leaf_rows, solve_scc_db_effects};
 use super::effect_lattice::{
     EffectPresence, effect_key_of, join_presence, merge_via_owned, via_for_edge_kind,
 };
 use super::effect_store::{SummaryBundle, SummaryBundleBuilder};
-use super::effect_universe::EffectUniverse;
+use super::effect_universe::GrowingEffectUniverse;
 use super::routine_interner::RoutineInterner;
 use super::scc::SccResult;
 use super::summary::{
@@ -1164,19 +1164,22 @@ pub fn compute_summaries_v2_bundle_with_leaves(
         .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
         .collect();
 
-    // Task A1: intern every workspace routine id once, up front, in the
+    // Task A1/A3: intern every workspace routine id once, up front, in the
     // CANONICAL `stable_routine_id`-sorted order (spec rev4) — so ascending
     // `RoutineIx` is stable across repeated builds of the SAME workspace, not
     // merely self-consistent within one run. Covers every routine (leaf AND
-    // non-leaf) — the db-effect solver's per-member maps
-    // (`SccPresence::by_member`, the via map, `PdState`,
-    // `solve_side_facts`'s per-member maps) only ever key by a member of some
-    // effective SCC, and every such member is guaranteed present here (it
-    // came from `routines_by_id`, built from this SAME `routines` slice).
+    // non-leaf), the db-effect solver's per-member maps, AND — Task A3 — every
+    // fixed-leaf id, INCLUDING retained cross-app dependency leaves that are
+    // NOT in `routines` (`build_detector_context_cross_app` passes exactly
+    // this). A leaf must be interned so the db-effect FEED-FORWARD can key its
+    // row; a leaf outside `routines` has no `stable_routine_id` here, so its
+    // own id is its canonical sort key (deterministic, and dedups against the
+    // `routines` entry when the leaf is also a workspace routine).
     let routine_interner = RoutineInterner::build_canonical(
         routines
             .iter()
-            .map(|r| (r.id.as_str(), r.stable_routine_id.as_str())),
+            .map(|r| (r.id.as_str(), r.stable_routine_id.as_str()))
+            .chain(leaf_summaries.keys().map(|id| (id.as_str(), id.as_str()))),
     );
 
     let mut uncertainty_edges_by_from: HashMap<String, Vec<usize>> = HashMap::new();
@@ -1216,13 +1219,29 @@ pub fn compute_summaries_v2_bundle_with_leaves(
         uncertainty_edges_by_from: &uncertainty_edges_by_from,
     };
 
-    // One workspace-wide interned effect universe, threaded across every SCC.
-    let mut universe = EffectUniverse::new();
+    // One workspace-wide interned effect universe, threaded across every SCC
+    // (GROWING form — `intern()` mints new PD/terminal-emission variants as
+    // SCCs settle; frozen ONCE after the loop, spec lifecycle steps 1-3).
+    let mut universe = GrowingEffectUniverse::new();
 
-    // Task A2: the compact db-effect row accumulator (spec Part A Step 2),
-    // threaded `&mut` through the per-SCC solve exactly like `universe` —
-    // frozen into a `SummaryBundle` once the loop below completes.
+    // Task A2/A3: the compact db-effect row accumulator + the shared terminal-
+    // set arena that DOUBLES as the db-effect feed-forward source, threaded
+    // `&mut` through the per-SCC solve exactly like `universe` — frozen into a
+    // `SummaryBundle` once the loop below completes.
     let mut bundle_builder = SummaryBundleBuilder::new();
+
+    // Task A3 (spec Step 3 ⟨rev3⟩ + lifecycle step 2b): seed the RETAINED
+    // fixed leaves' singleton effect classes BEFORE the solve loop — they are
+    // read as settled callees' db-effect feed-forward AND project like any
+    // routine (preserving their own via). This interns every leaf effect
+    // identity into `universe` up front (complete pre-freeze identity
+    // discovery).
+    seed_fixed_leaf_rows(
+        leaf_summaries,
+        &mut universe,
+        &routine_interner,
+        &mut bundle_builder,
+    );
 
     // Summarize-stage diagnostics raised by the roles fixpoint's convergence
     // backstop. Empty on every real SCC (roles converge) — see [`RolesSccOut`].
@@ -1270,13 +1289,16 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             });
         }
 
-        // New db-triple. Reads the SAME predecessor view (`v2_map`); its internal
-        // feed-forward layers this SCC's sibling effective SCCs on top.
-        // `body_avail_by_id`/`rvid_by_opid` are the workspace-wide, run-invariant
-        // maps built once above — NOT rebuilt per SCC (see their own
-        // construction comments for the O(N^2) this replaces).
+        // New db-effect solve. Reads the SAME predecessor view (`v2_map`) for
+        // side-facts; the db-effect feed-forward is on `bundle_builder` (Task
+        // A3 — compact ids, no materialized `Vec<DbEffect>`). Records every
+        // member's compact ROW in `bundle_builder` and returns only the
+        // per-member `(uncertainties, has_unresolved_calls)` — db_effects are
+        // projected lazily from the frozen bundle after the loop.
+        // `body_avail_by_id` is the workspace-wide, run-invariant map built
+        // once above — NOT rebuilt per SCC.
         let _db_t = std::time::Instant::now();
-        let triple = solve_scc_db_effects(
+        let side_facts = solve_scc_db_effects(
             scc_entry,
             graph,
             &routines_by_id,
@@ -1287,22 +1309,22 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             &body_avail_by_id,
             &mut universe,
             &is_recomputed,
-            &rvid_by_opid,
             &routine_interner,
             &mut bundle_builder,
         );
         db_us += _db_t.elapsed().as_micros();
 
-        // Assemble each member: NEW db_effects/uncertainties/has_unresolved from
-        // the solver, roles from the roles-only fixpoint, in_recursive_cycle from
-        // the Tarjan SCC's own `recursive` flag (run_one_scc's rule: true for
-        // every member of a recursive SCC). `roles_out` defines the exact member
-        // set (== the solver's recomputed set); a missing triple entry falls back
-        // to empty (which fails the differential loudly rather than silently
+        // Assemble each member: uncertainties/has_unresolved from the solver
+        // (db_effects left EMPTY here — filled from the frozen bundle's lazy
+        // projection in `compute_summaries_v2_with_leaves_core`), roles from
+        // the roles-only fixpoint, in_recursive_cycle from the Tarjan SCC's own
+        // `recursive` flag. `roles_out` defines the exact member set (== the
+        // solver's recomputed set); a missing side-facts entry falls back to
+        // empty (which fails the differential loudly rather than silently
         // masking a dropped member).
         for (id, parameter_roles) in roles {
-            let (db_effects, mut uncertainties, has_unresolved_calls) =
-                triple.get(&id).cloned().unwrap_or_default();
+            let (mut uncertainties, has_unresolved_calls) =
+                side_facts.get(&id).cloned().unwrap_or_default();
             // On a roles cap-hit, attach the per-member `fixpoint-capped`
             // Uncertainty EXACTLY as the OLD solver did (appended AFTER the
             // solver's dedup+sorted uncertainties, mirroring old's post-fixpoint
@@ -1320,7 +1342,7 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             }
             let assembled = RoutineSummary {
                 routine_id: id.clone(),
-                db_effects,
+                db_effects: Vec::new(),
                 in_recursive_cycle: scc_entry.recursive,
                 has_unresolved_calls,
                 uncertainties,
@@ -1341,7 +1363,11 @@ pub fn compute_summaries_v2_bundle_with_leaves(
         })
     });
 
-    let bundle = bundle_builder.finish(universe, routine_interner, rvid_by_opid);
+    // Freeze the universe (spec lifecycle steps 3-7): computes `key_rank`,
+    // then `finish` hash-conses the shared terminal-set arena into the
+    // `EffectStore` and reorders each row's via/PD arrays to `key_rank` output
+    // order. After this no new identity can be minted (compile-enforced).
+    let bundle = bundle_builder.finish(universe.freeze(), routine_interner, rvid_by_opid);
     (bundle, v2_map, diagnostics)
 }
 

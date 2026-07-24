@@ -23,8 +23,10 @@ use crate::engine::l3::call_resolver::UpgradedBinding;
 use crate::engine::l3::l3_workspace::L3Routine;
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
 use crate::engine::l4::effect_lattice::{TempStateKind, via_for_edge_kind};
-use crate::engine::l4::effect_store::{SummaryBundleBuilder, ViaRank, project_db_effects};
-use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, EffectUniverse};
+use crate::engine::l4::effect_store::{
+    SetRef, SummaryBundleBuilder, ViaRank, has_bit, iter_set_bits, or_bits, set_bit,
+};
+use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, GrowingEffectUniverse};
 use crate::engine::l4::routine_interner::{RoutineInterner, RoutineIx};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{
@@ -216,8 +218,9 @@ pub fn solve_pd_reachability(
     eff: &Scc,
     graph: &CombinedGraph,
     routines_by_id: &HashMap<String, &L3Routine>,
-    settled: &HashMap<String, RoutineSummary>,
+    settled_db: &SummaryBundleBuilder,
     _upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    universe: &GrowingEffectUniverse,
     interner: &RoutineInterner,
 ) -> (Vec<PdFact>, Vec<TerminalEmission>) {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
@@ -273,7 +276,11 @@ pub fn solve_pd_reachability(
     }
 
     // Seed 2: edge-substituted images of external-callee (already-settled
-    // successor / fixed-leaf) PD effects at each member's OUT-edges.
+    // successor / fixed-leaf) PD effects at each member's OUT-edges. Task A3:
+    // the callee's PD facts are read as interned `EffectId`s straight off the
+    // feed-forward builder (`settled_db.pd_ids`), NOT from a materialized
+    // `Vec<DbEffect>` — the identity `(op, table, operation, PD(j))` is decoded
+    // from the (still-growing) universe. No String re-intern, no `Vec<DbEffect>`.
     for m in &eff.members {
         let Some(caller_routine) = routines_by_id.get(m) else {
             continue;
@@ -285,27 +292,32 @@ pub fn solve_pd_reachability(
             if member_set.contains(e.to.as_str()) {
                 continue; // intra-effective-SCC; handled by the worklist below.
             }
-            let Some(callee_summary) = settled.get(&e.to) else {
-                continue; // unresolved / not (yet) settled — no PD image to seed.
+            let Some(to_ix) = interner.get(&e.to) else {
+                continue; // not interned (missing routine) — no PD image to seed.
             };
-            for callee_effect in &callee_summary.db_effects {
-                if let TempState::ParameterDependent(j) = &callee_effect.temp_state {
-                    let base_id = (
-                        callee_effect.op.clone(),
-                        callee_effect.table_id.clone(),
-                        callee_effect.operation_id.clone(),
-                    );
-                    let outcome = substitute_pd_temp_state(e, *j, caller_routine);
-                    apply_pd_transition(
-                        m_ix,
-                        &base_id,
-                        outcome,
-                        interner,
-                        &mut visited,
-                        &mut worklist,
-                        &mut terminals,
-                    );
-                }
+            if !settled_db.has_row(to_ix) {
+                continue; // unresolved / not (yet) settled — no PD image to seed.
+            }
+            for &callee_id in settled_db.pd_ids(to_ix) {
+                let identity = universe.identity(callee_id);
+                let TempStateKind::ParameterDependent(j) = identity.temp else {
+                    continue; // pd_ids are PD by construction; defensive.
+                };
+                let base_id = (
+                    identity.op.clone(),
+                    identity.table_id.clone(),
+                    identity.operation_id.clone(),
+                );
+                let outcome = substitute_pd_temp_state(e, j, caller_routine);
+                apply_pd_transition(
+                    m_ix,
+                    &base_id,
+                    outcome,
+                    interner,
+                    &mut visited,
+                    &mut worklist,
+                    &mut terminals,
+                );
             }
         }
     }
@@ -365,67 +377,48 @@ pub fn solve_pd_reachability(
 
 // ---------------------------------------------------------------------------
 // Steps B/C: closed-form terminal union + per-member presence assembly.
+//
+// The `EffectId`-keyed bitset primitives (`set_bit`/`has_bit`/`or_bits`/
+// `iter_set_bits`) live in `effect_store` now — the ONE home for the set
+// representation the solve-time bitsets and the freeze-time hash-cons share
+// (imported at the top of this module).
 // ---------------------------------------------------------------------------
 
-/// OR one interned [`EffectId`] into a presence bitset, growing the backing
-/// `Vec<u64>` if the id's word isn't yet allocated. Bit `n % 64` of word
-/// `n / 64` for `EffectId(n)` — the layout the Task 5 brief specifies, shared
-/// by every later task (`reconstruct_via`, `solve_scc_db_effects`) that reads
-/// or writes a [`SccPresence`] bitset.
-pub(crate) fn set_bit(bits: &mut Vec<u64>, id: EffectId) {
-    let word = (id.0 / 64) as usize;
-    if bits.len() <= word {
-        bits.resize(word + 1, 0);
-    }
-    bits[word] |= 1u64 << (id.0 % 64);
-}
-
-/// True iff `id`'s bit is set in `bits`. An id past the end of `bits` is
-/// simply absent (never grows `bits` — read-only). Read by [`reconstruct_via`]
-/// (Task 6) — checking whether a candidate target identity actually survived
-/// into a member's final presence before crediting an edge's `via` to it —
-/// and by `solve_scc_db_effects` (Task 8); also exercised directly by this
-/// module's own tests.
-pub(crate) fn has_bit(bits: &[u64], id: EffectId) -> bool {
-    let word = (id.0 / 64) as usize;
-    word < bits.len() && (bits[word] & (1u64 << (id.0 % 64))) != 0
-}
-
-/// Bulk word-at-a-time OR of `src` into `dst`, growing `dst` if `src` is
-/// longer — the whole-bitset counterpart to [`set_bit`]'s single-bit OR.
-/// [`reconstruct_via`]'s rank-group mask-OR uses this to fold an ENTIRE
-/// terminal presence set (e.g. [`SccPresence::terminal_union`]) into a via
-/// rank group in one pass over `src.len()` words, instead of a per-bit
-/// [`iter_set_bits`] scan over the same set for every contributing edge.
-fn or_bits(dst: &mut Vec<u64>, src: &[u64]) {
-    if dst.len() < src.len() {
-        dst.resize(src.len(), 0);
-    }
-    for (d, s) in dst.iter_mut().zip(src.iter()) {
-        *d |= s;
-    }
-}
-
-/// Per-member db-effect PRESENCE sets for one effective SCC — a bitset over
-/// the shared [`EffectUniverse`], indexed by [`EffectId`]`.0` (see [`set_bit`]).
-/// Task A1: keyed by [`RoutineIx`] rather than the member's raw `String` id —
-/// kills the per-member `String`-hashing this bitset's own construction and
-/// every later reader (`reconstruct_via`, `attribute_pd_substituted_via`,
-/// `solve_scc_db_effects`) used to pay.
+/// Per-member db-effect PRESENCE for one effective SCC (Task A3: SCC-shared).
+/// The TERMINAL union `C` is stored ONCE in `terminal_union` (never cloned per
+/// member — the memory win); only each member's OWN `ParameterDependent` facts
+/// are per-member (`pd_by_member`), because PD re-symbolizes along the specific
+/// caller-binding chain reaching that member. A member's FULL presence is the
+/// (disjoint) union `terminal_union ∪ pd_by_member[m]` — see
+/// [`SccPresence::member_present`] / [`SccPresence::member_present_ids`].
 pub struct SccPresence {
-    pub by_member: HashMap<RoutineIx, Vec<u64>>,
-    /// The shared closed-form TERMINAL union `C` this fn builds once and
-    /// clones into every member (see this fn's own doc: `bits = c.clone()`)
-    /// — i.e. exactly the terminal-typed (`Known`/`Unknown`) portion of
-    /// EVERY member's `by_member` entry, guaranteed PD-free (built only via
-    /// [`intern_terminal_db_effect`], which skips `ParameterDependent`, and
-    /// `TerminalEmission`, whose own `temp` field is `Known`/`Unknown`-only
-    /// by construction). Exposed separately (Task A2) so
-    /// [`reconstruct_via`]'s rank-group mask-OR can fold it wholesale into a
-    /// via rank group for an intra-effective-SCC edge in ONE bulk
-    /// word-at-a-time OR, instead of re-deriving it by filtering a member's
-    /// mixed terminal+PD bits one set bit at a time on every such edge.
+    /// The shared closed-form TERMINAL union `C` — the terminal-typed
+    /// (`Known`/`Unknown`) portion of EVERY member's presence, guaranteed
+    /// PD-free (built only via [`intern_terminal_db_effect`] which skips
+    /// `ParameterDependent`, plus [`TerminalEmission`]s which are terminal by
+    /// construction). Recorded once per effective SCC as the shared
+    /// [`crate::engine::l4::effect_store::EffectSetId`].
     pub terminal_union: Vec<u64>,
+    /// Per-member `ParameterDependent`-only bits (`delta \ base`, since PD and
+    /// terminal identities are disjoint EffectIds). The `pd_delta` of each
+    /// member's compact row.
+    pub pd_by_member: HashMap<RoutineIx, Vec<u64>>,
+}
+
+impl SccPresence {
+    /// True iff `id` is present for member `m` (in the shared terminal union OR
+    /// that member's own PD facts).
+    fn member_present(&self, m: RoutineIx, id: EffectId) -> bool {
+        has_bit(&self.terminal_union, id)
+            || self.pd_by_member.get(&m).is_some_and(|pd| has_bit(pd, id))
+    }
+
+    /// Iterate member `m`'s full present ids (terminal union + its PD facts),
+    /// ascending EffectId within each half. The two halves are disjoint.
+    fn member_present_ids(&self, m: RoutineIx) -> impl Iterator<Item = EffectId> + '_ {
+        let pd = self.pd_by_member.get(&m);
+        iter_set_bits(&self.terminal_union).chain(pd.into_iter().flat_map(|b| iter_set_bits(b)))
+    }
 }
 
 /// Intern a TERMINAL (`Known`/`Unknown` only) [`DbEffect`](crate::engine::l4::summary::DbEffect)
@@ -434,7 +427,7 @@ pub struct SccPresence {
 /// [`TerminalEmission`]); folding it here under its UNSUBSTITUTED index would
 /// double-count under the wrong identity.
 fn intern_terminal_db_effect(
-    universe: &mut EffectUniverse,
+    universe: &mut GrowingEffectUniverse,
     bits: &mut Vec<u64>,
     op: &str,
     table_id: &str,
@@ -496,11 +489,11 @@ pub fn closed_form_union(
     eff: &Scc,
     graph: &CombinedGraph,
     routines_by_id: &HashMap<String, &L3Routine>,
-    settled: &HashMap<String, RoutineSummary>,
+    settled_db: &SummaryBundleBuilder,
     base_summaries: &HashMap<String, RoutineSummary>,
     pd_facts: &[PdFact],
     terminal_emissions: &[TerminalEmission],
-    universe: &mut EffectUniverse,
+    universe: &mut GrowingEffectUniverse,
     interner: &RoutineInterner,
 ) -> SccPresence {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
@@ -536,24 +529,24 @@ pub fn closed_form_union(
     }
 
     // Source 2: terminal effects of settled successors, reached over an
-    // actual out-edge from any member of `eff`.
+    // actual out-edge from any member of `eff`. Task A3: the settled callee's
+    // TERMINAL set already IS a bitset of interned `EffectId`s in the feed-
+    // forward builder (`settled_db.terminal_bits`) — bulk word-OR it wholesale
+    // into `C` (no per-effect re-intern, no `Vec<DbEffect>` walk). A callee's
+    // PD facts are deliberately NOT folded here (Step A already turned them
+    // into per-member `PdFact`s / shared `TerminalEmission`s), and the builder
+    // keeps terminal (`terminal_bits`) and PD (`pd_ids`) apart, so folding
+    // `terminal_bits` is exactly the old `intern_terminal_db_effect` filter.
     for m in &eff.members {
         for e in graph.edges_by_from.get(m).into_iter().flatten() {
             if member_set.contains(e.to.as_str()) {
                 continue; // intra-effective-SCC; not settled yet.
             }
-            let Some(callee) = settled.get(&e.to) else {
-                continue; // unresolved / not (yet) settled.
+            let Some(to_ix) = interner.get(&e.to) else {
+                continue; // not interned (missing routine).
             };
-            for effect in &callee.db_effects {
-                intern_terminal_db_effect(
-                    universe,
-                    &mut c,
-                    &effect.op,
-                    &effect.table_id,
-                    &effect.operation_id,
-                    &effect.temp_state,
-                );
+            if settled_db.has_row(to_ix) {
+                or_bits(&mut c, settled_db.terminal_bits(to_ix));
             }
         }
     }
@@ -570,13 +563,15 @@ pub fn closed_form_union(
         set_bit(&mut c, id);
     }
 
-    // effects[v] = C ∪ member-v's own retained PD facts (NOT shared).
-    let mut by_member: HashMap<RoutineIx, Vec<u64>> = HashMap::with_capacity(eff.members.len());
+    // effects[v] = C ∪ member-v's own retained PD facts. Task A3: `C` is
+    // recorded ONCE (in `terminal_union`) and NEVER cloned per member — only
+    // each member's PD-only bits are stored per-member.
+    let mut pd_by_member: HashMap<RoutineIx, Vec<u64>> = HashMap::with_capacity(eff.members.len());
     for m in &eff.members {
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
-        let mut bits = c.clone();
+        let mut pd_bits: Vec<u64> = Vec::new();
         for f in pd_facts.iter().filter(|f| &f.routine_id == m) {
             let identity = EffectIdentity {
                 op: f.base.0.clone(),
@@ -585,14 +580,14 @@ pub fn closed_form_union(
                 temp: TempStateKind::ParameterDependent(f.param_index),
             };
             let id = universe.intern(&identity);
-            set_bit(&mut bits, id);
+            set_bit(&mut pd_bits, id);
         }
-        by_member.insert(m_ix, bits);
+        pd_by_member.insert(m_ix, pd_bits);
     }
 
     SccPresence {
-        by_member,
         terminal_union: c,
+        pd_by_member,
     }
 }
 
@@ -622,31 +617,6 @@ fn merge_via_into(
         _ => via,
     };
     via_map.insert(key, merged);
-}
-
-/// Bit-scan iterator over the SET bits of one presence bitset, yielding
-/// `EffectId`s in ascending order. Cost is proportional to the number of set
-/// bits, not `universe.len()` — [`reconstruct_via`]'s own per-member final
-/// derivation scan and `attribute_pd_substituted_via`'s per-edge callee scan
-/// must stay cheap even when the shared, workspace-wide universe holds many
-/// thousands of identities that have nothing to do with this callee. (Task
-/// A2: `reconstruct_via`'s intra-effective-SCC edge fold no longer scans a
-/// callee's bits at all — it bulk-ORs the shared terminal union wholesale,
-/// see [`or_bits`] — so this iterator's role there is now only the final,
-/// once-per-member presence-gated derivation.)
-fn iter_set_bits(bits: &[u64]) -> impl Iterator<Item = EffectId> + '_ {
-    bits.iter().enumerate().flat_map(|(word_idx, &word)| {
-        let mut remaining = word;
-        std::iter::from_fn(move || {
-            if remaining == 0 {
-                None
-            } else {
-                let bit = remaining.trailing_zeros();
-                remaining &= remaining - 1;
-                Some(EffectId((word_idx as u32) * 64 + bit))
-            }
-        })
-    })
 }
 
 /// Reconstruct the per-`(member, EffectId)` `via` provenance in ONE
@@ -731,8 +701,8 @@ pub fn reconstruct_via(
     graph: &CombinedGraph,
     presence: &SccPresence,
     base_summaries: &HashMap<String, RoutineSummary>,
-    settled: &HashMap<String, RoutineSummary>,
-    universe: &EffectUniverse,
+    settled_db: &SummaryBundleBuilder,
+    universe: &GrowingEffectUniverse,
     interner: &RoutineInterner,
 ) -> HashMap<(RoutineIx, EffectId), ViaRank> {
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
@@ -751,9 +721,6 @@ pub fn reconstruct_via(
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
-        let Some(m_bits) = presence.by_member.get(&m_ix) else {
-            continue; // no presence recorded for this member; nothing to seed.
-        };
 
         // The 5 rank-group presence contributions, indexed by `ViaRank as
         // usize` (index 0, `Inherited`, is never populated). Accumulated
@@ -796,31 +763,29 @@ pub fn reconstruct_via(
                 // union wholesale — see this fn's own doc for why this is
                 // exact, not an approximation.
                 or_bits(&mut rank_bits[via as usize], &presence.terminal_union);
-            } else if let Some(callee_summary) = settled.get(&edge.to) {
-                for e in &callee_summary.db_effects {
-                    if !matches!(e.temp_state, TempState::Known(_) | TempState::Unknown) {
-                        continue; // PD-typed: deferred, see doc above.
-                    }
-                    let identity = EffectIdentity {
-                        op: e.op.clone(),
-                        table_id: e.table_id.clone(),
-                        operation_id: e.operation_id.clone(),
-                        temp: e.temp_state.to_kind(),
-                    };
-                    if let Some(id) = universe.get(&identity) {
-                        set_bit(&mut rank_bits[via as usize], id);
-                    }
-                }
+            } else if let Some(to_ix) = interner.get(&edge.to)
+                && settled_db.has_row(to_ix)
+            {
+                // Settled successor/leaf: its TERMINAL set is already a bitset
+                // of interned ids in the feed-forward builder — bulk-OR it
+                // (identity transfer). PD-typed callee facts are excluded by
+                // construction (the builder keeps `terminal_bits` PD-free) —
+                // they are the DEFERRED case handled by
+                // `attribute_pd_substituted_via`.
+                or_bits(
+                    &mut rank_bits[via as usize],
+                    settled_db.terminal_bits(to_ix),
+                );
             }
             // `else`: edge.to is neither an eff member nor settled — the
             // Step-B/C closed-form union already treats it as unresolved
             // (no contribution to presence), so there is nothing to fold.
         }
 
-        // Derive: for every effect PRESENT in `m`'s FINAL bits (the
-        // `has_bit` presence gate, applied once here), take the highest rank
-        // whose group has that effect's bit set.
-        for id in iter_set_bits(m_bits) {
+        // Derive: for every effect PRESENT for `m` (the shared terminal union
+        // ∪ `m`'s own PD facts — the `has_bit` presence gate applied once
+        // here), take the highest rank whose group has that effect's bit set.
+        for id in presence.member_present_ids(m_ix) {
             if let Some(&via) = RANKED
                 .iter()
                 .find(|&&r| has_bit(&rank_bits[r as usize], id))
@@ -1172,9 +1137,9 @@ fn attribute_pd_substituted_via(
     eff: &Scc,
     graph: &CombinedGraph,
     presence: &SccPresence,
-    settled: &HashMap<String, RoutineSummary>,
+    settled_db: &SummaryBundleBuilder,
     routines_by_id: &HashMap<String, &L3Routine>,
-    universe: &EffectUniverse,
+    universe: &GrowingEffectUniverse,
     interner: &RoutineInterner,
     via_map: &mut HashMap<(RoutineIx, EffectId), ViaRank>,
 ) {
@@ -1184,9 +1149,6 @@ fn attribute_pd_substituted_via(
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
-        let Some(m_bits) = presence.by_member.get(&m_ix) else {
-            continue;
-        };
         let Some(caller_routine) = routines_by_id.get(m.as_str()) else {
             continue;
         };
@@ -1195,36 +1157,34 @@ fn attribute_pd_substituted_via(
 
             // The callee's PD effects, as `(op, table_id, operation_id,
             // pd_index)`. Intra-effective-SCC callee → read from presence (its
-            // PD-typed set bits); settled successor/leaf → read from its
-            // materialized `db_effects`.
+            // PD-only bits, Task A3); settled successor/leaf → read from the
+            // feed-forward builder's PD ids (Task A3 — no `Vec<DbEffect>`).
             let mut callee_pd: Vec<(String, String, String, u32)> = Vec::new();
+            let mut push_pd = |cid: EffectId| {
+                let identity = universe.identity(cid);
+                if let TempStateKind::ParameterDependent(i) = &identity.temp {
+                    callee_pd.push((
+                        identity.op.clone(),
+                        identity.table_id.clone(),
+                        identity.operation_id.clone(),
+                        *i,
+                    ));
+                }
+            };
             if member_set.contains(edge.to.as_str()) {
                 let to_ix = interner
                     .get(&edge.to)
                     .expect("every intra-effective-SCC callee is interned at workspace setup");
-                if let Some(callee_bits) = presence.by_member.get(&to_ix) {
-                    for cid in iter_set_bits(callee_bits) {
-                        let identity = universe.identity(cid);
-                        if let TempStateKind::ParameterDependent(i) = &identity.temp {
-                            callee_pd.push((
-                                identity.op.clone(),
-                                identity.table_id.clone(),
-                                identity.operation_id.clone(),
-                                *i,
-                            ));
-                        }
+                if let Some(callee_pd_bits) = presence.pd_by_member.get(&to_ix) {
+                    for cid in iter_set_bits(callee_pd_bits) {
+                        push_pd(cid);
                     }
                 }
-            } else if let Some(callee_summary) = settled.get(&edge.to) {
-                for e in &callee_summary.db_effects {
-                    if let TempState::ParameterDependent(i) = &e.temp_state {
-                        callee_pd.push((
-                            e.op.clone(),
-                            e.table_id.clone(),
-                            e.operation_id.clone(),
-                            *i,
-                        ));
-                    }
+            } else if let Some(to_ix) = interner.get(&edge.to)
+                && settled_db.has_row(to_ix)
+            {
+                for &cid in settled_db.pd_ids(to_ix) {
+                    push_pd(cid);
                 }
             }
 
@@ -1242,7 +1202,7 @@ fn attribute_pd_substituted_via(
                 // universe, and an absent id simply means the effect never
                 // survived into `m`'s presence, so there is nothing to attribute.
                 if let Some(pid) = universe.get(&produced)
-                    && has_bit(m_bits, pid)
+                    && presence.member_present(m_ix, pid)
                 {
                     merge_via_into(via_map, m_ix, pid, via);
                 }
@@ -1260,75 +1220,52 @@ fn attribute_pd_substituted_via(
 /// from [`attribute_pd_substituted_via`]); `record_variable_id` from
 /// `rvid_by_opid`; `temp_state` decoded from the interned identity.
 ///
-/// Task A2: the presence bits split into TERMINAL (`Known`/`Unknown` —
-/// `effect_store`'s `terminal_base`) vs `ParameterDependent` (`pd_delta`) as
-/// they're scanned, with `via` carried as a `Copy` [`ViaRank`] (`u8`) rather
-/// than a cloned `String` — no `format!`/`.to_string()` cost in this scan at
-/// all (only the FINAL legacy-`Vec<DbEffect>` projection, shared with
-/// [`SummaryBundle::db_effects`](crate::engine::l4::effect_store::SummaryBundle::db_effects)
-/// via [`project_db_effects`], allocates strings — see `effect_store.rs`'s
-/// module doc for why that projection still runs eagerly here through A2).
-/// The row is pushed into the workspace-wide `bundle` BEFORE projecting, so
-/// both outputs are built from the IDENTICAL (ids, vias) pieces (no
-/// divergence risk between the two representations).
-fn materialize_member_db_effects(
+/// Task A3: `via` is carried as a `Copy` [`ViaRank`] (`u8`); the terminal half
+/// is the SHARED `terminal_set` (never re-listed per member), and only this
+/// member's PD delta ids/vias are per-member. NO `Vec<DbEffect>` is
+/// materialized — feed-forward is on ids (the bundle) and the owned projection
+/// is lazy ([`SummaryBundle::db_effects`](crate::engine::l4::effect_store::SummaryBundle::db_effects)).
+/// `base_via` is built parallel to `iter_set_bits(terminal_union)` (ascending
+/// EffectId storage order); `finish` reorders it to `key_rank` order.
+fn materialize_member_row(
     member_ix: RoutineIx,
-    bits: &[u64],
+    presence: &SccPresence,
     via_map: &HashMap<(RoutineIx, EffectId), ViaRank>,
-    universe: &EffectUniverse,
-    rvid_by_opid: &HashMap<String, Option<String>>,
+    terminal_set: SetRef,
     bundle: &mut SummaryBundleBuilder,
-) -> Vec<DbEffect> {
-    // Scan the member's SET bits ONCE (ascending EffectId/storage order —
-    // `iter_set_bits` is a bit-scan), splitting terminal vs PD as we go.
-    // Every present effect is attributed by reconstruct_via +
-    // attribute_pd_substituted_via (base direct, terminal-inherited, or
-    // PD-substituted). The `Inherited` fallback (rank 0, the old fold's own
-    // default `via_for_edge_kind` value) is a defensive floor only — the
-    // differential matrix would surface any genuinely-missing via.
-    let mut terminal_ids: Vec<EffectId> = Vec::new();
-    let mut terminal_vias: Vec<ViaRank> = Vec::new();
-    let mut delta_ids: Vec<EffectId> = Vec::new();
-    let mut delta_vias: Vec<ViaRank> = Vec::new();
-    for id in iter_set_bits(bits) {
-        let via = via_map
+) {
+    // The `Inherited` fallback (rank 0, the old fold's default
+    // `via_for_edge_kind` value) is the defensive floor for a present effect
+    // with no attributed via — the differential surfaces any genuine gap.
+    let via_of = |id: EffectId| {
+        via_map
             .get(&(member_ix, id))
             .copied()
-            .unwrap_or(ViaRank::Inherited);
-        match universe.identity(id).temp {
-            TempStateKind::Known(_) | TempStateKind::Unknown => {
-                terminal_ids.push(id);
-                terminal_vias.push(via);
-            }
-            TempStateKind::ParameterDependent(_) => {
-                delta_ids.push(id);
-                delta_vias.push(via);
-            }
+            .unwrap_or(ViaRank::Inherited)
+    };
+    // base_via parallel to the shared terminal union's storage order.
+    let base_via: Vec<ViaRank> = iter_set_bits(&presence.terminal_union)
+        .map(via_of)
+        .collect();
+    // pd_delta + delta_via: this member's OWN PD facts (ascending EffectId).
+    let mut pd_delta: Vec<EffectId> = Vec::new();
+    let mut delta_via: Vec<ViaRank> = Vec::new();
+    if let Some(pd_bits) = presence.pd_by_member.get(&member_ix) {
+        for id in iter_set_bits(pd_bits) {
+            pd_delta.push(id);
+            delta_via.push(via_of(id));
         }
     }
-
-    let out = project_db_effects(
-        &terminal_ids,
-        &terminal_vias,
-        &delta_ids,
-        &delta_vias,
-        universe,
-        rvid_by_opid,
-    );
-    bundle.push_row(
-        member_ix,
-        terminal_ids,
-        terminal_vias,
-        delta_ids,
-        delta_vias,
-    );
-    out
+    bundle.push_row(member_ix, terminal_set, base_via, pd_delta, delta_via);
 }
 
-/// Solve ONE effective SCC end-to-end (PD → union → via → side-facts →
-/// materialize) against a `settled` map that already carries every
-/// topologically-later sibling's solved summary. Returns each member's
-/// `(db_effects, uncertainties, has_unresolved_calls)`.
+/// Solve ONE effective SCC end-to-end (PD → union → via → side-facts → compact
+/// rows). `settled` (a `RoutineSummary` map) supplies settled callees'
+/// `uncertainties`/`has_unresolved_calls` to [`solve_side_facts`]; the db-effect
+/// feed-forward (settled callees' terminal bits + PD ids) comes from `bundle`
+/// itself (Task A3 — no materialized `Vec<DbEffect>`). Returns each member's
+/// `(uncertainties, has_unresolved_calls)`; db_effects are recorded as compact
+/// rows in `bundle` (projected lazily post-freeze).
 #[allow(clippy::too_many_arguments)]
 fn solve_one_effective_scc(
     eff: &Scc,
@@ -1339,27 +1276,31 @@ fn solve_one_effective_scc(
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
     body_avail_by_id: &HashMap<String, bool>,
-    universe: &mut EffectUniverse,
-    rvid_by_opid: &HashMap<String, Option<String>>,
+    universe: &mut GrowingEffectUniverse,
     interner: &RoutineInterner,
     bundle: &mut SummaryBundleBuilder,
-) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
+) -> HashMap<String, (Vec<Uncertainty>, bool)> {
+    // --- Read phase: everything below reads `bundle` (the db-effect feed-
+    // forward source) immutably; the shared terminal set + rows are pushed in
+    // the write phase after `presence`/`via_map` are fully owned. ---
+
     // Step A: PD substitution as reachability.
     let (pd_facts, terminal_emissions) = solve_pd_reachability(
         eff,
         graph,
         routines_by_id,
-        settled,
+        &*bundle,
         upgraded_bindings,
+        &*universe,
         interner,
     );
 
-    // Steps B/C: closed-form terminal union + per-member presence.
+    // Steps B/C: closed-form terminal union + per-member PD presence.
     let presence = closed_form_union(
         eff,
         graph,
         routines_by_id,
-        settled,
+        &*bundle,
         base_summaries,
         &pd_facts,
         &terminal_emissions,
@@ -1368,28 +1309,29 @@ fn solve_one_effective_scc(
     );
 
     // Step D: via reconstruction (base + terminal-inherited) then the
-    // PD-substituted via attribution reconstruct_via defers to Task 8 (carry 2).
+    // PD-substituted via attribution.
     let mut via_map = reconstruct_via(
         eff,
         graph,
         &presence,
         base_summaries,
-        settled,
-        universe,
+        &*bundle,
+        &*universe,
         interner,
     );
     attribute_pd_substituted_via(
         eff,
         graph,
         &presence,
-        settled,
+        &*bundle,
         routines_by_id,
-        universe,
+        &*universe,
         interner,
         &mut via_map,
     );
 
-    // Side-facts: uncertainties + has_unresolved_calls.
+    // Side-facts: uncertainties + has_unresolved_calls (read from the
+    // `RoutineSummary` settled map, not the db-effect feed-forward).
     let side = solve_side_facts(
         eff,
         graph,
@@ -1401,20 +1343,24 @@ fn solve_one_effective_scc(
         interner,
     );
 
-    let mut out: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
+    // --- Write phase: record the shared terminal set ONCE, then every
+    // member's compact row against it (Task A3 SCC-sharing). ---
+    let terminal_set = bundle.push_terminal_set(presence.terminal_union.clone());
     for m in &eff.members {
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
-        let db_effects = match presence.by_member.get(&m_ix) {
-            Some(bits) => {
-                materialize_member_db_effects(m_ix, bits, &via_map, universe, rvid_by_opid, bundle)
-            }
-            None => Vec::new(),
-        };
+        materialize_member_row(m_ix, &presence, &via_map, terminal_set, bundle);
+    }
+
+    let mut out: HashMap<String, (Vec<Uncertainty>, bool)> = HashMap::new();
+    for m in &eff.members {
+        let m_ix = interner
+            .get(m)
+            .expect("every effective-SCC member is interned at workspace setup");
         let uncertainties = side.uncertainties.get(&m_ix).cloned().unwrap_or_default();
         let has_unresolved = side.has_unresolved.get(&m_ix).copied().unwrap_or(false);
-        out.insert(m.clone(), (db_effects, uncertainties, has_unresolved));
+        out.insert(m.clone(), (uncertainties, has_unresolved));
     }
     out
 }
@@ -1422,36 +1368,34 @@ fn solve_one_effective_scc(
 /// One-shot per-Tarjan-SCC db-effect solve. Re-decomposes `scc_entry` into its
 /// effective SCCs (Task 3), then — in `tarjan_scc`'s reverse-topological order —
 /// solves each with PD reachability (Task 4) → closed-form union (Task 5) → via
-/// (Task 6) + PD-substituted via attribution → side-facts (Task 7), and
-/// materializes every member's `Vec<DbEffect>` (sorted `(effect_key,
-/// operation_id)`, with reconstructed `via` + `record_variable_id`). Returns the
-/// per-member `(db_effects, uncertainties, has_unresolved_calls)` triple.
+/// (Task 6) + PD-substituted via attribution → side-facts (Task 7), and records
+/// every member's compact row in `bundle` (projected lazily post-freeze).
+/// Returns the per-member `(uncertainties, has_unresolved_calls)` pair.
 ///
 /// ## Inter-effective-SCC feed-forward (the redesign's INTEGRATION crux)
 ///
 /// `effective_sccs` can split ONE recursive Tarjan SCC into several sibling
 /// effective SCCs (a fixed leaf / missing routine severing a cycle into DAG
-/// pieces). Each sub-solver is correct only GIVEN a `settled` map holding every
-/// callee it reads (`settled[callee].db_effects` / `.uncertainties` /
-/// `.has_unresolved_calls`). A LATER sibling can call an EARLIER-processed one,
-/// so — exactly like the old `run_one_scc` loop feeding `final_map` forward —
-/// each solved effective SCC's per-member results are inserted (as a
-/// `RoutineSummary` carrying the db_effects/uncertainties/has_unresolved the
-/// sub-solvers consume) into a LOCAL settled view before the next sibling runs.
-/// The common case (one effective SCC — every singleton and simple self-loop)
-/// skips the clone and reads the caller's `settled` directly.
+/// pieces). A LATER sibling can call an EARLIER-processed one:
 ///
-/// `rvid_by_opid` and `body_avail_by_id` are BOTH workspace-wide, run-invariant
-/// maps built ONCE by the caller (`compute_summaries_v2_with_leaves_core`)
-/// BEFORE its per-Tarjan-SCC loop, not rebuilt here — see
-/// [`build_rvid_by_opid`]'s doc for why `rvid_by_opid` is complete from
-/// `base_summaries ∪ leaf_summaries` alone. Building either one PER CALL to
-/// this function (as this module used to do for `rvid_by_opid`, and as
-/// [`solve_side_facts`] used to do internally for `body_avail_by_id`) is an
-/// O(total-workspace-routines) cost paid once per Tarjan SCC — O(N²) total
-/// over N SCCs; threading the already-built map in makes this function's own
-/// cost O(this SCC's members), the SAME complexity class as the rest of the
-/// per-SCC solve.
+/// - **db-effect** feed-forward (a settled callee's terminal ids + PD ids) is
+///   read straight from `bundle` — a GLOBAL, monotonically-growing structure —
+///   so a just-solved earlier sibling's compact row is visible to a later
+///   sibling with NO clone and NO materialized `Vec<DbEffect>` (Task A3, the
+///   ~40GB win). Every settled routine's terminal set is an `EffectSetId` ref +
+///   tiny PD delta, not a private Vec of Strings.
+/// - **side-facts** feed-forward (a settled callee's `uncertainties` /
+///   `has_unresolved_calls`) still reads the `RoutineSummary` settled map;
+///   multi-effective-SCC siblings clone it into a LOCAL view. That clone no
+///   longer carries db_effects (empty here — the db feed-forward is on
+///   `bundle`), so it is cheap; multi-effective-SCC Tarjan SCCs are rare.
+///
+/// The common case (one effective SCC — every singleton and simple self-loop)
+/// skips the clone entirely.
+///
+/// `body_avail_by_id` is a workspace-wide, run-invariant map built ONCE by the
+/// caller (`compute_summaries_v2_with_leaves_core`) BEFORE its per-Tarjan-SCC
+/// loop, not rebuilt here.
 #[allow(clippy::too_many_arguments)]
 pub fn solve_scc_db_effects(
     scc_entry: &Scc,
@@ -1462,14 +1406,13 @@ pub fn solve_scc_db_effects(
     upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
     uncertainty_edges_by_from: &HashMap<String, Vec<usize>>,
     body_avail_by_id: &HashMap<String, bool>,
-    universe: &mut EffectUniverse,
+    universe: &mut GrowingEffectUniverse,
     is_recomputed: &dyn Fn(&str) -> bool,
-    rvid_by_opid: &HashMap<String, Option<String>>,
     interner: &RoutineInterner,
     bundle: &mut SummaryBundleBuilder,
-) -> HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> {
+) -> HashMap<String, (Vec<Uncertainty>, bool)> {
     let eff_sccs = effective_sccs(scc_entry, graph, is_recomputed);
-    let mut results: HashMap<String, (Vec<DbEffect>, Vec<Uncertainty>, bool)> = HashMap::new();
+    let mut results: HashMap<String, (Vec<Uncertainty>, bool)> = HashMap::new();
     if eff_sccs.is_empty() {
         return results;
     }
@@ -1486,7 +1429,6 @@ pub fn solve_scc_db_effects(
             uncertainty_edges_by_from,
             body_avail_by_id,
             universe,
-            rvid_by_opid,
             interner,
             bundle,
         );
@@ -1494,7 +1436,10 @@ pub fn solve_scc_db_effects(
         return results;
     }
 
-    // General path: feed each solved sibling forward (reverse-topo order).
+    // General path: feed each solved sibling forward (reverse-topo order). The
+    // db-effect feed-forward is on `bundle` (global); `local_settled` carries
+    // ONLY the side-facts (uncertainties/has_unresolved) — its db_effects are
+    // deliberately empty (never read by the sub-solvers post-A3).
     let mut local_settled: HashMap<String, RoutineSummary> = settled.clone();
     for eff in &eff_sccs {
         let solved = solve_one_effective_scc(
@@ -1507,21 +1452,15 @@ pub fn solve_scc_db_effects(
             uncertainty_edges_by_from,
             body_avail_by_id,
             universe,
-            rvid_by_opid,
             interner,
             bundle,
         );
-        for (id, (db_effects, uncertainties, has_unresolved)) in &solved {
-            // Feed-forward summary: only db_effects/uncertainties/
-            // has_unresolved_calls are read by the sub-solvers; roles /
-            // in_recursive_cycle are irrelevant to them (the assembler in
-            // `summary_runner` sets the member's real in_recursive_cycle from
-            // `scc_entry.recursive`).
+        for (id, (uncertainties, has_unresolved)) in &solved {
             local_settled.insert(
                 id.clone(),
                 RoutineSummary {
                     routine_id: id.clone(),
-                    db_effects: db_effects.clone(),
+                    db_effects: Vec::new(),
                     in_recursive_cycle: scc_entry.recursive,
                     has_unresolved_calls: *has_unresolved,
                     uncertainties: uncertainties.clone(),
@@ -1532,6 +1471,64 @@ pub fn solve_scc_db_effects(
         results.extend(solved);
     }
     results
+}
+
+/// Seed the compact store's shared arena + rows with the RETAINED fixed leaves'
+/// singleton effect classes (spec Step 3, ⟨rev3⟩), BEFORE the per-Tarjan-SCC
+/// solve loop. A fixed leaf is excluded from every effective SCC
+/// (`is_recomputed` is false for it), so its OWN settled summary must be
+/// normalized into the compact store itself, where it serves TWO roles:
+///   1. the db-effect FEED-FORWARD the solver reads when a member calls the
+///      leaf (terminal ids via [`SummaryBundleBuilder::terminal_bits`], PD ids
+///      via [`SummaryBundleBuilder::pd_ids`]);
+///   2. a singleton `terminal_base` + `pd_delta` ROW that projects/queries like
+///      any routine, preserving the leaf's OWN `via` values.
+///
+/// Interning every leaf effect identity here is part of the complete pre-freeze
+/// identity discovery (lifecycle step 2b — "every retained fixed-leaf identity,
+/// terminal AND PD"). A leaf not present in the workspace routine set (never
+/// interned) gets NO row — matching "missing routines get no row".
+pub fn seed_fixed_leaf_rows(
+    leaf_summaries: &HashMap<String, RoutineSummary>,
+    universe: &mut GrowingEffectUniverse,
+    interner: &RoutineInterner,
+    bundle: &mut SummaryBundleBuilder,
+) {
+    for (id, summary) in leaf_summaries {
+        let Some(ix) = interner.get(id) else {
+            continue; // a leaf not in the workspace routine set — no row.
+        };
+        // Intern the leaf's effects, splitting terminal (`C`) vs PD (delta),
+        // remembering each id's OWN via.
+        let mut terminal_bits: Vec<u64> = Vec::new();
+        let mut pd_bits: Vec<u64> = Vec::new();
+        let mut via_of: HashMap<EffectId, ViaRank> = HashMap::new();
+        for e in &summary.db_effects {
+            let identity = EffectIdentity {
+                op: e.op.clone(),
+                table_id: e.table_id.clone(),
+                operation_id: e.operation_id.clone(),
+                temp: e.temp_state.to_kind(),
+            };
+            let eid = universe.intern(&identity);
+            via_of.insert(eid, ViaRank::from_str(&e.via));
+            match e.temp_state {
+                TempState::Known(_) | TempState::Unknown => set_bit(&mut terminal_bits, eid),
+                TempState::ParameterDependent(_) => set_bit(&mut pd_bits, eid),
+            }
+        }
+        let via_lookup = |eid: EffectId| via_of.get(&eid).copied().unwrap_or(ViaRank::Inherited);
+        // Parallel to `iter_set_bits(terminal_bits)` (ascending EffectId).
+        let base_via: Vec<ViaRank> = iter_set_bits(&terminal_bits).map(via_lookup).collect();
+        let mut pd_delta: Vec<EffectId> = Vec::new();
+        let mut delta_via: Vec<ViaRank> = Vec::new();
+        for eid in iter_set_bits(&pd_bits) {
+            pd_delta.push(eid);
+            delta_via.push(via_lookup(eid));
+        }
+        let set_ref = bundle.push_terminal_set(terminal_bits);
+        bundle.push_row(ix, set_ref, base_via, pd_delta, delta_via);
+    }
 }
 
 #[cfg(test)]
@@ -1839,6 +1836,58 @@ mod tests {
             .collect()
     }
 
+    /// Task A3: build a settled `SummaryBundleBuilder` (the db-effect feed-
+    /// forward source) carrying one routine's effects — interns them into
+    /// `universe`, splits terminal (`C`) vs PD, and pushes a compact row. The
+    /// routine id must already be interned in `interner`. Vias are irrelevant
+    /// to the callers that read this (they read terminal ids / PD ids only), so
+    /// a floor `Inherited` via is used.
+    fn settled_db_with(
+        universe: &mut GrowingEffectUniverse,
+        interner: &RoutineInterner,
+        id: &str,
+        effects: &[(&str, &str, &str, TempStateKind)],
+    ) -> SummaryBundleBuilder {
+        let mut b = SummaryBundleBuilder::new();
+        let ix = interner.get(id).expect("settled routine must be interned");
+        let mut terminal: Vec<u64> = Vec::new();
+        let mut pd: Vec<EffectId> = Vec::new();
+        for (op, table, opid, temp) in effects {
+            let eid = universe.intern(&EffectIdentity {
+                op: op.to_string(),
+                table_id: table.to_string(),
+                operation_id: opid.to_string(),
+                temp: temp.clone(),
+            });
+            match temp {
+                TempStateKind::ParameterDependent(_) => pd.push(eid),
+                _ => set_bit(&mut terminal, eid),
+            }
+        }
+        let n_term = iter_set_bits(&terminal).count();
+        let set = b.push_terminal_set(terminal);
+        b.push_row(
+            ix,
+            set,
+            vec![ViaRank::Inherited; n_term],
+            pd.clone(),
+            vec![ViaRank::Inherited; pd.len()],
+        );
+        b
+    }
+
+    /// Reconstruct member `ix`'s FULL presence bitset (the shared terminal
+    /// union ∪ its own PD facts) — Task A3 split `by_member` into
+    /// `terminal_union` + `pd_by_member`, so tests that assert on the complete
+    /// per-member presence rebuild it here.
+    fn member_full_bits(presence: &SccPresence, ix: RoutineIx) -> Vec<u64> {
+        let mut bits = presence.terminal_union.clone();
+        if let Some(pd) = presence.pd_by_member.get(&ix) {
+            or_bits(&mut bits, pd);
+        }
+        bits
+    }
+
     #[test]
     fn pd_to_pd_chain_two_hops_then_known() {
         // c (base PD(0)) <- b (forwards its own param1, PD(1)) <- a (binds
@@ -1873,11 +1922,12 @@ mod tests {
             members: vec!["a".into(), "b".into(), "c".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
+        let universe = GrowingEffectUniverse::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
         let (pd_facts, terminals) =
-            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
+            solve_pd_reachability(&eff, &graph, &rbid, &settled_db, &ub, &universe, &interner);
 
         let base = ("Insert".to_string(), "t1".to_string(), "c_op1".to_string());
         let expected_facts: HashSet<PdFact> = [
@@ -1937,11 +1987,12 @@ mod tests {
             members: vec!["callee".into(), "caller".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
+        let universe = GrowingEffectUniverse::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
         let (pd_facts, terminals) =
-            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
+            solve_pd_reachability(&eff, &graph, &rbid, &settled_db, &ub, &universe, &interner);
 
         let base = (
             "Insert".to_string(),
@@ -2001,11 +2052,12 @@ mod tests {
             members: vec!["callee".into(), "caller".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
+        let universe = GrowingEffectUniverse::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
         let (pd_facts, terminals) =
-            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
+            solve_pd_reachability(&eff, &graph, &rbid, &settled_db, &ub, &universe, &interner);
 
         let base = (
             "Insert".to_string(),
@@ -2053,7 +2105,10 @@ mod tests {
 
         let routines = vec![a];
         let rbid = pd_routines_by_id(&routines);
-        let interner = pd_interner(&routines);
+        // `ext` is a settled successor, NOT a workspace routine here — intern
+        // it so the feed-forward builder can key its row.
+        let mut interner = pd_interner(&routines);
+        interner.intern("ext");
         let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_ext_cs")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -2065,36 +2120,24 @@ mod tests {
             "t1".to_string(),
             "ext_op1".to_string(),
         );
-        let ext_effect_key = effect_key_of(
-            "Insert",
-            "t1",
-            "ext_op1",
-            &TempStateKind::ParameterDependent(0),
-        );
-        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
-        settled.insert(
-            "ext".to_string(),
-            RoutineSummary {
-                routine_id: "ext".to_string(),
-                db_effects: vec![DbEffect {
-                    effect_key: ext_effect_key,
-                    operation_id: "ext_op1".to_string(),
-                    op: "Insert".to_string(),
-                    table_id: "t1".to_string(),
-                    record_variable_id: None,
-                    temp_state: TempState::ParameterDependent(0),
-                    via: "direct".to_string(),
-                }],
-                in_recursive_cycle: false,
-                has_unresolved_calls: false,
-                uncertainties: Vec::new(),
-                parameter_roles: Vec::new(),
-            },
+        // `ext` settled with a ParameterDependent(0) effect — supplied to the
+        // feed-forward builder as an interned PD id (Task A3).
+        let mut universe = GrowingEffectUniverse::new();
+        let settled_db = settled_db_with(
+            &mut universe,
+            &interner,
+            "ext",
+            &[(
+                "Insert",
+                "t1",
+                "ext_op1",
+                TempStateKind::ParameterDependent(0),
+            )],
         );
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
         let (pd_facts, terminals) =
-            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
+            solve_pd_reachability(&eff, &graph, &rbid, &settled_db, &ub, &universe, &interner);
 
         let expected_facts: HashSet<PdFact> = [PdFact {
             routine_id: "a".to_string(),
@@ -2137,11 +2180,12 @@ mod tests {
             members: vec!["a".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
+        let universe = GrowingEffectUniverse::new();
         let ub: HashMap<String, Vec<UpgradedBinding>> = HashMap::new();
 
         let (pd_facts, terminals) =
-            solve_pd_reachability(&eff, &graph, &rbid, &settled, &ub, &interner);
+            solve_pd_reachability(&eff, &graph, &rbid, &settled_db, &ub, &universe, &interner);
 
         let base = ("Insert".to_string(), "t1".to_string(), "a_op1".to_string());
         let expected_facts: HashSet<PdFact> = [PdFact {
@@ -2232,20 +2276,20 @@ mod tests {
             members: vec!["a".into(), "b".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
         let pd_facts = vec![PdFact {
             routine_id: "b".to_string(),
             base: ("Delete".to_string(), "t3".to_string(), "b_op3".to_string()),
             param_index: 0,
         }];
         let terminal_emissions: Vec<TerminalEmission> = Vec::new();
-        let mut universe = EffectUniverse::new();
+        let mut universe = GrowingEffectUniverse::new();
 
         let presence = closed_form_union(
             &eff,
             &graph,
             &rbid,
-            &settled,
+            &settled_db,
             &base_summaries,
             &pd_facts,
             &terminal_emissions,
@@ -2272,22 +2316,16 @@ mod tests {
             temp: TempStateKind::ParameterDependent(0),
         });
 
-        let a_bits = presence
-            .by_member
-            .get(&interner.get("a").unwrap())
-            .expect("a present");
-        let b_bits = presence
-            .by_member
-            .get(&interner.get("b").unwrap())
-            .expect("b present");
+        let a_bits = member_full_bits(&presence, interner.get("a").unwrap());
+        let b_bits = member_full_bits(&presence, interner.get("b").unwrap());
 
-        assert!(has_bit(a_bits, e1), "a must carry e1 (own base)");
-        assert!(has_bit(a_bits, e2), "a must carry e2 (shared SCC closure)");
-        assert!(!has_bit(a_bits, epd), "a must NOT carry b's own PD fact");
+        assert!(has_bit(&a_bits, e1), "a must carry e1 (own base)");
+        assert!(has_bit(&a_bits, e2), "a must carry e2 (shared SCC closure)");
+        assert!(!has_bit(&a_bits, epd), "a must NOT carry b's own PD fact");
 
-        assert!(has_bit(b_bits, e1), "b must carry e1 (shared SCC closure)");
-        assert!(has_bit(b_bits, e2), "b must carry e2 (own base)");
-        assert!(has_bit(b_bits, epd), "b must carry its own PD fact");
+        assert!(has_bit(&b_bits, e1), "b must carry e1 (shared SCC closure)");
+        assert!(has_bit(&b_bits, e2), "b must carry e2 (own base)");
+        assert!(has_bit(&b_bits, epd), "b must carry its own PD fact");
     }
 
     #[test]
@@ -2297,47 +2335,10 @@ mod tests {
         // presence set (transfers by identity); `ext`'s ParameterDependent
         // effect must NOT — Step A already owns PD outcomes, and re-adding it
         // here (under its unsubstituted callee-frame index) would be wrong.
-        let known_key = effect_key_of("Insert", "t4", "ext_op1", &TempStateKind::Known(true));
-        let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
-        settled.insert(
-            "ext".to_string(),
-            RoutineSummary {
-                routine_id: "ext".to_string(),
-                db_effects: vec![
-                    DbEffect {
-                        effect_key: known_key,
-                        operation_id: "ext_op1".to_string(),
-                        op: "Insert".to_string(),
-                        table_id: "t4".to_string(),
-                        record_variable_id: None,
-                        temp_state: TempState::Known(true),
-                        via: "direct".to_string(),
-                    },
-                    DbEffect {
-                        effect_key: effect_key_of(
-                            "Delete",
-                            "t5",
-                            "ext_op2",
-                            &TempStateKind::ParameterDependent(0),
-                        ),
-                        operation_id: "ext_op2".to_string(),
-                        op: "Delete".to_string(),
-                        table_id: "t5".to_string(),
-                        record_variable_id: None,
-                        temp_state: TempState::ParameterDependent(0),
-                        via: "direct".to_string(),
-                    },
-                ],
-                in_recursive_cycle: false,
-                has_unresolved_calls: false,
-                uncertainties: Vec::new(),
-                parameter_roles: Vec::new(),
-            },
-        );
-
         let routines = vec![pd_routine("a")];
         let rbid = pd_routines_by_id(&routines);
-        let interner = pd_interner(&routines);
+        let mut interner = pd_interner(&routines);
+        interner.intern("ext"); // settled successor, not a workspace routine here.
         let graph = pd_graph(&["a", "ext"], vec![pd_edge("a", "ext", "a_cs1")]);
         let eff = Scc {
             members: vec!["a".into()],
@@ -2346,13 +2347,30 @@ mod tests {
         let base_summaries: HashMap<String, RoutineSummary> = HashMap::new(); // "a" falls back to base_intraprocedural_summary (no own effects).
         let pd_facts: Vec<PdFact> = Vec::new();
         let terminal_emissions: Vec<TerminalEmission> = Vec::new();
-        let mut universe = EffectUniverse::new();
+        // `ext` settled with a Known + a PD effect — both interned into the
+        // feed-forward builder (Task A3); the builder keeps them in SEPARATE
+        // channels (`terminal_bits` vs `pd_ids`).
+        let mut universe = GrowingEffectUniverse::new();
+        let settled_db = settled_db_with(
+            &mut universe,
+            &interner,
+            "ext",
+            &[
+                ("Insert", "t4", "ext_op1", TempStateKind::Known(true)),
+                (
+                    "Delete",
+                    "t5",
+                    "ext_op2",
+                    TempStateKind::ParameterDependent(0),
+                ),
+            ],
+        );
 
         let presence = closed_form_union(
             &eff,
             &graph,
             &rbid,
-            &settled,
+            &settled_db,
             &base_summaries,
             &pd_facts,
             &terminal_emissions,
@@ -2360,31 +2378,35 @@ mod tests {
             &interner,
         );
 
-        let known_id = universe.intern(&EffectIdentity {
-            op: "Insert".to_string(),
-            table_id: "t4".to_string(),
-            operation_id: "ext_op1".to_string(),
-            temp: TempStateKind::Known(true),
-        });
-        let a_bits = presence
-            .by_member
-            .get(&interner.get("a").unwrap())
-            .expect("a present");
+        let known_id = universe
+            .get(&EffectIdentity {
+                op: "Insert".to_string(),
+                table_id: "t4".to_string(),
+                operation_id: "ext_op1".to_string(),
+                temp: TempStateKind::Known(true),
+            })
+            .expect("ext's Known effect is interned");
+        // "a" has no own PD facts, so its full presence IS the shared C.
+        let c = &presence.terminal_union;
         assert!(
-            has_bit(a_bits, known_id),
+            has_bit(c, known_id),
             "a must carry ext's settled terminal effect"
         );
 
-        let pd_identity = EffectIdentity {
-            op: "Delete".to_string(),
-            table_id: "t5".to_string(),
-            operation_id: "ext_op2".to_string(),
-            temp: TempStateKind::ParameterDependent(0),
-        };
-        assert_eq!(
-            universe.get(&pd_identity),
-            None,
-            "ext's PD effect must never be interned by closed_form_union at all"
+        // Task A3: ext's PD id IS interned (it lives in the feed-forward
+        // builder), but `closed_form_union` folds ONLY `terminal_bits` into
+        // `C` — so the PD id must NOT be present in `C`.
+        let pd_id = universe
+            .get(&EffectIdentity {
+                op: "Delete".to_string(),
+                table_id: "t5".to_string(),
+                operation_id: "ext_op2".to_string(),
+                temp: TempStateKind::ParameterDependent(0),
+            })
+            .expect("ext's PD effect is interned in the feed-forward builder");
+        assert!(
+            !has_bit(c, pd_id),
+            "ext's PD effect must NOT be folded into C (Step A owns PD outcomes)"
         );
     }
 
@@ -2439,16 +2461,16 @@ mod tests {
             members: vec!["a".into()],
             recursive: false,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
         let pd_facts: Vec<PdFact> = Vec::new();
         let terminal_emissions: Vec<TerminalEmission> = Vec::new();
-        let mut universe = EffectUniverse::new();
+        let mut universe = GrowingEffectUniverse::new();
 
         let presence = closed_form_union(
             &eff,
             &graph,
             &rbid,
-            &settled,
+            &settled_db,
             &base_summaries,
             &pd_facts,
             &terminal_emissions,
@@ -2462,12 +2484,9 @@ mod tests {
             operation_id: "a_op1".to_string(),
             temp: TempStateKind::Known(true),
         });
-        let a_bits = presence
-            .by_member
-            .get(&interner.get("a").unwrap())
-            .expect("a present");
+        let a_bits = member_full_bits(&presence, interner.get("a").unwrap());
         assert!(
-            has_bit(a_bits, known_id),
+            has_bit(&a_bits, known_id),
             "a must carry its own Known effect"
         );
 
@@ -2505,20 +2524,20 @@ mod tests {
             recursive: true,
         };
         let base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
         let pd_facts: Vec<PdFact> = Vec::new();
         let terminal_emissions = vec![TerminalEmission {
             routine_id: "a".to_string(),
             base: ("Insert".to_string(), "t7".to_string(), "op7".to_string()),
             temp: TempStateKind::Known(true),
         }];
-        let mut universe = EffectUniverse::new();
+        let mut universe = GrowingEffectUniverse::new();
 
         let presence = closed_form_union(
             &eff,
             &graph,
             &rbid,
-            &settled,
+            &settled_db,
             &base_summaries,
             &pd_facts,
             &terminal_emissions,
@@ -2533,20 +2552,14 @@ mod tests {
             temp: TempStateKind::Known(true),
         });
 
-        let a_bits = presence
-            .by_member
-            .get(&interner.get("a").unwrap())
-            .expect("a present");
-        let b_bits = presence
-            .by_member
-            .get(&interner.get("b").unwrap())
-            .expect("b present");
+        let a_bits = member_full_bits(&presence, interner.get("a").unwrap());
+        let b_bits = member_full_bits(&presence, interner.get("b").unwrap());
         assert!(
-            has_bit(a_bits, emitted_id),
+            has_bit(&a_bits, emitted_id),
             "terminal emission must land on the member it was recorded against"
         );
         assert!(
-            has_bit(b_bits, emitted_id),
+            has_bit(&b_bits, emitted_id),
             "terminal emission must be shared into EVERY member's presence, not just the one it landed on"
         );
     }
@@ -2609,16 +2622,16 @@ mod tests {
             members: vec!["a".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
         let pd_facts: Vec<PdFact> = Vec::new();
         let terminal_emissions: Vec<TerminalEmission> = Vec::new();
-        let mut universe = EffectUniverse::new();
+        let mut universe = GrowingEffectUniverse::new();
 
         let presence = closed_form_union(
             &eff,
             &graph,
             &rbid,
-            &settled,
+            &settled_db,
             &base_summaries,
             &pd_facts,
             &terminal_emissions,
@@ -2631,7 +2644,7 @@ mod tests {
             &graph,
             &presence,
             &base_summaries,
-            &settled,
+            &settled_db,
             &universe,
             &interner,
         );
@@ -2707,16 +2720,16 @@ mod tests {
             members: vec!["a".into(), "b".into()],
             recursive: true,
         };
-        let settled: HashMap<String, RoutineSummary> = HashMap::new();
+        let settled_db = SummaryBundleBuilder::new();
         let pd_facts: Vec<PdFact> = Vec::new();
         let terminal_emissions: Vec<TerminalEmission> = Vec::new();
-        let mut universe = EffectUniverse::new();
+        let mut universe = GrowingEffectUniverse::new();
 
         let presence = closed_form_union(
             &eff,
             &graph,
             &rbid,
-            &settled,
+            &settled_db,
             &base_summaries,
             &pd_facts,
             &terminal_emissions,
@@ -2729,7 +2742,7 @@ mod tests {
             &graph,
             &presence,
             &base_summaries,
-            &settled,
+            &settled_db,
             &universe,
             &interner,
         );
@@ -2764,16 +2777,16 @@ mod tests {
     // A test asserting a debug_assert panic for an input the type system no
     // longer accepts would not compile; there is nothing left to guard.
 
-    /// Task A1: `materialize_member_db_effects` sorts a member's present ids
-    /// by the UNIVERSE's cached `effect_key` (+ `operation_id` tie-break),
-    /// keyed by `RoutineIx` rather than a `String` clone per lookup. Interns
-    /// the two identities in an order that DELIBERATELY does not match key
-    /// order (Zeta before Alpha — EffectId(0)=Zeta, EffectId(1)=Alpha) so a
-    /// correct sort must actually reorder rather than happening to agree
-    /// with intern order.
+    /// Task A3: `materialize_member_row` records a compact row (shared
+    /// terminal set + per-member via) into the bundle; the frozen bundle's
+    /// lazy `db_effects` then emits ids in `key_rank` (== cached `effect_key`,
+    /// `operation_id` tie-break) order. Interns two identities in an order that
+    /// DELIBERATELY does not match key order (Zeta before Alpha —
+    /// EffectId(0)=Zeta, EffectId(1)=Alpha) so a correct emit must actually
+    /// reorder rather than happening to agree with intern order.
     #[test]
-    fn materialize_member_db_effects_sorts_by_cached_key_via_routine_ix() {
-        let mut universe = EffectUniverse::new();
+    fn materialize_member_row_emits_key_rank_order_via_bundle() {
+        let mut universe = GrowingEffectUniverse::new();
         let zeta_id = universe.intern(&EffectIdentity {
             op: "Zeta".to_string(),
             table_id: "t1".to_string(),
@@ -2783,13 +2796,9 @@ mod tests {
         let alpha_id = universe.intern(&EffectIdentity {
             op: "Alpha".to_string(),
             table_id: "t1".to_string(),
-            operation_id: "op1".to_string(),
+            operation_id: "op2".to_string(),
             temp: TempStateKind::Known(true),
         });
-
-        let mut bits: Vec<u64> = Vec::new();
-        set_bit(&mut bits, zeta_id);
-        set_bit(&mut bits, alpha_id);
 
         let mut interner = RoutineInterner::new();
         let m_ix: RoutineIx = interner.intern("m");
@@ -2798,18 +2807,22 @@ mod tests {
         via_map.insert((m_ix, zeta_id), ViaRank::Direct);
         via_map.insert((m_ix, alpha_id), ViaRank::Direct);
 
-        let rvid_by_opid: HashMap<String, Option<String>> = HashMap::new();
+        // Build a presence with both ids terminal (shared C), no PD.
+        let mut terminal_union: Vec<u64> = Vec::new();
+        set_bit(&mut terminal_union, zeta_id);
+        set_bit(&mut terminal_union, alpha_id);
+        let presence = SccPresence {
+            terminal_union: terminal_union.clone(),
+            pd_by_member: HashMap::new(),
+        };
+
         let mut bundle = SummaryBundleBuilder::new();
+        let set_ref = bundle.push_terminal_set(terminal_union);
+        materialize_member_row(m_ix, &presence, &via_map, set_ref, &mut bundle);
 
-        let out = materialize_member_db_effects(
-            m_ix,
-            &bits,
-            &via_map,
-            &universe,
-            &rvid_by_opid,
-            &mut bundle,
-        );
-
+        let rvid_by_opid: HashMap<String, Option<String>> = HashMap::new();
+        let frozen = bundle.finish(universe.freeze(), interner, rvid_by_opid);
+        let out: Vec<_> = frozen.db_effects(m_ix).map(|e| e.to_owned()).collect();
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].op, "Alpha", "Alpha sorts before Zeta by effect_key");
         assert_eq!(out[1].op, "Zeta");
