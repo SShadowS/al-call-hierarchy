@@ -502,7 +502,14 @@ impl ConeDerivedBuilder {
     /// docs' dedup-asymmetry note). It exists for callers that already hold the
     /// literal reachable sequence — hand-built fixture summaries, whose
     /// `capability_facts_inherited` IS the input rather than a cone output.
-    pub fn fold_routine<'f>(
+    ///
+    /// ⟨fix M3⟩ `#[cfg(test)]` + `pub(crate)` make that a STRUCTURAL guarantee
+    /// rather than just a doc warning: the misuse this guards against (folding a
+    /// flat reachable list in the production cone) is exactly the R3 dedup
+    /// hazard this whole arc exists to prevent. Its only caller
+    /// (`l5::test_support::cone_store_of`) is itself `#[cfg(test)]`-only.
+    #[cfg(test)]
+    pub(crate) fn fold_routine<'f>(
         &mut self,
         routine_id: &str,
         reachable: impl IntoIterator<Item = &'f CapabilityFact>,
@@ -853,6 +860,62 @@ mod tests {
             out.cones["r/partial"].coverage.inherited_status, "partial",
             "absent fact + partial ⇒ the Unknown arm"
         );
+
+        // ⟨fix I1⟩ The two asserts above only pin the INGREDIENTS (absent flags,
+        // the coverage string) — never an actual `EffectPresence`. Swapping the
+        // two arms of `l5::capability_query::presence` (absent+complete ⇒
+        // Unknown, everything else ⇒ No) would leave this test green without
+        // these. Build a `FullRoutineSummary` per routine and call the derived
+        // tri-state helpers directly so a swap is caught here.
+        {
+            use crate::engine::l4::capability_cone::CoverageRecord;
+            use crate::engine::l5::capability_query::{
+                EffectPresence, may_commit_derived, touches_db_derived,
+            };
+            use crate::engine::l5::full_summary::FullRoutineSummary;
+
+            let cov = |status: &str| {
+                Some(CoverageRecord {
+                    subject: "r".to_string(),
+                    direct_status: status.to_string(),
+                    inherited_status: status.to_string(),
+                    reasons: Vec::new(),
+                    unknown_targets: Vec::new(),
+                })
+            };
+            let complete_summary = FullRoutineSummary {
+                routine_id: "r/complete".to_string(),
+                capability_facts_direct: Vec::new(),
+                capability_facts_inherited: Vec::new(),
+                coverage: cov("complete"),
+            };
+            let partial_summary = FullRoutineSummary {
+                routine_id: "r/partial".to_string(),
+                capability_facts_direct: Vec::new(),
+                capability_facts_inherited: Vec::new(),
+                coverage: cov("partial"),
+            };
+            assert_eq!(
+                touches_db_derived(&out.derived, &complete_summary),
+                EffectPresence::No,
+                "absent fact + complete coverage must resolve to the No arm"
+            );
+            assert_eq!(
+                may_commit_derived(&out.derived, &complete_summary),
+                EffectPresence::No,
+                "absent fact + complete coverage must resolve to the No arm"
+            );
+            assert_eq!(
+                touches_db_derived(&out.derived, &partial_summary),
+                EffectPresence::Unknown,
+                "absent fact + partial coverage must resolve to the Unknown arm"
+            );
+            assert_eq!(
+                may_commit_derived(&out.derived, &partial_summary),
+                EffectPresence::Unknown,
+                "absent fact + partial coverage must resolve to the Unknown arm"
+            );
+        }
 
         assert!(out.derived.touches_io("r/io"));
         assert_eq!(

@@ -329,7 +329,26 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             // C1 Task 1 report. `build_detector_context_cross_app` reads its
             // cone with `get()`, so it never has this accident and needs no
             // such adjustment.)
-            if cone_entry.is_none() || direct.is_none() {
+            //
+            // ⟨fix M1⟩ `cone_entry.is_none() <=> direct.is_none()` today: both maps
+            // are built from the same `ws.routines` iteration and drained by the
+            // same per-id `remove()`, so a collision empties them together, never
+            // just one. Assert that invariant instead of merely relying on it —
+            // if a future change ever filters `nodes` (dep routines, bodyless
+            // routines, …) while `direct_full` kept every routine, the OLD `||`
+            // would zero a row whose surviving summary still carries direct
+            // facts, a silent findings loss once the parity oracle is retired.
+            // Keying on `direct.is_none()` alone is the correct long-term
+            // condition either way, since `direct` is what the surviving summary
+            // actually stores.
+            debug_assert_eq!(
+                cone_entry.is_none(),
+                direct.is_none(),
+                "cones and direct_full must collide identically — a mismatch means \
+                 `nodes` (cone input) and `ws.routines` (direct_full's source) have \
+                 silently diverged"
+            );
+            if direct.is_none() {
                 cone_derived.forget(&r.id);
             }
             let (inherited, coverage) = match cone_entry {

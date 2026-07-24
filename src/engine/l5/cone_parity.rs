@@ -23,8 +23,8 @@ use std::sync::OnceLock;
 use crate::engine::l4::capability_cone::CapabilityFact;
 use crate::engine::l4::cone_derived::ConeDerivedStore;
 use crate::engine::l5::capability_query::{
-    fact_is_known_temp, may_commit, may_commit_derived, publishes_events_of, reachable_coverage,
-    touches_db_derived, touches_db_of, writes_physical_tables_of, writes_tables_of,
+    fact_is_known_temp, may_commit, may_commit_derived, publishes_events_of, touches_db_derived,
+    touches_db_of, writes_physical_tables_of, writes_tables_of,
 };
 use crate::engine::l5::full_summary::FullRoutineSummary;
 
@@ -73,14 +73,17 @@ pub fn assert_cone_parity(
             may_commit(s),
             may_commit_derived(store, s),
         );
-        // Coverage is untouched by C1 — pinned so a future task cannot silently
-        // re-route the tri-state's second arm through a different record.
-        check(
-            id,
-            "reachable_coverage",
-            reachable_coverage(s, None),
-            s.inherited_status(),
-        );
+        // ⟨fix I2⟩ A `reachable_coverage` check used to sit here, comparing
+        // `reachable_coverage(s, None)` — literally `s.inherited_status()` — against
+        // `s.inherited_status()` on the "derived" side: `f(x)` vs `f(x)`, structurally
+        // unable to fail. C1 does not touch coverage at all — both
+        // `touches_db_derived`/`may_commit_derived`'s shared `presence()` absence arm
+        // and the raw helpers read `s.inherited_status()` directly off the SAME
+        // summary — so there is no second, independently-derived coverage
+        // computation to check it against. Deleted rather than kept as a
+        // never-failing assertion. (This leaves 7 of the 8 originally-described
+        // checks able to fail; d44's write map + read set count as one item in that
+        // tally.)
 
         // --- id-sets (exact Vec<String>, order included) ---------------------
         check(
