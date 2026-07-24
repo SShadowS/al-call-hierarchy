@@ -147,7 +147,7 @@ mod tests {
             None,
         );
         assert!(s.has_inherited_raw());
-        let got: Vec<&str> = s.inherited_raw().iter().map(|f| f.op.as_str()).collect();
+        let got: Vec<&str> = s.inherited_raw().iter().map(|f| f.op).collect();
         assert_eq!(got, vec!["modify", "commit"]);
     }
 

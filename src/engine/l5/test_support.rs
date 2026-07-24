@@ -194,16 +194,20 @@ pub fn object_run_call_site(id: &str, object_kind: &str, return_used: Option<boo
 
 /// A capability fact with the given op / resource kind / optional resource id.
 /// Other fields are defaulted (they do not affect any L5 query helper).
-pub fn fact(op: &str, resource_kind: &str, resource_id: Option<&str>) -> CapabilityFact {
+pub fn fact(
+    op: &'static str,
+    resource_kind: &'static str,
+    resource_id: Option<&str>,
+) -> CapabilityFact {
     CapabilityFact {
         subject: "r".to_string(),
-        op: op.to_string(),
-        resource_kind: resource_kind.to_string(),
+        op,
+        resource_kind,
         resource_id: resource_id.map(|s| s.to_string()),
         resource_arg_source: None,
-        confidence: "static".to_string(),
-        provenance: "direct".to_string(),
-        via: "self".to_string(),
+        confidence: "static",
+        provenance: "direct",
+        via: "self",
         witness_operation_id: None,
         witness_callsite_id: None,
         extra: None,

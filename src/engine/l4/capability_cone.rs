@@ -111,14 +111,28 @@ pub enum CapabilityExtra {
 #[derive(Debug, Clone, PartialEq, salsa::Update)]
 pub struct CapabilityFact {
     pub subject: String,
-    pub op: String,
-    pub resource_kind: String,
+    /// ⟨C1 Task 4⟩ `op` / `resource_kind` / `confidence` / `provenance` / `via`
+    /// are CLOSED vocabularies — every producer in the engine hands one of a
+    /// fixed set of literals (`map_table_op`, `object_type_to_resource_kind`,
+    /// `confidence_from_source`, `capability_via_for_edge_kind`, and the direct
+    /// extractors' inline literals), so an owned `String` per field bought
+    /// nothing but 5 heap allocations and 5 memcpys per fact — on every one of
+    /// the millions of `CapabilityFact` clones the cone merge performs. As
+    /// `&'static str` they are pointer copies into the binary's read-only data
+    /// and the struct itself is 40 B smaller. The three genuinely-open fields
+    /// (`subject`, `resource_id`, `witness_*`, `resource_arg_source`) stay
+    /// owned. `salsa::Update` still derives: its `UpdateDispatch` falls back to
+    /// the `PartialEq` comparison for any `'static + PartialEq` field, and a
+    /// `&'static str` — unlike the `&'db T` salsa's own doc warns about — can
+    /// never dangle or change under a revision.
+    pub op: &'static str,
+    pub resource_kind: &'static str,
     /// Internal resourceId (TableId / EventId / ObjectId) — projected to stable.
     pub resource_id: Option<String>,
     pub resource_arg_source: Option<ValueSource>,
-    pub confidence: String,
-    pub provenance: String,
-    pub via: String,
+    pub confidence: &'static str,
+    pub provenance: &'static str,
+    pub via: &'static str,
     pub witness_operation_id: Option<String>,
     pub witness_callsite_id: Option<String>,
     pub extra: Option<CapabilityExtra>,
@@ -608,13 +622,13 @@ pub(crate) fn direct_facts_for_routine(
         };
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: cap_op.to_string(),
-            resource_kind: "table".to_string(),
+            op: cap_op,
+            resource_kind: "table",
             resource_id,
             resource_arg_source: None,
-            confidence: confidence.to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence,
+            provenance: "direct",
+            via: "self",
             witness_operation_id: Some(op.id.clone()),
             witness_callsite_id: None,
             extra: Some(CapabilityExtra::Table {
@@ -631,13 +645,13 @@ pub(crate) fn direct_facts_for_routine(
         if op.kind == "commit" {
             facts.push(CapabilityFact {
                 subject: routine.id.clone(),
-                op: "commit".to_string(),
-                resource_kind: "transaction".to_string(),
+                op: "commit",
+                resource_kind: "transaction",
                 resource_id: None,
                 resource_arg_source: None,
-                confidence: "static".to_string(),
-                provenance: "direct".to_string(),
-                via: "self".to_string(),
+                confidence: "static",
+                provenance: "direct",
+                via: "self",
                 witness_operation_id: Some(op.id.clone()),
                 witness_callsite_id: None,
                 extra: None,
@@ -651,16 +665,16 @@ pub(crate) fn direct_facts_for_routine(
             PCallee::ObjectRun { object_kind, .. } => {
                 let object_type = object_kind.clone();
                 let target = classify_value_source(cs.argument_infos.first(), &variables);
-                let confidence = confidence_from_source(&target).to_string();
+                let confidence = confidence_from_source(&target);
                 facts.push(CapabilityFact {
                     subject: routine.id.clone(),
-                    op: "execute".to_string(),
-                    resource_kind: object_type_to_resource_kind(&object_type).to_string(),
+                    op: "execute",
+                    resource_kind: object_type_to_resource_kind(&object_type),
                     resource_id: None,
                     resource_arg_source: Some(target),
                     confidence,
-                    provenance: "direct".to_string(),
-                    via: "self".to_string(),
+                    provenance: "direct",
+                    via: "self",
                     witness_operation_id: None,
                     witness_callsite_id: Some(cs.id.clone()),
                     extra: Some(CapabilityExtra::Dispatch {
@@ -677,16 +691,16 @@ pub(crate) fn direct_facts_for_routine(
                     _ => continue,
                 };
                 let target = classify_value_source(cs.argument_infos.first(), &variables);
-                let confidence = confidence_from_source(&target).to_string();
+                let confidence = confidence_from_source(&target);
                 facts.push(CapabilityFact {
                     subject: routine.id.clone(),
-                    op: "execute".to_string(),
-                    resource_kind: object_type_to_resource_kind(object_type).to_string(),
+                    op: "execute",
+                    resource_kind: object_type_to_resource_kind(object_type),
                     resource_id: None,
                     resource_arg_source: Some(target),
                     confidence,
-                    provenance: "direct".to_string(),
-                    via: "self".to_string(),
+                    provenance: "direct",
+                    via: "self",
                     witness_operation_id: None,
                     witness_callsite_id: Some(cs.id.clone()),
                     extra: Some(CapabilityExtra::Dispatch {
@@ -724,16 +738,16 @@ pub(crate) fn direct_facts_for_routine(
             None => ValueSource::Unknown,
         };
         let body_arg_source = body_info.map(|i| classify_value_source(Some(i), &variables));
-        let confidence = confidence_from_source(&url_source).to_string();
+        let confidence = confidence_from_source(&url_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "send".to_string(),
-            resource_kind: "http".to_string(),
+            op: "send",
+            resource_kind: "http",
             resource_id: None,
             resource_arg_source: Some(url_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: Some(CapabilityExtra::Http {
@@ -760,16 +774,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&event_id_source).to_string();
+        let confidence = confidence_from_source(&event_id_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "log".to_string(),
-            resource_kind: "telemetry".to_string(),
+            op: "log",
+            resource_kind: "telemetry",
             resource_id: None,
             resource_arg_source: Some(event_id_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -791,7 +805,7 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&key_source).to_string();
+        let confidence = confidence_from_source(&key_source);
         // store-write: capture value arg (arg[1]) + scope (arg[2]).
         let (value_arg_source, scope) = if op == "store-write" {
             let value = cs
@@ -805,13 +819,13 @@ pub(crate) fn direct_facts_for_routine(
         };
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: op.to_string(),
-            resource_kind: "isolated-storage".to_string(),
+            op,
+            resource_kind: "isolated-storage",
             resource_id: None,
             resource_arg_source: Some(key_source.clone()),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: Some(CapabilityExtra::Storage {
@@ -835,16 +849,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&url_source).to_string();
+        let confidence = confidence_from_source(&url_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "open".to_string(),
-            resource_kind: "ui".to_string(),
+            op: "open",
+            resource_kind: "ui",
             resource_id: None,
             resource_arg_source: Some(url_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -869,16 +883,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&arg_source).to_string();
+        let confidence = confidence_from_source(&arg_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "write-blob".to_string(),
-            resource_kind: "file".to_string(),
+            op: "write-blob",
+            resource_kind: "file",
             resource_id: None,
             resource_arg_source: Some(arg_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -917,16 +931,16 @@ pub(crate) fn direct_facts_for_routine(
             Some(i) => classify_value_source(Some(i), &variables),
             None => ValueSource::Unknown,
         };
-        let confidence = confidence_from_source(&codeunit_source).to_string();
+        let confidence = confidence_from_source(&codeunit_source);
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "start".to_string(),
-            resource_kind: "background".to_string(),
+            op: "start",
+            resource_kind: "background",
             resource_id: None,
             resource_arg_source: Some(codeunit_source),
             confidence,
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -947,13 +961,13 @@ pub(crate) fn direct_facts_for_routine(
         };
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: op.to_string(),
-            resource_kind: "ui".to_string(),
+            op,
+            resource_kind: "ui",
             resource_id: None,
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -989,13 +1003,13 @@ pub(crate) fn direct_facts_for_routine(
         }
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "ui-window-open".to_string(),
-            resource_kind: "ui".to_string(),
+            op: "ui-window-open",
+            resource_kind: "ui",
             resource_id: None,
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: Some(cs.id.clone()),
             extra: None,
@@ -1011,13 +1025,13 @@ pub(crate) fn direct_facts_for_routine(
     {
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "subscribe".to_string(),
-            resource_kind: "event".to_string(),
+            op: "subscribe",
+            resource_kind: "event",
             resource_id: None,
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: None,
             extra: Some(CapabilityExtra::Event {
@@ -1033,13 +1047,13 @@ pub(crate) fn direct_facts_for_routine(
         if op.kind == "error-call" {
             facts.push(CapabilityFact {
                 subject: routine.id.clone(),
-                op: "error-throw".to_string(),
-                resource_kind: "error".to_string(),
+                op: "error-throw",
+                resource_kind: "error",
                 resource_id: None,
                 resource_arg_source: None,
-                confidence: "static".to_string(),
-                provenance: "direct".to_string(),
-                via: "self".to_string(),
+                confidence: "static",
+                provenance: "direct",
+                via: "self",
                 witness_operation_id: Some(op.id.clone()),
                 witness_callsite_id: None,
                 extra: None,
@@ -1053,13 +1067,13 @@ pub(crate) fn direct_facts_for_routine(
     for evt in publisher_events {
         facts.push(CapabilityFact {
             subject: routine.id.clone(),
-            op: "publish".to_string(),
-            resource_kind: "event".to_string(),
+            op: "publish",
+            resource_kind: "event",
             resource_id: Some(evt.id.clone()),
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: None,
             extra: Some(CapabilityExtra::Event {
@@ -1362,8 +1376,8 @@ fn merge_cone(dst: &mut ConeFacts, key: String, entry: ConeFactEntry) {
 fn retag(rep: &CapabilityFact, subject: &str, edge: &TypedOutEdge) -> CapabilityFact {
     CapabilityFact {
         subject: subject.to_string(),
-        provenance: "inherited".to_string(),
-        via: capability_via_for_edge_kind(&edge.kind).to_string(),
+        provenance: "inherited",
+        via: capability_via_for_edge_kind(&edge.kind),
         witness_callsite_id: edge.callsite.clone(),
         ..rep.clone()
     }
@@ -1372,14 +1386,19 @@ fn retag(rep: &CapabilityFact, subject: &str, edge: &TypedOutEdge) -> Capability
 /// Sort key for the final capabilityFactsInherited array. Mirrors
 /// `inheritedOutputSortKey`.
 fn inherited_output_sort_key(f: &CapabilityFact) -> String {
+    // ⟨C1 Task 4⟩ Borrowed throughout — `join` copies into the one output
+    // String either way, so the seven per-call clones this used to make were
+    // pure waste (this runs once per fact per `sort_inherited`). Byte-identical:
+    // `as_deref().unwrap_or_default()` is `""` for `None`, exactly what
+    // `clone().unwrap_or_default()` produced.
     [
-        f.op.clone(),
-        f.resource_kind.clone(),
-        f.resource_id.clone().unwrap_or_default(),
-        f.confidence.clone(),
-        f.via.clone(),
-        f.witness_callsite_id.clone().unwrap_or_default(),
-        f.witness_operation_id.clone().unwrap_or_default(),
+        f.op,
+        f.resource_kind,
+        f.resource_id.as_deref().unwrap_or_default(),
+        f.confidence,
+        f.via,
+        f.witness_callsite_id.as_deref().unwrap_or_default(),
+        f.witness_operation_id.as_deref().unwrap_or_default(),
     ]
     .join("|")
 }
@@ -2274,15 +2293,15 @@ pub(crate) fn project_capability_fact(
     event_by_id: &HashMap<String, &EventSymbol>,
 ) -> PCapabilityFact {
     PCapabilityFact {
-        op: f.op.clone(),
-        resource_kind: f.resource_kind.clone(),
-        confidence: f.confidence.clone(),
-        provenance: f.provenance.clone(),
-        via: f.via.clone(),
+        op: f.op.to_string(),
+        resource_kind: f.resource_kind.to_string(),
+        confidence: f.confidence.to_string(),
+        provenance: f.provenance.to_string(),
+        via: f.via.to_string(),
         resource_id: f
             .resource_id
             .as_ref()
-            .map(|r| stable_resource_id(r, &f.resource_kind, event_by_id)),
+            .map(|r| stable_resource_id(r, f.resource_kind, event_by_id)),
         resource_arg_source: f.resource_arg_source.as_ref().map(project_value_source),
         witness_operation_id: f
             .witness_operation_id

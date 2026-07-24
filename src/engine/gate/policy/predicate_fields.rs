@@ -323,11 +323,11 @@ pub fn evaluate_field(def: &PredicateFieldDef, ctx: &FieldEvalContext) -> FieldV
         },
         // ---- fact-scope ----
         "capability.op" => match ctx.fact {
-            Some(f) => FieldValue::KnownStr(f.op.clone()),
+            Some(f) => FieldValue::KnownStr(f.op.to_string()),
             None => FieldValue::Unknown(UnknownReason::EvaluatorError),
         },
         "capability.resourceKind" => match ctx.fact {
-            Some(f) => FieldValue::KnownStr(f.resource_kind.clone()),
+            Some(f) => FieldValue::KnownStr(f.resource_kind.to_string()),
             None => FieldValue::Unknown(UnknownReason::EvaluatorError),
         },
         "capability.resource.table.name" => {
@@ -379,7 +379,7 @@ pub fn evaluate_field(def: &PredicateFieldDef, ctx: &FieldEvalContext) -> FieldV
             if f.resource_kind != "ui" {
                 return FieldValue::Unknown(UnknownReason::FieldNotApplicable);
             }
-            match f.op.as_str() {
+            match f.op {
                 "ui-confirm" => FieldValue::KnownStr("confirm".to_string()),
                 "ui-message" => FieldValue::KnownStr("message".to_string()),
                 "ui-error" => FieldValue::KnownStr("error".to_string()),
@@ -387,16 +387,16 @@ pub fn evaluate_field(def: &PredicateFieldDef, ctx: &FieldEvalContext) -> FieldV
             }
         }
         "capability.confidence" => match ctx.fact {
-            Some(f) => FieldValue::KnownStr(f.confidence.clone()),
+            Some(f) => FieldValue::KnownStr(f.confidence.to_string()),
             None => FieldValue::Unknown(UnknownReason::EvaluatorError),
         },
         "capability.origin" => match ctx.fact {
             // Maps to CapabilityFact.provenance ("direct" | "inherited").
-            Some(f) => FieldValue::KnownStr(f.provenance.clone()),
+            Some(f) => FieldValue::KnownStr(f.provenance.to_string()),
             None => FieldValue::Unknown(UnknownReason::EvaluatorError),
         },
         "capability.via" => match ctx.fact {
-            Some(f) => FieldValue::KnownStr(f.via.clone()),
+            Some(f) => FieldValue::KnownStr(f.via.to_string()),
             None => FieldValue::Unknown(UnknownReason::EvaluatorError),
         },
         // Unknown field name (compiler rejects these, but mirror the evaluator's

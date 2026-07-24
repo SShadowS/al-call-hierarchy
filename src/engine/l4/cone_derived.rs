@@ -537,14 +537,14 @@ impl ConeDerivedBuilder {
     /// clone. Idempotent per distinct `(kind, op, resource_id, temp)` — folding a
     /// fact twice is a no-op after the freeze dedup.
     pub fn fold_fact(&mut self, f: &CapabilityFact) {
-        match f.resource_kind.as_str() {
+        match f.resource_kind {
             "table" => {
                 self.flags |= TOUCHES_TABLE;
                 let Some(rid) = f.resource_id.as_deref() else {
                     return;
                 };
                 let is_temp = fact_is_known_temp(f);
-                if let Some(bit) = write_op_bit(&f.op) {
+                if let Some(bit) = write_op_bit(f.op) {
                     let id = self.store.interner.intern(rid);
                     self.s_writes_all.push(id);
                     if !is_temp {
@@ -671,16 +671,21 @@ mod tests {
 
     // -- fixture constructors -------------------------------------------------
 
-    fn fact(subject: &str, op: &str, kind: &str, rid: Option<&str>) -> CapabilityFact {
+    fn fact(
+        subject: &str,
+        op: &'static str,
+        kind: &'static str,
+        rid: Option<&str>,
+    ) -> CapabilityFact {
         CapabilityFact {
             subject: subject.to_string(),
-            op: op.to_string(),
-            resource_kind: kind.to_string(),
+            op,
+            resource_kind: kind,
             resource_id: rid.map(|s| s.to_string()),
             resource_arg_source: None,
-            confidence: "static".to_string(),
-            provenance: "direct".to_string(),
-            via: "self".to_string(),
+            confidence: "static",
+            provenance: "direct",
+            via: "self",
             witness_operation_id: None,
             witness_callsite_id: None,
             extra: None,
@@ -690,7 +695,7 @@ mod tests {
     /// A table fact carrying an explicit `temp_state` (the physical/temp gate).
     fn temp_fact(
         subject: &str,
-        op: &str,
+        op: &'static str,
         rid: &str,
         kind: &str,
         value: Option<bool>,
@@ -740,8 +745,7 @@ mod tests {
     fn raw_physical_writes(direct: &[CapabilityFact], inherited: &[CapabilityFact]) -> Vec<String> {
         let mut ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for f in direct.iter().chain(inherited.iter()) {
-            if f.resource_kind != "table" || write_op_bit(&f.op).is_none() || fact_is_known_temp(f)
-            {
+            if f.resource_kind != "table" || write_op_bit(f.op).is_none() || fact_is_known_temp(f) {
                 continue;
             }
             if let Some(rid) = &f.resource_id {

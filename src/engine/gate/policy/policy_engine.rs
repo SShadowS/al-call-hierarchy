@@ -81,13 +81,13 @@ fn passes_coverage_gate(coverage_status: Option<&str>, gate: &str) -> bool {
 /// `factSortKey(f)` — joins 8 fields with `|`, undefined→"".
 fn fact_sort_key(f: &CapabilityFact) -> String {
     [
-        f.op.as_str(),
-        f.resource_kind.as_str(),
+        f.op,
+        f.resource_kind,
         f.resource_id.as_deref().unwrap_or(""),
         f.witness_operation_id.as_deref().unwrap_or(""),
-        f.confidence.as_str(),
-        f.provenance.as_str(),
-        f.via.as_str(),
+        f.confidence,
+        f.provenance,
+        f.via,
         f.witness_callsite_id.as_deref().unwrap_or(""),
     ]
     .join("|")

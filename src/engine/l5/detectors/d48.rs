@@ -95,7 +95,7 @@ fn direct_io_terminals_for(routine: &L3Routine, summary: &FullRoutineSummary) ->
         if fact.provenance != "direct" {
             continue;
         }
-        if !is_io_resource_kind(&fact.resource_kind) {
+        if !is_io_resource_kind(fact.resource_kind) {
             continue;
         }
         let Some(witness) = &fact.witness_callsite_id else {
@@ -113,7 +113,7 @@ fn direct_io_terminals_for(routine: &L3Routine, summary: &FullRoutineSummary) ->
         out.push(IoTerminal {
             witness_callsite_id: witness.clone(),
             source_anchor,
-            io_kind: fact.resource_kind.clone(),
+            io_kind: fact.resource_kind.to_string(),
             method_name,
             // al-sem witnessCallsite.loopStack.length (0 when the witness callsite isn't
             // found — defensive; the witness is the fact's own callsite, normally present).

@@ -656,7 +656,7 @@ fn derive_permissions(
 
         for f in facts {
             if f.resource_kind == "table" && f.resource_id.is_some() {
-                let Some(right) = table_op_to_right(&f.op) else {
+                let Some(right) = table_op_to_right(f.op) else {
                     continue;
                 };
                 let stable_table = stable_table_from_internal(f.resource_id.as_deref().unwrap());
@@ -669,13 +669,13 @@ fn derive_permissions(
                     &stable_table,
                     "TableData",
                     right,
-                    &f.op,
+                    f.op,
                     f.witness_callsite_id.as_deref(),
                     &coverage,
                 ));
             } else if f.op == "execute"
                 && f.resource_id.is_some()
-                && matches!(f.resource_kind.as_str(), "codeunit" | "page" | "report")
+                && matches!(f.resource_kind, "codeunit" | "page" | "report")
             {
                 let stable_obj =
                     crate::engine::ids::to_stable_object_id(f.resource_id.as_deref().unwrap());
@@ -683,7 +683,7 @@ fn derive_permissions(
                 if !seen.insert(key) {
                     continue;
                 }
-                let target_kind = match f.resource_kind.as_str() {
+                let target_kind = match f.resource_kind {
                     "codeunit" => "Codeunit",
                     "page" => "Page",
                     _ => "Report",
@@ -693,7 +693,7 @@ fn derive_permissions(
                     &stable_obj,
                     target_kind,
                     "X",
-                    &f.op,
+                    f.op,
                     f.witness_callsite_id.as_deref(),
                     &coverage,
                 ));
