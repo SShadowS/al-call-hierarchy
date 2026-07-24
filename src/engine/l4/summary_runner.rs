@@ -979,6 +979,42 @@ pub fn compute_summaries_v2(
     )
 }
 
+/// LEAN no-leaves entry point (⟨Task B1⟩ — the analyze-path RSS win). Returns the
+/// workspace-complete [`SummaryBundle`] alongside the settled map WITHOUT the
+/// per-member `Vec<DbEffect>` re-materialization the compat shim
+/// [`compute_summaries_v2_with_leaves_core`] performs. The returned map's
+/// `db_effects` stay EMPTY (as assembled by
+/// [`compute_summaries_v2_bundle_with_leaves`], see its member-assembly loop) while
+/// `uncertainties` / `parameter_roles` / `has_unresolved_calls` / `in_recursive_cycle`
+/// are fully populated — exactly the fields the analyze path
+/// ([`crate::engine::l5::detector_context::build_detector_context`]) consumes. The
+/// db-effect rows remain QUERYABLE through the returned bundle (lazy `db_effects(rix)`
+/// projection / an on-demand `ReverseEffectIndex`), so no per-routine owned
+/// `Vec<DbEffect>` is ever expanded on this path. Callers that DO read
+/// `RoutineSummary.db_effects` (the R3a-5 projection, the differential harness) keep
+/// using the materializing [`compute_summaries_v2`] / `_with_leaves_core` shims.
+pub fn compute_summaries_v2_bundle(
+    routines: &[L3Routine],
+    graph: &CombinedGraph,
+    scc: &SccResult,
+    upgraded_bindings: &HashMap<String, Vec<UpgradedBinding>>,
+    fields: &FieldIndex,
+) -> (
+    SummaryBundle,
+    HashMap<String, RoutineSummary>,
+    Vec<SummarizeDiagnostic>,
+) {
+    let no_leaves: HashMap<String, RoutineSummary> = HashMap::new();
+    compute_summaries_v2_bundle_with_leaves(
+        routines,
+        graph,
+        scc,
+        upgraded_bindings,
+        fields,
+        &no_leaves,
+    )
+}
+
 /// The SHARED per-SCC compute context — the workspace-wide lookup structures the
 /// v2 roles fixpoint reads (all keyed by internal RoutineId, so a single SCC's
 /// loop reads only the entries it needs). Built by

@@ -563,6 +563,7 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            db_effect_bundle: None,
             fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
                 routines,
                 &[],
@@ -714,6 +715,7 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            db_effect_bundle: None,
             // Borrows routines_slice/ws_objects (not yet moved — resolved.workspace
             // below is built from CLONES of both so this borrow stays valid for the
             // ctx's lifetime through the detect_d50 call).

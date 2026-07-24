@@ -482,6 +482,7 @@ mod tests {
             ordering_source: None,
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
+            db_effect_bundle: None,
             fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
                 routines, objects,
             ),

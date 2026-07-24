@@ -619,18 +619,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **L4 analyze path consumes the `SummaryBundle` lazily — the ~24 GB / ~74 s
+  db-effects RSS rematerialization is GONE** (`feat/l4-summary-redesign`, Part B
+  B1; `src/engine/l4/summary_runner.rs`, `src/engine/l5/detector_context.rs`).
+  The analyze path (`build_detector_context` + the cross-app
+  `build_detector_context_cross_app`) now calls the LEAN bundle entry points
+  (`compute_summaries_v2_bundle` / `compute_summaries_v2_bundle_with_leaves`)
+  instead of the materializing shim `compute_summaries_v2` /
+  `compute_summaries_v2_with_leaves_core`: it receives a `core_summaries` map
+  whose `db_effects` are EMPTY (never re-expanded) with `.uncertainties` /
+  `.parameter_roles` fully populated — the only fields any detector reads (no
+  `src/engine/l5/` or `src/engine/gate/` detector reads
+  `RoutineSummary.db_effects`) — and holds the compact `SummaryBundle` on the new
+  `DetectorContext.db_effect_bundle: Option<SummaryBundle>` so the rows stay
+  QUERYABLE on demand (`bundle.db_effects(rix)` / an on-demand
+  `ReverseEffectIndex`) without the eager per-routine `Vec<DbEffect>` expansion.
+  Output-neutral: cli-a analyze goldens byte-identical, the v2==frozen-baseline
+  differential still 17/17 (the materializing shim — kept for the R3a-5
+  projection + differential — is unchanged). This lands the deferred
+  **RSS consumer-migration** the entry below flagged.
 - **L4 `compute_summaries` — the closed-form interned `EffectStore` solver
   replaced the O(N²)-materialization Jacobi db-effects fixpoint**
   (`feat/l4-summary-redesign`; 8020-corpus re-measure in
   `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`). On the 8020 synthetic
   corpus the db-effect solve (`db_solver_ms`, phase-split) dropped from **~517 s
   to ~11.8 s** (the old Jacobi it replaced was ~729 s); the SCC-shared
-  `EffectSetId` store collapsed the per-member materialization. NOTE: the
-  analyze-path `db_effects` **materialization shim** (`summary_runner.rs`) still
-  re-expands the shared store into owned `Vec<DbEffect>` per routine (needed by
-  the projection + differential), so the full `context.compute_summaries` span /
-  ~24 GB RSS win awaits the deferred **RSS consumer-migration** (point the
-  analyze path at the bundle's borrowing view — see `docs/OUTSTANDING.md`).
+  `EffectSetId` store collapsed the per-member materialization. The analyze-path
+  `db_effects` **materialization shim** (`summary_runner.rs`) that re-expanded the
+  shared store into owned `Vec<DbEffect>` per routine — the residual
+  `context.compute_summaries` ~24 GB RSS cost — is now bypassed on the analyze
+  path by the B1 consumer-migration above; the shim is retained only for the
+  projection + differential callers that read `db_effects`.
 - **d1 CUTOVER — `detect_d1` emits the compressed terminal-cohort report; the
   per-`(loop, terminal)` witness/context explosion is GONE** (Tasks C5+C6,
   `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`;
