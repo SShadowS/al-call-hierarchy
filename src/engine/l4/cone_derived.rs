@@ -1052,6 +1052,78 @@ mod tests {
         assert!(raw_only.derived.is_empty());
     }
 
+    // -- N-A: the count helpers must equal the resolved Vec's length ----------
+
+    /// `writes_tables_count_of`/`writes_physical_tables_count_of` return the
+    /// frozen window's length directly, without resolving a single `String` —
+    /// that only holds because `freeze_ids`/`freeze_masked` dedup by [`ResId`]
+    /// and interning is injective, so the window's length IS the resolved
+    /// Vec's length. Nothing else asserts that equality, and it now carries
+    /// d8's and d50's `>= 3`-distinct-table gates: a future change to
+    /// `freeze_masked` that ever left a duplicate id in a window would move
+    /// those gates with no named cause, and `cone_parity`'s oracle would NOT
+    /// catch it (it compares the resolved Vec against the raw helper, and both
+    /// would carry the same duplicate).
+    ///
+    /// This test, not `cone_parity.rs`, is where the pin belongs — the oracle
+    /// is retired the next task, this invariant is not.
+    ///
+    /// The fixture writes THREE distinct tables and repeats one exact
+    /// `(table, op)` pair (`insert t/A` twice, straight in the RAW direct
+    /// Vec — the self half is un-deduped by construction, see the module
+    /// docs' dedup-asymmetry note) so a window of length 0 or 1 can never
+    /// accidentally satisfy this.
+    #[test]
+    fn count_helpers_equal_the_resolved_vecs_length() {
+        let graph = graph_of(Vec::new());
+        let nodes: Vec<String> = vec!["r/multi".to_string()];
+        let mut direct_in: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
+        direct_in.insert(
+            "r/multi".to_string(),
+            vec![
+                fact("r/multi", "insert", "table", Some("t/A")),
+                // An exact duplicate of the fact above — pins that a repeated
+                // (table, op) pair collapses to ONE window entry, not two.
+                fact("r/multi", "insert", "table", Some("t/A")),
+                fact("r/multi", "modify", "table", Some("t/B")),
+                // A known-temp write: counts toward the temp-INCLUSIVE window
+                // but not the physical one, so the two counts genuinely differ.
+                temp_fact("r/multi", "insert", "t/C", "known", Some(true)),
+            ],
+        );
+        let coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
+
+        let out =
+            compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in, ConeOutput::Both);
+
+        // Fixture preconditions: multiple distinct tables, and the two windows
+        // are of different (non-0/1) lengths.
+        assert_eq!(
+            out.derived.writes_tables_of("r/multi"),
+            vec!["t/A", "t/B", "t/C"]
+        );
+        assert_eq!(
+            out.derived.writes_physical_tables_of("r/multi"),
+            vec!["t/A", "t/B"]
+        );
+
+        // The discriminating assertions.
+        assert_eq!(
+            out.derived.writes_tables_count_of("r/multi"),
+            out.derived.writes_tables_of("r/multi").len(),
+            "writes_tables_count_of must equal writes_tables_of(...).len()"
+        );
+        assert_eq!(
+            out.derived.writes_physical_tables_count_of("r/multi"),
+            out.derived.writes_physical_tables_of("r/multi").len(),
+            "writes_physical_tables_count_of must equal writes_physical_tables_of(...).len()"
+        );
+
+        // Also hold for the absent-row case (an id the store never folded).
+        assert_eq!(out.derived.writes_tables_count_of("r/absent"), 0);
+        assert_eq!(out.derived.writes_physical_tables_count_of("r/absent"), 0);
+    }
+
     // -- interner invariants ---------------------------------------------------
 
     #[test]

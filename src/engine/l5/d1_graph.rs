@@ -108,12 +108,15 @@ pub(crate) fn edge_kind_binding_ok(kind: &str) -> bool {
 /// ⟨C1 Task 2⟩ The presence half now reads the folded cone flag
 /// ([`touches_db_derived`]) instead of scanning the routine's raw reachable
 /// facts; the absence half is unchanged (`coverage.inherited_status`, read off
-/// the same `summary`). The memo itself is retained: `build_d1_graph`'s own
-/// seed ladder and BFS edge expansion each call this once per edge, and many
-/// edges share the same target routine, so the memo still pays for itself
-/// within that one call. ⟨fix M1⟩ `detect_d1` does NOT read this memo again
-/// after `build_d1_graph` returns — the prior wording claiming it is "shared
-/// with `d1`'s own later probes" was false.
+/// the same `summary`). ⟨fix N-C⟩ The memo is retained, but not because it
+/// pays for itself: a memo HIT is one `HashMap<&str, _>` lookup, while the
+/// direct alternative (`touches_db_derived` → [`ConeDerivedStore::row`],
+/// `cone_derived.rs:285-287`) is one `HashMap<String, _>` lookup of the same
+/// key bytes plus a `u8` mask test and a field read — the same asymptotics,
+/// and a memo MISS additionally pays for the entry insert. At best a wash,
+/// strictly negative on first touch. ⟨fix M1⟩ `detect_d1` does NOT read this
+/// memo again after `build_d1_graph` returns — the prior wording claiming it
+/// is "shared with `d1`'s own later probes" was false.
 ///
 /// The memo's value is a function of `(store, summary)`, not of `summary`
 /// alone, but nothing here binds it to the store it was filled from — never
