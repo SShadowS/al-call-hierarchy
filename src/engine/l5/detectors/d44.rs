@@ -77,9 +77,11 @@ pub fn detect_d44(
             };
             // ⟨C1 Task 2⟩ The same set of (table, op) pairs the per-fact
             // `find_capabilities(table ∧ write ∧ resource_id ∧ ¬known-temp)`
-            // scan produced, read off the folded cone row. `unique_subs` and
-            // `op_union` below are both `BTreeSet`s, so collapsing duplicate
-            // facts on the SAME (table, op) into one entry is invisible.
+            // scan USED to produce (that helper and the raw Vec it scanned are
+            // both retired as of Task 3), read off the folded cone row.
+            // `unique_subs` and `op_union` below are both `BTreeSet`s, so
+            // collapsing duplicate facts on the SAME (table, op) into one entry
+            // is invisible.
             for (table_id, ops) in ctx
                 .cone_derived
                 .physical_table_write_ops_of(&summary.routine_id)
