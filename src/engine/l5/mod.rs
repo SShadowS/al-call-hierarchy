@@ -18,6 +18,9 @@
 //! a sorted `Vec` / `BTreeSet`. No `HashMap` iteration order reaches output.
 
 pub mod capability_query;
+// ⟨C1⟩ The dual-run parity oracle: per routine, every derived cone predicate vs.
+// its raw `capability_facts_inherited` computation. Opt-in via `C1_CONE_PARITY=1`.
+pub mod cone_parity;
 // G-19 — closed-world temp inference for `local` routines (the proven
 // `(routine, param)` set the d1/d3/d10 temp gates consult).
 pub mod closed_world_temp;

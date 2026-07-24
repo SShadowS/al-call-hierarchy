@@ -469,6 +469,8 @@ mod tests {
             uncertainties_by_node: HashMap::new(),
             call_site_by_id: HashMap::new(),
             summaries: HashMap::new(),
+            // ⟨C1⟩ No summaries ⇒ no derived cone rows.
+            cone_derived: Default::default(),
             event_flow_indexes: EventFlowIndexes::default(),
             parameter_roles_by_routine: HashMap::new(),
             upgraded_bindings_by_callsite: HashMap::new(),

@@ -14,24 +14,15 @@
 
 use std::collections::BTreeSet;
 
-use crate::engine::l4::capability_cone::{CapabilityExtra, CapabilityFact};
+use crate::engine::l4::capability_cone::CapabilityFact;
+use crate::engine::l4::cone_derived::{ConeDerivedStore, write_op_bit};
 use crate::engine::l5::full_summary::FullRoutineSummary;
 
-/// True when a capability fact is a write/read on a PROVABLY temporary record
-/// (`extra == Table { temp_state: known/true }`). Such ops are in-memory — they
-/// never touch the physical database, so they cannot create cross-routine /
-/// cross-extension table conflicts or exposure. Mirrors the detector-side
-/// `is_known_temp` gate, lifted to the cone-fact level (the `temp_state` is
-/// preserved across inheritance via `retag`). Suppression-direction safe: only
-/// the exact `known/true` signal qualifies; `Unknown` / parameter-dependent /
-/// absent temp_state keep counting.
-pub fn fact_is_known_temp(f: &CapabilityFact) -> bool {
-    matches!(
-        &f.extra,
-        Some(CapabilityExtra::Table { temp_state: Some(ts), .. })
-            if ts.kind == "known" && ts.value == Some(true)
-    )
-}
+/// True when a capability fact is a write/read on a PROVABLY temporary record.
+/// ⟨C1⟩ The implementation lives in `l4::cone_derived` (the fold applies the same
+/// gate per fact); re-exported here so the raw helpers and the derived fold
+/// cannot drift apart.
+pub use crate::engine::l4::cone_derived::fact_is_known_temp;
 
 /// Tri-state effect presence (al-sem `EffectPresence = "yes" | "no" | "unknown"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,8 +33,9 @@ pub enum EffectPresence {
 }
 
 /// Table-write ops (al-sem `TABLE_WRITE_OPS = {insert, modify, delete}`).
+/// ⟨C1⟩ Routed through the fold's own op→bit map so there is ONE definition.
 fn is_table_write_op(op: &str) -> bool {
-    matches!(op, "insert" | "modify" | "delete")
+    write_op_bit(op).is_some()
 }
 
 /// Filter reachable facts (direct + inherited) by an arbitrary predicate.
@@ -172,12 +164,42 @@ pub fn reachable_coverage<'a>(s: &'a FullRoutineSummary, _kind: Option<&str>) ->
 }
 
 // ===========================================================================
+// ⟨C1⟩ DERIVED-substrate tri-states. Same semantics as the two helpers above —
+// the presence half reads the folded cone flag instead of scanning the raw
+// reachable facts; the absence half is UNCHANGED (`coverage.inherited_status`,
+// which C1 does not touch). Proven equal per routine by `cone_parity`.
+// ===========================================================================
+
+/// [`touches_db_of`] over the derived substrate.
+pub fn touches_db_derived(store: &ConeDerivedStore, s: &FullRoutineSummary) -> EffectPresence {
+    presence(store.touches_table(&s.routine_id), s)
+}
+
+/// [`may_commit`] over the derived substrate.
+pub fn may_commit_derived(store: &ConeDerivedStore, s: &FullRoutineSummary) -> EffectPresence {
+    presence(store.may_commit_flag(&s.routine_id), s)
+}
+
+/// The shared tri-state arm: present ⇒ `Yes`; absent ⇒ `No` only when the
+/// inherited cone is "complete", else `Unknown` (G6 honesty).
+fn presence(found: bool, s: &FullRoutineSummary) -> EffectPresence {
+    if found {
+        EffectPresence::Yes
+    } else if s.inherited_status() == "complete" {
+        EffectPresence::No
+    } else {
+        EffectPresence::Unknown
+    }
+}
+
+// ===========================================================================
 // Native oracles — ground-truth-free invariants on synthetic inputs.
 // ===========================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::l4::capability_cone::CapabilityExtra;
     use crate::engine::l5::test_support::{coverage, fact, summary};
 
     #[test]

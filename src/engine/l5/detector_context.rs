@@ -32,6 +32,7 @@ use crate::engine::l4::capability_cone::{
     CapabilityFact, compose_cone_over_graph, direct_facts_for_routine,
 };
 use crate::engine::l4::combined_graph::{CombinedGraph, build_combined_graph};
+use crate::engine::l4::cone_derived::{ConeDerivedStore, ConeOutput};
 use crate::engine::l4::effect_store::SummaryBundle;
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
@@ -88,6 +89,16 @@ pub struct DetectorContext<'a> {
     pub call_site_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Per-routine `FullRoutineSummary` (direct + inherited facts + coverage).
     pub summaries: HashMap<String, FullRoutineSummary>,
+    /// ⟨C1⟩ The compact DERIVED capability-cone substrate — per-routine presence
+    /// flags + interned table/event id-sets folded during the same cone walk that
+    /// produces `summaries`, with zero `retag` clones. Every analyze-path consumer
+    /// of `capability_facts_inherited` reads only a derived predicate off it, so
+    /// this row is a sufficient replacement (proven per routine by
+    /// `cone_parity::assert_cone_parity` under `C1_CONE_PARITY=1` while both
+    /// representations exist). Parked here — next to `db_effect_bundle` — because
+    /// the rows are `Range<u32>` windows into pools this store owns; a row alone
+    /// is meaningless. EMPTY when the `SUMMARIES` substrate was not demanded.
+    pub cone_derived: ConeDerivedStore,
     /// The shared event-flow indexes (publisher/subscriber lookup tables) the
     /// d43/d44/d45 event-flow detectors consume. al-sem builds this LAZILY
     /// (`ctx.getEventFlowIndexes()`, memoized); the Rust port builds it EAGERLY
@@ -264,6 +275,9 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     // some selected detector demands SUMMARIES (or TRANSACTION_SPANS, which folds
     // over the summaries map). Skipped ⇒ empty `summaries` map.
     let _cones_span = pt::span("context", "context.capability_cones");
+    // ⟨C1⟩ Assigned inside the block below (kept a separate binding so the whole
+    // cone-assembly block stays at its original indentation).
+    let mut cone_derived = ConeDerivedStore::default();
     let summaries: HashMap<String, FullRoutineSummary> = if need_summaries {
         let mut publisher_events_by_routine: HashMap<String, Vec<&EventSymbol>> = HashMap::new();
         for evt in &event_graph.events {
@@ -286,13 +300,39 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             coverage_in.insert(r.id.clone(), (status, reasons));
             direct_full.insert(r.id.clone(), facts);
         }
-        let mut cones = compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in);
+        // ⟨C1⟩ `Both` — the raw inherited Vec (what every current consumer
+        // reads) AND the derived substrate, folded in the same walk. Task 3
+        // flips this to `DerivedOnly` unless the policy-only
+        // `RAW_INHERITED_FACTS` bit is set.
+        let outcome =
+            compose_cone_over_graph(&graph, &nodes, &direct_in, &coverage_in, ConeOutput::Both);
+        let mut cones = outcome.cones;
+        cone_derived = outcome.derived;
 
         // `cones` and `direct_full` are locally owned and dead after this loop, so
         // move their payloads into the summaries instead of cloning them out.
         let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
         for r in &ws.routines {
-            let (inherited, coverage) = match cones.remove(&r.id) {
+            let cone_entry = cones.remove(&r.id);
+            let direct = direct_full.remove(&r.id);
+            // ⟨C1⟩ Two AL routines can COLLIDE on one internal routine id (two
+            // same-name triggers in one object — gap G-18; `compute_routine_id`
+            // has no member discriminator). Both `remove`s above are then
+            // consumed by the FIRST occurrence, so the summary the second
+            // occurrence writes — the one that survives the map insert — is
+            // fully degenerate: no direct facts, no inherited facts, no
+            // coverage. The derived row is keyed by id and holds the FULL fold,
+            // so it must be dropped to match the summary this context will
+            // actually hold. (PRE-EXISTING behaviour, reproduced deliberately:
+            // losing a colliding routine's whole cone is a real precision
+            // defect, but it is what today's detector output encodes — see the
+            // C1 Task 1 report. `build_detector_context_cross_app` reads its
+            // cone with `get()`, so it never has this accident and needs no
+            // such adjustment.)
+            if cone_entry.is_none() || direct.is_none() {
+                cone_derived.forget(&r.id);
+            }
+            let (inherited, coverage) = match cone_entry {
                 Some(c) => (c.inherited, Some(c.coverage)),
                 None => (Vec::new(), None),
             };
@@ -300,7 +340,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 r.id.clone(),
                 FullRoutineSummary {
                     routine_id: r.id.clone(),
-                    capability_facts_direct: direct_full.remove(&r.id).unwrap_or_default(),
+                    capability_facts_direct: direct.unwrap_or_default(),
                     capability_facts_inherited: inherited,
                     coverage,
                 },
@@ -310,6 +350,10 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     } else {
         HashMap::new()
     };
+    // ⟨C1⟩ The S1 dual-run gate: while BOTH representations exist, prove per
+    // routine that every derived predicate equals its raw-Vec computation.
+    // Opt-in (`C1_CONE_PARITY=1`); panics on the first divergence.
+    crate::engine::l5::cone_parity::assert_cone_parity_if_enabled(&summaries, &cone_derived);
     drop(_cones_span);
 
     // --- Eager indexes -----------------------------------------------------
@@ -640,6 +684,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         uncertainties_by_node,
         call_site_by_id,
         summaries,
+        cone_derived,
         event_flow_indexes,
         parameter_roles_by_routine,
         upgraded_bindings_by_callsite,
@@ -684,12 +729,16 @@ pub(crate) fn build_detector_context_cross_app(
     let graph = base.graph.clone();
 
     // Cone over the merged graph (direct facts/coverage already assembled in `base`).
-    let cones = compose_cone_over_graph(
+    // ⟨C1⟩ `Both`, exactly as the source-only builder — see its note.
+    let outcome = compose_cone_over_graph(
         &base.graph,
         &base.nodes,
         &base.direct_full,
         &base.direct_coverage,
+        ConeOutput::Both,
     );
+    let cones = outcome.cones;
+    let cone_derived = outcome.derived;
     let empty_facts: Vec<CapabilityFact> = Vec::new();
     let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
     for r in ws_routines {
@@ -710,6 +759,8 @@ pub(crate) fn build_detector_context_cross_app(
             },
         );
     }
+    // ⟨C1⟩ The same per-routine dual-run gate the source-only builder runs.
+    crate::engine::l5::cone_parity::assert_cone_parity_if_enabled(&summaries, &cone_derived);
 
     // --- Eager indexes (over the merged routine/object/table sets) ---------
     let routine_by_id: HashMap<&str, &L3Routine> =
@@ -884,6 +935,7 @@ pub(crate) fn build_detector_context_cross_app(
         uncertainties_by_node,
         call_site_by_id,
         summaries,
+        cone_derived,
         event_flow_indexes,
         parameter_roles_by_routine,
         upgraded_bindings_by_callsite,

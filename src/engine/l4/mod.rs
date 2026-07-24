@@ -12,6 +12,11 @@
 pub mod capability_cone;
 pub mod cfg_walker;
 pub mod combined_graph;
+// C1 — the compact derived cone substrate (`ConeDerivedStore` + the fold + the
+// `ConeOutput` mode) that replaces the per-routine inherited `Vec<CapabilityFact>`
+// for every derived consumer. Lives beside `capability_cone`, which folds into it
+// at its own `retag` sites.
+pub mod cone_derived;
 pub mod db_effect_solver;
 pub mod effect_lattice;
 pub mod effect_store;

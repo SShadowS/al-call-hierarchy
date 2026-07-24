@@ -16,8 +16,24 @@ use crate::engine::l2::features::{
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::capability_cone::{CapabilityFact, CoverageRecord};
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
+use crate::engine::l4::cone_derived::{ConeDerivedBuilder, ConeDerivedStore};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::full_summary::FullRoutineSummary;
+
+/// ⟨C1⟩ The derived cone substrate for a set of hand-built summaries — each
+/// routine's literal `reachable()` sequence folded into a row. Fixture summaries
+/// carry their `capability_facts_inherited` as INPUT (there is no cone walk and
+/// so no key-dedup), so folding the flat reachable list is exactly right here —
+/// unlike the production path, which must fold key-deduped representatives.
+/// Every hand-built `DetectorContext` uses this so its `cone_derived` field can
+/// never silently disagree with its `summaries`.
+pub fn cone_store_of(summaries: &HashMap<String, FullRoutineSummary>) -> ConeDerivedStore {
+    let mut b = ConeDerivedBuilder::default();
+    for (id, s) in summaries {
+        b.fold_routine(id, s.reachable_iter());
+    }
+    b.finish()
+}
 
 /// A throwaway anchor (positions are irrelevant to the L5 query substrate).
 pub fn dummy_anchor() -> PAnchor {
@@ -355,6 +371,9 @@ pub fn minimal_ctx<'a>(
         uncertainty_edges_by_from: HashMap::new(),
         uncertainties_by_node: HashMap::new(),
         call_site_by_id,
+        // ⟨C1⟩ Fold BEFORE the move so the derived substrate always mirrors this
+        // context's own summaries.
+        cone_derived: cone_store_of(&summaries),
         summaries,
         event_flow_indexes: crate::engine::l5::event_flow::EventFlowIndexes::default(),
         parameter_roles_by_routine: HashMap::new(),

@@ -30,6 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::combined_graph::{CombinedGraph, TypedEdge, build_combined_graph};
+use super::cone_derived::{ConeDerivedBuilder, ConeDerivedStore, ConeOutput};
 use super::scc::{Scc, SccInputGraph, SccResult, tarjan_scc};
 use crate::engine::ids::to_stable_object_id;
 use crate::engine::l2::features::{PCallSite, PCallee, PExpressionInfo, POperationSite};
@@ -1406,20 +1407,30 @@ struct CoverageCone {
 }
 
 /// Singleton non-recursive fast path. Mirrors `inheritedFactsForSingleton`.
-fn inherited_facts_for_singleton(
+///
+/// ⟨C1⟩ `best` holds BORROWED representatives/edges (it used to clone both on
+/// every win): the winners' fields are read identically whether borrowed or
+/// cloned, and only the survivors are cloned — by `retag`, and only when `mode`
+/// wants the raw Vec. Under [`ConeOutput::DerivedOnly`] neither the `retag`
+/// clone nor `sort_inherited`'s allocation happens; the fold over the SAME
+/// `best.values()` key-winners still runs.
+fn inherited_facts_for_singleton<'g>(
     subject: &str,
-    g: &TypedEdgeGraph,
+    g: &'g TypedEdgeGraph,
     scc_id_by_routine: &HashMap<String, usize>,
-    cones: &HashMap<usize, ConeFacts>,
+    cones: &'g HashMap<usize, ConeFacts>,
+    mode: ConeOutput,
+    derived: &mut ConeDerivedBuilder,
 ) -> Vec<CapabilityFact> {
-    struct Best {
-        rep: CapabilityFact,
+    struct Best<'g> {
+        rep: &'g CapabilityFact,
         dist: usize,
-        edge: TypedOutEdge,
+        edge: &'g TypedOutEdge,
     }
-    let mut best: BTreeMap<String, Best> = BTreeMap::new();
-    let empty: Vec<TypedOutEdge> = Vec::new();
-    for edge in g.outgoing.get(subject).unwrap_or(&empty) {
+    let mut best: BTreeMap<String, Best<'g>> = BTreeMap::new();
+    let out_edges: &'g [TypedOutEdge] =
+        g.outgoing.get(subject).map(|v| v.as_slice()).unwrap_or(&[]);
+    for edge in out_edges {
         let Some(yj) = scc_id_by_routine.get(&edge.to) else {
             continue;
         };
@@ -1434,36 +1445,53 @@ fn inherited_facts_for_singleton(
                 None => true,
                 Some(cur) => {
                     cand_dist < cur.dist
-                        || (cand_dist == cur.dist && edge_sort_key(edge) < edge_sort_key(&cur.edge))
+                        || (cand_dist == cur.dist && edge_sort_key(edge) < edge_sort_key(cur.edge))
                 }
             };
             if wins {
                 best.insert(
                     key.clone(),
                     Best {
-                        rep: entry.rep.clone(),
+                        rep: &entry.rep,
                         dist: cand_dist,
-                        edge: edge.clone(),
+                        edge,
                     },
                 );
             }
         }
     }
+    if mode.wants_derived() {
+        for b in best.values() {
+            derived.fold_fact(b.rep);
+        }
+    }
+    if !mode.wants_raw() {
+        return Vec::new();
+    }
     let out: Vec<CapabilityFact> = best
         .values()
-        .map(|b| retag(&b.rep, subject, &b.edge))
+        .map(|b| retag(b.rep, subject, b.edge))
         .collect();
     sort_inherited(out)
 }
 
 /// Set-correct path for routines in recursive SCCs. Mirrors
 /// `inheritedFactsByBfs`.
-fn inherited_facts_by_bfs(
+///
+/// ⟨C1⟩ The `seen`-deduped representatives this walk visits are the derived
+/// fold's inherited source. Note the asymmetry R3 pins: a SIBLING member's facts
+/// come from the key-deduped `direct` map (not its raw Vec), while a downstream
+/// SCC contributes its cone entries. Under [`ConeOutput::DerivedOnly`] the
+/// `retag` clones and `sort_inherited` are skipped; the walk (and therefore the
+/// fold) is unchanged.
+fn inherited_facts_by_bfs<'g>(
     subject: &str,
-    g: &TypedEdgeGraph,
-    direct: &RoutineDirectFacts,
+    g: &'g TypedEdgeGraph,
+    direct: &'g RoutineDirectFacts,
     scc_id_by_routine: &HashMap<String, usize>,
-    cones: &HashMap<usize, ConeFacts>,
+    cones: &'g HashMap<usize, ConeFacts>,
+    mode: ConeOutput,
+    derived: &mut ConeDerivedBuilder,
 ) -> Vec<CapabilityFact> {
     let my_scc = scc_id_by_routine.get(subject).copied();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -1471,21 +1499,34 @@ fn inherited_facts_by_bfs(
     let mut visited: BTreeSet<String> = BTreeSet::new();
     visited.insert(subject.to_string());
 
-    struct QI {
+    struct QI<'g> {
         id: String,
-        first_hop: TypedOutEdge,
+        first_hop: &'g TypedOutEdge,
     }
-    let mut queue: std::collections::VecDeque<QI> = std::collections::VecDeque::new();
-    let empty: Vec<TypedOutEdge> = Vec::new();
-    for edge in g.outgoing.get(subject).unwrap_or(&empty) {
+    let mut queue: std::collections::VecDeque<QI<'g>> = std::collections::VecDeque::new();
+    let out_edges = |id: &str| -> &'g [TypedOutEdge] {
+        g.outgoing.get(id).map(|v| v.as_slice()).unwrap_or(&[])
+    };
+    for edge in out_edges(subject) {
         if !visited.contains(&edge.to) {
             visited.insert(edge.to.clone());
             queue.push_back(QI {
                 id: edge.to.clone(),
-                first_hop: edge.clone(),
+                first_hop: edge,
             });
         }
     }
+    // One emission helper so the raw push and the derived fold can never drift
+    // apart on WHICH representative they consume.
+    let mut emit =
+        |rep: &CapabilityFact, first_hop: &TypedOutEdge, out: &mut Vec<CapabilityFact>| {
+            if mode.wants_derived() {
+                derived.fold_fact(rep);
+            }
+            if mode.wants_raw() {
+                out.push(retag(rep, subject, first_hop));
+            }
+        };
     while let Some(item) = queue.pop_front() {
         let id = item.id;
         let first_hop = item.first_hop;
@@ -1495,16 +1536,16 @@ fn inherited_facts_by_bfs(
                 for (key, rep) in byk {
                     if !seen.contains(key) {
                         seen.insert(key.clone());
-                        out.push(retag(rep, subject, &first_hop));
+                        emit(rep, first_hop, &mut out);
                     }
                 }
             }
-            for edge in g.outgoing.get(&id).unwrap_or(&empty) {
+            for edge in out_edges(&id) {
                 if !visited.contains(&edge.to) {
                     visited.insert(edge.to.clone());
                     queue.push_back(QI {
                         id: edge.to.clone(),
-                        first_hop: first_hop.clone(),
+                        first_hop,
                     });
                 }
             }
@@ -1515,11 +1556,14 @@ fn inherited_facts_by_bfs(
                 for (key, entry) in ycone {
                     if !seen.contains(key) {
                         seen.insert(key.clone());
-                        out.push(retag(&entry.rep, subject, &first_hop));
+                        emit(&entry.rep, first_hop, &mut out);
                     }
                 }
             }
         }
+    }
+    if !mode.wants_raw() {
+        return Vec::new();
     }
     sort_inherited(out)
 }
@@ -1642,15 +1686,24 @@ struct InheritedConeResult {
 /// Compute capabilityFactsInherited + coverage for EVERY routine via a single
 /// fused bottom-up SCC-cone pass. Mirrors `composeInheritedCones`. The engine
 /// never throws: on internal inconsistency it still returns whatever it built.
+///
+/// ⟨C1⟩ `direct_raw` is the RAW, un-deduped per-routine direct-fact map (the
+/// same Vec `FullRoutineSummary.capability_facts_direct` holds). It is the SELF
+/// half of the derived fold: `reachable_iter` scans every direct fact, so the
+/// fold must too — unlike the inherited half, which folds key-deduped
+/// representatives. `mode` decides which of the two outputs is produced.
 #[allow(clippy::too_many_arguments)]
 fn compose_inherited_cones(
     g: &TypedEdgeGraph,
     scc: &SccResult,
     direct: &RoutineDirectFacts,
+    direct_raw: &HashMap<String, Vec<CapabilityFact>>,
     cov: &RoutineDirectCoverage,
     routine_ids: &BTreeSet<String>,
-) -> HashMap<String, InheritedConeResult> {
+    mode: ConeOutput,
+) -> (HashMap<String, InheritedConeResult>, ConeDerivedStore) {
     let mut out: HashMap<String, InheritedConeResult> = HashMap::new();
+    let mut derived = ConeDerivedBuilder::default();
 
     let succ_sccs = build_succ_sccs(g, &scc.sccs, &scc.scc_id_by_routine);
     let mut remaining_uses: Vec<usize> = scc.sccs.iter().map(|_| 0usize).collect();
@@ -1684,11 +1737,39 @@ fn compose_inherited_cones(
             if !routine_ids.contains(m) {
                 continue;
             }
+            if mode.wants_derived() {
+                derived.begin_routine();
+            }
             let inherited = if recursive {
-                inherited_facts_by_bfs(m, g, direct, &scc.scc_id_by_routine, &fact_cones)
+                inherited_facts_by_bfs(
+                    m,
+                    g,
+                    direct,
+                    &scc.scc_id_by_routine,
+                    &fact_cones,
+                    mode,
+                    &mut derived,
+                )
             } else {
-                inherited_facts_for_singleton(m, g, &scc.scc_id_by_routine, &fact_cones)
+                inherited_facts_for_singleton(
+                    m,
+                    g,
+                    &scc.scc_id_by_routine,
+                    &fact_cones,
+                    mode,
+                    &mut derived,
+                )
             };
+            if mode.wants_derived() {
+                // The SELF half — the routine's RAW direct facts, one fold each
+                // (they are stored un-deduped and `reachable_iter` scans them all).
+                if let Some(own) = direct_raw.get(m) {
+                    for f in own {
+                        derived.fold_fact(f);
+                    }
+                }
+                derived.finish_routine(m);
+            }
             let d_status = cov
                 .get(m)
                 .map(|c| c.direct_status.clone())
@@ -1724,7 +1805,7 @@ fn compose_inherited_cones(
         }
     }
 
-    out
+    (out, derived.finish())
 }
 
 // ===========================================================================
@@ -1743,6 +1824,18 @@ pub struct ConeResultPub {
     pub coverage: CoverageRecord,
 }
 
+/// What one cone composition produced: the per-routine RAW cone results and the
+/// compact derived substrate. Which halves are populated is decided by the
+/// [`ConeOutput`] mode — see its variants.
+pub struct ConeOutcome {
+    /// Per-routine inherited facts + coverage. Under
+    /// [`ConeOutput::DerivedOnly`] every `inherited` Vec is empty (never built);
+    /// `coverage` is always populated (it is not the memory problem).
+    pub cones: HashMap<String, ConeResultPub>,
+    /// The compact derived substrate. Empty under [`ConeOutput::RawOnly`].
+    pub derived: ConeDerivedStore,
+}
+
 /// Compute every routine's `capabilityFactsInherited` + `coverage` over the given
 /// combined graph (typed edges already folded, incl. any injected intra-app dep
 /// edges) + the per-routine direct facts + direct coverage. The `nodes` list is
@@ -1751,12 +1844,18 @@ pub struct ConeResultPub {
 ///
 /// This is the EXACT cone substrate `project_r3a3` / `project_r3a5_cross_app`
 /// build inline; factored out so the R3b Salsa layer wraps it without re-porting.
+///
+/// ⟨C1⟩ `mode` selects the output(s). `direct_in` doubles as the derived fold's
+/// SELF half — it is the raw, un-deduped direct-fact Vec every caller also stores
+/// on `FullRoutineSummary.capability_facts_direct` (verified at all three call
+/// sites), which is exactly what `reachable_iter` scans.
 pub fn compose_cone_over_graph(
     graph: &CombinedGraph,
     nodes: &[String],
     direct_in: &HashMap<String, Vec<CapabilityFact>>,
     coverage_in: &HashMap<String, (String, Vec<String>)>,
-) -> HashMap<String, ConeResultPub> {
+    mode: ConeOutput,
+) -> ConeOutcome {
     let g = build_typed_edge_graph(graph, nodes);
     let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
     for (from, list) in &g.outgoing {
@@ -1800,19 +1899,23 @@ pub fn compose_cone_over_graph(
         }
     }
 
-    let cones = compose_inherited_cones(&g, &scc, &direct, &cov, &routine_ids);
-    cones
-        .into_iter()
-        .map(|(id, r)| {
-            (
-                id,
-                ConeResultPub {
-                    inherited: r.inherited,
-                    coverage: r.coverage,
-                },
-            )
-        })
-        .collect()
+    let (cones, derived) =
+        compose_inherited_cones(&g, &scc, &direct, direct_in, &cov, &routine_ids, mode);
+    ConeOutcome {
+        cones: cones
+            .into_iter()
+            .map(|(id, r)| {
+                (
+                    id,
+                    ConeResultPub {
+                        inherited: r.inherited,
+                        coverage: r.coverage,
+                    },
+                )
+            })
+            .collect(),
+        derived,
+    }
 }
 
 // ===========================================================================
@@ -2578,8 +2681,17 @@ pub fn project_r3a5_cross_app(
         &base.field_index,
         &base.leaf_summaries,
     );
-    let cones =
-        compose_cone_over_graph(graph, &base.nodes, &base.direct_full, &base.direct_coverage);
+    // ⟨C1⟩ `Both` — this projection path consumes the RAW cone (its exact
+    // `sort_inherited` byte order is the golden surface); the derived substrate
+    // rides along unread, which keeps the fold exercised by the r3a5 fixtures.
+    let cones = compose_cone_over_graph(
+        graph,
+        &base.nodes,
+        &base.direct_full,
+        &base.direct_coverage,
+        ConeOutput::Both,
+    )
+    .cones;
 
     project_r3a5_from_parts(
         ws_routines,
@@ -2847,7 +2959,18 @@ pub fn project_r3a3(resolved: &L3Resolved) -> R3a3Projection {
         direct_full.insert(r.id.clone(), facts);
     }
 
-    let cones = compose_inherited_cones(&g, &scc, &direct, &cov, &routine_ids);
+    // ⟨C1⟩ `Both` — this projection consumes the RAW cone (its `sort_inherited`
+    // byte order IS the R3a-3 golden surface); the derived store rides along
+    // unread so the fold stays exercised by the r3a3 fixtures.
+    let (cones, _derived) = compose_inherited_cones(
+        &g,
+        &scc,
+        &direct,
+        &direct_full,
+        &cov,
+        &routine_ids,
+        ConeOutput::Both,
+    );
 
     // ── Project ───────────────────────────────────────────────────────────
     let map: HashMap<String, String> = ws
@@ -3000,7 +3123,16 @@ pub fn build_r3a3_source_only_base(resolved: &L3Resolved) -> R3a3SourceBase {
     }
 
     let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
-    let cones = compose_cone_over_graph(&graph, &nodes, &direct_full, &direct_coverage);
+    // ⟨C1⟩ `Both` — the snapshot/digest/prove derivers read the RAW cone off this
+    // base; the derived substrate rides along unread (see `project_r3a5_cross_app`).
+    let cones = compose_cone_over_graph(
+        &graph,
+        &nodes,
+        &direct_full,
+        &direct_coverage,
+        ConeOutput::Both,
+    )
+    .cones;
 
     let routine_to_stable: HashMap<String, String> = ws
         .routines
