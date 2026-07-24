@@ -1,0 +1,10 @@
+[
+    RoutineSummary {
+        routine_id: "a",
+        db_effects: [],
+        in_recursive_cycle: true,
+        has_unresolved_calls: true,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+]

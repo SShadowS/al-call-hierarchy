@@ -1,0 +1,60 @@
+[
+    RoutineSummary {
+        routine_id: "a",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t2|b_op1|p0",
+                operation_id: "b_op1",
+                op: "Insert",
+                table_id: "t2",
+                record_variable_id: None,
+                temp_state: ParameterDependent(
+                    0,
+                ),
+                via: "inherited",
+            },
+            DbEffect {
+                effect_key: "Insert|t2|b_op1|u",
+                operation_id: "b_op1",
+                op: "Insert",
+                table_id: "t2",
+                record_variable_id: None,
+                temp_state: Unknown,
+                via: "inherited",
+            },
+        ],
+        in_recursive_cycle: true,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+    RoutineSummary {
+        routine_id: "b",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t2|b_op1|p0",
+                operation_id: "b_op1",
+                op: "Insert",
+                table_id: "t2",
+                record_variable_id: None,
+                temp_state: ParameterDependent(
+                    0,
+                ),
+                via: "direct",
+            },
+            DbEffect {
+                effect_key: "Insert|t2|b_op1|u",
+                operation_id: "b_op1",
+                op: "Insert",
+                table_id: "t2",
+                record_variable_id: None,
+                temp_state: Unknown,
+                via: "inherited",
+            },
+        ],
+        in_recursive_cycle: true,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+]

@@ -138,6 +138,11 @@ criterion = "0.5"
 # the crate + dev-deps, so the IR crate + a dir walker are listed here too.
 al-syntax = { path = "crates/al-syntax" }
 walkdir = "2"
+# Already a normal dependency (see [dependencies] above) — re-listed here so the
+# `l4_summary_differential` integration test can SHA-256 the CDO whole-program
+# frozen baseline (too large to commit readably; frozen as a digest). Not a new
+# crate in the tree.
+sha2 = "0.10"
 
 [[bin]]
 name = "telemetry-spike"

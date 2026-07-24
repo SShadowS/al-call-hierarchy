@@ -1,0 +1,42 @@
+[
+    RoutineSummary {
+        routine_id: "a",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t6|shared_op2|p2",
+                operation_id: "shared_op2",
+                op: "Insert",
+                table_id: "t6",
+                record_variable_id: None,
+                temp_state: ParameterDependent(
+                    2,
+                ),
+                via: "direct",
+            },
+        ],
+        in_recursive_cycle: false,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+    RoutineSummary {
+        routine_id: "b",
+        db_effects: [
+            DbEffect {
+                effect_key: "Insert|t6|shared_op2|p0",
+                operation_id: "shared_op2",
+                op: "Insert",
+                table_id: "t6",
+                record_variable_id: None,
+                temp_state: ParameterDependent(
+                    0,
+                ),
+                via: "direct",
+            },
+        ],
+        in_recursive_cycle: false,
+        has_unresolved_calls: false,
+        uncertainties: [],
+        parameter_roles: [],
+    },
+]

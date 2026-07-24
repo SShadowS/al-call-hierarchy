@@ -1631,7 +1631,7 @@ mod tests {
     use crate::engine::l4::effect_lattice::effect_key_of;
     use crate::engine::l4::scc::SccResult;
     use crate::engine::l4::summary::{DbEffect, RoutineSummary, TempState};
-    use crate::engine::l4::summary_runner::compute_summaries_with_leaves;
+    use crate::engine::l4::summary_runner::compute_summaries_v2_with_leaves_core;
     use std::collections::HashSet;
 
     fn pd_anchor() -> PAnchor {
@@ -3112,12 +3112,17 @@ mod tests {
         // Build a REAL fixture — {a,b} recursive effective SCC, `ext` an
         // external bodyless (opaque) successor, `a` parse-incomplete (a
         // generic base uncertainty) and owning a `member-not-found`
-        // uncertainty-edge — run the OLD `compute_summaries_with_leaves` over
-        // the WHOLE workspace (ext's singleton SCC settles first, exactly
-        // the ordering the real assembly uses) and assert `solve_side_facts`
-        // reproduces the old solver's converged
-        // `uncertainties`/`has_unresolved_calls` BIT FOR BIT — the "truest
-        // oracle" per the task brief.
+        // uncertainty-edge — run the v2 solver
+        // (`compute_summaries_v2_with_leaves_core`) over the WHOLE workspace
+        // (ext's singleton SCC settles first, exactly the ordering the real
+        // assembly uses) purely to obtain `ext`'s settled successor summary,
+        // then assert `solve_side_facts` (the KEPT v2 uncertainty/roles
+        // side-solver) reproduces the converged
+        // `uncertainties`/`has_unresolved_calls` BIT FOR BIT. Was originally
+        // seeded from the old Jacobi `compute_summaries_with_leaves`; since v2
+        // is byte-identical for `ext` (a trivial bodyless-opaque summary) the
+        // seed source moved to v2 when the old solver was retired (Part B) —
+        // `solve_side_facts` remains the subject under test.
         let mut a = pd_routine("a");
         a.parse_incomplete = true;
         let b = pd_routine("b");
@@ -3165,13 +3170,12 @@ mod tests {
         let fields = FieldIndex::new();
         let leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
 
-        let (old_map, _trace, _diag) = compute_summaries_with_leaves(
+        let (v2_map, _diag) = compute_summaries_v2_with_leaves_core(
             &routines,
             &graph,
             &scc,
             &upgraded_bindings,
             &fields,
-            false,
             &leaf_summaries,
         );
 
@@ -3185,7 +3189,7 @@ mod tests {
         let mut settled: HashMap<String, RoutineSummary> = HashMap::new();
         settled.insert(
             "ext".to_string(),
-            old_map.get("ext").expect("ext settled").clone(),
+            v2_map.get("ext").expect("ext settled").clone(),
         );
         let mut base_summaries: HashMap<String, RoutineSummary> = HashMap::new();
         for id in ["a", "b"] {
@@ -3209,19 +3213,19 @@ mod tests {
         );
 
         for m in ["a", "b"] {
-            let old_summary = old_map
+            let full_summary = v2_map
                 .get(m)
-                .unwrap_or_else(|| panic!("old solver missing {m}"));
+                .unwrap_or_else(|| panic!("v2 solver missing {m}"));
             let m_ix = interner.get(m).expect("routine present");
             assert_eq!(
                 facts.uncertainties.get(&m_ix).cloned().unwrap_or_default(),
-                old_summary.uncertainties,
-                "[{m}] uncertainties mismatch vs old compose_routine oracle"
+                full_summary.uncertainties,
+                "[{m}] uncertainties mismatch vs full v2 solver oracle"
             );
             assert_eq!(
                 facts.has_unresolved.get(&m_ix).copied(),
-                Some(old_summary.has_unresolved_calls),
-                "[{m}] has_unresolved_calls mismatch vs old compose_routine oracle"
+                Some(full_summary.has_unresolved_calls),
+                "[{m}] has_unresolved_calls mismatch vs full v2 solver oracle"
             );
         }
     }
