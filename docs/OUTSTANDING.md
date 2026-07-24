@@ -164,6 +164,37 @@ the bottom, CHANGELOG, and git log.
   interleaved complexity-class assertions. Give compute_all the same load-stable
   treatment if it flakes again
 
+- [ ] **L4 db-effect RSS consumer-migration — remove the analyze-path
+  materialization shim** (`src/engine/l4/summary_runner.rs`
+  `compute_summaries_v2_bundle_with_leaves` → `_core`; the follow-up the L4 store
+  redesign B1 explicitly deferred). B1 deleted the old Jacobi solver and flipped
+  the differential to a frozen baseline, but the shim that re-expands the shared
+  `EffectStore` into an owned `Vec<DbEffect>` per routine (so the returned
+  `HashMap<String, RoutineSummary>` keeps the legacy shape) STAYS — the projection
+  (`summary.rs::project_r3a2`) and the differential still need materialized
+  `db_effects`. Measured cost (8020,
+  `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`): `context.compute_summaries`
+  ~87 s + ~24 GB peak RSS is dominated by this shim, and the analyze path never
+  READS `RoutineSummary.db_effects` (detectors consume only `.uncertainties` /
+  `.parameter_roles` / capability facts — verified grep). Migrate the analyze path
+  (`detector_context` / `gate`) to the bundle's borrowing view + the A4
+  `ReverseEffectIndex`, keeping a materializing path ONLY for the projection +
+  differential. Expected: −24 GB, `compute_summaries` ~87 s → ~13 s. No wake
+  condition — buildable now.
+- [ ] **C1 — `context.capability_cones` base-assembly RSS** (~16 GB on 8020;
+  `compose_cone_over_graph`, a separate pre-existing cost, NOT the db-effect
+  store). Diagnosis: `.superpowers/sdd/C1-cones-diagnosis.md`. Whole-process
+  "<1 GB" is only approachable after BOTH the RSS consumer-migration (−24 GB) and
+  C1 (−~11 GB) land.
+- [ ] **A future incremental L4 path over the new `EffectStore`** (a redesign, NOT
+  a re-port of the deleted R3b). The reusable design intent — fine-grained Salsa
+  query topology, SCC-identity rules (interned sorted-member `SccKey`), fixed-leaf
+  successor handling, deterministic sorted member-order, the demand-order /
+  DB-provenance / fixpoint-schedule / `RUST_HASH_SEED` nondeterminism invariants,
+  and the strict-subset minimal-invalidation fixtures — is preserved in
+  `docs/superpowers/notes/2026-07-24-r3b-incremental-l4-design-intent.md`. Wake: a
+  real incremental-analyze consumer.
+
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY

@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **L4 db-effect store redesign — interned columnar `EffectStore` +
+  `ReverseEffectIndex`** (`src/engine/l4/effect_store.rs`,
+  `src/engine/l4/effect_universe.rs`, `src/engine/l4/reverse_index.rs`,
+  `src/engine/l4/routine_interner.rs`;
+  `docs/superpowers/specs/2026-07-22-l4-dbeffect-store-and-retirement-design.md`,
+  `feat/l4-summary-redesign`, Part A A1–A5). Replaces the per-member
+  `Vec<DbEffect>` materialization that dominated the closed-form v2 solver's
+  constant factors with a shared, interned, columnar store: a
+  `GrowingEffectUniverse` → `FrozenEffectUniverse` typestate interns each
+  distinct effect identity to an `EffectId` (storage EffectId-keyed, OUTPUT order
+  a frozen `key_rank` — ids are never reassigned), an SCC-shared `EffectSetId`
+  hash-conses the terminal sets, and a lazy `DbEffect` view reproduces the
+  byte-identical `Vec<DbEffect>` per routine on demand. `ReverseEffectIndex` is
+  the bidirectional hover/query index (effect/table ↔ routine). Proven
+  byte-identical to the old Jacobi solver over the complete `RoutineSummary` on
+  the fixtures + generated small-graph shapes + the CDO whole-program case
+  (`tests/l4_summary_differential.rs`).
 - **`finding`/`d1_cohort` — compressed report schema + loop-set interning
   (`LoopSetId`, `LoopSetRegistry`, `LoopCatalogEntry`, `D1CohortContext`,
   `decompress_cohort_context`)** (`src/engine/l5/finding.rs`,
@@ -391,6 +408,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt` stamp).
 
 ### Removed
+- **The old L4 Jacobi db-effects solver + the R3b Salsa incremental experiment +
+  the R3a-2 Jacobi trace dump mode — ONE summary path remains**
+  (`src/engine/l4/summary_runner.rs`, `src/engine/l4/summary.rs`,
+  `src/engine/l4/incremental/` [deleted], `src/bin/aldump.rs`,
+  `src/engine/perf_trace.rs`;
+  `docs/superpowers/specs/2026-07-22-l4-dbeffect-store-and-retirement-design.md`
+  Part B, `feat/l4-summary-redesign`, Task B1). Now that the interned columnar
+  `EffectStore` solver (above) is proven byte-identical, the old Jacobi solver is
+  retired: deleted `compose_routine` (the full JACOBI transfer function),
+  `run_one_scc` + `SccComputeOut`, `compute_summaries` /
+  `compute_summaries_with_leaves`, `RawSccTrace` / `RawSccTracePass`, and the
+  `Detail::Jacobi` perf-trace tier + its per-SCC/per-pass instrumentation. KEPT
+  the pieces v2 uses (`compose_roles_only`, `run_one_scc_roles`,
+  `solve_side_facts`, `SccComputeCtx`, `SummarizeDiagnostic`). Also deleted the
+  **R3b Salsa incrementality experiment** (`src/engine/l4/incremental/` + the 4
+  `tests/r3/r3b_*` suites — zero shipping consumers; reusable design intent
+  preserved in `docs/superpowers/notes/2026-07-24-r3b-incremental-l4-design-intent.md`)
+  and the **R3a-2 Jacobi fingerprint TRACE** dump mode (`aldump --r3a2-trace`,
+  `project_r3a2_with_trace`, `R3a2Trace`/`PSccTrace`/`PSccTracePass`,
+  `project_raw_scc_traces`, the 3 `*.r3a2-trace.golden.json` + their tests): the
+  closed-form v2 solver has no per-pass trajectory to trace, and al-sem (the
+  trace's oracle) is retired. The `tests/l4_summary_differential.rs` differential
+  flipped from `v2 == old` to `v2 == frozen complete-internal baseline`
+  (`tests/l4-summary-baseline/`, captured at parity before deletion; pre-deletion
+  commit recorded for forensic re-differencing). The R3a-2 SUMMARY projection
+  (`aldump --r3a2-summary-core`) is unchanged — byte-identical goldens.
 - **7a's rayon `par_iter` group-parallelism in `d1_reach::search_loops`** (Task
   D3; `src/engine/l5/d1_reach.rs`, `feat/d1-reachability`). This was the 42.8 GB
   RSS culprit — 32 concurrent worker threads each materializing a fresh
@@ -576,6 +619,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **L4 `compute_summaries` — the closed-form interned `EffectStore` solver
+  replaced the O(N²)-materialization Jacobi db-effects fixpoint**
+  (`feat/l4-summary-redesign`; 8020-corpus re-measure in
+  `docs/2026-07-24-l4-dbeffect-store-8020-remeasure.md`). On the 8020 synthetic
+  corpus the db-effect solve (`db_solver_ms`, phase-split) dropped from **~517 s
+  to ~11.8 s** (the old Jacobi it replaced was ~729 s); the SCC-shared
+  `EffectSetId` store collapsed the per-member materialization. NOTE: the
+  analyze-path `db_effects` **materialization shim** (`summary_runner.rs`) still
+  re-expands the shared store into owned `Vec<DbEffect>` per routine (needed by
+  the projection + differential), so the full `context.compute_summaries` span /
+  ~24 GB RSS win awaits the deferred **RSS consumer-migration** (point the
+  analyze path at the bundle's borrowing view — see `docs/OUTSTANDING.md`).
 - **d1 CUTOVER — `detect_d1` emits the compressed terminal-cohort report; the
   per-`(loop, terminal)` witness/context explosion is GONE** (Tasks C5+C6,
   `docs/superpowers/plans/2026-07-21-d1-cohort-redesign.md`, `feat/d1-reachability`;
