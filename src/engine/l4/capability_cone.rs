@@ -30,6 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::combined_graph::{CombinedGraph, TypedEdge, build_combined_graph};
+use super::cone_census;
 use super::cone_derived::{ConeDerivedBuilder, ConeDerivedStore, ConeOutput};
 use super::scc::{Scc, SccInputGraph, SccResult, tarjan_scc};
 use crate::engine::ids::to_stable_object_id;
@@ -1806,6 +1807,58 @@ fn compose_inherited_cones(
         }
     }
 
+    // ⟨C1 census⟩ `C1_CONE_CENSUS=1` — report what's LEFT in `fact_cones`/
+    // `cov_cones` at function exit. An SCC with no caller (a true call-graph
+    // root — an entry point / public API nothing else in the workspace calls)
+    // never has its refcount driven to zero by the loop above, so its cone
+    // survives until these two locals drop at this function's return. This is
+    // NOT a peak sample — mid-walk, before earlier SCCs were refcount-freed,
+    // the maps could have held more — but it is a cheap, non-invasive proxy:
+    // true per-insert/remove incremental byte tracking (the only way to get a
+    // real peak) is the invasive plumbing this diagnostic deliberately skips.
+    if cone_census::enabled() {
+        let mut fc_entries: u64 = 0;
+        let mut fc_bytes: u64 = 0;
+        for cone in fact_cones.values() {
+            for (key, entry) in cone {
+                fc_entries += 1;
+                fc_bytes += key.len() as u64
+                    + std::mem::size_of::<ConeFactEntry>() as u64
+                    + cone_census::capability_fact_heap_bytes(&entry.rep);
+            }
+        }
+        let mut cc_reasons: u64 = 0;
+        let mut cc_reasons_bytes: u64 = 0;
+        let mut cc_unknown: u64 = 0;
+        let mut cc_unknown_bytes: u64 = 0;
+        for cone in cov_cones.values() {
+            cc_reasons += cone.reasons.len() as u64;
+            cc_reasons_bytes += cone.reasons.iter().map(|s| s.len() as u64).sum::<u64>();
+            cc_unknown += cone.unknown_targets.len() as u64;
+            cc_unknown_bytes += cone
+                .unknown_targets
+                .iter()
+                .map(|s| s.len() as u64)
+                .sum::<u64>();
+        }
+        eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
+        eprintln!(
+            "[C1_CONE_CENSUS] section: fact_cones/cov_cones residual at compose_inherited_cones \
+             exit (root SCCs only, never refcount-freed — NOT a peak sample, NOT part of any \
+             grand_total_bytes)"
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   fact_cones_residual_sccs={} fact_cones_residual_entries={fc_entries} fact_cones_residual_bytes={fc_bytes} ({:.2} MB)",
+            fact_cones.len(),
+            fc_bytes as f64 / 1_048_576.0
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   cov_cones_residual_sccs={} cov_cones_residual_reasons={cc_reasons} reasons_bytes={cc_reasons_bytes} cov_cones_residual_unknown_targets={cc_unknown} unknown_targets_bytes={cc_unknown_bytes} ({:.2} MB total)",
+            cov_cones.len(),
+            (cc_reasons_bytes + cc_unknown_bytes) as f64 / 1_048_576.0
+        );
+    }
+
     (out, derived.finish())
 }
 
@@ -1902,6 +1955,45 @@ pub fn compose_cone_over_graph(
 
     let (cones, derived) =
         compose_inherited_cones(&g, &scc, &direct, direct_in, &cov, &routine_ids, mode);
+
+    // ⟨C1 census⟩ `direct` — the SCC walk's per-routine DEDUP-KEYED direct-fact
+    // map (`inherited_fact_key` -> canonical rep) — is alive for the whole
+    // `compose_inherited_cones` call above (borrowed throughout) and is about
+    // to drop at this function's own return, a THIRD copy of the direct-facts
+    // population alongside `direct_in` (raw duplicate, see
+    // `cone_census::emit_direct_in_residual`) and the `capability_facts_direct`
+    // ultimately stored in `summaries`.
+    if cone_census::enabled() {
+        let mut inner_entries: u64 = 0;
+        let mut struct_bytes: u64 = 0;
+        let mut heap_bytes: u64 = 0;
+        let mut outer_key_bytes: u64 = 0;
+        for (outer_key, byk) in &direct {
+            outer_key_bytes += outer_key.len() as u64;
+            for (inner_key, fact) in byk {
+                inner_entries += 1;
+                struct_bytes += std::mem::size_of::<CapabilityFact>() as u64;
+                heap_bytes +=
+                    inner_key.len() as u64 + cone_census::capability_fact_heap_bytes(fact);
+            }
+        }
+        let total = struct_bytes + heap_bytes + outer_key_bytes;
+        eprintln!("[C1_CONE_CENSUS] --------------------------------------------------");
+        eprintln!(
+            "[C1_CONE_CENSUS] section: `direct` dedup-keyed facts map (compose_cone_over_graph's \
+             own SCC-walk input — alive for the whole cone walk, a THIRD copy alongside direct_in \
+             and the final capability_facts_direct; NOT part of any grand_total_bytes)"
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   outer_entries={} inner_entries={inner_entries} outer_key_heap_bytes={outer_key_bytes} struct_bytes={struct_bytes} heap_bytes={heap_bytes}",
+            direct.len()
+        );
+        eprintln!(
+            "[C1_CONE_CENSUS]   direct_dedup_total_bytes={total} ({:.2} MB)  # BTreeMap node overhead NOT modeled (only key+value payload bytes) — a further under-count",
+            total as f64 / 1_048_576.0
+        );
+    }
+
     ConeOutcome {
         cones: cones
             .into_iter()

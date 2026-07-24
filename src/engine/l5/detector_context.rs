@@ -337,6 +337,13 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         let mut cones = outcome.cones;
         cone_derived = outcome.derived;
 
+        // ⟨C1 census⟩ `direct_in`'s last real use is the call above — from here
+        // to the end of this block it is dead but Rust will not free it until
+        // the block's scope ends (a few dozen lines below), so it stays a live,
+        // full duplicate of the direct-facts population for the rest of this
+        // span. See `cone_census::emit_direct_in_residual`'s doc.
+        crate::engine::l4::cone_census::emit_direct_in_residual(&direct_in);
+
         // `cones` and `direct_full` are locally owned and dead after this loop, so
         // move their payloads into the summaries instead of cloning them out.
         let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
@@ -405,6 +412,12 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         HashMap::new()
     };
     drop(_cones_span);
+
+    // ⟨C1 census⟩ `C1_CONE_CENSUS=1` — one-shot byte census of what the cone
+    // build just left resident (`summaries` + `cone_derived`), emitted after
+    // the span closes so the census's own (modest) bookkeeping never pollutes
+    // the span's own `rss_delta` measurement. No-op when the env var is unset.
+    crate::engine::l4::cone_census::emit_full_census(&summaries, &cone_derived);
 
     // --- Eager indexes -----------------------------------------------------
     let routine_by_id: HashMap<&str, &L3Routine> =

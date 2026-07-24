@@ -12,6 +12,12 @@
 pub mod capability_cone;
 pub mod cfg_walker;
 pub mod combined_graph;
+// ⟨C1 residual census⟩ `C1_CONE_CENSUS=1` diagnostic — attributes the
+// `context.capability_cones` span's `rss_delta` byte-for-byte across
+// `capability_facts_direct` / `CoverageRecord` / `ConeDerivedStore` / the
+// `summaries` map container. See its module doc for the full accounting
+// convention. Inert (no allocation, no output) when the env var is unset.
+pub mod cone_census;
 // C1 — the compact derived cone substrate (`ConeDerivedStore` + the fold + the
 // `ConeOutput` mode) that REPLACED the per-routine inherited `Vec<CapabilityFact>`
 // on the analyze path: since Task 3 that Vec is not built there at all

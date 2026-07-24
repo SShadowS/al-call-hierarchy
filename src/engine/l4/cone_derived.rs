@@ -63,6 +63,7 @@
 //! `BTreeSet<String>` ordering the raw helpers produce.
 
 use std::collections::{BTreeMap, HashMap};
+use std::mem::size_of;
 use std::ops::Range;
 
 use crate::engine::l4::capability_cone::{CapabilityExtra, CapabilityFact};
@@ -232,6 +233,18 @@ impl ResInterner {
     /// True when nothing has been interned.
     pub fn is_empty(&self) -> bool {
         self.strings.is_empty()
+    }
+
+    /// ⟨C1 census⟩ Total HEAP bytes owned by the interner's string storage —
+    /// BOTH copies: the canonical `strings` Vec (index → string) AND the
+    /// `by_str` reverse-lookup `HashMap`'s own `String` keys. Each interned
+    /// resource id's text is therefore stored TWICE; this reports the true
+    /// total, not an idealized single-copy count. `C1_CONE_CENSUS`-only —
+    /// not read by any production code path.
+    pub fn census_heap_bytes(&self) -> u64 {
+        let strings_bytes: u64 = self.strings.iter().map(|s| s.len() as u64).sum();
+        let by_str_key_bytes: u64 = self.by_str.keys().map(|s| s.len() as u64).sum();
+        strings_bytes + by_str_key_bytes
     }
 }
 
@@ -439,6 +452,53 @@ impl ConeDerivedStore {
         out.sort();
         out
     }
+
+    /// ⟨C1 census⟩ Pool/row sizes for the `C1_CONE_CENSUS` diagnostic (see
+    /// `cone_census.rs`'s module doc for the accounting convention). Every
+    /// pool here stores plain `ResId`/`(ResId, u8)` values — no owned strings
+    /// — so its `_bytes` fields are pure backing-buffer footprint
+    /// (`len() * size_of::<T>()`); the interner is the ONLY owner of the
+    /// actual id text, reported separately via [`ResInterner::census_heap_bytes`].
+    pub fn census(&self) -> ConeDerivedCensus {
+        ConeDerivedCensus {
+            rows: self.rows.len(),
+            rows_key_heap_bytes: self.rows.keys().map(|k| k.len() as u64).sum(),
+            rows_struct_bytes: (self.rows.len() * size_of::<ConeDerivedRow>()) as u64,
+            interner_strings: self.interner.len(),
+            interner_heap_bytes: self.interner.census_heap_bytes(),
+            writes_all_len: self.writes_all_pool.len(),
+            writes_all_bytes: (self.writes_all_pool.len() * size_of::<ResId>()) as u64,
+            phys_writes_len: self.phys_writes_pool.len(),
+            phys_writes_bytes: (self.phys_writes_pool.len() * size_of::<(ResId, u8)>()) as u64,
+            phys_reads_len: self.phys_reads_pool.len(),
+            phys_reads_bytes: (self.phys_reads_pool.len() * size_of::<ResId>()) as u64,
+            events_len: self.events_pool.len(),
+            events_bytes: (self.events_pool.len() * size_of::<ResId>()) as u64,
+        }
+    }
+}
+
+/// ⟨C1 census⟩ Byte/row accounting for [`ConeDerivedStore::census`] — the
+/// `C1_CONE_CENSUS` diagnostic only, not used by any production query.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ConeDerivedCensus {
+    pub rows: usize,
+    /// Heap bytes of the `rows` HashMap's owned `String` keys (routine ids).
+    pub rows_key_heap_bytes: u64,
+    /// `rows.len() * size_of::<ConeDerivedRow>()` — the rows table's own
+    /// backing-buffer footprint (the routine-id keys' heap bytes are counted
+    /// separately above).
+    pub rows_struct_bytes: u64,
+    pub interner_strings: usize,
+    pub interner_heap_bytes: u64,
+    pub writes_all_len: usize,
+    pub writes_all_bytes: u64,
+    pub phys_writes_len: usize,
+    pub phys_writes_bytes: u64,
+    pub phys_reads_len: usize,
+    pub phys_reads_bytes: u64,
+    pub events_len: usize,
+    pub events_bytes: u64,
 }
 
 // ---------------------------------------------------------------------------
