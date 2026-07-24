@@ -391,6 +391,21 @@ pub(crate) fn has_bit(bits: &[u64], id: EffectId) -> bool {
     word < bits.len() && (bits[word] & (1u64 << (id.0 % 64))) != 0
 }
 
+/// Bulk word-at-a-time OR of `src` into `dst`, growing `dst` if `src` is
+/// longer — the whole-bitset counterpart to [`set_bit`]'s single-bit OR.
+/// [`reconstruct_via`]'s rank-group mask-OR uses this to fold an ENTIRE
+/// terminal presence set (e.g. [`SccPresence::terminal_union`]) into a via
+/// rank group in one pass over `src.len()` words, instead of a per-bit
+/// [`iter_set_bits`] scan over the same set for every contributing edge.
+fn or_bits(dst: &mut Vec<u64>, src: &[u64]) {
+    if dst.len() < src.len() {
+        dst.resize(src.len(), 0);
+    }
+    for (d, s) in dst.iter_mut().zip(src.iter()) {
+        *d |= s;
+    }
+}
+
 /// Per-member db-effect PRESENCE sets for one effective SCC — a bitset over
 /// the shared [`EffectUniverse`], indexed by [`EffectId`]`.0` (see [`set_bit`]).
 /// Task A1: keyed by [`RoutineIx`] rather than the member's raw `String` id —
@@ -399,6 +414,18 @@ pub(crate) fn has_bit(bits: &[u64], id: EffectId) -> bool {
 /// `solve_scc_db_effects`) used to pay.
 pub struct SccPresence {
     pub by_member: HashMap<RoutineIx, Vec<u64>>,
+    /// The shared closed-form TERMINAL union `C` this fn builds once and
+    /// clones into every member (see this fn's own doc: `bits = c.clone()`)
+    /// — i.e. exactly the terminal-typed (`Known`/`Unknown`) portion of
+    /// EVERY member's `by_member` entry, guaranteed PD-free (built only via
+    /// [`intern_terminal_db_effect`], which skips `ParameterDependent`, and
+    /// `TerminalEmission`, whose own `temp` field is `Known`/`Unknown`-only
+    /// by construction). Exposed separately (Task A2) so
+    /// [`reconstruct_via`]'s rank-group mask-OR can fold it wholesale into a
+    /// via rank group for an intra-effective-SCC edge in ONE bulk
+    /// word-at-a-time OR, instead of re-deriving it by filtering a member's
+    /// mixed terminal+PD bits one set bit at a time on every such edge.
+    pub terminal_union: Vec<u64>,
 }
 
 /// Intern a TERMINAL (`Known`/`Unknown` only) [`DbEffect`](crate::engine::l4::summary::DbEffect)
@@ -563,7 +590,10 @@ pub fn closed_form_union(
         by_member.insert(m_ix, bits);
     }
 
-    SccPresence { by_member }
+    SccPresence {
+        by_member,
+        terminal_union: c,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -596,9 +626,14 @@ fn merge_via_into(
 
 /// Bit-scan iterator over the SET bits of one presence bitset, yielding
 /// `EffectId`s in ascending order. Cost is proportional to the number of set
-/// bits, not `universe.len()` — [`reconstruct_via`]'s per-edge callee scan
+/// bits, not `universe.len()` — [`reconstruct_via`]'s own per-member final
+/// derivation scan and `attribute_pd_substituted_via`'s per-edge callee scan
 /// must stay cheap even when the shared, workspace-wide universe holds many
-/// thousands of identities that have nothing to do with this callee.
+/// thousands of identities that have nothing to do with this callee. (Task
+/// A2: `reconstruct_via`'s intra-effective-SCC edge fold no longer scans a
+/// callee's bits at all — it bulk-ORs the shared terminal union wholesale,
+/// see [`or_bits`] — so this iterator's role there is now only the final,
+/// once-per-member presence-gated derivation.)
 fn iter_set_bits(bits: &[u64]) -> impl Iterator<Item = EffectId> + '_ {
     bits.iter().enumerate().flat_map(|(word_idx, &word)| {
         let mut remaining = word;
@@ -659,6 +694,38 @@ fn iter_set_bits(bits: &[u64]) -> impl Iterator<Item = EffectId> + '_ {
 ///     and `upgraded_bindings` in scope; it must either extend this function
 ///     or run an equivalent substitution-aware pass over PD-typed presence
 ///     bits before materializing `DbEffect.via`.
+///
+/// ## Implementation: rank-group mask-OR (Task A2 review fix, spec lines 136-139)
+///
+/// Rather than a per-`(member, EffectId)` `HashMap` upsert for every
+/// contribution (`merge_via_into`'s original strategy here), this fn
+/// accumulates FIVE per-member presence bitsets — one per [`ViaRank`] —
+/// then derives each present effect's `via` as the highest rank whose
+/// bitset has that effect's bit set. Two properties make this exact:
+///   - `via_for_edge_kind` never returns `"direct"`, so the `Direct` group is
+///     populated ONLY by the base seed (below) — never by an edge fold — and
+///     `Inherited` (rank 0) is `materialize_member_db_effects`'s own default
+///     for an ABSENT `via_map` entry, so that group is never even built:
+///     skipping it is behaviourally identical to populating and querying it.
+///   - Every intra-effective-SCC callee's TERMINAL presence is, by
+///     construction, EXACTLY the shared closed-form union `C`
+///     ([`SccPresence::terminal_union`] — `closed_form_union` clones `c`
+///     into every member's `by_member` entry, so `C` never varies by which
+///     member is asked) — so an intra-SCC edge's contribution is a single
+///     bulk word-at-a-time OR of `C` into that edge's rank group
+///     ([`or_bits`]), not a per-bit scan filtered by temp-state kind. A
+///     settled successor's own terminal set is typically small and NOT
+///     necessarily all of `C`, so that path still walks its `db_effects` by
+///     identity (same cost as before).
+///
+/// Gating happens ONCE, in bulk, at derivation time (`has_bit` against the
+/// member's FINAL presence) rather than per contribution — equivalent
+/// because presence never changes between accumulation and derivation.
+/// Because the 5 ranks are a bijection with the 5 canonical via strings (no
+/// two distinct strings share a rank), an equal-rank tie is an identical
+/// value — "first-wins" is vacuous — so max-rank reproduces `merge_via`
+/// exactly, matching `merge_via_into`'s own max-rank semantics byte for
+/// byte.
 pub fn reconstruct_via(
     eff: &Scc,
     graph: &CombinedGraph,
@@ -671,71 +738,64 @@ pub fn reconstruct_via(
     let member_set: HashSet<&str> = eff.members.iter().map(|s| s.as_str()).collect();
     let mut via_map: HashMap<(RoutineIx, EffectId), ViaRank> = HashMap::new();
 
-    // Init: base effects seed "direct" for every present EffectId that is
-    // one of the member's OWN base db_effects (terminal or PD — both always
-    // carry via="direct"; base_intraprocedural_summary, summary_runner.rs:162).
-    for m in &eff.members {
-        let m_ix = interner
-            .get(m)
-            .expect("every effective-SCC member is interned at workspace setup");
-        let Some(bits) = presence.by_member.get(&m_ix) else {
-            continue; // no presence recorded for this member; nothing to seed.
-        };
-        let Some(base) = base_summaries.get(m) else {
-            // Every real routine has a precomputed base summary — see
-            // compose_routine's own "this fallback is dead" note
-            // (summary_runner.rs:365-369). reconstruct_via's signature
-            // carries no routines_by_id to recompute one on the fly, so a
-            // missing entry is skipped defensively rather than faked.
-            continue;
-        };
-        for e in &base.db_effects {
-            let identity = EffectIdentity {
-                op: e.op.clone(),
-                table_id: e.table_id.clone(),
-                operation_id: e.operation_id.clone(),
-                temp: e.temp_state.to_kind(),
-            };
-            if let Some(id) = universe.get(&identity)
-                && has_bit(bits, id)
-            {
-                merge_via_into(&mut via_map, m_ix, id, ViaRank::Direct);
-            }
-        }
-    }
+    // Descending-rank order, `Inherited` excluded — see this fn's own doc
+    // for why the floor rank is never built or queried.
+    const RANKED: [ViaRank; 4] = [
+        ViaRank::Direct,
+        ViaRank::ImplicitTrigger,
+        ViaRank::EventSubscriber,
+        ViaRank::Dynamic,
+    ];
 
-    // Fold: every actual out-edge contributes via_for_edge_kind(edge.kind)
-    // to every TERMINAL effect it carries from the callee's set that is ALSO
-    // present in the caller's own final presence (identity transfer — see
-    // the "DEFERRED" doc section above for why PD-typed callee facts are
-    // skipped here).
     for m in &eff.members {
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
         let Some(m_bits) = presence.by_member.get(&m_ix) else {
-            continue;
+            continue; // no presence recorded for this member; nothing to seed.
         };
+
+        // The 5 rank-group presence contributions, indexed by `ViaRank as
+        // usize` (index 0, `Inherited`, is never populated). Accumulated
+        // UNCONDITIONALLY — the presence gate is applied once, below.
+        let mut rank_bits: [Vec<u64>; 5] = Default::default();
+
+        // Base seed: every one of `m`'s own base db_effects — terminal OR
+        // PD, both always carry via="direct" (base_intraprocedural_summary,
+        // summary_runner.rs:162) — contributes to the `Direct` group.
+        // Every real routine has a precomputed base summary — see
+        // compose_routine's own "this fallback is dead" note
+        // (summary_runner.rs:365-369); reconstruct_via's signature carries
+        // no routines_by_id to recompute one on the fly, so a missing entry
+        // contributes nothing here, same as before.
+        if let Some(base) = base_summaries.get(m) {
+            for e in &base.db_effects {
+                let identity = EffectIdentity {
+                    op: e.op.clone(),
+                    table_id: e.table_id.clone(),
+                    operation_id: e.operation_id.clone(),
+                    temp: e.temp_state.to_kind(),
+                };
+                if let Some(id) = universe.get(&identity) {
+                    set_bit(&mut rank_bits[ViaRank::Direct as usize], id);
+                }
+            }
+        }
+
+        // Fold: every actual out-edge contributes via_for_edge_kind(edge.kind)
+        // to every TERMINAL effect it carries from the callee (identity
+        // transfer — see the "DEFERRED" doc section above for why PD-typed
+        // callee facts are skipped here).
         for edge in graph.edges_by_from.get(m).into_iter().flatten() {
             let via = ViaRank::from_str(via_for_edge_kind(&edge.kind));
+            if via == ViaRank::Inherited {
+                continue; // the floor default; never queried at derivation.
+            }
             if member_set.contains(edge.to.as_str()) {
-                let to_ix = interner
-                    .get(&edge.to)
-                    .expect("every intra-effective-SCC callee is interned at workspace setup");
-                let Some(callee_bits) = presence.by_member.get(&to_ix) else {
-                    continue;
-                };
-                for id in iter_set_bits(callee_bits) {
-                    if !matches!(
-                        universe.identity(id).temp,
-                        TempStateKind::Known(_) | TempStateKind::Unknown
-                    ) {
-                        continue; // PD-typed: deferred, see doc above.
-                    }
-                    if has_bit(m_bits, id) {
-                        merge_via_into(&mut via_map, m_ix, id, via);
-                    }
-                }
+                // Intra-effective-SCC callee: bulk-OR the shared terminal
+                // union wholesale — see this fn's own doc for why this is
+                // exact, not an approximation.
+                or_bits(&mut rank_bits[via as usize], &presence.terminal_union);
             } else if let Some(callee_summary) = settled.get(&edge.to) {
                 for e in &callee_summary.db_effects {
                     if !matches!(e.temp_state, TempState::Known(_) | TempState::Unknown) {
@@ -747,16 +807,26 @@ pub fn reconstruct_via(
                         operation_id: e.operation_id.clone(),
                         temp: e.temp_state.to_kind(),
                     };
-                    if let Some(id) = universe.get(&identity)
-                        && has_bit(m_bits, id)
-                    {
-                        merge_via_into(&mut via_map, m_ix, id, via);
+                    if let Some(id) = universe.get(&identity) {
+                        set_bit(&mut rank_bits[via as usize], id);
                     }
                 }
             }
             // `else`: edge.to is neither an eff member nor settled — the
             // Step-B/C closed-form union already treats it as unresolved
             // (no contribution to presence), so there is nothing to fold.
+        }
+
+        // Derive: for every effect PRESENT in `m`'s FINAL bits (the
+        // `has_bit` presence gate, applied once here), take the highest rank
+        // whose group has that effect's bit set.
+        for id in iter_set_bits(m_bits) {
+            if let Some(&via) = RANKED
+                .iter()
+                .find(|&&r| has_bit(&rank_bits[r as usize], id))
+            {
+                via_map.insert((m_ix, id), via);
+            }
         }
     }
 
