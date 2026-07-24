@@ -944,13 +944,12 @@ mod release_checks {
         }
 
         // Warm-up (also proves the solver runs clean before timing it).
-        let (warm, _trace, _diag) = compute_summaries_v2(
+        let (warm, _diag) = compute_summaries_v2(
             &ws.routines,
             &graph,
             &scc,
             &calls.upgraded_bindings,
             &field_index,
-            false,
         );
         assert!(
             !warm.is_empty(),
@@ -960,13 +959,12 @@ mod release_checks {
         let mut samples = Vec::with_capacity(5);
         for _ in 0..5 {
             let start = Instant::now();
-            let (result, _trace, _diag) = compute_summaries_v2(
+            let (result, _diag) = compute_summaries_v2(
                 &ws.routines,
                 &graph,
                 &scc,
                 &calls.upgraded_bindings,
                 &field_index,
-                false,
             );
             samples.push(start.elapsed());
             assert!(

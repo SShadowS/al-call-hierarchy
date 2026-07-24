@@ -507,17 +507,15 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                     .or_insert_with(|| field.id.clone());
             }
         }
-        // v2 db-effect solver (Phase-1-parity). `summarize_diagnostics` now carries
-        // the ROLES fixpoint's cap-hit backstop (empty on the corpus — roles
-        // converge); the db_effects path is closed-form and never caps. `_trace` is
-        // always empty (v2 is trace-free).
-        let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_v2(
+        // v2 db-effect solver. `summarize_diagnostics` carries the ROLES fixpoint's
+        // cap-hit backstop (empty on the corpus — roles converge); the db_effects
+        // path is closed-form and never caps.
+        let (core_summaries, summarize_diagnostics) = compute_summaries_v2(
             &ws.routines,
             &graph,
             &scc,
             &calls.upgraded_bindings,
             &field_index,
-            false,
         );
         drop(_summaries_span);
 
@@ -651,7 +649,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
 pub(crate) fn build_detector_context_cross_app(
     base: &crate::engine::l4::capability_cone::R3a5CrossAppBase,
 ) -> DetectorContext<'_> {
-    use crate::engine::l4::summary_runner::compute_summaries_v2_with_leaves;
+    use crate::engine::l4::summary_runner::compute_summaries_v2_with_leaves_core;
 
     let ws_routines = &base.ws_routines;
     let dep_routine_ids = &base.dep_routine_ids;
@@ -770,17 +768,16 @@ pub(crate) fn build_detector_context_cross_app(
             .push(ue.uncertainty.clone());
     }
 
-    // Core summaries (v2 db-effect solver WITH dep leaves, Phase-1-parity) for the
-    // path-walker uncertainty union + parameter roles — same as
-    // project_r3a5_cross_app's core. `summarize_diagnostics` carries the roles
-    // fixpoint's cap-hit backstop (empty on the corpus); `_trace` is always empty.
-    let (core_summaries, _trace, summarize_diagnostics) = compute_summaries_v2_with_leaves(
+    // Core summaries (v2 db-effect solver WITH dep leaves) for the path-walker
+    // uncertainty union + parameter roles — same as project_r3a5_cross_app's core.
+    // `summarize_diagnostics` carries the roles fixpoint's cap-hit backstop (empty
+    // on the corpus).
+    let (core_summaries, summarize_diagnostics) = compute_summaries_v2_with_leaves_core(
         ws_routines,
         &graph,
         &base.combined_scc,
         &base.upgraded_bindings,
         &base.field_index,
-        false,
         &base.leaf_summaries,
     );
 

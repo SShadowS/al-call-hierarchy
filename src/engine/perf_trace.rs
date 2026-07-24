@@ -43,20 +43,19 @@ const MB: u64 = 1_048_576;
 // Detail tiers (cumulative)
 // ---------------------------------------------------------------------------
 
-/// Cumulative verbosity tiers. `Stages` < `Jacobi` < `Hot`; a configured tier
-/// enables every tier at or below it (`enabled(Detail::Stages)` is true whenever
-/// tracing is on at all).
+/// Cumulative verbosity tiers. `Stages` < `Hot`; a configured tier enables every
+/// tier at or below it (`enabled(Detail::Stages)` is true whenever tracing is on
+/// at all). (The intermediate `Jacobi` tier was retired with the old Jacobi
+/// db-effects solver — its only instrumentation lived inside that solver.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Detail {
     Stages,
-    Jacobi,
     Hot,
 }
 
 impl Detail {
     fn parse(s: &str) -> Detail {
         match s.trim().to_ascii_lowercase().as_str() {
-            "jacobi" => Detail::Jacobi,
             "hot" => Detail::Hot,
             _ => Detail::Stages,
         }
@@ -557,9 +556,10 @@ pub fn sample_every() -> u64 {
     tracer().map_or(64, |t| t.config.sample_every)
 }
 
-/// Per-SCC detail threshold (`ALSEM_TRACE_SCC_MIN`, default 100). Read by the
-/// Detail::Jacobi summary-runner instrumentation to emit one span per recursive
-/// SCC at or above this size.
+/// Per-SCC detail threshold (`ALSEM_TRACE_SCC_MIN`, default 100). A generic
+/// tracing knob: per-SCC instrumentation (when added) emits one span per SCC at
+/// or above this size. (Its previous reader, the old Jacobi solver's per-SCC
+/// span, retired with that solver.)
 pub fn scc_min() -> u64 {
     tracer().map_or(100, |t| t.config.scc_min)
 }
@@ -699,23 +699,21 @@ mod tests {
         assert_eq!(hot.detail, Detail::Hot);
         // Hot enables every lower tier.
         assert!(hot.detail >= Detail::Stages);
-        assert!(hot.detail >= Detail::Jacobi);
         assert!(hot.detail >= Detail::Hot);
 
-        let jac = Config::from_reader(env(&[
+        // The retired `jacobi` tier now parses as the base `Stages` tier (the
+        // `_ => Detail::Stages` fallback), and never enables `Hot`.
+        let retired = Config::from_reader(env(&[
             ("ALSEM_TRACE", "1"),
             ("ALSEM_TRACE_DETAIL", "jacobi"),
         ]))
         .unwrap();
-        assert_eq!(jac.detail, Detail::Jacobi);
-        assert!(jac.detail >= Detail::Stages);
-        assert!(jac.detail < Detail::Hot, "jacobi does NOT enable hot");
+        assert_eq!(retired.detail, Detail::Stages);
+        assert!(retired.detail < Detail::Hot, "stages does NOT enable hot");
 
         let stages = Config::from_reader(env(&[("ALSEM_TRACE", "1")])).unwrap();
-        assert!(
-            stages.detail < Detail::Jacobi,
-            "stages does NOT enable jacobi"
-        );
+        assert_eq!(stages.detail, Detail::Stages);
+        assert!(stages.detail < Detail::Hot, "stages does NOT enable hot");
     }
 
     #[test]

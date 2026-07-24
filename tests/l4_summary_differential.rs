@@ -6,24 +6,22 @@
 //! internal `RoutineSummary` (effect sequence + order, `effect_key`,
 //! op/table/operation, temp, via, `record_variable_id`, `uncertainties`,
 //! `has_unresolved_calls`, `parameter_roles`, `in_recursive_cycle`) — to the
-//! old Jacobi solver (`compute_summaries_with_leaves`), per routine, on these
-//! fixtures + the CDO whole-program case. Part B retires the old solver, so
-//! this harness's PRIMARY assertion FLIPS from `v2 == old` to
-//! `v2 == frozen-baseline`: a committed complete-internal snapshot captured
-//! from v2 while old still existed (`tests/l4-summary-baseline/`, see its
-//! `README.md` for provenance + the pre-deletion commit for forensic
+//! old Jacobi solver, per routine, on these fixtures + the CDO whole-program
+//! case. Part B has now retired the old solver, so this harness asserts
+//! `v2 == frozen-baseline`: a committed complete-internal snapshot captured from
+//! v2 while old still existed (`tests/l4-summary-baseline/`, see its `README.md`
+//! for provenance + the pre-deletion commit `f295ef8` for forensic
 //! re-differencing).
 //!
-//! ## Capture cross-assert (spec Part B.1)
+//! ## Capture provenance (spec Part B.1)
 //!
 //! The frozen baseline was captured from v2 with `baseline == old == v2` proven
 //! in the same working tree. Through the R3b-delete and aldump-cut steps that
-//! proof stayed live and CONTINUOUS: [`cross_check_v2_equals_old_all_fixtures`]
-//! (fixtures) and [`cdo_whole_program_v2_parity`] (CDO) kept asserting `v2 ==
-//! old` until the FINAL commit — the one that deletes the old solver — removed
-//! them (and the old solver) together. What remains is `v2 == frozen-baseline`
-//! ([`assert_parity`] / [`cdo_whole_program_v2_matches_frozen_digest`]) as the
-//! permanent regression anchor.
+//! proof stayed live and CONTINUOUS — a `v2 == old` cross-check over every
+//! fixture + the CDO whole-program parity test kept asserting it — until the
+//! FINAL commit deleted the old solver and those two cross-checks together. What
+//! remains is `v2 == frozen-baseline` ([`assert_parity`] /
+//! [`cdo_whole_program_v2_matches_frozen_digest`]) as the permanent anchor.
 //!
 //! Regenerate (a deliberate, engine-intended re-freeze — a MEASUREMENT, never a
 //! blind bless) with `REGEN_TEMP_GOLDENS=1 cargo test -p al-call-hierarchy
@@ -34,7 +32,7 @@ use std::path::PathBuf;
 
 use al_call_hierarchy::engine::l4::summary::RoutineSummary;
 use al_call_hierarchy::engine::l4::summary_runner::{
-    FieldIndex, compute_summaries_v2_with_leaves_core, compute_summaries_with_leaves,
+    FieldIndex, compute_summaries_v2_with_leaves_core,
 };
 
 // Task 9 (l4-summary-fixpoint-redesign): the CDO_WS/ENFORCE_CDO_WS gating helper
@@ -45,39 +43,6 @@ use al_call_hierarchy::engine::l4::summary_runner::{
 #[path = "common/cdo.rs"]
 mod cdo;
 use cdo::cdo_ws_or_enforce;
-
-/// Every fixture name the differential freezes — the 10 original Phase-1
-/// fixtures + the 8 committed generated small-graph shapes (collision /
-/// freeze-order / multi-callsite / fixed-leaf), i.e. the complete fixture
-/// surface Part A proved at parity. Drives [`cross_check_v2_equals_old_all_fixtures`].
-const ALL_FIXTURES: &[&str] = &[
-    "linear_known",
-    "recursive_self_loop",
-    "recursive_pair_pd",
-    "pd_to_known",
-    "pd_to_unknown",
-    "multi_callsite_same_callee",
-    "via_collision",
-    "via_collision_edges_reversed",
-    "pd_substituted_via_collision",
-    "pd_substituted_via_collision_reversed",
-    "direct_terminal_beats_colliding_pd_substitution",
-    "direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition",
-    "external_successor_pd",
-    "fixed_leaf_in_scc",
-    "multi_effect_fixed_leaf_in_scc",
-    "missing_routine_in_scc",
-];
-
-/// The fixed-leaf `leaf_summaries` map a fixture needs (empty for all but the
-/// two fixed-leaf fixtures).
-fn leaves_for(name: &str) -> HashMap<String, RoutineSummary> {
-    match name {
-        "fixed_leaf_in_scc" => fixtures::fixed_leaf_in_scc_leaves(),
-        "multi_effect_fixed_leaf_in_scc" => fixtures::multi_effect_fixed_leaf_in_scc_leaves(),
-        _ => HashMap::new(),
-    }
-}
 
 fn baseline_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -143,35 +108,6 @@ fn assert_parity_with_leaves(name: &str, leaves: &HashMap<String, RoutineSummary
         strip_cr(&expected),
         "[{name}] v2 diverged from the frozen complete-internal RoutineSummary baseline"
     );
-}
-
-/// CROSS-CHECK — retired in the SAME commit as the old Jacobi solver (spec Part
-/// B, step 4/5). While the old solver still exists, this asserts the frozen
-/// baseline (captured from v2) still equals the OLD solver bit-for-bit over the
-/// complete `RoutineSummary`, for every fixture — the continuous proof that
-/// `baseline == old == v2`. When the old solver is deleted this test goes with
-/// it, leaving the per-fixture `v2 == frozen-baseline` assertions above as the
-/// permanent anchor. NEVER weaken it: it is the last live `v2 == old` gate.
-#[test]
-fn cross_check_v2_equals_old_all_fixtures() {
-    for &name in ALL_FIXTURES {
-        let leaves = leaves_for(name);
-        let (routines, graph, scc, fields, ub) = fixtures::build(name);
-        let (old, _t, _d) =
-            compute_summaries_with_leaves(&routines, &graph, &scc, &ub, &fields, false, &leaves);
-        let (new, _diags) =
-            compute_summaries_v2_with_leaves_core(&routines, &graph, &scc, &ub, &fields, &leaves);
-        assert_eq!(old.len(), new.len(), "[{name}] routine count (v2 vs old)");
-        for (id, old_s) in &old {
-            let new_s = new
-                .get(id)
-                .unwrap_or_else(|| panic!("[{name}] missing {id} from v2"));
-            assert_eq!(
-                old_s, new_s,
-                "[{name}] v2 diverged from old solver for {id}"
-            );
-        }
-    }
 }
 
 #[test]
@@ -269,236 +205,6 @@ fn parity_multi_effect_fixed_leaf_in_scc() {
     assert_parity_with_leaves("multi_effect_fixed_leaf_in_scc", &leaves);
 }
 
-// ---------------------------------------------------------------------------
-// Task 9: the real-corpus whole-program v2 parity gate.
-// ---------------------------------------------------------------------------
-
-/// Returns a short, focused description of the FIRST field at which two
-/// `RoutineSummary`s diverge — used by [`cdo_whole_program_v2_parity`]'s
-/// mismatch diagnostic instead of dumping both complete summaries raw (a real
-/// workspace's `db_effects`/`uncertainties` lists can be long; this walks each
-/// list element-by-element and reports only the first differing entry, or a
-/// length mismatch, whichever comes first).
-fn first_diff_field(old: &RoutineSummary, new: &RoutineSummary) -> String {
-    if old.db_effects.len() != new.db_effects.len() {
-        return format!(
-            "db_effects length differs: old={} new={}",
-            old.db_effects.len(),
-            new.db_effects.len()
-        );
-    }
-    for (i, (o, n)) in old.db_effects.iter().zip(new.db_effects.iter()).enumerate() {
-        if o != n {
-            return format!("db_effects[{i}] differs: old={o:?} new={n:?}");
-        }
-    }
-    if old.in_recursive_cycle != new.in_recursive_cycle {
-        return format!(
-            "in_recursive_cycle differs: old={} new={}",
-            old.in_recursive_cycle, new.in_recursive_cycle
-        );
-    }
-    if old.has_unresolved_calls != new.has_unresolved_calls {
-        return format!(
-            "has_unresolved_calls differs: old={} new={}",
-            old.has_unresolved_calls, new.has_unresolved_calls
-        );
-    }
-    if old.uncertainties.len() != new.uncertainties.len() {
-        return format!(
-            "uncertainties length differs: old={} new={}",
-            old.uncertainties.len(),
-            new.uncertainties.len()
-        );
-    }
-    for (i, (o, n)) in old
-        .uncertainties
-        .iter()
-        .zip(new.uncertainties.iter())
-        .enumerate()
-    {
-        if o != n {
-            return format!("uncertainties[{i}] differs: old={o:?} new={n:?}");
-        }
-    }
-    if old.parameter_roles.len() != new.parameter_roles.len() {
-        return format!(
-            "parameter_roles length differs: old={} new={}",
-            old.parameter_roles.len(),
-            new.parameter_roles.len()
-        );
-    }
-    for (i, (o, n)) in old
-        .parameter_roles
-        .iter()
-        .zip(new.parameter_roles.iter())
-        .enumerate()
-    {
-        if o != n {
-            return format!("parameter_roles[{i}] differs: old={o:?} new={n:?}");
-        }
-    }
-    "RoutineSummary != by derived PartialEq but no per-field comparison above caught it \
-     (should be unreachable — report as an engine bug)"
-        .to_string()
-}
-
-/// The real-workspace parity gate (Task 9, l4-summary-fixpoint-redesign Phase 1
-/// capstone): assembles a REAL Business Central workspace (`CDO_WS`) into the
-/// exact `(routines, graph, scc, upgraded_bindings, fields, leaf_summaries)`
-/// tuple both `compute_summaries_with_leaves` (old JACOBI) and
-/// `compute_summaries_v2_with_leaves` (new closed-form solver) take, runs BOTH
-/// over the SAME inputs, and asserts complete-`RoutineSummary` parity — incl.
-/// `db_effects` (and its `record_variable_id`), `uncertainties`,
-/// `has_unresolved_calls`, `parameter_roles`, `in_recursive_cycle` — for EVERY
-/// routine in the workspace.
-///
-/// This is the ONLY place Phase 1's synthetic-fixture parity (all ten fixtures
-/// in this file use `record_variable_id: None`) gets checked at real scale: a
-/// real workspace's `L3RecordOperation.record_variable_id` is frequently
-/// `Some(..)`, so this is where a `record_variable_id` divergence between the
-/// two solvers would actually surface.
-///
-/// ## Assembly
-///
-/// The six inputs are built by replaying — in the SAME order, via the SAME
-/// public functions — exactly the sequence `build_detector_context`'s
-/// `CORE_SUMMARIES` substrate uses (`src/engine/l5/detector_context.rs`,
-/// roughly lines 236-517): `SymbolTable::build` → `resolve_calls` (no deps, no
-/// fetched apps — matches the source-only detector-context path) →
-/// `build_event_graph` → `build_combined_graph` → a Tarjan SCC over
-/// `graph.edges_by_from` → the `(tableId, lowercased field name) -> fieldId`
-/// `FieldIndex`. `leaf_summaries` is the empty map, exactly like
-/// `build_detector_context`'s own `compute_summaries(...)` call (which always
-/// passes `&no_leaves` — see `summary_runner::compute_summaries`). This makes
-/// the graph/SCC/bindings/fields fed to both solvers here BYTE-IDENTICAL to
-/// what a real `alsem`/`aldump` run feeds the production `compute_summaries`
-/// call — not a hand-built graph — while still calling the two solver entry
-/// points directly (so this test, not `DetectorContext`, owns the comparison).
-///
-/// ## record_variable_id out-of-contract proof
-///
-/// `PDbEffect` (`src/engine/l4/summary.rs:211`, the serde-projected `DbEffect`)
-/// OMITS `record_variable_id` — it is carried on the internal `DbEffect` (used
-/// by `RoutineSummary`/this differential) but never reaches the projected
-/// surface any consumer serializes. A repo-wide grep for readers —
-/// ```text
-/// rg -n "record_variable_id" src/engine/l5 src/engine/l4 | rg -v "None|test_support|: Option<String>"
-/// ```
-/// — turns up ONLY: (a) `DbEffect`/`RoutineSummary` CONSTRUCTOR sites in
-/// `summary_runner.rs` (old solver) and `db_effect_solver.rs` (new solver) —
-/// i.e. the two solvers this test already differentials against each other,
-/// and (b) same-NAMED-but-different fields on unrelated structs
-/// (`L3RecordOperation.record_variable_id` read by `capability_cone.rs` /
-/// `cfg_walker.rs`, `PCallArgumentBinding.source_record_variable_id` read by
-/// `d37.rs`/`d40.rs`, `CapabilityExtra::Table.record_variable_id` read by
-/// `snapshot.rs` — all capability-cone-family fields, never
-/// `RoutineSummary.db_effects[].record_variable_id`). Zero hits read the
-/// summary's `DbEffect.record_variable_id` back out. The complete-`RoutineSummary`
-/// `assert_eq!` below already guards the field regardless of this proof — this
-/// doc comment just records WHY a hypothetical divergence there could not reach
-/// any l5 consumer today.
-///
-/// Skips (no-op) when `CDO_WS` is unset; PANICS when `ENFORCE_CDO_WS=1` is set
-/// alongside a missing/invalid `CDO_WS` (`tests/common/cdo.rs`). Run against a
-/// real workspace with:
-/// ```text
-/// CDO_WS=<path> cargo test -p al-call-hierarchy --test l4_summary_differential cdo_ -- --nocapture
-/// ```
-#[test]
-fn cdo_whole_program_v2_parity() {
-    use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
-    use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
-    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
-    use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
-    use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
-    use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
-
-    let Some(ws_path) = cdo_ws_or_enforce() else {
-        return;
-    };
-
-    let resolved = assemble_and_resolve_workspace_default(&ws_path)
-        .expect("assemble_and_resolve_workspace_default must succeed on CDO_WS");
-    let ws = &resolved.workspace;
-
-    // --- Assemble the SAME (graph, scc, upgraded_bindings, fields) the
-    // detector-context CORE_SUMMARIES path builds — see the doc comment above. ---
-    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
-    let no_deps: Vec<DeclaredDependency> = Vec::new();
-    let no_fetched: Vec<String> = Vec::new();
-    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
-
-    let event_graph = build_event_graph(&ws.routines, &symbols);
-    let graph = build_combined_graph(ws, &calls, &event_graph);
-
-    let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
-    for (from, list) in &graph.edges_by_from {
-        scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
-    }
-    let scc = tarjan_scc(&SccInputGraph {
-        nodes: &graph.nodes,
-        edges_by_from: &scc_adjacency,
-    });
-
-    let mut field_index: FieldIndex = HashMap::new();
-    for table in &ws.tables {
-        for field in &table.fields {
-            field_index
-                .entry((table.id.clone(), field.name.to_lowercase()))
-                .or_insert_with(|| field.id.clone());
-        }
-    }
-
-    let leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
-
-    // --- Run BOTH solvers over the identical inputs. ---
-    let (old, _trace, _cap_diagnostics) = compute_summaries_with_leaves(
-        &ws.routines,
-        &graph,
-        &scc,
-        &calls.upgraded_bindings,
-        &field_index,
-        false,
-        &leaf_summaries,
-    );
-    let (new, _diags) = compute_summaries_v2_with_leaves_core(
-        &ws.routines,
-        &graph,
-        &scc,
-        &calls.upgraded_bindings,
-        &field_index,
-        &leaf_summaries,
-    );
-
-    assert_eq!(
-        old.len(),
-        new.len(),
-        "cdo_whole_program_v2_parity: routine count mismatch (old={}, new={})",
-        old.len(),
-        new.len()
-    );
-
-    let mut mismatches: Vec<String> = Vec::new();
-    for (id, old_s) in &old {
-        match new.get(id) {
-            None => mismatches.push(format!("{id}: missing from v2 output")),
-            Some(new_s) if old_s != new_s => {
-                mismatches.push(format!("{id}: {}", first_diff_field(old_s, new_s)));
-            }
-            Some(_) => {}
-        }
-    }
-
-    assert!(
-        mismatches.is_empty(),
-        "cdo_whole_program_v2_parity: {} of {} routine(s) diverged between old and v2:\n{}",
-        mismatches.len(),
-        old.len(),
-        mismatches.join("\n")
-    );
-}
-
 /// SHA-256 (lowercase hex) of a string.
 fn sha256_hex(s: &str) -> String {
     use sha2::{Digest, Sha256};
@@ -516,16 +222,14 @@ fn sha256_hex(s: &str) -> String {
 /// is frozen as a **SHA-256 digest** over the canonical complete-`RoutineSummary`
 /// serialization (`tests/l4-summary-baseline/cdo-whole-program-digest.txt`).
 ///
-/// At capture (`REGEN_TEMP_GOLDENS=1`, while the old solver still existed) this
-/// CROSS-ASSERTS `v2 == old` per routine BEFORE writing the digest — so the
-/// committed digest is provably the old solver's output too. That regen-time
-/// cross-assert (and its `compute_summaries_with_leaves` call) is removed in the
-/// commit that deletes the old solver; the non-regen anchor (`digest(v2) ==
-/// frozen`) is untouched by that deletion.
+/// The digest was captured (`REGEN_TEMP_GOLDENS=1`) while the old solver still
+/// existed, with the `v2 == old` cross-assert green — so `digest == old == v2`
+/// at capture (see this file's header + `tests/l4-summary-baseline/README.md`
+/// for the pre-deletion commit). The old solver and that regen-time cross-assert
+/// are now deleted; a re-freeze measures v2 alone.
 ///
-/// Assembly mirrors [`cdo_whole_program_v2_parity`] verbatim (same source-only
-/// detector-context substrate). Skips when `CDO_WS` is unset; panics under
-/// `ENFORCE_CDO_WS=1`. Run with:
+/// Assembly is the source-only detector-context substrate (`no_deps`, empty leaf
+/// map). Skips when `CDO_WS` is unset; panics under `ENFORCE_CDO_WS=1`. Run with:
 /// ```text
 /// CDO_WS=<path> cargo test -p al-call-hierarchy --test l4_summary_differential cdo_whole_program_v2_matches_frozen_digest -- --nocapture
 /// ```
@@ -585,45 +289,11 @@ fn cdo_whole_program_v2_matches_frozen_digest() {
     let path = baseline_dir().join("cdo-whole-program-digest.txt");
 
     if regen() {
-        // Capture cross-assert (spec Part B.1): while the old solver exists,
-        // prove v2 == old per routine over the IDENTICAL inputs BEFORE freezing
-        // the digest, so the committed digest is the old solver's output too.
-        // This block (and its old-solver call) is removed when the old solver
-        // is deleted.
-        let (old, _trace, _cap_diagnostics) = compute_summaries_with_leaves(
-            &ws.routines,
-            &graph,
-            &scc,
-            &calls.upgraded_bindings,
-            &field_index,
-            false,
-            &leaf_summaries,
-        );
-        assert_eq!(
-            old.len(),
-            new.len(),
-            "cdo digest capture: routine count mismatch (old={}, v2={})",
-            old.len(),
-            new.len()
-        );
-        let mut mismatches: Vec<String> = Vec::new();
-        for (id, old_s) in &old {
-            match new.get(id) {
-                None => mismatches.push(format!("{id}: missing from v2 output")),
-                Some(new_s) if old_s != new_s => {
-                    mismatches.push(format!("{id}: {}", first_diff_field(old_s, new_s)));
-                }
-                Some(_) => {}
-            }
-        }
-        assert!(
-            mismatches.is_empty(),
-            "cdo digest capture: refusing to freeze — {} of {} routine(s) diverge v2 vs old:\n{}",
-            mismatches.len(),
-            old.len(),
-            mismatches.join("\n")
-        );
-
+        // The old-solver `v2 == old` cross-assert that guarded this capture was
+        // removed with the old Jacobi solver (spec Part B). The digest was frozen
+        // at parity — see this file's header + tests/l4-summary-baseline/README.md
+        // (pre-deletion commit for forensic re-differencing). A fresh re-freeze
+        // now measures v2 alone.
         std::fs::create_dir_all(baseline_dir()).expect("create l4-summary-baseline dir");
         std::fs::write(&path, digest.as_bytes())
             .unwrap_or_else(|e| panic!("regen write {}: {e}", path.display()));
