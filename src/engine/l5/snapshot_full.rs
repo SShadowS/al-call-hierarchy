@@ -1730,4 +1730,167 @@ page 50816 "T4 I-2 Wizard"
         );
         assert_eq!(member_of(&rows[1]), Some("Bravo Field".to_string()));
     }
+
+    /// ⟨review-branch-final I-3⟩ The test above proves the SECONDARY key
+    /// (`enclosingMember`) discriminates; it never reaches the TERTIARY key
+    /// (`originatingObject`) at all — that arm needs two rows agreeing on BOTH
+    /// `stableRoutineId` AND `enclosingMember`, which the test above does not
+    /// construct (it forces only the stable-id collision, then relies on the
+    /// members differing). No assembled fixture reaches it either: the member
+    /// discriminator already gives same-member, same-object triggers distinct
+    /// stable ids. This is the same hand-stated pattern one key further: two
+    /// DIFFERENT pages each declare an action with the SAME name, so
+    /// `enclosingMember` ("Shared Action") agrees BY CONSTRUCTION — no forcing
+    /// needed for that part — while `originatingObject` (each page's own
+    /// StableObjectId) differs naturally. Only `stableRoutineId` is forced.
+    /// Deleting `inventory_row_cmp`'s tertiary `.then_with` arm must fail this
+    /// test (verified by removal, not asserted).
+    #[test]
+    fn hand_stated_collision_discriminates_by_originating_object_when_member_also_ties() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+
+        let files = vec![
+            (
+                "T5I3WizardBravo.Page.al".to_string(),
+                r#"
+page 50817 "T5 I-3 Wizard Bravo"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action("Shared Action")
+            {
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#
+                .to_string(),
+            ),
+            (
+                "T5I3WizardAlpha.Page.al".to_string(),
+                r#"
+page 50818 "T5 I-3 Wizard Alpha"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action("Shared Action")
+            {
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#
+                .to_string(),
+            ),
+        ];
+        let mut resolved =
+            assemble_and_resolve_default(&files, "66666666-0000-0000-0000-0000000cp007");
+        assert_eq!(
+            resolved.workspace.routines.len(),
+            2,
+            "fixture precondition: exactly the two OnAction triggers"
+        );
+
+        // Preconditions the whole test rests on: enclosingMember agrees without any
+        // forcing (both actions are literally named "Shared Action"); originatingObject
+        // does not (real per-page StableObjectId) — exactly what makes the tertiary
+        // key reachable at all.
+        assert_eq!(
+            resolved.workspace.routines[0].enclosing_member,
+            resolved.workspace.routines[1].enclosing_member,
+            "fixture precondition: both actions share the member name 'Shared Action'"
+        );
+        assert_ne!(
+            resolved.workspace.routines[0].originating_object,
+            resolved.workspace.routines[1].originating_object,
+            "fixture precondition: the two pages have distinct StableObjectIds"
+        );
+
+        // Force the identical-stable-id collision by hand (real source gives these
+        // two DISTINCT stable ids — different objects, different object numbers —
+        // which is correct; the collision is otherwise unreachable here too).
+        let forced_id = resolved.workspace.routines[0].stable_routine_id.clone();
+        for r in &mut resolved.workspace.routines {
+            r.stable_routine_id = forced_id.clone();
+        }
+
+        // Determine the real comparator's order over the two originatingObject
+        // values, then pin the pre-sort Vec to the OPPOSITE order — so a working
+        // tertiary key must visibly swap them, and a `sort_by` that silently drops
+        // the tertiary arm (a stable sort) would leave them in this same wrong order.
+        let (obj0, obj1) = (
+            resolved.workspace.routines[0].originating_object.clone(),
+            resolved.workspace.routines[1].originating_object.clone(),
+        );
+        let correct_first = match (&obj0, &obj1) {
+            (Some(x), Some(y)) if locale_compare(x, y) == std::cmp::Ordering::Greater => 1,
+            _ => 0,
+        };
+        // Pre-sort Vec order: put the correct-SECOND row first (the wrong order).
+        if correct_first == 0 {
+            resolved.workspace.routines.swap(0, 1);
+        }
+
+        let tree = CborValue::Map(IndexMap::new());
+        let doc = build_inventory_doc(&tree, &resolved, "test", true);
+
+        let rows = match &doc {
+            CborValue::Map(env) => match env.get("payload") {
+                Some(CborValue::Map(p)) => match p.get("routineInventory") {
+                    Some(CborValue::Array(rows)) => rows,
+                    other => panic!("routineInventory not an array: {other:?}"),
+                },
+                other => panic!("payload not a map: {other:?}"),
+            },
+            other => panic!("doc not a map: {other:?}"),
+        };
+        assert_eq!(rows.len(), 2);
+
+        let stable_id_of = |row: &CborValue| -> String {
+            let CborValue::Map(m) = row else {
+                panic!("row not a map: {row:?}")
+            };
+            match m.get("stableRoutineId") {
+                Some(CborValue::Text(s)) => s.clone(),
+                other => panic!("missing stableRoutineId: {other:?}"),
+            }
+        };
+        let originating_object_of = |row: &CborValue| -> Option<String> {
+            let CborValue::Map(m) = row else {
+                panic!("row not a map: {row:?}")
+            };
+            match m.get("originatingObject") {
+                Some(CborValue::Text(s)) => Some(s.clone()),
+                _ => None,
+            }
+        };
+
+        assert_eq!(stable_id_of(&rows[0]), forced_id);
+        assert_eq!(stable_id_of(&rows[1]), forced_id);
+        let (expected_first, expected_second) = if correct_first == 0 {
+            (&obj0, &obj1)
+        } else {
+            (&obj1, &obj0)
+        };
+        assert_eq!(
+            &originating_object_of(&rows[0]),
+            expected_first,
+            "tertiary originatingObject key must place the locale-lesser StableObjectId first"
+        );
+        assert_eq!(&originating_object_of(&rows[1]), expected_second);
+    }
 }
