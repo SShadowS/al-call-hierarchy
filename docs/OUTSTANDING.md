@@ -289,7 +289,14 @@ the bottom, CHANGELOG, and git log.
   replication against 8020's 56.4x, a ~5.29 MB win there vs. 8020's
   ~434.97 MB, see `scope-l3-substrate.md` §8 and the CHANGELOG's L-3 entry);
   the TRANSIENT churn is not, and is the most likely explanation for the
-  scoped ~700 MB vs. measured ~560 MB shortfall (also 8020-scale). **Not a
+  scoped ~700 MB vs. measured ~560 MB shortfall (also 8020-scale).
+  ⟨final-branch-review-l3.md M-6⟩ **The ~540/~560 MB figures themselves rest on
+  one inference, not a Task-5-isolated re-measurement**: the "before" baseline
+  used for them already sits downstream of Tasks 3 and 4's id-schema change, so
+  attributing the full drop to Task 5 assumes T3/T4 moved the peak by ~0 (both
+  are same-length SHA-256-hex substitutions — reasonable, not idle, but still an
+  assumption) rather than toggling Task 5 off against an otherwise-identical
+  build, the way Task 3's own re-freeze isolates its own change. **Not a
   defect on its own** — L2's `PFeatures.variables`
   is a serialized golden surface (`tests/ir-l2-goldens/l2_features.snapshot`,
   `tests/r1a-vectors/l2-vectors.json`) and must keep its full flat
@@ -327,18 +334,27 @@ the bottom, CHANGELOG, and git log.
   same conditional position, with the same shape constraint the closed entry's id
   schema already established. Until then the fail-closed handling stands:
   `detector_context`'s skip-on-drained-map branch, d1's
-  `edge_target_matches_callsite_callee` guard, and the inventory's
-  `case_insensitive_compare_opt` tie-break (used by `inventory_row_cmp`'s
-  `sort_by` in `build_inventory_doc`) — all three kept deliberately and each with a
-  test that states its precondition executably:
+  `edge_target_matches_callsite_callee` guard, and the inventory's THREE-key sort
+  (`inventory_row_cmp`'s `sort_by` in `build_inventory_doc`: primary
+  `stableRoutineId`, secondary `case_insensitive_compare_opt` on `enclosingMember`,
+  tertiary `locale_compare` on `originatingObject`) — all three kept deliberately
+  and each with a test that states its precondition executably:
   `detector_context::tests::hand_stated_id_collision_keeps_a_real_summary_and_derived_row`,
-  `gap_g18_transitive_loop.rs`'s (d)/(e), and
+  `gap_g18_transitive_loop.rs`'s (d)/(e), and — for the inventory sort — BOTH
   `snapshot_full::tests::hand_stated_collision_discriminates_by_member_case_insensitively`
-  respectively (⟨task-4-review.md finding I-2⟩, fix wave — the last did not exist
-  at T4: its predecessor, `member_tie_break_is_case_insensitive_and_none_first`,
-  pinned the comparator function but not the sort's actual use of it, so deleting
-  the tie-break's `.then_with` call from `build_inventory_doc` left every test —
-  and every golden — green).
+  (secondary key) AND
+  `snapshot_full::tests::hand_stated_collision_discriminates_by_originating_object_when_member_also_ties`
+  (tertiary key), respectively (⟨task-4-review.md finding I-2⟩, fix wave — the
+  first of those did not exist at T4: its predecessor,
+  `member_tie_break_is_case_insensitive_and_none_first`, pinned the comparator
+  function but not the sort's actual use of it, so deleting the tie-break's
+  `.then_with` call from `build_inventory_doc` left every test — and every golden
+  — green; ⟨final-branch-review-l3.md finding I-3⟩ then found the tertiary key had
+  no coverage of any kind — not function-level, not use-level, no golden — because
+  reaching it needs two rows agreeing on BOTH `stableRoutineId` AND
+  `enclosingMember`, which the T4 fix wave's test does not construct; the second
+  test closes that gap the same way, by hand-stating the collision one key
+  further).
 
 - [x] **CLOSED 2026-07-25 (T1 + T3 + T4) — `compute_routine_id`
   member-discriminator gap: colliding same-name triggers shared ONE id.**

@@ -992,8 +992,15 @@ That recovered real findings on real code and moved 71 of 2,369 DO fingerprints
   inventory's case-insensitive `enclosingMember` tie-break (RE-6) is KEPT as
   fail-closed cover for the residual duplicate-stable-id shapes, and — since no
   assembled fixture can reach it through the projection any more — gains its own
-  direct pin (`snapshot_full::tests::member_tie_break_is_case_insensitive_and_none_first`)
-  rather than being left silently untested.
+  direct pin. The real pin is
+  `snapshot_full::tests::hand_stated_collision_discriminates_by_member_case_insensitively`
+  (added by a later fix wave): its predecessor, named here at the time,
+  `member_tie_break_is_case_insensitive_and_none_first`, pinned the comparator
+  function in isolation, not the sort's actual use of it, so deleting the
+  tie-break's `.then_with` call from `build_inventory_doc` left that test, the
+  whole suite and every golden green — see `docs/OUTSTANDING.md`'s parked-items
+  entry for the correction and `final-branch-review-l3.md` I-2/I-3 for the fifth
+  instance of the same gap, one key over.
   The CDO L4 frozen whole-program digest did **not** move (`scripts/cdo-gate`
   with `CDO_WS` set: PASS, `cdo_whole_program_v2_matches_frozen_digest` really
   ran, nothing under `tests/l4-summary-baseline/` regenerated) — `RoutineSummary`
@@ -1193,6 +1200,15 @@ That recovered real findings on real code and moved 71 of 2,369 DO fingerprints
   (SHA-256 `f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`
   on both sides), the 8020 run's own output is byte-identical, and all 29 golden
   directories across 9 targets pass with zero files moved.
+  ⟨final-branch-review-l3.md M-6⟩ **This number rests on one inference, not a
+  dedicated single-variable re-measurement**: the 5,674/5,685 MB "before" figure
+  above sits downstream of Tasks 3 and 4's id-schema change, not immediately
+  after Task 2, so the ~540–560 MB attributed to Task 5 assumes T3/T4 moved the
+  peak by ~0 (both are SHA-256-hex substitutions of identical length either
+  way — a reasonable assumption, not an idle one) rather than isolating Task 5
+  by toggling it off against an otherwise-identical build, the way Task 3's own
+  re-freeze does (disable the conditional key-part append, reproduce the old
+  digest byte-for-byte).
 - **`SymbolTable` borrows the workspace instead of deep-cloning it — ~2.1 GB off
   the `analyze` peak on the 8020 corpus** (`feat/l3-substrate-and-parked-items`
   Task 2 / lever L-1; `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
