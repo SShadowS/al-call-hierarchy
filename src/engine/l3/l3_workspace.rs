@@ -2075,21 +2075,63 @@ mod tests {
 
     /// Duplicate object globals (the `#if`/`#else` shape — the IR carries both
     /// branches) are deduped first-wins ONCE, at the object level.
+    ///
+    /// ⟨task-5-review.md finding F3⟩ The prior version of this test asserted
+    /// name-uniqueness over `tests/fixtures/props`, whose only routine-bearing
+    /// object declares exactly one global and one routine — three distinct names,
+    /// so the `seen.insert` assertion was unfalsifiable there: it passed whether or
+    /// not `ir_object_globals`'s dedup existed at all. It also attributed its
+    /// coverage to the `#if`/`#else` shape while no `#if` fixture existed anywhere
+    /// in the repo (`grep -rl "#if" tests/ --include=*.al` returned zero files).
+    /// This version hand-states the precondition: a REAL `#if`/`#else` global
+    /// declaration (the lowerer never evaluates the condition — see
+    /// `is_preproc_wrapper`'s module doc in `crates/al-syntax/src/lower/mod.rs` —
+    /// so both branches are always collected into `ObjectDecl::globals`), run
+    /// through the real dedup via full assembly, asserting both that the
+    /// duplicate collapses to ONE entry and that the FIRST branch's declared type
+    /// is the one that survives.
     #[test]
     fn object_globals_are_deduped_first_wins() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/props");
-        let resolved = assemble_and_resolve_workspace_default(&dir).expect("assemble");
-        for r in &resolved.workspace.routines {
-            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-            for v in r.variables.iter() {
-                assert!(
-                    seen.insert(v.name.as_str()),
-                    "routine {} yields `{}` twice — the list must be name-unique",
-                    r.id,
-                    v.name,
-                );
-            }
-        }
+        let src = r#"
+codeunit 50816 "T5 F3 Dedup"
+{
+    var
+#if T5F3COND
+        MyGlobal: Integer;
+#else
+        MyGlobal: Text;
+#endif
+
+    procedure DoIt()
+    begin
+    end;
+}
+"#;
+        let files = vec![("src/T5F3Dedup.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "66666666-0000-0000-0000-0000000cp5f3");
+        let routine = resolved
+            .workspace
+            .routines
+            .iter()
+            .find(|r| r.name.eq_ignore_ascii_case("DoIt"))
+            .expect("fixture precondition: the DoIt procedure");
+
+        let globals: Vec<&L3Variable> = routine
+            .variables
+            .iter()
+            .filter(|v| v.name == "myglobal")
+            .collect();
+        assert_eq!(
+            globals.len(),
+            1,
+            "the #if/#else branches must collapse to ONE `myglobal` entry, not two \
+             (got {globals:?})"
+        );
+        assert_eq!(
+            globals[0].declared_type, "Integer",
+            "first-wins: the #if branch's `Integer` must survive over the #else \
+             branch's `Text`"
+        );
     }
 
     // Task 2 (BCQuality wave): `SingleInstance` (Codeunit) + the Page write-surface

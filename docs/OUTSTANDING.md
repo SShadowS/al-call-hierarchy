@@ -275,6 +275,32 @@ the bottom, CHANGELOG, and git log.
   urgent, no correctness or perf stake, just dead-weight-dependency hygiene.
   Wake: convenient piggyback on an unrelated touch of those types, or a
   dependency-audit pass.
+- [ ] **L-3 globals sharing is retained-only — the transient build-then-discard
+  allocation cost survives** (`feat/l3-substrate-and-parked-items` Task 5 /
+  lever L-3; `task-5-review.md` finding F1). `ir_variables`
+  (`src/engine/l2/ir_walk.rs:2189`) still materializes a FRESH copy of every
+  object global — 2 heap `String`s plus a `PAnchor` carrying 2 more — for
+  EVERY routine (the ~6 M small allocations §3.3/§5 L-3 counted on), and
+  `project_file` (`src/engine/l3/l3_workspace.rs:1038-1050`) immediately
+  filters them back out and drops them before constructing
+  `RoutineVariables`. The RETAINED cost is genuinely gone (Task 5's measured
+  ~540 MB peak drop is real, not an artifact); the TRANSIENT churn is not,
+  and is the most likely explanation for the scoped ~700 MB vs. measured
+  ~560 MB shortfall. **Not a defect on its own** — L2's `PFeatures.variables`
+  is a serialized golden surface (`tests/ir-l2-goldens/l2_features.snapshot`,
+  `tests/r1a-vectors/l2-vectors.json`) and must keep its full flat
+  params→locals→globals form; L-3 was scoped as "never-build" for the L3
+  assembly path specifically, not for L2's own projection. On the
+  `analyze`/L3-assembly path, the only remaining consumer of the
+  flat-with-globals list is `innermost_scope_by_lc`
+  (`src/engine/l3/l3_workspace.rs:1136-1142`), which is derivable first-wins
+  straight from `RoutineVariables::iter()` (`own` already precedes
+  non-shadowed `globals` in that exact order) without ever building the flat
+  L2 form. A globals-free `ir_variables` variant reserved for the L3
+  assembly call site (L2's serialized projection keeps calling the existing
+  full-globals path, unchanged) would collect the rest of the scoped L-3
+  win. **Wake:** the next L3-substrate memory pass (e.g. sizing L-5 for real),
+  or opportunistically alongside another `ir_variables`/`ir_walk.rs` touch.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 

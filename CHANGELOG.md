@@ -1069,6 +1069,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unlike `record_variables`, which `record_types.rs` upgrades per routine and
   which is therefore explicitly NOT part of this change (the scoping report's
   L-6 hazard).
+  **This removes the RETAINED copies only — it does not stop the copies from
+  being built.** `ir_variables` still materializes a fresh copy of every
+  object global (2 heap `String`s plus a `PAnchor`) for every routine before
+  `project_file` filters them back out to build the shared table, so the ~6 M
+  small allocations the scoping report counted on are still made, transiently.
+  The lever was scoped as never-build for the L3 assembly path; it landed as
+  build-then-discard, which is the most likely reason the measured saving
+  (below) came in under the ~700 MB scoped estimate. See `docs/OUTSTANDING.md`'s
+  L-3 entry for the follow-up that would close the gap.
   **Measured** (8020 corpus, `--detector d8-commit-in-transaction`,
   `ALSEM_TRACE=1`, `release-fast`, two runs each): whole-process
   `analyze.total` peak **5,674/5,685 MB → 5,125/5,124 MB**;
