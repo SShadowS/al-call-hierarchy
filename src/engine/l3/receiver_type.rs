@@ -1325,7 +1325,9 @@ fn dispatch_framework(
 mod tests {
     use super::*;
     use crate::engine::l2::features::PTempState;
-    use crate::engine::l3::l3_workspace::{L3Object, L3RecordVariable, L3Table, L3Variable};
+    use crate::engine::l3::l3_workspace::{
+        L3Object, L3RecordVariable, L3Table, L3Variable, RoutineVariables,
+    };
 
     /// Owns the workspace slices a test [`SymbolTable`] borrows from. A borrowing
     /// index cannot be returned by a fixture helper that builds its own data, so
@@ -1420,7 +1422,7 @@ mod tests {
             record_variables: rec_vars,
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: vars,
+            variables: RoutineVariables::from_own(vars),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

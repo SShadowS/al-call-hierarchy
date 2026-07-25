@@ -368,7 +368,9 @@ mod fixtures {
         PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
     };
     use al_call_hierarchy::engine::l3::call_resolver::UpgradedBinding;
-    use al_call_hierarchy::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+    use al_call_hierarchy::engine::l3::l3_workspace::{
+        L3RecordOperation, L3Routine, RoutineVariables,
+    };
     use al_call_hierarchy::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
     use al_call_hierarchy::engine::l4::effect_lattice::{TempStateKind, effect_key_of};
     use al_call_hierarchy::engine::l4::scc::{Scc, SccResult};
@@ -444,7 +446,7 @@ mod fixtures {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

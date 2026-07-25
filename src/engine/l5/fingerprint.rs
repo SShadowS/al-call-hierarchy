@@ -230,7 +230,7 @@ fn substitute_stable_ids(
 mod tests {
     use super::*;
     use crate::engine::ids::sha256_hex;
-    use crate::engine::l3::l3_workspace::L3Routine;
+    use crate::engine::l3::l3_workspace::{L3Routine, RoutineVariables};
     use crate::engine::l5::finding::{Evidence, FindingConfidence, SourceAnchor};
 
     fn dummy_anchor(enclosing: &str) -> SourceAnchor {
@@ -299,7 +299,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

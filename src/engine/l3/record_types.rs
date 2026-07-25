@@ -172,7 +172,7 @@ pub fn resolve_routine_record_types(
     // The unset guard below is essential — never override a tableId pass (1)/(2a)
     // already set.
     let mut variable_decl_by_name: HashMap<String, String> = HashMap::new();
-    for v in &routine.variables {
+    for v in routine.variables.iter() {
         variable_decl_by_name
             .entry(v.name.to_lowercase())
             .or_insert(v.declared_type.clone());

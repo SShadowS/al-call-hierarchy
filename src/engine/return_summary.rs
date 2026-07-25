@@ -537,6 +537,7 @@ mod tests {
     use super::*;
     use crate::engine::l2::features::PCFNNode;
     use crate::engine::l3::al_attributes::{AttributeArg, AttributeInfo};
+    use crate::engine::l3::l3_workspace::RoutineVariables;
 
     // Helper: build a minimal AttributeInfo for a given name + one qualified arg.
     fn attr_qualified(name: &str, qualifier: &str, member: &str) -> AttributeInfo {
@@ -908,7 +909,7 @@ mod tests {
             record_variables: vec![],
             record_operations: vec![],
             field_accesses: vec![],
-            variables: vec![],
+            variables: RoutineVariables::default(),
             parameters: vec![],
             access_modifier: None,
             return_type: None,

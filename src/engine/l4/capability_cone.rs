@@ -559,7 +559,7 @@ pub(crate) fn direct_facts_for_routine(
     // al-sem (confirmed by the ws-policy-api-dynamic-dispatch golden, which carries
     // `tableId: "unknown"`).
     let mut variables: HashMap<String, VarInfo> = HashMap::new();
-    for v in &routine.variables {
+    for v in routine.variables.iter() {
         variables.insert(
             v.name.to_lowercase(),
             VarInfo {

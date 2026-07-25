@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::engine::l2::features::{
     PAnchor, PCallArgumentBinding, PCallSite, PCallee, PLoop, POperationSite, PTempState,
 };
-use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, RoutineVariables};
 use crate::engine::l4::capability_cone::{CapabilityFact, CoverageRecord};
 use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
 use crate::engine::l4::cone_derived::{ConeDerivedBuilder, ConeDerivedStore};
@@ -127,7 +127,7 @@ pub fn routine(id: &str, kind: &str) -> L3Routine {
         record_variables: Vec::new(),
         record_operations: Vec::new(),
         field_accesses: Vec::new(),
-        variables: Vec::new(),
+        variables: RoutineVariables::default(),
         parameters: Vec::new(),
         access_modifier: None,
         return_type: None,

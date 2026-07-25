@@ -125,7 +125,7 @@ mod tests {
     use super::*;
     use crate::engine::l2::features::PAnchor;
     use crate::engine::l3::l3_workspace::{
-        L3Object, L3RecordOperation, L3Routine, L3Table, L3Workspace,
+        L3Object, L3RecordOperation, L3Routine, L3Table, L3Workspace, RoutineVariables,
     };
 
     const APP: &str = "app";
@@ -198,7 +198,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

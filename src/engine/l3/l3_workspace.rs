@@ -26,6 +26,7 @@ use al_syntax::IdentifierFoldExt;
 use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
 use crate::engine::l2::node_util::{Utf16Cols, strip_quotes};
 use crate::engine::perf_trace as pt;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // L3 model types — workspace-level, in-memory (NOT the serde projection shape).
@@ -299,6 +300,96 @@ pub struct L3Variable {
     pub scope: Option<String>,
 }
 
+/// A routine's lexical variable list — **params → locals → non-shadowed object
+/// globals** — stored WITHOUT replicating the object's globals into every routine.
+///
+/// An object's globals are byte-identical for each of its routines (lowercased name,
+/// canonicalized declared type, `scope: Some("global")`, never a parameter, never an
+/// initializer), so one `Arc<[L3Variable]>` per object is shared by all of them. On
+/// the 8020 corpus that removed 2,997,353 copies of 53,186 distinct globals — a 56.4×
+/// replication costing ~443 MB of payload (see `.superpowers/sdd/scope-l3-substrate.md`
+/// §3.3). This is L4 pattern (a) recurring in L3.
+///
+/// **This is a representation change only.** [`RoutineVariables::iter`] yields exactly
+/// the flat list the L2 projection emits (`PFeatures::variables`) — same elements, same
+/// order, same shadowing — and the assembly path asserts that round trip in debug
+/// builds. Two invariants the consumers depend on, both preserved:
+///
+/// * **order is params → locals → globals.** `record_types.rs`'s pass-2b builds a
+///   name→declared-type map with `entry().or_insert()` (FIRST-wins), so the innermost
+///   declaration must come first; `capability_cone.rs`'s `VarInfo` map is LAST-wins
+///   over the same sequence and needs the globals last.
+/// * **the sequence is name-unique on the lowercased name.** A param/local shadows a
+///   same-named global (recorded in `shadowed` below), and duplicate globals within an
+///   object are deduped first-wins by [`crate::engine::l2::ir_walk::ir_object_globals`].
+///
+/// Nothing mutates a routine's variables after assembly (unlike `record_variables`,
+/// which `record_types.rs` upgrades per routine — see the L-6 hazard note in the
+/// scoping report), so sharing cannot leak a per-routine change to a sibling.
+#[derive(Debug, Clone, Default)]
+pub struct RoutineVariables {
+    /// The routine's OWN variables: parameters in declaration order, then locals —
+    /// exactly the `scope != "global"` prefix of the L2 list.
+    own: Vec<L3Variable>,
+    /// The owning object's globals, shared with every sibling routine.
+    globals: Arc<[L3Variable]>,
+    /// Ascending indices into `globals` this routine SHADOWS (it declares a param or
+    /// local of the same lowercased name). Empty for almost every routine, and an
+    /// empty `Box<[u32]>` does not allocate — precomputed so [`Self::iter`] never pays
+    /// an O(own × globals) name scan on a hot path.
+    shadowed: Box<[u32]>,
+}
+
+impl RoutineVariables {
+    /// A routine with no object globals in scope — dependency/ABI routines (whose
+    /// globals are not modelled at all) and test fixtures.
+    pub fn from_own(own: Vec<L3Variable>) -> Self {
+        Self {
+            own,
+            globals: Arc::default(),
+            shadowed: Box::default(),
+        }
+    }
+
+    /// Assemble from the routine's own params/locals plus the owning object's shared
+    /// global table.
+    ///
+    /// Both name sets are already lowercased by the L2 projection
+    /// (`ir_variables`/`ir_object_globals` both apply `to_ascii_lowercase`), so the
+    /// shadow test is exact string equality — the same test the inlined
+    /// `HashSet<String>` in `ir_variables` performs.
+    pub fn new(own: Vec<L3Variable>, globals: Arc<[L3Variable]>) -> Self {
+        let shadowed: Box<[u32]> = if own.is_empty() || globals.is_empty() {
+            Box::default()
+        } else {
+            globals
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| own.iter().any(|o| o.name == g.name))
+                .map(|(i, _)| i as u32)
+                .collect()
+        };
+        Self {
+            own,
+            globals,
+            shadowed,
+        }
+    }
+
+    /// The routine's full lexical scope, in the L2 order: params → locals → the
+    /// object's globals it does not shadow.
+    pub fn iter(&self) -> impl Iterator<Item = &L3Variable> {
+        let shadowed = &self.shadowed;
+        self.own.iter().chain(
+            self.globals
+                .iter()
+                .enumerate()
+                .filter(move |(i, _)| !shadowed.contains(&(*i as u32)))
+                .map(|(_, g)| g),
+        )
+    }
+}
+
 /// A routine parameter (the L3-relevant subset of al-sem's `ParameterSymbol`) —
 /// drives arity matching, `calleeParameterIsVar` upgrades, and overload arg-type
 /// disambiguation (`typeText`).
@@ -357,7 +448,10 @@ pub struct L3Routine {
     /// Field accesses (from L2 body walk). Required by the R3a-2 summary
     /// engine to derive RecordRoleSummary.readsFields per record parameter.
     pub field_accesses: Vec<crate::engine::l2::features::PFieldAccess>,
-    pub variables: Vec<L3Variable>,
+    /// The routine's lexical scope (params → locals → non-shadowed object globals).
+    /// Iterate with `.iter()`; see [`RoutineVariables`] for why the globals are shared
+    /// rather than replicated per routine.
+    pub variables: RoutineVariables,
     /// Declared parameters (in order) — drives arity + var-ness + arg-type
     /// disambiguation. Empty for trigger routines with no parameter list.
     pub parameters: Vec<L3Parameter>,
@@ -770,6 +864,25 @@ fn project_file(
             continue;
         }
 
+        // L-3: the object's GLOBAL scalar variables, built ONCE and shared (by `Arc`)
+        // with every routine of the object instead of copied into each one's
+        // `variables`. Identical to the tail `ir_variables` appends per routine —
+        // same source, same first-wins dedup, same lowercasing — minus the anchor,
+        // which `L3Variable` does not carry. See [`RoutineVariables`].
+        let object_globals: Arc<[L3Variable]> = Arc::from(
+            crate::engine::l2::ir_walk::ir_object_globals(&ir_file, oi, cols, source_unit_id)
+                .into_iter()
+                .map(|g| L3Variable {
+                    name: g.name,
+                    declared_type: g.declared_type,
+                    is_parameter: g.is_parameter,
+                    parameter_index: g.parameter_index,
+                    initializer: g.initializer,
+                    scope: Some(g.scope),
+                })
+                .collect::<Vec<_>>(),
+        );
+
         for ir_routine in &o.routines {
             let rname = ir_routine.name.clone();
             if rname.is_empty() {
@@ -919,9 +1032,13 @@ fn project_file(
                 })
                 .collect();
             let field_accesses = std::mem::take(&mut features.field_accesses);
-            let variables = features
+            // L-3: keep only the routine's OWN variables (the `scope != "global"`
+            // prefix — params then locals); the globals tail is the object's shared
+            // table, re-derived per routine by `RoutineVariables::iter`.
+            let own_variables: Vec<L3Variable> = features
                 .variables
                 .iter()
+                .filter(|v| v.scope != "global")
                 .map(|v| L3Variable {
                     name: v.name.clone(),
                     declared_type: v.declared_type.clone(),
@@ -931,6 +1048,31 @@ fn project_file(
                     scope: Some(v.scope.clone()),
                 })
                 .collect();
+            let variables = RoutineVariables::new(own_variables, Arc::clone(&object_globals));
+            // The round trip that makes this a representation change and nothing more:
+            // the shared form must re-yield the L2 list element-for-element, in order.
+            // (`initializer` is excluded only because it is `None` for every global and
+            // moved verbatim for every own var.)
+            debug_assert!(
+                variables
+                    .iter()
+                    .map(|v| (
+                        v.name.as_str(),
+                        v.declared_type.as_str(),
+                        v.is_parameter,
+                        v.parameter_index,
+                        v.scope.as_deref()
+                    ))
+                    .eq(features.variables.iter().map(|v| (
+                        v.name.as_str(),
+                        v.declared_type.as_str(),
+                        v.is_parameter,
+                        v.parameter_index,
+                        Some(v.scope.as_str())
+                    ))),
+                "RoutineVariables must reproduce the flat L2 variable list exactly \
+                 (routine {routine_id})"
+            );
 
             // The routine's own parameters + return type for the call resolver, from
             // the matched IR routine (legacy extractors as a fallback). Reuses the SAME
@@ -1847,6 +1989,108 @@ impl TableView<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn var(name: &str, ty: &str, scope: &str) -> L3Variable {
+        L3Variable {
+            name: name.to_string(),
+            declared_type: ty.to_string(),
+            is_parameter: scope == "parameter",
+            parameter_index: None,
+            initializer: None,
+            scope: Some(scope.to_string()),
+        }
+    }
+
+    fn names(v: &RoutineVariables) -> Vec<&str> {
+        v.iter().map(|x| x.name.as_str()).collect()
+    }
+
+    /// L-3: the shared form must yield params → locals → globals, with any global
+    /// the routine's own params/locals shadow dropped — the flat list `ir_variables`
+    /// used to materialize per routine.
+    #[test]
+    fn routine_variables_yields_own_then_unshadowed_globals() {
+        let globals: Arc<[L3Variable]> = Arc::from(vec![
+            var("ga", "Integer", "global"),
+            var("shadowed", "Integer", "global"),
+            var("gb", "Text", "global"),
+        ]);
+
+        // No shadowing: every global is visible, after the routine's own vars.
+        let plain = RoutineVariables::new(
+            vec![var("p", "Integer", "parameter"), var("l", "Text", "local")],
+            Arc::clone(&globals),
+        );
+        assert_eq!(names(&plain), ["p", "l", "ga", "shadowed", "gb"]);
+
+        // A local of the same lowercased name hides exactly that one global, and the
+        // survivors keep their relative order.
+        let shadowing = RoutineVariables::new(
+            vec![
+                var("p", "Integer", "parameter"),
+                var("shadowed", "Code[20]", "local"),
+            ],
+            Arc::clone(&globals),
+        );
+        assert_eq!(names(&shadowing), ["p", "shadowed", "ga", "gb"]);
+        assert_eq!(
+            shadowing
+                .iter()
+                .find(|v| v.name == "shadowed")
+                .unwrap()
+                .declared_type,
+            "Code[20]",
+            "the routine's OWN declaration must win, not the object global's",
+        );
+
+        // Degenerate shapes: no globals, and no own vars.
+        assert_eq!(
+            names(&RoutineVariables::from_own(vec![var(
+                "only", "Integer", "local"
+            )])),
+            ["only"]
+        );
+        assert_eq!(
+            names(&RoutineVariables::new(Vec::new(), Arc::clone(&globals))),
+            ["ga", "shadowed", "gb"]
+        );
+        assert!(names(&RoutineVariables::default()).is_empty());
+    }
+
+    /// The globals are SHARED, not copied: two routines of the same object hold the
+    /// same allocation. This is the whole point of the representation.
+    #[test]
+    fn routine_variables_share_one_global_allocation() {
+        let globals: Arc<[L3Variable]> = Arc::from(vec![var("g", "Integer", "global")]);
+        let a = RoutineVariables::new(vec![var("x", "Integer", "local")], Arc::clone(&globals));
+        let b = RoutineVariables::new(vec![var("y", "Integer", "local")], Arc::clone(&globals));
+        assert!(
+            std::ptr::eq(
+                a.iter().find(|v| v.name == "g").unwrap(),
+                b.iter().find(|v| v.name == "g").unwrap(),
+            ),
+            "sibling routines must see the SAME global element, not per-routine copies",
+        );
+    }
+
+    /// Duplicate object globals (the `#if`/`#else` shape — the IR carries both
+    /// branches) are deduped first-wins ONCE, at the object level.
+    #[test]
+    fn object_globals_are_deduped_first_wins() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/props");
+        let resolved = assemble_and_resolve_workspace_default(&dir).expect("assemble");
+        for r in &resolved.workspace.routines {
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for v in r.variables.iter() {
+                assert!(
+                    seen.insert(v.name.as_str()),
+                    "routine {} yields `{}` twice — the list must be name-unique",
+                    r.id,
+                    v.name,
+                );
+            }
+        }
+    }
 
     // Task 2 (BCQuality wave): `SingleInstance` (Codeunit) + the Page write-surface
     // booleans (`Editable`/`InsertAllowed`/`ModifyAllowed`/`DeleteAllowed`) forward

@@ -1625,7 +1625,7 @@ mod tests {
         PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
     };
     use crate::engine::l3::call_resolver::UpgradedBinding;
-    use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+    use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, RoutineVariables};
     use crate::engine::l4::combined_graph::Uncertainty as CgUncertainty;
     use crate::engine::l4::combined_graph::UncertaintyEdge;
     use crate::engine::l4::effect_lattice::effect_key_of;
@@ -1667,7 +1667,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

@@ -1035,6 +1035,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     definition" invariant enforceable), and a new test pins that the L2 and L3
     id paths agree on an **escaped** enclosing member — the one part of this
     design's named trap that had no executable pin, only a structural argument.
+- **Object globals are SHARED across an object's routines instead of copied into
+  each one — ~540 MB off the `analyze` peak on the 8020 corpus**
+  (`feat/l3-substrate-and-parked-items` Task 5 / lever L-3;
+  `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
+  `src/engine/l2/ir_walk.rs`, `src/engine/l3/l3_workspace.rs`, plus the
+  mechanical `.iter()`/constructor updates in `record_types.rs`,
+  `receiver_type.rs`, `capability_cone.rs`, `cross_app_l3.rs` and the test
+  constructors).
+  `ir_variables` appended the owning object's globals into EVERY routine's
+  `variables`, so `L3Routine.variables` held **2,997,353 copies of 53,186
+  distinct `(object, name)` pairs — a 56.4x replication costing ~443 MB of
+  payload per workspace** on the 8020 corpus (`.superpowers/sdd/scope-l3-substrate.md`
+  §3.3). This is the L4 "replicate the parent's data into every child" pattern
+  recurring in L3. The globals are byte-identical for every routine of an object
+  (lowercased name, canonicalized declared type, `scope: Some("global")`, never a
+  parameter, never an initializer), so nothing about them was ever per-routine.
+  `L3Routine.variables` is now a `RoutineVariables`: the routine's OWN params and
+  locals, plus an `Arc<[L3Variable]>` built ONCE per object and shared by all of
+  its routines, plus a (nearly always empty, non-allocating) `Box<[u32]>` of the
+  global indices this routine shadows. `RoutineVariables::iter` re-yields the
+  ORIGINAL flat list — params → locals → non-shadowed globals — so both
+  invariants the consumers depend on survive untouched: `record_types.rs`'s
+  pass-2b `entry().or_insert()` still sees the innermost declaration FIRST, and
+  `capability_cone.rs`'s LAST-wins `VarInfo` map still sees the globals LAST.
+  The single definition of "the object's globals" is the new
+  `ir_walk::ir_object_globals` (first-wins dedup by lowercased name — the
+  `#if`/`#else` shape), which `ir_variables` itself now calls, so the L2
+  projection's serialized `PFeatures.variables` cannot drift from the shared
+  table; the assembly path additionally `debug_assert!`s the full round trip
+  element-for-element on every routine of every fixture. Sharing is safe here
+  precisely because nothing mutates a routine's `variables` after assembly —
+  unlike `record_variables`, which `record_types.rs` upgrades per routine and
+  which is therefore explicitly NOT part of this change (the scoping report's
+  L-6 hazard).
+  **Measured** (8020 corpus, `--detector d8-commit-in-transaction`,
+  `ALSEM_TRACE=1`, `release-fast`, two runs each): whole-process
+  `analyze.total` peak **5,674/5,685 MB → 5,125/5,124 MB**;
+  `l3.parse_project_parallel` rss **2,914/2,916 → 2,372/2,375 MB**;
+  `l3.resolve` rss **2,782/2,797 → 2,258 MB**; `gate.coverage` rss
+  **3,498/3,534 → 2,857/2,883 MB**. Representation only: the DO workspace's
+  `analyze --format json --deterministic` output is byte-identical
+  (SHA-256 `f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`
+  on both sides), the 8020 run's own output is byte-identical, and all 29 golden
+  directories across 9 targets pass with zero files moved.
 - **`SymbolTable` borrows the workspace instead of deep-cloning it — ~2.1 GB off
   the `analyze` peak on the 8020 corpus** (`feat/l3-substrate-and-parked-items`
   Task 2 / lever L-1; `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
