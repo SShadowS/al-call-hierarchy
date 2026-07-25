@@ -1007,15 +1007,37 @@ mod reverse_index_differential {
 ///   does NOT touch. The negatives are the interesting half — they are where
 ///   "a caller reaches it through a sibling branch" actually shows up.
 ///
+/// **Then, only once the exhaustive comparison above has already asserted
+/// agreement in THIS SAME RUN, a frozen digest** (scope §4.2 level 2's third
+/// bullet, `tests/l4-summary-baseline/cdo-reverse-index-digest.txt`) — the
+/// canonical serialization the spec names verbatim: for each table id in
+/// sorted order, the sorted `bundle.routine_id(ix)` list `up_table` returns.
+/// The oracle proves the index correct TODAY; the digest proves it stays
+/// UNCHANGED tomorrow. Sequencing the digest after the oracle assertions
+/// inside one function (rather than as a separate test, which Rust may run in
+/// any order/in parallel) is what makes "capture mismatch-guarded" — a digest
+/// can never be minted from a state the differential has not already
+/// vetted — an actual guarantee rather than a convention, mirroring
+/// `tests/l4-summary-baseline/README.md`'s `baseline == old == v2`-at-capture
+/// discipline as a same-run check instead of a historical one (the oracle
+/// here, unlike the now-deleted old Jacobi solver, is still live to ask).
+///
 /// Skips when `CDO_WS` is unset; panics under `ENFORCE_CDO_WS=1`, so
-/// `scripts/cdo-gate` runs it for real.
+/// `scripts/cdo-gate` runs it for real. Regenerate the digest with:
+/// ```text
+/// CDO_WS=<path> ENFORCE_CDO_WS=1 REGEN_TEMP_GOLDENS=1 cargo test -p al-call-hierarchy \
+///   --test l4_summary_differential cdo_reverse_index_matches_slow_oracle -- --nocapture
+/// ```
 #[test]
 fn cdo_reverse_index_matches_slow_oracle() {
+    use std::collections::BTreeMap;
+
     use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
     use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
     use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
     use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
     use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
+    use al_call_hierarchy::engine::l4::reverse_index::ReverseEffectIndex;
     use al_call_hierarchy::engine::l4::routine_interner::RoutineIx;
     use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
     use al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
@@ -1123,6 +1145,54 @@ fn cdo_reverse_index_matches_slow_oracle() {
         "cdo_reverse_index_matches_slow_oracle: ancestor oracle ran over {} sampled \
          routines (every 50th)",
         sample.len()
+    );
+
+    // ---- Frozen digest (scope §4.2 level 2, third bullet) --------------------
+    //
+    // Reached only after every assertion above has already passed — see this
+    // fn's doc comment for why that sequencing, not a separate test, is what
+    // makes the mismatch guard real. `tables` is `oracle.tables` (sorted,
+    // deduped) captured above; `index` is rebuilt here (cheap relative to the
+    // CDO workspace assembly already paid for) so this section reads
+    // standalone.
+    let index = ReverseEffectIndex::build(&bundle);
+    let mut canonical: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for t in &tables {
+        let ids: Vec<String> = index
+            .up_table(t)
+            .into_iter()
+            .map(|ix| bundle.routine_id(ix).to_string())
+            .collect();
+        canonical.insert(t.clone(), ids);
+    }
+    let digest = sha256_hex(&format!("{canonical:#?}"));
+    let digest_path = baseline_dir().join("cdo-reverse-index-digest.txt");
+
+    if regen() {
+        std::fs::create_dir_all(baseline_dir()).expect("create l4-summary-baseline dir");
+        std::fs::write(&digest_path, digest.as_bytes())
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", digest_path.display()));
+        eprintln!(
+            "REGEN cdo-reverse-index-digest ({} tables): {} -> {}",
+            tables.len(),
+            digest,
+            digest_path.display()
+        );
+        return;
+    }
+
+    let expected = std::fs::read_to_string(&digest_path).unwrap_or_else(|e| {
+        panic!(
+            "read frozen CDO reverse-index digest {} failed: {e} — run CDO_WS=<path> \
+             ENFORCE_CDO_WS=1 REGEN_TEMP_GOLDENS=1 to (re)capture",
+            digest_path.display()
+        )
+    });
+    assert_eq!(
+        digest,
+        strip_cr(&expected).trim(),
+        "CDO reverse index ({} tables) diverged from the frozen digest",
+        tables.len()
     );
 }
 
