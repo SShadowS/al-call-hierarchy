@@ -24,6 +24,49 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
+- [x] **Golden-gate coverage repair** — DONE 2026-07-25 (task-3 fix wave, review
+  I-3). Every "goldens clean" claim in the l3-substrate/C1 arcs rested on a gate
+  with real holes; task 3 walked straight through one (it moved
+  `tests/r3a3-goldens/` behind a green `scripts/check-goldens`). Fixed, all
+  verified by construction:
+  - `scripts/check-goldens` went from **5 targets / 17 of 29 golden directories**
+    to **9 targets / 29 of 29**. Added `--test r3` (r3a1/r3a2/r3a3/r3a4/r3a5,
+    483 files), `--test r25_abi` (7), `--test l4_summary_differential` (18) and
+    `--test program_resolve_harness` (`tests/goldens/semantic-edges/`, 2 —
+    a 12th uncovered dir the review's count of 11 missed). Proof: corrupting one
+    r3a3 golden now FAILS the script (it did not even run before) and `--regen`
+    restores it byte-for-byte. r3a3's regen is content-change-gated by design, so
+    `--regen` legitimately writes zero r3a3 files when nothing moved.
+  - `--no-fail-fast` added — the first failing binary used to hide every later
+    target. Proof: with r3a3 stale, `--test r4` still reports after `--test r3`
+    fails.
+  - `scripts/git-hooks/pre-commit`'s path filter widened from
+    `src/engine/{l4,l5}/` + 4 golden dirs to ALL of `src/engine/`,
+    `crates/al-syntax/src/`, every `tests/*goldens*/`, `tests/l4-summary-baseline/`,
+    every `tests/*-vectors/`, and the fixture roots. It matched **none** of
+    task 3's substrate (`src/engine/{ids.rs,l2,l3,deps}`) and none of the four
+    dirs that moved; it fired only because two doc-comment edits landed in
+    `src/engine/l5/`. Honest cost: ~23s warm-cache on a firing commit (was ~17s
+    for the old 5 targets), plus any debug rebuild.
+  - `scripts/cdo-gate` gained `--test l4_summary_differential`. The CDO
+    whole-program L4 frozen digest was on **no** runner at all — see the next
+    entry.
+- [x] **CDO L4 frozen digest re-freeze** — DONE 2026-07-25 (task-3 fix wave,
+  review I-2). `tests/l4-summary-baseline/cdo-whole-program-digest.txt` moved
+  `d3fc4f0e…` → `d9eac0c7…` (3685 → 4842 routines) as a consequence of task 3's
+  enclosing-member discriminator. It was NOT blind-regenerated: disabling that one
+  conditional key-part append, with the rest of the tree unchanged, reproduces the
+  OLD digest byte for byte — an exact single-variable attribution, stronger than
+  the masked-diff method the committed goldens needed. Full evidence table
+  (population decomposition 3231 unchanged / 454 replaced / 1611 minted, the
+  +1157 matching `detector_context.rs`'s independently-measured figure, zero
+  shape or value-domain movement) is in
+  `tests/l4-summary-baseline/README.md`'s re-freeze log — **add an entry there
+  for every future re-freeze; the independent oracle behind this baseline was
+  retired, so "regenerated, tests green" proves nothing on its own.** Note the
+  review's premise that `scripts/cdo-gate` would fail on this was wrong in a
+  worse way than being wrong: that script did not run the test at all. It does now.
+
 - [x] **Engine memory/speed Wave 1 (Track A)** — DONE 2026-07-18 (branch
   `worktree-design-engine-memory-speed`, commits `9c0ee77..708f000`, 10 tasks
   SDD-executed + per-task reviewed, goldens byte-stable throughout). Base App
@@ -232,46 +275,218 @@ the bottom, CHANGELOG, and git log.
   urgent, no correctness or perf stake, just dead-weight-dependency hygiene.
   Wake: convenient piggyback on an unrelated touch of those types, or a
   dependency-audit pass.
+- [ ] **L-3 globals sharing is retained-only — the transient build-then-discard
+  allocation cost survives** (`feat/l3-substrate-and-parked-items` Task 5 /
+  lever L-3; `task-5-review.md` finding F1). `ir_variables`
+  (`src/engine/l2/ir_walk.rs:2189`) still materializes a FRESH copy of every
+  object global — 2 heap `String`s plus a `PAnchor` carrying 2 more — for
+  EVERY routine (the ~6 M small allocations §3.3/§5 L-3 counted on), and
+  `project_file` (`src/engine/l3/l3_workspace.rs:1038-1050`) immediately
+  filters them back out and drops them before constructing
+  `RoutineVariables`. The RETAINED cost is genuinely gone (Task 5's measured
+  ~540 MB peak drop is real, not an artifact, **on the 8020 corpus** — real
+  BC customer workspaces replicate far less: CDO/DO measures 16.8x global
+  replication against 8020's 56.4x, a ~5.29 MB win there vs. 8020's
+  ~434.97 MB, see `scope-l3-substrate.md` §8 and the CHANGELOG's L-3 entry);
+  the TRANSIENT churn is not, and is the most likely explanation for the
+  scoped ~700 MB vs. measured ~560 MB shortfall (also 8020-scale).
+  ⟨final-branch-review-l3.md M-6⟩ **The ~540/~560 MB figures themselves rest on
+  one inference, not a Task-5-isolated re-measurement**: the "before" baseline
+  used for them already sits downstream of Tasks 3 and 4's id-schema change, so
+  attributing the full drop to Task 5 assumes T3/T4 moved the peak by ~0 (both
+  are same-length SHA-256-hex substitutions — reasonable, not idle, but still an
+  assumption) rather than toggling Task 5 off against an otherwise-identical
+  build, the way Task 3's own re-freeze isolates its own change. **Not a
+  defect on its own** — L2's `PFeatures.variables`
+  is a serialized golden surface (`tests/ir-l2-goldens/l2_features.snapshot`,
+  `tests/r1a-vectors/l2-vectors.json`) and must keep its full flat
+  params→locals→globals form; L-3 was scoped as "never-build" for the L3
+  assembly path specifically, not for L2's own projection. On the
+  `analyze`/L3-assembly path, the only remaining consumer of the
+  flat-with-globals list is `innermost_scope_by_lc`
+  (`src/engine/l3/l3_workspace.rs:1136-1142`), which is derivable first-wins
+  straight from `RoutineVariables::iter()` (`own` already precedes
+  non-shadowed `globals` in that exact order) without ever building the flat
+  L2 form. A globals-free `ir_variables` variant reserved for the L3
+  assembly call site (L2's serialized projection keeps calling the existing
+  full-globals path, unchanged) would collect the rest of the scoped L-3
+  win. **Wake:** the next L3-substrate memory pass (e.g. sizing L-5 for real),
+  or opportunistically alongside another `ir_variables`/`ir_walk.rs` touch.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
-- [ ] **`compute_routine_id` member-discriminator gap — colliding same-name
-  triggers lose their entire capability cone** — `compute_routine_id`
-  (`src/engine/l2/scope.rs`) keys app/object-type/number/kind/name/signature
-  with NO member discriminator, so two same-name same-signature triggers in
-  one object (e.g. any page with two actions each declaring `trigger
-  OnAction()` — ordinary in real BC) collide on one routine id.
-  `build_detector_context` drains its cone maps with `remove()`, so the
-  SECOND occurrence's summary is fully degenerate (no direct facts, no
-  inherited facts, no coverage) and that routine loses its **entire**
-  capability cone; `ConeDerivedStore::forget`
-  (`src/engine/l5/detector_context.rs:361-396`,
-  `src/engine/l4/cone_derived.rs:322-337`) freezes the loss in place
-  deliberately — this arc's own parity oracle discovered it and chose not to
-  fix it because fixing it moves goldens. Note `build_detector_context_cross_app`
-  reads with `get()` and never has the accident, which is itself evidence the
-  `remove()` is an accident rather than a decision. This is the SAME
-  `compute_routine_id` collision family as `docs/engine-gaps.md`'s **G-18**
-  (which fixed a different symptom — d1's cross-body loop misattribution —
-  and correctly remains marked FIXED); this cone-loss symptom is separate and
-  still open. Fix options: a member discriminator on `compute_routine_id`, or
-  dedup `ws.routines` upstream of the cone walk. **Wake:** the next time
-  goldens are being rebaselined anyway (the fix moves them), or a
-  misattributed production finding on an object with colliding same-name
-  triggers.
-- [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
-  built and tested but has zero production callers** — built at A4 with
-  wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +
-  migrate) and deliberately did NOT wire it (eager construction would add
-  unconsumed cost to every `analyze` run — the right call), so the stated
-  wake condition passed without being met. Every `ReverseEffectIndex::build`
-  call site is inside its own `#[cfg(test)]` module; its only other mentions
-  in the codebase are two doc comments (`summary_runner.rs`,
-  `detector_context.rs`). It has never executed against real data — no
-  golden, no DO run, no CDO run reaches it — so its 7 self-consistency tests
-  are its entire correctness evidence. **Wake:** the first db-effect-reading
-  consumer (originally planned: VSCode hover) or a future `finding`/query
-  surface that needs an effect/table ↔ routine lookup.
+- [ ] **Residual duplicate-id groups: 15 groups / 19 routines on BC Base App (0 on
+  DO) still share BOTH the internal and the stable routine id.** ⟨task-4-review.md
+  finding M-3, fix wave⟩ Promoted out of the CLOSED `compute_routine_id` entry
+  below — a reader scanning this section for open work used to meet a closed item
+  first, with the genuinely-open residual buried as one of its sub-paragraphs. The
+  member-discriminator fold that entry describes (closing DO's 262 collision
+  groups to 0 and 8020's 3,058 to 15) leaves two shapes a FLAT enclosing-member
+  string cannot separate: **13 XMLport same-name `fieldelement` members at
+  different nesting paths** — a flat member name cannot separate a nested XMLport
+  tree — and **2 preproc `#if`/`#else` alternatives** of one member, an artifact of
+  the deliberate union-read preproc design rather than of the discriminator defect
+  (one of those two is a codeunit-level procedure with no enclosing member at all,
+  so no member discriminator could ever separate it).
+
+  **Wake:** a consumer that must tell two same-named XMLport elements apart — at
+  which point the fix is a path-qualified member (or a declaration ordinal) in the
+  same conditional position, with the same shape constraint the closed entry's id
+  schema already established. Until then the fail-closed handling stands:
+  `detector_context`'s skip-on-drained-map branch, d1's
+  `edge_target_matches_callsite_callee` guard, and the inventory's THREE-key sort
+  (`inventory_row_cmp`'s `sort_by` in `build_inventory_doc`: primary
+  `stableRoutineId`, secondary `case_insensitive_compare_opt` on `enclosingMember`,
+  tertiary `locale_compare` on `originatingObject`) — all three kept deliberately
+  and each with a test that states its precondition executably:
+  `detector_context::tests::hand_stated_id_collision_keeps_a_real_summary_and_derived_row`,
+  `gap_g18_transitive_loop.rs`'s (d)/(e), and — for the inventory sort — BOTH
+  `snapshot_full::tests::hand_stated_collision_discriminates_by_member_case_insensitively`
+  (secondary key) AND
+  `snapshot_full::tests::hand_stated_collision_discriminates_by_originating_object_when_member_also_ties`
+  (tertiary key), respectively (⟨task-4-review.md finding I-2⟩, fix wave — the
+  first of those did not exist at T4: its predecessor,
+  `member_tie_break_is_case_insensitive_and_none_first`, pinned the comparator
+  function but not the sort's actual use of it, so deleting the tie-break's
+  `.then_with` call from `build_inventory_doc` left every test — and every golden
+  — green; ⟨final-branch-review-l3.md finding I-3⟩ then found the tertiary key had
+  no coverage of any kind — not function-level, not use-level, no golden — because
+  reaching it needs two rows agreeing on BOTH `stableRoutineId` AND
+  `enclosingMember`, which the T4 fix wave's test does not construct; the second
+  test closes that gap the same way, by hand-stating the collision one key
+  further).
+
+- [x] **CLOSED 2026-07-25 (T1 + T3 + T4) — `compute_routine_id`
+  member-discriminator gap: colliding same-name triggers shared ONE id.**
+  `compute_routine_id` (`src/engine/l2/scope.rs`) keyed
+  app/object-type/number/kind/name/signature with NO member
+  discriminator, so two same-name same-signature triggers in one object (e.g.
+  any page with two actions each declaring `trigger OnAction()` — ordinary in
+  real BC) collided on one routine id. This is the SAME collision family as
+  `docs/engine-gaps.md`'s **G-18** (which fixed a different symptom — d1's
+  cross-body loop misattribution — and correctly remains marked FIXED).
+  Kept here in full because the three tasks' measurements are the evidence
+  behind the current id schema, and because the honest residual below is a
+  live wake condition.
+
+  **MEASURED, 2026-07-25** (`.superpowers/sdd/scope-routine-id-collision.md`),
+  correcting this entry's own earlier "handful of routines" framing by three
+  orders of magnitude:
+
+  | corpus | routines | collision groups | routines erased by the collapse |
+  |---|---:|---:|---:|
+  | DO (`DocumentOutput/Cloud`) | 4 842 | 262 | **1 157 (23.9 %)** |
+  | 8020 (BC Base App) | 100 941 | 3 058 | **16 906 (16.7 %)** |
+
+  Largest group: 17 routines on one id (DO), 100 (8020). Every colliding
+  routine is a member trigger; 98 % of groups carry real call graph.
+  `enclosing_member` is already in the model at every `compute_routine_id`
+  call site and closes DO to **0** residual groups, 8020 to 15 groups / 19
+  routines (preproc `#if` alternatives + XMLport same-name elements at
+  different nesting paths).
+
+  **DONE (T1, 2026-07-25): the cone-LOSS symptom is fixed.**
+  `build_detector_context` drained its cone maps with `remove()`, so a later
+  occurrence of a colliding id wrote a fully degenerate summary over the real
+  one and `ConeDerivedStore::forget` dropped the matching derived row — the
+  whole cone of an id shared by N routines was erased.
+  (`build_detector_context_cross_app` reads with `get()` and never had the
+  accident, which is what identified the drain as an accident rather than a
+  decision.) The builder now skips the later occurrence instead; `forget` is
+  deleted. Measured on DO: **+4 `d8-commit-in-transaction` findings, −1
+  `d9-transaction-span-summary`, 20 findings changed in place** — see
+  `.superpowers/sdd/task-1-report.md`. Zero golden movement.
+
+  **DONE (T3, 2026-07-25): the INTERNAL id schema is fixed.**
+  `CanonicalRoutineKey` gained `enclosing_member: Option<String>` and
+  `encode_canonical_routine_key` appends it as a 7th `sha256_of_strings` part
+  **only when a member exists**, so procedures, object-level triggers and every
+  dependency-ABI routine (the dep projection passes `None`) keep byte-identical
+  ids and the cross-app join stays symmetric by construction. The id's SHAPE is
+  unchanged — `routine_id_shape_is_two_parts_with_64_hex_regardless_of_member`
+  pins it independently of its content. Measured closure: **DO 262 collision
+  groups → 0; 8020 3 058 → 15 groups / 19 routines (0.019 %)**, the residual
+  being 13 XMLport same-name `fieldelement` members at different nesting paths
+  (wake condition for a path-qualified member, if a consumer ever needs one)
+  and 2 preproc `#if`/`#else` alternatives (an artifact of the deliberate
+  union-read preproc design, not of this defect). 20 goldens moved, all
+  id-shaped — 84 lines, 6 distinct ids, each re-derived as (6-part hash) →
+  (6-part + lowercased member), every masked run in `{modelInstanceId}/`
+  position; no fact content or fingerprint moved. (`git diff --stat -- tests/`
+  says 22: it also counts 2 hand-edited `tests/l2_ir/*.rs` sources.) DO
+  findings 2 387 → 2 369: −14 d34 / −3 d45 / −3 d8 / −2 d9 (cone shrink, the
+  predicted direction — cross-body splices removed) and +3 d1 / +1 d3
+  (previously unaddressable sibling BODIES becoming real routines). See
+  `.superpowers/sdd/task-3-report.md`.
+
+  **DONE (T4, 2026-07-25): the STABLE id schema is fixed — option (a3), and
+  the parked entry closes with it.** `to_stable_routine_id_from_parts` takes
+  `enclosing_member: Option<&str>` and, when `Some`, replaces the hash part with
+  `sha256_of_strings([normalizedSignatureHash, member_lowercased])` — the same
+  ONE canonical normalization (`ir_enclosing_member`) at all five construction
+  sites, `None` on the dep-ABI side. `None` reproduces
+  `{stableObjectId}#{normalizedSignatureHash}` byte for byte; the SHAPE stays
+  `{stableObjectId}#{64 lowercase hex}` (folded into the hash, never appended as
+  a segment — an appended `#member` would have defeated `alsem diff`'s join,
+  `stable_sub_id`'s two-part split and `DepIdStabilizer`, moving EVERY
+  fingerprint in the product), pinned independently of its content by
+  `stable_routine_id_shape_is_object_plus_64_hex_regardless_of_member`.
+  Measured on DO: **71 of 2 369 findings (3.00 %) get a new fingerprint and
+  2 295 of 2 362 baseline fingerprints (97.16 %) still match** — against the
+  scoping doc's 81/2 384 (3.4 %) prediction, made before T1/T3 moved the
+  population. **Zero findings appeared or disappeared**; every detector count is
+  identical. **Duplicate-fingerprint excess 7 → 3**, closing all four
+  sibling-`OnAction` groups (including `b2d1b142f0577a38` and
+  `47500c86760f3f93`). 50 goldens moved, every one explained order-insensitively
+  by the stable-id substitution (42) or by it plus the 4 intended fingerprint
+  moves (8); the 6 stable ids and 4 fingerprints were re-derived independently
+  in Python; the mask was POSITIONAL and confirmed that zero bare 64-hex values
+  (`normalizedSignatureHash` / `signatureFingerprint`) and zero
+  `{modelInstanceId}/`-prefixed internal ids changed value. `scripts/cdo-gate`
+  with `CDO_WS` set: PASS, and the frozen CDO L4 whole-program digest did **not**
+  move. See `.superpowers/sdd/task-4-report.md`.
+
+  **The honest residual, and its wake condition** — promoted to its own open
+  entry directly above this one (⟨task-4-review.md finding M-3⟩, fix wave):
+  15 groups / 19 routines on BC Base App (0 on DO) still share both the
+  internal and the stable id.
+
+  **Historical (superseded by T3 above) — what the collision cost.** With one
+  id per N siblings the
+  surviving DIRECT facts were still ONE arbitrary (last-sibling-wins) sibling's.
+  The surviving INHERITED cone is NOT one sibling's view: the combined graph
+  files every sibling's out-edges under the one shared `from` key, so the cone
+  walk consumes their union — `(last sibling's direct facts) ∪ (cone over the
+  union of ALL siblings' callees)`, an over-approximation. This explained why
+  the +4 d8 findings above were genuine rather than accidental (their manager
+  qualification rode the union) and predicted the direction of the
+  member-discriminator fix's own diff: de-colliding ids SHRINKS each sibling's
+  cone back to its own callees, so some of those +4 d8 findings would disappear
+  again if a manager's `writes_physical_tables_count_of >= 3` was only met by
+  the union — expected movement, not a regression.
+  **T3 CONFIRMED that prediction exactly**: 3 of the d8 findings went away,
+  including the `CDO Move Logs` one this entry called out by hand (it anchored
+  on line 212, `UpdateStatusAction`'s trigger, while its `Commit()` sits at line
+  188 in the sibling `StartmovinglogsAction` — `routine_by_id` had resolved the
+  last sibling and the op-site lookup fell back to its declaration anchor). The
+  d9 twin now anchors correctly on line 142 with 2 tables instead of the
+  union's 5, which is precisely why d8's `>= 3` threshold stops being met.
+- [ ] **`d55-event-publish-in-loop`'s `rootCauseKey` omits the callsite, so
+  several publish sites in ONE loop share a fingerprint** — `d55.rs:73` builds
+  `d55/{routine.id}/{loop_info.id}` while the finding `id` additionally carries
+  `/cs{n}`. Measured on DO (2026-07-25, after T4 closed every id-collision
+  duplicate): this is now the **entire** remaining duplicate-fingerprint
+  population — 2 groups / 3 excess, `CDO Payment Link Handler.al:43,51`
+  (`/cs9`, `/cs18`) and `CDOEMailJob.Table.al:254,257,464`
+  (`/cs6`, `/cs7`, `/cs86`), each group inside a single routine with a single
+  internal id. **Not an id defect** — the ids are correct and distinct; the
+  detector's key is coarser than its findings. Two coherent fixes: include the
+  callsite in the key (one finding per publish site, distinct fingerprints), or
+  emit ONE finding per loop (matching the key). The second is arguably what the
+  message text already implies. **Wake:** a user reporting that baselining one
+  d55 finding silently suppressed a second publish in the same loop, or the next
+  deliberate fingerprint-moving change (piggyback — the cost is the same class as
+  T4's 3 %).
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
   app's parse only (deps parse once in the fresh pass); on DO that's 407 files of a
   dep-dominated 4.8 s resolve → sub-second saving. Live BOM divergence (DO has 4

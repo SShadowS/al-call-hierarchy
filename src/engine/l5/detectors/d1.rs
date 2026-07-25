@@ -1081,10 +1081,16 @@ pub(crate) fn detect_d1_premerge(resolved: &L3Resolved, ctx: &DetectorContext) -
             //
             // G-18 (docs/engine-gaps.md): the callsite-id match alone is NOT
             // sufficient. Two same-name same-signature triggers in one object
-            // (e.g. two page actions, each `trigger OnAction()`) COLLIDE on the
-            // internal routine id (`compute_routine_id` carries no member
-            // discriminator), so their call-site ids (`{rid}/cs{n}`) collide too
-            // and `edges_by_from[{rid}]` mixes BOTH bodies' edges under one key.
+            // (e.g. two page actions, each `trigger OnAction()`) used to COLLIDE
+            // on the internal routine id, so their call-site ids (`{rid}/cs{n}`)
+            // collided too and `edges_by_from[{rid}]` mixed BOTH bodies' edges
+            // under one key. Task 3 gave `compute_routine_id` a conditional
+            // enclosing-member discriminator, which closes that collision for
+            // every member trigger (DO: 262 groups → 0). This guard is KEPT
+            // deliberately: a small residual still collides by construction
+            // (8020: 15 groups — XMLport same-name elements at different nesting
+            // paths, and preproc `#if` alternatives), and it is fail-closed for
+            // any future id-schema regression.
             // Picking the sibling body's edge for THIS body's in-loop call site
             // attributed the loop to a call chain it is not on (the CDO batch-7
             // `eDocumentsConfigExists` false positive). The edge's TARGET must

@@ -25,7 +25,9 @@
 //!
 //! To match al-sem's NEW stabilized fingerprint (`src/projection/finding-fingerprint.ts`),
 //! we build a map from EVERY routine's internal id → its `StableRoutineId`
-//! (`${appGuid}:${objectType}:${objectNumber}#${normalizedSignatureHash}`) — for ALL
+//! (`${appGuid}:${objectType}:${objectNumber}#${64 lowercase hex}` — the hex is the
+//! `normalizedSignatureHash` for a member-less routine and its enclosing-member fold
+//! for a member trigger, see `ids::to_stable_routine_id_from_parts`) — for ALL
 //! routines, SOURCE and DEPENDENCY alike — and substitute every internal routine-id
 //! occurrence in the `rootCauseKey` before hashing. Because operation/callsite/loop
 //! ids carry the routine id as a prefix, replacing the routine-id substring preserves
@@ -33,12 +35,20 @@
 //!
 //! Routines whose `normalized_signature_hash` is empty are skipped (no stable form to
 //! swap to — `to_stable_routine_id_from_parts` would emit a degenerate trailing `#`).
+//!
+//! ⟨task 4⟩ **This is where the member discriminator on the STABLE id pays off.**
+//! Task 3 gave two sibling `trigger OnAction()` bodies distinct INTERNAL ids, but
+//! both still substituted to one stable id here, so their findings hashed to one
+//! fingerprint and a single baseline entry suppressed both. Folding the enclosing
+//! member into the stable id closes that (measured on DO: duplicate-fingerprint
+//! excess 7 → 3, the residual 3 being `d55`'s own callsite-blind `rootCauseKey`,
+//! not an id collision).
 //! For the r0-pinned (r4 differential) path the engine pins `modelInstanceId = "r0"`,
 //! so source ids are already reproducible; the substitution still applies and both
 //! paths stabilize to the SAME `StableRoutineId`. This unifies the prior dep-only
 //! special case into one all-routines map.
 
-use crate::engine::ids::sha256_hex;
+use crate::engine::ids::{is_lower_hex, sha256_hex};
 use crate::engine::l3::l3_workspace::{L3Object, L3Routine};
 use crate::engine::l5::finding::Finding;
 use std::collections::HashMap;
@@ -75,9 +85,17 @@ impl<'a> FingerprintIndex<'a> {
             objects.iter().map(|o| (o.id.as_str(), o)).collect();
 
         // Map every routine's INTERNAL id → its modelInstanceId-/cache-independent
-        // StableRoutineId. Skip routines with an empty normalized_signature_hash:
-        // their stable form would be a degenerate trailing `#` (no stable form to
-        // swap to — mirrors al-sem skipping `normalizedSignatureHash === ""`).
+        // StableRoutineId. Skip routines with an empty normalized_signature_hash
+        // (mirrors al-sem skipping `normalizedSignatureHash === ""`).
+        // ⟨final-branch-review-l3.md M-7⟩ The "degenerate trailing `#`" rationale
+        // is only half-true: it holds for a MEMBER-LESS routine (empty hash → an
+        // empty six-part join, a real degenerate id with nothing to swap to), but
+        // NOT for a member-trigger routine — `sha256_of_strings(["", member])`
+        // still folds to 64 real hex, so there is nothing degenerate to avoid
+        // there. Unreachable either way in production (assembly always computes a
+        // non-empty `normalized_signature_hash`), so this skip is conservative
+        // rather than wrong, and the comment above states only the case where the
+        // rationale actually applies.
         let stable_by_id: HashMap<String, String> = routines
             .iter()
             .filter(|r| !r.normalized_signature_hash.is_empty())
@@ -189,7 +207,7 @@ fn substitute_stable_ids(
                 && pos + plen + 64 <= len
                 && bytes[pos + plen..pos + plen + 64]
                     .iter()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
+                    .all(|b| is_lower_hex(*b))
             {
                 let candidate = &key[pos..pos + plen + 64];
                 if let Some(stable) = stable_by_id.get(candidate) {
@@ -220,7 +238,7 @@ fn substitute_stable_ids(
 mod tests {
     use super::*;
     use crate::engine::ids::sha256_hex;
-    use crate::engine::l3::l3_workspace::L3Routine;
+    use crate::engine::l3::l3_workspace::{L3Routine, RoutineVariables};
     use crate::engine::l5::finding::{Evidence, FindingConfidence, SourceAnchor};
 
     fn dummy_anchor(enclosing: &str) -> SourceAnchor {
@@ -289,7 +307,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

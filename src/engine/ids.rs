@@ -1,7 +1,18 @@
-//! R0 identity encoders — Rust ports of al-sem's object/routine identity
-//! functions. These MUST reproduce al-sem's output byte-for-byte; the
-//! differential oracle is `tests/encoder_vectors.rs` against the committed
-//! vectors in `tests/r0-vectors/encoder-vectors.json`.
+//! R0 identity encoders — originally Rust ports of al-sem's object/routine
+//! identity functions, now **Rust-owned** (CLAUDE.md, "al-sem retirement is
+//! COMPLETE"). The regression oracle is `tests/l2_ir/encoder_vectors.rs` against
+//! the committed vectors in `tests/r0-vectors/encoder-vectors.json` — Rust-owned
+//! baselines, not an al-sem differential.
+//!
+//! **These no longer reproduce al-sem's output byte-for-byte, and must not be
+//! "fixed" back to it.** [`encode_canonical_routine_key`] appends a CONDITIONAL
+//! 7th key part — the enclosing-member discriminator (task 3,
+//! `feat/l3-substrate-and-parked-items`) — so a member trigger's id is
+//! deliberately an id al-sem never minted. Every routine WITHOUT an enclosing
+//! member (`enclosing_member: None`: procedures, object-level triggers, and every
+//! dependency-ABI routine) still hashes the original six parts and is byte-identical
+//! to the pre-discriminator id; the committed vectors contain zero `enclosingMember`
+//! entries and therefore all take that branch unchanged.
 //!
 //! Cross-port invariants worth knowing before touching anything here:
 //! - `sha256_of_strings` length-prefixes each part with its **UTF-16 code-unit
@@ -30,6 +41,28 @@ pub struct CanonicalRoutineKey {
     pub routine_kind: String,
     pub routine_name: String,
     pub normalized_signature_hash: String,
+    /// The member (table field / page field / action / dataitem / …) that
+    /// ENCLOSES a member trigger — the discriminator that separates the N
+    /// `trigger OnAction()` bodies of one page from each other. `None` for
+    /// procedures, object-level triggers (`OnRun`/`OnOpenPage`) and every
+    /// dependency-ABI routine.
+    ///
+    /// Two hard contracts, both load-bearing:
+    ///
+    /// 1. **The string must be the UNESCAPED logical identifier** (inner `""`
+    ///    collapsed to `"`), which is exactly what
+    ///    [`crate::engine::l2::ir_walk::ir_enclosing_member`] produces — the
+    ///    single source every call site uses. The raw IR value is only
+    ///    outer-quote-stripped, so feeding it here directly would mint a
+    ///    different id for the same routine from a different code path.
+    ///    [`encode_canonical_routine_key`] lowercases (AL identifiers are
+    ///    case-insensitive) but deliberately does NOT unescape — normalizing
+    ///    twice is not idempotent for a member like `"a""""b"`.
+    /// 2. **`None` must stay byte-identical to the pre-discriminator id.**
+    ///    [`encode_canonical_routine_key`] therefore appends a 7th hash part
+    ///    only when this is `Some` — see its doc for why `Some("")` and `None`
+    ///    are still distinguishable.
+    pub enclosing_member: Option<String>,
 }
 
 /// Count of UTF-16 code units in `s` — equal to JavaScript's `String.length`.
@@ -77,6 +110,19 @@ fn hex_lower(bytes: &[u8]) -> String {
         out.push_str(&format!("{b:02x}"));
     }
     out
+}
+
+/// One BYTE of a `hex_lower`-produced digest — digit or **lowercase** `a`-`f`
+/// only. ⟨task-4-review.md finding M-5⟩ Shared home for a predicate that used to
+/// be open-coded at three call sites (`l5::fingerprint::substitute_stable_ids`,
+/// this module's own shape test, `tests/cli/cli_p1_inventory.rs`). The
+/// lowercase-only rule is load-bearing, not cosmetic: every id this crate mints
+/// goes through `hex_lower`, which never emits `A`-`F`, so
+/// `is_ascii_hexdigit` (which accepts `A`-`F` too) would wrongly widen the match
+/// and risk mis-splicing a stable id at the wrong position in
+/// `substitute_stable_ids`.
+pub fn is_lower_hex(b: u8) -> bool {
+    b.is_ascii_digit() || (b'a'..=b'f').contains(&b)
 }
 
 /// Internal object id: `"{appGuid}/{objectType}/{objectNumber}"`, no
@@ -176,16 +222,49 @@ pub fn routine_signature_fingerprint(
 
 /// Canonical routine key hash: `sha256_of_strings` over the 6 ordered parts
 /// `[appGuid, objectType, objectNumber, routineKind, routineName_lower,
-/// normalizedSignatureHash]`.
+/// normalizedSignatureHash]`, plus a CONDITIONAL 7th part —
+/// `enclosing_member_lower` — appended only when the routine has an enclosing
+/// member ([`CanonicalRoutineKey::enclosing_member`]).
+///
+/// **Conditional, not unconditional, and that is the whole design.** Without a
+/// member discriminator two `trigger OnAction()` bodies in one page hash to one
+/// id (measured: 23.9 % of DO routines, 16.7 % of BC Base App routines collapse
+/// onto a shared id). Appending the part only when a member exists means every
+/// routine that never collides — procedures, object-level triggers, and the
+/// whole dependency-ABI side, which passes `None` — keeps a byte-identical id,
+/// so the cross-app join stays symmetric by construction and the committed
+/// encoder vectors do not move.
+///
+/// `sha256_of_strings` length-prefixes every part, so `[…6 parts]` and
+/// `[…6 parts, ""]` already hash differently: an empty-named member is still
+/// distinguishable from no member at all, and the conditional append is
+/// unambiguous rather than merely conventional.
+///
+/// This changes the hash INPUT only. The id's SHAPE
+/// (`{modelInstanceId}/{64 lowercase hex}`) is load-bearing far downstream —
+/// `l5::fingerprint`'s `substitute_stable_ids` locates ids by scanning for
+/// exactly 64 lowercase-hex bytes and `l4::summary`'s `stable_sub_id` splits on
+/// exactly two `/`-parts — so a `#member` suffix or an extra `/`-segment would
+/// silently break both and move every fingerprint in the product. Pinned by
+/// `routine_id_shape_is_two_parts_with_64_hex_regardless_of_member`.
 pub fn encode_canonical_routine_key(key: &CanonicalRoutineKey) -> String {
-    sha256_of_strings(&[
+    let mut parts = vec![
         key.app_guid.clone(),
         key.object_type.clone(),
         key.object_number.to_string(),
         key.routine_kind.clone(),
         key.routine_name.to_lowercase(),
         key.normalized_signature_hash.clone(),
-    ])
+    ];
+    // CONDITIONAL: no member → the 6-part hash, byte-identical to the
+    // pre-discriminator schema. The value is lowercased (AL identifiers are
+    // case-insensitive, exactly like `routine_name` above) but NOT unescaped —
+    // callers pass the already-unescaped logical identifier, see
+    // `CanonicalRoutineKey::enclosing_member`.
+    if let Some(member) = &key.enclosing_member {
+        parts.push(member.to_lowercase());
+    }
+    sha256_of_strings(&parts)
 }
 
 /// Full RoutineId: `"{modelInstanceId}/{canonicalRoutineKeyHash}"`.
@@ -193,12 +272,59 @@ pub fn encode_routine_id(key: &CanonicalRoutineKey, model_instance_id: &str) -> 
     format!("{model_instance_id}/{}", encode_canonical_routine_key(key))
 }
 
-/// Stable routine id from its parts: `"{stableObjectId}#{normalizedSignatureHash}"`.
+/// Stable routine id from its parts: `"{stableObjectId}#{64 lowercase hex}"`.
+///
+/// The hex part is the `normalizedSignatureHash` verbatim for a routine with NO
+/// enclosing member, and `sha256_of_strings([normalizedSignatureHash, member_lower])`
+/// for a member trigger — the CONDITIONAL enclosing-member discriminator (task 4),
+/// mirroring [`encode_canonical_routine_key`]'s conditional 7th part on the
+/// INTERNAL id (task 3).
+///
+/// **Why the stable id needs it too.** The internal discriminator separates two
+/// `trigger OnAction()` bodies of one page in the model; it does NOT separate
+/// their FINDINGS. `l5::fingerprint::fingerprint_of` hashes the `rootCauseKey`
+/// with every internal id substituted to its STABLE image, so while the stable
+/// id stayed member-blind two sibling triggers' findings hashed to ONE
+/// fingerprint and a single baseline entry suppressed both (measured on DO:
+/// `b2d1b142f0577a38`, `47500c86760f3f93`).
+///
+/// **The shape is load-bearing and does not change.** The result is always
+/// `{stableObjectId}#{64 lowercase hex}`: `sha256_of_strings` returns the same
+/// 64-hex width as `normalized_signature_hash`, so `alsem diff`'s stable-id join,
+/// `l4::summary::stable_sub_id`'s two-`/`-part split, `deps::r3a4_projection`'s
+/// `DepIdStabilizer` and the R2.5a stable-id vectors all see the shape they
+/// already assume. Appending a `#member` segment instead would move EVERY
+/// fingerprint in the product rather than only the member triggers'. Pinned by
+/// `stable_routine_id_shape_is_object_plus_64_hex_regardless_of_member`.
+///
+/// **`None` is byte-identical to the pre-discriminator id**, so procedures,
+/// object-level triggers and every dependency-ABI routine (the dep projection
+/// passes `None`) keep their stable id and the cross-app join stays symmetric by
+/// construction.
+///
+/// The member string must be the UNESCAPED logical identifier — the ONE canonical
+/// normalization, [`crate::engine::l2::ir_walk::ir_enclosing_member`], exactly as
+/// for [`CanonicalRoutineKey::enclosing_member`]. Lowercased here (AL identifiers
+/// are case-insensitive), never unescaped here (normalizing twice is not
+/// idempotent).
+///
+/// One consequence worth knowing: for a member trigger the stable id no longer
+/// ENDS with the routine's own `normalizedSignatureHash` (that field is still
+/// emitted, unchanged, and is still what the ABI signature match compares). The
+/// historical "suffix invariant" holds for member-less routines only.
 pub fn to_stable_routine_id_from_parts(
     stable_object_id: &str,
     normalized_signature_hash: &str,
+    enclosing_member: Option<&str>,
 ) -> String {
-    format!("{stable_object_id}#{normalized_signature_hash}")
+    match enclosing_member {
+        None => format!("{stable_object_id}#{normalized_signature_hash}"),
+        Some(member) => {
+            let discriminated =
+                sha256_of_strings(&[normalized_signature_hash.to_string(), member.to_lowercase()]);
+            format!("{stable_object_id}#{discriminated}")
+        }
+    }
 }
 
 /// Object signature fingerprint: `sha256("{objectType}|{objectNumber}|{name}")`.
@@ -317,6 +443,187 @@ mod tests {
         assert_eq!(utf16_len("café"), 4); // NOT byte length 5
         assert_eq!(utf16_len("😀"), 2); // surrogate pair, NOT 1 scalar / 4 bytes
         assert_eq!(utf16_len("a😀b"), 4); // 1 + 2 + 1
+    }
+
+    // -- the enclosing-member discriminator (Task 3) --------------------------
+
+    fn member_key(member: Option<&str>) -> CanonicalRoutineKey {
+        CanonicalRoutineKey {
+            app_guid: "11111111-2222-3333-4444-555555555555".to_string(),
+            object_type: "Page".to_string(),
+            object_number: 50811,
+            routine_kind: "trigger".to_string(),
+            routine_name: "OnAction".to_string(),
+            normalized_signature_hash: sha256_hex("onaction():"),
+            enclosing_member: member.map(|m| m.to_string()),
+        }
+    }
+
+    /// THE TRAP, pinned. The discriminator changes the hash INPUT; it must never
+    /// change the id's SHAPE. `l5::fingerprint::substitute_stable_ids` finds ids by
+    /// scanning for `"{mid}/"` followed by EXACTLY 64 lowercase-hex bytes, and
+    /// `l4::summary::stable_sub_id` splits an id into EXACTLY two `/`-parts — a
+    /// `#member` suffix or a 7th `/`-segment silently defeats both, and the failure
+    /// mode is every fingerprint in the product moving.
+    ///
+    /// This asserts the shape INDEPENDENTLY of the content, so it holds for any
+    /// future key part too.
+    #[test]
+    fn routine_id_shape_is_two_parts_with_64_hex_regardless_of_member() {
+        for member in [None, Some(""), Some("No."), Some(r#"a"b"#), Some("😀")] {
+            let id = encode_routine_id(&member_key(member), "r0");
+            let parts: Vec<&str> = id.split('/').collect();
+            assert_eq!(
+                parts.len(),
+                2,
+                "id must stay exactly two `/`-separated parts (member={member:?}): {id}"
+            );
+            assert_eq!(parts[0], "r0", "first part is the modelInstanceId verbatim");
+            assert_eq!(
+                parts[1].len(),
+                64,
+                "hash part must stay 64 bytes (member={member:?}): {id}"
+            );
+            assert!(
+                parts[1].bytes().all(is_lower_hex),
+                "hash part must stay LOWERCASE hex (member={member:?}): {id}"
+            );
+        }
+    }
+
+    /// The closure the discriminator buys, at the encoder level: two routines
+    /// identical in all six legacy key parts and differing ONLY in their enclosing
+    /// member now get distinct ids. Before Task 3 these were the same id.
+    #[test]
+    fn distinct_enclosing_members_yield_distinct_routine_ids() {
+        let first = encode_canonical_routine_key(&member_key(Some("First")));
+        let second = encode_canonical_routine_key(&member_key(Some("Second")));
+        assert_ne!(
+            first, second,
+            "two same-name triggers under different members must not collide"
+        );
+        // AL identifiers are case-insensitive: the SAME member differing only in
+        // case is the same routine and must keep one id.
+        assert_eq!(
+            first,
+            encode_canonical_routine_key(&member_key(Some("FIRST")))
+        );
+    }
+
+    /// The conditional append, both directions: no member reproduces the exact
+    /// 6-part hash (so every non-member routine's id is byte-identical to the
+    /// pre-discriminator schema), and `Some("")` is still distinguishable from
+    /// `None` because `sha256_of_strings` length-prefixes each part.
+    #[test]
+    fn absent_member_reproduces_the_six_part_hash_and_is_distinct_from_empty() {
+        let key = member_key(None);
+        let six_part = sha256_of_strings(&[
+            key.app_guid.clone(),
+            key.object_type.clone(),
+            key.object_number.to_string(),
+            key.routine_kind.clone(),
+            key.routine_name.to_lowercase(),
+            key.normalized_signature_hash.clone(),
+        ]);
+        assert_eq!(
+            encode_canonical_routine_key(&key),
+            six_part,
+            "a routine with no enclosing member must keep the legacy 6-part hash"
+        );
+        assert_ne!(
+            encode_canonical_routine_key(&member_key(None)),
+            encode_canonical_routine_key(&member_key(Some(""))),
+            "length-prefixed framing keeps `None` and `Some(\"\")` apart"
+        );
+    }
+
+    // -- the enclosing-member discriminator on the STABLE id (Task 4) ---------
+
+    /// A realistic `normalizedSignatureHash` — the shape pin below is only
+    /// meaningful against a real 64-hex signature hash, which is what every
+    /// production call site passes.
+    fn norm_hash() -> String {
+        sha256_hex("onaction():")
+    }
+
+    /// THE TRAP, pinned on the STABLE id — the one that reaches user baselines.
+    ///
+    /// The discriminator changes the hash INPUT; it must never change the stable
+    /// id's SHAPE. `{stableObjectId}#{64 lowercase hex}` is assumed by `alsem
+    /// diff`'s join key, by `l4::summary::stable_sub_id` (which re-attaches an
+    /// `/opN` suffix to the stable base), by `deps::r3a4_projection`'s
+    /// `DepIdStabilizer`, and by the R2.5a stable-id vectors. Appending a
+    /// `#member` segment or widening the hash would move EVERY fingerprint in the
+    /// product instead of only the member triggers' — the exact inversion of this
+    /// task's intent.
+    ///
+    /// Asserted INDEPENDENTLY of the content (exactly one `#`, the object id
+    /// verbatim before it, exactly 64 lowercase-hex bytes after it), so it holds
+    /// for any future change to the hash input too.
+    #[test]
+    fn stable_routine_id_shape_is_object_plus_64_hex_regardless_of_member() {
+        const OBJ: &str = "11111111-2222-3333-4444-555555555555:Page:50811";
+        for member in [None, Some(""), Some("No."), Some(r#"a"b"#), Some("😀")] {
+            let id = to_stable_routine_id_from_parts(OBJ, &norm_hash(), member);
+            let parts: Vec<&str> = id.split('#').collect();
+            assert_eq!(
+                parts.len(),
+                2,
+                "stable id must stay exactly one `#`-separated pair (member={member:?}): {id}"
+            );
+            assert_eq!(parts[0], OBJ, "first part is the stableObjectId verbatim");
+            assert_eq!(
+                parts[1].len(),
+                64,
+                "hash part must stay 64 bytes (member={member:?}): {id}"
+            );
+            assert!(
+                parts[1].bytes().all(is_lower_hex),
+                "hash part must stay LOWERCASE hex (member={member:?}): {id}"
+            );
+        }
+    }
+
+    /// The closure the discriminator buys at the FINDING level: two sibling
+    /// triggers identical in object and signature, differing only in their
+    /// enclosing member, now get distinct stable ids — so their findings get
+    /// distinct fingerprints and become independently baseline-able.
+    #[test]
+    fn distinct_enclosing_members_yield_distinct_stable_routine_ids() {
+        const OBJ: &str = "11111111-2222-3333-4444-555555555555:Page:50811";
+        let first = to_stable_routine_id_from_parts(OBJ, &norm_hash(), Some("First"));
+        let second = to_stable_routine_id_from_parts(OBJ, &norm_hash(), Some("Second"));
+        assert_ne!(
+            first, second,
+            "two same-signature triggers under different members must not share a stable id"
+        );
+        // AL identifiers are case-insensitive: the SAME member differing only in
+        // case is the same routine and must keep one stable id.
+        assert_eq!(
+            first,
+            to_stable_routine_id_from_parts(OBJ, &norm_hash(), Some("FIRST"))
+        );
+    }
+
+    /// The conditional fold, both directions: no member reproduces the legacy
+    /// `{stableObjectId}#{normalizedSignatureHash}` byte for byte (so every
+    /// procedure, object-level trigger and dependency-ABI routine keeps its stable
+    /// id and 96.6 % of a user's DO baseline keeps matching), and `Some("")` is
+    /// still distinguishable from `None`.
+    #[test]
+    fn absent_member_reproduces_the_legacy_stable_routine_id() {
+        const OBJ: &str = "11111111-2222-3333-4444-555555555555:Page:50811";
+        let h = norm_hash();
+        assert_eq!(
+            to_stable_routine_id_from_parts(OBJ, &h, None),
+            format!("{OBJ}#{h}"),
+            "a routine with no enclosing member must keep the legacy stable id"
+        );
+        assert_ne!(
+            to_stable_routine_id_from_parts(OBJ, &h, None),
+            to_stable_routine_id_from_parts(OBJ, &h, Some("")),
+            "an empty-named member is still distinguishable from no member at all"
+        );
     }
 
     #[test]

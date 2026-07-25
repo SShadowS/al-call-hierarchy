@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 use crate::engine::gate::cbor::CborValue;
 use crate::engine::ids::{
     ParamSpec, canonical_routine_signature, locale_compare, object_signature_fingerprint,
-    sha256_hex, to_stable_routine_id_from_parts,
+    sha256_hex,
 };
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l4::capability_cone::{CapabilityFact, build_r3a3_source_only_base};
@@ -413,9 +413,13 @@ fn derive_contracts(resolved: &L3Resolved) -> CborValue {
     }
 
     for r in &ws.routines {
-        let stable_object = crate::engine::ids::to_stable_object_id(&r.object_id);
-        let stable_id =
-            to_stable_routine_id_from_parts(&stable_object, &r.normalized_signature_hash);
+        // ⟨task-4-review.md finding I-1⟩ Read the stable id the assembly already
+        // minted — do not re-derive it from parts. A future mint-site change (e.g.
+        // the OUTSTANDING.md path-qualified-member wake condition) is not obligated
+        // to touch `to_stable_routine_id_from_parts`'s signature, so a recompute
+        // here would silently diverge from `r.stable_routine_id` with no test to
+        // catch it.
+        let stable_id = r.stable_routine_id.clone();
         let mut m: IndexMap<String, CborValue> = IndexMap::new();
         m.insert("kind".into(), CborValue::Text("routine".into()));
         m.insert("stableId".into(), CborValue::Text(stable_id.clone()));
@@ -628,9 +632,9 @@ fn derive_permissions(
         let Some(cone) = base.cones.get(&r.id) else {
             continue;
         };
-        let stable_object = crate::engine::ids::to_stable_object_id(&r.object_id);
-        let stable_subject =
-            to_stable_routine_id_from_parts(&stable_object, &r.normalized_signature_hash);
+        // ⟨task-4-review.md finding I-1⟩ Same as `derive_contracts` above: read the
+        // already-minted stable id instead of re-deriving it.
+        let stable_subject = r.stable_routine_id.clone();
 
         // coverage = inheritedStatus ?? directStatus ?? "unknown".
         let coverage = {
@@ -1042,6 +1046,16 @@ pub const INVENTORY_SCHEMA_VERSION: &str = "1.1.0";
 /// lowercased form so duplicate-`stableRoutineId` rows are content-stable
 /// regardless of developer casing. Deterministic (locale-compare on lowercased
 /// text; ties resolve only on the tertiary originatingObject key in the caller).
+///
+/// ⟨task 4⟩ **Kept deliberately, and no longer the ordinary case.** The stable id
+/// now folds the enclosing member in, so two field triggers of one object have
+/// DISTINCT `stableRoutineId` and the primary key already separates them. What
+/// still reaches this comparator is the measured residual — a same member NAME at
+/// two XMLport nesting paths, or `#if`/`#else` alternatives of one member (15
+/// groups on BC Base App, 0 on DO) — where the members compare equal and the
+/// tertiary key decides. Fail-closed for any future duplicate shape; pinned
+/// directly by `member_tie_break_is_case_insensitive_and_none_first` because no
+/// real fixture can reach it through the projection any more.
 fn case_insensitive_compare_opt(a: &Option<String>, b: &Option<String>) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     match (a, b) {
@@ -1050,6 +1064,30 @@ fn case_insensitive_compare_opt(a: &Option<String>, b: &Option<String>) -> std::
         (Some(_), None) => Ordering::Greater,
         (Some(x), Some(y)) => locale_compare(&x.to_lowercase(), &y.to_lowercase()),
     }
+}
+
+/// The full three-key inventory-row sort (RE-6): primary `stableRoutineId`
+/// (locale_compare) → secondary `enclosingMember` (case-insensitive, `None`
+/// first) → tertiary `originatingObject` (locale_compare). Named and called
+/// directly by `build_inventory_doc`'s `sort_by` below so that a test exercising
+/// this function pins THE SORT ITSELF — not a hand-reimplementation of it that
+/// could silently drift from the real comparator chain. See
+/// `hand_stated_collision_discriminates_by_member_case_insensitively`
+/// (⟨task-4-review.md finding I-2⟩): the previous coverage of this chain's
+/// secondary key exercised `case_insensitive_compare_opt` in isolation, so
+/// deleting its `.then_with` call from the sort left every test green.
+fn inventory_row_cmp(
+    a: &(String, Option<String>, Option<String>, CborValue),
+    b: &(String, Option<String>, Option<String>, CborValue),
+) -> std::cmp::Ordering {
+    locale_compare(&a.0, &b.0)
+        .then_with(|| case_insensitive_compare_opt(&a.1, &b.1))
+        .then_with(|| match (&a.2, &b.2) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (None, Some(_)) => std::cmp::Ordering::Less,
+            (Some(_), None) => std::cmp::Ordering::Greater,
+            (Some(x), Some(y)) => locale_compare(x, y),
+        })
 }
 
 fn build_inventory_doc(
@@ -1080,8 +1118,10 @@ fn build_inventory_doc(
     // trigger routines (field/control/action/dataitem trigger). Sort is three-key
     // (RE-6): primary stableRoutineId (locale_compare) → secondary enclosingMember
     // (case-insensitive; None first) → tertiary originatingObject (locale_compare).
-    // The secondary/tertiary keys give duplicate-stableRoutineId rows (two field
-    // triggers that collapse to one StableRoutineId) a content-stable order.
+    // ⟨task 4⟩ The primary key now separates two field triggers of one object on
+    // its own (the member is folded into the stable id); the secondary/tertiary
+    // keys remain as fail-closed cover for the residual duplicate-stableRoutineId
+    // shapes — see `inventory_row_cmp` (the sort below) and `case_insensitive_compare_opt`.
     let mut routine_rows: Vec<(String, Option<String>, Option<String>, CborValue)> = resolved
         .workspace
         .routines
@@ -1109,16 +1149,7 @@ fn build_inventory_doc(
             )
         })
         .collect();
-    routine_rows.sort_by(|a, b| {
-        locale_compare(&a.0, &b.0)
-            .then_with(|| case_insensitive_compare_opt(&a.1, &b.1))
-            .then_with(|| match (&a.2, &b.2) {
-                (None, None) => std::cmp::Ordering::Equal,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (Some(x), Some(y)) => locale_compare(x, y),
-            })
-    });
+    routine_rows.sort_by(inventory_row_cmp);
     let routine_inventory =
         CborValue::Array(routine_rows.into_iter().map(|(_, _, _, v)| v).collect());
 
@@ -1526,5 +1557,340 @@ fn write_insertion_json(v: &CborValue, indent: usize, out: &mut String) {
             out.push_str(&"  ".repeat(indent));
             out.push('}');
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ⟨task 4⟩ The RE-6 member tie-break, pinned where it lives.
+    ///
+    /// The stable id now folds the enclosing member in, so the inventory's PRIMARY
+    /// key separates two field triggers of one object by itself and no assembled
+    /// fixture can drive this comparator's discriminating branch through
+    /// `build_inventory_doc` any more. Its previous coverage
+    /// (`cli_p1_inventory`'s two-field ordering assertion) therefore stopped
+    /// testing it; this is the replacement, exercising the comparator directly so
+    /// the tie-break kept for the residual duplicate-stableRoutineId shapes is not
+    /// silently deletable.
+    #[test]
+    fn member_tie_break_is_case_insensitive_and_none_first() {
+        use std::cmp::Ordering;
+        let alpha = Some("alpha field".to_string());
+        let bravo = Some("Bravo Field".to_string());
+        // Case-insensitive: the lowercase `alpha field` still sorts before the
+        // uppercase `Bravo Field` (an ordinal compare would put `B` first).
+        assert_eq!(case_insensitive_compare_opt(&alpha, &bravo), Ordering::Less);
+        assert_eq!(
+            case_insensitive_compare_opt(&bravo, &alpha),
+            Ordering::Greater
+        );
+        // Same member differing only in case is a TIE — which is exactly the
+        // residual case (one member name, two XMLport nesting paths): the tertiary
+        // originatingObject key decides, not this one.
+        assert_eq!(
+            case_insensitive_compare_opt(&Some("Ctry".to_string()), &Some("ctry".to_string())),
+            Ordering::Equal
+        );
+        // `None` (an object-level trigger / procedure) orders first.
+        assert_eq!(case_insensitive_compare_opt(&None, &alpha), Ordering::Less);
+        assert_eq!(
+            case_insensitive_compare_opt(&alpha, &None),
+            Ordering::Greater
+        );
+        assert_eq!(case_insensitive_compare_opt(&None, &None), Ordering::Equal);
+    }
+
+    /// ⟨task-4-review.md finding I-2⟩ The test above pins `case_insensitive_compare_opt`
+    /// as a function — it does NOT prove `build_inventory_doc`'s actual `sort_by` still
+    /// calls it. Concretely: deleting `.then_with(|| case_insensitive_compare_opt(&a.1,
+    /// &b.1))` from the sort left that test (and everything else, including every
+    /// golden) green. This test closes the gap the way
+    /// `hand_stated_id_collision_keeps_a_real_summary_and_derived_row`
+    /// (`detector_context.rs`) closed the analogous gap for the drained-map skip: it
+    /// does not ask the id schema for a collision (two real member triggers now get
+    /// DISTINCT stable ids — that is this whole arc's point) — it STATES one, by
+    /// direct field assignment after assembly, then runs the real
+    /// `build_inventory_doc` end to end and asserts on its actual output order.
+    #[test]
+    fn hand_stated_collision_discriminates_by_member_case_insensitively() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+
+        let src = r#"
+page 50816 "T4 I-2 Wizard"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action("Bravo Field")
+            {
+                trigger OnAction()
+                begin
+                end;
+            }
+            action("alpha field")
+            {
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#;
+        let mut resolved = assemble_and_resolve_default(
+            &[("T4I2Wizard.Page.al".to_string(), src.to_string())],
+            "66666666-0000-0000-0000-0000000cp006",
+        );
+        assert_eq!(
+            resolved.workspace.routines.len(),
+            2,
+            "fixture precondition: exactly the two OnAction triggers"
+        );
+
+        // Force the identical-stable-id collision by hand (real source gives these
+        // two DISTINCT stable ids under the member discriminator — that is correct
+        // and is what makes the collision this comparator guards against otherwise
+        // unreachable). Also pin the pre-sort Vec order to "Bravo Field" before
+        // "alpha field" — the ordinally-WRONG order — so a working case-insensitive
+        // tie-break must visibly swap them, and a `sort_by` that silently drops the
+        // tie-break (a stable sort) would leave them in this same wrong order.
+        let forced_id = resolved.workspace.routines[0].stable_routine_id.clone();
+        for r in &mut resolved.workspace.routines {
+            r.stable_routine_id = forced_id.clone();
+        }
+        let bravo_idx = resolved
+            .workspace
+            .routines
+            .iter()
+            .position(|r| r.enclosing_member.as_deref() == Some("Bravo Field"))
+            .expect("fixture precondition: a 'Bravo Field' OnAction trigger");
+        let alpha_idx = resolved
+            .workspace
+            .routines
+            .iter()
+            .position(|r| r.enclosing_member.as_deref() == Some("alpha field"))
+            .expect("fixture precondition: an 'alpha field' OnAction trigger");
+        if alpha_idx < bravo_idx {
+            resolved.workspace.routines.swap(alpha_idx, bravo_idx);
+        }
+        assert_eq!(
+            resolved.workspace.routines[0].enclosing_member.as_deref(),
+            Some("Bravo Field"),
+            "precondition: 'Bravo Field' precedes 'alpha field' pre-sort"
+        );
+
+        let tree = CborValue::Map(IndexMap::new());
+        let doc = build_inventory_doc(&tree, &resolved, "test", true);
+
+        let rows = match &doc {
+            CborValue::Map(env) => match env.get("payload") {
+                Some(CborValue::Map(p)) => match p.get("routineInventory") {
+                    Some(CborValue::Array(rows)) => rows,
+                    other => panic!("routineInventory not an array: {other:?}"),
+                },
+                other => panic!("payload not a map: {other:?}"),
+            },
+            other => panic!("doc not a map: {other:?}"),
+        };
+        assert_eq!(rows.len(), 2);
+
+        let member_of = |row: &CborValue| -> Option<String> {
+            let CborValue::Map(m) = row else {
+                panic!("row not a map: {row:?}")
+            };
+            match m.get("enclosingMember") {
+                Some(CborValue::Text(s)) => Some(s.clone()),
+                _ => None,
+            }
+        };
+        let stable_id_of = |row: &CborValue| -> String {
+            let CborValue::Map(m) = row else {
+                panic!("row not a map: {row:?}")
+            };
+            match m.get("stableRoutineId") {
+                Some(CborValue::Text(s)) => s.clone(),
+                other => panic!("missing stableRoutineId: {other:?}"),
+            }
+        };
+
+        assert_eq!(stable_id_of(&rows[0]), forced_id);
+        assert_eq!(stable_id_of(&rows[1]), forced_id);
+        // The discriminating assertion: case-insensitive fold puts "alpha field"
+        // first even though it was declared AFTER "Bravo Field" and an ordinal
+        // compare ('B' = 0x42 < 'a' = 0x61) would keep "Bravo Field" first.
+        assert_eq!(
+            member_of(&rows[0]),
+            Some("alpha field".to_string()),
+            "case-insensitive secondary key must place 'alpha field' before 'Bravo Field'"
+        );
+        assert_eq!(member_of(&rows[1]), Some("Bravo Field".to_string()));
+    }
+
+    /// ⟨review-branch-final I-3⟩ The test above proves the SECONDARY key
+    /// (`enclosingMember`) discriminates; it never reaches the TERTIARY key
+    /// (`originatingObject`) at all — that arm needs two rows agreeing on BOTH
+    /// `stableRoutineId` AND `enclosingMember`, which the test above does not
+    /// construct (it forces only the stable-id collision, then relies on the
+    /// members differing). No assembled fixture reaches it either: the member
+    /// discriminator already gives same-member, same-object triggers distinct
+    /// stable ids. This is the same hand-stated pattern one key further: two
+    /// DIFFERENT pages each declare an action with the SAME name, so
+    /// `enclosingMember` ("Shared Action") agrees BY CONSTRUCTION — no forcing
+    /// needed for that part — while `originatingObject` (each page's own
+    /// StableObjectId) differs naturally. Only `stableRoutineId` is forced.
+    /// Deleting `inventory_row_cmp`'s tertiary `.then_with` arm must fail this
+    /// test (verified by removal, not asserted).
+    #[test]
+    fn hand_stated_collision_discriminates_by_originating_object_when_member_also_ties() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+
+        let files = vec![
+            (
+                "T5I3WizardBravo.Page.al".to_string(),
+                r#"
+page 50817 "T5 I-3 Wizard Bravo"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action("Shared Action")
+            {
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#
+                .to_string(),
+            ),
+            (
+                "T5I3WizardAlpha.Page.al".to_string(),
+                r#"
+page 50818 "T5 I-3 Wizard Alpha"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action("Shared Action")
+            {
+                trigger OnAction()
+                begin
+                end;
+            }
+        }
+    }
+}
+"#
+                .to_string(),
+            ),
+        ];
+        let mut resolved =
+            assemble_and_resolve_default(&files, "66666666-0000-0000-0000-0000000cp007");
+        assert_eq!(
+            resolved.workspace.routines.len(),
+            2,
+            "fixture precondition: exactly the two OnAction triggers"
+        );
+
+        // Preconditions the whole test rests on: enclosingMember agrees without any
+        // forcing (both actions are literally named "Shared Action"); originatingObject
+        // does not (real per-page StableObjectId) — exactly what makes the tertiary
+        // key reachable at all.
+        assert_eq!(
+            resolved.workspace.routines[0].enclosing_member,
+            resolved.workspace.routines[1].enclosing_member,
+            "fixture precondition: both actions share the member name 'Shared Action'"
+        );
+        assert_ne!(
+            resolved.workspace.routines[0].originating_object,
+            resolved.workspace.routines[1].originating_object,
+            "fixture precondition: the two pages have distinct StableObjectIds"
+        );
+
+        // Force the identical-stable-id collision by hand (real source gives these
+        // two DISTINCT stable ids — different objects, different object numbers —
+        // which is correct; the collision is otherwise unreachable here too).
+        let forced_id = resolved.workspace.routines[0].stable_routine_id.clone();
+        for r in &mut resolved.workspace.routines {
+            r.stable_routine_id = forced_id.clone();
+        }
+
+        // Determine the real comparator's order over the two originatingObject
+        // values, then pin the pre-sort Vec to the OPPOSITE order — so a working
+        // tertiary key must visibly swap them, and a `sort_by` that silently drops
+        // the tertiary arm (a stable sort) would leave them in this same wrong order.
+        let (obj0, obj1) = (
+            resolved.workspace.routines[0].originating_object.clone(),
+            resolved.workspace.routines[1].originating_object.clone(),
+        );
+        let correct_first = match (&obj0, &obj1) {
+            (Some(x), Some(y)) if locale_compare(x, y) == std::cmp::Ordering::Greater => 1,
+            _ => 0,
+        };
+        // Pre-sort Vec order: put the correct-SECOND row first (the wrong order).
+        if correct_first == 0 {
+            resolved.workspace.routines.swap(0, 1);
+        }
+
+        let tree = CborValue::Map(IndexMap::new());
+        let doc = build_inventory_doc(&tree, &resolved, "test", true);
+
+        let rows = match &doc {
+            CborValue::Map(env) => match env.get("payload") {
+                Some(CborValue::Map(p)) => match p.get("routineInventory") {
+                    Some(CborValue::Array(rows)) => rows,
+                    other => panic!("routineInventory not an array: {other:?}"),
+                },
+                other => panic!("payload not a map: {other:?}"),
+            },
+            other => panic!("doc not a map: {other:?}"),
+        };
+        assert_eq!(rows.len(), 2);
+
+        let stable_id_of = |row: &CborValue| -> String {
+            let CborValue::Map(m) = row else {
+                panic!("row not a map: {row:?}")
+            };
+            match m.get("stableRoutineId") {
+                Some(CborValue::Text(s)) => s.clone(),
+                other => panic!("missing stableRoutineId: {other:?}"),
+            }
+        };
+        let originating_object_of = |row: &CborValue| -> Option<String> {
+            let CborValue::Map(m) = row else {
+                panic!("row not a map: {row:?}")
+            };
+            match m.get("originatingObject") {
+                Some(CborValue::Text(s)) => Some(s.clone()),
+                _ => None,
+            }
+        };
+
+        assert_eq!(stable_id_of(&rows[0]), forced_id);
+        assert_eq!(stable_id_of(&rows[1]), forced_id);
+        let (expected_first, expected_second) = if correct_first == 0 {
+            (&obj0, &obj1)
+        } else {
+            (&obj1, &obj0)
+        };
+        assert_eq!(
+            &originating_object_of(&rows[0]),
+            expected_first,
+            "tertiary originatingObject key must place the locale-lesser StableObjectId first"
+        );
+        assert_eq!(&originating_object_of(&rows[1]), expected_second);
     }
 }

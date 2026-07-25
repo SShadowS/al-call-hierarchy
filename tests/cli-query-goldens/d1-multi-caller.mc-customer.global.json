@@ -1,0 +1,64 @@
+{
+  "alsemVersion": "cli-query-v1",
+  "deterministic": true,
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "query.touches",
+  "payload": {
+    "direction": "both",
+    "table": {
+      "id": "11111111-0000-0000-0000-00000000d01a/table/50101",
+      "isUnknownBucket": false,
+      "name": "MC Customer",
+      "resolution": "resolved",
+      "selector": "MC Customer"
+    },
+    "up": {
+      "note": "workspace-global: every routine whose transitive cone touches this table. Scope it with --from <routine> --direction up.",
+      "routineCount": 4,
+      "routines": [
+        {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/D1MultiCaller.al",
+            "line": 29
+          },
+          "display": "CallerB",
+          "objectDisplay": "Codeunit D1 Multi Caller",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#22d79cdc769a71d6f724e7468843fb5a879c193e230effbf2c9b81cac03e82cf"
+        },
+        {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/D1MultiCaller.al",
+            "line": 37
+          },
+          "display": "CallerC",
+          "objectDisplay": "Codeunit D1 Multi Caller",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#77e5d11f5d0fcec939747ce2b13beaef853990807dc6030b36ec487372fd680c"
+        },
+        {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/D1MultiCaller.al",
+            "line": 21
+          },
+          "display": "CallerA",
+          "objectDisplay": "Codeunit D1 Multi Caller",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#b2ad4cc8e18349f86facdc5d49d913638d7b4cbfa6a8ef368516b4840dca7a6c"
+        },
+        {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/D1MultiCaller.al",
+            "line": 16
+          },
+          "display": "ModifyHelper",
+          "objectDisplay": "Codeunit D1 Multi Caller",
+          "stableId": "11111111-0000-0000-0000-00000000d01a:Codeunit:50101#bba09dc4564face513d34012aa979e52fafbbb67925ac7625604faf279c99a9f"
+        }
+      ],
+      "scoped": false
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

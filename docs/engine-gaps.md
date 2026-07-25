@@ -618,17 +618,45 @@ op id `{rid}/op{n}`). Controls: a REAL in-loop chain through a colliding trigger
 (and is now picked deterministically by name instead of by edge-sort luck), the vanilla
 transitive shape still fires at `high`. Tests: `tests/gap_g18_transitive_loop.rs`;
 `gap_g1`/`gap_g4` green. No in-repo golden moved (no fixture has colliding triggers with
-cross-name edges). RESIDUAL (follow-up, not d1-specific): the id collision itself remains —
+cross-name edges). RESIDUAL (follow-up, not d1-specific) — **SUPERSEDED, see "The ROOT
+CAUSE — the internal id collision itself — is FIXED" below** (⟨final-branch-review-l3.md
+M-9⟩: left unmarked, a reader meets this paragraph first and reads the collision as still
+open): the id collision itself remains —
 `routine_by_id`/`call_site_by_id` keep one arbitrary body per colliding id, so any OTHER
 consumer matching root edges by callsite id alone (e.g. d2-style walks) or walking THROUGH a
 colliding node could still conflate sibling bodies; the durable fix is a member discriminator
 in the internal routine id (RE-11 territory — id-schema change, golden-moving, deliberately
 out of G-18's scope).
 
-**Related, separate, still-open symptom of the SAME `compute_routine_id` collision (NOT fixed
-by the above — this entry's FIXED status covers only d1's loop misattribution):** a colliding
-routine's entire L4 capability cone is lost (`ConeDerivedStore::forget`, deliberately preserved
-by the `feat/l4-summary-redesign` C1 arc). Tracked in `docs/OUTSTANDING.md`'s Parked section.
+**Related, separate symptom of the SAME `compute_routine_id` collision (NOT the same as d1's
+loop misattribution fixed above) — the cone-LOSS half: FIXED at commit `124c1ae`.** A
+colliding routine's entire L4 capability cone used to be lost — a later occurrence's
+degenerate summary overwrote the real one and dropped the matching derived row, so the whole
+cone of an id shared by N routines went silent for every cone-derived detector. The builder
+now skips the later occurrence instead of overwriting it, so the real summary and its derived
+row both survive; `ConeDerivedStore::forget` is deleted (nothing else reached it).
+
+**The ROOT CAUSE — the internal id collision itself — is FIXED (Task 3, 2026-07-25).**
+`CanonicalRoutineKey` carries `enclosing_member: Option<String>` and
+`encode_canonical_routine_key` appends it as a CONDITIONAL 7th hash part, so sibling member
+triggers get distinct ids (DO 262 collision groups → 0; 8020 3 058 → 15, the residual being
+XMLport same-name elements at different nesting paths + preproc `#if` alternatives). The
+derived `{rid}/cs{n}` / `{rid}/op{n}` / `{rid}/loop{n}` ids therefore no longer collide
+either, and the combined graph no longer files two bodies' edges under one `from` key. d1's
+`edge_target_matches_callsite_callee` guard is consequently no longer load-bearing on
+non-colliding ids — it is kept (it still guards the 15 residual 8020 groups and is
+fail-closed for any future collision). **Do not read "no longer load-bearing" as
+"deletable".** Its coverage is now `tests/gap/gap_g18_transitive_loop.rs`'s two
+STATED-collision tests (`hand_stated_collision_does_not_splice_the_sibling_bodys_edge`
+and `hand_stated_collision_still_fires_a_genuine_inloop_chain`), which force the residual
+shape by hand rather than deriving it from `compute_routine_id`; deleting the guard from
+the production lookup (`d1_graph.rs:220`) fails both, with the original false positive
+back in the output. The three page-action tests in that file no longer collide at all and
+would NOT notice the deletion — that gap was found by the task-3 review (I-1) and closed
+in its fix wave. De-colliding is visibly what let two previously
+unaddressable `OnValidate` bodies in DO's `CDOMergeTableField` start reporting. What remains
+open is only the **stable** id, which still has no discriminator ⇒ sibling triggers' findings
+still share a fingerprint; tracked in `docs/OUTSTANDING.md`'s Parked section.
 
 **Symptom:** d1 reports an op as in-a-loop when, on the real call path, it is NOT inside any loop —
 the engine attributes a loop from a SIBLING call path of a shared callee. (Distinct from G-4, which

@@ -20,13 +20,15 @@
 //! A dep routine's INTERNAL id (`<modelInstanceId>/<keyHash>[/opN|/csN]`) is
 //! modelInstanceId/devFingerprint-keyed → NOT reproducible by another engine. al-sem
 //! and the Rust port both STABLE-PROJECT it to
-//! `<appGuid>:<Type>:<Num>#<normalizedSignatureHash>[/opN|/csN]`, which is
+//! `<appGuid>:<Type>:<Num>#<64 lowercase hex>[/opN|/csN]`, which is
 //! appGuid/signature-derived → cache/modelInstanceId/devFingerprint-INDEPENDENT.
 //! The Rust dep routine already carries `stable_routine_id` =
-//! `to_stable_object_id(object_id) + "#" + normalized_signature_hash` — exactly
-//! al-sem's `DepIdStabilizer` base. The `/opN` / `/csN` suffix (everything after
-//! the routine id, which is exactly two `/`-parts) is re-attached onto the stable
-//! base.
+//! `ids::to_stable_routine_id_from_parts(to_stable_object_id(object_id),
+//! normalized_signature_hash, None)` — exactly al-sem's `DepIdStabilizer` base
+//! (`None`: a dep ABI has no member triggers, so task 4's enclosing-member fold
+//! never applies here and the hex part IS the `normalizedSignatureHash`). The
+//! `/opN` / `/csN` suffix (everything after the routine id, which is exactly two
+//! `/`-parts) is re-attached onto the stable base.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -52,7 +54,7 @@ pub const R3A4_MODEL_INSTANCE_ID: &str = "r0";
 
 /// Maps INTERNAL dep ids (`<modelInstanceId>/<keyHash>[/opN|/csN]`) → STABLE,
 /// cache/devFingerprint-INDEPENDENT ids
-/// (`<appGuid>:<Type>:<Num>#<sigHash>[/opN|/csN]`). Port of al-sem's
+/// (`<appGuid>:<Type>:<Num>#<64 hex>[/opN|/csN]`). Port of al-sem's
 /// `DepIdStabilizer` (`scripts/r3a4-projection.ts`).
 ///
 /// Built from the dep producer's own routines: each carries the internal `id` plus

@@ -34,6 +34,7 @@ use crate::engine::l4::capability_cone::{
 use crate::engine::l4::combined_graph::{CombinedGraph, build_combined_graph};
 use crate::engine::l4::cone_derived::{ConeDerivedStore, ConeOutput};
 use crate::engine::l4::effect_store::SummaryBundle;
+use crate::engine::l4::reverse_index::ReverseEffectIndex;
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
 use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_bundle};
@@ -199,6 +200,22 @@ pub struct DetectorContext<'a> {
     /// eager expansion. `None` when the `CORE_SUMMARIES` substrate was not demanded
     /// (the summary solve is skipped entirely — no bundle exists to hold).
     pub db_effect_bundle: Option<SummaryBundle>,
+    /// ⟨Task 6⟩ The [`ReverseEffectIndex`] transpose over [`Self::db_effect_bundle`]
+    /// — the routine <-> table/effect inverted index a db-effect-reading detector
+    /// or the planned LSP hover would query.
+    ///
+    /// `Some` **only** when `demanded` carried
+    /// [`substrate::DB_EFFECT_REVERSE_INDEX`], which is deliberately outside
+    /// [`substrate::ALL`] and which no detector may declare (see that
+    /// constant's doc for the `gap_detector_substrate_parity` trap and the
+    /// one-line unlock). Left `None` costs a run exactly one `Option` field: no
+    /// allocation, no transpose pass, no perf span.
+    ///
+    /// Today's shipped consumer — `alsem query` — does NOT come through here at
+    /// all; it owns its own pipeline (`l4::effect_query_cli`), so it cannot
+    /// charge `analyze` even accidentally. This field is the seam for the
+    /// eventual in-context consumer.
+    pub reverse_effect_index: Option<ReverseEffectIndex>,
     /// The shared finding-fingerprint index (routine/object id maps + the
     /// internal→stable routine-id substitution map). Built ONCE per run —
     /// previously every detector rebuilt it (54 × ~2 String clones per routine).
@@ -359,20 +376,57 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         for r in &ws.routines {
             let cone_entry = cones.remove(&r.id);
             let direct = direct_full.remove(&r.id);
-            // ⟨C1⟩ Two AL routines can COLLIDE on one internal routine id (two
-            // same-name triggers in one object — gap G-18; `compute_routine_id`
-            // has no member discriminator). Both `remove`s above are then
-            // consumed by the FIRST occurrence, so the summary the second
-            // occurrence writes — the one that survives the map insert — is
-            // fully degenerate: no direct facts, no inherited facts, no
-            // coverage. The derived row is keyed by id and holds the FULL fold,
-            // so it must be dropped to match the summary this context will
-            // actually hold. (PRE-EXISTING behaviour, reproduced deliberately:
-            // losing a colliding routine's whole cone is a real precision
-            // defect, but it is what today's detector output encodes — see the
-            // C1 Task 1 report. `build_detector_context_cross_app` reads its
-            // cone with `get()`, so it never has this accident and needs no
-            // such adjustment.)
+            // ⟨T1, corrected by the T3 fix wave (review M-3)⟩ Two AL routines can
+            // still COLLIDE on one internal routine id — gap G-18. Historically the
+            // usual shape was two same-name triggers in one object, because
+            // `compute_routine_id` had no member discriminator; ⟨T3⟩ added a
+            // conditional one, so TODAY the surviving shapes are the ones a flat
+            // member name cannot separate (XMLport same-name elements at different
+            // nesting paths; preproc `#if`/`#else` alternatives) plus any
+            // hand-stated id. See the ⟨T3⟩ paragraph below for the measured
+            // residual. Both `remove`s above are then consumed by the FIRST
+            // occurrence, so every LATER occurrence sees `None/None`.
+            //
+            // This used to write a fully degenerate summary for that later
+            // occurrence — no direct facts, no inherited facts, no coverage —
+            // and, because the map is keyed by id, that degenerate row is what
+            // SURVIVED: `cone_derived.forget(&r.id)` then dropped the real
+            // derived row to match, so the whole cone of an id shared by N
+            // routines was erased and every cone-derived detector on it went
+            // silent. That was never a decision — `build_detector_context_cross_app`
+            // reads its cone with `get()` and has never had the accident; the
+            // two builders simply disagreed. Measured, the collapse is not rare:
+            // 1 157 of 4 842 DO routines (23.9 %) and 16 906 of 100 941 8020
+            // routines (16.7 %) are erased by it (see
+            // `.superpowers/sdd/scope-routine-id-collision.md`).
+            //
+            // Now: the FIRST occurrence's real summary is written and every later
+            // occurrence is skipped, so the surviving summary is the real one.
+            // No clone is paid for this (the `remove()` drain the C1 arc chose
+            // over `get()` is kept — a `get()` would clone every routine's direct
+            // facts, including the ~80 % that never collide, 79.66 MB of pure
+            // duplicate on 8020).
+            //
+            // This is a PARTIAL fix and deliberately so. Loop 1 above builds
+            // `direct_full` with `insert()`, so a colliding id's DIRECT facts are
+            // already last-sibling-wins before the cone walk runs; the surviving
+            // summary's direct half therefore carries ONE arbitrary (deterministic,
+            // but arbitrary) sibling's facts attributed to all N. The INHERITED
+            // half is NOT one sibling's view: the combined graph files every
+            // sibling's out-edges under the one shared `from` key, so the cone walk
+            // consumes their union — the surviving cone is (last sibling's direct
+            // facts) ∪ (cone over the union of ALL siblings' callees), an
+            // over-approximation rather than one body's picked view. What this
+            // fixes is the strictly worse state of holding NO answer at all.
+            //
+            // ⟨T3⟩ The id schema itself now carries a CONDITIONAL enclosing-member
+            // discriminator (`ids::encode_canonical_routine_key`), so on real
+            // workspaces this path is very nearly unreachable: DO went from 262
+            // colliding groups to 0, 8020 from 3 058 to 15. It is NOT dead code —
+            // those 15 (XMLport same-name elements at different nesting paths;
+            // preproc `#if` alternatives, which the union-read design makes
+            // genuinely indistinguishable) still reach it, and it is the
+            // fail-closed behaviour for any hand-stated or future collision.
             //
             // ⟨fix M1⟩ `cone_entry.is_none() <=> direct.is_none()` today: both maps
             // are built from the same `ws.routines` iteration and drained by the
@@ -404,25 +458,35 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                  `nodes` (cone input) and `ws.routines` (direct_full's source) have \
                  silently diverged"
             );
-            if direct.is_none() {
-                cone_derived.forget(&r.id);
-            }
+            // ⟨T1⟩ The drain came back empty: this is a LATER occurrence of an id
+            // the first occurrence already consumed. That first occurrence wrote
+            // the real summary and `cone_derived` already holds the matching
+            // derived row, so the only correct action is to leave both alone.
+            // Falling through would overwrite the real summary with a degenerate
+            // one and then `forget()` the real derived row to match it.
+            let Some(direct) = direct else {
+                continue;
+            };
             let (inherited, coverage) = match cone_entry {
                 Some(c) => (c.inherited, Some(c.coverage)),
+                // Unreachable while `nodes` is exactly `ws.routines`' ids (the
+                // `debug_assert_eq!` above pins that); kept fail-soft rather than
+                // `unwrap()` so a future divergence degrades one routine's coverage
+                // instead of panicking a release build.
                 None => (Vec::new(), None),
             };
             // ⟨C1 Task 3⟩ `Some(inherited)` ONLY under `RAW_INHERITED_FACTS`;
             // `None` records "never materialized" so `inherited_raw()` panics
-            // instead of answering "empty cone" (R6). Note the `Some(Vec::new())`
-            // case is REAL and must stay distinct from `None`: the G-18 collision
-            // arm above yields a drained (empty) cone entry, which the policy path
-            // must still read as a materialized-but-empty cone, exactly as it did
-            // before this task.
+            // instead of answering "empty cone" (R6). The `Some(Vec::new())` case
+            // is still REAL and must stay distinct from `None` — a leaf routine
+            // with no callees has a materialized-but-empty cone. (It is no longer
+            // ALSO produced by the G-18 collision arm, which now `continue`s
+            // above rather than composing a drained entry.)
             summaries.insert(
                 r.id.clone(),
                 FullRoutineSummary::new(
                     r.id.clone(),
-                    direct.unwrap_or_default(),
+                    direct,
                     want_raw_inherited.then_some(inherited),
                     coverage,
                 ),
@@ -741,6 +805,21 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         (HashMap::new(), HashMap::new(), Vec::new(), None)
     };
 
+    // ⟨Task 6⟩ The reverse transpose — built ONLY on explicit demand. Not in
+    // `substrate::ALL`, so the four `ALL`-passing non-registry callers never pay
+    // it, and `run_detectors` (which passes `demanded`, the fold of the selected
+    // detectors' `requires`) can never reach it either, since no detector may
+    // declare the bit. Unset ⇒ this is one `None` write: no allocation, no pass,
+    // and — because the span is INSIDE the branch — not even a trace entry.
+    // The named span is deliberate: when it IS built, its cost lands in the perf
+    // trace beside every other substrate rather than being guessed at.
+    let reverse_effect_index = if demanded & substrate::DB_EFFECT_REVERSE_INDEX != 0 {
+        let _s = pt::span("context", "context.reverse_effect_index");
+        db_effect_bundle.as_ref().map(ReverseEffectIndex::build)
+    } else {
+        None
+    };
+
     let _final_indexes_span = pt::span("context", "context.final_indexes");
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
     for r in &ws.routines {
@@ -804,6 +883,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         closed_world_temp_params,
         summarize_diagnostics,
         db_effect_bundle,
+        reverse_effect_index,
         fingerprint_index,
         cross_extension_subscribers,
     }
@@ -1060,6 +1140,10 @@ pub(crate) fn build_detector_context_cross_app(
         closed_world_temp_params,
         summarize_diagnostics,
         db_effect_bundle: Some(db_effect_bundle),
+        // ⟨Task 6⟩ The cross-app context takes no `demanded` mask, so there is
+        // no way to ask it for the transpose — and no cross-app consumer wants
+        // one (d13/d16/d17 read no db effects). `None` keeps this path free.
+        reverse_effect_index: None,
         fingerprint_index,
         cross_extension_subscribers,
     }
@@ -1099,23 +1183,30 @@ mod tests {
         );
     }
 
-    /// ⟨C1 Task 3, carry #1⟩ RELOCATED from the retired `l5::cone_parity`'s test
-    /// module (that file's raw-vs-derived oracle died with the raw Vec; this test
-    /// never depended on the Vec and is the ONLY unconditional pin on
-    /// [`ConeDerivedStore::forget`], so it moves rather than dies). Its parity
-    /// tail — `assert_cone_parity(&ctx.summaries, &ctx.cone_derived)` — is gone
-    /// with the oracle; the degeneracy assertions below are the part that pinned
-    /// real behaviour.
+    /// ⟨T1⟩ The CONTRACT the non-destructive drain buys, stated so it survives the
+    /// later id-schema change.
     ///
-    /// Two page actions each declaring `trigger OnAction()` COLLIDE on one
-    /// internal routine id (`compute_routine_id` carries no member discriminator
-    /// — gap G-18). `build_detector_context` assembles summaries by `remove()`-ing
-    /// each routine's cone entry, so the second occurrence gets nothing and the
-    /// summary that SURVIVES is fully degenerate. The derived row must be dropped
-    /// to match, or every colliding trigger in a real BC workspace would silently
-    /// change output now that detectors read the row instead of the Vec.
+    /// Two page actions each declaring `trigger OnAction()` USED to collide on one
+    /// internal routine id (gap G-18); ⟨T3⟩ gave `compute_routine_id` a conditional
+    /// enclosing-member discriminator, so as of that change they do not. Whether they
+    /// collide or not, the observable requirement is the same and
+    /// is what this asserts: **every `OnAction` trigger in this fixture has a real
+    /// summary (coverage present) whose derived row reaches the `Setup.Insert()` it
+    /// calls through `Touch()`** — i.e. no routine is silently erased.
+    ///
+    /// Before the fix this FAILED: `build_detector_context` drained `cones`/`direct_full`
+    /// with `remove()`, so the second occurrence of the colliding id got `None/None`,
+    /// called `cone_derived.forget()` and overwrote the real summary with a degenerate
+    /// one — no direct facts, no inherited facts, no coverage, no derived row. Every
+    /// cone-derived detector reading that id then saw an empty cone and produced nothing.
+    ///
+    /// After the T3 id-schema change the two triggers get DISTINCT ids and each
+    /// carries its own real summary — the assertions below held unchanged across it,
+    /// which is why they are phrased over `ws.routines` rather than over "the
+    /// colliding id". The still-honest collision pin is
+    /// [`hand_stated_id_collision_keeps_a_real_summary_and_derived_row`] below.
     #[test]
-    fn colliding_routine_ids_leave_summary_and_derived_row_equally_degenerate() {
+    fn colliding_routine_ids_keep_a_real_summary_and_derived_row() {
         use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
         use crate::engine::l5::registry::substrate;
 
@@ -1163,62 +1254,162 @@ page 50811 "CP Wizard"
         let resolved = assemble_and_resolve_default(&files, "11111111-0000-0000-0000-0000000cp001");
         let ctx = build_detector_context(&resolved, substrate::SUMMARIES);
 
-        // ⟨carry #1, re-review finding N-B⟩ Without this the whole test would pass
-        // identically on an EMPTY store — every `flags_of` would read the empty
-        // row and every `writes_tables_of` would be empty for the trivial reason,
-        // silently voiding what it pins.
+        // Without this the whole test would pass identically on an EMPTY store —
+        // every `flags_of` would read the empty row for the trivial reason.
         assert!(
             !ctx.cone_derived.is_empty(),
             "precondition: the derived store must actually hold rows, or the \
-             degeneracy assertions below are vacuous"
+             assertions below are vacuous"
         );
 
-        // The collision is real: two routines share one id, so the routine list
-        // is longer than the summaries map.
-        let ids: BTreeSet<&str> = resolved
+        let on_actions: Vec<&crate::engine::l3::l3_workspace::L3Routine> = resolved
             .workspace
             .routines
             .iter()
-            .map(|r| r.id.as_str())
+            .filter(|r| r.name.eq_ignore_ascii_case("OnAction"))
             .collect();
-        assert!(
-            ids.len() < resolved.workspace.routines.len(),
-            "fixture precondition: the two OnAction triggers must collide on one routine id"
+        assert_eq!(
+            on_actions.len(),
+            2,
+            "fixture precondition: both OnAction trigger bodies must be in the model"
         );
 
-        // The colliding id's summary is degenerate — and its derived row matches.
-        // ⟨Task 3⟩ The degeneracy predicate no longer mentions
-        // `capability_facts_inherited`: under `DerivedOnly` it is `None` for EVERY
-        // routine, so it discriminates nothing. `direct.is_empty() &&
-        // coverage.is_none()` is exactly the condition `build_detector_context`'s
-        // `forget` arm keys on.
+        for r in &on_actions {
+            let s = ctx.summaries.get(&r.id).unwrap_or_else(|| {
+                panic!(
+                    "{}: every routine must have a summary (member {:?})",
+                    r.id, r.enclosing_member
+                )
+            });
+            assert!(
+                s.coverage.is_some(),
+                "{}: summary must not be degenerate — coverage was dropped (member {:?})",
+                r.id,
+                r.enclosing_member
+            );
+            assert!(
+                ctx.cone_derived.touches_table(&r.id),
+                "{}: the OnAction cone must still reach Touch()'s Setup.Insert() \
+                 (member {:?})",
+                r.id,
+                r.enclosing_member
+            );
+        }
+
+        // No routine anywhere in this fixture may end up with a degenerate summary.
+        // `coverage_in` is inserted for EVERY routine in the first loop and
+        // `compose_cone_over_graph` returns an entry for every node, so the only way
+        // a `None` coverage can appear is the drain accident this test guards.
         let degenerate: Vec<&String> = ctx
             .summaries
             .iter()
-            .filter(|(_, s)| s.capability_facts_direct.is_empty() && s.coverage.is_none())
+            .filter(|(_, s)| s.coverage.is_none())
             .map(|(id, _)| id)
             .collect();
         assert!(
-            !degenerate.is_empty(),
-            "fixture precondition: the collision must produce a degenerate summary"
+            degenerate.is_empty(),
+            "no summary may be degenerate; got {degenerate:?}"
         );
-        for id in &degenerate {
-            assert_eq!(
-                ctx.cone_derived.flags_of(id),
-                0,
-                "{id}: a degenerate summary must carry an empty derived row"
-            );
-            assert!(ctx.cone_derived.writes_tables_of(id).is_empty());
-        }
+    }
 
-        // And a NON-degenerate routine still carries its folded row — the other
-        // half of the pin (`forget` must drop exactly the degenerate rows, not
-        // wipe the store).
+    /// ⟨task-1-review.md finding I-2⟩ Schema-independent pin for the SAME defect the
+    /// test above pins — and, as of ⟨T3⟩, the ONLY one of the two that still exercises
+    /// the drain path. That test asserts only `on_actions.len() == 2` — no collision
+    /// PRECONDITION — so now that the id schema HAS a member discriminator, its two
+    /// `OnAction` triggers get distinct natural ids, the drain path is never entered,
+    /// and it keeps passing for a reason unrelated to its name. That the drain path
+    /// still matters is measured, not hypothetical: 15 collision groups / 19 routines
+    /// on 8020 survive the member discriminator (preproc `#if` alternatives and
+    /// XMLport same-name elements at different nesting paths).
+    ///
+    /// This test never asks `compute_routine_id` for a collision — it STATES one:
+    /// two `L3Routine`s built from ordinary, non-colliding source are forced to carry
+    /// the literal same `id` by direct field assignment after assembly, before
+    /// `build_detector_context` runs. That holds under ANY id schema, forever,
+    /// because it does not depend on what the schema would have produced.
+    #[test]
+    fn hand_stated_id_collision_keeps_a_real_summary_and_derived_row() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50812 "CP2 Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50812 "CP2 Wizard"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action(Alpha)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+            action(Beta)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+        }
+    }
+
+    local procedure Touch()
+    var
+        Setup: Record "CP2 Setup";
+    begin
+        Setup.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/CP2Wizard.al".to_string(), src.to_string())];
+        let mut resolved =
+            assemble_and_resolve_default(&files, "22222222-0000-0000-0000-0000000cp002");
+
+        // State the collision by hand: force the two `OnAction` triggers to carry the
+        // literal SAME id via direct field assignment — never by relying on
+        // `compute_routine_id` happening to agree (it does today; it need not
+        // tomorrow). `build_detector_context` re-derives everything else (symbol
+        // table, call resolution, combined graph) from `resolved.workspace.routines`
+        // fresh on every call, reading whatever id is on each routine AT CALL TIME —
+        // so overwriting here, before that call, is sufficient to force the collision
+        // all the way through the pipeline it exercises.
+        const SHARED_ID: &str = "hand-stated-collision-id";
+        let mut forced = 0usize;
+        for r in resolved.workspace.routines.iter_mut() {
+            if r.name.eq_ignore_ascii_case("OnAction") {
+                r.id = SHARED_ID.to_string();
+                forced += 1;
+            }
+        }
+        assert_eq!(
+            forced, 2,
+            "fixture precondition: both OnAction trigger bodies must be in the model"
+        );
+
+        let ctx = build_detector_context(&resolved, substrate::SUMMARIES);
+
+        let summary = ctx
+            .summaries
+            .get(SHARED_ID)
+            .expect("the hand-stated collision id must have a summary at all");
         assert!(
-            ctx.summaries
-                .values()
-                .any(|s| ctx.cone_derived.touches_table(&s.routine_id)),
-            "at least one surviving routine must still reach the table write"
+            summary.coverage.is_some(),
+            "the surviving summary must not be degenerate — coverage was dropped"
+        );
+        assert!(
+            ctx.cone_derived.touches_table(SHARED_ID),
+            "the surviving derived row must still reach Touch()'s Setup.Insert()"
         );
     }
 
@@ -1278,5 +1469,108 @@ codeunit 50900 "FX1 Touch"
              db_effects row in the bundle, or the debug_assert in \
              `build_detector_context` is never exercised against a real effect"
         );
+    }
+
+    /// ⟨Task 6⟩ The demand gate on `DB_EFFECT_REVERSE_INDEX`, in BOTH
+    /// directions, on a workspace that really does produce db effects.
+    ///
+    /// The direction that matters is the negative one: wiring the index was
+    /// declined before precisely because "does `analyze` pay for it?" had no
+    /// answer. `analyze` reaches this function through `run_detectors`, which
+    /// passes `demanded` — the fold of every selected detector's `requires` —
+    /// and no detector may declare this bit (see the constant's doc), so the
+    /// production analyze path cannot set it. `substrate::ALL` is asserted here
+    /// as the standing proxy for that path: if someone ever folds the bit into
+    /// `ALL`, this test fails rather than the four `ALL`-passing CLI callers
+    /// silently starting to pay for a transpose none of them reads.
+    ///
+    /// The fixture's effect population is asserted as a PRECONDITION, not
+    /// assumed — an empty bundle would make the positive direction pass
+    /// vacuously.
+    #[test]
+    fn reverse_effect_index_is_built_only_when_its_bit_is_demanded() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50901 "FX2 Ledger"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+codeunit 50901 "FX2 Touch"
+{
+    procedure Touch()
+    var
+        Ledger: Record "FX2 Ledger";
+    begin
+        Ledger.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/FX2Touch.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "11111111-0000-0000-0000-0000000fx002");
+
+        // The bit is NOT in `ALL` — asserted directly, so folding it in there
+        // fails here first.
+        assert_eq!(
+            substrate::ALL & substrate::DB_EFFECT_REVERSE_INDEX,
+            0,
+            "DB_EFFECT_REVERSE_INDEX must stay OUT of substrate::ALL — see its doc \
+             for the four ALL-passing callers this protects and the parity trap"
+        );
+
+        // NEGATIVE: the full `ALL` substrate — everything analyze can ever ask
+        // for — leaves the index unbuilt.
+        let ctx_all = build_detector_context(&resolved, substrate::ALL);
+        assert!(
+            ctx_all.db_effect_bundle.is_some(),
+            "ALL includes CORE_SUMMARIES, so the bundle IS built — which is what \
+             makes the next assertion meaningful rather than vacuous"
+        );
+        assert!(
+            ctx_all.reverse_effect_index.is_none(),
+            "substrate::ALL must NOT build the reverse index"
+        );
+
+        // POSITIVE: ask for it explicitly and it appears, correct and populated.
+        let ctx = build_detector_context(
+            &resolved,
+            substrate::CORE_SUMMARIES | substrate::DB_EFFECT_REVERSE_INDEX,
+        );
+        let bundle = ctx
+            .db_effect_bundle
+            .as_ref()
+            .expect("CORE_SUMMARIES demanded");
+        let index = ctx
+            .reverse_effect_index
+            .as_ref()
+            .expect("DB_EFFECT_REVERSE_INDEX demanded — the transpose must exist");
+
+        // Fixture precondition, hand-stated: there IS a table with effects to
+        // transpose. Without this the assertions below could all pass on an
+        // empty index.
+        let table_id = bundle
+            .routines_with_rows()
+            .flat_map(|rix| bundle.db_effects(rix))
+            .map(|e| e.table_id.to_string())
+            .next()
+            .expect(
+                "fixture precondition: `Ledger.Insert()` must produce at least one \
+                 db effect, or this test proves nothing about the transpose",
+            );
+
+        let up = index.up_table(&table_id);
+        assert!(
+            !up.is_empty(),
+            "the transpose must answer for a table the bundle really carries"
+        );
+        for &rix in &up {
+            assert!(
+                index.touches_table(bundle, rix, &table_id),
+                "up_table and touches_table must agree"
+            );
+        }
     }
 }

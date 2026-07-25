@@ -192,7 +192,16 @@ fn extract_from_ir(file: &al_syntax::ir::AlFile, app_guid: &str, out: &mut Ident
                 canonical_routine_signature(&rname, &parameters, return_type_ref);
             let norm_hash = normalized_signature_hash(&rname, &parameters, return_type_ref);
             let sig_fp = routine_signature_fingerprint(&rname, &parameters, return_type_ref);
-            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
+            // This module re-derives its own identity snapshot from the raw IR, so it
+            // must take the enclosing-member discriminator from the SAME single source
+            // (`ir_enclosing_member`) the L2/L3 paths use — otherwise the two would mint
+            // different stable ids for the same member trigger.
+            let enclosing_member = crate::engine::l2::ir_walk::ir_enclosing_member(r);
+            let stable_routine_id = to_stable_routine_id_from_parts(
+                &stable_object_id,
+                &norm_hash,
+                enclosing_member.as_deref(),
+            );
 
             out.routines.push(RoutineIdentity {
                 stable_routine_id,

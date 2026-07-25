@@ -1,29 +1,95 @@
 #!/usr/bin/env bash
 # scripts/check-goldens — run the byte-compared golden test families in one shot.
 #
-# WHY: a change under tests/r0-corpus/ (fixtures), src/engine/l5/detectors/, or a
-# golden dir can move MORE golden families than the one you were looking at. In
-# the BCQuality wave, editing a fixture and regenerating only `--test r4` left
-# the l2_features.snapshot (l2_ir) stale and two commits shipped red. This script
-# runs every golden-bearing target together so that never happens again.
+# WHY: a change under tests/r0-corpus/ (fixtures), src/engine/, or a golden dir can
+# move MORE golden families than the one you were looking at. In the BCQuality wave,
+# editing a fixture and regenerating only `--test r4` left the l2_features.snapshot
+# (l2_ir) stale and two commits shipped red. This script runs every golden-bearing
+# target together so that never happens again.
 #
-# Golden family -> test target map (keep in sync with CLAUDE.md "Goldens"):
-#   tests/r4-goldens/        -> --test r4
-#   tests/ir-l2-goldens/     -> --test l2_ir   (the l2_features.snapshot)
-#   tests/cli-a-goldens/     -> --test cli
-#   tests/r2c-goldens/       -> --test l3 (l3eg_oracles) + --test differential
+# ⟨task-3 fix wave, review I-3⟩ The list below used to be five targets and covered
+# 15 of the repo's THEN-27 golden directories (30 today, ⟨final-branch-review-l3.md
+# M-4⟩ — see the map below for the current, authoritative enumeration). `--test r3`
+# (r3a1/r3a2/r3a3/r3a4/r3a5 —
+# 483 files, 93 of them id-bearing), `--test r25_abi` (7 files) and
+# `--test l4_summary_differential` (18 files) were missing entirely, so the task-3
+# id-schema change moved `tests/r3a3-goldens/` behind a green `check-goldens` — the
+# exact BCQuality failure this script exists to prevent, one directory over. The
+# `--regen` path was missing them too, so the documented canonical loop could not
+# even PRODUCE the r3a3 movement that commit had to make; only a bare
+# `REGEN_TEMP_GOLDENS=1 cargo test` could. `--test program_resolve_harness` was also
+# missing (`tests/goldens/semantic-edges/`, 2 non-CDO byte-compared goldens).
+#
+# Golden directory -> owning test target map (30 directories; keep in sync with
+# CLAUDE.md "Goldens"). Every directory below is a `REGEN_TEMP_GOLDENS`-gated byte
+# comparison:
+#   tests/r4-goldens/, tests/r4f-goldens/                     -> --test r4
+#   tests/ir-l2-goldens/            (the l2_features.snapshot) -> --test l2_ir
+#   tests/cli-a-goldens/, cli-b-, cli-c-, cli-c-events-,
+#     cli-c-policy-, cli-query-goldens/, gate-goldens/,
+#     al2dump-smoke-goldens/, aldump-smoke-goldens/            -> --test cli
+#   tests/r0-, r1a-, r2a-, r2b-, r2c-, r2d-goldens/            -> --test differential
+#   tests/r3a1-, r3a2-, r3a3-, r3a4-, r3a5-goldens/            -> --test r3
+#   tests/r2-5a-goldens/, r2-5b-{cg,cov,eg,rt}-goldens/        -> --test r25_abi
+#   tests/l4-summary-baseline/                                 -> --test l4_summary_differential
+#   tests/goldens/semantic-edges/                              -> --test program_resolve_harness
+#
+# ⟨final-branch-review-l3.md M-5⟩ `--test l3` (the l3cg/l3cov/l3eg/l3rt oracle +
+# vectors suite) owns NO byte-compared golden directory of its own — despite the
+# name, `l3eg_oracles.rs` explicitly documents that it is NOT a golden diff
+# against al-sem expected strings; that comparison is `tests/r2c-goldens/*.l3eg.
+# golden.json`, read only by `tests/differential.rs` (already listed above). It
+# stays in `targets` below because it is still part of the suite this script runs
+# `--no-fail-fast` together, not because it owns a golden directory.
+#
+# ⟨Task 6⟩ `tests/cli-query-goldens/` (the `alsem query` db-effect query family)
+# needs no new target — it is a member of the `cli` umbrella, which is already
+# listed. It IS the reason `ReverseEffectIndex` cannot go back to having zero
+# production callers: every run of this script executes the transpose, both
+# up-queries, the ancestor BFS and the facade, through the shipped binary.
+#
+# A note on `--regen` and `tests/r3a3-goldens/`: r3a3's regen path is
+# CONTENT-CHANGE-GATED by design (`tests/r3/r3a3_differential.rs` — it skips any
+# golden whose structural `serde_json::Value` already matches, so a rebaseline diff
+# is not swamped by pure key-order churn). So `--regen` legitimately writes ZERO
+# r3a3 files when nothing moved; it writes exactly the ones that did. Verified by
+# construction in the task-3 fix wave: corrupting one r3a3 golden makes plain
+# `check-goldens` fail on `--test r3` (it did not even RUN before) and
+# `check-goldens --regen` restores it byte-for-byte.
+#
+# NOT covered here, deliberately: the CDO-gated members of the last two targets
+# (`cdo_whole_program_v2_matches_frozen_digest`, and most of
+# `program_resolve_harness`) SKIP silently when `CDO_WS` is unset, which is the
+# normal case for this script. With `CDO_WS` exported in your environment they DO
+# run and will add minutes — that is correct, not a bug, but it is why a warm
+# `check-goldens` is slower for some developers than others. `scripts/cdo-gate` is
+# the runner that enforces the CDO side.
 #
 # Usage:
 #   scripts/check-goldens            # verify (no regen) — exits nonzero on any stale golden
 #   scripts/check-goldens --regen    # REGEN_TEMP_GOLDENS=1 first (inspect the diff!), then verify
 set -uo pipefail
 
-targets=(--test r4 --test l2_ir --test l3 --test cli --test differential)
+targets=(
+    --test r4
+    --test l2_ir
+    --test l3
+    --test cli
+    --test differential
+    --test r3
+    --test r25_abi
+    --test l4_summary_differential
+    --test program_resolve_harness
+)
 
+# `--no-fail-fast`: without it cargo aborts the whole run on the FIRST failing test
+# binary, so one stale family hides every later target — you fix it, re-run, and
+# discover the next one. A golden gate must report every stale family in one pass.
+# ⟨task-3 fix wave, review I-3(2)⟩
 if [[ "${1:-}" == "--regen" ]]; then
     echo "check-goldens: regenerating (REGEN_TEMP_GOLDENS=1) — INSPECT the diff before committing"
-    REGEN_TEMP_GOLDENS=1 cargo test "${targets[@]}" || exit 1
+    REGEN_TEMP_GOLDENS=1 cargo test --no-fail-fast "${targets[@]}" || exit 1
     echo "check-goldens: re-running WITHOUT regen to confirm green"
 fi
 
-cargo test "${targets[@]}"
+cargo test --no-fail-fast "${targets[@]}"

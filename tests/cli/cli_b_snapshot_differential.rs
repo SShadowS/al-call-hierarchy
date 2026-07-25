@@ -129,6 +129,11 @@ const SNAPSHOT_CORPUS: &[&str] = &[
     "ws-d51-neg",
     "ws-d1-multi-caller",
     "ws-d14-dead-routine",
+    // ⟨task-4-review.md finding M-2⟩ Two sibling member-trigger bodies of one
+    // object — proves the stable-id member discriminator's `contractFacts` split
+    // (distinct `stableId` per OnAction body) end to end through a byte-compared
+    // golden. See the fixture's own header comment for the full rationale.
+    "ws-sibling-member-triggers",
 ];
 
 const SHARD_FIXTURE: &str = "ws-d8-commit-in-tx";

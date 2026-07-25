@@ -7,7 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — L3 substrate + the two parked items (arc capstone)
+
+Whole-process peak on the 8020 corpus (`alsem analyze --detector
+d8-commit-in-transaction`, release-fast, the like-for-like probe this arc used
+throughout): **7,787 MB -> 5,122 MB (-2,665 MB, -34%)**. Span deltas:
+`l3.assemble_resolve` 3,381 -> 2,231 MB, `l3.parse_project_parallel` 2,770 ->
+2,225 MB, `context.symbols_resolve_calls` 1,723 -> 254 MB, `l3.resolve` 664 ->
+15 MB, `context.capability_cones` 2,195 -> 1,178 MB.
+
+**Sub-GB was NOT reached and is not an L3 problem.** L3's own floor is ~1.2 GB of
+actual program (100,941 routines' call sites, operations and CFN trees at ~12
+KB/routine). After every lever here the peak is set by `d1` (~4.3 GB on a default
+preset) and the cone substrate — a separate arc. Note also that a default-preset
+run is a larger number than the d8-only probe above; the two shapes are never
+comparable.
+
+Correctness, not just memory: the `compute_routine_id` collision that erased
+**1,157 of 4,842 DO routines (23.9%)** and **16,906 of 100,941 on 8020 (16.7%)**
+is closed — DO collision groups 262 -> 0, 8020 3,058 -> 15 (0.019%, preproc `#if`
+alternatives and XMLport same-name nesting, recorded as the honest residual).
+That recovered real findings on real code and moved 71 of 2,369 DO fingerprints
+(3.00%), leaving 97.16% of a user's baseline matching.
+
+
 ### Added
+- **`alsem query touches` / `alsem query effects` — a db-effect query surface, and
+  with it the first production consumer of `ReverseEffectIndex`**
+  (`src/engine/l4/effect_query.rs`, `src/engine/l4/effect_query_cli.rs`,
+  `src/bin/alsem.rs`, `tests/cli-query-goldens/`;
+  `feat/l3-substrate-and-parked-items` Task 6). Answers *"is table X touched by any
+  DB action — read or write, temp or physical — transitively, up or down the call
+  stack from routine R?"*. `touches` reports the down cone with witnesses, the
+  workspace-global routine list, or — the new capability — the **ancestor-scoped**
+  answer: which transitive CALLERS of R touch X through a branch that does not go
+  through R. `effects` dumps one routine's complete transitive db-effect list with
+  `via` provenance. Both take `--format human|json`, `--out`, `--deterministic`;
+  a selector that matches nothing or is ambiguous produces a well-formed exit-2
+  document naming the failure rather than an empty result that reads as "no".
+  - **The ancestor-scoped up-query is new code, not new wiring.**
+    `reverse_index.rs`'s own module header had called it mandatory
+    (`GraphSccIx` reverse-DAG BFS) since A4 and it had never been implemented, so
+    the only up-direction that existed was `up_table` — workspace-global, a DO
+    median of 377 of 3 685 routines per table. `DbEffectQuery::ancestors_touching`
+    builds the reverse condensation once, BFSes it for depth, and filters by
+    `touches_table`, holding the notion discipline the two newtypes exist for:
+    steps 1-2 walk the ORIGINAL Tarjan condensation (`GraphSccIx`, where
+    reachability is intact), step 3 goes through `EffectClassIx`. Because
+    summaries are transitive-down, the answer is only informative when R itself
+    does NOT touch X — the payload says which case it is instead of presenting a
+    restatement as a finding.
+  - **Witnesses come from the bundle, membership from the index.** The posting
+    lists drop `ViaRank` and 98.8 % of real memberships are `inherited`, so every
+    hit is re-read from `SummaryBundle::db_effects` to recover `via` / `op` /
+    `tempState`, then joined to the routine + record operation that actually
+    performs it — a `via: inherited` answer anchors at the callee's own
+    `Cust.Modify()`, not at the routine asked about.
+  - **`"unknown"` is a labelled bucket, never a table.** `summary_runner` writes
+    the literal sentinel `"unknown"` when a record operation's target table cannot
+    be determined, and on DO that is the LARGEST posting of all (1 334 routines).
+    It stays queryable (`--table unknown`) and every rendering flags it
+    (`isUnknownBucket`, `tableName: null`); name resolution can never fall through
+    to it.
+  - **No caps.** The unscoped list reports `routineCount` first and then the
+    COMPLETE list — the size is made visible rather than truncated.
+  - **Differential coverage, including the CDO frozen digest.** Fixture-level
+    (`tests/l4_summary_differential.rs`'s `reverse_index_differential` module) is
+    exhaustive against a from-scratch oracle sharing no code with the
+    implementation; `cdo_reverse_index_matches_slow_oracle` runs the same
+    comparison against real DO/CDO source (4842 routines-with-rows, 61 tables),
+    then — only once that comparison has already passed in the same run —
+    checks a frozen SHA-256 digest of `up_table`'s answer for every table
+    (`tests/l4-summary-baseline/cdo-reverse-index-digest.txt`), closing the one
+    item the original task deferred (it had assumed no `CDO_WS` was available;
+    this repo's `CDO_WS` is the DO workspace). `scripts/cdo-gate` runs it.
+- **`substrate::DB_EFFECT_REVERSE_INDEX` + `ctx.reverse_effect_index`**
+  (`src/engine/l5/registry.rs`, `src/engine/l5/detector_context.rs`) — the
+  demand-gated seam for the eventual detector / LSP-hover consumer. Deliberately
+  OUTSIDE `substrate::ALL` and, unlike every other bit, **not declarable by a
+  detector**: `gap_detector_substrate_parity` builds its "full" context from `ALL`
+  and its "minimal" one from `det.requires`, so a bit outside `ALL` inverts that
+  comparison and would fail a CORRECTLY-declared detector while production stayed
+  right. The one-line unlock (change that test's full context to
+  `substrate::ALL | det.requires`) is recorded in the constant's own doc so the
+  next person does not rediscover it. Unset costs a run one `None` field — no
+  allocation, no pass, not even a trace entry; `analyze` cannot set it at all.
+
+### Fixed
+- **`ReverseEffectIndex` build allocated 2 table-id `String`s per membership**
+  (`src/engine/l4/reverse_index.rs`). The transpose passes cloned
+  `universe.identity(eid).table_id` twice per (class, effect) pair — 2·B
+  allocations, where B is Σ-over-distinct-classes of base cardinality: ~131 k on
+  DO and an extrapolated ~4 M (~190 MB of churn, in peak RSS) at 8020 scale,
+  inside an arc whose point was killing a 24 GB allocation. The working maps now
+  key on `&str` borrowed from the frozen universe (which outlives the build), so
+  the only table-id `String`s minted are the `<= n_tables` surviving map keys.
+- **`ReverseEffectIndex::touches_effect` did not have the shape its doc claimed**
+  (`src/engine/l4/reverse_index.rs`). Documented as the "same no-decompression
+  shape" as `touches_table`, it was `effect_classes(effect).any(|c| c == class)` —
+  a linear walk of a SORTED posting, a full bit-scan in the dense case. Both arms
+  now go through `PostingList::contains` (binary search / one word test) via two
+  private accessors mirroring the public table pair.
+
 - **A recursive-SCC perf corpus + release gate for the SOLVER's own internal
   cost** (`tests/perf_support/mod.rs`, `tests/perf_bounds.rs`,
   `chore/l4-post-merge-minors`; final-branch-review finding **M-6**).
@@ -476,7 +577,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Vec-independent test — the G-18 colliding-routine-id pin on
   `ConeDerivedStore::forget` — was RELOCATED into `detector_context`'s test
   module and hardened with the `!cone_derived.is_empty()` precondition it
-  lacked. `C1_CONE_CENSUS=1` (`src/engine/l4/cone_census.rs`) is a different,
+  lacked. (Superseded later in this same unreleased cycle: the `Fixed` entry
+  below removes the degeneracy that pin described, deletes `forget`, and
+  replaces the test with
+  `colliding_routine_ids_keep_a_real_summary_and_derived_row`.) `C1_CONE_CENSUS=1` (`src/engine/l4/cone_census.rs`) is a different,
   still-live diagnostic: a byte census, not a parity oracle.
 - **The old L4 Jacobi db-effects solver + the R3b Salsa incremental experiment +
   the R3a-2 Jacobi trace dump mode — ONE summary path remains**
@@ -532,6 +636,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **Colliding routine ids no longer lose their entire capability cone — the
+  source-only detector context stops overwriting a real summary with a
+  degenerate one** (`src/engine/l5/detector_context.rs`,
+  `src/engine/l4/cone_derived.rs`, `src/engine/l5/mod.rs`,
+  `docs/OUTSTANDING.md`; `.superpowers/sdd/task-1-report.md`,
+  `.superpowers/sdd/scope-routine-id-collision.md`).
+  `compute_routine_id` carries no member discriminator, so two same-name
+  same-signature triggers in one object — any page with two `trigger
+  OnAction()` actions, ordinary in real BC — collide on ONE internal routine
+  id. `build_detector_context` drained its cone maps with `remove()`, so a
+  later occurrence of a colliding id read `None/None`, called
+  `ConeDerivedStore::forget` and wrote a fully degenerate summary (no direct
+  facts, no inherited facts, no coverage) OVER the real one the first
+  occurrence had written. Because both maps are keyed by id, the degenerate row
+  is what survived: the cone of an id shared by N routines was erased outright
+  and every cone-derived detector reading it went silent.
+  `build_detector_context_cross_app` reads its cone with `get()` and has never
+  had the accident — the two builders simply disagreed, which is what
+  identified the drain as an accident rather than a decision. The builder now
+  skips the later occurrence (`let Some(direct) = direct else { continue; }`),
+  so the real summary and its matching folded derived row both survive; the
+  `remove()` drain is KEPT, so no clone is reintroduced (a `get()` would clone
+  every routine's direct facts, including the ~80 % that never collide — 79.66
+  MB of pure duplicate on 8020, exactly what the C1 arc removed).
+  **Measured, not assumed.** The collapse is not rare: 1 157 of 4 842 DO
+  routines (23.9 %) and 16 906 of 100 941 8020 routines (16.7 %) are erased by
+  it. `alsem analyze <DO> --format json --deterministic`, release-fast, before
+  vs after: **2 384 → 2 387 findings — 4 new `d8-commit-in-transaction`, 1
+  `d9-transaction-span-summary` withdrawn, 20 findings changed in place (9 d8,
+  11 d9)**; no other detector of the 43 in the run moved by a single byte.
+  Each of the 4 new findings was verified against real AL source (a real
+  mid-transaction `Commit()` behind a page action on pages carrying 2, 5, 6 and
+  8 colliding `trigger OnAction()` bodies). The withdrawn d9 is an uncertainty
+  RESOLUTION, not a lost true positive: it was emitted only because
+  `!coverage_complete` (its span writes 1 table, below d9's 2-table bar), and
+  its span's coverage was incomplete solely because a colliding
+  `trigger OnAssistEdit()` caller carried the degenerate summary.
+  `ConeDerivedStore::forget` is **deleted** — its only caller was the arm above
+  and no path can reach it again (a store is produced only by
+  `ConeDerivedBuilder::finish`, `Default`, and `l5::test_support::cone_store_of`,
+  and nothing mutates one after it is built). Its doc also claimed the collapse
+  hit "a handful of routines per workspace"; that number was wrong by three
+  orders of magnitude and is corrected in place. The `l5::detector_context`
+  test that pinned the degenerate behaviour is replaced by
+  `colliding_routine_ids_keep_a_real_summary_and_derived_row`, phrased over
+  `ws.routines` rather than "the colliding id" so it holds unchanged once the id
+  schema gains its member discriminator. **This is a partial fix and the
+  remaining half is recorded in `docs/OUTSTANDING.md`:** loop 1 still builds
+  `direct_full` with `insert()`, so the surviving summary's DIRECT facts are
+  one arbitrary (last-sibling-wins) sibling's attributed to all N — the
+  INHERITED cone is not: it is the union over every sibling's out-edges (the
+  combined graph files them all under the shared `from` key), an
+  over-approximation rather than one body's picked view. The derived
+  (`cs`/`op`/`loop`) ids, merged call edges and shared fingerprint all remain
+  until the id schema itself carries the member. Zero golden movement
+  (`scripts/check-goldens` green with `git status --porcelain tests/` empty);
+  l4 differential 17/17. **Impact beyond the measured 43-detector DO preset:**
+  `gate/policy` reads `capability_facts_direct` through this same source-only
+  builder and can move on any workspace with collisions; `l5::digest_cli` and
+  `l5::prove` both iterate `transaction_spans`, which demonstrably moved on 20
+  DO spans, so `digest`'s `factId` and `prove`'s output move with them; the
+  opt-in `d50-checked-run-implicit-commit` is a second `transaction_spans`
+  consumer outside the 43 and was not measured. `d48` also reads
+  `capability_facts_direct` but measured zero DO delta — it found nothing
+  IO-shaped in a colliding trigger's direct facts, not because it is immune to
+  the change.
 - **Post-merge review fix wave on `chore/l4-post-merge-minors`**
   (`src/engine/l5/detector_context.rs`, `tests/perf_support/mod.rs`,
   `tests/lsp/perf_support_smoke.rs`, `tests/perf_bounds.rs`,
@@ -752,6 +922,334 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **BREAKING (fingerprints): the STABLE routine id gains the same CONDITIONAL
+  enclosing-member discriminator — sibling member triggers' findings stop
+  sharing a fingerprint** (`feat/l3-substrate-and-parked-items` Task 4;
+  `src/engine/ids.rs`, `src/engine/l2/l2_workspace.rs`,
+  `src/engine/l3/l3_workspace.rs`, `src/engine/l5/snapshot_full.rs`,
+  `src/engine/snapshot.rs`, `src/engine/deps/projection.rs`;
+  `.superpowers/sdd/task-4-report.md`,
+  `.superpowers/sdd/scope-routine-id-collision.md` option (a3)).
+  Task 3 (below) gave the two `trigger OnAction()` bodies of one page distinct
+  INTERNAL ids, but their FINDINGS still hashed to one fingerprint:
+  `l5::fingerprint::fingerprint_of` substitutes every internal id in a
+  `rootCauseKey` to its STABLE image before hashing, and the stable id was still
+  member-blind — so one baseline entry suppressed both siblings, and recovering
+  a previously-invisible sibling body ADDED a duplicate-fingerprint pair
+  (measured on DO: duplicate-fingerprint excess 5 → 7 after Task 3).
+  `to_stable_routine_id_from_parts` now takes `enclosing_member: Option<&str>`
+  and, when `Some`, replaces the hash part with
+  `sha256_of_strings([normalizedSignatureHash, member_lowercased])`.
+  **Conditional, exactly as on the internal id:** `None` — procedures,
+  object-level triggers, and every dependency-ABI routine (the dep projection
+  passes `None`) — reproduces `{stableObjectId}#{normalizedSignatureHash}` byte
+  for byte, so the cross-app stable-id join stays symmetric by construction and
+  the committed encoder vectors do not move.
+  **The SHAPE is unchanged and that is the whole design.** The result is always
+  `{stableObjectId}#{64 lowercase hex}` — folding the member into the hash
+  rather than appending a `#member` segment — because `alsem diff`'s stable-id
+  join, `l4::summary::stable_sub_id`'s two-`/`-part split and
+  `deps::r3a4_projection`'s `DepIdStabilizer` all assume it; a shape change
+  would have moved EVERY fingerprint in the product instead of only the member
+  triggers'. Pinned independently of its content by
+  `stable_routine_id_shape_is_object_plus_64_hex_regardless_of_member`.
+  One consequence, stated rather than discovered later: for a member trigger the
+  stable id no longer ENDS with that routine's own `normalizedSignatureHash`
+  (the field itself is emitted unchanged, and is still what the ABI signature
+  match compares) — the historical "suffix invariant" now holds for member-less
+  routines only.
+  **Measured user cost on DO** (`alsem analyze <DO> --format json
+  --deterministic`, `--profile release-fast` at `207db0d` vs this commit):
+  **71 of 2 369 findings (3.00 %) get a new fingerprint; 2 295 of the 2 362
+  baseline fingerprints (97.16 %) still match** — against the scoping doc's
+  prediction of 81/2 384 (3.4 %) made before Tasks 1/3 moved the population.
+  **Zero findings appeared or disappeared** (2 369 → 2 369, every detector count
+  identical) — this task changes identity, not detection.
+  **Duplicate-fingerprint excess 7 → 3**, closing 4 of the 6 groups: all four
+  were the two sibling `OnAction` bodies of `Page 6175313 CDO eDocuments Setup
+  Wizard` (`d1`, `d3`, `d5`, `d10`), including both groups the scoping doc named
+  (`b2d1b142f0577a38`, `47500c86760f3f93`). The residual 3 (2 groups) are
+  `d55-event-publish-in-loop` findings *inside one routine* — same internal id,
+  different call sites — because `d55`'s `rootCauseKey` is
+  `d55/{routine.id}/{loop.id}` and omits the callsite; that is a detector-key
+  granularity question, not an id collision, unchanged before and after, and is
+  now recorded in `docs/OUTSTANDING.md`.
+  **50 goldens moved, and every one was triaged before regenerating.** All 50
+  are explained, order-insensitively, by the stable-id substitution alone (42)
+  or by it plus the 4 intended fingerprint moves (8: the `cli-c-policy` json +
+  sarif pairs). The 6 moved stable ids and the 4 moved fingerprints were each
+  re-derived by a standalone Python reimplementation of the hash, not by the
+  Rust code. The mask used is POSITIONAL — only a 64-hex run immediately
+  preceded by `#` — and the audit separately confirms **zero bare 64-hex values
+  moved** (no `normalizedSignatureHash` / `signatureFingerprint`) and **zero
+  `{modelInstanceId}/`-prefixed internal ids changed value**; the three
+  internal-id-bearing lines that do appear in the diff are a 3-row permutation
+  of `ws-triggers`' routine array, which sorts by stable id.
+  Two hand-written tests asserted the defect by name and were **deliberately
+  inverted**, not preserved: `two_field_on_validate_distinct_member_same_stable_id`
+  → `…_and_stable_id`, and `two_field_rows_share_stable_id_…` →
+  `two_field_rows_have_distinct_stable_ids_and_deterministic_order`. The
+  inventory's case-insensitive `enclosingMember` tie-break (RE-6) is KEPT as
+  fail-closed cover for the residual duplicate-stable-id shapes, and — since no
+  assembled fixture can reach it through the projection any more — gains its own
+  direct pin. The real pin is
+  `snapshot_full::tests::hand_stated_collision_discriminates_by_member_case_insensitively`
+  (added by a later fix wave): its predecessor, named here at the time,
+  `member_tie_break_is_case_insensitive_and_none_first`, pinned the comparator
+  function in isolation, not the sort's actual use of it, so deleting the
+  tie-break's `.then_with` call from `build_inventory_doc` left that test, the
+  whole suite and every golden green — see `docs/OUTSTANDING.md`'s parked-items
+  entry for the correction and `final-branch-review-l3.md` I-2/I-3 for the fifth
+  instance of the same gap, one key over.
+  The CDO L4 frozen whole-program digest did **not** move (`scripts/cdo-gate`
+  with `CDO_WS` set: PASS, `cdo_whole_program_v2_matches_frozen_digest` really
+  ran, nothing under `tests/l4-summary-baseline/` regenerated) — `RoutineSummary`
+  carries internal ids only, and the run is positive evidence that its content is
+  independent of `RoutineInterner`'s `(stable_routine_id, routine_id)` interning
+  ORDER, which this change does permute on 4 842 real routines.
+  The residual member-blind cases are unchanged from Task 3's: 15 groups / 19
+  routines on BC Base App (13 XMLport same-name `fieldelement` members at
+  different nesting paths — wake condition for a path-qualified member if a
+  consumer ever needs one — plus 2 preproc `#if`/`#else` alternatives), 0 on DO.
+- **The internal routine id gains a CONDITIONAL enclosing-member discriminator —
+  same-name member triggers in one object no longer collide**
+  (`feat/l3-substrate-and-parked-items` Task 3;
+  `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
+  `src/engine/ids.rs`, `src/engine/l2/scope.rs`, `src/engine/l2/ir_walk.rs`,
+  `src/engine/l2/l2_workspace.rs`, `src/engine/l3/l3_workspace.rs`,
+  `src/engine/deps/projection.rs`; `.superpowers/sdd/task-3-report.md`,
+  `.superpowers/sdd/scope-routine-id-collision.md`).
+  `compute_routine_id` keyed app / object-type / object-number / kind / name /
+  signature with **no member discriminator**, so the N `trigger OnAction()`
+  bodies of one page — ordinary in real BC — hashed to ONE internal routine id,
+  and so did every id derived from it (`{rid}/csN`, `{rid}/opN`,
+  `{rid}/loopN`, `{rid}/rv/<name>`). Measured: **1 157 of 4 842 DO routines
+  (23.9 %) and 16 906 of 100 941 8020 routines (16.7 %)** were erased by the
+  collapse; largest group 17 (DO) / 100 (8020). Task 1 stopped the destructive
+  drain that erased the survivors' summaries; this closes the id itself.
+  `CanonicalRoutineKey` gains `enclosing_member: Option<String>` and
+  `encode_canonical_routine_key` appends it as a **7th** `sha256_of_strings`
+  part **only when a member exists** — `sha256_of_strings` length-prefixes each
+  part, so `[…6]` and `[…6, ""]` already hash differently and the conditional
+  append is unambiguous. Consequence: procedures, object-level triggers
+  (`OnRun`/`OnOpenPage`) and **every dependency-ABI routine** (the dep
+  projection passes `None`) keep **byte-identical** ids, so the cross-app join
+  stays symmetric by construction and `tests/r0-vectors/encoder-vectors.json`
+  does not move. The id's SHAPE (`{modelInstanceId}/{64 lowercase hex}`) is
+  unchanged — only the hash INPUT — because `l5::fingerprint`'s
+  `substitute_stable_ids` scans for exactly 64 lowercase-hex bytes and
+  `l4::summary`'s `stable_sub_id` assumes exactly two `/`-parts; a `#member`
+  suffix or an extra segment would silently move every fingerprint in the
+  product. `routine_id_shape_is_two_parts_with_64_hex_regardless_of_member`
+  pins the shape independently of its content.
+  One canonical normalization: `l2::ir_walk::ir_enclosing_member` is the single
+  source of the member string (the raw IR value is only outer-quote-stripped;
+  `unescape_al_identifier` moved from `l3_workspace` to `l2::scope` so the
+  routine-id discriminator and `L3Routine.enclosing_member` cannot be different
+  strings), and the encoder lowercases it exactly as it already lowercases
+  `routine_name`.
+  **Closure, measured:** DO **262 collision groups → 0**; 8020 **3 058 → 15
+  groups / 19 routines (0.019 %)**. The honest residual is entirely two
+  known shapes: **13 XMLport same-name `fieldelement` members at different
+  nesting paths** (`SEPACTpain*`/`SEPADDpain*`/`ImpExpDataExchDefMap`) — a flat
+  member name cannot separate a nested XMLport tree; a path-qualified member or
+  a declaration ordinal would, and that is the wake condition if a consumer ever
+  needs one — and **2 preprocessor `#if`/`#else` alternatives** (`Page 15
+  "Location List"`'s duplicated `action("Items with Negative Inventory")`,
+  `Codeunit 700 "Page Management"`'s two `GetPurchaseHeaderPageID`), which are
+  artifacts of the engine's deliberate union-read preproc handling, not of this
+  defect.
+  **Output movement is deliberate and id-shaped.** 20 committed goldens moved
+  (6 `r1a`, 3 `r2a`, 3 `r3a3`, 8 `cli-c-policy` json+sarif): 84 changed lines,
+  **every one differing only in a 64-hex id**, across exactly **6 distinct
+  routine ids**, each re-derived independently as (old = the 6-part hash,
+  new = the same 6 parts + the lowercased member); and every masked 64-hex run
+  on every changed line sits in `{modelInstanceId}/` position, so no bare
+  content hash (a `normalizedSignatureHash` is also 64 lowercase hex) could
+  have hidden behind the mask. No fact content, position, count, ordering or
+  **fingerprint** moved. (The commit also touches 2 hand-edited test sources,
+  `tests/l2_ir/{encoder_vectors,ir_robustness}.rs` — `git diff --stat -- tests/`
+  therefore reports 22 files; those two are Rust, not goldens, and their changes
+  are not id-only.) On DO, `alsem analyze --format json
+  --deterministic` goes 2 387 → 2 369 findings: **−14 `d34-commit-in-loop`,
+  −3 `d45-event-transitive-table-exposure`, −3 `d8-commit-in-transaction`,
+  −2 `d9-transaction-span-summary`** (cone shrink — a colliding id's cone was
+  `(one sibling's direct facts) ∪ (cone over ALL siblings' callees)`, so
+  de-colliding removes cross-body splices: the 14 d34 findings claimed
+  "OnAction's repeat loop calls SalesHeaderOpenEMail" on bodies whose loop calls
+  something else entirely) and **+3 `d1-db-op-in-loop`, +1
+  `d3-missing-setloadfields`** (NOT cone growth — previously unaddressable
+  sibling BODIES becoming real routines: `CDOMergeTableField.Table.al`'s two
+  field `OnValidate`s at :51/:80 now both exist and both fire). The
+  `CDO Move Logs` d8/d9 misattribution Task 1's report called out by hand is
+  visibly fixed: it anchored on line 212 (`UpdateStatusAction`, body
+  `RefreshStatus();`) claiming "writes 5 tables"; it now anchors on line 142
+  (`StartmovinglogsAction`, which owns the `Commit()` at line 188) with its own
+  2 tables — below d8's threshold, which is why d8 correctly stops firing.
+  **Not fixed here (still parked):** the **stable** id carries no discriminator,
+  so two sibling triggers' findings still share a fingerprint — DO's
+  duplicate-fingerprint excess goes 5 → 7, because recovering a previously
+  invisible sibling ADDS a pair. That is option (a3) in the scoping doc and is
+  the only remaining half.
+- **Task-3 review fix wave** (`feat/l3-substrate-and-parked-items`;
+  `.superpowers/sdd/task-3-review.md` I-1/I-2/I-3 + M-1…M-8). No shipped
+  behaviour changed; one deliberate, triaged baseline re-freeze.
+  - **The G-18 guard's only test had gone vacuous, and nothing noticed.**
+    `tests/gap/gap_g18_transitive_loop.rs` built its collision from two page
+    actions' `trigger OnAction()` **through the real id path** — the exact shape
+    the new discriminator now separates — so after Task 3 it exercised nothing.
+    Measured: the guard could be deleted from all three call sites and `cargo
+    test` stayed fully green, which would have silently restored the d1 false
+    positive on the 15 residual 8020 collision groups. Two STATED-collision tests
+    replace the derived one (`hand_stated_collision_does_not_splice_the_sibling_bodys_edge`
+    for the reject direction, `…_still_fires_a_genuine_inloop_chain` for the
+    accept direction): they force the shared routine id AND the derived
+    `{rid}/cs{n}` ids by hand, so they hold under any id schema. Both fail when
+    the guard is removed from the production lookup (`d1_graph.rs:220`). The
+    three page-action tests are kept as behaviour tests, each now asserting its
+    real (non-colliding) precondition. Also established, and previously
+    undocumented: of the guard's three call sites only `d1_graph.rs:220` affects
+    emitted findings — `d1.rs:1103` is inside the `#[cfg(test)]` shadow oracle
+    and `d1.rs:1345` feeds stat counters only.
+  - **The golden gate had holes wider than the arc that walked through one.**
+    `scripts/check-goldens` covered 17 of 29 golden directories across 5 targets;
+    it is now 29 of 29 across 9 (`--test r3`, `--test r25_abi`,
+    `--test l4_summary_differential`, `--test program_resolve_harness` added),
+    and gained `--no-fail-fast` so one stale family no longer hides every later
+    target. `scripts/git-hooks/pre-commit`'s filter, which matched **none** of
+    Task 3's substrate or any of the four golden dirs it moved (it fired only on
+    two doc-comment edits in `src/engine/l5/`), now covers all of `src/engine/`,
+    `crates/al-syntax/src/`, every golden and vector dir, and the fixture roots.
+    `scripts/cdo-gate` gained `--test l4_summary_differential` — the CDO L4
+    frozen digest had been on no runner at all.
+  - **CDO whole-program L4 digest re-frozen**, `d3fc4f0e…` → `d9eac0c7…`
+    (3685 → 4842 routines), as a consequence of the id-schema change. Not a blind
+    regen: disabling the conditional key-part append alone reproduces the OLD
+    digest byte-for-byte, an exact single-variable attribution. Population
+    decomposes as 3231 ids unchanged / 454 member-bearing replaced / 1611 minted
+    (+1157, matching `detector_context.rs`'s independently-measured figure
+    exactly); zero id-shape, struct-shape or value-domain movement. Evidence
+    table in `tests/l4-summary-baseline/README.md`'s new re-freeze log.
+  - **Corrections to claims this branch falsified**: "22 goldens moved" → **20**
+    (the 22 counted two hand-edited test sources); the id-only mask argument now
+    states its required POSITIONAL second step (a `normalizedSignatureHash` is
+    also 64 lowercase hex); `src/engine/ids.rs`'s "MUST reproduce al-sem's output
+    byte-for-byte" header, which this very commit falsifies for member-bearing
+    keys; `detector_context.rs`'s present-tense "`compute_routine_id` has no
+    member discriminator"; `docs/engine-gaps.md`'s "no longer load-bearing"
+    reading of the G-18 guard; the `LocationList.Page.al` residual line numbers.
+  - **Hardening**: `l2::scope::unescape_al_identifier` is `pub(crate)` (one
+    crate-internal caller, and the visibility is what makes its "exactly one
+    definition" invariant enforceable), and a new test pins that the L2 and L3
+    id paths agree on an **escaped** enclosing member — the one part of this
+    design's named trap that had no executable pin, only a structural argument.
+- **Object globals are SHARED across an object's routines instead of copied into
+  each one — ~540 MB off the `analyze` peak on the 8020 corpus**
+  (`feat/l3-substrate-and-parked-items` Task 5 / lever L-3;
+  `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
+  `src/engine/l2/ir_walk.rs`, `src/engine/l3/l3_workspace.rs`, plus the
+  mechanical `.iter()`/constructor updates in `record_types.rs`,
+  `receiver_type.rs`, `capability_cone.rs`, `cross_app_l3.rs` and the test
+  constructors).
+  `ir_variables` appended the owning object's globals into EVERY routine's
+  `variables`, so `L3Routine.variables` held **2,997,353 copies of 53,186
+  distinct `(object, name)` pairs — a 56.4x replication costing ~443 MB of
+  payload per workspace** on the 8020 corpus (`.superpowers/sdd/scope-l3-substrate.md`
+  §3.3). **That factor is corpus-shaped, not a constant**: re-measured on the real
+  CDO/DO workspace it is **16.8x** (record variables 20.2x vs 8020's 65.4x), so the
+  fractional payload recovered there is ~9% against the 8020 headline's ~25%
+  (§8, dated re-measure). Quote the 8020 figure only with the corpus named.
+  This is the L4 "replicate the parent's data into every child" pattern
+  recurring in L3. The globals are byte-identical for every routine of an object
+  (lowercased name, canonicalized declared type, `scope: Some("global")`, never a
+  parameter, never an initializer), so nothing about them was ever per-routine.
+  `L3Routine.variables` is now a `RoutineVariables`: the routine's OWN params and
+  locals, plus an `Arc<[L3Variable]>` built ONCE per object and shared by all of
+  its routines, plus a (nearly always empty, non-allocating) `Box<[u32]>` of the
+  global indices this routine shadows. `RoutineVariables::iter` re-yields the
+  ORIGINAL flat list — params → locals → non-shadowed globals — so both
+  invariants the consumers depend on survive untouched: `record_types.rs`'s
+  pass-2b `entry().or_insert()` still sees the innermost declaration FIRST, and
+  `capability_cone.rs`'s LAST-wins `VarInfo` map still sees the globals LAST.
+  The single definition of "the object's globals" is the new
+  `ir_walk::ir_object_globals` (first-wins dedup by lowercased name — the
+  `#if`/`#else` shape), which `ir_variables` itself now calls, so the L2
+  projection's serialized `PFeatures.variables` cannot drift from the shared
+  table; the assembly path additionally `debug_assert!`s the full round trip
+  element-for-element on every routine of every fixture. Sharing is safe here
+  precisely because nothing mutates a routine's `variables` after assembly —
+  unlike `record_variables`, which `record_types.rs` upgrades per routine and
+  which is therefore explicitly NOT part of this change (the scoping report's
+  L-6 hazard).
+  **This removes the RETAINED copies only — it does not stop the copies from
+  being built.** `ir_variables` still materializes a fresh copy of every
+  object global (2 heap `String`s plus a `PAnchor`) for every routine before
+  `project_file` filters them back out to build the shared table, so the ~6 M
+  small allocations the scoping report counted on are still made, transiently.
+  The lever was scoped as never-build for the L3 assembly path; it landed as
+  build-then-discard, which is the most likely reason the measured saving
+  (below) came in under the ~700 MB scoped estimate. See `docs/OUTSTANDING.md`'s
+  L-3 entry for the follow-up that would close the gap.
+  **Measured** (8020 corpus, `--detector d8-commit-in-transaction`,
+  `ALSEM_TRACE=1`, `release-fast`, two runs each): whole-process
+  `analyze.total` peak **5,674/5,685 MB → 5,125/5,124 MB**;
+  `l3.parse_project_parallel` rss **2,914/2,916 → 2,372/2,375 MB**;
+  `l3.resolve` rss **2,782/2,797 → 2,258 MB**; `gate.coverage` rss
+  **3,498/3,534 → 2,857/2,883 MB**. Representation only: the DO workspace's
+  `analyze --format json --deterministic` output is byte-identical
+  (SHA-256 `f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`
+  on both sides), the 8020 run's own output is byte-identical, and all 29 golden
+  directories across 9 targets pass with zero files moved.
+  ⟨final-branch-review-l3.md M-6⟩ **This number rests on one inference, not a
+  dedicated single-variable re-measurement**: the 5,674/5,685 MB "before" figure
+  above sits downstream of Tasks 3 and 4's id-schema change, not immediately
+  after Task 2, so the ~540–560 MB attributed to Task 5 assumes T3/T4 moved the
+  peak by ~0 (both are SHA-256-hex substitutions of identical length either
+  way — a reasonable assumption, not an idle one) rather than isolating Task 5
+  by toggling it off against an otherwise-identical build, the way Task 3's own
+  re-freeze does (disable the conditional key-part append, reproduce the old
+  digest byte-for-byte).
+- **`SymbolTable` borrows the workspace instead of deep-cloning it — ~2.1 GB off
+  the `analyze` peak on the 8020 corpus** (`feat/l3-substrate-and-parked-items`
+  Task 2 / lever L-1; `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
+  `src/engine/l3/symbol_table.rs`, `src/engine/l3/l3_workspace.rs`,
+  `src/engine/l3/receiver_type.rs`, `src/engine/l3/implicit_edges.rs`,
+  `tests/temp_state/temp_state_shadowing.rs`).
+  `SymbolTable::build` opened with `objects.to_vec()` / `tables.to_vec()` /
+  `routines.to_vec()` — a complete deep copy of the assembled workspace, measured
+  at **~1.7 GB per table** on an 8020-file corpus, and the `analyze` path builds
+  **three** of them (`l3::resolve`, `build_detector_context`,
+  `project_coverage`). The type never needed ownership: every public accessor
+  already returns a reference (`&L3Object` / `&L3Table` / `&L3Routine`) and every
+  index map holds `usize`/`String` keys, so the clone existed purely to free
+  callers from a lifetime. `SymbolTable` is now `SymbolTable<'a>` over
+  `&'a [L3Object]` / `&'a [L3Table]` / `&'a [L3Routine]`; no accessor signature
+  and no lookup semantics changed (iteration order is the input slice order,
+  which is exactly what the clone preserved).
+  **Measured, 8020 corpus, `--detector d8-commit-in-transaction`, two runs:**
+  whole-process peak **7,796/7,793 MB → 5,688/5,684 MB (−2,108 MB)**;
+  `context.symbols_resolve_calls` rss_delta **1,681/1,715 MB → 249/250 MB**
+  (the residual is `resolve_calls`' real 254k-edge output, as predicted);
+  `l3.resolve` peak **4,865/4,860 MB → 2,944/2,938 MB**, i.e. the 1.4 GB
+  transient spike inside `resolve` is gone entirely and that span no longer
+  raises the process peak at all; `l3.assemble_resolve` rss_delta
+  **3,429/3,389 MB → 2,766/2,765 MB**. Output is byte-identical: the full DO
+  workspace `analyze --format json --deterministic` and the 8020 run both hash
+  the same before and after, `scripts/check-goldens` passes with zero golden
+  files touched, and the l4 differential stays 17/17.
+  **One structural consequence, made explicit rather than papered over:**
+  `l3_workspace::resolve` walks `&mut workspace.routines` while consulting the
+  table, so a borrowing table cannot also hold `&workspace.routines` there. It
+  never needed to — `record_types::resolve_routine_record_types` asks the table
+  only `object_by_type_number` / `object_by_type_name` / `table_by_name` /
+  `table_by_id`, never a routine — so `resolve` now uses a new, deliberately
+  named `SymbolTable::build_without_routines(objects, tables)`. The routine
+  index it used to populate there (100,941 deep-cloned routines on this corpus)
+  was read by nothing; the constructor's name now says so.
+  **Riding along, same function, pre-authorized hygiene:** `l3_workspace::resolve`'s
+  `object_by_id` map (`l3_workspace.rs:1478`) is now `HashMap<&str, &L3Object>`
+  instead of a second ~4 MB clone of `objects` — identical semantics (same
+  iteration order, same `HashMap::insert` LAST-wins on a duplicate id).
 - **L4 capability cones — the compact `ConeDerivedStore` substrate replaces the
   per-routine inherited-fact Vec, and the SCC walk stops holding cones nothing
   will read** (`feat/l4-summary-redesign`, Part C C1 Tasks 1–4;

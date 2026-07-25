@@ -26,6 +26,7 @@ use al_syntax::IdentifierFoldExt;
 use crate::engine::ids::{encode_object_id, to_stable_object_id, to_stable_routine_id_from_parts};
 use crate::engine::l2::node_util::{Utf16Cols, strip_quotes};
 use crate::engine::perf_trace as pt;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // L3 model types — workspace-level, in-memory (NOT the serde projection shape).
@@ -299,6 +300,98 @@ pub struct L3Variable {
     pub scope: Option<String>,
 }
 
+/// A routine's lexical variable list — **params → locals → non-shadowed object
+/// globals** — stored WITHOUT replicating the object's globals into every routine.
+///
+/// An object's globals are byte-identical for each of its routines (lowercased name,
+/// canonicalized declared type, `scope: Some("global")`, never a parameter, never an
+/// initializer), so one `Arc<[L3Variable]>` per object is shared by all of them. On
+/// the 8020 corpus that removed 2,997,353 copies of 53,186 distinct globals — a 56.4×
+/// replication costing ~443 MB of payload (see `.superpowers/sdd/scope-l3-substrate.md`
+/// §3.3). This is L4 pattern (a) recurring in L3.
+///
+/// **This is a representation change only.** [`RoutineVariables::iter`] yields exactly
+/// the flat list the L2 projection emits (`PFeatures::variables`) — same elements, same
+/// order, same shadowing — and the assembly path asserts that round trip in debug
+/// builds. Two invariants the consumers depend on, both preserved:
+///
+/// * **order is params → locals → globals.** `record_types.rs`'s pass-2b builds a
+///   name→declared-type map with `entry().or_insert()` (FIRST-wins), so the innermost
+///   declaration must come first; `capability_cone.rs`'s `VarInfo` map is LAST-wins
+///   over the same sequence and needs the globals last.
+/// * **the sequence is name-unique on the lowercased name.** A param/local shadows a
+///   same-named global (recorded in `shadowed` below), and duplicate globals within an
+///   object are deduped first-wins by [`crate::engine::l2::ir_walk::ir_object_globals`].
+///
+/// Nothing mutates a routine's variables after assembly (unlike `record_variables`,
+/// which `record_types.rs` upgrades per routine — see the L-6 hazard note in the
+/// scoping report), so sharing cannot leak a per-routine change to a sibling.
+#[derive(Debug, Clone, Default)]
+pub struct RoutineVariables {
+    /// The routine's OWN variables: parameters in declaration order, then locals —
+    /// exactly the `scope != "global"` prefix of the L2 list.
+    own: Vec<L3Variable>,
+    /// The owning object's globals, shared with every sibling routine.
+    globals: Arc<[L3Variable]>,
+    /// Ascending indices into `globals` this routine SHADOWS (it declares a param or
+    /// local of the same lowercased name). Empty for almost every routine, and an
+    /// empty `Box<[u32]>` does not allocate — precomputed so [`Self::iter`] never
+    /// re-scans `own` by name for every global (an O(own × globals) name scan);
+    /// the ascending order lets [`Self::iter`]'s own per-global membership test run
+    /// as a `binary_search` (O(log shadowed)) rather than a linear scan.
+    shadowed: Box<[u32]>,
+}
+
+impl RoutineVariables {
+    /// A routine with no object globals in scope — dependency/ABI routines (whose
+    /// globals are not modelled at all) and test fixtures.
+    pub fn from_own(own: Vec<L3Variable>) -> Self {
+        Self {
+            own,
+            globals: Arc::default(),
+            shadowed: Box::default(),
+        }
+    }
+
+    /// Assemble from the routine's own params/locals plus the owning object's shared
+    /// global table.
+    ///
+    /// Both name sets are already lowercased by the L2 projection
+    /// (`ir_variables`/`ir_object_globals` both apply `to_ascii_lowercase`), so the
+    /// shadow test is exact string equality — the same test the inlined
+    /// `HashSet<String>` in `ir_variables` performs.
+    pub fn new(own: Vec<L3Variable>, globals: Arc<[L3Variable]>) -> Self {
+        let shadowed: Box<[u32]> = if own.is_empty() || globals.is_empty() {
+            Box::default()
+        } else {
+            globals
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| own.iter().any(|o| o.name == g.name))
+                .map(|(i, _)| i as u32)
+                .collect()
+        };
+        Self {
+            own,
+            globals,
+            shadowed,
+        }
+    }
+
+    /// The routine's full lexical scope, in the L2 order: params → locals → the
+    /// object's globals it does not shadow.
+    pub fn iter(&self) -> impl Iterator<Item = &L3Variable> {
+        let shadowed = &self.shadowed;
+        self.own.iter().chain(
+            self.globals
+                .iter()
+                .enumerate()
+                .filter(move |(i, _)| shadowed.binary_search(&(*i as u32)).is_err())
+                .map(|(_, g)| g),
+        )
+    }
+}
+
 /// A routine parameter (the L3-relevant subset of al-sem's `ParameterSymbol`) —
 /// drives arity matching, `calleeParameterIsVar` upgrades, and overload arg-type
 /// disambiguation (`typeText`).
@@ -320,8 +413,12 @@ pub struct L3Parameter {
 pub struct L3Routine {
     /// Internal routine id: `${modelInstanceId}/${canonicalRoutineKeyHash}`.
     pub id: String,
-    /// StableRoutineId: `${stableObjectId}#${normalizedSignatureHash}` — the
-    /// modelInstanceId-independent key the L3 record-type projection emits.
+    /// StableRoutineId: `${stableObjectId}#${64 lowercase hex}` — the
+    /// modelInstanceId-independent key the L3 record-type projection emits, and
+    /// the id `l5::fingerprint` substitutes into every `rootCauseKey`. The hex is
+    /// the `normalizedSignatureHash` for a member-less routine and its
+    /// enclosing-member fold for a member trigger (`enclosing_member` below); see
+    /// [`crate::engine::ids::to_stable_routine_id_from_parts`].
     pub stable_routine_id: String,
     /// Owning object's internal id.
     pub object_id: String,
@@ -353,7 +450,10 @@ pub struct L3Routine {
     /// Field accesses (from L2 body walk). Required by the R3a-2 summary
     /// engine to derive RecordRoleSummary.readsFields per record parameter.
     pub field_accesses: Vec<crate::engine::l2::features::PFieldAccess>,
-    pub variables: Vec<L3Variable>,
+    /// The routine's lexical scope (params → locals → non-shadowed object globals).
+    /// Iterate with `.iter()`; see [`RoutineVariables`] for why the globals are shared
+    /// rather than replicated per routine.
+    pub variables: RoutineVariables,
     /// Declared parameters (in order) — drives arity + var-ness + arg-type
     /// disambiguation. Empty for trigger routines with no parameter list.
     pub parameters: Vec<L3Parameter>,
@@ -537,13 +637,11 @@ fn anchor_from_origin(
     }
 }
 
-/// Unescape an AL identifier's logical name: a quoted AL identifier escapes an inner
-/// double-quote by doubling it (`""`), so the logical name collapses each `""` back to
-/// a single `"`. Called AFTER `strip_quotes` (which only trims the boundary quotes), so
-/// the input here is the inner text. Matches the profiler's display form (RE-4).
-fn unescape_al_identifier(inner: &str) -> String {
-    inner.replace("\"\"", "\"")
-}
+// `unescape_al_identifier` (a quoted AL identifier escapes an inner double-quote by
+// doubling it, so the logical name collapses each `""` back to one `"` — the
+// profiler's display form, RE-4) moved to `l2::scope`: the enclosing-member name it
+// normalizes is now ALSO the routine id's member discriminator, so exactly one
+// definition may exist. `l2::ir_walk::ir_enclosing_member` is the only caller.
 
 // ---------------------------------------------------------------------------
 // Per-file assembly.
@@ -768,11 +866,39 @@ fn project_file(
             continue;
         }
 
+        // L-3: the object's GLOBAL scalar variables, built ONCE and shared (by `Arc`)
+        // with every routine of the object instead of copied into each one's
+        // `variables`. Identical to the tail `ir_variables` appends per routine —
+        // same source, same first-wins dedup, same lowercasing — minus the anchor,
+        // which `L3Variable` does not carry. See [`RoutineVariables`].
+        let object_globals: Arc<[L3Variable]> = Arc::from(
+            crate::engine::l2::ir_walk::ir_object_globals(&ir_file, oi, cols, source_unit_id)
+                .into_iter()
+                .map(|g| L3Variable {
+                    name: g.name,
+                    declared_type: g.declared_type,
+                    is_parameter: g.is_parameter,
+                    parameter_index: g.parameter_index,
+                    initializer: g.initializer,
+                    scope: Some(g.scope),
+                })
+                .collect::<Vec<_>>(),
+        );
+
         for ir_routine in &o.routines {
             let rname = ir_routine.name.clone();
             if rname.is_empty() {
                 continue;
             }
+
+            // E1: the enclosing member of a member trigger — the unescaped logical
+            // identifier of the field / control / action / dataitem wrapper, `None`
+            // for procedures and object-level triggers. Computed ONCE here because
+            // it is both the routine id's discriminator (below) and the
+            // `L3Routine.enclosing_member` field (further down): the two MUST be the
+            // same string, and `ir_enclosing_member` is the single place that
+            // unescapes it.
+            let enclosing_member = crate::engine::l2::ir_walk::ir_enclosing_member(ir_routine);
 
             let (routine_id, mut features) = {
                 let kind_for_id = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
@@ -783,6 +909,7 @@ fn project_file(
                     object_number,
                     kind_for_id,
                     &rname,
+                    enclosing_member.as_deref(),
                     &params_for_id,
                     ir_routine.return_type.as_deref(),
                     model_instance_id,
@@ -907,9 +1034,13 @@ fn project_file(
                 })
                 .collect();
             let field_accesses = std::mem::take(&mut features.field_accesses);
-            let variables = features
+            // L-3: keep only the routine's OWN variables (the `scope != "global"`
+            // prefix — params then locals); the globals tail is the object's shared
+            // table, re-derived per routine by `RoutineVariables::iter`.
+            let own_variables: Vec<L3Variable> = features
                 .variables
                 .iter()
+                .filter(|v| v.scope != "global")
                 .map(|v| L3Variable {
                     name: v.name.clone(),
                     declared_type: v.declared_type.clone(),
@@ -919,6 +1050,31 @@ fn project_file(
                     scope: Some(v.scope.clone()),
                 })
                 .collect();
+            let variables = RoutineVariables::new(own_variables, Arc::clone(&object_globals));
+            // The round trip that makes this a representation change and nothing more:
+            // the shared form must re-yield the L2 list element-for-element, in order.
+            // (`initializer` is excluded only because it is `None` for every global and
+            // moved verbatim for every own var.)
+            debug_assert!(
+                variables
+                    .iter()
+                    .map(|v| (
+                        v.name.as_str(),
+                        v.declared_type.as_str(),
+                        v.is_parameter,
+                        v.parameter_index,
+                        v.scope.as_deref()
+                    ))
+                    .eq(features.variables.iter().map(|v| (
+                        v.name.as_str(),
+                        v.declared_type.as_str(),
+                        v.is_parameter,
+                        v.parameter_index,
+                        Some(v.scope.as_str())
+                    ))),
+                "RoutineVariables must reproduce the flat L2 variable list exactly \
+                 (routine {routine_id})"
+            );
 
             // The routine's own parameters + return type for the call resolver, from
             // the matched IR routine (legacy extractors as a fallback). Reuses the SAME
@@ -1052,9 +1208,11 @@ fn project_file(
             let body_available = ir_routine.body.is_some();
             let parse_incomplete = ir_routine.parse_incomplete;
 
-            // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
-            // The hash reuses the same param/kind/return extraction as the internal
-            // routine id (`routine_normalized_signature_hash`), so they cannot drift.
+            // StableRoutineId = `${stableObjectId}#{64 hex}`. The hash reuses the same
+            // param/kind/return extraction as the internal routine id
+            // (`routine_normalized_signature_hash`), so they cannot drift, and it takes
+            // the SAME `enclosing_member` value computed once at the top of this loop as
+            // the internal id's discriminator — one string, one normalization, both ids.
             let stable_object_id = to_stable_object_id(&object_id);
             let norm_hash = {
                 let param_specs: Vec<crate::engine::ids::ParamSpec> = param_syms
@@ -1070,7 +1228,11 @@ fn project_file(
                     return_type.as_deref(),
                 )
             };
-            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
+            let stable_routine_id = to_stable_routine_id_from_parts(
+                &stable_object_id,
+                &norm_hash,
+                enclosing_member.as_deref(),
+            );
 
             // Routine kind + structured attributes (the event-graph inputs). Reuse the
             // SAME L2 attribute indexing that produces the L2 projection's
@@ -1088,23 +1250,20 @@ fn project_file(
             let access_modifier = ir_routine.access_modifier.clone();
 
             // E1: enclosing-member capture (additive — never serialized into a golden).
-            // A member-trigger (parent is a member-bearing wrapper) gets the unescaped
-            // logical member name + the WRAPPER node's source range (RE-2/RE-3/RE-4) and
-            // `originatingObject` = the StableObjectId of the object decl in scope (the
-            // EXTENSION object for an extension-declared trigger — RE-5). Procedures and
-            // object-level triggers (OnRun / OnOpenPage) carry a non-member parent → all
-            // `None`.
-            let (enclosing_member, enclosing_member_range, originating_object) =
-                match &ir_routine.enclosing_member {
-                    // IR carries the (outer-quote-stripped) member name + wrapper origin;
-                    // the unescape + range anchoring match the legacy enclosing_member_of.
-                    Some((member_name, wrapper_origin)) => (
-                        Some(unescape_al_identifier(member_name)),
-                        Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
-                        Some(stable_object_id.clone()),
-                    ),
-                    None => (None, None, None),
-                };
+            // A member-trigger (parent is a member-bearing wrapper) gets the WRAPPER
+            // node's source range (RE-2/RE-3/RE-4) and `originatingObject` = the
+            // StableObjectId of the object decl in scope (the EXTENSION object for an
+            // extension-declared trigger — RE-5). Procedures and object-level triggers
+            // (OnRun / OnOpenPage) carry a non-member parent → all `None`. The member
+            // NAME itself was unescaped once at the top of this loop (`enclosing_member`),
+            // because the routine id consumes it too.
+            let (enclosing_member_range, originating_object) = match &ir_routine.enclosing_member {
+                Some((_member_name, wrapper_origin)) => (
+                    Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
+                    Some(stable_object_id.clone()),
+                ),
+                None => (None, None),
+            };
 
             workspace.routines.push(L3Routine {
                 id: routine_id,
@@ -1463,18 +1622,26 @@ fn read_primary_app_from_disk(
 /// `cross_app_l3_poison` test guards). NOTHING in `resolve` reads beyond them.
 pub fn resolve(workspace: &mut L3Workspace) {
     let _s = pt::span("l3", "l3.resolve");
-    let symbols = SymbolTable::build(&workspace.objects, &workspace.tables, &workspace.routines);
+    // ROUTINE-FREE index (see `SymbolTable::build_without_routines`): the loop
+    // below takes `&mut workspace.routines`, so the table — which borrows the
+    // workspace rather than cloning it — must not hold `&workspace.routines`.
+    // It never needed to: `resolve_routine_record_types` only ever asks the
+    // table about objects and tables. `objects`/`tables` are disjoint fields, so
+    // borrowing them immutably alongside the mutable routine walk is fine.
+    let symbols = SymbolTable::build_without_routines(&workspace.objects, &workspace.tables);
 
-    // objectId → object, so a routine maps back to its owning object.
+    // objectId → object, so a routine maps back to its owning object. Borrowed,
+    // not cloned — `resolve_routine_record_types` takes `Option<&L3Object>`, and
+    // `HashMap::insert` is LAST-wins on a duplicate id either way.
     use std::collections::HashMap;
-    let object_by_id: HashMap<String, L3Object> = workspace
+    let object_by_id: HashMap<&str, &L3Object> = workspace
         .objects
         .iter()
-        .map(|o| (o.id.clone(), o.clone()))
+        .map(|o| (o.id.as_str(), o))
         .collect();
 
     for routine in &mut workspace.routines {
-        let object = object_by_id.get(&routine.object_id);
+        let object = object_by_id.get(routine.object_id.as_str()).copied();
         resolve_routine_record_types(routine, object, &symbols);
     }
 
@@ -1825,6 +1992,150 @@ impl TableView<'_> {
 mod tests {
     use super::*;
 
+    fn var(name: &str, ty: &str, scope: &str) -> L3Variable {
+        L3Variable {
+            name: name.to_string(),
+            declared_type: ty.to_string(),
+            is_parameter: scope == "parameter",
+            parameter_index: None,
+            initializer: None,
+            scope: Some(scope.to_string()),
+        }
+    }
+
+    fn names(v: &RoutineVariables) -> Vec<&str> {
+        v.iter().map(|x| x.name.as_str()).collect()
+    }
+
+    /// L-3: the shared form must yield params → locals → globals, with any global
+    /// the routine's own params/locals shadow dropped — the flat list `ir_variables`
+    /// used to materialize per routine.
+    #[test]
+    fn routine_variables_yields_own_then_unshadowed_globals() {
+        let globals: Arc<[L3Variable]> = Arc::from(vec![
+            var("ga", "Integer", "global"),
+            var("shadowed", "Integer", "global"),
+            var("gb", "Text", "global"),
+        ]);
+
+        // No shadowing: every global is visible, after the routine's own vars.
+        let plain = RoutineVariables::new(
+            vec![var("p", "Integer", "parameter"), var("l", "Text", "local")],
+            Arc::clone(&globals),
+        );
+        assert_eq!(names(&plain), ["p", "l", "ga", "shadowed", "gb"]);
+
+        // A local of the same lowercased name hides exactly that one global, and the
+        // survivors keep their relative order.
+        let shadowing = RoutineVariables::new(
+            vec![
+                var("p", "Integer", "parameter"),
+                var("shadowed", "Code[20]", "local"),
+            ],
+            Arc::clone(&globals),
+        );
+        assert_eq!(names(&shadowing), ["p", "shadowed", "ga", "gb"]);
+        assert_eq!(
+            shadowing
+                .iter()
+                .find(|v| v.name == "shadowed")
+                .unwrap()
+                .declared_type,
+            "Code[20]",
+            "the routine's OWN declaration must win, not the object global's",
+        );
+
+        // Degenerate shapes: no globals, and no own vars.
+        assert_eq!(
+            names(&RoutineVariables::from_own(vec![var(
+                "only", "Integer", "local"
+            )])),
+            ["only"]
+        );
+        assert_eq!(
+            names(&RoutineVariables::new(Vec::new(), Arc::clone(&globals))),
+            ["ga", "shadowed", "gb"]
+        );
+        assert!(names(&RoutineVariables::default()).is_empty());
+    }
+
+    /// The globals are SHARED, not copied: two routines of the same object hold the
+    /// same allocation. This is the whole point of the representation.
+    #[test]
+    fn routine_variables_share_one_global_allocation() {
+        let globals: Arc<[L3Variable]> = Arc::from(vec![var("g", "Integer", "global")]);
+        let a = RoutineVariables::new(vec![var("x", "Integer", "local")], Arc::clone(&globals));
+        let b = RoutineVariables::new(vec![var("y", "Integer", "local")], Arc::clone(&globals));
+        assert!(
+            std::ptr::eq(
+                a.iter().find(|v| v.name == "g").unwrap(),
+                b.iter().find(|v| v.name == "g").unwrap(),
+            ),
+            "sibling routines must see the SAME global element, not per-routine copies",
+        );
+    }
+
+    /// Duplicate object globals (the `#if`/`#else` shape — the IR carries both
+    /// branches) are deduped first-wins ONCE, at the object level.
+    ///
+    /// ⟨task-5-review.md finding F3⟩ The prior version of this test asserted
+    /// name-uniqueness over `tests/fixtures/props`, whose only routine-bearing
+    /// object declares exactly one global and one routine — three distinct names,
+    /// so the `seen.insert` assertion was unfalsifiable there: it passed whether or
+    /// not `ir_object_globals`'s dedup existed at all. It also attributed its
+    /// coverage to the `#if`/`#else` shape while no `#if` fixture existed anywhere
+    /// in the repo (`grep -rl "#if" tests/ --include=*.al` returned zero files).
+    /// This version hand-states the precondition: a REAL `#if`/`#else` global
+    /// declaration (the lowerer never evaluates the condition — see
+    /// `is_preproc_wrapper`'s module doc in `crates/al-syntax/src/lower/mod.rs` —
+    /// so both branches are always collected into `ObjectDecl::globals`), run
+    /// through the real dedup via full assembly, asserting both that the
+    /// duplicate collapses to ONE entry and that the FIRST branch's declared type
+    /// is the one that survives.
+    #[test]
+    fn object_globals_are_deduped_first_wins() {
+        let src = r#"
+codeunit 50816 "T5 F3 Dedup"
+{
+    var
+#if T5F3COND
+        MyGlobal: Integer;
+#else
+        MyGlobal: Text;
+#endif
+
+    procedure DoIt()
+    begin
+    end;
+}
+"#;
+        let files = vec![("src/T5F3Dedup.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "66666666-0000-0000-0000-0000000cp5f3");
+        let routine = resolved
+            .workspace
+            .routines
+            .iter()
+            .find(|r| r.name.eq_ignore_ascii_case("DoIt"))
+            .expect("fixture precondition: the DoIt procedure");
+
+        let globals: Vec<&L3Variable> = routine
+            .variables
+            .iter()
+            .filter(|v| v.name == "myglobal")
+            .collect();
+        assert_eq!(
+            globals.len(),
+            1,
+            "the #if/#else branches must collapse to ONE `myglobal` entry, not two \
+             (got {globals:?})"
+        );
+        assert_eq!(
+            globals[0].declared_type, "Integer",
+            "first-wins: the #if branch's `Integer` must survive over the #else \
+             branch's `Text`"
+        );
+    }
+
     // Task 2 (BCQuality wave): `SingleInstance` (Codeunit) + the Page write-surface
     // booleans (`Editable`/`InsertAllowed`/`ModifyAllowed`/`DeleteAllowed`) forward
     // onto `L3Object`, plus the object decl's own `source_anchor` — substrate for
@@ -1877,5 +2188,393 @@ mod tests {
         assert_eq!(scope_of("GlobalNames").as_deref(), Some("global"));
         assert_eq!(scope_of("LocalN").as_deref(), Some("local"));
         assert_eq!(scope_of("ParamN").as_deref(), Some("parameter"));
+    }
+
+    /// Task 3: the member discriminator, end-to-end on real assembled source.
+    ///
+    /// Two page actions and two page fields each declare `trigger OnAction()` /
+    /// `trigger OnValidate()`. Every one of the four is identical in all six legacy
+    /// key parts (app / object type / object number / kind / name / signature), so
+    /// before this change each PAIR shared one internal routine id — the defect that
+    /// collapsed 23.9 % of DO routines. They must now be pairwise distinct, and the
+    /// object-level `OnOpenPage` trigger and the plain procedure (no enclosing
+    /// member) must still be distinct from everything.
+    #[test]
+    fn same_name_member_triggers_get_distinct_routine_ids() {
+        let src = r#"
+page 50813 "CP3 Wizard"
+{
+    PageType = Card;
+    SourceTable = "CP3 Setup";
+
+    layout
+    {
+        area(Content)
+        {
+            field(Alpha; Rec."No.") { trigger OnValidate() begin end; }
+            field("Be""ta"; Rec."No.") { trigger OnValidate() begin end; }
+        }
+    }
+
+    actions
+    {
+        area(Processing)
+        {
+            action(First) { trigger OnAction() begin end; }
+            action(Second) { trigger OnAction() begin end; }
+        }
+    }
+
+    trigger OnOpenPage() begin end;
+
+    local procedure Touch() begin end;
+}
+"#;
+        let files = vec![("src/CP3Wizard.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "33333333-0000-0000-0000-0000000cp003");
+        let routines = &resolved.workspace.routines;
+
+        let ids_named = |n: &str| -> Vec<String> {
+            let mut v: Vec<String> = routines
+                .iter()
+                .filter(|r| r.name.eq_ignore_ascii_case(n))
+                .map(|r| r.id.clone())
+                .collect();
+            v.sort();
+            v
+        };
+
+        for name in ["OnValidate", "OnAction"] {
+            let ids = ids_named(name);
+            assert_eq!(ids.len(), 2, "fixture precondition: two `{name}` bodies");
+            assert_ne!(
+                ids[0], ids[1],
+                "two `{name}` triggers under different members must not share an id"
+            );
+        }
+
+        // …and the discriminator is the ONLY reason they differ. Re-mint each pair's
+        // key with `enclosing_member: None` — the pre-Task-3 six-part schema — and
+        // assert the pair collides there. This states "these two DID share an id
+        // before the member discriminator" as an executable fact rather than a claim
+        // in a comment, so the test cannot pass for an unrelated reason.
+        for name in ["OnValidate", "OnAction"] {
+            let legacy: Vec<String> = routines
+                .iter()
+                .filter(|r| r.name.eq_ignore_ascii_case(name))
+                .map(|r| {
+                    crate::engine::ids::encode_canonical_routine_key(
+                        &crate::engine::ids::CanonicalRoutineKey {
+                            app_guid: r.app_guid.clone(),
+                            object_type: r.object_type.clone(),
+                            object_number: r.object_number,
+                            routine_kind: r.kind.clone(),
+                            routine_name: r.name.clone(),
+                            normalized_signature_hash: r.normalized_signature_hash.clone(),
+                            enclosing_member: None,
+                        },
+                    )
+                })
+                .collect();
+            assert_eq!(
+                legacy[0], legacy[1],
+                "precondition: without the member discriminator both `{name}` bodies \
+                 hash to one key — that is the defect being closed"
+            );
+        }
+
+        // The member NAME is what separates them — carried, unescaped, on the model.
+        let mut members: Vec<String> = routines
+            .iter()
+            .filter(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+            .filter_map(|r| r.enclosing_member.clone())
+            .collect();
+        members.sort();
+        assert_eq!(members, vec!["Alpha".to_string(), r#"Be"ta"#.to_string()]);
+
+        // Whole-object closure: every routine in the fixture has its own id, and the
+        // two member-less routines are in that set too.
+        let all: std::collections::HashSet<&str> = routines.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            all.len(),
+            routines.len(),
+            "no two routines in this object may share an internal id"
+        );
+        assert!(
+            routines
+                .iter()
+                .any(|r| r.name.eq_ignore_ascii_case("OnOpenPage") && r.enclosing_member.is_none()),
+            "an object-level trigger carries no enclosing member (its id is unchanged)"
+        );
+    }
+
+    /// Task 4: the same discriminator on the **STABLE** id — the one that reaches
+    /// user baselines.
+    ///
+    /// Task 3 separated the four sibling bodies of the fixture above in the model,
+    /// but their FINDINGS still hashed to one fingerprint, because
+    /// `l5::fingerprint::fingerprint_of` substitutes internal ids to their STABLE
+    /// image before hashing and the stable id was still member-blind. Same fixture,
+    /// same closure, one level up — plus the executable precondition that the
+    /// pre-Task-4 form (member-less) DID collide, so this cannot pass for an
+    /// unrelated reason.
+    #[test]
+    fn same_name_member_triggers_get_distinct_stable_routine_ids() {
+        let src = r#"
+page 50815 "CP5 Wizard"
+{
+    PageType = Card;
+    SourceTable = "CP5 Setup";
+
+    layout
+    {
+        area(Content)
+        {
+            field(Alpha; Rec."No.") { trigger OnValidate() begin end; }
+            field("Be""ta"; Rec."No.") { trigger OnValidate() begin end; }
+        }
+    }
+
+    actions
+    {
+        area(Processing)
+        {
+            action(First) { trigger OnAction() begin end; }
+            action(Second) { trigger OnAction() begin end; }
+        }
+    }
+
+    trigger OnOpenPage() begin end;
+
+    local procedure Touch() begin end;
+}
+"#;
+        let files = vec![("src/CP5Wizard.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "55555555-0000-0000-0000-0000000cp005");
+        let routines = &resolved.workspace.routines;
+
+        let named = |n: &str| -> Vec<&L3Routine> {
+            routines
+                .iter()
+                .filter(|r| r.name.eq_ignore_ascii_case(n))
+                .collect()
+        };
+
+        for name in ["OnValidate", "OnAction"] {
+            let pair = named(name);
+            assert_eq!(pair.len(), 2, "fixture precondition: two `{name}` bodies");
+            assert_ne!(
+                pair[0].stable_routine_id, pair[1].stable_routine_id,
+                "two `{name}` triggers under different members must not share a STABLE id"
+            );
+            // The precondition, executable: the pre-Task-4 form — the same object and
+            // the same signature hash, with no member — collides for the pair.
+            let legacy: Vec<String> = pair
+                .iter()
+                .map(|r| {
+                    crate::engine::ids::to_stable_routine_id_from_parts(
+                        &to_stable_object_id(&r.object_id),
+                        &r.normalized_signature_hash,
+                        None,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                legacy[0], legacy[1],
+                "precondition: without the member discriminator both `{name}` bodies \
+                 share ONE stable id — that is what made their findings share a \
+                 fingerprint and be cross-suppressed by a single baseline entry"
+            );
+        }
+
+        // The member-LESS routines keep the legacy stable id byte-for-byte, which is
+        // why only member-anchored fingerprints move in a user's baseline.
+        for name in ["OnOpenPage", "Touch"] {
+            let r = named(name);
+            assert_eq!(r.len(), 1, "fixture precondition: one `{name}`");
+            let r = r[0];
+            assert!(r.enclosing_member.is_none());
+            assert_eq!(
+                r.stable_routine_id,
+                format!(
+                    "{}#{}",
+                    to_stable_object_id(&r.object_id),
+                    r.normalized_signature_hash
+                ),
+                "a routine with no enclosing member keeps `{{stableObjectId}}#{{normalizedSignatureHash}}`"
+            );
+        }
+
+        // Whole-object closure on the stable id too.
+        let all: std::collections::HashSet<&str> = routines
+            .iter()
+            .map(|r| r.stable_routine_id.as_str())
+            .collect();
+        assert_eq!(
+            all.len(),
+            routines.len(),
+            "no two routines in this object may share a stable routine id"
+        );
+    }
+
+    /// ⟨task-3 fix wave, review M-8⟩ The L2 and L3 id paths must agree on an
+    /// **ESCAPED** member name.
+    ///
+    /// Two independent paths mint the internal routine id for the same source
+    /// routine: `l2_workspace::build_proutine` and `l3_workspace::project_file`.
+    /// Both take the discriminator from `ir_walk::ir_enclosing_member`, which is the
+    /// single place `scope::unescape_al_identifier` is applied — the raw IR value is
+    /// only outer-quote-stripped, so a path that fed the raw value would mint a
+    /// DIFFERENT id for the same routine and silently split the cross-path join.
+    /// That normalization split was called out as *the* trap of this design, and
+    /// until now the guarantee was structural only: no golden fixture has an escaped
+    /// member, and `same_name_member_triggers_get_distinct_routine_ids` exercises
+    /// `field("Be""ta"; …)` through the L3 path alone. This pins it executably.
+    ///
+    /// The internal id is not a field on `PRoutine` (which carries only
+    /// `stableRoutineId`), but it IS observable: `build_proutine` feeds it to
+    /// `project_routine_features_ir`, which mints every op/callsite id as
+    /// `{routine_id}/op{n}` / `{routine_id}/cs{n}`. Stripping the last `/`-segment
+    /// recovers exactly the id the L2 path computed — the same recovery
+    /// `call_graph_projection::StableMap::stable_site` performs in production.
+    #[test]
+    fn l2_and_l3_agree_on_the_id_of_an_escaped_enclosing_member() {
+        // ONE `OnValidate`, under a member whose logical name contains a literal `"`
+        // (`Be"ta`, written `"Be""ta"`), so `project_named_routine`'s first-match
+        // lookup is unambiguous. Its body has a db op purely so the L2 features carry
+        // an id to recover the routine id from.
+        let src = r#"
+table 50814 "CP4 Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50814 "CP4 Wizard"
+{
+    PageType = Card;
+    SourceTable = "CP4 Setup";
+
+    layout
+    {
+        area(Content)
+        {
+            field("Be""ta"; Rec."No.")
+            {
+                trigger OnValidate()
+                var
+                    Setup: Record "CP4 Setup";
+                begin
+                    Setup.Insert();
+                end;
+            }
+        }
+    }
+}
+"#;
+        const APP_GUID: &str = "44444444-0000-0000-0000-0000000cp004";
+        const UNIT: &str = "ws:src/CP4Wizard.al";
+
+        // --- L3 path -------------------------------------------------------
+        let files = vec![(UNIT.trim_start_matches("ws:").to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, APP_GUID);
+        let l3: Vec<&L3Routine> = resolved
+            .workspace
+            .routines
+            .iter()
+            .filter(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+            .collect();
+        assert_eq!(l3.len(), 1, "fixture precondition: exactly one OnValidate");
+        let l3_routine = l3[0];
+        assert_eq!(
+            l3_routine.enclosing_member.as_deref(),
+            Some(r#"Be"ta"#),
+            "the stored member must be the UNESCAPED logical identifier"
+        );
+
+        // --- L2 path -------------------------------------------------------
+        let l2 = crate::engine::l2::l2_workspace::project_named_routine(
+            src,
+            "OnValidate",
+            APP_GUID,
+            UNIT,
+        )
+        .expect("L2 must project the OnValidate trigger");
+        let witness = l2
+            .features
+            .record_operations
+            .first()
+            .expect("fixture precondition: the trigger body has a record operation");
+        let (l2_routine_id, _) = witness
+            .id
+            .rsplit_once('/')
+            .expect("an op id is `{routine_id}/op{n}`");
+
+        assert_eq!(
+            l2_routine_id, l3_routine.id,
+            "the L2 and L3 id paths must mint the SAME internal routine id for a \
+             routine under an ESCAPED enclosing member — a divergence here means one \
+             path stopped going through `ir_enclosing_member`'s single unescape"
+        );
+
+        // ⟨task 4⟩ The same agreement on the STABLE id, which `PRoutine` carries
+        // directly. This is the half that reaches user baselines: a normalization
+        // split here would give the same routine two fingerprints depending on which
+        // path produced it.
+        assert_eq!(
+            l2.stable_routine_id, l3_routine.stable_routine_id,
+            "the L2 and L3 paths must mint the SAME STABLE routine id for a routine \
+             under an ESCAPED enclosing member"
+        );
+        // …and it is genuinely discriminated, not accidentally equal to the legacy
+        // member-less form.
+        assert_ne!(
+            l3_routine.stable_routine_id,
+            crate::engine::ids::to_stable_routine_id_from_parts(
+                &to_stable_object_id(&l3_routine.object_id),
+                &l3_routine.normalized_signature_hash,
+                None,
+            ),
+            "a member trigger's stable id must differ from its pre-discriminator form"
+        );
+        assert_ne!(
+            l3_routine.stable_routine_id,
+            crate::engine::ids::to_stable_routine_id_from_parts(
+                &to_stable_object_id(&l3_routine.object_id),
+                &l3_routine.normalized_signature_hash,
+                Some(r#"Be""ta"#),
+            ),
+            "the escaped and unescaped member texts must fold differently into the \
+             STABLE id too — otherwise this test could not tell a missing unescape \
+             from a present one"
+        );
+
+        // …and the agreement is on the UNESCAPED form specifically. Re-mint the id
+        // from the RAW (still-escaped) member text and assert it differs: without
+        // this, both paths agreeing on a wrongly-escaped string would pass the
+        // assertion above and the test would prove nothing about the normalization.
+        let params = crate::engine::l2::ir_walk::ir_parameter_symbols(
+            al_syntax::parse(src).objects[1]
+                .routines
+                .iter()
+                .find(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+                .expect("IR must carry the OnValidate trigger"),
+        );
+        let raw_escaped_id = crate::engine::l2::scope::compute_routine_id(
+            APP_GUID,
+            "Page",
+            50814,
+            "trigger",
+            "OnValidate",
+            Some(r#"Be""ta"#),
+            &params,
+            None,
+            MODEL_INSTANCE_ID_DEFAULT,
+        );
+        assert_ne!(
+            raw_escaped_id, l3_routine.id,
+            "the escaped and unescaped member texts must hash differently — otherwise \
+             this test could not tell a missing unescape from a present one"
+        );
     }
 }

@@ -1711,6 +1711,7 @@ fn walk_flat(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::l3::l3_workspace::RoutineVariables;
 
     /// A throwaway anchor (positions are irrelevant to this depth-budget test).
     fn dummy_anchor() -> PAnchor {
@@ -1744,7 +1745,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

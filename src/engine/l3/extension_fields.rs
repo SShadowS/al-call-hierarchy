@@ -30,6 +30,12 @@ pub fn merge_extension_fields(workspace: &mut L3Workspace) {
     // Resolve table-name → index and table-id → index up front (LAST-wins, to
     // mirror the symbol table the TS pass queries). We must mutate tables in
     // place, so we resolve indices, then apply.
+    //
+    // `objects.clone()` is a genuine borrow-conflict clone, not a stylistic
+    // choice: the loop below reads `objects` while mutating `workspace.tables`
+    // (the `fields.push` a few lines down), so removing it needs a
+    // `&mut *workspace` destructure into disjoint field borrows — a real
+    // (if small, ~4 MB) edit, not a one-liner.
     let objects = workspace.objects.clone();
     for object in &objects {
         if object.object_type != "TableExtension" {

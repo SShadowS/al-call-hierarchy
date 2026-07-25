@@ -244,7 +244,9 @@ mod tests {
     use super::{cmp_version, detect_d17};
     use crate::engine::l2::features::PAnchor;
     use crate::engine::l3::event_graph::EventGraph;
-    use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine, L3Workspace};
+    use crate::engine::l3::l3_workspace::{
+        L3Object, L3Resolved, L3Routine, L3Workspace, RoutineVariables,
+    };
     use crate::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
     use crate::engine::l5::detector_context::{DeclaredDep, DetectorContext};
     use crate::engine::l5::event_flow::EventFlowIndexes;
@@ -382,7 +384,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,
@@ -485,6 +487,7 @@ mod tests {
             closed_world_temp_params: Default::default(),
             summarize_diagnostics: Vec::new(),
             db_effect_bundle: None,
+            reverse_effect_index: None,
             fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(
                 routines, objects,
             ),

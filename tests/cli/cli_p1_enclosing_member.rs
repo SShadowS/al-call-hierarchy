@@ -93,20 +93,46 @@ fn routine_set_and_order_invariant() {
 }
 
 // ---------------------------------------------------------------------------
-// (b) Two-field OnValidate: same stable_routine_id, distinct member + range (RE-1/RE-2).
+// (b) Two-field OnValidate: DISTINCT stable_routine_id, distinct member + range
+//     (RE-1/RE-2, and the Task-4 stable-id discriminator).
 // ---------------------------------------------------------------------------
 
+/// ⟨task 4⟩ **This assertion is inverted from what it was, deliberately.** It used
+/// to read *"both field OnValidate triggers collapse to the SAME
+/// stable_routine_id"* — a frozen recording of the defect, from the era when
+/// `enclosing_member` was a work-AROUND for a collapse that the id itself could
+/// not express. `to_stable_routine_id_from_parts` now folds the member into the
+/// hash, so the collapse is gone and the two siblings' findings no longer share a
+/// fingerprint. Rebaselined under the project's standing rule (correctness over
+/// compatibility, all downstream consumers are ours) rather than preserved.
 #[test]
-fn two_field_on_validate_distinct_member_same_stable_id() {
+fn two_field_on_validate_distinct_member_and_stable_id() {
     let ws = assemble(&[("multi.al", MULTI_TRIGGER_TABLE)]);
 
     let validates = find(&ws, "OnValidate");
     assert_eq!(validates.len(), 2, "two OnValidate triggers expected");
 
-    // Same StableRoutineId (the collapse the discriminator must work around).
-    assert_eq!(
+    // Distinct StableRoutineId — the collapse is closed at the id itself.
+    assert_ne!(
         validates[0].stable_routine_id, validates[1].stable_routine_id,
-        "both field OnValidate triggers collapse to the SAME stable_routine_id"
+        "two field OnValidate triggers must NOT share a stable_routine_id"
+    );
+    // …and the member is what separates them: re-minting both without the
+    // discriminator (the pre-Task-4 form) collides, so this cannot pass for an
+    // unrelated reason.
+    let legacy: Vec<String> = validates
+        .iter()
+        .map(|r| {
+            al_call_hierarchy::engine::ids::to_stable_routine_id_from_parts(
+                &al_call_hierarchy::engine::ids::to_stable_object_id(&r.object_id),
+                &r.normalized_signature_hash,
+                None,
+            )
+        })
+        .collect();
+    assert_eq!(
+        legacy[0], legacy[1],
+        "precondition: without the member discriminator both collapse to one stable id"
     );
 
     // Distinct enclosing members (the unescaped logical field names).

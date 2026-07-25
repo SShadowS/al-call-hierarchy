@@ -47,7 +47,7 @@
         {
           "ruleId": "policy-api-no-interactive-ui",
           "message": {
-            "text": "Policy api-no-interactive-ui matched 1 fact(s) on routine 6cad5cc3f372ef45/dcbc0f3f9435c088206f5beaab2684c1f436a0bb41e43b033f31e006d02ad295."
+            "text": "Policy api-no-interactive-ui matched 1 fact(s) on routine 6cad5cc3f372ef45/63e9bdd4d363ea0590b948e4f20bd770cb78d0211919176f397725369792005a."
           },
           "level": "error",
           "locations": [
@@ -64,7 +64,7 @@
             }
           ],
           "fingerprints": {
-            "al-sem/v1": "66847ef626a772f9"
+            "al-sem/v1": "59096ddf7863d0b2"
           }
         }
       ]

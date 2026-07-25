@@ -31,7 +31,8 @@
 
 use al_call_hierarchy::engine::l2::features::PAnchor;
 use al_call_hierarchy::engine::l3::l3_workspace::{
-    L3RecordOperation, L3Routine, L3Table, L3Variable, assemble_and_resolve_default,
+    L3RecordOperation, L3Routine, L3Table, L3Variable, RoutineVariables,
+    assemble_and_resolve_default,
 };
 use al_call_hierarchy::engine::l3::record_types::resolve_routine_record_types;
 use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
@@ -112,7 +113,11 @@ fn make_routine_for_pass2b(variables: Vec<L3Variable>) -> L3Routine {
         record_variables: Vec::new(), // intentionally empty — passes 1/2a do nothing
         record_operations: vec![op],
         field_accesses: Vec::new(),
-        variables,
+        // `from_own` keeps the injected flat list VERBATIM (including the
+        // duplicate name), which is the whole point here: real assembly can never
+        // emit a shadowed global, so this stays a synthetic, defensive guard on
+        // pass 2b's map-building rather than on how the list was produced.
+        variables: RoutineVariables::from_own(variables),
         parameters: Vec::new(),
         access_modifier: None,
         return_type: None,
@@ -144,7 +149,9 @@ fn pass_2b_first_wins_on_name_collision() {
     // Two tables in the symbol table.
     let bar_table = make_table("Bar", 50900);
     let baz_table = make_table("Baz", 50901);
-    let symbols = SymbolTable::build(&[], &[bar_table, baz_table], &[]);
+    // `SymbolTable` borrows its slices, so the array must outlive the table.
+    let tables = [bar_table, baz_table];
+    let symbols = SymbolTable::build(&[], &tables, &[]);
 
     // `variables` carries the COLLISION: local "Baz" first, then global "Bar".
     // (params → locals → globals order; Task 3 will add globals AFTER locals.)

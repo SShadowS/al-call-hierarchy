@@ -350,6 +350,852 @@ fn cdo_whole_program_v2_matches_frozen_digest() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Task 6 — the `ReverseEffectIndex` / `DbEffectQuery` differential.
+// ---------------------------------------------------------------------------
+
+/// An INDEPENDENTLY computed answer to every query the reverse index and its
+/// facade ship, worked out the slow way: straight off [`SummaryBundle`], with
+/// no postings, no effect classes, no bitmaps and no condensation.
+///
+/// ## Why this file, and why an oracle rather than a golden
+///
+/// `ReverseEffectIndex` shipped 7 self-consistency unit tests, all of which
+/// hand-build a 2-3 routine bundle through `SummaryBundleBuilder`. **None ran
+/// `compute_summaries_v2*`, the only real producer**, so nothing exercised the
+/// dense `PostingList` branch, a class with more than one member, the real
+/// `key_rank` / `ordered_storage_ord` ordering plumbing, fixed-leaf singleton
+/// classes as `seed_fixed_leaf_rows` actually emits them, or any scale effect.
+/// The module had never executed against real data at all.
+///
+/// A golden over the index's own dump would not have fixed that: it freezes
+/// whatever the index currently does, bug included — which is exactly how
+/// 7 comfortable self-consistency tests came to exist. So the oracle below is
+/// deliberately naive and shares no code with the implementation:
+///
+/// - membership: iterate `db_effects(r)` and compare strings;
+/// - the up-queries: filter every routine-with-a-row by that membership;
+/// - ancestors: a whole-graph brute force (for each candidate A, BFS FORWARD
+///   over `graph.edges_by_from` and see whether it reaches R). O(V·(V+E)) —
+///   unusable in production, perfect as an oracle, and it never touches the
+///   condensation, so it cannot share a bug with the implementation;
+/// - ancestor DEPTH: a 0-1 BFS on the REVERSED ROUTINE graph counting SCC
+///   boundary crossings, which is a different computation from the
+///   implementation's plain BFS over a prebuilt condensation and must
+///   nonetheless agree exactly.
+///
+/// Effect granularity needs no `effect_key`-injectivity assumption: a
+/// `DbEffectRef` carries the whole `(op, table_id, operation_id, temp)` tuple,
+/// which IS `EffectIdentity`, so the oracle maps it back through the frozen
+/// universe's own `get()` — the interning map itself is the injection.
+mod reverse_index_differential {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
+    use al_call_hierarchy::engine::l4::combined_graph::CombinedGraph;
+    use al_call_hierarchy::engine::l4::effect_query::DbEffectQuery;
+    use al_call_hierarchy::engine::l4::effect_store::SummaryBundle;
+    use al_call_hierarchy::engine::l4::effect_universe::{EffectId, EffectIdentity};
+    use al_call_hierarchy::engine::l4::reverse_index::{ReverseEffectIndex, class_of};
+    use al_call_hierarchy::engine::l4::routine_interner::RoutineIx;
+    use al_call_hierarchy::engine::l4::scc::SccResult;
+    use al_call_hierarchy::engine::l4::summary::RoutineSummary;
+    use al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
+
+    // -----------------------------------------------------------------------
+    // The oracle.
+    // -----------------------------------------------------------------------
+
+    /// Every answer, worked out the slow way and MEMOIZED once per workspace.
+    ///
+    /// Memoization is not a shortcut into the implementation's world: each set
+    /// below is built by iterating `bundle.db_effects(r)` and reading strings —
+    /// the same thing a caller with no index at all would do. Without it the
+    /// exhaustive `up_effect` comparison would be
+    /// `n_effects x n_routines x effects_per_routine` (~1e9 on a real
+    /// workspace) and the differential would be untestable at the only scale
+    /// that matters.
+    pub struct Oracle<'a> {
+        bundle: &'a SummaryBundle,
+        graph: &'a CombinedGraph,
+        /// Per routine-with-a-row: the exact `EffectId` set of its projected
+        /// effects, resolved through the frozen universe's OWN identity map (so
+        /// no `effect_key` injectivity is assumed — the interning map IS the
+        /// injection).
+        pub effect_ids: HashMap<RoutineIx, HashSet<EffectId>>,
+        /// Per routine-with-a-row: the exact `table_id` string set.
+        pub table_ids: HashMap<RoutineIx, HashSet<String>>,
+        /// Reversed ROUTINE adjacency `to -> [(from, cost)]`, cost 1 when the
+        /// edge crosses an SCC boundary and 0 when it does not. Deliberately
+        /// over raw routine ids: the implementation walks a prebuilt
+        /// CONDENSATION, so a 0-1 BFS here is a structurally different
+        /// computation that must nonetheless agree.
+        rev_routine: HashMap<&'a str, Vec<(&'a str, u32)>>,
+        pub routines: Vec<RoutineIx>,
+        pub tables: Vec<String>,
+    }
+
+    impl<'a> Oracle<'a> {
+        pub fn build(bundle: &'a SummaryBundle, graph: &'a CombinedGraph, scc: &SccResult) -> Self {
+            let universe = bundle.effects().universe();
+            let mut routines: Vec<RoutineIx> = bundle.routines_with_rows().collect();
+            routines.sort_unstable();
+
+            let mut effect_ids: HashMap<RoutineIx, HashSet<EffectId>> = HashMap::new();
+            let mut table_ids: HashMap<RoutineIx, HashSet<String>> = HashMap::new();
+            for &r in &routines {
+                let mut eids: HashSet<EffectId> = HashSet::new();
+                let mut tids: HashSet<String> = HashSet::new();
+                for e in bundle.db_effects(r) {
+                    let identity = EffectIdentity {
+                        op: e.op.to_string(),
+                        table_id: e.table_id.to_string(),
+                        operation_id: e.operation_id.to_string(),
+                        temp: e.temp_state.clone(),
+                    };
+                    let eid = universe.get(&identity).unwrap_or_else(|| {
+                        panic!(
+                            "every projected effect must round-trip to its EffectId \
+                             (op={:?} table={:?} opid={:?})",
+                            e.op, e.table_id, e.operation_id
+                        )
+                    });
+                    eids.insert(eid);
+                    tids.insert(e.table_id.to_string());
+                }
+                effect_ids.insert(r, eids);
+                table_ids.insert(r, tids);
+            }
+
+            let mut tables: Vec<String> = (0..universe.len() as u32)
+                .map(|i| universe.identity(EffectId(i)).table_id.clone())
+                .collect();
+            tables.sort();
+            tables.dedup();
+
+            let mut rev_routine: HashMap<&'a str, Vec<(&'a str, u32)>> = HashMap::new();
+            for (from, edges) in &graph.edges_by_from {
+                for e in edges {
+                    let cost = match (
+                        scc.scc_id_by_routine.get(from),
+                        scc.scc_id_by_routine.get(&e.to),
+                    ) {
+                        (Some(a), Some(b)) if a == b => 0,
+                        _ => 1,
+                    };
+                    rev_routine
+                        .entry(e.to.as_str())
+                        .or_default()
+                        .push((from.as_str(), cost));
+                }
+            }
+
+            Oracle {
+                bundle,
+                graph,
+                effect_ids,
+                table_ids,
+                rev_routine,
+                routines,
+                tables,
+            }
+        }
+
+        pub fn touches_table(&self, r: RoutineIx, t: &str) -> bool {
+            self.table_ids.get(&r).is_some_and(|s| s.contains(t))
+        }
+
+        pub fn touches_effect(&self, r: RoutineIx, e: EffectId) -> bool {
+            self.effect_ids.get(&r).is_some_and(|s| s.contains(&e))
+        }
+
+        pub fn up_table(&self, t: &str) -> Vec<RoutineIx> {
+            self.routines
+                .iter()
+                .copied()
+                .filter(|&r| self.touches_table(r, t))
+                .collect()
+        }
+
+        pub fn up_effect(&self, e: EffectId) -> Vec<RoutineIx> {
+            self.routines
+                .iter()
+                .copied()
+                .filter(|&r| self.touches_effect(r, e))
+                .collect()
+        }
+
+        /// Ancestor DEPTH by 0-1 BFS on the reversed ROUTINE graph: the minimum
+        /// number of SCC boundaries any path `A -> ... -> r` crosses. That
+        /// equals BFS depth in the condensation, so it must match the
+        /// implementation exactly — without this oracle ever building one.
+        /// `r` itself is excluded.
+        pub fn ancestor_depths(&self, r: RoutineIx) -> HashMap<RoutineIx, u32> {
+            let start = self.bundle.routine_id(r);
+            let mut dist: HashMap<&str, u32> = HashMap::new();
+            let mut dq: VecDeque<&str> = VecDeque::new();
+            dist.insert(start, 0);
+            dq.push_back(start);
+            let empty: Vec<(&str, u32)> = Vec::new();
+            while let Some(cur) = dq.pop_front() {
+                let d = dist[cur];
+                for &(pred, cost) in self.rev_routine.get(cur).unwrap_or(&empty) {
+                    let nd = d + cost;
+                    if dist.get(pred).is_none_or(|&old| nd < old) {
+                        dist.insert(pred, nd);
+                        if cost == 0 {
+                            dq.push_front(pred);
+                        } else {
+                            dq.push_back(pred);
+                        }
+                    }
+                }
+            }
+            dist.into_iter()
+                .filter_map(|(id, d)| self.bundle.routine_ix(id).map(|ix| (ix, d)))
+                .filter(|&(ix, _)| ix != r)
+                .collect()
+        }
+
+        /// The ancestor answer used everywhere: transitive callers of `r`
+        /// (excluding `r`) that have a row and touch `t`, ascending.
+        pub fn ancestors_touching(&self, r: RoutineIx, t: &str) -> Vec<RoutineIx> {
+            let mut v: Vec<RoutineIx> = self
+                .ancestor_depths(r)
+                .into_keys()
+                .filter(|&a| self.table_ids.contains_key(&a) && self.touches_table(a, t))
+                .collect();
+            v.sort_unstable();
+            v
+        }
+
+        /// The MAXIMALLY naive ancestor answer: for each candidate, a fresh
+        /// forward BFS over `graph.edges_by_from` asking whether it reaches `r`.
+        /// O(V·(V+E)) — unusable past fixture scale, which is why
+        /// [`Self::ancestors_touching`] exists; the fixture test asserts the two
+        /// agree, so the cheaper one is itself under oracle.
+        pub fn ancestors_touching_bruteforce(&self, r: RoutineIx, t: &str) -> Vec<RoutineIx> {
+            let target = self.bundle.routine_id(r).to_string();
+            let mut v: Vec<RoutineIx> = self
+                .routines
+                .iter()
+                .copied()
+                .filter(|&a| a != r)
+                .filter(|&a| self.touches_table(a, t))
+                .filter(|&a| reaches(self.graph, self.bundle.routine_id(a), &target))
+                .collect();
+            v.sort_unstable();
+            v
+        }
+    }
+
+    /// Brute force: is there a directed path of length >= 1 from `from` to `to`?
+    fn reaches(graph: &CombinedGraph, from: &str, to: &str) -> bool {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut q: VecDeque<&str> = VecDeque::new();
+        q.push_back(from);
+        let mut first = true;
+        while let Some(cur) = q.pop_front() {
+            if !first && cur == to {
+                return true;
+            }
+            first = false;
+            if let Some(edges) = graph.edges_by_from.get(cur) {
+                for e in edges {
+                    if e.to == to {
+                        return true;
+                    }
+                    if seen.insert(e.to.as_str()) {
+                        q.push_back(e.to.as_str());
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    // -----------------------------------------------------------------------
+    // The exhaustive comparison.
+    // -----------------------------------------------------------------------
+
+    fn is_strictly_ascending(v: &[RoutineIx]) -> bool {
+        v.windows(2).all(|w| w[0] < w[1])
+    }
+
+    /// Every assertion of scope §4.2 level 1, run exhaustively over one bundle.
+    /// Shared verbatim by the fixture cases and the real-workspace case, so the
+    /// two can never drift apart.
+    pub fn assert_index_matches_oracle(
+        label: &str,
+        bundle: &SummaryBundle,
+        graph: &CombinedGraph,
+        scc: &SccResult,
+        oracle: &Oracle<'_>,
+    ) {
+        let index = ReverseEffectIndex::build(bundle);
+        let query = DbEffectQuery::build(bundle, scc, graph);
+        let universe_len = bundle.effects().universe().len() as u32;
+
+        // 1. up_table, exhaustively + an id that is definitely not a table.
+        for t in &oracle.tables {
+            let got = index.up_table(t);
+            assert_eq!(
+                got,
+                oracle.up_table(t),
+                "[{label}] up_table({t:?}) diverged from the oracle"
+            );
+            assert!(
+                is_strictly_ascending(&got),
+                "[{label}] up_table({t:?}) must be strictly ascending"
+            );
+            assert_eq!(
+                query.routines_touching(t),
+                got,
+                "[{label}] the facade must delegate routines_touching verbatim"
+            );
+        }
+        assert!(
+            index.up_table("::absolutely-not-a-table::").is_empty(),
+            "[{label}] an absent table id answers empty, never panics"
+        );
+
+        // 2. touches_table over every (routine-with-row x table), and the
+        //    facade's boolean/witness-list agreement.
+        for &r in &oracle.routines {
+            for t in &oracle.tables {
+                let got = index.touches_table(bundle, r, t);
+                assert_eq!(
+                    got,
+                    oracle.touches_table(r, t),
+                    "[{label}] touches_table({}, {t:?}) diverged",
+                    bundle.routine_id(r)
+                );
+                assert_eq!(
+                    query.touches_table(r, t),
+                    got,
+                    "[{label}] facade touches_table must match the index"
+                );
+                assert_eq!(
+                    !query.touches(r, t).is_empty(),
+                    got,
+                    "[{label}] touches()/touches_table() disagreement for {t:?}"
+                );
+            }
+            assert!(
+                !index.touches_table(bundle, r, "::absolutely-not-a-table::"),
+                "[{label}] absent table is never touched"
+            );
+        }
+
+        // 3. up_effect / touches_effect over every EffectId in the universe.
+        for i in 0..universe_len {
+            let eid = EffectId(i);
+            let got = index.up_effect(eid);
+            assert_eq!(
+                got,
+                oracle.up_effect(eid),
+                "[{label}] up_effect({i}) diverged from the oracle"
+            );
+            assert!(
+                is_strictly_ascending(&got),
+                "[{label}] up_effect({i}) must be strictly ascending"
+            );
+        }
+        for &r in &oracle.routines {
+            for i in 0..universe_len {
+                let eid = EffectId(i);
+                assert_eq!(
+                    index.touches_effect(bundle, r, eid),
+                    oracle.touches_effect(r, eid),
+                    "[{label}] touches_effect({}, {i}) diverged",
+                    bundle.routine_id(r)
+                );
+            }
+        }
+
+        // 4. down(r) is byte-identical to db_effects(r), ORDER included, and the
+        //    facade's unfiltered list agrees row for row.
+        for &r in &oracle.routines {
+            let via_down: Vec<_> = index.down(bundle, r).map(|e| e.to_owned()).collect();
+            let via_bundle: Vec<_> = bundle.db_effects(r).map(|e| e.to_owned()).collect();
+            assert_eq!(
+                via_down,
+                via_bundle,
+                "[{label}] down({}) must delegate verbatim",
+                bundle.routine_id(r)
+            );
+            let facade = query.all_effects(r);
+            assert_eq!(facade.len(), via_bundle.len());
+            for (a, b) in facade.iter().zip(via_bundle.iter()) {
+                assert_eq!(a.op, b.op);
+                assert_eq!(a.table_id, b.table_id);
+                assert_eq!(a.operation_id, b.operation_id);
+                assert_eq!(a.via.as_str(), b.via);
+            }
+        }
+
+        // 5. The ⟨rev3⟩ disjointness invariant over the WHOLE index — not the
+        //    4 hand-picked pairs the unit test checks — plus the stronger
+        //    statement that the two arms UNION to exactly the oracle's answer.
+        for &r in &oracle.routines {
+            let Some(c) = class_of(bundle, r) else {
+                continue;
+            };
+            for t in &oracle.tables {
+                let base = index.table_touches_via_base(t, c);
+                let delta = index.table_touches_via_delta_routine(t, r);
+                if delta {
+                    assert!(
+                        !base,
+                        "[{label}] {t:?}: routine {} is in BOTH the delta posting and its \
+                         class's base posting — the disjoint contract is broken",
+                        bundle.routine_id(r)
+                    );
+                }
+                assert_eq!(
+                    base || delta,
+                    oracle.touches_table(r, t),
+                    "[{label}] base|delta arms must reconstruct the oracle answer"
+                );
+            }
+        }
+
+        // 6. class_members: ascending, self-inclusive, and internally coherent.
+        for &r in &oracle.routines {
+            let Some(c) = class_of(bundle, r) else {
+                continue;
+            };
+            let members = index.class_members(c);
+            assert!(
+                members.windows(2).all(|w| w[0] < w[1]),
+                "[{label}] class_members must be strictly ascending"
+            );
+            assert!(
+                members.contains(&r),
+                "[{label}] a routine must be a member of its own class"
+            );
+            for &m in members {
+                assert_eq!(
+                    class_of(bundle, m),
+                    Some(c),
+                    "[{label}] every class member must report that class"
+                );
+            }
+        }
+    }
+
+    /// The ancestor comparison. Split out because the real-workspace case runs
+    /// it over a stated deterministic SAMPLE while fixtures run it exhaustively.
+    pub fn assert_ancestors_match_oracle(
+        label: &str,
+        bundle: &SummaryBundle,
+        graph: &CombinedGraph,
+        scc: &SccResult,
+        oracle: &Oracle<'_>,
+        routines: &[RoutineIx],
+        tables: &[String],
+    ) {
+        let query = DbEffectQuery::build(bundle, scc, graph);
+        for &r in routines {
+            let depths = oracle.ancestor_depths(r);
+
+            // The ancestor set and its depth, independent of any table.
+            let ancestors = query.ancestors(r);
+            for &(depth, ix) in &ancestors {
+                assert_eq!(
+                    depths.get(&ix).copied(),
+                    Some(depth),
+                    "[{label}] ancestor depth for {} -> {} diverged from the 0-1-BFS oracle",
+                    bundle.routine_id(ix),
+                    bundle.routine_id(r)
+                );
+            }
+            assert!(
+                !ancestors.iter().any(|&(_, ix)| ix == r),
+                "[{label}] a routine must never be its own ancestor"
+            );
+            // `ancestors` returns `(depth, routine)`, so the tuple's own `Ord`
+            // IS the documented nearest-first order — no re-derived sort key,
+            // and no way to accidentally check the wrong field.
+            assert!(
+                ancestors.windows(2).all(|w| w[0] < w[1]),
+                "[{label}] ancestors must be strictly ascending by (depth, routine)"
+            );
+
+            for t in tables {
+                let ups = query.ancestors_touching(r, t);
+                let mut got: Vec<RoutineIx> = ups.iter().map(|a| a.touch.routine).collect();
+                got.sort_unstable();
+                got.dedup();
+                assert_eq!(
+                    got,
+                    oracle.ancestors_touching(r, t),
+                    "[{label}] ancestors_touching({}, {t:?}) diverged from the oracle",
+                    bundle.routine_id(r)
+                );
+                assert!(
+                    ups.windows(2).all(|w| w[0].depth <= w[1].depth),
+                    "[{label}] ancestors_touching must be nearest-first"
+                );
+                for a in &ups {
+                    assert_eq!(a.touch.table_id, t);
+                    assert!(query.touches_table(a.touch.routine, t));
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Level 1: the fixture cases, exhaustive.
+    // -----------------------------------------------------------------------
+
+    /// Every fixture `fixtures::build` knows how to make — including
+    /// `fixed_leaf_in_scc` (a fixed leaf inside a cycle, where the effect-class
+    /// DAG and the Tarjan condensation genuinely diverge),
+    /// `missing_routine_in_scc` (a graph node with no row) and the whole
+    /// via-collision family.
+    const FIXTURES: &[&str] = &[
+        "linear_known",
+        "recursive_self_loop",
+        "recursive_pair_pd",
+        "pd_to_known",
+        "pd_to_unknown",
+        "multi_callsite_same_callee",
+        "via_collision",
+        "via_collision_edges_reversed",
+        "pd_substituted_via_collision",
+        "pd_substituted_via_collision_reversed",
+        "direct_terminal_beats_colliding_pd_substitution",
+        "direct_pd_base_beats_colliding_pd_substitution_and_dedup_transition",
+        "external_successor_pd",
+        "fixed_leaf_in_scc",
+        "multi_effect_fixed_leaf_in_scc",
+        "missing_routine_in_scc",
+    ];
+
+    fn leaves_for(name: &str) -> HashMap<String, RoutineSummary> {
+        match name {
+            "fixed_leaf_in_scc" => super::fixtures::fixed_leaf_in_scc_leaves(),
+            "multi_effect_fixed_leaf_in_scc" => {
+                super::fixtures::multi_effect_fixed_leaf_in_scc_leaves()
+            }
+            _ => HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn every_fixture_index_matches_the_slow_oracle_exhaustively() {
+        let mut with_effects = 0usize;
+        for name in FIXTURES {
+            let (routines, graph, scc, fields, ub) = super::fixtures::build(name);
+            let leaves = leaves_for(name);
+            // The BUNDLE entry point, not the materializing `_core` shim — the
+            // compact rows are what the index transposes.
+            let (bundle, _map, _diags) = compute_summaries_v2_bundle_with_leaves(
+                &routines, &graph, &scc, &ub, &fields, &leaves,
+            );
+            let oracle = Oracle::build(&bundle, &graph, &scc);
+
+            assert_index_matches_oracle(name, &bundle, &graph, &scc, &oracle);
+            let rs = oracle.routines.clone();
+            let ts = oracle.tables.clone();
+            assert_ancestors_match_oracle(name, &bundle, &graph, &scc, &oracle, &rs, &ts);
+
+            // The cheap ancestor oracle is itself under oracle: at fixture scale
+            // the maximally-naive per-candidate forward BFS must agree with the
+            // 0-1-BFS derivation used at real-workspace scale.
+            for &r in &rs {
+                for t in &ts {
+                    assert_eq!(
+                        oracle.ancestors_touching(r, t),
+                        oracle.ancestors_touching_bruteforce(r, t),
+                        "[{name}] the two oracles disagree for ({}, {t:?}) — the cheaper \
+                         one is not a faithful stand-in",
+                        bundle.routine_id(r)
+                    );
+                }
+            }
+
+            if !ts.is_empty() {
+                with_effects += 1;
+            }
+        }
+        // Precondition, hand-stated: nearly every fixture must actually carry db
+        // effects, or the comparison above ran over empty universes and proved
+        // nothing. (`missing_routine_in_scc` legitimately has none.)
+        assert!(
+            with_effects >= FIXTURES.len() - 1,
+            "expected all but the effect-free fixture to carry db effects, got \
+             {with_effects} of {}",
+            FIXTURES.len()
+        );
+    }
+
+    /// The scope's §2.4 notion-discipline case, driven through the REAL solver
+    /// rather than a hand-built bundle: `fixed_leaf_in_scc` is a 3-member cycle
+    /// `a -> b -> c -> a` whose `c` arrives as a pre-settled fixed leaf, so
+    /// `effective_sccs` splits the cycle in the EFFECT-class DAG while Tarjan
+    /// still sees one component. An ancestor walk computed on the effect DAG
+    /// would therefore return a strictly SMALLER set than the truth.
+    #[test]
+    fn fixed_leaf_cycle_ancestors_match_the_brute_force_oracle() {
+        let name = "fixed_leaf_in_scc";
+        let (routines, graph, scc, fields, ub) = super::fixtures::build(name);
+        let leaves = super::fixtures::fixed_leaf_in_scc_leaves();
+        let (bundle, _map, _diags) =
+            compute_summaries_v2_bundle_with_leaves(&routines, &graph, &scc, &ub, &fields, &leaves);
+
+        // Premise: Tarjan really did see ONE cycle here.
+        assert_eq!(scc.sccs.len(), 1, "the fixture is a single 3-member cycle");
+
+        let oracle = Oracle::build(&bundle, &graph, &scc);
+        let query = DbEffectQuery::build(&bundle, &scc, &graph);
+        let rs = oracle.routines.clone();
+        assert!(
+            rs.len() >= 2,
+            "precondition: at least two cycle members must have rows"
+        );
+
+        // Every member is every other member's ancestor at depth 0 — the answer
+        // an effect-class-DAG walk could not give.
+        for &r in &rs {
+            let ancestors: Vec<RoutineIx> =
+                query.ancestors(r).into_iter().map(|(_, ix)| ix).collect();
+            for &other in &rs {
+                if other == r {
+                    continue;
+                }
+                assert!(
+                    ancestors.contains(&other),
+                    "{} must be an ancestor of {} — they are cycle-mates in the TARJAN \
+                     condensation, which is the notion this walk uses",
+                    bundle.routine_id(other),
+                    bundle.routine_id(r)
+                );
+            }
+            assert!(
+                query.ancestors(r).iter().all(|&(d, _)| d == 0),
+                "all cycle-mates sit at depth 0"
+            );
+        }
+
+        assert!(
+            oracle.tables.contains(&"t3".to_string()),
+            "precondition: the fixed leaf's own table must be in the universe"
+        );
+        let ts = oracle.tables.clone();
+        assert_ancestors_match_oracle(name, &bundle, &graph, &scc, &oracle, &rs, &ts);
+    }
+}
+
+/// The real-workspace differential (scope §4.2 level 2) — the one that closes
+/// "this module has never executed against real data".
+///
+/// Reuses `cdo_whole_program_v2_matches_frozen_digest`'s assembly verbatim,
+/// swapping `compute_summaries_v2_with_leaves_core` for
+/// `compute_summaries_v2_bundle_with_leaves` so the compact bundle survives, and
+/// then runs the SAME oracle comparison the fixtures use — so the two can never
+/// drift apart.
+///
+/// Coverage, stated rather than hidden:
+///
+/// - **Exhaustive** — `up_table` / `up_effect` / `touches_table` /
+///   `touches_effect` / `down` / the ⟨rev3⟩ disjointness invariant / ascending
+///   order, over EVERY table, EVERY `EffectId` and EVERY routine-with-a-row.
+/// - **Sampled, deterministically** — `ancestors_touching`, whose oracle is
+///   O(V·(V+E)): every 50th routine-with-a-row (ascending `RoutineIx`, so the
+///   sample is reproducible), against its own touched tables PLUS two tables it
+///   does NOT touch. The negatives are the interesting half — they are where
+///   "a caller reaches it through a sibling branch" actually shows up.
+///
+/// **Then, only once the exhaustive comparison above has already asserted
+/// agreement in THIS SAME RUN, a frozen digest** (scope §4.2 level 2's third
+/// bullet, `tests/l4-summary-baseline/cdo-reverse-index-digest.txt`) — the
+/// canonical serialization the spec names verbatim: for each table id in
+/// sorted order, the sorted `bundle.routine_id(ix)` list `up_table` returns.
+/// The oracle proves the index correct TODAY; the digest proves it stays
+/// UNCHANGED tomorrow. Sequencing the digest after the oracle assertions
+/// inside one function (rather than as a separate test, which Rust may run in
+/// any order/in parallel) is what makes "capture mismatch-guarded" — a digest
+/// can never be minted from a state the differential has not already
+/// vetted — an actual guarantee rather than a convention, mirroring
+/// `tests/l4-summary-baseline/README.md`'s `baseline == old == v2`-at-capture
+/// discipline as a same-run check instead of a historical one (the oracle
+/// here, unlike the now-deleted old Jacobi solver, is still live to ask).
+///
+/// Skips when `CDO_WS` is unset; panics under `ENFORCE_CDO_WS=1`, so
+/// `scripts/cdo-gate` runs it for real. Regenerate the digest with:
+/// ```text
+/// CDO_WS=<path> ENFORCE_CDO_WS=1 REGEN_TEMP_GOLDENS=1 cargo test -p al-call-hierarchy \
+///   --test l4_summary_differential cdo_reverse_index_matches_slow_oracle -- --nocapture
+/// ```
+#[test]
+fn cdo_reverse_index_matches_slow_oracle() {
+    use std::collections::BTreeMap;
+
+    use al_call_hierarchy::engine::l3::call_resolver::{DeclaredDependency, resolve_calls};
+    use al_call_hierarchy::engine::l3::event_graph::build_event_graph;
+    use al_call_hierarchy::engine::l3::l3_workspace::assemble_and_resolve_workspace_default;
+    use al_call_hierarchy::engine::l3::symbol_table::SymbolTable;
+    use al_call_hierarchy::engine::l4::combined_graph::build_combined_graph;
+    use al_call_hierarchy::engine::l4::reverse_index::ReverseEffectIndex;
+    use al_call_hierarchy::engine::l4::routine_interner::RoutineIx;
+    use al_call_hierarchy::engine::l4::scc::{SccInputGraph, tarjan_scc};
+    use al_call_hierarchy::engine::l4::summary_runner::compute_summaries_v2_bundle_with_leaves;
+    use reverse_index_differential as diff;
+
+    let Some(ws_path) = cdo_ws_or_enforce() else {
+        return;
+    };
+
+    let resolved = assemble_and_resolve_workspace_default(&ws_path)
+        .expect("assemble_and_resolve_workspace_default must succeed on CDO_WS");
+    let ws = &resolved.workspace;
+
+    let symbols = SymbolTable::build(&ws.objects, &ws.tables, &ws.routines);
+    let no_deps: Vec<DeclaredDependency> = Vec::new();
+    let no_fetched: Vec<String> = Vec::new();
+    let calls = resolve_calls(ws, &symbols, &no_deps, &no_fetched);
+    let event_graph = build_event_graph(&ws.routines, &symbols);
+    let graph = build_combined_graph(ws, &calls, &event_graph);
+
+    let mut scc_adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    for (from, list) in &graph.edges_by_from {
+        scc_adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
+    }
+    let scc = tarjan_scc(&SccInputGraph {
+        nodes: &graph.nodes,
+        edges_by_from: &scc_adjacency,
+    });
+
+    let mut field_index: FieldIndex = HashMap::new();
+    for table in &ws.tables {
+        for field in &table.fields {
+            field_index
+                .entry((table.id.clone(), field.name.to_lowercase()))
+                .or_insert_with(|| field.id.clone());
+        }
+    }
+    let leaf_summaries: HashMap<String, RoutineSummary> = HashMap::new();
+    let (bundle, _map, _diags) = compute_summaries_v2_bundle_with_leaves(
+        &ws.routines,
+        &graph,
+        &scc,
+        &calls.upgraded_bindings,
+        &field_index,
+        &leaf_summaries,
+    );
+
+    let oracle = diff::Oracle::build(&bundle, &graph, &scc);
+    let routines = oracle.routines.clone();
+    let tables = oracle.tables.clone();
+
+    // PRECONDITIONS, hand-stated: a real workspace must produce a real
+    // population, or every assertion below passes vacuously. These numbers are
+    // deliberately loose floors, not pinned values — this is a differential,
+    // not a ratchet.
+    assert!(
+        routines.len() > 100,
+        "a real BC workspace must yield >100 routines with db-effect rows, got {}",
+        routines.len()
+    );
+    assert!(
+        tables.len() > 5,
+        "a real BC workspace must yield >5 distinct effect tables, got {}",
+        tables.len()
+    );
+    eprintln!(
+        "cdo_reverse_index_matches_slow_oracle: {} routines-with-rows, {} tables, \
+         {} effects in the frozen universe",
+        routines.len(),
+        tables.len(),
+        bundle.effects().universe().len()
+    );
+
+    // Exhaustive.
+    diff::assert_index_matches_oracle("CDO_WS", &bundle, &graph, &scc, &oracle);
+
+    // Sampled — the rule is stated in this test's doc, and printed, not hidden.
+    let sample: Vec<RoutineIx> = routines.iter().copied().step_by(50).collect();
+    assert!(
+        !sample.is_empty(),
+        "the every-50th sample must not be empty"
+    );
+    for &r in &sample {
+        let touched: Vec<String> = {
+            let mut t: Vec<String> = bundle
+                .db_effects(r)
+                .map(|e| e.table_id.to_string())
+                .collect();
+            t.sort();
+            t.dedup();
+            t
+        };
+        // Two tables this routine does NOT touch — the informative half.
+        let untouched: Vec<String> = tables
+            .iter()
+            .filter(|t| !touched.contains(t))
+            .take(2)
+            .cloned()
+            .collect();
+        let mut probe = touched;
+        probe.extend(untouched);
+        diff::assert_ancestors_match_oracle("CDO_WS", &bundle, &graph, &scc, &oracle, &[r], &probe);
+    }
+    eprintln!(
+        "cdo_reverse_index_matches_slow_oracle: ancestor oracle ran over {} sampled \
+         routines (every 50th)",
+        sample.len()
+    );
+
+    // ---- Frozen digest (scope §4.2 level 2, third bullet) --------------------
+    //
+    // Reached only after every assertion above has already passed — see this
+    // fn's doc comment for why that sequencing, not a separate test, is what
+    // makes the mismatch guard real. `tables` is `oracle.tables` (sorted,
+    // deduped) captured above; `index` is rebuilt here (cheap relative to the
+    // CDO workspace assembly already paid for) so this section reads
+    // standalone.
+    let index = ReverseEffectIndex::build(&bundle);
+    let mut canonical: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for t in &tables {
+        let ids: Vec<String> = index
+            .up_table(t)
+            .into_iter()
+            .map(|ix| bundle.routine_id(ix).to_string())
+            .collect();
+        canonical.insert(t.clone(), ids);
+    }
+    let digest = sha256_hex(&format!("{canonical:#?}"));
+    let digest_path = baseline_dir().join("cdo-reverse-index-digest.txt");
+
+    if regen() {
+        std::fs::create_dir_all(baseline_dir()).expect("create l4-summary-baseline dir");
+        std::fs::write(&digest_path, digest.as_bytes())
+            .unwrap_or_else(|e| panic!("regen write {}: {e}", digest_path.display()));
+        eprintln!(
+            "REGEN cdo-reverse-index-digest ({} tables): {} -> {}",
+            tables.len(),
+            digest,
+            digest_path.display()
+        );
+        return;
+    }
+
+    let expected = std::fs::read_to_string(&digest_path).unwrap_or_else(|e| {
+        panic!(
+            "read frozen CDO reverse-index digest {} failed: {e} — run CDO_WS=<path> \
+             ENFORCE_CDO_WS=1 REGEN_TEMP_GOLDENS=1 to (re)capture",
+            digest_path.display()
+        )
+    });
+    assert_eq!(
+        digest,
+        strip_cr(&expected).trim(),
+        "CDO reverse index ({} tables) diverged from the frozen digest",
+        tables.len()
+    );
+}
+
 /// Fixture builders for the differential harness above. Each named fixture
 /// builds real `L3Routine` / `CombinedGraph` / `SccResult` / `FieldIndex` /
 /// `upgraded_bindings` inputs the OLD solver can process without panicking; the
@@ -368,7 +1214,9 @@ mod fixtures {
         PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
     };
     use al_call_hierarchy::engine::l3::call_resolver::UpgradedBinding;
-    use al_call_hierarchy::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+    use al_call_hierarchy::engine::l3::l3_workspace::{
+        L3RecordOperation, L3Routine, RoutineVariables,
+    };
     use al_call_hierarchy::engine::l4::combined_graph::{CombinedEdge, CombinedGraph};
     use al_call_hierarchy::engine::l4::effect_lattice::{TempStateKind, effect_key_of};
     use al_call_hierarchy::engine::l4::scc::{Scc, SccResult};
@@ -444,7 +1292,7 @@ mod fixtures {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

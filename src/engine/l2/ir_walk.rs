@@ -2251,11 +2251,43 @@ pub fn ir_variables(
         });
     }
 
-    // 3. Object globals (first-name-wins shadowing).
-    let mut emitted: HashSet<String> = out.iter().map(|v| v.name.clone()).collect();
+    // 3. Object globals (first-name-wins shadowing). `ir_object_globals` has already
+    //    deduped the object's own globals first-wins by lowercased name, so the only
+    //    filter left here is the routine's own params/locals — which is exactly what
+    //    seeding `emitted` from `out` did when this loop was inlined.
+    let emitted: HashSet<String> = out.iter().map(|v| v.name.clone()).collect();
+    out.extend(
+        ir_object_globals(file, object_idx, &cols, source_unit_id)
+            .into_iter()
+            .filter(|g| !emitted.contains(&g.name)),
+    );
+
+    out
+}
+
+/// The owning object's GLOBAL variables (`PVariableSymbol`, scope=global), deduped
+/// **first-wins by lowercased name** (the IR carries both `#if`/`#else` branches, so
+/// one name can appear twice).
+///
+/// Every routine of the object sees the SAME list: [`ir_variables`] appends the subset
+/// not shadowed by the routine's own params/locals. Split out of `ir_variables` so
+/// there is ONE definition of "the object's globals" — the L3 emitter builds this list
+/// once per object and shares it across the object's routines
+/// ([`crate::engine::l3::l3_workspace::RoutineVariables`]) instead of replicating a
+/// copy into each. Sibling of [`ir_object_global_record_vars`].
+pub fn ir_object_globals(
+    file: &AlFile,
+    object_idx: usize,
+    cols: &Utf16Cols,
+    source_unit_id: &str,
+) -> Vec<super::features::PVariableSymbol> {
+    use super::features::PVariableSymbol;
+    use super::scope::canonicalize_type_text;
+    let mut out: Vec<PVariableSymbol> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     for g in &file.objects[object_idx].globals {
         let lc = g.name.to_ascii_lowercase();
-        if !emitted.insert(lc.clone()) {
+        if !seen.insert(lc.clone()) {
             continue;
         }
         out.push(PVariableSymbol {
@@ -2265,10 +2297,16 @@ pub fn ir_variables(
             is_parameter: false,
             parameter_index: None,
             initializer: None,
-            source_anchor: anchor(&g.origin, "variable_declaration"),
+            source_anchor: PAnchor {
+                source_unit_id: source_unit_id.to_string(),
+                start_line: g.origin.start.row,
+                start_column: cols.col(g.origin.start.row as usize, g.origin.start.column as usize),
+                end_line: g.origin.end.row,
+                end_column: cols.col(g.origin.end.row as usize, g.origin.end.column as usize),
+                syntax_kind: "variable_declaration".to_string(),
+            },
         });
     }
-
     out
 }
 
@@ -2453,6 +2491,25 @@ pub fn ir_parameter_symbols(routine: &RoutineDecl) -> Vec<super::scope::Paramete
             }
         })
         .collect()
+}
+
+/// The routine's enclosing-member discriminator: the UNESCAPED logical name of
+/// the member wrapper (table field / page field / action / dataitem / …) that
+/// declares this member trigger, `None` for procedures and object-level triggers
+/// (`OnRun`/`OnOpenPage`).
+///
+/// THE single source for that string. It feeds BOTH `L3Routine.enclosing_member`
+/// and the internal routine id's conditional 7th key part
+/// ([`crate::engine::ids::CanonicalRoutineKey::enclosing_member`]) — those must be
+/// the same string, and the raw IR value is only outer-quote-stripped, so the
+/// unescape has to happen in exactly one place. Two call paths mint ids for the
+/// same routine (`l2_workspace::build_proutine` and `l3_workspace::project_file`);
+/// both go through here.
+pub fn ir_enclosing_member(routine: &RoutineDecl) -> Option<String> {
+    routine
+        .enclosing_member
+        .as_ref()
+        .map(|(name, _origin)| super::scope::unescape_al_identifier(name))
 }
 
 /// Routine kind for id/classification (mirrors classify_kind): event-subscriber /

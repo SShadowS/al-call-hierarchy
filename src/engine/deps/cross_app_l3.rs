@@ -55,7 +55,7 @@ use crate::engine::deps::projection::{ProjectedObject, ProjectedRoutine, Project
 use crate::engine::l2::scope::{ts_known, ts_param_dependent};
 use crate::engine::l3::l3_workspace::{
     L3Field, L3Object, L3PageControl, L3Parameter, L3Resolved, L3Routine, L3Table, L3Workspace,
-    PageControlKind, assemble_l3_workspace_from_disk, resolve,
+    PageControlKind, RoutineVariables, assemble_l3_workspace_from_disk, resolve,
 };
 
 /// The merged-input context: the assembled+resolved cross-app workspace plus the
@@ -260,7 +260,8 @@ fn dep_routine_to_l3(r: &ProjectedRoutine, object_type: &str) -> L3Routine {
         record_variables,
         record_operations: Vec::new(),
         field_accesses: Vec::new(),
-        variables: Vec::new(),
+        // A dep routine's object globals are not modelled by the ABI at all.
+        variables: RoutineVariables::default(),
         parameters,
         // The ABI symbol reference DOES expose access modifiers (`IsInternal`/`IsLocal`),
         // and `project_abi_to_index` already computes `ProjectedRoutine.access_modifier`

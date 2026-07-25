@@ -22,8 +22,11 @@ pub mod capability_query;
 // compared each derived predicate against the raw `capability_facts_inherited`
 // Vec; Task 3 stops building that Vec on every path that had one, so the oracle's
 // raw side would have degraded to direct-only and false-alarmed on every routine.
-// Its one Vec-independent test (the G-18 collision / `ConeDerivedStore::forget`
-// pin) was RELOCATED to `detector_context`'s test module, not deleted.
+// Its one Vec-independent test (the G-18 collision pin) was RELOCATED to
+// `detector_context`'s test module, not deleted; ⟨T1⟩ then turned it from a pin on
+// the collision's degenerate summary into a pin on the REAL summary surviving
+// (`colliding_routine_ids_keep_a_real_summary_and_derived_row`), and deleted
+// `ConeDerivedStore::forget` along with the degeneracy it existed to mirror.
 // G-19 — closed-world temp inference for `local` routines (the proven
 // `(routine, param)` set the d1/d3/d10 temp gates consult).
 pub mod closed_world_temp;

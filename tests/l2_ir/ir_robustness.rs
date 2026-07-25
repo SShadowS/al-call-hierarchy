@@ -228,8 +228,20 @@ fn report_dataitem_implicit_rec_and_name_vars_seeded() {
         .find(|r| r.name == "OnAfterGetRecord")
         .expect("trigger");
     assert_eq!(trig.dataitem_source_table.as_deref(), Some("Customer"));
+    // `enclosing_member` = the dataitem wrapper — the real discriminator this
+    // trigger's id carries (`ir_enclosing_member`, Task 3).
+    let trig_member = ir_walk::ir_enclosing_member(trig);
+    assert_eq!(trig_member.as_deref(), Some("Cust"));
     let rid = compute_routine_id(
-        "a", "Report", 50100, "trigger", &trig.name, &no_params, None, "a",
+        "a",
+        "Report",
+        50100,
+        "trigger",
+        &trig.name,
+        trig_member.as_deref(),
+        &no_params,
+        None,
+        "a",
     );
     let feats = ir_walk::project_routine_features_ir(&f, oi, trig, &rid, src, "a", None);
     let rec = feats
@@ -264,6 +276,7 @@ fn report_dataitem_implicit_rec_and_name_vars_seeded() {
         50100,
         "procedure",
         &helper.name,
+        ir_walk::ir_enclosing_member(helper).as_deref(),
         &no_params,
         None,
         "a",

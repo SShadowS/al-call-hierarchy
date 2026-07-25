@@ -203,7 +203,7 @@ pub fn format_pr_summary(
 mod tests {
     use super::*;
     use crate::engine::gate::projection::{FindingLocation, FindingSummary};
-    use crate::engine::l3::l3_workspace::L3Routine;
+    use crate::engine::l3::l3_workspace::{L3Routine, RoutineVariables};
     use crate::engine::l5::finding::{EvidenceStep, Finding, FindingConfidence, SourceAnchor};
 
     /// Build a minimal `SourceAnchor` keyed on `enclosing_routine_id`.
@@ -323,7 +323,7 @@ mod tests {
             record_variables: vec![],
             record_operations: vec![],
             field_accesses: vec![],
-            variables: vec![],
+            variables: RoutineVariables::default(),
             parameters: vec![],
             access_modifier: None,
             return_type: None,

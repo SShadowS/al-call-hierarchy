@@ -208,6 +208,7 @@ mod tests {
     use crate::engine::l2::features::{
         PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
     };
+    use crate::engine::l3::l3_workspace::RoutineVariables;
     use crate::engine::l5::finding::{EvidenceStep, SourceAnchor};
     use crate::engine::l5::path_temp_resolve::resolve_temp_along_path_closed_world;
 
@@ -257,7 +258,7 @@ mod tests {
             record_variables: Vec::new(),
             record_operations: Vec::new(),
             field_accesses: Vec::new(),
-            variables: Vec::new(),
+            variables: RoutineVariables::default(),
             parameters: Vec::new(),
             access_modifier: None,
             return_type: None,

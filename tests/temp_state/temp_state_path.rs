@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use al_call_hierarchy::engine::l2::features::{
     PAnchor, PCallArgumentBinding, PCallSite, PCallee, PTempState,
 };
-use al_call_hierarchy::engine::l3::l3_workspace::L3Routine;
+use al_call_hierarchy::engine::l3::l3_workspace::{L3Routine, RoutineVariables};
 use al_call_hierarchy::engine::l4::effect_lattice::TempStateKind;
 use al_call_hierarchy::engine::l5::finding::{EvidenceStep, SourceAnchor};
 use al_call_hierarchy::engine::l5::path_temp_resolve::resolve_temp_along_path;
@@ -76,7 +76,7 @@ fn routine(id: &str) -> L3Routine {
         record_variables: Vec::new(),
         record_operations: Vec::new(),
         field_accesses: Vec::new(),
-        variables: Vec::new(),
+        variables: RoutineVariables::default(),
         parameters: Vec::new(),
         access_modifier: None,
         return_type: None,
