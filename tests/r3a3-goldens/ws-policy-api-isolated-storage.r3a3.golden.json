@@ -1,7 +1,7 @@
 {
 	"summaries": [
 		{
-			"routineId": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+			"routineId": "10000008-0000-0000-0000-000000000000:Page:50105#8a9601db777cc237f4ceb946f7078443784e754fda6d4b4f55579d4b671c9b1e",
 			"capabilityFactsDirect": [
 				{
 					"op": "store-write",
@@ -13,24 +13,24 @@
 						"kind": "literal",
 						"value": "secret-key"
 					},
-					"witnessCallsiteId": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0/cs0",
+					"witnessCallsiteId": "10000008-0000-0000-0000-000000000000:Page:50105#8a9601db777cc237f4ceb946f7078443784e754fda6d4b4f55579d4b671c9b1e/cs0",
 					"extra": {
-						"kind": "storage",
 						"keyArgSource": {
 							"kind": "literal",
 							"value": "secret-key"
 						},
+						"kind": "storage",
+						"scope": "Module",
 						"valueArgSource": {
 							"kind": "literal",
 							"value": "secret-value"
-						},
-						"scope": "Module"
+						}
 					}
 				}
 			],
 			"capabilityFactsInherited": [],
 			"coverage": {
-				"subject": "10000008-0000-0000-0000-000000000000:Page:50105#898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+				"subject": "10000008-0000-0000-0000-000000000000:Page:50105#8a9601db777cc237f4ceb946f7078443784e754fda6d4b4f55579d4b671c9b1e",
 				"directStatus": "complete",
 				"inheritedStatus": "complete",
 				"reasons": [],

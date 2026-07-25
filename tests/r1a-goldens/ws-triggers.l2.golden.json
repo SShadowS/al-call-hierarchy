@@ -417,6 +417,55 @@
       "capabilityDiagnostics": []
     },
     {
+      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#39d3df51df588e25d7047af68e9a57805fe76352ed008f8992ef3bc5792b1eba",
+      "name": "OnValidate",
+      "kind": "trigger",
+      "attributes": [],
+      "attributesParsed": [],
+      "bodyAvailable": true,
+      "parseIncomplete": false,
+      "features": {
+        "loops": [],
+        "operationSites": [],
+        "recordOperations": [],
+        "callSites": [],
+        "fieldAccesses": [],
+        "recordVariables": [
+          {
+            "id": "r0/5405cd507f75edeafba2d40d32dc99a155fe16687e7f2ed54b1f19e59b059bd8/rv/rec",
+            "name": "Rec",
+            "tempState": {
+              "kind": "known",
+              "value": false
+            },
+            "isParameter": false
+          }
+        ],
+        "nestingDepth": 0,
+        "hasBranching": false,
+        "unreachableStatements": [],
+        "identifierReferences": [],
+        "variables": [],
+        "varAssignments": [],
+        "conditionReferences": [],
+        "statementTree": {
+          "kind": "block",
+          "children": []
+        },
+        "scopeFrames": [
+          {
+            "frameId": 0,
+            "parentFrameId": -1,
+            "kind": "block"
+          }
+        ]
+      },
+      "capabilityFactsDirect": [],
+      "capabilityStatus": "complete",
+      "capabilityReasons": [],
+      "capabilityDiagnostics": []
+    },
+    {
       "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#440dcf23126accbfbacb03611807b37ec5791111556b0d7b23a400294d56491e",
       "name": "OnInsert",
       "kind": "trigger",
@@ -482,55 +531,6 @@
         "recordVariables": [
           {
             "id": "r0/d464f707b49262f3625fe22d116d876d64a89d2dd4d7df62858e89de3589f41e/rv/rec",
-            "name": "Rec",
-            "tempState": {
-              "kind": "known",
-              "value": false
-            },
-            "isParameter": false
-          }
-        ],
-        "nestingDepth": 0,
-        "hasBranching": false,
-        "unreachableStatements": [],
-        "identifierReferences": [],
-        "variables": [],
-        "varAssignments": [],
-        "conditionReferences": [],
-        "statementTree": {
-          "kind": "block",
-          "children": []
-        },
-        "scopeFrames": [
-          {
-            "frameId": 0,
-            "parentFrameId": -1,
-            "kind": "block"
-          }
-        ]
-      },
-      "capabilityFactsDirect": [],
-      "capabilityStatus": "complete",
-      "capabilityReasons": [],
-      "capabilityDiagnostics": []
-    },
-    {
-      "stableRoutineId": "77777777-7777-7777-7777-777777777777:Table:51100#7ce9297ccff0bb1f4a27fb53f7b0335828268f8ec707e4650469ecc05962c253",
-      "name": "OnValidate",
-      "kind": "trigger",
-      "attributes": [],
-      "attributesParsed": [],
-      "bodyAvailable": true,
-      "parseIncomplete": false,
-      "features": {
-        "loops": [],
-        "operationSites": [],
-        "recordOperations": [],
-        "callSites": [],
-        "fieldAccesses": [],
-        "recordVariables": [
-          {
-            "id": "r0/5405cd507f75edeafba2d40d32dc99a155fe16687e7f2ed54b1f19e59b059bd8/rv/rec",
             "name": "Rec",
             "tempState": {
               "kind": "known",

@@ -50,7 +50,9 @@ pub struct ProjectedParameter {
 pub struct ProjectedRoutine {
     /// Internal RoutineId: `${modelInstanceId}/${canonicalRoutineKeyHash}`.
     pub id: String,
-    /// `StableRoutineId`: `${stableObjectId}#${normalizedSignatureHash}`.
+    /// `StableRoutineId`: `${stableObjectId}#${normalizedSignatureHash}`. A dep ABI
+    /// has no member triggers, so the enclosing-member fold (task 4) never applies
+    /// on this side and the id is byte-identical to the pre-discriminator schema.
     pub stable_routine_id: String,
     /// `StableObjectId` of the declaring object.
     pub stable_object_id: String,
@@ -223,8 +225,11 @@ fn abi_routine_to_routine(
     };
 
     let stable_object_id = to_stable_object_id(object_id);
+    // `None` for the same reason as `canonical.enclosing_member` above — a dep ABI
+    // has no member triggers — so every dep-side STABLE id is byte-identical too and
+    // the cross-app stable-id join stays symmetric by construction.
     let stable_routine_id =
-        ids::to_stable_routine_id_from_parts(&stable_object_id, &normalized_hash);
+        ids::to_stable_routine_id_from_parts(&stable_object_id, &normalized_hash, None);
 
     ProjectedRoutine {
         id: ids::encode_routine_id(&canonical, model_instance_id),

@@ -821,6 +821,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **BREAKING (fingerprints): the STABLE routine id gains the same CONDITIONAL
+  enclosing-member discriminator — sibling member triggers' findings stop
+  sharing a fingerprint** (`feat/l3-substrate-and-parked-items` Task 4;
+  `src/engine/ids.rs`, `src/engine/l2/l2_workspace.rs`,
+  `src/engine/l3/l3_workspace.rs`, `src/engine/l5/snapshot_full.rs`,
+  `src/engine/snapshot.rs`, `src/engine/deps/projection.rs`;
+  `.superpowers/sdd/task-4-report.md`,
+  `.superpowers/sdd/scope-routine-id-collision.md` option (a3)).
+  Task 3 (below) gave the two `trigger OnAction()` bodies of one page distinct
+  INTERNAL ids, but their FINDINGS still hashed to one fingerprint:
+  `l5::fingerprint::fingerprint_of` substitutes every internal id in a
+  `rootCauseKey` to its STABLE image before hashing, and the stable id was still
+  member-blind — so one baseline entry suppressed both siblings, and recovering
+  a previously-invisible sibling body ADDED a duplicate-fingerprint pair
+  (measured on DO: duplicate-fingerprint excess 5 → 7 after Task 3).
+  `to_stable_routine_id_from_parts` now takes `enclosing_member: Option<&str>`
+  and, when `Some`, replaces the hash part with
+  `sha256_of_strings([normalizedSignatureHash, member_lowercased])`.
+  **Conditional, exactly as on the internal id:** `None` — procedures,
+  object-level triggers, and every dependency-ABI routine (the dep projection
+  passes `None`) — reproduces `{stableObjectId}#{normalizedSignatureHash}` byte
+  for byte, so the cross-app stable-id join stays symmetric by construction and
+  the committed encoder vectors do not move.
+  **The SHAPE is unchanged and that is the whole design.** The result is always
+  `{stableObjectId}#{64 lowercase hex}` — folding the member into the hash
+  rather than appending a `#member` segment — because `alsem diff`'s stable-id
+  join, `l4::summary::stable_sub_id`'s two-`/`-part split and
+  `deps::r3a4_projection`'s `DepIdStabilizer` all assume it; a shape change
+  would have moved EVERY fingerprint in the product instead of only the member
+  triggers'. Pinned independently of its content by
+  `stable_routine_id_shape_is_object_plus_64_hex_regardless_of_member`.
+  One consequence, stated rather than discovered later: for a member trigger the
+  stable id no longer ENDS with that routine's own `normalizedSignatureHash`
+  (the field itself is emitted unchanged, and is still what the ABI signature
+  match compares) — the historical "suffix invariant" now holds for member-less
+  routines only.
+  **Measured user cost on DO** (`alsem analyze <DO> --format json
+  --deterministic`, `--profile release-fast` at `207db0d` vs this commit):
+  **71 of 2 369 findings (3.00 %) get a new fingerprint; 2 295 of the 2 362
+  baseline fingerprints (97.16 %) still match** — against the scoping doc's
+  prediction of 81/2 384 (3.4 %) made before Tasks 1/3 moved the population.
+  **Zero findings appeared or disappeared** (2 369 → 2 369, every detector count
+  identical) — this task changes identity, not detection.
+  **Duplicate-fingerprint excess 7 → 3**, closing 4 of the 6 groups: all four
+  were the two sibling `OnAction` bodies of `Page 6175313 CDO eDocuments Setup
+  Wizard` (`d1`, `d3`, `d5`, `d10`), including both groups the scoping doc named
+  (`b2d1b142f0577a38`, `47500c86760f3f93`). The residual 3 (2 groups) are
+  `d55-event-publish-in-loop` findings *inside one routine* — same internal id,
+  different call sites — because `d55`'s `rootCauseKey` is
+  `d55/{routine.id}/{loop.id}` and omits the callsite; that is a detector-key
+  granularity question, not an id collision, unchanged before and after, and is
+  now recorded in `docs/OUTSTANDING.md`.
+  **50 goldens moved, and every one was triaged before regenerating.** All 50
+  are explained, order-insensitively, by the stable-id substitution alone (42)
+  or by it plus the 4 intended fingerprint moves (8: the `cli-c-policy` json +
+  sarif pairs). The 6 moved stable ids and the 4 moved fingerprints were each
+  re-derived by a standalone Python reimplementation of the hash, not by the
+  Rust code. The mask used is POSITIONAL — only a 64-hex run immediately
+  preceded by `#` — and the audit separately confirms **zero bare 64-hex values
+  moved** (no `normalizedSignatureHash` / `signatureFingerprint`) and **zero
+  `{modelInstanceId}/`-prefixed internal ids changed value**; the three
+  internal-id-bearing lines that do appear in the diff are a 3-row permutation
+  of `ws-triggers`' routine array, which sorts by stable id.
+  Two hand-written tests asserted the defect by name and were **deliberately
+  inverted**, not preserved: `two_field_on_validate_distinct_member_same_stable_id`
+  → `…_and_stable_id`, and `two_field_rows_share_stable_id_…` →
+  `two_field_rows_have_distinct_stable_ids_and_deterministic_order`. The
+  inventory's case-insensitive `enclosingMember` tie-break (RE-6) is KEPT as
+  fail-closed cover for the residual duplicate-stable-id shapes, and — since no
+  assembled fixture can reach it through the projection any more — gains its own
+  direct pin (`snapshot_full::tests::member_tie_break_is_case_insensitive_and_none_first`)
+  rather than being left silently untested.
+  The CDO L4 frozen whole-program digest did **not** move (`scripts/cdo-gate`
+  with `CDO_WS` set: PASS, `cdo_whole_program_v2_matches_frozen_digest` really
+  ran, nothing under `tests/l4-summary-baseline/` regenerated) — `RoutineSummary`
+  carries internal ids only, and the run is positive evidence that its content is
+  independent of `RoutineInterner`'s `(stable_routine_id, routine_id)` interning
+  ORDER, which this change does permute on 4 842 real routines.
+  The residual member-blind cases are unchanged from Task 3's: 15 groups / 19
+  routines on BC Base App (13 XMLport same-name `fieldelement` members at
+  different nesting paths — wake condition for a path-qualified member if a
+  consumer ever needs one — plus 2 preproc `#if`/`#else` alternatives), 0 on DO.
 - **The internal routine id gains a CONDITIONAL enclosing-member discriminator —
   same-name member triggers in one object no longer collide**
   (`feat/l3-substrate-and-parked-items` Task 3;

@@ -268,13 +268,16 @@ fn build_proutine(
         .collect();
     let return_type_text = ir_routine.return_type.clone();
     let norm_hash = normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
-    let stable_routine_id = to_stable_routine_id_from_parts(stable_object_id, &norm_hash);
 
     // The member-trigger discriminator: without it the N `trigger OnAction()`
     // bodies of one page all hash to ONE internal id (see
-    // `ids::encode_canonical_routine_key`). `None` for procedures / object-level
-    // triggers, which keep a byte-identical id.
+    // `ids::encode_canonical_routine_key`) AND to one stable id (see
+    // `ids::to_stable_routine_id_from_parts`). `None` for procedures /
+    // object-level triggers, which keep byte-identical ids. Computed ONCE, from
+    // `ir_enclosing_member` — the single normalization — and fed to BOTH ids.
     let enclosing_member = ir_walk::ir_enclosing_member(ir_routine);
+    let stable_routine_id =
+        to_stable_routine_id_from_parts(stable_object_id, &norm_hash, enclosing_member.as_deref());
     let routine_id = scope::compute_routine_id(
         app_guid,
         object_type,

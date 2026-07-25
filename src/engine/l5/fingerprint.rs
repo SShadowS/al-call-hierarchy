@@ -25,7 +25,9 @@
 //!
 //! To match al-sem's NEW stabilized fingerprint (`src/projection/finding-fingerprint.ts`),
 //! we build a map from EVERY routine's internal id → its `StableRoutineId`
-//! (`${appGuid}:${objectType}:${objectNumber}#${normalizedSignatureHash}`) — for ALL
+//! (`${appGuid}:${objectType}:${objectNumber}#${64 lowercase hex}` — the hex is the
+//! `normalizedSignatureHash` for a member-less routine and its enclosing-member fold
+//! for a member trigger, see `ids::to_stable_routine_id_from_parts`) — for ALL
 //! routines, SOURCE and DEPENDENCY alike — and substitute every internal routine-id
 //! occurrence in the `rootCauseKey` before hashing. Because operation/callsite/loop
 //! ids carry the routine id as a prefix, replacing the routine-id substring preserves
@@ -33,6 +35,14 @@
 //!
 //! Routines whose `normalized_signature_hash` is empty are skipped (no stable form to
 //! swap to — `to_stable_routine_id_from_parts` would emit a degenerate trailing `#`).
+//!
+//! ⟨task 4⟩ **This is where the member discriminator on the STABLE id pays off.**
+//! Task 3 gave two sibling `trigger OnAction()` bodies distinct INTERNAL ids, but
+//! both still substituted to one stable id here, so their findings hashed to one
+//! fingerprint and a single baseline entry suppressed both. Folding the enclosing
+//! member into the stable id closes that (measured on DO: duplicate-fingerprint
+//! excess 7 → 3, the residual 3 being `d55`'s own callsite-blind `rootCauseKey`,
+//! not an id collision).
 //! For the r0-pinned (r4 differential) path the engine pins `modelInstanceId = "r0"`,
 //! so source ids are already reproducible; the substitution still applies and both
 //! paths stabilize to the SAME `StableRoutineId`. This unifies the prior dep-only

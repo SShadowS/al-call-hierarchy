@@ -320,8 +320,12 @@ pub struct L3Parameter {
 pub struct L3Routine {
     /// Internal routine id: `${modelInstanceId}/${canonicalRoutineKeyHash}`.
     pub id: String,
-    /// StableRoutineId: `${stableObjectId}#${normalizedSignatureHash}` — the
-    /// modelInstanceId-independent key the L3 record-type projection emits.
+    /// StableRoutineId: `${stableObjectId}#${64 lowercase hex}` — the
+    /// modelInstanceId-independent key the L3 record-type projection emits, and
+    /// the id `l5::fingerprint` substitutes into every `rootCauseKey`. The hex is
+    /// the `normalizedSignatureHash` for a member-less routine and its
+    /// enclosing-member fold for a member trigger (`enclosing_member` below); see
+    /// [`crate::engine::ids::to_stable_routine_id_from_parts`].
     pub stable_routine_id: String,
     /// Owning object's internal id.
     pub object_id: String,
@@ -1060,9 +1064,11 @@ fn project_file(
             let body_available = ir_routine.body.is_some();
             let parse_incomplete = ir_routine.parse_incomplete;
 
-            // StableRoutineId = `${stableObjectId}#${normalizedSignatureHash}`.
-            // The hash reuses the same param/kind/return extraction as the internal
-            // routine id (`routine_normalized_signature_hash`), so they cannot drift.
+            // StableRoutineId = `${stableObjectId}#{64 hex}`. The hash reuses the same
+            // param/kind/return extraction as the internal routine id
+            // (`routine_normalized_signature_hash`), so they cannot drift, and it takes
+            // the SAME `enclosing_member` value computed once at the top of this loop as
+            // the internal id's discriminator — one string, one normalization, both ids.
             let stable_object_id = to_stable_object_id(&object_id);
             let norm_hash = {
                 let param_specs: Vec<crate::engine::ids::ParamSpec> = param_syms
@@ -1078,7 +1084,11 @@ fn project_file(
                     return_type.as_deref(),
                 )
             };
-            let stable_routine_id = to_stable_routine_id_from_parts(&stable_object_id, &norm_hash);
+            let stable_routine_id = to_stable_routine_id_from_parts(
+                &stable_object_id,
+                &norm_hash,
+                enclosing_member.as_deref(),
+            );
 
             // Routine kind + structured attributes (the event-graph inputs). Reuse the
             // SAME L2 attribute indexing that produces the L2 projection's
@@ -2010,6 +2020,115 @@ page 50813 "CP3 Wizard"
         );
     }
 
+    /// Task 4: the same discriminator on the **STABLE** id — the one that reaches
+    /// user baselines.
+    ///
+    /// Task 3 separated the four sibling bodies of the fixture above in the model,
+    /// but their FINDINGS still hashed to one fingerprint, because
+    /// `l5::fingerprint::fingerprint_of` substitutes internal ids to their STABLE
+    /// image before hashing and the stable id was still member-blind. Same fixture,
+    /// same closure, one level up — plus the executable precondition that the
+    /// pre-Task-4 form (member-less) DID collide, so this cannot pass for an
+    /// unrelated reason.
+    #[test]
+    fn same_name_member_triggers_get_distinct_stable_routine_ids() {
+        let src = r#"
+page 50815 "CP5 Wizard"
+{
+    PageType = Card;
+    SourceTable = "CP5 Setup";
+
+    layout
+    {
+        area(Content)
+        {
+            field(Alpha; Rec."No.") { trigger OnValidate() begin end; }
+            field("Be""ta"; Rec."No.") { trigger OnValidate() begin end; }
+        }
+    }
+
+    actions
+    {
+        area(Processing)
+        {
+            action(First) { trigger OnAction() begin end; }
+            action(Second) { trigger OnAction() begin end; }
+        }
+    }
+
+    trigger OnOpenPage() begin end;
+
+    local procedure Touch() begin end;
+}
+"#;
+        let files = vec![("src/CP5Wizard.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "55555555-0000-0000-0000-0000000cp005");
+        let routines = &resolved.workspace.routines;
+
+        let named = |n: &str| -> Vec<&L3Routine> {
+            routines
+                .iter()
+                .filter(|r| r.name.eq_ignore_ascii_case(n))
+                .collect()
+        };
+
+        for name in ["OnValidate", "OnAction"] {
+            let pair = named(name);
+            assert_eq!(pair.len(), 2, "fixture precondition: two `{name}` bodies");
+            assert_ne!(
+                pair[0].stable_routine_id, pair[1].stable_routine_id,
+                "two `{name}` triggers under different members must not share a STABLE id"
+            );
+            // The precondition, executable: the pre-Task-4 form — the same object and
+            // the same signature hash, with no member — collides for the pair.
+            let legacy: Vec<String> = pair
+                .iter()
+                .map(|r| {
+                    crate::engine::ids::to_stable_routine_id_from_parts(
+                        &to_stable_object_id(&r.object_id),
+                        &r.normalized_signature_hash,
+                        None,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                legacy[0], legacy[1],
+                "precondition: without the member discriminator both `{name}` bodies \
+                 share ONE stable id — that is what made their findings share a \
+                 fingerprint and be cross-suppressed by a single baseline entry"
+            );
+        }
+
+        // The member-LESS routines keep the legacy stable id byte-for-byte, which is
+        // why only member-anchored fingerprints move in a user's baseline.
+        for name in ["OnOpenPage", "Touch"] {
+            let r = named(name);
+            assert_eq!(r.len(), 1, "fixture precondition: one `{name}`");
+            let r = r[0];
+            assert!(r.enclosing_member.is_none());
+            assert_eq!(
+                r.stable_routine_id,
+                format!(
+                    "{}#{}",
+                    to_stable_object_id(&r.object_id),
+                    r.normalized_signature_hash
+                ),
+                "a routine with no enclosing member keeps `{{stableObjectId}}#{{normalizedSignatureHash}}`"
+            );
+        }
+
+        // Whole-object closure on the stable id too.
+        let all: std::collections::HashSet<&str> = routines
+            .iter()
+            .map(|r| r.stable_routine_id.as_str())
+            .collect();
+        assert_eq!(
+            all.len(),
+            routines.len(),
+            "no two routines in this object may share a stable routine id"
+        );
+    }
+
     /// ⟨task-3 fix wave, review M-8⟩ The L2 and L3 id paths must agree on an
     /// **ESCAPED** member name.
     ///
@@ -2108,6 +2227,38 @@ page 50814 "CP4 Wizard"
             "the L2 and L3 id paths must mint the SAME internal routine id for a \
              routine under an ESCAPED enclosing member — a divergence here means one \
              path stopped going through `ir_enclosing_member`'s single unescape"
+        );
+
+        // ⟨task 4⟩ The same agreement on the STABLE id, which `PRoutine` carries
+        // directly. This is the half that reaches user baselines: a normalization
+        // split here would give the same routine two fingerprints depending on which
+        // path produced it.
+        assert_eq!(
+            l2.stable_routine_id, l3_routine.stable_routine_id,
+            "the L2 and L3 paths must mint the SAME STABLE routine id for a routine \
+             under an ESCAPED enclosing member"
+        );
+        // …and it is genuinely discriminated, not accidentally equal to the legacy
+        // member-less form.
+        assert_ne!(
+            l3_routine.stable_routine_id,
+            crate::engine::ids::to_stable_routine_id_from_parts(
+                &to_stable_object_id(&l3_routine.object_id),
+                &l3_routine.normalized_signature_hash,
+                None,
+            ),
+            "a member trigger's stable id must differ from its pre-discriminator form"
+        );
+        assert_ne!(
+            l3_routine.stable_routine_id,
+            crate::engine::ids::to_stable_routine_id_from_parts(
+                &to_stable_object_id(&l3_routine.object_id),
+                &l3_routine.normalized_signature_hash,
+                Some(r#"Be""ta"#),
+            ),
+            "the escaped and unescaped member texts must fold differently into the \
+             STABLE id too — otherwise this test could not tell a missing unescape \
+             from a present one"
         );
 
         // …and the agreement is on the UNESCAPED form specifically. Re-mint the id

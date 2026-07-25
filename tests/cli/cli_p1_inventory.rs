@@ -328,11 +328,21 @@ table 50100 "Two Field"
 }
 "#;
 
-/// Two field OnValidate triggers collapse to ONE stableRoutineId but carry DISTINCT
-/// enclosingMember; the rows are emitted in deterministic case-insensitive member
-/// order ("alpha field" before "Bravo Field" despite the lowercase/uppercase mix).
+/// ⟨task 4⟩ Two field OnValidate triggers now carry DISTINCT `stableRoutineId`
+/// (the member is folded into it) as well as distinct `enclosingMember`, and the
+/// rows are emitted in deterministic `locale_compare(stableRoutineId)` order.
+///
+/// **This test's premise was inverted deliberately.** It used to assert the two
+/// rows *share* one `stableRoutineId` and are ordered by the case-insensitive
+/// `enclosingMember` tie-break — a recording of the collapse Task 4 closed. The
+/// tie-break itself is KEPT and still asserted below on the tie it can still see;
+/// it is now fail-closed cover for the residual duplicate-stable-id shapes (same
+/// member name at different XMLport nesting paths; `#if`/`#else` alternatives of
+/// one member — measured: 15 groups on BC Base App, 0 on DO), not the ordinary
+/// case. Compare d1's `edge_target_matches_callsite_callee`, kept for the same
+/// residual.
 #[test]
-fn two_field_rows_share_stable_id_distinct_member_case_insensitive_order() {
+fn two_field_rows_have_distinct_stable_ids_and_deterministic_order() {
     let doc = inventory_doc_for("two-field", "twofield.al", TWO_FIELD_TABLE);
     let rows = doc["payload"]["routineInventory"]
         .as_array()
@@ -349,13 +359,26 @@ fn two_field_rows_share_stable_id_distinct_member_case_insensitive_order() {
         "two OnValidate rows expected, got {validate_rows:?}"
     );
 
-    // Same stableRoutineId.
+    // DISTINCT stableRoutineId — the Task-4 fold. Their findings therefore get
+    // distinct fingerprints and are independently baseline-able.
     let sid0 = validate_rows[0]["stableRoutineId"].as_str().unwrap();
     let sid1 = validate_rows[1]["stableRoutineId"].as_str().unwrap();
-    assert_eq!(
+    assert_ne!(
         sid0, sid1,
-        "both field OnValidate rows must share one stableRoutineId"
+        "the two field OnValidate rows must NOT share a stableRoutineId"
     );
+    // Both keep the `{stableObjectId}#{64 lowercase hex}` SHAPE — the property
+    // `alsem diff`'s join key and `stable_sub_id`'s split depend on.
+    for sid in [sid0, sid1] {
+        let (obj, hash) = sid.rsplit_once('#').expect("stable id is `{obj}#{hash}`");
+        assert!(!obj.contains('#'), "exactly one `#` in {sid}");
+        assert_eq!(hash.len(), 64, "hash part stays 64 bytes in {sid}");
+        assert!(
+            hash.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "hash part stays lowercase hex in {sid}"
+        );
+    }
 
     // Distinct enclosingMember, present on both.
     let m0 = validate_rows[0]["enclosingMember"]
@@ -366,14 +389,19 @@ fn two_field_rows_share_stable_id_distinct_member_case_insensitive_order() {
         .expect("row 1 enclosingMember present");
     assert_ne!(m0, m1, "the two rows must carry distinct enclosingMember");
 
-    // Deterministic case-insensitive member order: "alpha field" < "Bravo Field".
-    // The duplicate-stableRoutineId tie-break (RE-6) is case-insensitive, so the
-    // lowercase "alpha field" sorts before "Bravo Field" regardless of casing.
+    // Deterministic order: the PRIMARY key (locale_compare on stableRoutineId) now
+    // decides, since the two ids differ. Recomputed from the emitted ids rather than
+    // hardcoded, so the assertion pins the SORT RULE and not one hash's accident.
     assert_eq!(
-        (m0, m1),
-        ("alpha field", "Bravo Field"),
-        "duplicate-stableRoutineId rows ordered by case-insensitive enclosingMember"
+        al_call_hierarchy::engine::ids::locale_compare(sid0, sid1),
+        std::cmp::Ordering::Less,
+        "inventory rows must be ordered by locale_compare(stableRoutineId)"
     );
+
+    // The case-insensitive `enclosingMember` tie-break (RE-6) is KEPT for the
+    // residual duplicate-stable-id shapes but can no longer be reached through this
+    // fixture. Its own non-vacuous pin lives next to the comparator, in
+    // `snapshot_full::tests::member_tie_break_is_case_insensitive_and_none_first`.
 
     // originatingObject present on the member-trigger rows (the declaring table).
     assert!(

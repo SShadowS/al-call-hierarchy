@@ -278,14 +278,18 @@ the bottom, CHANGELOG, and git log.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
-- [ ] **`compute_routine_id` member-discriminator gap — colliding same-name
-  triggers share ONE id** — `compute_routine_id` (`src/engine/l2/scope.rs`)
-  keys app/object-type/number/kind/name/signature with NO member
+- [x] **CLOSED 2026-07-25 (T1 + T3 + T4) — `compute_routine_id`
+  member-discriminator gap: colliding same-name triggers shared ONE id.**
+  `compute_routine_id` (`src/engine/l2/scope.rs`) keyed
+  app/object-type/number/kind/name/signature with NO member
   discriminator, so two same-name same-signature triggers in one object (e.g.
   any page with two actions each declaring `trigger OnAction()` — ordinary in
-  real BC) collide on one routine id. This is the SAME collision family as
+  real BC) collided on one routine id. This is the SAME collision family as
   `docs/engine-gaps.md`'s **G-18** (which fixed a different symptom — d1's
   cross-body loop misattribution — and correctly remains marked FIXED).
+  Kept here in full because the three tasks' measurements are the evidence
+  behind the current id schema, and because the honest residual below is a
+  live wake condition.
 
   **MEASURED, 2026-07-25** (`.superpowers/sdd/scope-routine-id-collision.md`),
   correcting this entry's own earlier "handful of routines" framing by three
@@ -337,20 +341,48 @@ the bottom, CHANGELOG, and git log.
   (previously unaddressable sibling BODIES becoming real routines). See
   `.superpowers/sdd/task-3-report.md`.
 
-  **STILL OPEN — the STABLE id (option (a3)).** The internal collision is
-  closed, so the surviving DIRECT facts, the derived (`cs`/`op`/`loop`) ids,
-  the merged call edges, `routine_by_id`'s last-wins `collect()` and G-19's
-  collision disqualifier are all fixed with it. What remains is the **stable**
-  routine id, which still carries no member discriminator: two sibling
-  triggers' findings still hash to ONE fingerprint, so one baseline entry
-  suppresses both. Measured on DO, that is now slightly WORSE in raw count than
-  before T3 (duplicate-fingerprint excess 5 → 7) — recovering a previously
-  invisible sibling body adds a duplicate pair rather than removing one. The
-  fix is the same conditional discriminator folded into
-  `normalized_signature_hash`'s input, keeping the `{stableObjectId}#{64hex}`
-  SHAPE intact; its user cost was measured at 81 of 2 384 DO fingerprints
-  (3.4 %). **Wake:** willingness to move ~3.4 % of a user baseline, or the
-  first report of one baseline entry suppressing two distinct findings.
+  **DONE (T4, 2026-07-25): the STABLE id schema is fixed — option (a3), and
+  the parked entry closes with it.** `to_stable_routine_id_from_parts` takes
+  `enclosing_member: Option<&str>` and, when `Some`, replaces the hash part with
+  `sha256_of_strings([normalizedSignatureHash, member_lowercased])` — the same
+  ONE canonical normalization (`ir_enclosing_member`) at all five construction
+  sites, `None` on the dep-ABI side. `None` reproduces
+  `{stableObjectId}#{normalizedSignatureHash}` byte for byte; the SHAPE stays
+  `{stableObjectId}#{64 lowercase hex}` (folded into the hash, never appended as
+  a segment — an appended `#member` would have defeated `alsem diff`'s join,
+  `stable_sub_id`'s two-part split and `DepIdStabilizer`, moving EVERY
+  fingerprint in the product), pinned independently of its content by
+  `stable_routine_id_shape_is_object_plus_64_hex_regardless_of_member`.
+  Measured on DO: **71 of 2 369 findings (3.00 %) get a new fingerprint and
+  2 295 of 2 362 baseline fingerprints (97.16 %) still match** — against the
+  scoping doc's 81/2 384 (3.4 %) prediction, made before T1/T3 moved the
+  population. **Zero findings appeared or disappeared**; every detector count is
+  identical. **Duplicate-fingerprint excess 7 → 3**, closing all four
+  sibling-`OnAction` groups (including `b2d1b142f0577a38` and
+  `47500c86760f3f93`). 50 goldens moved, every one explained order-insensitively
+  by the stable-id substitution (42) or by it plus the 4 intended fingerprint
+  moves (8); the 6 stable ids and 4 fingerprints were re-derived independently
+  in Python; the mask was POSITIONAL and confirmed that zero bare 64-hex values
+  (`normalizedSignatureHash` / `signatureFingerprint`) and zero
+  `{modelInstanceId}/`-prefixed internal ids changed value. `scripts/cdo-gate`
+  with `CDO_WS` set: PASS, and the frozen CDO L4 whole-program digest did **not**
+  move. See `.superpowers/sdd/task-4-report.md`.
+
+  **The honest residual, and its wake condition.** 15 groups / 19 routines on BC
+  Base App (0 on DO) still share both ids, on BOTH the internal and the stable
+  schema: **13 are XMLport same-name `fieldelement` members at different nesting
+  paths** — a FLAT member name cannot separate a nested XMLport tree — and **2
+  are preproc `#if`/`#else` alternatives** of one member, an artifact of the
+  deliberate union-read preproc design rather than of this defect (one of those
+  two is a codeunit-level procedure with no enclosing member at all, so no
+  member discriminator could ever separate it). **Wake:** a consumer that must
+  tell two same-named XMLport elements apart — at which point the fix is a
+  path-qualified member (or a declaration ordinal) in the same conditional
+  position, with the same shape constraint. Until then the fail-closed handling
+  stands: `detector_context`'s skip-on-drained-map branch, d1's
+  `edge_target_matches_callsite_callee` guard, and the inventory's
+  `case_insensitive_compare_opt` tie-break, all three kept deliberately and each
+  with a test that states its precondition executably.
 
   **Historical (superseded by T3 above) — what the collision cost.** With one
   id per N siblings the
@@ -372,6 +404,22 @@ the bottom, CHANGELOG, and git log.
   last sibling and the op-site lookup fell back to its declaration anchor). The
   d9 twin now anchors correctly on line 142 with 2 tables instead of the
   union's 5, which is precisely why d8's `>= 3` threshold stops being met.
+- [ ] **`d55-event-publish-in-loop`'s `rootCauseKey` omits the callsite, so
+  several publish sites in ONE loop share a fingerprint** — `d55.rs:73` builds
+  `d55/{routine.id}/{loop_info.id}` while the finding `id` additionally carries
+  `/cs{n}`. Measured on DO (2026-07-25, after T4 closed every id-collision
+  duplicate): this is now the **entire** remaining duplicate-fingerprint
+  population — 2 groups / 3 excess, `CDO Payment Link Handler.al:43,51`
+  (`/cs9`, `/cs18`) and `CDOEMailJob.Table.al:254,257,464`
+  (`/cs6`, `/cs7`, `/cs86`), each group inside a single routine with a single
+  internal id. **Not an id defect** — the ids are correct and distinct; the
+  detector's key is coarser than its findings. Two coherent fixes: include the
+  callsite in the key (one finding per publish site, distinct fingerprints), or
+  emit ONE finding per loop (matching the key). The second is arguably what the
+  message text already implies. **Wake:** a user reporting that baselining one
+  d55 finding silently suppressed a second publish in the same loop, or the next
+  deliberate fingerprint-moving change (piggyback — the cost is the same class as
+  T4's 3 %).
 - [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
   built and tested but has zero production callers** — built at A4 with
   wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +

@@ -414,8 +414,11 @@ fn derive_contracts(resolved: &L3Resolved) -> CborValue {
 
     for r in &ws.routines {
         let stable_object = crate::engine::ids::to_stable_object_id(&r.object_id);
-        let stable_id =
-            to_stable_routine_id_from_parts(&stable_object, &r.normalized_signature_hash);
+        let stable_id = to_stable_routine_id_from_parts(
+            &stable_object,
+            &r.normalized_signature_hash,
+            r.enclosing_member.as_deref(),
+        );
         let mut m: IndexMap<String, CborValue> = IndexMap::new();
         m.insert("kind".into(), CborValue::Text("routine".into()));
         m.insert("stableId".into(), CborValue::Text(stable_id.clone()));
@@ -629,8 +632,11 @@ fn derive_permissions(
             continue;
         };
         let stable_object = crate::engine::ids::to_stable_object_id(&r.object_id);
-        let stable_subject =
-            to_stable_routine_id_from_parts(&stable_object, &r.normalized_signature_hash);
+        let stable_subject = to_stable_routine_id_from_parts(
+            &stable_object,
+            &r.normalized_signature_hash,
+            r.enclosing_member.as_deref(),
+        );
 
         // coverage = inheritedStatus ?? directStatus ?? "unknown".
         let coverage = {
@@ -1042,6 +1048,16 @@ pub const INVENTORY_SCHEMA_VERSION: &str = "1.1.0";
 /// lowercased form so duplicate-`stableRoutineId` rows are content-stable
 /// regardless of developer casing. Deterministic (locale-compare on lowercased
 /// text; ties resolve only on the tertiary originatingObject key in the caller).
+///
+/// ⟨task 4⟩ **Kept deliberately, and no longer the ordinary case.** The stable id
+/// now folds the enclosing member in, so two field triggers of one object have
+/// DISTINCT `stableRoutineId` and the primary key already separates them. What
+/// still reaches this comparator is the measured residual — a same member NAME at
+/// two XMLport nesting paths, or `#if`/`#else` alternatives of one member (15
+/// groups on BC Base App, 0 on DO) — where the members compare equal and the
+/// tertiary key decides. Fail-closed for any future duplicate shape; pinned
+/// directly by `member_tie_break_is_case_insensitive_and_none_first` because no
+/// real fixture can reach it through the projection any more.
 fn case_insensitive_compare_opt(a: &Option<String>, b: &Option<String>) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     match (a, b) {
@@ -1080,8 +1096,10 @@ fn build_inventory_doc(
     // trigger routines (field/control/action/dataitem trigger). Sort is three-key
     // (RE-6): primary stableRoutineId (locale_compare) → secondary enclosingMember
     // (case-insensitive; None first) → tertiary originatingObject (locale_compare).
-    // The secondary/tertiary keys give duplicate-stableRoutineId rows (two field
-    // triggers that collapse to one StableRoutineId) a content-stable order.
+    // ⟨task 4⟩ The primary key now separates two field triggers of one object on
+    // its own (the member is folded into the stable id); the secondary/tertiary
+    // keys remain as fail-closed cover for the residual duplicate-stableRoutineId
+    // shapes — see `case_insensitive_compare_opt`.
     let mut routine_rows: Vec<(String, Option<String>, Option<String>, CborValue)> = resolved
         .workspace
         .routines
@@ -1526,5 +1544,48 @@ fn write_insertion_json(v: &CborValue, indent: usize, out: &mut String) {
             out.push_str(&"  ".repeat(indent));
             out.push('}');
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ⟨task 4⟩ The RE-6 member tie-break, pinned where it lives.
+    ///
+    /// The stable id now folds the enclosing member in, so the inventory's PRIMARY
+    /// key separates two field triggers of one object by itself and no assembled
+    /// fixture can drive this comparator's discriminating branch through
+    /// `build_inventory_doc` any more. Its previous coverage
+    /// (`cli_p1_inventory`'s two-field ordering assertion) therefore stopped
+    /// testing it; this is the replacement, exercising the comparator directly so
+    /// the tie-break kept for the residual duplicate-stableRoutineId shapes is not
+    /// silently deletable.
+    #[test]
+    fn member_tie_break_is_case_insensitive_and_none_first() {
+        use std::cmp::Ordering;
+        let alpha = Some("alpha field".to_string());
+        let bravo = Some("Bravo Field".to_string());
+        // Case-insensitive: the lowercase `alpha field` still sorts before the
+        // uppercase `Bravo Field` (an ordinal compare would put `B` first).
+        assert_eq!(case_insensitive_compare_opt(&alpha, &bravo), Ordering::Less);
+        assert_eq!(
+            case_insensitive_compare_opt(&bravo, &alpha),
+            Ordering::Greater
+        );
+        // Same member differing only in case is a TIE — which is exactly the
+        // residual case (one member name, two XMLport nesting paths): the tertiary
+        // originatingObject key decides, not this one.
+        assert_eq!(
+            case_insensitive_compare_opt(&Some("Ctry".to_string()), &Some("ctry".to_string())),
+            Ordering::Equal
+        );
+        // `None` (an object-level trigger / procedure) orders first.
+        assert_eq!(case_insensitive_compare_opt(&None, &alpha), Ordering::Less);
+        assert_eq!(
+            case_insensitive_compare_opt(&alpha, &None),
+            Ordering::Greater
+        );
+        assert_eq!(case_insensitive_compare_opt(&None, &None), Ordering::Equal);
     }
 }

@@ -86,9 +86,13 @@ fn encode(kind: &str, input: &Value) -> String {
             &parse_params(&input["parameters"]),
             opt_str(&input["returnTypeText"]).as_deref(),
         ),
+        // Same contract as `build_key`'s `enclosingMember` (Task 4, for the STABLE
+        // id): the committed vectors carry none, so every one takes the CONDITIONAL
+        // fold's absent branch and must stay byte-identical.
         "toStableRoutineIdFromParts" => ids::to_stable_routine_id_from_parts(
             input["stableObjectId"].as_str().unwrap(),
             input["normalizedSignatureHash"].as_str().unwrap(),
+            input.get("enclosingMember").and_then(|v| v.as_str()),
         ),
         "routineSignatureFingerprint" => ids::routine_signature_fingerprint(
             input["name"].as_str().unwrap(),
