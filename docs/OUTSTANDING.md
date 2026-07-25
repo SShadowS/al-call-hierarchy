@@ -284,9 +284,13 @@ the bottom, CHANGELOG, and git log.
   `project_file` (`src/engine/l3/l3_workspace.rs:1038-1050`) immediately
   filters them back out and drops them before constructing
   `RoutineVariables`. The RETAINED cost is genuinely gone (Task 5's measured
-  ~540 MB peak drop is real, not an artifact); the TRANSIENT churn is not,
-  and is the most likely explanation for the scoped ~700 MB vs. measured
-  ~560 MB shortfall. **Not a defect on its own** — L2's `PFeatures.variables`
+  ~540 MB peak drop is real, not an artifact, **on the 8020 corpus** — real
+  BC customer workspaces replicate far less: CDO/DO measures 16.8x global
+  replication against 8020's 56.4x, a ~5.29 MB win there vs. 8020's
+  ~434.97 MB, see `scope-l3-substrate.md` §8 and the CHANGELOG's L-3 entry);
+  the TRANSIENT churn is not, and is the most likely explanation for the
+  scoped ~700 MB vs. measured ~560 MB shortfall (also 8020-scale). **Not a
+  defect on its own** — L2's `PFeatures.variables`
   is a serialized golden surface (`tests/ir-l2-goldens/l2_features.snapshot`,
   `tests/r1a-vectors/l2-vectors.json`) and must keep its full flat
   params→locals→globals form; L-3 was scoped as "never-build" for the L3
