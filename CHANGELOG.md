@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — L3 substrate + the two parked items (arc capstone)
+
+Whole-process peak on the 8020 corpus (`alsem analyze --detector
+d8-commit-in-transaction`, release-fast, the like-for-like probe this arc used
+throughout): **7,787 MB -> 5,122 MB (-2,665 MB, -34%)**. Span deltas:
+`l3.assemble_resolve` 3,381 -> 2,231 MB, `l3.parse_project_parallel` 2,770 ->
+2,225 MB, `context.symbols_resolve_calls` 1,723 -> 254 MB, `l3.resolve` 664 ->
+15 MB, `context.capability_cones` 2,195 -> 1,178 MB.
+
+**Sub-GB was NOT reached and is not an L3 problem.** L3's own floor is ~1.2 GB of
+actual program (100,941 routines' call sites, operations and CFN trees at ~12
+KB/routine). After every lever here the peak is set by `d1` (~4.3 GB on a default
+preset) and the cone substrate — a separate arc. Note also that a default-preset
+run is a larger number than the d8-only probe above; the two shapes are never
+comparable.
+
+Correctness, not just memory: the `compute_routine_id` collision that erased
+**1,157 of 4,842 DO routines (23.9%)** and **16,906 of 100,941 on 8020 (16.7%)**
+is closed — DO collision groups 262 -> 0, 8020 3,058 -> 15 (0.019%, preproc `#if`
+alternatives and XMLport same-name nesting, recorded as the honest residual).
+That recovered real findings on real code and moved 71 of 2,369 DO fingerprints
+(3.00%), leaving 97.16% of a user's baseline matching.
+
+
 ### Added
 - **`alsem query touches` / `alsem query effects` — a db-effect query surface, and
   with it the first production consumer of `ReverseEffectIndex`**
