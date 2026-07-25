@@ -80,6 +80,15 @@ pub struct SymbolTable<'a> {
     enum_implementers: HashMap<String, Vec<usize>>,
 
     impls_knowledge: ImplsKnowledge,
+
+    /// `true` for a table built by [`build`](Self::build), `false` for one built
+    /// by [`build_without_routines`](Self::build_without_routines). Every routine
+    /// accessor `debug_assert!`s this — a table built without routines fails
+    /// *open* (its routine indexes are simply empty, so a query silently returns
+    /// `None`/`[]` rather than an error); this flag turns that into a loud panic
+    /// in debug/test builds instead of a silent under-resolve. See
+    /// `build_without_routines`'s doc for the one caller allowed to set it `false`.
+    routines_indexed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +104,15 @@ impl<'a> SymbolTable<'a> {
         objects: &'a [L3Object],
         tables: &'a [L3Table],
         routines: &'a [L3Routine],
+    ) -> SymbolTable<'a> {
+        Self::build_inner(objects, tables, routines, true)
+    }
+
+    fn build_inner(
+        objects: &'a [L3Object],
+        tables: &'a [L3Table],
+        routines: &'a [L3Routine],
+        routines_indexed: bool,
     ) -> SymbolTable<'a> {
         // --- object indexes (LAST-wins) -------------------------------------
         let mut by_type_number = HashMap::new();
@@ -228,6 +246,7 @@ impl<'a> SymbolTable<'a> {
             codeunit_implementers,
             enum_implementers,
             impls_knowledge,
+            routines_indexed,
         }
     }
 
@@ -249,12 +268,15 @@ impl<'a> SymbolTable<'a> {
     ///
     /// Making that structural is the point of this constructor: a routine lookup
     /// against a `resolve`-time table is a bug, and naming the constructor says so.
-    /// Do NOT use it anywhere else.
-    pub fn build_without_routines(
+    /// Do NOT use it anywhere else. `pub(crate)` rather than `pub` so that
+    /// restriction is enforced for every consumer outside this lib crate
+    /// (`aldump`, `alsem`, integration tests) — its sole in-crate caller is
+    /// `l3_workspace::resolve`.
+    pub(crate) fn build_without_routines(
         objects: &'a [L3Object],
         tables: &'a [L3Table],
     ) -> SymbolTable<'a> {
-        SymbolTable::build(objects, tables, &[])
+        Self::build_inner(objects, tables, &[], false)
     }
 
     pub fn object_by_type_number(
@@ -306,6 +328,12 @@ impl<'a> SymbolTable<'a> {
     }
 
     pub fn routine_in_object(&self, object_id: &str, routine_name: &str) -> Option<&L3Routine> {
+        debug_assert!(
+            self.routines_indexed,
+            "routine_in_object called on a table built via SymbolTable::build_without_routines \
+             (routine indexes are empty, so this would silently return None) — use \
+             SymbolTable::build instead"
+        );
         let key = format!("{}::{}", object_id, routine_name.to_lowercase());
         self.routine_by_key.get(&key).map(|&i| &self.routines[i])
     }
@@ -345,6 +373,12 @@ impl<'a> SymbolTable<'a> {
     }
 
     pub fn routines_in_object(&self, object_id: &str) -> Vec<&L3Routine> {
+        debug_assert!(
+            self.routines_indexed,
+            "routines_in_object called on a table built via SymbolTable::build_without_routines \
+             (routine indexes are empty, so this would silently return []) — use \
+             SymbolTable::build instead"
+        );
         self.routines_by_object
             .get(object_id)
             .map(|v| v.iter().map(|&i| &self.routines[i]).collect())
@@ -357,6 +391,12 @@ impl<'a> SymbolTable<'a> {
         object_id: &str,
         routine_name: &str,
     ) -> Vec<&L3Routine> {
+        debug_assert!(
+            self.routines_indexed,
+            "routines_in_object_by_name called on a table built via \
+             SymbolTable::build_without_routines (routine indexes are empty, so this would \
+             silently return []) — use SymbolTable::build instead"
+        );
         let key = format!("{}::{}", object_id, routine_name.to_lowercase());
         self.routines_by_object_and_name
             .get(&key)

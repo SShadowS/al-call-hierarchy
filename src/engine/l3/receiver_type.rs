@@ -132,13 +132,21 @@ pub struct InferredReceiver {
 /// Everything Phase B needs that is not the receiver type or the method name. A
 /// thin bundle of the per-callsite resolution context so `dispatch` reads as one
 /// typed `match` rather than a parameter swarm.
-pub(crate) struct DispatchCtx<'a> {
+///
+/// `symbols` carries its OWN lifetime `'b`, independent of the bundle's `'a`,
+/// rather than reusing `&'a SymbolTable<'a>`. The two happen to coincide at every
+/// call site today, but tying them together would only be sound because
+/// `SymbolTable` is currently covariant (no interior mutability) — an unstated,
+/// easy-to-break premise. A separate parameter costs nothing and removes the
+/// dependency: if `SymbolTable` ever gains a `Cell`/`RefCell` field and stops
+/// being covariant, this type keeps compiling unchanged.
+pub(crate) struct DispatchCtx<'a, 'b> {
     pub from: &'a str,
     pub callsite_id: &'a str,
     pub operation_id: &'a str,
     pub routine: &'a L3Routine,
     pub call_site: &'a PCallSite,
-    pub symbols: &'a SymbolTable<'a>,
+    pub symbols: &'a SymbolTable<'b>,
     pub state: &'a mut BindingState,
     pub diagnostics: &'a mut Vec<Diagnostic>,
     pub unfetched_declared_dependency: bool,

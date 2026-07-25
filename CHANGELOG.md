@@ -858,6 +858,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named `SymbolTable::build_without_routines(objects, tables)`. The routine
   index it used to populate there (100,941 deep-cloned routines on this corpus)
   was read by nothing; the constructor's name now says so.
+  **Riding along, same function, pre-authorized hygiene:** `l3_workspace::resolve`'s
+  `object_by_id` map (`l3_workspace.rs:1478`) is now `HashMap<&str, &L3Object>`
+  instead of a second ~4 MB clone of `objects` — identical semantics (same
+  iteration order, same `HashMap::insert` LAST-wins on a duplicate id).
 - **L4 capability cones — the compact `ConeDerivedStore` substrate replaces the
   per-routine inherited-fact Vec, and the SCC walk stops holding cones nothing
   will read** (`feat/l4-summary-redesign`, Part C C1 Tasks 1–4;
