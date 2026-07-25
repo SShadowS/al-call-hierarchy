@@ -22,7 +22,7 @@
 # golden clause named only 4 of the repo's 27 golden directories. The hook fired
 # purely by luck, on two doc-comment-only edits that happened to land under
 # `src/engine/l5/`. A substrate-only version of the same commit would have sailed
-# through. So the filter is now:
+# through. So the filter became:
 #   - ALL of `src/engine/` (the id encoders, L2 projection, L3 workspace, dep
 #     ingestion and L4/L5 all feed goldens; drawing a line inside `src/engine/` is
 #     what failed twice already), plus
@@ -33,19 +33,33 @@
 #     `tests/l4-summary-baseline/`, every `tests/*-vectors/` directory, and the
 #     fixture roots.
 #
+# ⟨final-branch-review-l3.md I-1⟩ Still not enough: the line was drawn one level
+# up, at `src/engine/`, and that repeated the SAME "line inside src/ is what failed
+# twice already" mistake a third time — `src/bin/alsem.rs`/`aldump.rs`/
+# `mint-goldens.rs` and `src/program/` (`resolve/semantic_golden.rs`, `l3_mint.rs`)
+# are provably golden-determining and were both unwatched. Every `cli-*`, `gate-*`
+# and `*-smoke-goldens` family spawns `CARGO_BIN_EXE_alsem`/`CARGO_BIN_EXE_aldump`
+# (`tests/cli/cli_query_differential.rs` — going through `main` is the point: "the
+# subcommand, its flags, its format validation, its exit-code plumbing"), and
+# `tests/goldens/semantic-edges/` — the family the task-3 fix wave was proud of
+# finding — is minted by `src/program/`. So the filter now covers ALL of `src/`,
+# not just `src/engine/`: any file that can reach a golden-producing binary or
+# library path, engine or not, is in scope.
+#
 # THE HONEST COST: this now fires `scripts/check-goldens` — nine test targets
-# covering all 29 golden directories, not the old five covering 17 — on essentially
-# every engine commit. Measured on the dev machine with a warm `target/` (nothing to
-# recompile): 22s wall, 726 tests. A cold or source-invalidated cache pays the debug
-# rebuild on top, which is the real cost most of the time. With `CDO_WS` exported it
-# is slower again, because the CDO-gated members stop skipping. That is the intended
-# trade; a stale golden shipping green is strictly worse than a slower commit. If a
-# commit genuinely cannot move a golden and you need the seconds back, `--no-verify`
-# is there, but you own the consequence.
+# covering all 30 golden directories, not the old five covering 17 — on essentially
+# every source commit (`src/`, not just `src/engine/`). Measured on the dev machine
+# with a warm `target/` (nothing to recompile): 22s wall, 726 tests. A cold or
+# source-invalidated cache pays the debug rebuild on top, which is the real cost
+# most of the time. With `CDO_WS` exported it is slower again, because the
+# CDO-gated members stop skipping. That is the intended trade; a stale golden
+# shipping green is strictly worse than a slower commit. If a commit genuinely
+# cannot move a golden and you need the seconds back, `--no-verify` is there, but
+# you own the consequence.
 set -uo pipefail
 
 # Paths whose change can move a golden family.
-golden_paths='^(src/engine/|crates/al-syntax/src/|tests/r0-corpus/|tests/fixtures/|tests/[a-z0-9._-]*goldens/|tests/l4-summary-baseline/|tests/[a-z0-9._-]*-vectors/)'
+golden_paths='^(src/|crates/al-syntax/src/|tests/r0-corpus/|tests/fixtures/|tests/[a-z0-9._-]*goldens/|tests/l4-summary-baseline/|tests/[a-z0-9._-]*-vectors/)'
 
 if ! git diff --cached --name-only | grep -qE "$golden_paths"; then
     exit 0
