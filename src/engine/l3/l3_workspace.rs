@@ -2009,4 +2009,133 @@ page 50813 "CP3 Wizard"
             "an object-level trigger carries no enclosing member (its id is unchanged)"
         );
     }
+
+    /// ⟨task-3 fix wave, review M-8⟩ The L2 and L3 id paths must agree on an
+    /// **ESCAPED** member name.
+    ///
+    /// Two independent paths mint the internal routine id for the same source
+    /// routine: `l2_workspace::build_proutine` and `l3_workspace::project_file`.
+    /// Both take the discriminator from `ir_walk::ir_enclosing_member`, which is the
+    /// single place `scope::unescape_al_identifier` is applied — the raw IR value is
+    /// only outer-quote-stripped, so a path that fed the raw value would mint a
+    /// DIFFERENT id for the same routine and silently split the cross-path join.
+    /// That normalization split was called out as *the* trap of this design, and
+    /// until now the guarantee was structural only: no golden fixture has an escaped
+    /// member, and `same_name_member_triggers_get_distinct_routine_ids` exercises
+    /// `field("Be""ta"; …)` through the L3 path alone. This pins it executably.
+    ///
+    /// The internal id is not a field on `PRoutine` (which carries only
+    /// `stableRoutineId`), but it IS observable: `build_proutine` feeds it to
+    /// `project_routine_features_ir`, which mints every op/callsite id as
+    /// `{routine_id}/op{n}` / `{routine_id}/cs{n}`. Stripping the last `/`-segment
+    /// recovers exactly the id the L2 path computed — the same recovery
+    /// `call_graph_projection::StableMap::stable_site` performs in production.
+    #[test]
+    fn l2_and_l3_agree_on_the_id_of_an_escaped_enclosing_member() {
+        // ONE `OnValidate`, under a member whose logical name contains a literal `"`
+        // (`Be"ta`, written `"Be""ta"`), so `project_named_routine`'s first-match
+        // lookup is unambiguous. Its body has a db op purely so the L2 features carry
+        // an id to recover the routine id from.
+        let src = r#"
+table 50814 "CP4 Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50814 "CP4 Wizard"
+{
+    PageType = Card;
+    SourceTable = "CP4 Setup";
+
+    layout
+    {
+        area(Content)
+        {
+            field("Be""ta"; Rec."No.")
+            {
+                trigger OnValidate()
+                var
+                    Setup: Record "CP4 Setup";
+                begin
+                    Setup.Insert();
+                end;
+            }
+        }
+    }
+}
+"#;
+        const APP_GUID: &str = "44444444-0000-0000-0000-0000000cp004";
+        const UNIT: &str = "ws:src/CP4Wizard.al";
+
+        // --- L3 path -------------------------------------------------------
+        let files = vec![(UNIT.trim_start_matches("ws:").to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, APP_GUID);
+        let l3: Vec<&L3Routine> = resolved
+            .workspace
+            .routines
+            .iter()
+            .filter(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+            .collect();
+        assert_eq!(l3.len(), 1, "fixture precondition: exactly one OnValidate");
+        let l3_routine = l3[0];
+        assert_eq!(
+            l3_routine.enclosing_member.as_deref(),
+            Some(r#"Be"ta"#),
+            "the stored member must be the UNESCAPED logical identifier"
+        );
+
+        // --- L2 path -------------------------------------------------------
+        let l2 = crate::engine::l2::l2_workspace::project_named_routine(
+            src,
+            "OnValidate",
+            APP_GUID,
+            UNIT,
+        )
+        .expect("L2 must project the OnValidate trigger");
+        let witness = l2
+            .features
+            .record_operations
+            .first()
+            .expect("fixture precondition: the trigger body has a record operation");
+        let (l2_routine_id, _) = witness
+            .id
+            .rsplit_once('/')
+            .expect("an op id is `{routine_id}/op{n}`");
+
+        assert_eq!(
+            l2_routine_id, l3_routine.id,
+            "the L2 and L3 id paths must mint the SAME internal routine id for a \
+             routine under an ESCAPED enclosing member — a divergence here means one \
+             path stopped going through `ir_enclosing_member`'s single unescape"
+        );
+
+        // …and the agreement is on the UNESCAPED form specifically. Re-mint the id
+        // from the RAW (still-escaped) member text and assert it differs: without
+        // this, both paths agreeing on a wrongly-escaped string would pass the
+        // assertion above and the test would prove nothing about the normalization.
+        let params = crate::engine::l2::ir_walk::ir_parameter_symbols(
+            al_syntax::parse(src).objects[1]
+                .routines
+                .iter()
+                .find(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+                .expect("IR must carry the OnValidate trigger"),
+        );
+        let raw_escaped_id = crate::engine::l2::scope::compute_routine_id(
+            APP_GUID,
+            "Page",
+            50814,
+            "trigger",
+            "OnValidate",
+            Some(r#"Be""ta"#),
+            &params,
+            None,
+            MODEL_INSTANCE_ID_DEFAULT,
+        );
+        assert_ne!(
+            raw_escaped_id, l3_routine.id,
+            "the escaped and unescaped member texts must hash differently — otherwise \
+             this test could not tell a missing unescape from a present one"
+        );
+    }
 }

@@ -642,7 +642,15 @@ derived `{rid}/cs{n}` / `{rid}/op{n}` / `{rid}/loop{n}` ids therefore no longer 
 either, and the combined graph no longer files two bodies' edges under one `from` key. d1's
 `edge_target_matches_callsite_callee` guard is consequently no longer load-bearing on
 non-colliding ids — it is kept (it still guards the 15 residual 8020 groups and is
-fail-closed for any future collision), and de-colliding is visibly what let two previously
+fail-closed for any future collision). **Do not read "no longer load-bearing" as
+"deletable".** Its coverage is now `tests/gap/gap_g18_transitive_loop.rs`'s two
+STATED-collision tests (`hand_stated_collision_does_not_splice_the_sibling_bodys_edge`
+and `hand_stated_collision_still_fires_a_genuine_inloop_chain`), which force the residual
+shape by hand rather than deriving it from `compute_routine_id`; deleting the guard from
+the production lookup (`d1_graph.rs:220`) fails both, with the original false positive
+back in the output. The three page-action tests in that file no longer collide at all and
+would NOT notice the deletion — that gap was found by the task-3 review (I-1) and closed
+in its fix wave. De-colliding is visibly what let two previously
 unaddressable `OnValidate` bodies in DO's `CDOMergeTableField` start reporting. What remains
 open is only the **stable** id, which still has no discriminator ⇒ sibling triggers' findings
 still share a fingerprint; tracked in `docs/OUTSTANDING.md`'s Parked section.

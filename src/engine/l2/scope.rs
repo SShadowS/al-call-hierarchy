@@ -87,7 +87,14 @@ pub fn canonicalize_type_text(raw: &str) -> String {
 /// through it and [`super::ir_walk::ir_enclosing_member`] feeds the routine-id
 /// discriminator through it, and those two strings MUST be the same string.
 /// (The raw IR value is only outer-quote-stripped.)
-pub fn unescape_al_identifier(inner: &str) -> String {
+///
+/// `pub(crate)` deliberately: [`super::ir_walk::ir_enclosing_member`] is the ONLY
+/// caller repo-wide, and keeping the visibility crate-internal is what makes the
+/// "exactly one definition, exactly one caller" invariant above enforceable
+/// rather than merely asserted — an out-of-crate consumer could otherwise unescape
+/// a second time (not idempotent for a member like `a""""b`) and mint a divergent
+/// id. ⟨task-3 fix wave, review M-5⟩
+pub(crate) fn unescape_al_identifier(inner: &str) -> String {
     inner.replace("\"\"", "\"")
 }
 
