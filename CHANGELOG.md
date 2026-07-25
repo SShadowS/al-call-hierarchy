@@ -821,6 +821,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **`SymbolTable` borrows the workspace instead of deep-cloning it — ~2.1 GB off
+  the `analyze` peak on the 8020 corpus** (`feat/l3-substrate-and-parked-items`
+  Task 2 / lever L-1; `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
+  `src/engine/l3/symbol_table.rs`, `src/engine/l3/l3_workspace.rs`,
+  `src/engine/l3/receiver_type.rs`, `src/engine/l3/implicit_edges.rs`,
+  `tests/temp_state/temp_state_shadowing.rs`).
+  `SymbolTable::build` opened with `objects.to_vec()` / `tables.to_vec()` /
+  `routines.to_vec()` — a complete deep copy of the assembled workspace, measured
+  at **~1.7 GB per table** on an 8020-file corpus, and the `analyze` path builds
+  **three** of them (`l3::resolve`, `build_detector_context`,
+  `project_coverage`). The type never needed ownership: every public accessor
+  already returns a reference (`&L3Object` / `&L3Table` / `&L3Routine`) and every
+  index map holds `usize`/`String` keys, so the clone existed purely to free
+  callers from a lifetime. `SymbolTable` is now `SymbolTable<'a>` over
+  `&'a [L3Object]` / `&'a [L3Table]` / `&'a [L3Routine]`; no accessor signature
+  and no lookup semantics changed (iteration order is the input slice order,
+  which is exactly what the clone preserved).
+  **Measured, 8020 corpus, `--detector d8-commit-in-transaction`, two runs:**
+  whole-process peak **7,796/7,793 MB → 5,688/5,684 MB (−2,108 MB)**;
+  `context.symbols_resolve_calls` rss_delta **1,681/1,715 MB → 249/250 MB**
+  (the residual is `resolve_calls`' real 254k-edge output, as predicted);
+  `l3.resolve` peak **4,865/4,860 MB → 2,944/2,938 MB**, i.e. the 1.4 GB
+  transient spike inside `resolve` is gone entirely and that span no longer
+  raises the process peak at all; `l3.assemble_resolve` rss_delta
+  **3,429/3,389 MB → 2,766/2,765 MB**. Output is byte-identical: the full DO
+  workspace `analyze --format json --deterministic` and the 8020 run both hash
+  the same before and after, `scripts/check-goldens` passes with zero golden
+  files touched, and the l4 differential stays 17/17.
+  **One structural consequence, made explicit rather than papered over:**
+  `l3_workspace::resolve` walks `&mut workspace.routines` while consulting the
+  table, so a borrowing table cannot also hold `&workspace.routines` there. It
+  never needed to — `record_types::resolve_routine_record_types` asks the table
+  only `object_by_type_number` / `object_by_type_name` / `table_by_name` /
+  `table_by_id`, never a routine — so `resolve` now uses a new, deliberately
+  named `SymbolTable::build_without_routines(objects, tables)`. The routine
+  index it used to populate there (100,941 deep-cloned routines on this corpus)
+  was read by nothing; the constructor's name now says so.
 - **L4 capability cones — the compact `ConeDerivedStore` substrate replaces the
   per-routine inherited-fact Vec, and the SCC walk stops holding cones nothing
   will read** (`feat/l4-summary-redesign`, Part C C1 Tasks 1–4;

@@ -1463,18 +1463,26 @@ fn read_primary_app_from_disk(
 /// `cross_app_l3_poison` test guards). NOTHING in `resolve` reads beyond them.
 pub fn resolve(workspace: &mut L3Workspace) {
     let _s = pt::span("l3", "l3.resolve");
-    let symbols = SymbolTable::build(&workspace.objects, &workspace.tables, &workspace.routines);
+    // ROUTINE-FREE index (see `SymbolTable::build_without_routines`): the loop
+    // below takes `&mut workspace.routines`, so the table — which borrows the
+    // workspace rather than cloning it — must not hold `&workspace.routines`.
+    // It never needed to: `resolve_routine_record_types` only ever asks the
+    // table about objects and tables. `objects`/`tables` are disjoint fields, so
+    // borrowing them immutably alongside the mutable routine walk is fine.
+    let symbols = SymbolTable::build_without_routines(&workspace.objects, &workspace.tables);
 
-    // objectId → object, so a routine maps back to its owning object.
+    // objectId → object, so a routine maps back to its owning object. Borrowed,
+    // not cloned — `resolve_routine_record_types` takes `Option<&L3Object>`, and
+    // `HashMap::insert` is LAST-wins on a duplicate id either way.
     use std::collections::HashMap;
-    let object_by_id: HashMap<String, L3Object> = workspace
+    let object_by_id: HashMap<&str, &L3Object> = workspace
         .objects
         .iter()
-        .map(|o| (o.id.clone(), o.clone()))
+        .map(|o| (o.id.as_str(), o))
         .collect();
 
     for routine in &mut workspace.routines {
-        let object = object_by_id.get(&routine.object_id);
+        let object = object_by_id.get(routine.object_id.as_str()).copied();
         resolve_routine_record_types(routine, object, &symbols);
     }
 

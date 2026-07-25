@@ -30,22 +30,33 @@ fn normalize_interface_name(name: &str) -> String {
     }
 }
 
-/// A read-only lookup index over a workspace L3 model. Holds owned clones so it
-/// is independent of the source model's lifetime (the resolver clones cheaply).
-pub struct SymbolTable {
+/// A read-only lookup index over a workspace L3 model.
+///
+/// BORROWS the assembled workspace slices — it never owns a copy. Every public
+/// accessor already hands back a reference (`&L3Object` / `&L3Table` /
+/// `&L3Routine`), so ownership was never part of the contract; the index maps
+/// hold `usize`/`String` keys only. Deep-cloning the three slices instead cost
+/// **~1.7 GB per table** on an 8020-file corpus, retained for as long as the
+/// table lived — and the `analyze` path builds three of them.
+///
+/// Consequence for callers: the workspace must outlive the table, and it cannot
+/// be mutated while a table over it is alive. Both already held everywhere
+/// except `l3_workspace::resolve`, which mutates `workspace.routines` — see
+/// [`SymbolTable::build_without_routines`].
+pub struct SymbolTable<'a> {
     /// `${objectType_lc}/${objectNumber}` → object index.
     by_type_number: HashMap<String, usize>,
     /// `${objectType_lc}/${name_lc}` → object index.
     by_type_name: HashMap<String, usize>,
     /// `${objectId}` → object index (exact-id lookup; LAST-wins like the others).
     by_id: HashMap<String, usize>,
-    objects: Vec<L3Object>,
+    objects: &'a [L3Object],
 
     /// `${name_lc}` → table index.
     tables_by_name: HashMap<String, usize>,
     /// `${tableId}` → table index.
     tables_by_id: HashMap<String, usize>,
-    tables: Vec<L3Table>,
+    tables: &'a [L3Table],
 
     /// `${objectId}::${name_lc}` → routine index (single, LAST-wins).
     routine_by_key: HashMap<String, usize>,
@@ -53,7 +64,7 @@ pub struct SymbolTable {
     routines_by_object_and_name: HashMap<String, Vec<usize>>,
     /// `${objectId}` → all routine indices in that object (document order).
     routines_by_object: HashMap<String, Vec<usize>>,
-    routines: Vec<L3Routine>,
+    routines: &'a [L3Routine],
 
     /// `${extends_target_lc}` → object ids of every `TableExtension` extending that
     /// base table. The key is the raw `extends` target lowercased — a NAME (native
@@ -77,14 +88,14 @@ pub enum ImplsKnowledge {
     Partial,
 }
 
-impl SymbolTable {
+impl<'a> SymbolTable<'a> {
     /// Build the symbol table over an assembled workspace. The slices MUST be in
     /// al-sem's deterministic ingestion order (collision resolution depends on it).
-    pub fn build(objects: &[L3Object], tables: &[L3Table], routines: &[L3Routine]) -> SymbolTable {
-        let objects = objects.to_vec();
-        let tables = tables.to_vec();
-        let routines = routines.to_vec();
-
+    pub fn build(
+        objects: &'a [L3Object],
+        tables: &'a [L3Table],
+        routines: &'a [L3Routine],
+    ) -> SymbolTable<'a> {
         // --- object indexes (LAST-wins) -------------------------------------
         let mut by_type_number = HashMap::new();
         let mut by_type_name = HashMap::new();
@@ -147,7 +158,7 @@ impl SymbolTable {
         // (native source) or a NUMBER string (dep symbols). A base table is queried
         // by BOTH its name and its number, so either encoding resolves.
         let mut table_extensions_by_base: HashMap<String, Vec<String>> = HashMap::new();
-        for o in &objects {
+        for o in objects {
             if o.object_type.eq_ignore_ascii_case("tableextension")
                 && let Some(et) = &o.extends_target_name
             {
@@ -188,7 +199,7 @@ impl SymbolTable {
         // --- per-app interface-knowledge detection --------------------------
         // appGuid → hasAnyDefined. "partial" iff at least one app is "unknown".
         let mut app_knowledge: HashMap<String, bool> = HashMap::new();
-        for o in &objects {
+        for o in objects {
             let has = o.implements_interfaces.is_some();
             app_knowledge
                 .entry(o.app_guid.clone())
@@ -218,6 +229,32 @@ impl SymbolTable {
             enum_implementers,
             impls_knowledge,
         }
+    }
+
+    /// Build an OBJECT+TABLE-only index — the routine indexes are empty, so every
+    /// routine accessor ([`routine_in_object`](Self::routine_in_object),
+    /// [`routines_in_object`](Self::routines_in_object),
+    /// [`routines_in_object_by_name`](Self::routines_in_object_by_name),
+    /// [`trigger_in_object`](Self::trigger_in_object)) returns nothing.
+    ///
+    /// EXISTS FOR EXACTLY ONE CALLER: `l3_workspace::resolve`, which walks
+    /// `&mut workspace.routines` while consulting the table. Since the table now
+    /// borrows rather than clones, it cannot hold `&workspace.routines` across
+    /// that mutation — and it does not need to: `resolve`'s only consumer is
+    /// `record_types::resolve_routine_record_types`, whose entire use of the
+    /// table is `object_by_type_number` / `object_by_type_name` / `table_by_name`
+    /// / `table_by_id`. It never asks about a routine. The old cloning build
+    /// deep-copied every routine in the workspace here (100,941 of them on an
+    /// 8020-file corpus) to populate an index nothing read.
+    ///
+    /// Making that structural is the point of this constructor: a routine lookup
+    /// against a `resolve`-time table is a bug, and naming the constructor says so.
+    /// Do NOT use it anywhere else.
+    pub fn build_without_routines(
+        objects: &'a [L3Object],
+        tables: &'a [L3Table],
+    ) -> SymbolTable<'a> {
+        SymbolTable::build(objects, tables, &[])
     }
 
     pub fn object_by_type_number(

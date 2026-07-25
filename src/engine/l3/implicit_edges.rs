@@ -260,19 +260,22 @@ mod tests {
         }
     }
 
-    /// Assemble `(workspace, symbols)`: `triggers` are registered in the symbol
-    /// table (the lookup surface); `callers` are the workspace routines the builder
-    /// iterates.
-    fn setup(triggers: Vec<L3Routine>, callers: Vec<L3Routine>) -> (L3Workspace, SymbolTable) {
-        let objects = vec![table_object()];
-        let tables = vec![table_entry()];
-        let symbols = SymbolTable::build(&objects, &tables, &triggers);
+    /// Assemble `(workspace, triggers)`: `callers` are the workspace routines the
+    /// builder iterates; `triggers` are the routines the symbol table indexes (the
+    /// lookup surface), kept OUTSIDE the workspace so the two populations stay
+    /// distinct.
+    ///
+    /// A borrowing [`SymbolTable`] cannot be returned alongside the data it
+    /// borrows (that is a self-referential struct), so the caller finishes with
+    /// `let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);` —
+    /// the same three slices this helper used to pass.
+    fn setup(triggers: Vec<L3Routine>, callers: Vec<L3Routine>) -> (L3Workspace, Vec<L3Routine>) {
         let workspace = L3Workspace {
-            objects,
-            tables,
+            objects: vec![table_object()],
+            tables: vec![table_entry()],
             routines: callers,
         };
-        (workspace, symbols)
+        (workspace, triggers)
     }
 
     // 1. A Validate must target the validated field's OWN OnValidate trigger, never
@@ -292,7 +295,8 @@ mod tests {
                 None,
             )],
         );
-        let (ws, symbols) = setup(vec![ta, tb], vec![caller]);
+        let (ws, triggers) = setup(vec![ta, tb], vec![caller]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert_eq!(edges.len(), 1, "exactly one validate edge");
         assert_eq!(
@@ -316,7 +320,8 @@ mod tests {
                 None,
             )],
         );
-        let (ws, symbols) = setup(vec![ta], vec![caller]);
+        let (ws, triggers) = setup(vec![ta], vec![caller]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert!(
             edges.is_empty(),
@@ -336,7 +341,8 @@ mod tests {
         );
         let caller_absent =
             caller_routine("ca/r0", vec![record_op("ca/r0/op0", "Insert", None, None)]);
-        let (ws, symbols) = setup(vec![oninsert], vec![caller_false, caller_absent]);
+        let (ws, triggers) = setup(vec![oninsert], vec![caller_false, caller_absent]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert_eq!(
             edges.len(),
@@ -359,7 +365,8 @@ mod tests {
             "c/r0",
             vec![record_op("c/r0/op0", "Insert", None, Some(true))],
         );
-        let (ws, symbols) = setup(vec![oninsert], vec![caller]);
+        let (ws, triggers) = setup(vec![oninsert], vec![caller]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].to.as_deref(), Some("app/table/50000::oninsert"));
@@ -380,7 +387,8 @@ mod tests {
                 None,
             )],
         );
-        let (ws, symbols) = setup(vec![obj_level], vec![caller]);
+        let (ws, triggers) = setup(vec![obj_level], vec![caller]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert!(
             edges.is_empty(),
@@ -416,7 +424,8 @@ mod tests {
                 None,
             )],
         );
-        let (ws, symbols) = setup(vec![email, phone], vec![caller]);
+        let (ws, triggers) = setup(vec![email, phone], vec![caller]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert_eq!(edges.len(), 1, "exactly one validate edge");
         assert_eq!(
@@ -446,7 +455,8 @@ mod tests {
                 None,
             )],
         );
-        let (ws, symbols) = setup(vec![weird], vec![caller]);
+        let (ws, triggers) = setup(vec![weird], vec![caller]);
+        let symbols = SymbolTable::build(&ws.objects, &ws.tables, &triggers);
         let edges = build_implicit_trigger_edges(&ws, &symbols);
         assert_eq!(edges.len(), 1);
         assert_eq!(

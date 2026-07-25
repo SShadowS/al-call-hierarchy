@@ -144,7 +144,9 @@ fn pass_2b_first_wins_on_name_collision() {
     // Two tables in the symbol table.
     let bar_table = make_table("Bar", 50900);
     let baz_table = make_table("Baz", 50901);
-    let symbols = SymbolTable::build(&[], &[bar_table, baz_table], &[]);
+    // `SymbolTable` borrows its slices, so the array must outlive the table.
+    let tables = [bar_table, baz_table];
+    let symbols = SymbolTable::build(&[], &tables, &[]);
 
     // `variables` carries the COLLISION: local "Baz" first, then global "Bar".
     // (params → locals → globals order; Task 3 will add globals AFTER locals.)

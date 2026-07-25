@@ -138,7 +138,7 @@ pub(crate) struct DispatchCtx<'a> {
     pub operation_id: &'a str,
     pub routine: &'a L3Routine,
     pub call_site: &'a PCallSite,
-    pub symbols: &'a SymbolTable,
+    pub symbols: &'a SymbolTable<'a>,
     pub state: &'a mut BindingState,
     pub diagnostics: &'a mut Vec<Diagnostic>,
     pub unfetched_declared_dependency: bool,
@@ -1319,14 +1319,34 @@ mod tests {
     use crate::engine::l2::features::PTempState;
     use crate::engine::l3::l3_workspace::{L3Object, L3RecordVariable, L3Table, L3Variable};
 
-    fn empty_symbols() -> SymbolTable {
+    /// Owns the workspace slices a test [`SymbolTable`] borrows from. A borrowing
+    /// index cannot be returned by a fixture helper that builds its own data, so
+    /// the helper returns the OWNER and the test binds
+    /// `let symbols = fx.symbols();`.
+    struct SymbolFixture {
+        objects: Vec<L3Object>,
+        tables: Vec<L3Table>,
+        routines: Vec<L3Routine>,
+    }
+
+    impl SymbolFixture {
+        fn symbols(&self) -> SymbolTable<'_> {
+            SymbolTable::build(&self.objects, &self.tables, &self.routines)
+        }
+    }
+
+    fn empty_symbols() -> SymbolTable<'static> {
         SymbolTable::build(&[], &[], &[])
     }
 
     /// A symbol table with a single Table object + its internal `L3Table` entry,
     /// so the Record table-object-id resolution (table_id → name → Table object id)
     /// has something to find.
-    fn symbols_with_table(table_id: &str, table_name: &str, table_object_id: &str) -> SymbolTable {
+    fn symbols_with_table(
+        table_id: &str,
+        table_name: &str,
+        table_object_id: &str,
+    ) -> SymbolFixture {
         let table = L3Table {
             id: table_id.to_string(),
             app_guid: "app".to_string(),
@@ -1358,7 +1378,11 @@ mod tests {
             delete_allowed: None,
             source_anchor: None,
         };
-        SymbolTable::build(&[object], &[table], &[])
+        SymbolFixture {
+            objects: vec![object],
+            tables: vec![table],
+            routines: Vec::new(),
+        }
     }
 
     fn temp_unknown() -> PTempState {
@@ -1617,7 +1641,8 @@ mod tests {
             scope: None,
         }];
         let routine = routine_with(vars, rec_vars);
-        let symbols = symbols_with_table("tbl-internal", "Customer", "obj/Table/18");
+        let fx = symbols_with_table("tbl-internal", "Customer", "obj/Table/18");
+        let symbols = fx.symbols();
         let ty = infer_receiver_type("rec", &routine, &symbols).ty;
         assert_eq!(
             ty,
@@ -1645,7 +1670,7 @@ mod tests {
     /// Build a symbol table whose object `obj` owns the given callee routines, plus
     /// the calling `R` routine, so the C2 helper can resolve a bare `<Name>()` to a
     /// unique own-object routine and read its return type.
-    fn symbols_with_callees(callees: Vec<L3Routine>) -> SymbolTable {
+    fn symbols_with_callees(callees: Vec<L3Routine>) -> SymbolFixture {
         let object = L3Object {
             id: "obj".to_string(),
             app_guid: "app".to_string(),
@@ -1667,14 +1692,19 @@ mod tests {
             delete_allowed: None,
             source_anchor: None,
         };
-        SymbolTable::build(&[object], &[], &callees)
+        SymbolFixture {
+            objects: vec![object],
+            tables: Vec::new(),
+            routines: callees,
+        }
     }
 
     #[test]
     fn call_result_framework_return_types_as_framework() {
         // `GetClient()` returns `HttpClient` → `HttpClient.Get` dispatch target.
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine("GetClient", Some("HttpClient"))]);
+        let fx = symbols_with_callees(vec![callee_routine("GetClient", Some("HttpClient"))]);
+        let symbols = fx.symbols();
         let inferred = infer_receiver_type("GetClient()", &routine, &symbols);
         assert_eq!(
             inferred.ty,
@@ -1689,10 +1719,11 @@ mod tests {
     fn call_result_object_return_types_as_object() {
         // `MakeCu()` returns `Codeunit "Sales-Post"` → Object dispatch.
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine(
+        let fx = symbols_with_callees(vec![callee_routine(
             "MakeCu",
             Some("Codeunit \"Sales-Post\""),
         )]);
+        let symbols = fx.symbols();
         let inferred = infer_receiver_type("MakeCu()", &routine, &symbols);
         assert_eq!(
             inferred.ty,
@@ -1707,7 +1738,8 @@ mod tests {
     fn call_result_record_return_types_as_record_none() {
         // A `Record Customer` return → Record with no recoverable table id (None).
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine("GetRec", Some("Record Customer"))]);
+        let fx = symbols_with_callees(vec![callee_routine("GetRec", Some("Record Customer"))]);
+        let symbols = fx.symbols();
         let inferred = infer_receiver_type("GetRec()", &routine, &symbols);
         assert_eq!(
             inferred.ty,
@@ -1721,7 +1753,8 @@ mod tests {
     fn call_result_primitive_return_declines() {
         // A `Text` return is a primitive scalar → DECLINE → stays CompoundReceiver.
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine("GetText", Some("Text"))]);
+        let fx = symbols_with_callees(vec![callee_routine("GetText", Some("Text"))]);
+        let symbols = fx.symbols();
         let inferred = infer_receiver_type("GetText()", &routine, &symbols);
         assert_eq!(
             inferred.ty,
@@ -1740,7 +1773,8 @@ mod tests {
     fn call_result_no_return_type_declines() {
         // A void procedure (no return type) → DECLINE.
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine("DoThing", None)]);
+        let fx = symbols_with_callees(vec![callee_routine("DoThing", None)]);
+        let symbols = fx.symbols();
         assert_eq!(
             infer_receiver_type("DoThing()", &routine, &symbols).ty,
             ReceiverType::Unknown {
@@ -1754,10 +1788,11 @@ mod tests {
         // Two same-name routines (overloads) → not a UNIQUE match → DECLINE (we
         // cannot be certain which return type applies).
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![
+        let fx = symbols_with_callees(vec![
             callee_routine("Make", Some("HttpClient")),
             callee_routine("Make", Some("JsonObject")),
         ]);
+        let symbols = fx.symbols();
         assert_eq!(
             infer_receiver_type("Make()", &routine, &symbols).ty,
             ReceiverType::Unknown {
@@ -1770,7 +1805,8 @@ mod tests {
     fn call_result_unknown_callee_declines() {
         // The bare name is not an own-object routine → DECLINE.
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine("GetClient", Some("HttpClient"))]);
+        let fx = symbols_with_callees(vec![callee_routine("GetClient", Some("HttpClient"))]);
+        let symbols = fx.symbols();
         assert_eq!(
             infer_receiver_type("Nonexistent()", &routine, &symbols).ty,
             ReceiverType::Unknown {
@@ -1784,7 +1820,8 @@ mod tests {
         // `Obj.Make()` has a `.` before the call — NOT a bare call result; the C2
         // helper must decline (it is a member-of-member shape, handled elsewhere).
         let routine = routine_with(Vec::new(), Vec::new());
-        let symbols = symbols_with_callees(vec![callee_routine("Make", Some("HttpClient"))]);
+        let fx = symbols_with_callees(vec![callee_routine("Make", Some("HttpClient"))]);
+        let symbols = fx.symbols();
         let inferred = infer_receiver_type("Obj.Make()", &routine, &symbols);
         // `.`-bearing → member-of-member shape, never call-result.
         assert_eq!(
@@ -1808,7 +1845,8 @@ mod tests {
         // TRUE receiver of the outer call is `<tail>`, NOT `Make`'s return type, so
         // the C2 helper must DECLINE (typing it as `Make`'s return drops `<tail>` — a
         // false resolution). Regression for the missing after-`)` validation.
-        let symbols = symbols_with_callees(vec![callee_routine("Make", Some("HttpClient"))]);
+        let fx = symbols_with_callees(vec![callee_routine("Make", Some("HttpClient"))]);
+        let symbols = fx.symbols();
         for expr in ["Make().Field", "Make().Other()", "Make().Content.Add"] {
             let routine = routine_with(Vec::new(), Vec::new());
             assert_eq!(
