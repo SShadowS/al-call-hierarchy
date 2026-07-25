@@ -112,6 +112,19 @@ fn hex_lower(bytes: &[u8]) -> String {
     out
 }
 
+/// One BYTE of a `hex_lower`-produced digest — digit or **lowercase** `a`-`f`
+/// only. ⟨task-4-review.md finding M-5⟩ Shared home for a predicate that used to
+/// be open-coded at three call sites (`l5::fingerprint::substitute_stable_ids`,
+/// this module's own shape test, `tests/cli/cli_p1_inventory.rs`). The
+/// lowercase-only rule is load-bearing, not cosmetic: every id this crate mints
+/// goes through `hex_lower`, which never emits `A`-`F`, so
+/// `is_ascii_hexdigit` (which accepts `A`-`F` too) would wrongly widen the match
+/// and risk mis-splicing a stable id at the wrong position in
+/// `substitute_stable_ids`.
+pub fn is_lower_hex(b: u8) -> bool {
+    b.is_ascii_digit() || (b'a'..=b'f').contains(&b)
+}
+
 /// Internal object id: `"{appGuid}/{objectType}/{objectNumber}"`, no
 /// normalization (appGuid casing kept verbatim).
 pub fn encode_object_id(app_guid: &str, object_type: &str, object_number: i64) -> String {
@@ -472,9 +485,7 @@ mod tests {
                 "hash part must stay 64 bytes (member={member:?}): {id}"
             );
             assert!(
-                parts[1]
-                    .bytes()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                parts[1].bytes().all(is_lower_hex),
                 "hash part must stay LOWERCASE hex (member={member:?}): {id}"
             );
         }
@@ -567,9 +578,7 @@ mod tests {
                 "hash part must stay 64 bytes (member={member:?}): {id}"
             );
             assert!(
-                parts[1]
-                    .bytes()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                parts[1].bytes().all(is_lower_hex),
                 "hash part must stay LOWERCASE hex (member={member:?}): {id}"
             );
         }

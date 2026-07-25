@@ -48,7 +48,7 @@
 //! paths stabilize to the SAME `StableRoutineId`. This unifies the prior dep-only
 //! special case into one all-routines map.
 
-use crate::engine::ids::sha256_hex;
+use crate::engine::ids::{is_lower_hex, sha256_hex};
 use crate::engine::l3::l3_workspace::{L3Object, L3Routine};
 use crate::engine::l5::finding::Finding;
 use std::collections::HashMap;
@@ -199,7 +199,7 @@ fn substitute_stable_ids(
                 && pos + plen + 64 <= len
                 && bytes[pos + plen..pos + plen + 64]
                     .iter()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
+                    .all(|b| is_lower_hex(*b))
             {
                 let candidate = &key[pos..pos + plen + 64];
                 if let Some(stable) = stable_by_id.get(candidate) {

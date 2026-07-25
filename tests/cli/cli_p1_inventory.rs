@@ -375,7 +375,7 @@ fn two_field_rows_have_distinct_stable_ids_and_deterministic_order() {
         assert_eq!(hash.len(), 64, "hash part stays 64 bytes in {sid}");
         assert!(
             hash.bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                .all(al_call_hierarchy::engine::ids::is_lower_hex),
             "hash part stays lowercase hex in {sid}"
         );
     }
