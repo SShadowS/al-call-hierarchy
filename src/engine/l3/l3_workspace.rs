@@ -335,8 +335,10 @@ pub struct RoutineVariables {
     globals: Arc<[L3Variable]>,
     /// Ascending indices into `globals` this routine SHADOWS (it declares a param or
     /// local of the same lowercased name). Empty for almost every routine, and an
-    /// empty `Box<[u32]>` does not allocate — precomputed so [`Self::iter`] never pays
-    /// an O(own × globals) name scan on a hot path.
+    /// empty `Box<[u32]>` does not allocate — precomputed so [`Self::iter`] never
+    /// re-scans `own` by name for every global (an O(own × globals) name scan);
+    /// the ascending order lets [`Self::iter`]'s own per-global membership test run
+    /// as a `binary_search` (O(log shadowed)) rather than a linear scan.
     shadowed: Box<[u32]>,
 }
 
@@ -384,7 +386,7 @@ impl RoutineVariables {
             self.globals
                 .iter()
                 .enumerate()
-                .filter(move |(i, _)| !shadowed.contains(&(*i as u32)))
+                .filter(move |(i, _)| shadowed.binary_search(&(*i as u32)).is_err())
                 .map(|(_, g)| g),
         )
     }
