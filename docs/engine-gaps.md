@@ -618,7 +618,10 @@ op id `{rid}/op{n}`). Controls: a REAL in-loop chain through a colliding trigger
 (and is now picked deterministically by name instead of by edge-sort luck), the vanilla
 transitive shape still fires at `high`. Tests: `tests/gap_g18_transitive_loop.rs`;
 `gap_g1`/`gap_g4` green. No in-repo golden moved (no fixture has colliding triggers with
-cross-name edges). RESIDUAL (follow-up, not d1-specific): the id collision itself remains —
+cross-name edges). RESIDUAL (follow-up, not d1-specific) — **SUPERSEDED, see "The ROOT
+CAUSE — the internal id collision itself — is FIXED" below** (⟨final-branch-review-l3.md
+M-9⟩: left unmarked, a reader meets this paragraph first and reads the collision as still
+open): the id collision itself remains —
 `routine_by_id`/`call_site_by_id` keep one arbitrary body per colliding id, so any OTHER
 consumer matching root edges by callsite id alone (e.g. d2-style walks) or walking THROUGH a
 colliding node could still conflate sibling bodies; the durable fix is a member discriminator

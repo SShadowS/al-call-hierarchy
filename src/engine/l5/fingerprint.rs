@@ -85,9 +85,17 @@ impl<'a> FingerprintIndex<'a> {
             objects.iter().map(|o| (o.id.as_str(), o)).collect();
 
         // Map every routine's INTERNAL id → its modelInstanceId-/cache-independent
-        // StableRoutineId. Skip routines with an empty normalized_signature_hash:
-        // their stable form would be a degenerate trailing `#` (no stable form to
-        // swap to — mirrors al-sem skipping `normalizedSignatureHash === ""`).
+        // StableRoutineId. Skip routines with an empty normalized_signature_hash
+        // (mirrors al-sem skipping `normalizedSignatureHash === ""`).
+        // ⟨final-branch-review-l3.md M-7⟩ The "degenerate trailing `#`" rationale
+        // is only half-true: it holds for a MEMBER-LESS routine (empty hash → an
+        // empty six-part join, a real degenerate id with nothing to swap to), but
+        // NOT for a member-trigger routine — `sha256_of_strings(["", member])`
+        // still folds to 64 real hex, so there is nothing degenerate to avoid
+        // there. Unreachable either way in production (assembly always computes a
+        // non-empty `normalized_signature_hash`), so this skip is conservative
+        // rather than wrong, and the comment above states only the case where the
+        // rationale actually applies.
         let stable_by_id: HashMap<String, String> = routines
             .iter()
             .filter(|r| !r.normalized_signature_hash.is_empty())
