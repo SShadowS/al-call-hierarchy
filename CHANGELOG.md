@@ -476,7 +476,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Vec-independent test — the G-18 colliding-routine-id pin on
   `ConeDerivedStore::forget` — was RELOCATED into `detector_context`'s test
   module and hardened with the `!cone_derived.is_empty()` precondition it
-  lacked. `C1_CONE_CENSUS=1` (`src/engine/l4/cone_census.rs`) is a different,
+  lacked. (Superseded later in this same unreleased cycle: the `Fixed` entry
+  below removes the degeneracy that pin described, deletes `forget`, and
+  replaces the test with
+  `colliding_routine_ids_keep_a_real_summary_and_derived_row`.) `C1_CONE_CENSUS=1` (`src/engine/l4/cone_census.rs`) is a different,
   still-live diagnostic: a byte census, not a parity oracle.
 - **The old L4 Jacobi db-effects solver + the R3b Salsa incremental experiment +
   the R3a-2 Jacobi trace dump mode — ONE summary path remains**
@@ -532,6 +535,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed (the old merge never emitted a `mergedPathGroups`-style key).
 
 ### Fixed
+- **Colliding routine ids no longer lose their entire capability cone — the
+  source-only detector context stops overwriting a real summary with a
+  degenerate one** (`src/engine/l5/detector_context.rs`,
+  `src/engine/l4/cone_derived.rs`, `src/engine/l5/mod.rs`,
+  `docs/OUTSTANDING.md`; `.superpowers/sdd/task-1-report.md`,
+  `.superpowers/sdd/scope-routine-id-collision.md`).
+  `compute_routine_id` carries no member discriminator, so two same-name
+  same-signature triggers in one object — any page with two `trigger
+  OnAction()` actions, ordinary in real BC — collide on ONE internal routine
+  id. `build_detector_context` drained its cone maps with `remove()`, so a
+  later occurrence of a colliding id read `None/None`, called
+  `ConeDerivedStore::forget` and wrote a fully degenerate summary (no direct
+  facts, no inherited facts, no coverage) OVER the real one the first
+  occurrence had written. Because both maps are keyed by id, the degenerate row
+  is what survived: the cone of an id shared by N routines was erased outright
+  and every cone-derived detector reading it went silent.
+  `build_detector_context_cross_app` reads its cone with `get()` and has never
+  had the accident — the two builders simply disagreed, which is what
+  identified the drain as an accident rather than a decision. The builder now
+  skips the later occurrence (`let Some(direct) = direct else { continue; }`),
+  so the real summary and its matching folded derived row both survive; the
+  `remove()` drain is KEPT, so no clone is reintroduced (a `get()` would clone
+  every routine's direct facts, including the ~80 % that never collide — 79.66
+  MB of pure duplicate on 8020, exactly what the C1 arc removed).
+  **Measured, not assumed.** The collapse is not rare: 1 157 of 4 842 DO
+  routines (23.9 %) and 16 906 of 100 941 8020 routines (16.7 %) are erased by
+  it. `alsem analyze <DO> --format json --deterministic`, release-fast, before
+  vs after: **2 384 → 2 387 findings — 4 new `d8-commit-in-transaction`, 1
+  `d9-transaction-span-summary` withdrawn, 20 findings changed in place (9 d8,
+  11 d9)**; no other detector of the 43 in the run moved by a single byte.
+  Each of the 4 new findings was verified against real AL source (a real
+  mid-transaction `Commit()` behind a page action on pages carrying 2, 5, 6 and
+  8 colliding `trigger OnAction()` bodies). The withdrawn d9 is an uncertainty
+  RESOLUTION, not a lost true positive: it was emitted only because
+  `!coverage_complete` (its span writes 1 table, below d9's 2-table bar), and
+  its span's coverage was incomplete solely because a colliding
+  `trigger OnAssistEdit()` caller carried the degenerate summary.
+  `ConeDerivedStore::forget` is **deleted** — its only caller was the arm above
+  and no path can reach it again (a store is produced only by
+  `ConeDerivedBuilder::finish`, `Default`, and `l5::test_support::cone_store_of`,
+  and nothing mutates one after it is built). Its doc also claimed the collapse
+  hit "a handful of routines per workspace"; that number was wrong by three
+  orders of magnitude and is corrected in place. The `l5::detector_context`
+  test that pinned the degenerate behaviour is replaced by
+  `colliding_routine_ids_keep_a_real_summary_and_derived_row`, phrased over
+  `ws.routines` rather than "the colliding id" so it holds unchanged once the id
+  schema gains its member discriminator. **This is a partial fix and the
+  remaining half is recorded in `docs/OUTSTANDING.md`:** loop 1 still builds
+  `direct_full` with `insert()`, so the surviving summary carries one arbitrary
+  sibling's facts attributed to all N, and the derived (`cs`/`op`/`loop`) ids,
+  merged call edges and shared fingerprint all remain until the id schema
+  itself carries the member. Zero golden movement (`scripts/check-goldens`
+  green with `git status --porcelain tests/` empty); l4 differential 17/17.
 - **Post-merge review fix wave on `chore/l4-post-merge-minors`**
   (`src/engine/l5/detector_context.rs`, `tests/perf_support/mod.rs`,
   `tests/lsp/perf_support_smoke.rs`, `tests/perf_bounds.rs`,

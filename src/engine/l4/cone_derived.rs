@@ -309,22 +309,27 @@ impl ConeDerivedStore {
         self.rows.is_empty()
     }
 
-    /// Drop this routine's row, so it reads as the empty row again.
-    ///
-    /// Needed because a derived row must equal the fold of the summary the
-    /// context ACTUALLY ends up holding, and a caller can end up holding a
-    /// degenerate summary: `build_detector_context` assembles summaries by
-    /// `remove()`-ing each routine's cone entry, and two AL routines can collide
-    /// on one internal routine id (two same-name triggers in one object — gap
-    /// G-18). The second occurrence's `remove()` then yields `None`, so the
-    /// summary that SURVIVES the map insert has no direct facts, no inherited
-    /// facts and no coverage. Its derived row must be empty to match.
-    ///
-    /// Cheap and rare: the pooled ids stay behind as dead space (a handful of
-    /// routines per workspace), only the row lookup is removed.
-    pub fn forget(&mut self, routine_id: &str) {
-        self.rows.remove(routine_id);
-    }
+    // ⟨T1⟩ `forget(routine_id)` — DELETED, not merely unused.
+    //
+    // It existed for exactly one caller and one reason: `build_detector_context`
+    // drained its cone maps with `remove()`, so a LATER occurrence of a colliding
+    // internal routine id (two same-name triggers in one object — gap G-18)
+    // overwrote the real summary with a degenerate one, and the derived row then
+    // had to be dropped to match. T1 made that builder skip the later occurrence
+    // instead, so the real summary survives and the row it must match is the FULL
+    // fold — the row `forget` used to delete.
+    //
+    // No path can reach it again as written. A store is produced in exactly three
+    // places — `ConeDerivedBuilder::finish` (i.e. `compose_cone_over_graph`),
+    // `Default`, and `l5::test_support::cone_store_of` (which folds the store FROM
+    // the summaries, so it is consistent by construction) — and after T1 nothing
+    // mutates a store after it is built. `build_detector_context_cross_app` reads
+    // its cone with `get()` and never had the degeneracy at all.
+    //
+    // Its doc also carried the claim that the collapse hit "a handful of routines
+    // per workspace". That was measured and is wrong by three orders of magnitude:
+    // 1 157 of 4 842 DO routines (23.9 %) and 16 906 of 100 941 8020 routines
+    // (16.7 %). See `.superpowers/sdd/scope-routine-id-collision.md`.
 
     /// This routine's presence flags.
     pub fn flags_of(&self, routine_id: &str) -> u8 {

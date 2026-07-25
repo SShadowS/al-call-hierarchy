@@ -236,29 +236,60 @@ the bottom, CHANGELOG, and git log.
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
 - [ ] **`compute_routine_id` member-discriminator gap — colliding same-name
-  triggers lose their entire capability cone** — `compute_routine_id`
-  (`src/engine/l2/scope.rs`) keys app/object-type/number/kind/name/signature
-  with NO member discriminator, so two same-name same-signature triggers in
-  one object (e.g. any page with two actions each declaring `trigger
-  OnAction()` — ordinary in real BC) collide on one routine id.
-  `build_detector_context` drains its cone maps with `remove()`, so the
-  SECOND occurrence's summary is fully degenerate (no direct facts, no
-  inherited facts, no coverage) and that routine loses its **entire**
-  capability cone; `ConeDerivedStore::forget`
-  (`src/engine/l5/detector_context.rs:361-396`,
-  `src/engine/l4/cone_derived.rs:322-337`) freezes the loss in place
-  deliberately — this arc's own parity oracle discovered it and chose not to
-  fix it because fixing it moves goldens. Note `build_detector_context_cross_app`
-  reads with `get()` and never has the accident, which is itself evidence the
-  `remove()` is an accident rather than a decision. This is the SAME
-  `compute_routine_id` collision family as `docs/engine-gaps.md`'s **G-18**
-  (which fixed a different symptom — d1's cross-body loop misattribution —
-  and correctly remains marked FIXED); this cone-loss symptom is separate and
-  still open. Fix options: a member discriminator on `compute_routine_id`, or
-  dedup `ws.routines` upstream of the cone walk. **Wake:** the next time
-  goldens are being rebaselined anyway (the fix moves them), or a
-  misattributed production finding on an object with colliding same-name
-  triggers.
+  triggers share ONE id** — `compute_routine_id` (`src/engine/l2/scope.rs`)
+  keys app/object-type/number/kind/name/signature with NO member
+  discriminator, so two same-name same-signature triggers in one object (e.g.
+  any page with two actions each declaring `trigger OnAction()` — ordinary in
+  real BC) collide on one routine id. This is the SAME collision family as
+  `docs/engine-gaps.md`'s **G-18** (which fixed a different symptom — d1's
+  cross-body loop misattribution — and correctly remains marked FIXED).
+
+  **MEASURED, 2026-07-25** (`.superpowers/sdd/scope-routine-id-collision.md`),
+  correcting this entry's own earlier "handful of routines" framing by three
+  orders of magnitude:
+
+  | corpus | routines | collision groups | routines erased by the collapse |
+  |---|---:|---:|---:|
+  | DO (`DocumentOutput/Cloud`) | 4 842 | 262 | **1 157 (23.9 %)** |
+  | 8020 (BC Base App) | 100 941 | 3 058 | **16 906 (16.7 %)** |
+
+  Largest group: 17 routines on one id (DO), 100 (8020). Every colliding
+  routine is a member trigger; 98 % of groups carry real call graph.
+  `enclosing_member` is already in the model at every `compute_routine_id`
+  call site and closes DO to **0** residual groups, 8020 to 15 groups / 19
+  routines (preproc `#if` alternatives + XMLport same-name elements at
+  different nesting paths).
+
+  **DONE (T1, 2026-07-25): the cone-LOSS symptom is fixed.**
+  `build_detector_context` drained its cone maps with `remove()`, so a later
+  occurrence of a colliding id wrote a fully degenerate summary over the real
+  one and `ConeDerivedStore::forget` dropped the matching derived row — the
+  whole cone of an id shared by N routines was erased.
+  (`build_detector_context_cross_app` reads with `get()` and never had the
+  accident, which is what identified the drain as an accident rather than a
+  decision.) The builder now skips the later occurrence instead; `forget` is
+  deleted. Measured on DO: **+4 `d8-commit-in-transaction` findings, −1
+  `d9-transaction-span-summary`, 20 findings changed in place** — see
+  `.superpowers/sdd/task-1-report.md`. Zero golden movement.
+
+  **STILL OPEN — the id schema itself.** With one id per N siblings the
+  surviving answer is still ONE arbitrary sibling's, and the derived
+  (`cs`/`op`/`loop`) ids, the merged call edges, `routine_by_id`'s last-wins
+  `collect()`, the shared **stable** id (⇒ shared fingerprint ⇒ one baseline
+  entry suppresses N findings), and G-19's collision disqualifier all remain.
+  It is visible in T1's own output: the new `CDO Move Logs` d8 finding anchors
+  on line 212 (`UpdateStatusAction`'s trigger) while its `Commit()` is at line
+  188 in the sibling `StartmovinglogsAction` — `routine_by_id` resolved the
+  last sibling and the op-site lookup fell back to its declaration anchor.
+  Recommended fix is the conditional member discriminator on both the internal
+  and stable id, keeping the `{mid}/{64hex}` / `{stableObjectId}#{64hex}`
+  SHAPE intact (§3.2 of the scope doc: `substitute_stable_ids` scans for
+  exactly 64 lowercase-hex bytes, and `stable_sub_id`/`DepIdStabilizer` assume
+  a two-part split — a `#member` suffix or an extra segment silently moves
+  every fingerprint in the product). **Wake:** an isolated arc whose only
+  expected diff is id-shaped (~561 committed goldens carry a raw internal id;
+  regenerating them alongside unrelated movement is strictly worse than doing
+  it alone).
 - [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
   built and tested but has zero production callers** — built at A4 with
   wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +
