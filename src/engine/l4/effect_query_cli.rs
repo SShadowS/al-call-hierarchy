@@ -621,8 +621,15 @@ pub fn run_query_touches_pipeline(
 /// `from: None` means the WORKSPACE-GLOBAL query, which has no down direction:
 /// "down" is about one routine's cone. That combination is rejected here rather
 /// than only in `alsem.rs`'s clap arm, so a library caller cannot get a global
-/// list back labelled `"direction": "down"`. (The CLI still pre-checks it, to
-/// fail before paying for workspace assembly.)
+/// list back labelled `"direction": "down"`. ⟨final-branch-review-l3.md M-1⟩ The
+/// CLI does NOT pre-check it — `src/bin/alsem.rs`'s `run_query_touches_cmd`
+/// deliberately defers to this function alone ("rejected by
+/// `render_query_touches` itself, not duplicated here: one rule in one place"),
+/// so `alsem query touches <ws> --table T --direction down` with no `--from`
+/// pays a full workspace assembly + L3 resolve + L4 summary solve before
+/// returning this exit-2 error. That is the TESTED behaviour (the
+/// `d1-multi-caller.down-without-from` golden depends on it), so a pre-check
+/// would be a perf fix here, not a doc fix.
 pub fn render_query_touches(
     substrate: &QuerySubstrate,
     table_selector: &str,
@@ -959,10 +966,35 @@ pub fn render_query_effects(
     let tables = TableNames::build(&substrate.resolved);
     let rr = join.of(routine);
 
-    let effects: Vec<TableTouch<'_>> = match query.routine_ix(&routine.id) {
-        Some(rix) => query.all_effects(rix),
-        None => Vec::new(),
+    let Some(rix) = query.routine_ix(&routine.id) else {
+        // ⟨final-branch-review-l3.md M-2⟩ Resolvable as a workspace routine but
+        // never interned by the solve — state that rather than reporting a false
+        // `effectCount: 0`, indistinguishable from "this routine performs no DB
+        // work". Mirrors `render_query_touches`'s down-without-rix branch above.
+        // Unreachable today (`RoutineInterner::build_canonical` interns every
+        // `ws.routines` entry, so `routine_ix` is always `Some` for a resolved
+        // selector) — latent, not live, but the two siblings should agree on how
+        // to report this state.
+        let payload = json!({
+            "routine": {
+                "selector": routine_selector,
+                "resolution": "resolved",
+                "routine": routine_ref_json(&rr),
+            },
+            "answerable": false,
+            "reason": "routine has no db-effect row",
+        });
+        let human = format!(
+            "--- effects of {}::{} ---\n  not answerable: routine has no db-effect row\n",
+            rr.object_display, rr.display
+        );
+        return QueryRunResult {
+            json_text: envelope("query.effects", payload, alsem_ver, deterministic),
+            human_text: human,
+            exit_code: 0,
+        };
     };
+    let effects: Vec<TableTouch<'_>> = query.all_effects(rix);
 
     let payload = json!({
         "routine": {
