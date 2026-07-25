@@ -1,7 +1,18 @@
-//! R0 identity encoders — Rust ports of al-sem's object/routine identity
-//! functions. These MUST reproduce al-sem's output byte-for-byte; the
-//! differential oracle is `tests/encoder_vectors.rs` against the committed
-//! vectors in `tests/r0-vectors/encoder-vectors.json`.
+//! R0 identity encoders — originally Rust ports of al-sem's object/routine
+//! identity functions, now **Rust-owned** (CLAUDE.md, "al-sem retirement is
+//! COMPLETE"). The regression oracle is `tests/l2_ir/encoder_vectors.rs` against
+//! the committed vectors in `tests/r0-vectors/encoder-vectors.json` — Rust-owned
+//! baselines, not an al-sem differential.
+//!
+//! **These no longer reproduce al-sem's output byte-for-byte, and must not be
+//! "fixed" back to it.** [`encode_canonical_routine_key`] appends a CONDITIONAL
+//! 7th key part — the enclosing-member discriminator (task 3,
+//! `feat/l3-substrate-and-parked-items`) — so a member trigger's id is
+//! deliberately an id al-sem never minted. Every routine WITHOUT an enclosing
+//! member (`enclosing_member: None`: procedures, object-level triggers, and every
+//! dependency-ABI routine) still hashes the original six parts and is byte-identical
+//! to the pre-discriminator id; the committed vectors contain zero `enclosingMember`
+//! entries and therefore all take that branch unchanged.
 //!
 //! Cross-port invariants worth knowing before touching anything here:
 //! - `sha256_of_strings` length-prefixes each part with its **UTF-16 code-unit

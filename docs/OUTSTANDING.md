@@ -24,6 +24,49 @@ the bottom, CHANGELOG, and git log.
 
 ## Open — buildable backlog (no blocker, pick up any time)
 
+- [x] **Golden-gate coverage repair** — DONE 2026-07-25 (task-3 fix wave, review
+  I-3). Every "goldens clean" claim in the l3-substrate/C1 arcs rested on a gate
+  with real holes; task 3 walked straight through one (it moved
+  `tests/r3a3-goldens/` behind a green `scripts/check-goldens`). Fixed, all
+  verified by construction:
+  - `scripts/check-goldens` went from **5 targets / 17 of 29 golden directories**
+    to **9 targets / 29 of 29**. Added `--test r3` (r3a1/r3a2/r3a3/r3a4/r3a5,
+    483 files), `--test r25_abi` (7), `--test l4_summary_differential` (18) and
+    `--test program_resolve_harness` (`tests/goldens/semantic-edges/`, 2 —
+    a 12th uncovered dir the review's count of 11 missed). Proof: corrupting one
+    r3a3 golden now FAILS the script (it did not even run before) and `--regen`
+    restores it byte-for-byte. r3a3's regen is content-change-gated by design, so
+    `--regen` legitimately writes zero r3a3 files when nothing moved.
+  - `--no-fail-fast` added — the first failing binary used to hide every later
+    target. Proof: with r3a3 stale, `--test r4` still reports after `--test r3`
+    fails.
+  - `scripts/git-hooks/pre-commit`'s path filter widened from
+    `src/engine/{l4,l5}/` + 4 golden dirs to ALL of `src/engine/`,
+    `crates/al-syntax/src/`, every `tests/*goldens*/`, `tests/l4-summary-baseline/`,
+    every `tests/*-vectors/`, and the fixture roots. It matched **none** of
+    task 3's substrate (`src/engine/{ids.rs,l2,l3,deps}`) and none of the four
+    dirs that moved; it fired only because two doc-comment edits landed in
+    `src/engine/l5/`. Honest cost: ~23s warm-cache on a firing commit (was ~17s
+    for the old 5 targets), plus any debug rebuild.
+  - `scripts/cdo-gate` gained `--test l4_summary_differential`. The CDO
+    whole-program L4 frozen digest was on **no** runner at all — see the next
+    entry.
+- [x] **CDO L4 frozen digest re-freeze** — DONE 2026-07-25 (task-3 fix wave,
+  review I-2). `tests/l4-summary-baseline/cdo-whole-program-digest.txt` moved
+  `d3fc4f0e…` → `d9eac0c7…` (3685 → 4842 routines) as a consequence of task 3's
+  enclosing-member discriminator. It was NOT blind-regenerated: disabling that one
+  conditional key-part append, with the rest of the tree unchanged, reproduces the
+  OLD digest byte for byte — an exact single-variable attribution, stronger than
+  the masked-diff method the committed goldens needed. Full evidence table
+  (population decomposition 3231 unchanged / 454 replaced / 1611 minted, the
+  +1157 matching `detector_context.rs`'s independently-measured figure, zero
+  shape or value-domain movement) is in
+  `tests/l4-summary-baseline/README.md`'s re-freeze log — **add an entry there
+  for every future re-freeze; the independent oracle behind this baseline was
+  retired, so "regenerated, tests green" proves nothing on its own.** Note the
+  review's premise that `scripts/cdo-gate` would fail on this was wrong in a
+  worse way than being wrong: that script did not run the test at all. It does now.
+
 - [x] **Engine memory/speed Wave 1 (Track A)** — DONE 2026-07-18 (branch
   `worktree-design-engine-memory-speed`, commits `9c0ee77..708f000`, 10 tasks
   SDD-executed + per-task reviewed, goldens byte-stable throughout). Base App
@@ -284,9 +327,11 @@ the bottom, CHANGELOG, and git log.
   being 13 XMLport same-name `fieldelement` members at different nesting paths
   (wake condition for a path-qualified member, if a consumer ever needs one)
   and 2 preproc `#if`/`#else` alternatives (an artifact of the deliberate
-  union-read preproc design, not of this defect). 22 goldens moved, all
+  union-read preproc design, not of this defect). 20 goldens moved, all
   id-shaped — 84 lines, 6 distinct ids, each re-derived as (6-part hash) →
-  (6-part + lowercased member); no fact content or fingerprint moved. DO
+  (6-part + lowercased member), every masked run in `{modelInstanceId}/`
+  position; no fact content or fingerprint moved. (`git diff --stat -- tests/`
+  says 22: it also counts 2 hand-edited `tests/l2_ir/*.rs` sources.) DO
   findings 2 387 → 2 369: −14 d34 / −3 d45 / −3 d8 / −2 d9 (cone shrink, the
   predicted direction — cross-body splices removed) and +3 d1 / +1 d3
   (previously unaddressable sibling BODIES becoming real routines). See

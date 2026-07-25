@@ -869,12 +869,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Codeunit 700 "Page Management"`'s two `GetPurchaseHeaderPageID`), which are
   artifacts of the engine's deliberate union-read preproc handling, not of this
   defect.
-  **Output movement is deliberate and id-shaped.** 22 committed goldens moved
+  **Output movement is deliberate and id-shaped.** 20 committed goldens moved
   (6 `r1a`, 3 `r2a`, 3 `r3a3`, 8 `cli-c-policy` json+sarif): 84 changed lines,
   **every one differing only in a 64-hex id**, across exactly **6 distinct
   routine ids**, each re-derived independently as (old = the 6-part hash,
-  new = the same 6 parts + the lowercased member). No fact content, position,
-  count, ordering or **fingerprint** moved. On DO, `alsem analyze --format json
+  new = the same 6 parts + the lowercased member); and every masked 64-hex run
+  on every changed line sits in `{modelInstanceId}/` position, so no bare
+  content hash (a `normalizedSignatureHash` is also 64 lowercase hex) could
+  have hidden behind the mask. No fact content, position, count, ordering or
+  **fingerprint** moved. (The commit also touches 2 hand-edited test sources,
+  `tests/l2_ir/{encoder_vectors,ir_robustness}.rs` — `git diff --stat -- tests/`
+  therefore reports 22 files; those two are Rust, not goldens, and their changes
+  are not id-only.) On DO, `alsem analyze --format json
   --deterministic` goes 2 387 → 2 369 findings: **−14 `d34-commit-in-loop`,
   −3 `d45-event-transitive-table-exposure`, −3 `d8-commit-in-transaction`,
   −2 `d9-transaction-span-summary`** (cone shrink — a colliding id's cone was
@@ -895,6 +901,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duplicate-fingerprint excess goes 5 → 7, because recovering a previously
   invisible sibling ADDS a pair. That is option (a3) in the scoping doc and is
   the only remaining half.
+- **Task-3 review fix wave** (`feat/l3-substrate-and-parked-items`;
+  `.superpowers/sdd/task-3-review.md` I-1/I-2/I-3 + M-1…M-8). No shipped
+  behaviour changed; one deliberate, triaged baseline re-freeze.
+  - **The G-18 guard's only test had gone vacuous, and nothing noticed.**
+    `tests/gap/gap_g18_transitive_loop.rs` built its collision from two page
+    actions' `trigger OnAction()` **through the real id path** — the exact shape
+    the new discriminator now separates — so after Task 3 it exercised nothing.
+    Measured: the guard could be deleted from all three call sites and `cargo
+    test` stayed fully green, which would have silently restored the d1 false
+    positive on the 15 residual 8020 collision groups. Two STATED-collision tests
+    replace the derived one (`hand_stated_collision_does_not_splice_the_sibling_bodys_edge`
+    for the reject direction, `…_still_fires_a_genuine_inloop_chain` for the
+    accept direction): they force the shared routine id AND the derived
+    `{rid}/cs{n}` ids by hand, so they hold under any id schema. Both fail when
+    the guard is removed from the production lookup (`d1_graph.rs:220`). The
+    three page-action tests are kept as behaviour tests, each now asserting its
+    real (non-colliding) precondition. Also established, and previously
+    undocumented: of the guard's three call sites only `d1_graph.rs:220` affects
+    emitted findings — `d1.rs:1103` is inside the `#[cfg(test)]` shadow oracle
+    and `d1.rs:1345` feeds stat counters only.
+  - **The golden gate had holes wider than the arc that walked through one.**
+    `scripts/check-goldens` covered 17 of 29 golden directories across 5 targets;
+    it is now 29 of 29 across 9 (`--test r3`, `--test r25_abi`,
+    `--test l4_summary_differential`, `--test program_resolve_harness` added),
+    and gained `--no-fail-fast` so one stale family no longer hides every later
+    target. `scripts/git-hooks/pre-commit`'s filter, which matched **none** of
+    Task 3's substrate or any of the four golden dirs it moved (it fired only on
+    two doc-comment edits in `src/engine/l5/`), now covers all of `src/engine/`,
+    `crates/al-syntax/src/`, every golden and vector dir, and the fixture roots.
+    `scripts/cdo-gate` gained `--test l4_summary_differential` — the CDO L4
+    frozen digest had been on no runner at all.
+  - **CDO whole-program L4 digest re-frozen**, `d3fc4f0e…` → `d9eac0c7…`
+    (3685 → 4842 routines), as a consequence of the id-schema change. Not a blind
+    regen: disabling the conditional key-part append alone reproduces the OLD
+    digest byte-for-byte, an exact single-variable attribution. Population
+    decomposes as 3231 ids unchanged / 454 member-bearing replaced / 1611 minted
+    (+1157, matching `detector_context.rs`'s independently-measured figure
+    exactly); zero id-shape, struct-shape or value-domain movement. Evidence
+    table in `tests/l4-summary-baseline/README.md`'s new re-freeze log.
+  - **Corrections to claims this branch falsified**: "22 goldens moved" → **20**
+    (the 22 counted two hand-edited test sources); the id-only mask argument now
+    states its required POSITIONAL second step (a `normalizedSignatureHash` is
+    also 64 lowercase hex); `src/engine/ids.rs`'s "MUST reproduce al-sem's output
+    byte-for-byte" header, which this very commit falsifies for member-bearing
+    keys; `detector_context.rs`'s present-tense "`compute_routine_id` has no
+    member discriminator"; `docs/engine-gaps.md`'s "no longer load-bearing"
+    reading of the G-18 guard; the `LocationList.Page.al` residual line numbers.
+  - **Hardening**: `l2::scope::unescape_al_identifier` is `pub(crate)` (one
+    crate-internal caller, and the visibility is what makes its "exactly one
+    definition" invariant enforceable), and a new test pins that the L2 and L3
+    id paths agree on an **escaped** enclosing member — the one part of this
+    design's named trap that had no executable pin, only a structural argument.
 - **`SymbolTable` borrows the workspace instead of deep-cloning it — ~2.1 GB off
   the `analyze` peak on the 8020 corpus** (`feat/l3-substrate-and-parked-items`
   Task 2 / lever L-1; `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;

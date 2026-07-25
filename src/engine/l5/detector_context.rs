@@ -359,11 +359,16 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         for r in &ws.routines {
             let cone_entry = cones.remove(&r.id);
             let direct = direct_full.remove(&r.id);
-            // ⟨T1⟩ Two AL routines can COLLIDE on one internal routine id (two
-            // same-name triggers in one object — gap G-18; `compute_routine_id`
-            // has no member discriminator). Both `remove`s above are then
-            // consumed by the FIRST occurrence, so every LATER occurrence sees
-            // `None/None`.
+            // ⟨T1, corrected by the T3 fix wave (review M-3)⟩ Two AL routines can
+            // still COLLIDE on one internal routine id — gap G-18. Historically the
+            // usual shape was two same-name triggers in one object, because
+            // `compute_routine_id` had no member discriminator; ⟨T3⟩ added a
+            // conditional one, so TODAY the surviving shapes are the ones a flat
+            // member name cannot separate (XMLport same-name elements at different
+            // nesting paths; preproc `#if`/`#else` alternatives) plus any
+            // hand-stated id. See the ⟨T3⟩ paragraph below for the measured
+            // residual. Both `remove`s above are then consumed by the FIRST
+            // occurrence, so every LATER occurrence sees `None/None`.
             //
             // This used to write a fully degenerate summary for that later
             // occurrence — no direct facts, no inherited facts, no coverage —
