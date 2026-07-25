@@ -278,6 +278,38 @@ the bottom, CHANGELOG, and git log.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
+- [ ] **Residual duplicate-id groups: 15 groups / 19 routines on BC Base App (0 on
+  DO) still share BOTH the internal and the stable routine id.** ⟨task-4-review.md
+  finding M-3, fix wave⟩ Promoted out of the CLOSED `compute_routine_id` entry
+  below — a reader scanning this section for open work used to meet a closed item
+  first, with the genuinely-open residual buried as one of its sub-paragraphs. The
+  member-discriminator fold that entry describes (closing DO's 262 collision
+  groups to 0 and 8020's 3,058 to 15) leaves two shapes a FLAT enclosing-member
+  string cannot separate: **13 XMLport same-name `fieldelement` members at
+  different nesting paths** — a flat member name cannot separate a nested XMLport
+  tree — and **2 preproc `#if`/`#else` alternatives** of one member, an artifact of
+  the deliberate union-read preproc design rather than of the discriminator defect
+  (one of those two is a codeunit-level procedure with no enclosing member at all,
+  so no member discriminator could ever separate it).
+
+  **Wake:** a consumer that must tell two same-named XMLport elements apart — at
+  which point the fix is a path-qualified member (or a declaration ordinal) in the
+  same conditional position, with the same shape constraint the closed entry's id
+  schema already established. Until then the fail-closed handling stands:
+  `detector_context`'s skip-on-drained-map branch, d1's
+  `edge_target_matches_callsite_callee` guard, and the inventory's
+  `case_insensitive_compare_opt` tie-break (used by `inventory_row_cmp`'s
+  `sort_by` in `build_inventory_doc`) — all three kept deliberately and each with a
+  test that states its precondition executably:
+  `detector_context::tests::hand_stated_id_collision_keeps_a_real_summary_and_derived_row`,
+  `gap_g18_transitive_loop.rs`'s (d)/(e), and
+  `snapshot_full::tests::hand_stated_collision_discriminates_by_member_case_insensitively`
+  respectively (⟨task-4-review.md finding I-2⟩, fix wave — the last did not exist
+  at T4: its predecessor, `member_tie_break_is_case_insensitive_and_none_first`,
+  pinned the comparator function but not the sort's actual use of it, so deleting
+  the tie-break's `.then_with` call from `build_inventory_doc` left every test —
+  and every golden — green).
+
 - [x] **CLOSED 2026-07-25 (T1 + T3 + T4) — `compute_routine_id`
   member-discriminator gap: colliding same-name triggers shared ONE id.**
   `compute_routine_id` (`src/engine/l2/scope.rs`) keyed
@@ -368,21 +400,10 @@ the bottom, CHANGELOG, and git log.
   with `CDO_WS` set: PASS, and the frozen CDO L4 whole-program digest did **not**
   move. See `.superpowers/sdd/task-4-report.md`.
 
-  **The honest residual, and its wake condition.** 15 groups / 19 routines on BC
-  Base App (0 on DO) still share both ids, on BOTH the internal and the stable
-  schema: **13 are XMLport same-name `fieldelement` members at different nesting
-  paths** — a FLAT member name cannot separate a nested XMLport tree — and **2
-  are preproc `#if`/`#else` alternatives** of one member, an artifact of the
-  deliberate union-read preproc design rather than of this defect (one of those
-  two is a codeunit-level procedure with no enclosing member at all, so no
-  member discriminator could ever separate it). **Wake:** a consumer that must
-  tell two same-named XMLport elements apart — at which point the fix is a
-  path-qualified member (or a declaration ordinal) in the same conditional
-  position, with the same shape constraint. Until then the fail-closed handling
-  stands: `detector_context`'s skip-on-drained-map branch, d1's
-  `edge_target_matches_callsite_callee` guard, and the inventory's
-  `case_insensitive_compare_opt` tie-break, all three kept deliberately and each
-  with a test that states its precondition executably.
+  **The honest residual, and its wake condition** — promoted to its own open
+  entry directly above this one (⟨task-4-review.md finding M-3⟩, fix wave):
+  15 groups / 19 routines on BC Base App (0 on DO) still share both the
+  internal and the stable id.
 
   **Historical (superseded by T3 above) — what the collision cost.** With one
   id per N siblings the
