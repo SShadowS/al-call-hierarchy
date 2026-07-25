@@ -47,6 +47,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     to it.
   - **No caps.** The unscoped list reports `routineCount` first and then the
     COMPLETE list — the size is made visible rather than truncated.
+  - **Differential coverage, including the CDO frozen digest.** Fixture-level
+    (`tests/l4_summary_differential.rs`'s `reverse_index_differential` module) is
+    exhaustive against a from-scratch oracle sharing no code with the
+    implementation; `cdo_reverse_index_matches_slow_oracle` runs the same
+    comparison against real DO/CDO source (4842 routines-with-rows, 61 tables),
+    then — only once that comparison has already passed in the same run —
+    checks a frozen SHA-256 digest of `up_table`'s answer for every table
+    (`tests/l4-summary-baseline/cdo-reverse-index-digest.txt`), closing the one
+    item the original task deferred (it had assumed no `CDO_WS` was available;
+    this repo's `CDO_WS` is the DO workspace). `scripts/cdo-gate` runs it.
 - **`substrate::DB_EFFECT_REVERSE_INDEX` + `ctx.reverse_effect_index`**
   (`src/engine/l5/registry.rs`, `src/engine/l5/detector_context.rs`) — the
   demand-gated seam for the eventual detector / LSP-hover consumer. Deliberately
