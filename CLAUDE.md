@@ -420,24 +420,33 @@ under `docs/superpowers/specs/`.
   Inspect the diff is intended before committing. Manifest "matrix" oracles hold
   Rust-owned numbers; update them to the current Rust value when the engine intentionally
   improves.
-- **One fixture/detector change moves SEVERAL golden families — regen and run them
-  together, never one at a time.** A change under `tests/r0-corpus/` (fixtures),
-  `src/engine/l5/detectors/`, or any golden dir can move any of:
+- **One change moves SEVERAL golden families — regen and run them together, never
+  one at a time.** A change anywhere under `src/engine/`, `crates/al-syntax/src/`,
+  `tests/r0-corpus/` (fixtures), `tests/fixtures/`, or any golden/vector dir can
+  move any of the **29 golden directories**, which map to **9 test targets**:
 
-  | Golden dir | Test target |
+  | Golden dir(s) | Test target |
   |------------|-------------|
-  | `tests/r4-goldens/` | `--test r4` |
+  | `tests/r4-goldens/`, `tests/r4f-goldens/` | `--test r4` |
   | `tests/ir-l2-goldens/` (the `l2_features.snapshot`) | `--test l2_ir` |
-  | `tests/cli-a-goldens/` (json + stats) | `--test cli` |
   | `tests/r2c-goldens/` (l3eg) | `--test l3` + `--test differential` |
+  | `tests/cli-{a,b,c,c-events,c-policy}-goldens/`, `tests/gate-goldens/`, `tests/{al2,al}dump-smoke-goldens/` | `--test cli` |
+  | `tests/r{0,1a,2a,2b,2c,2d}-goldens/` | `--test differential` |
+  | `tests/r3a{1,2,3,4,5}-goldens/` | `--test r3` |
+  | `tests/r2-5a-goldens/`, `tests/r2-5b-{cg,cov,eg,rt}-goldens/` | `--test r25_abi` |
+  | `tests/l4-summary-baseline/` | `--test l4_summary_differential` |
+  | `tests/goldens/semantic-edges/` | `--test program_resolve_harness` |
 
-  Canonical loop: **`scripts/check-goldens --regen`** (regens all five targets),
+  Canonical loop: **`scripts/check-goldens --regen`** (regens all nine targets),
   inspect the diff, then **`scripts/check-goldens`** (no regen) to confirm green.
+  The script is the source of truth for this table — keep the two in sync.
   Regenerating only the family you were looking at is the trap that shipped two red
-  commits in the BCQuality wave (the `l2_features.snapshot` went stale). A
-  **pre-commit hook** (`scripts/git-hooks/pre-commit`, enabled via `git config
-  core.hooksPath scripts/git-hooks`) blocks a commit touching those paths unless
-  `check-goldens` passes; enable it once per clone.
+  commits in the BCQuality wave (the `l2_features.snapshot` went stale) and again in
+  the l3-substrate arc (`tests/r3a3-goldens/` moved while `check-goldens` did not
+  cover `--test r3` at all). A **pre-commit hook** (`scripts/git-hooks/pre-commit`,
+  enabled via `git config core.hooksPath scripts/git-hooks`) blocks a commit
+  touching any of those paths unless `check-goldens` passes; enable it once per
+  clone. It costs ~23s warm-cache when it fires, plus any debug rebuild.
 - **New advisory L5 detector = triage on a real workspace BEFORE shipping DEFAULT.**
   Run it on DO/CDO, triage every finding against real source (the `triage-findings`
   skill; or `/triage-wave` to fan out one subagent per detector). A detector with

@@ -9,23 +9,50 @@
 # green is exactly what this prevents).
 #
 # ⟨task-1 fix wave FIX 5⟩ Gate widened from `src/engine/l5/detectors/` to all of
-# `src/engine/l4/` + `src/engine/l5/` (which subsumes the old `detectors/`
-# clause) — every detector reads substrate from both (`cone_derived.rs`,
-# `capability_cone.rs`, `detector_context.rs`, `full_summary.rs`, …), and the
-# l3-substrate/C1 arcs kept changing exactly those files while goldens stayed
-# green only because someone happened to run `check-goldens` by hand. The
-# honest cost: this now fires `check-goldens` (a few minutes) on most engine
-# commits, not just detector-file ones. That is the intended trade — a stale
-# golden shipping green is strictly worse than a slower commit.
+# `src/engine/l4/` + `src/engine/l5/` — every detector reads substrate from both
+# (`cone_derived.rs`, `capability_cone.rs`, `detector_context.rs`,
+# `full_summary.rs`, …), and the l3-substrate/C1 arcs kept changing exactly those
+# files while goldens stayed green only because someone happened to run
+# `check-goldens` by hand.
+#
+# ⟨task-3 fix wave, review I-3(3)⟩ That was still far too narrow, and task 3 proved
+# it: its substrate change (`src/engine/ids.rs`, `src/engine/l2/`, `src/engine/l3/`,
+# `src/engine/deps/`) matched NONE of the filter, and neither did any of the four
+# golden dirs it actually moved (`r1a`, `r2a`, `r3a3`, `cli-c-policy`) — the old
+# golden clause named only 4 of the repo's 27 golden directories. The hook fired
+# purely by luck, on two doc-comment-only edits that happened to land under
+# `src/engine/l5/`. A substrate-only version of the same commit would have sailed
+# through. So the filter is now:
+#   - ALL of `src/engine/` (the id encoders, L2 projection, L3 workspace, dep
+#     ingestion and L4/L5 all feed goldens; drawing a line inside `src/engine/` is
+#     what failed twice already), plus
+#   - `crates/al-syntax/src/` — the CST→IR lowerer is upstream of every consumer,
+#     and CLAUDE.md already says a lowerer change is validated by the differential
+#     goldens, plus
+#   - every `tests/*goldens*/` directory, `tests/goldens/`,
+#     `tests/l4-summary-baseline/`, every `tests/*-vectors/` directory, and the
+#     fixture roots.
+#
+# THE HONEST COST: this now fires `scripts/check-goldens` — nine test targets
+# covering all 29 golden directories, not the old five covering 17 — on essentially
+# every engine commit. Measured on the dev machine with a warm `target/` (nothing to
+# recompile): 22s wall, 726 tests. A cold or source-invalidated cache pays the debug
+# rebuild on top, which is the real cost most of the time. With `CDO_WS` exported it
+# is slower again, because the CDO-gated members stop skipping. That is the intended
+# trade; a stale golden shipping green is strictly worse than a slower commit. If a
+# commit genuinely cannot move a golden and you need the seconds back, `--no-verify`
+# is there, but you own the consequence.
 set -uo pipefail
 
 # Paths whose change can move a golden family.
-if ! git diff --cached --name-only | grep -qE '^(tests/r0-corpus/|tests/fixtures/|src/engine/l4/|src/engine/l5/|tests/(r4|ir-l2|cli-a|r2c)-goldens/)'; then
+golden_paths='^(src/engine/|crates/al-syntax/src/|tests/r0-corpus/|tests/fixtures/|tests/[a-z0-9._-]*goldens/|tests/l4-summary-baseline/|tests/[a-z0-9._-]*-vectors/)'
+
+if ! git diff --cached --name-only | grep -qE "$golden_paths"; then
     exit 0
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
-echo "pre-commit: detector/fixture/golden change staged — verifying goldens..."
+echo "pre-commit: engine/fixture/golden change staged — verifying goldens..."
 if ! "$repo_root/scripts/check-goldens"; then
     echo "pre-commit: golden verification FAILED. Regenerate + inspect:" >&2
     echo "  scripts/check-goldens --regen   # then review the diff and re-stage" >&2

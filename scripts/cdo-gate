@@ -45,6 +45,19 @@ if ! cargo test --release --test lsp -- program_graph:: snapshot_robustness::; t
     status=1
 fi
 
+# ⟨task-3 fix wave, review I-2⟩ The CDO whole-program L4 frozen digest
+# (`tests/l4-summary-baseline/cdo-whole-program-digest.txt`) is a CDO-gated ratchet
+# exactly like the two above, but it was on NO runner: this script never listed
+# `--test l4_summary_differential`, so the review's prediction that "the next
+# cdo-gate run will fail on the frozen baseline" was wrong for a reason worse than
+# being wrong — the gate could not fail, because it never ran. It runs here now, so
+# ENFORCE_CDO_WS=1 applies to it too (a missing CDO_WS panics instead of skipping).
+# The fixture members of the same target are cheap and run alongside it.
+echo "cdo-gate: running l4_summary_differential (CDO whole-program frozen digest)..."
+if ! cargo test --release --test l4_summary_differential; then
+    status=1
+fi
+
 if [[ "$status" -eq 0 ]]; then
     echo "cdo-gate: PASS"
 else
