@@ -394,10 +394,17 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             // sibling's out-edges under the one shared `from` key, so the cone walk
             // consumes their union — the surviving cone is (last sibling's direct
             // facts) ∪ (cone over the union of ALL siblings' callees), an
-            // over-approximation rather than one body's picked view. Closing the
-            // direct-half gap requires the id schema itself to carry a member
-            // discriminator — a separate, deliberate change. What this fixes is the
-            // strictly worse state of holding NO answer at all.
+            // over-approximation rather than one body's picked view. What this
+            // fixes is the strictly worse state of holding NO answer at all.
+            //
+            // ⟨T3⟩ The id schema itself now carries a CONDITIONAL enclosing-member
+            // discriminator (`ids::encode_canonical_routine_key`), so on real
+            // workspaces this path is very nearly unreachable: DO went from 262
+            // colliding groups to 0, 8020 from 3 058 to 15. It is NOT dead code —
+            // those 15 (XMLport same-name elements at different nesting paths;
+            // preproc `#if` alternatives, which the union-read design makes
+            // genuinely indistinguishable) still reach it, and it is the
+            // fail-closed behaviour for any hand-stated or future collision.
             //
             // ⟨fix M1⟩ `cone_entry.is_none() <=> direct.is_none()` today: both maps
             // are built from the same `ws.routines` iteration and drained by the
@@ -1137,9 +1144,10 @@ mod tests {
     /// ⟨T1⟩ The CONTRACT the non-destructive drain buys, stated so it survives the
     /// later id-schema change.
     ///
-    /// Two page actions each declaring `trigger OnAction()` collide on one internal
-    /// routine id today (`compute_routine_id` carries no member discriminator — gap
-    /// G-18). Whether they collide or not, the observable requirement is the same and
+    /// Two page actions each declaring `trigger OnAction()` USED to collide on one
+    /// internal routine id (gap G-18); ⟨T3⟩ gave `compute_routine_id` a conditional
+    /// enclosing-member discriminator, so as of that change they do not. Whether they
+    /// collide or not, the observable requirement is the same and
     /// is what this asserts: **every `OnAction` trigger in this fixture has a real
     /// summary (coverage present) whose derived row reaches the `Setup.Insert()` it
     /// calls through `Touch()`** — i.e. no routine is silently erased.
@@ -1150,9 +1158,11 @@ mod tests {
     /// one — no direct facts, no inherited facts, no coverage, no derived row. Every
     /// cone-derived detector reading that id then saw an empty cone and produced nothing.
     ///
-    /// After the later id-schema change the two triggers get DISTINCT ids and each
-    /// carries its own real summary — the assertions below hold unchanged, which is why
-    /// they are phrased over `ws.routines` rather than over "the colliding id".
+    /// After the T3 id-schema change the two triggers get DISTINCT ids and each
+    /// carries its own real summary — the assertions below held unchanged across it,
+    /// which is why they are phrased over `ws.routines` rather than over "the
+    /// colliding id". The still-honest collision pin is
+    /// [`hand_stated_id_collision_keeps_a_real_summary_and_derived_row`] below.
     #[test]
     fn colliding_routine_ids_keep_a_real_summary_and_derived_row() {
         use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
@@ -1261,11 +1271,12 @@ page 50811 "CP Wizard"
     }
 
     /// ⟨task-1-review.md finding I-2⟩ Schema-independent pin for the SAME defect the
-    /// test above pins. That test asserts only `on_actions.len() == 2` — no collision
-    /// PRECONDITION — so once the id schema gains a member discriminator (a later
-    /// task), the two `OnAction` triggers get distinct natural ids, the drain path is
-    /// never entered, and that test keeps passing for a reason unrelated to its name.
-    /// The scoping doc (§1.4) proves that matters: 15 collision groups / 19 routines
+    /// test above pins — and, as of ⟨T3⟩, the ONLY one of the two that still exercises
+    /// the drain path. That test asserts only `on_actions.len() == 2` — no collision
+    /// PRECONDITION — so now that the id schema HAS a member discriminator, its two
+    /// `OnAction` triggers get distinct natural ids, the drain path is never entered,
+    /// and it keeps passing for a reason unrelated to its name. That the drain path
+    /// still matters is measured, not hypothetical: 15 collision groups / 19 routines
     /// on 8020 survive the member discriminator (preproc `#if` alternatives and
     /// XMLport same-name elements at different nesting paths).
     ///

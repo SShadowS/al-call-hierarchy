@@ -272,35 +272,61 @@ the bottom, CHANGELOG, and git log.
   `d9-transaction-span-summary`, 20 findings changed in place** — see
   `.superpowers/sdd/task-1-report.md`. Zero golden movement.
 
-  **STILL OPEN — the id schema itself.** With one id per N siblings the
-  surviving DIRECT facts are still ONE arbitrary (last-sibling-wins) sibling's.
+  **DONE (T3, 2026-07-25): the INTERNAL id schema is fixed.**
+  `CanonicalRoutineKey` gained `enclosing_member: Option<String>` and
+  `encode_canonical_routine_key` appends it as a 7th `sha256_of_strings` part
+  **only when a member exists**, so procedures, object-level triggers and every
+  dependency-ABI routine (the dep projection passes `None`) keep byte-identical
+  ids and the cross-app join stays symmetric by construction. The id's SHAPE is
+  unchanged — `routine_id_shape_is_two_parts_with_64_hex_regardless_of_member`
+  pins it independently of its content. Measured closure: **DO 262 collision
+  groups → 0; 8020 3 058 → 15 groups / 19 routines (0.019 %)**, the residual
+  being 13 XMLport same-name `fieldelement` members at different nesting paths
+  (wake condition for a path-qualified member, if a consumer ever needs one)
+  and 2 preproc `#if`/`#else` alternatives (an artifact of the deliberate
+  union-read preproc design, not of this defect). 22 goldens moved, all
+  id-shaped — 84 lines, 6 distinct ids, each re-derived as (6-part hash) →
+  (6-part + lowercased member); no fact content or fingerprint moved. DO
+  findings 2 387 → 2 369: −14 d34 / −3 d45 / −3 d8 / −2 d9 (cone shrink, the
+  predicted direction — cross-body splices removed) and +3 d1 / +1 d3
+  (previously unaddressable sibling BODIES becoming real routines). See
+  `.superpowers/sdd/task-3-report.md`.
+
+  **STILL OPEN — the STABLE id (option (a3)).** The internal collision is
+  closed, so the surviving DIRECT facts, the derived (`cs`/`op`/`loop`) ids,
+  the merged call edges, `routine_by_id`'s last-wins `collect()` and G-19's
+  collision disqualifier are all fixed with it. What remains is the **stable**
+  routine id, which still carries no member discriminator: two sibling
+  triggers' findings still hash to ONE fingerprint, so one baseline entry
+  suppresses both. Measured on DO, that is now slightly WORSE in raw count than
+  before T3 (duplicate-fingerprint excess 5 → 7) — recovering a previously
+  invisible sibling body adds a duplicate pair rather than removing one. The
+  fix is the same conditional discriminator folded into
+  `normalized_signature_hash`'s input, keeping the `{stableObjectId}#{64hex}`
+  SHAPE intact; its user cost was measured at 81 of 2 384 DO fingerprints
+  (3.4 %). **Wake:** willingness to move ~3.4 % of a user baseline, or the
+  first report of one baseline entry suppressing two distinct findings.
+
+  **Historical (superseded by T3 above) — what the collision cost.** With one
+  id per N siblings the
+  surviving DIRECT facts were still ONE arbitrary (last-sibling-wins) sibling's.
   The surviving INHERITED cone is NOT one sibling's view: the combined graph
   files every sibling's out-edges under the one shared `from` key, so the cone
   walk consumes their union — `(last sibling's direct facts) ∪ (cone over the
-  union of ALL siblings' callees)`, an over-approximation. This explains why
-  the +4 d8 findings above are genuine rather than accidental (their manager
-  qualification rides the union) and predicts the direction of the
+  union of ALL siblings' callees)`, an over-approximation. This explained why
+  the +4 d8 findings above were genuine rather than accidental (their manager
+  qualification rode the union) and predicted the direction of the
   member-discriminator fix's own diff: de-colliding ids SHRINKS each sibling's
-  cone back to its own callees, so some of those +4 d8 findings may disappear
+  cone back to its own callees, so some of those +4 d8 findings would disappear
   again if a manager's `writes_physical_tables_count_of >= 3` was only met by
-  the union — expected movement, not a regression, when that fix lands. The
-  derived (`cs`/`op`/`loop`) ids, the merged call edges, `routine_by_id`'s
-  last-wins `collect()`, the shared **stable** id (⇒ shared fingerprint ⇒ one
-  baseline entry suppresses N findings), and G-19's collision disqualifier all
-  remain.
-  It is visible in T1's own output: the new `CDO Move Logs` d8 finding anchors
-  on line 212 (`UpdateStatusAction`'s trigger) while its `Commit()` is at line
-  188 in the sibling `StartmovinglogsAction` — `routine_by_id` resolved the
-  last sibling and the op-site lookup fell back to its declaration anchor.
-  Recommended fix is the conditional member discriminator on both the internal
-  and stable id, keeping the `{mid}/{64hex}` / `{stableObjectId}#{64hex}`
-  SHAPE intact (§3.2 of the scope doc: `substitute_stable_ids` scans for
-  exactly 64 lowercase-hex bytes, and `stable_sub_id`/`DepIdStabilizer` assume
-  a two-part split — a `#member` suffix or an extra segment silently moves
-  every fingerprint in the product). **Wake:** an isolated arc whose only
-  expected diff is id-shaped (~561 committed goldens carry a raw internal id;
-  regenerating them alongside unrelated movement is strictly worse than doing
-  it alone).
+  the union — expected movement, not a regression.
+  **T3 CONFIRMED that prediction exactly**: 3 of the d8 findings went away,
+  including the `CDO Move Logs` one this entry called out by hand (it anchored
+  on line 212, `UpdateStatusAction`'s trigger, while its `Commit()` sits at line
+  188 in the sibling `StartmovinglogsAction` — `routine_by_id` had resolved the
+  last sibling and the op-site lookup fell back to its declaration anchor). The
+  d9 twin now anchors correctly on line 142 with 2 tables instead of the
+  union's 5, which is precisely why d8's `>= 3` threshold stops being met.
 - [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
   built and tested but has zero production callers** — built at A4 with
   wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +

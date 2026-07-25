@@ -204,6 +204,13 @@ fn abi_routine_to_routine(
         routine_kind: r.kind.clone(),
         routine_name: r.name.clone(),
         normalized_signature_hash: normalized_hash.clone(),
+        // Always `None`: a dependency ABI exposes procedures and event
+        // publishers/subscribers, never member triggers, and it carries no member
+        // wrapper to name one with. The conditional append in
+        // `encode_canonical_routine_key` therefore leaves every dep-side id
+        // byte-identical, which is what keeps the cross-app join symmetric with
+        // the source side by construction rather than by coincidence.
+        enclosing_member: None,
     };
 
     // accessModifier: isInternal ? "internal" : isLocal ? "local" : undefined.

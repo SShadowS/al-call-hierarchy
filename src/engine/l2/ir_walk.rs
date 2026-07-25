@@ -2455,6 +2455,25 @@ pub fn ir_parameter_symbols(routine: &RoutineDecl) -> Vec<super::scope::Paramete
         .collect()
 }
 
+/// The routine's enclosing-member discriminator: the UNESCAPED logical name of
+/// the member wrapper (table field / page field / action / dataitem / …) that
+/// declares this member trigger, `None` for procedures and object-level triggers
+/// (`OnRun`/`OnOpenPage`).
+///
+/// THE single source for that string. It feeds BOTH `L3Routine.enclosing_member`
+/// and the internal routine id's conditional 7th key part
+/// ([`crate::engine::ids::CanonicalRoutineKey::enclosing_member`]) — those must be
+/// the same string, and the raw IR value is only outer-quote-stripped, so the
+/// unescape has to happen in exactly one place. Two call paths mint ids for the
+/// same routine (`l2_workspace::build_proutine` and `l3_workspace::project_file`);
+/// both go through here.
+pub fn ir_enclosing_member(routine: &RoutineDecl) -> Option<String> {
+    routine
+        .enclosing_member
+        .as_ref()
+        .map(|(name, _origin)| super::scope::unescape_al_identifier(name))
+}
+
 /// Routine kind for id/classification (mirrors classify_kind): event-subscriber /
 /// event-publisher from attributes, else trigger / procedure.
 pub fn ir_routine_kind(routine: &RoutineDecl) -> &'static str {

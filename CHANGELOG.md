@@ -821,6 +821,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ALSEM_TRACE_SCC_MIN=1` emits both.
 
 ### Changed
+- **The internal routine id gains a CONDITIONAL enclosing-member discriminator —
+  same-name member triggers in one object no longer collide**
+  (`feat/l3-substrate-and-parked-items` Task 3;
+  `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;
+  `src/engine/ids.rs`, `src/engine/l2/scope.rs`, `src/engine/l2/ir_walk.rs`,
+  `src/engine/l2/l2_workspace.rs`, `src/engine/l3/l3_workspace.rs`,
+  `src/engine/deps/projection.rs`; `.superpowers/sdd/task-3-report.md`,
+  `.superpowers/sdd/scope-routine-id-collision.md`).
+  `compute_routine_id` keyed app / object-type / object-number / kind / name /
+  signature with **no member discriminator**, so the N `trigger OnAction()`
+  bodies of one page — ordinary in real BC — hashed to ONE internal routine id,
+  and so did every id derived from it (`{rid}/csN`, `{rid}/opN`,
+  `{rid}/loopN`, `{rid}/rv/<name>`). Measured: **1 157 of 4 842 DO routines
+  (23.9 %) and 16 906 of 100 941 8020 routines (16.7 %)** were erased by the
+  collapse; largest group 17 (DO) / 100 (8020). Task 1 stopped the destructive
+  drain that erased the survivors' summaries; this closes the id itself.
+  `CanonicalRoutineKey` gains `enclosing_member: Option<String>` and
+  `encode_canonical_routine_key` appends it as a **7th** `sha256_of_strings`
+  part **only when a member exists** — `sha256_of_strings` length-prefixes each
+  part, so `[…6]` and `[…6, ""]` already hash differently and the conditional
+  append is unambiguous. Consequence: procedures, object-level triggers
+  (`OnRun`/`OnOpenPage`) and **every dependency-ABI routine** (the dep
+  projection passes `None`) keep **byte-identical** ids, so the cross-app join
+  stays symmetric by construction and `tests/r0-vectors/encoder-vectors.json`
+  does not move. The id's SHAPE (`{modelInstanceId}/{64 lowercase hex}`) is
+  unchanged — only the hash INPUT — because `l5::fingerprint`'s
+  `substitute_stable_ids` scans for exactly 64 lowercase-hex bytes and
+  `l4::summary`'s `stable_sub_id` assumes exactly two `/`-parts; a `#member`
+  suffix or an extra segment would silently move every fingerprint in the
+  product. `routine_id_shape_is_two_parts_with_64_hex_regardless_of_member`
+  pins the shape independently of its content.
+  One canonical normalization: `l2::ir_walk::ir_enclosing_member` is the single
+  source of the member string (the raw IR value is only outer-quote-stripped;
+  `unescape_al_identifier` moved from `l3_workspace` to `l2::scope` so the
+  routine-id discriminator and `L3Routine.enclosing_member` cannot be different
+  strings), and the encoder lowercases it exactly as it already lowercases
+  `routine_name`.
+  **Closure, measured:** DO **262 collision groups → 0**; 8020 **3 058 → 15
+  groups / 19 routines (0.019 %)**. The honest residual is entirely two
+  known shapes: **13 XMLport same-name `fieldelement` members at different
+  nesting paths** (`SEPACTpain*`/`SEPADDpain*`/`ImpExpDataExchDefMap`) — a flat
+  member name cannot separate a nested XMLport tree; a path-qualified member or
+  a declaration ordinal would, and that is the wake condition if a consumer ever
+  needs one — and **2 preprocessor `#if`/`#else` alternatives** (`Page 15
+  "Location List"`'s duplicated `action("Items with Negative Inventory")`,
+  `Codeunit 700 "Page Management"`'s two `GetPurchaseHeaderPageID`), which are
+  artifacts of the engine's deliberate union-read preproc handling, not of this
+  defect.
+  **Output movement is deliberate and id-shaped.** 22 committed goldens moved
+  (6 `r1a`, 3 `r2a`, 3 `r3a3`, 8 `cli-c-policy` json+sarif): 84 changed lines,
+  **every one differing only in a 64-hex id**, across exactly **6 distinct
+  routine ids**, each re-derived independently as (old = the 6-part hash,
+  new = the same 6 parts + the lowercased member). No fact content, position,
+  count, ordering or **fingerprint** moved. On DO, `alsem analyze --format json
+  --deterministic` goes 2 387 → 2 369 findings: **−14 `d34-commit-in-loop`,
+  −3 `d45-event-transitive-table-exposure`, −3 `d8-commit-in-transaction`,
+  −2 `d9-transaction-span-summary`** (cone shrink — a colliding id's cone was
+  `(one sibling's direct facts) ∪ (cone over ALL siblings' callees)`, so
+  de-colliding removes cross-body splices: the 14 d34 findings claimed
+  "OnAction's repeat loop calls SalesHeaderOpenEMail" on bodies whose loop calls
+  something else entirely) and **+3 `d1-db-op-in-loop`, +1
+  `d3-missing-setloadfields`** (NOT cone growth — previously unaddressable
+  sibling BODIES becoming real routines: `CDOMergeTableField.Table.al`'s two
+  field `OnValidate`s at :51/:80 now both exist and both fire). The
+  `CDO Move Logs` d8/d9 misattribution Task 1's report called out by hand is
+  visibly fixed: it anchored on line 212 (`UpdateStatusAction`, body
+  `RefreshStatus();`) claiming "writes 5 tables"; it now anchors on line 142
+  (`StartmovinglogsAction`, which owns the `Commit()` at line 188) with its own
+  2 tables — below d8's threshold, which is why d8 correctly stops firing.
+  **Not fixed here (still parked):** the **stable** id carries no discriminator,
+  so two sibling triggers' findings still share a fingerprint — DO's
+  duplicate-fingerprint excess goes 5 → 7, because recovering a previously
+  invisible sibling ADDS a pair. That is option (a3) in the scoping doc and is
+  the only remaining half.
 - **`SymbolTable` borrows the workspace instead of deep-cloning it — ~2.1 GB off
   the `analyze` peak on the 8020 corpus** (`feat/l3-substrate-and-parked-items`
   Task 2 / lever L-1; `docs/superpowers/plans/2026-07-25-l3-substrate-and-parked-items.md`;

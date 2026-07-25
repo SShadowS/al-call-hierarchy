@@ -30,6 +30,28 @@ pub struct CanonicalRoutineKey {
     pub routine_kind: String,
     pub routine_name: String,
     pub normalized_signature_hash: String,
+    /// The member (table field / page field / action / dataitem / …) that
+    /// ENCLOSES a member trigger — the discriminator that separates the N
+    /// `trigger OnAction()` bodies of one page from each other. `None` for
+    /// procedures, object-level triggers (`OnRun`/`OnOpenPage`) and every
+    /// dependency-ABI routine.
+    ///
+    /// Two hard contracts, both load-bearing:
+    ///
+    /// 1. **The string must be the UNESCAPED logical identifier** (inner `""`
+    ///    collapsed to `"`), which is exactly what
+    ///    [`crate::engine::l2::ir_walk::ir_enclosing_member`] produces — the
+    ///    single source every call site uses. The raw IR value is only
+    ///    outer-quote-stripped, so feeding it here directly would mint a
+    ///    different id for the same routine from a different code path.
+    ///    [`encode_canonical_routine_key`] lowercases (AL identifiers are
+    ///    case-insensitive) but deliberately does NOT unescape — normalizing
+    ///    twice is not idempotent for a member like `"a""""b"`.
+    /// 2. **`None` must stay byte-identical to the pre-discriminator id.**
+    ///    [`encode_canonical_routine_key`] therefore appends a 7th hash part
+    ///    only when this is `Some` — see its doc for why `Some("")` and `None`
+    ///    are still distinguishable.
+    pub enclosing_member: Option<String>,
 }
 
 /// Count of UTF-16 code units in `s` — equal to JavaScript's `String.length`.
@@ -176,16 +198,49 @@ pub fn routine_signature_fingerprint(
 
 /// Canonical routine key hash: `sha256_of_strings` over the 6 ordered parts
 /// `[appGuid, objectType, objectNumber, routineKind, routineName_lower,
-/// normalizedSignatureHash]`.
+/// normalizedSignatureHash]`, plus a CONDITIONAL 7th part —
+/// `enclosing_member_lower` — appended only when the routine has an enclosing
+/// member ([`CanonicalRoutineKey::enclosing_member`]).
+///
+/// **Conditional, not unconditional, and that is the whole design.** Without a
+/// member discriminator two `trigger OnAction()` bodies in one page hash to one
+/// id (measured: 23.9 % of DO routines, 16.7 % of BC Base App routines collapse
+/// onto a shared id). Appending the part only when a member exists means every
+/// routine that never collides — procedures, object-level triggers, and the
+/// whole dependency-ABI side, which passes `None` — keeps a byte-identical id,
+/// so the cross-app join stays symmetric by construction and the committed
+/// encoder vectors do not move.
+///
+/// `sha256_of_strings` length-prefixes every part, so `[…6 parts]` and
+/// `[…6 parts, ""]` already hash differently: an empty-named member is still
+/// distinguishable from no member at all, and the conditional append is
+/// unambiguous rather than merely conventional.
+///
+/// This changes the hash INPUT only. The id's SHAPE
+/// (`{modelInstanceId}/{64 lowercase hex}`) is load-bearing far downstream —
+/// `l5::fingerprint`'s `substitute_stable_ids` locates ids by scanning for
+/// exactly 64 lowercase-hex bytes and `l4::summary`'s `stable_sub_id` splits on
+/// exactly two `/`-parts — so a `#member` suffix or an extra `/`-segment would
+/// silently break both and move every fingerprint in the product. Pinned by
+/// `routine_id_shape_is_two_parts_with_64_hex_regardless_of_member`.
 pub fn encode_canonical_routine_key(key: &CanonicalRoutineKey) -> String {
-    sha256_of_strings(&[
+    let mut parts = vec![
         key.app_guid.clone(),
         key.object_type.clone(),
         key.object_number.to_string(),
         key.routine_kind.clone(),
         key.routine_name.to_lowercase(),
         key.normalized_signature_hash.clone(),
-    ])
+    ];
+    // CONDITIONAL: no member → the 6-part hash, byte-identical to the
+    // pre-discriminator schema. The value is lowercased (AL identifiers are
+    // case-insensitive, exactly like `routine_name` above) but NOT unescaped —
+    // callers pass the already-unescaped logical identifier, see
+    // `CanonicalRoutineKey::enclosing_member`.
+    if let Some(member) = &key.enclosing_member {
+        parts.push(member.to_lowercase());
+    }
+    sha256_of_strings(&parts)
 }
 
 /// Full RoutineId: `"{modelInstanceId}/{canonicalRoutineKeyHash}"`.
@@ -317,6 +372,100 @@ mod tests {
         assert_eq!(utf16_len("café"), 4); // NOT byte length 5
         assert_eq!(utf16_len("😀"), 2); // surrogate pair, NOT 1 scalar / 4 bytes
         assert_eq!(utf16_len("a😀b"), 4); // 1 + 2 + 1
+    }
+
+    // -- the enclosing-member discriminator (Task 3) --------------------------
+
+    fn member_key(member: Option<&str>) -> CanonicalRoutineKey {
+        CanonicalRoutineKey {
+            app_guid: "11111111-2222-3333-4444-555555555555".to_string(),
+            object_type: "Page".to_string(),
+            object_number: 50811,
+            routine_kind: "trigger".to_string(),
+            routine_name: "OnAction".to_string(),
+            normalized_signature_hash: sha256_hex("onaction():"),
+            enclosing_member: member.map(|m| m.to_string()),
+        }
+    }
+
+    /// THE TRAP, pinned. The discriminator changes the hash INPUT; it must never
+    /// change the id's SHAPE. `l5::fingerprint::substitute_stable_ids` finds ids by
+    /// scanning for `"{mid}/"` followed by EXACTLY 64 lowercase-hex bytes, and
+    /// `l4::summary::stable_sub_id` splits an id into EXACTLY two `/`-parts — a
+    /// `#member` suffix or a 7th `/`-segment silently defeats both, and the failure
+    /// mode is every fingerprint in the product moving.
+    ///
+    /// This asserts the shape INDEPENDENTLY of the content, so it holds for any
+    /// future key part too.
+    #[test]
+    fn routine_id_shape_is_two_parts_with_64_hex_regardless_of_member() {
+        for member in [None, Some(""), Some("No."), Some(r#"a"b"#), Some("😀")] {
+            let id = encode_routine_id(&member_key(member), "r0");
+            let parts: Vec<&str> = id.split('/').collect();
+            assert_eq!(
+                parts.len(),
+                2,
+                "id must stay exactly two `/`-separated parts (member={member:?}): {id}"
+            );
+            assert_eq!(parts[0], "r0", "first part is the modelInstanceId verbatim");
+            assert_eq!(
+                parts[1].len(),
+                64,
+                "hash part must stay 64 bytes (member={member:?}): {id}"
+            );
+            assert!(
+                parts[1]
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                "hash part must stay LOWERCASE hex (member={member:?}): {id}"
+            );
+        }
+    }
+
+    /// The closure the discriminator buys, at the encoder level: two routines
+    /// identical in all six legacy key parts and differing ONLY in their enclosing
+    /// member now get distinct ids. Before Task 3 these were the same id.
+    #[test]
+    fn distinct_enclosing_members_yield_distinct_routine_ids() {
+        let first = encode_canonical_routine_key(&member_key(Some("First")));
+        let second = encode_canonical_routine_key(&member_key(Some("Second")));
+        assert_ne!(
+            first, second,
+            "two same-name triggers under different members must not collide"
+        );
+        // AL identifiers are case-insensitive: the SAME member differing only in
+        // case is the same routine and must keep one id.
+        assert_eq!(
+            first,
+            encode_canonical_routine_key(&member_key(Some("FIRST")))
+        );
+    }
+
+    /// The conditional append, both directions: no member reproduces the exact
+    /// 6-part hash (so every non-member routine's id is byte-identical to the
+    /// pre-discriminator schema), and `Some("")` is still distinguishable from
+    /// `None` because `sha256_of_strings` length-prefixes each part.
+    #[test]
+    fn absent_member_reproduces_the_six_part_hash_and_is_distinct_from_empty() {
+        let key = member_key(None);
+        let six_part = sha256_of_strings(&[
+            key.app_guid.clone(),
+            key.object_type.clone(),
+            key.object_number.to_string(),
+            key.routine_kind.clone(),
+            key.routine_name.to_lowercase(),
+            key.normalized_signature_hash.clone(),
+        ]);
+        assert_eq!(
+            encode_canonical_routine_key(&key),
+            six_part,
+            "a routine with no enclosing member must keep the legacy 6-part hash"
+        );
+        assert_ne!(
+            encode_canonical_routine_key(&member_key(None)),
+            encode_canonical_routine_key(&member_key(Some(""))),
+            "length-prefixed framing keeps `None` and `Some(\"\")` apart"
+        );
     }
 
     #[test]

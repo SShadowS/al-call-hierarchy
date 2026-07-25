@@ -537,13 +537,11 @@ fn anchor_from_origin(
     }
 }
 
-/// Unescape an AL identifier's logical name: a quoted AL identifier escapes an inner
-/// double-quote by doubling it (`""`), so the logical name collapses each `""` back to
-/// a single `"`. Called AFTER `strip_quotes` (which only trims the boundary quotes), so
-/// the input here is the inner text. Matches the profiler's display form (RE-4).
-fn unescape_al_identifier(inner: &str) -> String {
-    inner.replace("\"\"", "\"")
-}
+// `unescape_al_identifier` (a quoted AL identifier escapes an inner double-quote by
+// doubling it, so the logical name collapses each `""` back to one `"` — the
+// profiler's display form, RE-4) moved to `l2::scope`: the enclosing-member name it
+// normalizes is now ALSO the routine id's member discriminator, so exactly one
+// definition may exist. `l2::ir_walk::ir_enclosing_member` is the only caller.
 
 // ---------------------------------------------------------------------------
 // Per-file assembly.
@@ -774,6 +772,15 @@ fn project_file(
                 continue;
             }
 
+            // E1: the enclosing member of a member trigger — the unescaped logical
+            // identifier of the field / control / action / dataitem wrapper, `None`
+            // for procedures and object-level triggers. Computed ONCE here because
+            // it is both the routine id's discriminator (below) and the
+            // `L3Routine.enclosing_member` field (further down): the two MUST be the
+            // same string, and `ir_enclosing_member` is the single place that
+            // unescapes it.
+            let enclosing_member = crate::engine::l2::ir_walk::ir_enclosing_member(ir_routine);
+
             let (routine_id, mut features) = {
                 let kind_for_id = crate::engine::l2::ir_walk::ir_routine_kind(ir_routine);
                 let params_for_id = crate::engine::l2::ir_walk::ir_parameter_symbols(ir_routine);
@@ -783,6 +790,7 @@ fn project_file(
                     object_number,
                     kind_for_id,
                     &rname,
+                    enclosing_member.as_deref(),
                     &params_for_id,
                     ir_routine.return_type.as_deref(),
                     model_instance_id,
@@ -1088,23 +1096,20 @@ fn project_file(
             let access_modifier = ir_routine.access_modifier.clone();
 
             // E1: enclosing-member capture (additive — never serialized into a golden).
-            // A member-trigger (parent is a member-bearing wrapper) gets the unescaped
-            // logical member name + the WRAPPER node's source range (RE-2/RE-3/RE-4) and
-            // `originatingObject` = the StableObjectId of the object decl in scope (the
-            // EXTENSION object for an extension-declared trigger — RE-5). Procedures and
-            // object-level triggers (OnRun / OnOpenPage) carry a non-member parent → all
-            // `None`.
-            let (enclosing_member, enclosing_member_range, originating_object) =
-                match &ir_routine.enclosing_member {
-                    // IR carries the (outer-quote-stripped) member name + wrapper origin;
-                    // the unescape + range anchoring match the legacy enclosing_member_of.
-                    Some((member_name, wrapper_origin)) => (
-                        Some(unescape_al_identifier(member_name)),
-                        Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
-                        Some(stable_object_id.clone()),
-                    ),
-                    None => (None, None, None),
-                };
+            // A member-trigger (parent is a member-bearing wrapper) gets the WRAPPER
+            // node's source range (RE-2/RE-3/RE-4) and `originatingObject` = the
+            // StableObjectId of the object decl in scope (the EXTENSION object for an
+            // extension-declared trigger — RE-5). Procedures and object-level triggers
+            // (OnRun / OnOpenPage) carry a non-member parent → all `None`. The member
+            // NAME itself was unescaped once at the top of this loop (`enclosing_member`),
+            // because the routine id consumes it too.
+            let (enclosing_member_range, originating_object) = match &ir_routine.enclosing_member {
+                Some((_member_name, wrapper_origin)) => (
+                    Some(anchor_from_origin(wrapper_origin, source_unit_id, cols)),
+                    Some(stable_object_id.clone()),
+                ),
+                None => (None, None),
+            };
 
             workspace.routines.push(L3Routine {
                 id: routine_id,
@@ -1885,5 +1890,123 @@ mod tests {
         assert_eq!(scope_of("GlobalNames").as_deref(), Some("global"));
         assert_eq!(scope_of("LocalN").as_deref(), Some("local"));
         assert_eq!(scope_of("ParamN").as_deref(), Some("parameter"));
+    }
+
+    /// Task 3: the member discriminator, end-to-end on real assembled source.
+    ///
+    /// Two page actions and two page fields each declare `trigger OnAction()` /
+    /// `trigger OnValidate()`. Every one of the four is identical in all six legacy
+    /// key parts (app / object type / object number / kind / name / signature), so
+    /// before this change each PAIR shared one internal routine id — the defect that
+    /// collapsed 23.9 % of DO routines. They must now be pairwise distinct, and the
+    /// object-level `OnOpenPage` trigger and the plain procedure (no enclosing
+    /// member) must still be distinct from everything.
+    #[test]
+    fn same_name_member_triggers_get_distinct_routine_ids() {
+        let src = r#"
+page 50813 "CP3 Wizard"
+{
+    PageType = Card;
+    SourceTable = "CP3 Setup";
+
+    layout
+    {
+        area(Content)
+        {
+            field(Alpha; Rec."No.") { trigger OnValidate() begin end; }
+            field("Be""ta"; Rec."No.") { trigger OnValidate() begin end; }
+        }
+    }
+
+    actions
+    {
+        area(Processing)
+        {
+            action(First) { trigger OnAction() begin end; }
+            action(Second) { trigger OnAction() begin end; }
+        }
+    }
+
+    trigger OnOpenPage() begin end;
+
+    local procedure Touch() begin end;
+}
+"#;
+        let files = vec![("src/CP3Wizard.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "33333333-0000-0000-0000-0000000cp003");
+        let routines = &resolved.workspace.routines;
+
+        let ids_named = |n: &str| -> Vec<String> {
+            let mut v: Vec<String> = routines
+                .iter()
+                .filter(|r| r.name.eq_ignore_ascii_case(n))
+                .map(|r| r.id.clone())
+                .collect();
+            v.sort();
+            v
+        };
+
+        for name in ["OnValidate", "OnAction"] {
+            let ids = ids_named(name);
+            assert_eq!(ids.len(), 2, "fixture precondition: two `{name}` bodies");
+            assert_ne!(
+                ids[0], ids[1],
+                "two `{name}` triggers under different members must not share an id"
+            );
+        }
+
+        // …and the discriminator is the ONLY reason they differ. Re-mint each pair's
+        // key with `enclosing_member: None` — the pre-Task-3 six-part schema — and
+        // assert the pair collides there. This states "these two DID share an id
+        // before the member discriminator" as an executable fact rather than a claim
+        // in a comment, so the test cannot pass for an unrelated reason.
+        for name in ["OnValidate", "OnAction"] {
+            let legacy: Vec<String> = routines
+                .iter()
+                .filter(|r| r.name.eq_ignore_ascii_case(name))
+                .map(|r| {
+                    crate::engine::ids::encode_canonical_routine_key(
+                        &crate::engine::ids::CanonicalRoutineKey {
+                            app_guid: r.app_guid.clone(),
+                            object_type: r.object_type.clone(),
+                            object_number: r.object_number,
+                            routine_kind: r.kind.clone(),
+                            routine_name: r.name.clone(),
+                            normalized_signature_hash: r.normalized_signature_hash.clone(),
+                            enclosing_member: None,
+                        },
+                    )
+                })
+                .collect();
+            assert_eq!(
+                legacy[0], legacy[1],
+                "precondition: without the member discriminator both `{name}` bodies \
+                 hash to one key — that is the defect being closed"
+            );
+        }
+
+        // The member NAME is what separates them — carried, unescaped, on the model.
+        let mut members: Vec<String> = routines
+            .iter()
+            .filter(|r| r.name.eq_ignore_ascii_case("OnValidate"))
+            .filter_map(|r| r.enclosing_member.clone())
+            .collect();
+        members.sort();
+        assert_eq!(members, vec!["Alpha".to_string(), r#"Be"ta"#.to_string()]);
+
+        // Whole-object closure: every routine in the fixture has its own id, and the
+        // two member-less routines are in that set too.
+        let all: std::collections::HashSet<&str> = routines.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            all.len(),
+            routines.len(),
+            "no two routines in this object may share an internal id"
+        );
+        assert!(
+            routines
+                .iter()
+                .any(|r| r.name.eq_ignore_ascii_case("OnOpenPage") && r.enclosing_member.is_none()),
+            "an object-level trigger carries no enclosing member (its id is unchanged)"
+        );
     }
 }

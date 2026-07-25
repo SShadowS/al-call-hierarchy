@@ -631,9 +631,21 @@ colliding routine's entire L4 capability cone used to be lost — a later occurr
 degenerate summary overwrote the real one and dropped the matching derived row, so the whole
 cone of an id shared by N routines went silent for every cone-derived detector. The builder
 now skips the later occurrence instead of overwriting it, so the real summary and its derived
-row both survive; `ConeDerivedStore::forget` is deleted (nothing else reached it). The id
-schema itself — one id per N siblings, so the surviving answer is still one arbitrary
-sibling's — remains open; tracked in `docs/OUTSTANDING.md`'s Parked section.
+row both survive; `ConeDerivedStore::forget` is deleted (nothing else reached it).
+
+**The ROOT CAUSE — the internal id collision itself — is FIXED (Task 3, 2026-07-25).**
+`CanonicalRoutineKey` carries `enclosing_member: Option<String>` and
+`encode_canonical_routine_key` appends it as a CONDITIONAL 7th hash part, so sibling member
+triggers get distinct ids (DO 262 collision groups → 0; 8020 3 058 → 15, the residual being
+XMLport same-name elements at different nesting paths + preproc `#if` alternatives). The
+derived `{rid}/cs{n}` / `{rid}/op{n}` / `{rid}/loop{n}` ids therefore no longer collide
+either, and the combined graph no longer files two bodies' edges under one `from` key. d1's
+`edge_target_matches_callsite_callee` guard is consequently no longer load-bearing on
+non-colliding ids — it is kept (it still guards the 15 residual 8020 groups and is
+fail-closed for any future collision), and de-colliding is visibly what let two previously
+unaddressable `OnValidate` bodies in DO's `CDOMergeTableField` start reporting. What remains
+open is only the **stable** id, which still has no discriminator ⇒ sibling triggers' findings
+still share a fingerprint; tracked in `docs/OUTSTANDING.md`'s Parked section.
 
 **Symptom:** d1 reports an op as in-a-loop when, on the real call path, it is NOT inside any loop —
 the engine attributes a loop from a SIBLING call path of a shared callee. (Distinct from G-4, which

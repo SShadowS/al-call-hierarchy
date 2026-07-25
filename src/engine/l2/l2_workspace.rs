@@ -270,12 +270,18 @@ fn build_proutine(
     let norm_hash = normalized_signature_hash(&rname, &param_specs, return_type_text.as_deref());
     let stable_routine_id = to_stable_routine_id_from_parts(stable_object_id, &norm_hash);
 
+    // The member-trigger discriminator: without it the N `trigger OnAction()`
+    // bodies of one page all hash to ONE internal id (see
+    // `ids::encode_canonical_routine_key`). `None` for procedures / object-level
+    // triggers, which keep a byte-identical id.
+    let enclosing_member = ir_walk::ir_enclosing_member(ir_routine);
     let routine_id = scope::compute_routine_id(
         app_guid,
         object_type,
         object_number,
         kind,
         &rname,
+        enclosing_member.as_deref(),
         &parameters,
         return_type_text.as_deref(),
         MODEL_INSTANCE_ID,
@@ -361,12 +367,14 @@ pub fn ir_features_for_named_routine(
             }
             let kind = ir_walk::ir_routine_kind(r);
             let parameters = ir_walk::ir_parameter_symbols(r);
+            let enclosing_member = ir_walk::ir_enclosing_member(r);
             let routine_id = scope::compute_routine_id(
                 app_guid,
                 object_type,
                 object_number,
                 kind,
                 &r.name,
+                enclosing_member.as_deref(),
                 &parameters,
                 r.return_type.as_deref(),
                 model_instance_id,

@@ -40,6 +40,15 @@ fn build_key(input: &Value) -> ids::CanonicalRoutineKey {
             .as_str()
             .unwrap()
             .to_string(),
+        // The committed vectors predate the member discriminator and carry no
+        // `enclosingMember` — which is exactly the point: `None` takes the
+        // CONDITIONAL append's absent branch, so every vector here must stay
+        // byte-identical. A vector moving is a shape/schema regression, not a
+        // rebaseline. (`ids::encode_canonical_routine_key`, Task 3.)
+        enclosing_member: input
+            .get("enclosingMember")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     }
 }
 

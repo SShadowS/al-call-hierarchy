@@ -80,7 +80,26 @@ pub fn canonicalize_type_text(raw: &str) -> String {
     out
 }
 
+/// Unescape an AL quoted identifier's inner text: a doubled `""` inside the
+/// quotes is one literal `"`.
+///
+/// THE single definition — the L3 workspace stores `L3Routine.enclosing_member`
+/// through it and [`super::ir_walk::ir_enclosing_member`] feeds the routine-id
+/// discriminator through it, and those two strings MUST be the same string.
+/// (The raw IR value is only outer-quote-stripped.)
+pub fn unescape_al_identifier(inner: &str) -> String {
+    inner.replace("\"\"", "\"")
+}
+
 /// Compute the internal RoutineId (`{modelInstanceId}/{canonicalKeyHash}`).
+///
+/// `enclosing_member` is the member-trigger discriminator: the UNESCAPED logical
+/// name of the field / control / action / dataitem that encloses this routine,
+/// `None` for procedures and object-level triggers. Always source it from
+/// [`super::ir_walk::ir_enclosing_member`] — passing a raw, still-escaped IR
+/// value would mint a different id for the same routine. See
+/// [`crate::engine::ids::encode_canonical_routine_key`] for why the append is
+/// conditional and why the id's shape must not change.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_routine_id(
     app_guid: &str,
@@ -88,6 +107,7 @@ pub fn compute_routine_id(
     object_number: i64,
     routine_kind: &str,
     routine_name: &str,
+    enclosing_member: Option<&str>,
     parameters: &[ParameterSymbol],
     return_type_text: Option<&str>,
     model_instance_id: &str,
@@ -108,6 +128,7 @@ pub fn compute_routine_id(
         routine_kind: routine_kind.to_string(),
         routine_name: routine_name.to_string(),
         normalized_signature_hash,
+        enclosing_member: enclosing_member.map(|m| m.to_string()),
     };
     encode_routine_id(&key, model_instance_id)
 }
