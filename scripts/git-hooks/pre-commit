@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
 # scripts/git-hooks/pre-commit — block a commit that touches detectors, fixtures,
-# or goldens unless every byte-compared golden family still matches.
+# substrate, or goldens unless every byte-compared golden family still matches.
 #
 # Enabled repo-wide via `git config core.hooksPath scripts/git-hooks` (see
 # CLAUDE.md "Goldens"). Fires ONLY when a staged path can move a golden, so
 # ordinary commits are untouched. Bypass in a genuine emergency with
 # `git commit --no-verify` (do not make a habit of it — a stale golden shipping
 # green is exactly what this prevents).
+#
+# ⟨task-1 fix wave FIX 5⟩ Gate widened from `src/engine/l5/detectors/` to all of
+# `src/engine/l4/` + `src/engine/l5/` (which subsumes the old `detectors/`
+# clause) — every detector reads substrate from both (`cone_derived.rs`,
+# `capability_cone.rs`, `detector_context.rs`, `full_summary.rs`, …), and the
+# l3-substrate/C1 arcs kept changing exactly those files while goldens stayed
+# green only because someone happened to run `check-goldens` by hand. The
+# honest cost: this now fires `check-goldens` (a few minutes) on most engine
+# commits, not just detector-file ones. That is the intended trade — a stale
+# golden shipping green is strictly worse than a slower commit.
 set -uo pipefail
 
 # Paths whose change can move a golden family.
-if ! git diff --cached --name-only | grep -qE '^(tests/r0-corpus/|tests/fixtures/|src/engine/l5/detectors/|tests/(r4|ir-l2|cli-a|r2c)-goldens/)'; then
+if ! git diff --cached --name-only | grep -qE '^(tests/r0-corpus/|tests/fixtures/|src/engine/l4/|src/engine/l5/|tests/(r4|ir-l2|cli-a|r2c)-goldens/)'; then
     exit 0
 fi
 

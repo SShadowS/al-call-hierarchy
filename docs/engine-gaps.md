@@ -625,10 +625,15 @@ colliding node could still conflate sibling bodies; the durable fix is a member 
 in the internal routine id (RE-11 territory — id-schema change, golden-moving, deliberately
 out of G-18's scope).
 
-**Related, separate, still-open symptom of the SAME `compute_routine_id` collision (NOT fixed
-by the above — this entry's FIXED status covers only d1's loop misattribution):** a colliding
-routine's entire L4 capability cone is lost (`ConeDerivedStore::forget`, deliberately preserved
-by the `feat/l4-summary-redesign` C1 arc). Tracked in `docs/OUTSTANDING.md`'s Parked section.
+**Related, separate symptom of the SAME `compute_routine_id` collision (NOT the same as d1's
+loop misattribution fixed above) — the cone-LOSS half: FIXED at commit `124c1ae`.** A
+colliding routine's entire L4 capability cone used to be lost — a later occurrence's
+degenerate summary overwrote the real one and dropped the matching derived row, so the whole
+cone of an id shared by N routines went silent for every cone-derived detector. The builder
+now skips the later occurrence instead of overwriting it, so the real summary and its derived
+row both survive; `ConeDerivedStore::forget` is deleted (nothing else reached it). The id
+schema itself — one id per N siblings, so the surviving answer is still one arbitrary
+sibling's — remains open; tracked in `docs/OUTSTANDING.md`'s Parked section.
 
 **Symptom:** d1 reports an op as in-a-loop when, on the real call path, it is NOT inside any loop —
 the engine attributes a loop from a SIBLING call path of a shared callee. (Distinct from G-4, which

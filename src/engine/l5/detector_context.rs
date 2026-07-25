@@ -386,13 +386,18 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             // duplicate on 8020).
             //
             // This is a PARTIAL fix and deliberately so. Loop 1 above builds
-            // `direct_full` with `insert()`, so a colliding id's direct facts are
+            // `direct_full` with `insert()`, so a colliding id's DIRECT facts are
             // already last-sibling-wins before the cone walk runs; the surviving
-            // summary therefore carries ONE arbitrary (deterministic, but
-            // arbitrary) sibling's facts attributed to all N. Closing that
-            // requires the id schema itself to carry a member discriminator —
-            // a separate, deliberate change. What this fixes is the strictly
-            // worse state of holding NO answer at all.
+            // summary's direct half therefore carries ONE arbitrary (deterministic,
+            // but arbitrary) sibling's facts attributed to all N. The INHERITED
+            // half is NOT one sibling's view: the combined graph files every
+            // sibling's out-edges under the one shared `from` key, so the cone walk
+            // consumes their union — the surviving cone is (last sibling's direct
+            // facts) ∪ (cone over the union of ALL siblings' callees), an
+            // over-approximation rather than one body's picked view. Closing the
+            // direct-half gap requires the id schema itself to carry a member
+            // discriminator — a separate, deliberate change. What this fixes is the
+            // strictly worse state of holding NO answer at all.
             //
             // ⟨fix M1⟩ `cone_entry.is_none() <=> direct.is_none()` today: both maps
             // are built from the same `ws.routines` iteration and drained by the
@@ -1252,6 +1257,106 @@ page 50811 "CP Wizard"
         assert!(
             degenerate.is_empty(),
             "no summary may be degenerate; got {degenerate:?}"
+        );
+    }
+
+    /// ⟨task-1-review.md finding I-2⟩ Schema-independent pin for the SAME defect the
+    /// test above pins. That test asserts only `on_actions.len() == 2` — no collision
+    /// PRECONDITION — so once the id schema gains a member discriminator (a later
+    /// task), the two `OnAction` triggers get distinct natural ids, the drain path is
+    /// never entered, and that test keeps passing for a reason unrelated to its name.
+    /// The scoping doc (§1.4) proves that matters: 15 collision groups / 19 routines
+    /// on 8020 survive the member discriminator (preproc `#if` alternatives and
+    /// XMLport same-name elements at different nesting paths).
+    ///
+    /// This test never asks `compute_routine_id` for a collision — it STATES one:
+    /// two `L3Routine`s built from ordinary, non-colliding source are forced to carry
+    /// the literal same `id` by direct field assignment after assembly, before
+    /// `build_detector_context` runs. That holds under ANY id schema, forever,
+    /// because it does not depend on what the schema would have produced.
+    #[test]
+    fn hand_stated_id_collision_keeps_a_real_summary_and_derived_row() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50812 "CP2 Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50812 "CP2 Wizard"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action(Alpha)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+            action(Beta)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                end;
+            }
+        }
+    }
+
+    local procedure Touch()
+    var
+        Setup: Record "CP2 Setup";
+    begin
+        Setup.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/CP2Wizard.al".to_string(), src.to_string())];
+        let mut resolved =
+            assemble_and_resolve_default(&files, "22222222-0000-0000-0000-0000000cp002");
+
+        // State the collision by hand: force the two `OnAction` triggers to carry the
+        // literal SAME id via direct field assignment — never by relying on
+        // `compute_routine_id` happening to agree (it does today; it need not
+        // tomorrow). `build_detector_context` re-derives everything else (symbol
+        // table, call resolution, combined graph) from `resolved.workspace.routines`
+        // fresh on every call, reading whatever id is on each routine AT CALL TIME —
+        // so overwriting here, before that call, is sufficient to force the collision
+        // all the way through the pipeline it exercises.
+        const SHARED_ID: &str = "hand-stated-collision-id";
+        let mut forced = 0usize;
+        for r in resolved.workspace.routines.iter_mut() {
+            if r.name.eq_ignore_ascii_case("OnAction") {
+                r.id = SHARED_ID.to_string();
+                forced += 1;
+            }
+        }
+        assert_eq!(
+            forced, 2,
+            "fixture precondition: both OnAction trigger bodies must be in the model"
+        );
+
+        let ctx = build_detector_context(&resolved, substrate::SUMMARIES);
+
+        let summary = ctx
+            .summaries
+            .get(SHARED_ID)
+            .expect("the hand-stated collision id must have a summary at all");
+        assert!(
+            summary.coverage.is_some(),
+            "the surviving summary must not be degenerate — coverage was dropped"
+        );
+        assert!(
+            ctx.cone_derived.touches_table(SHARED_ID),
+            "the surviving derived row must still reach Touch()'s Setup.Insert()"
         );
     }
 

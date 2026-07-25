@@ -273,10 +273,21 @@ the bottom, CHANGELOG, and git log.
   `.superpowers/sdd/task-1-report.md`. Zero golden movement.
 
   **STILL OPEN — the id schema itself.** With one id per N siblings the
-  surviving answer is still ONE arbitrary sibling's, and the derived
-  (`cs`/`op`/`loop`) ids, the merged call edges, `routine_by_id`'s last-wins
-  `collect()`, the shared **stable** id (⇒ shared fingerprint ⇒ one baseline
-  entry suppresses N findings), and G-19's collision disqualifier all remain.
+  surviving DIRECT facts are still ONE arbitrary (last-sibling-wins) sibling's.
+  The surviving INHERITED cone is NOT one sibling's view: the combined graph
+  files every sibling's out-edges under the one shared `from` key, so the cone
+  walk consumes their union — `(last sibling's direct facts) ∪ (cone over the
+  union of ALL siblings' callees)`, an over-approximation. This explains why
+  the +4 d8 findings above are genuine rather than accidental (their manager
+  qualification rides the union) and predicts the direction of the
+  member-discriminator fix's own diff: de-colliding ids SHRINKS each sibling's
+  cone back to its own callees, so some of those +4 d8 findings may disappear
+  again if a manager's `writes_physical_tables_count_of >= 3` was only met by
+  the union — expected movement, not a regression, when that fix lands. The
+  derived (`cs`/`op`/`loop`) ids, the merged call edges, `routine_by_id`'s
+  last-wins `collect()`, the shared **stable** id (⇒ shared fingerprint ⇒ one
+  baseline entry suppresses N findings), and G-19's collision disqualifier all
+  remain.
   It is visible in T1's own output: the new `CDO Move Logs` d8 finding anchors
   on line 212 (`UpdateStatusAction`'s trigger) while its `Commit()` is at line
   188 in the sibling `StartmovinglogsAction` — `routine_by_id` resolved the

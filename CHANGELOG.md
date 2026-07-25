@@ -583,11 +583,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ws.routines` rather than "the colliding id" so it holds unchanged once the id
   schema gains its member discriminator. **This is a partial fix and the
   remaining half is recorded in `docs/OUTSTANDING.md`:** loop 1 still builds
-  `direct_full` with `insert()`, so the surviving summary carries one arbitrary
-  sibling's facts attributed to all N, and the derived (`cs`/`op`/`loop`) ids,
-  merged call edges and shared fingerprint all remain until the id schema
-  itself carries the member. Zero golden movement (`scripts/check-goldens`
-  green with `git status --porcelain tests/` empty); l4 differential 17/17.
+  `direct_full` with `insert()`, so the surviving summary's DIRECT facts are
+  one arbitrary (last-sibling-wins) sibling's attributed to all N — the
+  INHERITED cone is not: it is the union over every sibling's out-edges (the
+  combined graph files them all under the shared `from` key), an
+  over-approximation rather than one body's picked view. The derived
+  (`cs`/`op`/`loop`) ids, merged call edges and shared fingerprint all remain
+  until the id schema itself carries the member. Zero golden movement
+  (`scripts/check-goldens` green with `git status --porcelain tests/` empty);
+  l4 differential 17/17. **Impact beyond the measured 43-detector DO preset:**
+  `gate/policy` reads `capability_facts_direct` through this same source-only
+  builder and can move on any workspace with collisions; `l5::digest_cli` and
+  `l5::prove` both iterate `transaction_spans`, which demonstrably moved on 20
+  DO spans, so `digest`'s `factId` and `prove`'s output move with them; the
+  opt-in `d50-checked-run-implicit-commit` is a second `transaction_spans`
+  consumer outside the 43 and was not measured. `d48` also reads
+  `capability_facts_direct` but measured zero DO delta — it found nothing
+  IO-shaped in a colliding trigger's direct facts, not because it is immune to
+  the change.
 - **Post-merge review fix wave on `chore/l4-post-merge-minors`**
   (`src/engine/l5/detector_context.rs`, `tests/perf_support/mod.rs`,
   `tests/lsp/perf_support_smoke.rs`, `tests/perf_bounds.rs`,
