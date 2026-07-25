@@ -394,9 +394,14 @@ fn unknown_bucket_is_flagged_not_disguised_as_a_table() {
     let table = &v["payload"]["table"];
     assert_eq!(table["id"], serde_json::json!("unknown"));
     assert_eq!(table["isUnknownBucket"], serde_json::json!(true));
-    assert_eq!(
-        table["name"],
-        serde_json::Value::Null,
+    // ⟨final-branch-review-l3.md M-11⟩ `serialize_document_value` drops every
+    // explicit JSON null (`sort_and_drop_nulls`), and `serde_json::Value`'s
+    // `Index` yields `Value::Null` for an absent key too — so `table["name"] ==
+    // Value::Null` would pass identically whether the key were null or simply
+    // missing, and cannot tell "correctly omitted" from "typo'd/renamed key
+    // that never got populated". Assert the key's actual absence instead.
+    assert!(
+        table.get("name").is_none(),
         "the bucket has no name because it is not a table"
     );
     assert_eq!(v["payload"]["up"]["routineCount"], serde_json::json!(1));
@@ -415,7 +420,9 @@ fn unknown_bucket_is_flagged_not_disguised_as_a_table() {
          one unresolved-table effect in this fixture"
     );
     assert_eq!(unknown_rows[0]["op"], serde_json::json!("Get"));
-    assert_eq!(unknown_rows[0]["tableName"], serde_json::Value::Null);
+    // ⟨final-branch-review-l3.md M-11⟩ same reasoning as above: assert the key
+    // is absent, not that an indexed lookup happens to equal `Value::Null`.
+    assert!(unknown_rows[0].get("tableName").is_none());
     // Every OTHER row resolved to a real, named table.
     for r in effects.iter().filter(|r| r["isUnknownBucket"] == false) {
         assert!(
@@ -448,5 +455,40 @@ fn absent_table_selector_reports_unmatched_rather_than_empty() {
         v["payload"]["table"]["resolution"],
         serde_json::json!("unmatched")
     );
-    assert!(v["payload"]["up"].is_null(), "no answer was computed");
+    // ⟨final-branch-review-l3.md M-11⟩ `.is_null()` on an indexed lookup cannot
+    // tell an absent key from an explicit null (which `sort_and_drop_nulls`
+    // makes impossible here anyway) — assert the key's actual absence.
+    assert!(v["payload"].get("up").is_none(), "no answer was computed");
+}
+
+/// ⟨final-branch-review-l3.md M-3⟩ `VALID_QUERY_FORMATS` (`src/bin/alsem.rs`)
+/// had zero coverage — every golden case above passes only `json` or `human`,
+/// so deleting the check entirely is silent: `emit_query` falls through to
+/// `human` for any non-`"json"` string, and no golden's exit code would move.
+/// Pin the rejection directly, for both subcommands, without needing a golden
+/// (the check runs before workspace assembly, so this only asserts an exit
+/// code — no output to pin).
+#[test]
+fn invalid_query_format_is_rejected_with_exit_1() {
+    let ws = fixtures_dir().join("ws-d1-multi-caller");
+    assert!(ws.is_dir(), "fixture missing: {}", ws.display());
+    let ws_str = ws.to_string_lossy().to_string();
+
+    let (_out, touches_code) = run_alsem(
+        &["query", "touches", &ws_str, "--table", "MC Customer"],
+        "xml",
+    );
+    assert_eq!(
+        touches_code, 1,
+        "query touches: an invalid --format must exit 1, not fall through to human"
+    );
+
+    let (_out, effects_code) = run_alsem(
+        &["query", "effects", &ws_str, "--routine", "ModifyHelper"],
+        "xml",
+    );
+    assert_eq!(
+        effects_code, 1,
+        "query effects: an invalid --format must exit 1, not fall through to human"
+    );
 }
