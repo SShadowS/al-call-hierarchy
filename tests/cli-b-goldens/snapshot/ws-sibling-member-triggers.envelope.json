@@ -1,0 +1,145 @@
+{
+  "alsemVersion": "cli-b-v1",
+  "deterministic": true,
+  "diagnostics": [],
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "capability-snapshot",
+  "payload": {
+    "analysisGaps": [],
+    "apps": [
+      {
+        "appGuid": "88888888-0000-0000-0000-000000005816",
+        "name": "Sibling Member Triggers",
+        "publisher": "PT",
+        "version": "1.0.0.0"
+      }
+    ],
+    "callsiteIndex": [],
+    "callsiteResolutions": [],
+    "capabilityFacts": [],
+    "contractFacts": [
+      {
+        "attributes": [],
+        "kind": "object",
+        "signatureFingerprint": "8fa3f84919d1df59b4507e2ba0bf98a78e1855965e0af1678a6ba401f904fb48",
+        "stableId": "88888888-0000-0000-0000-000000005816:Page:50920",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+        "stableId": "88888888-0000-0000-0000-000000005816:Page:50920#38bc8c9b92b2aa8c2ae13e5b7e253cf5e461fa861ea872b21dd34330b904c1bf",
+        "visibility": "public"
+      },
+      {
+        "attributes": [],
+        "kind": "routine",
+        "signatureFingerprint": "898788ae522034b1d8afd2e85cd97f6711fcfe245cca68ba8c76f778c13e18d0",
+        "stableId": "88888888-0000-0000-0000-000000005816:Page:50920#d1d921fd1b581c598f3b37479e383da7012e6cf8dec466cf49d206097822d688",
+        "visibility": "public"
+      }
+    ],
+    "coverage": [
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "88888888-0000-0000-0000-000000005816:Page:50920#38bc8c9b92b2aa8c2ae13e5b7e253cf5e461fa861ea872b21dd34330b904c1bf",
+        "unknownTargets": []
+      },
+      {
+        "directStatus": "complete",
+        "inheritedStatus": "complete",
+        "reasons": [],
+        "subject": "88888888-0000-0000-0000-000000005816:Page:50920#d1d921fd1b581c598f3b37479e383da7012e6cf8dec466cf49d206097822d688",
+        "unknownTargets": []
+      }
+    ],
+    "eventDeclarations": [],
+    "identities": {
+      "displayNames": [
+        "M2 Sibling Triggers",
+        "OnAction",
+        "OnAction"
+      ],
+      "stableIds": [
+        "88888888-0000-0000-0000-000000005816:Page:50920",
+        "88888888-0000-0000-0000-000000005816:Page:50920#38bc8c9b92b2aa8c2ae13e5b7e253cf5e461fa861ea872b21dd34330b904c1bf",
+        "88888888-0000-0000-0000-000000005816:Page:50920#d1d921fd1b581c598f3b37479e383da7012e6cf8dec466cf49d206097822d688"
+      ]
+    },
+    "inputs": [
+      {
+        "contentHash": "d34c635045cb0f934c0b84457101a7f88005cb3d651e7639eba4855c4207297a",
+        "kind": "app-json",
+        "path": "app.json"
+      }
+    ],
+    "operationIndex": [],
+    "permissionFacts": [],
+    "rootClassifications": [
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "trigger-page"
+        ],
+        "routineId": "88888888-0000-0000-0000-000000005816:Page:50920#38bc8c9b92b2aa8c2ae13e5b7e253cf5e461fa861ea872b21dd34330b904c1bf",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "9ca138b9242118f0/59da86c6db221568270bda45af10454f303b0715a139ee68975d8d413c1fb2e8",
+          "range": {
+            "endColumn": 20,
+            "endLine": 20,
+            "startColumn": 16,
+            "startLine": 18
+          },
+          "sourceUnitId": "ws:src/SiblingTriggers.Page.al",
+          "syntaxKind": "trigger_declaration"
+        }
+      },
+      {
+        "confidence": "static",
+        "externallyReachable": true,
+        "kinds": [
+          "trigger-page"
+        ],
+        "routineId": "88888888-0000-0000-0000-000000005816:Page:50920#d1d921fd1b581c598f3b37479e383da7012e6cf8dec466cf49d206097822d688",
+        "source": "ast",
+        "sourceAnchor": {
+          "enclosingRoutineId": "9ca138b9242118f0/a6b6e752e94d20add0a3c31382229de9f4154ecd0609106f7e5d1bad526e55de",
+          "range": {
+            "endColumn": 20,
+            "endLine": 26,
+            "startColumn": 16,
+            "startLine": 24
+          },
+          "sourceUnitId": "ws:src/SiblingTriggers.Page.al",
+          "syntaxKind": "trigger_declaration"
+        }
+      }
+    ],
+    "routineOrderFrames": {
+      "88888888-0000-0000-0000-000000005816:Page:50920#38bc8c9b92b2aa8c2ae13e5b7e253cf5e461fa861ea872b21dd34330b904c1bf": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ],
+      "88888888-0000-0000-0000-000000005816:Page:50920#d1d921fd1b581c598f3b37479e383da7012e6cf8dec466cf49d206097822d688": [
+        {
+          "frameId": 0,
+          "kind": "block",
+          "parentFrameId": -1
+        }
+      ]
+    },
+    "schemaFacts": [],
+    "snapshotSchemaVersion": 3,
+    "typedEdges": [],
+    "workspaceFingerprint": "c40b4647270fae89f9861ea27242e8eb39759c6bff5c3f68254962ed7db62edd"
+  },
+  "schemaVersion": "1.1.0"
+}
