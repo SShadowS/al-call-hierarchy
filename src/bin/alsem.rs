@@ -631,17 +631,9 @@ fn run_query_touches_cmd(t: QueryTouchesCli) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    // `--direction up` without `--from` is the workspace-global list, which is
-    // what omitting `--from` already means; reject the combination rather than
-    // silently answering a different question than the one asked.
-    if t.from.is_none() && direction == Direction::Down {
-        eprintln!(
-            "al-sem query touches: --direction down requires --from <routine> (a down query \
-             is about one routine's cone)"
-        );
-        return ExitCode::from(1);
-    }
-
+    // `--direction down` without `--from` is rejected by `render_query_touches`
+    // itself, not duplicated here: one rule in one place, and the golden family
+    // covers it end to end (a second copy could drift and would test nothing).
     let workspace = std::path::Path::new(&t.workspace);
     let version = driver_version();
     match run_query_touches_pipeline(

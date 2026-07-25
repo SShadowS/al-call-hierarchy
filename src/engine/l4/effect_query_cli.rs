@@ -617,6 +617,12 @@ pub fn run_query_touches_pipeline(
 /// The pure rendering half of [`run_query_touches_pipeline`] — split out so the
 /// goldens and the differential drive the EXACT code the CLI runs without
 /// re-assembling the workspace per case.
+///
+/// `from: None` means the WORKSPACE-GLOBAL query, which has no down direction:
+/// "down" is about one routine's cone. That combination is rejected here rather
+/// than only in `alsem.rs`'s clap arm, so a library caller cannot get a global
+/// list back labelled `"direction": "down"`. (The CLI still pre-checks it, to
+/// fail before paying for workspace assembly.)
 pub fn render_query_touches(
     substrate: &QuerySubstrate,
     table_selector: &str,
@@ -625,6 +631,19 @@ pub fn render_query_touches(
     alsem_ver: &str,
     deterministic: bool,
 ) -> QueryRunResult {
+    if from.is_none() && direction == Direction::Down {
+        let payload = json!({
+            "direction": direction.as_str(),
+            "from": Value::Null,
+            "error": "a `down` query is about one routine's cone — pass --from <routine>, \
+                      or omit --direction for the workspace-global list",
+        });
+        return QueryRunResult {
+            json_text: envelope("query.touches", payload, alsem_ver, deterministic),
+            human_text: "query.touches: --direction down requires --from <routine>\n".to_string(),
+            exit_code: 2,
+        };
+    }
     let table = match resolve_table_selector(&substrate.resolved, table_selector) {
         Resolution::Resolved(t) => t,
         other => {

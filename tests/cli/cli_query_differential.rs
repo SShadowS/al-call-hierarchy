@@ -30,8 +30,8 @@
 //!   the whole reason the ancestor-scoped query was built
 //! - the `"unknown"` bucket (a real population: `Missing.Get()` on
 //!   `Record "No Such Table"`), asserted to be LABELLED, not shown as a table
-//! - an absent table selector (exit 2, a well-formed answer rather than a
-//!   silent empty result)
+//! - an absent table selector, and `--direction down` with no `--from` (both
+//!   exit 2 with a well-formed answer rather than a silent empty result)
 //! - the workspace-global list (count first, uncapped)
 //! - `query effects`, including an `implicit-trigger` and an `event-subscriber`
 //!   `via` — provenance `ConeDerivedStore` does not carry at all
@@ -187,6 +187,17 @@ const CORPUS: &[Case] = &[
         args: &["--table", "No Such Table At All"],
         exit_code: 2,
     },
+    // `--direction down` with no `--from`: a down query is about one routine's
+    // cone, so this asks for something that does not exist. Rejected by
+    // `render_query_touches` itself (one rule, one place — the clap arm does not
+    // duplicate it), with a document that says why rather than a bare usage error.
+    Case {
+        slug: "d1-multi-caller.down-without-from",
+        workspace: "ws-d1-multi-caller",
+        sub: "touches",
+        args: &["--table", "MC Customer", "--direction", "down"],
+        exit_code: 2,
+    },
     // `query effects`: the complete down-list for the unknown-bucket routine —
     // 6 effects spanning `direct`, `implicit-trigger` (the table's own OnInsert
     // trigger, origin in Tables.al) and the `unknown` bucket, all with `via`,
@@ -279,13 +290,18 @@ fn query_touches_absent_table_selector_exits_2() {
 }
 
 #[test]
-fn query_effects_full_down_list_with_via() {
+fn query_touches_down_without_from_is_rejected() {
     check_case(&CORPUS[6]);
 }
 
 #[test]
-fn query_effects_event_subscriber_via() {
+fn query_effects_full_down_list_with_via() {
     check_case(&CORPUS[7]);
+}
+
+#[test]
+fn query_effects_event_subscriber_via() {
+    check_case(&CORPUS[8]);
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +402,7 @@ fn unknown_bucket_is_flagged_not_disguised_as_a_table() {
     assert_eq!(v["payload"]["up"]["routineCount"], serde_json::json!(1));
 
     // And in `query effects`, the same effect is flagged per-row.
-    let e = json_of(&CORPUS[6]);
+    let e = json_of(&CORPUS[7]);
     let effects = e["payload"]["effects"].as_array().expect("effects array");
     let unknown_rows: Vec<_> = effects
         .iter()
