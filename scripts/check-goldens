@@ -8,7 +8,9 @@
 # target together so that never happens again.
 #
 # ⟨task-3 fix wave, review I-3⟩ The list below used to be five targets and covered
-# 15 of the repo's 27 golden directories. `--test r3` (r3a1/r3a2/r3a3/r3a4/r3a5 —
+# 15 of the repo's THEN-27 golden directories (30 today, ⟨final-branch-review-l3.md
+# M-4⟩ — see the map below for the current, authoritative enumeration). `--test r3`
+# (r3a1/r3a2/r3a3/r3a4/r3a5 —
 # 483 files, 93 of them id-bearing), `--test r25_abi` (7 files) and
 # `--test l4_summary_differential` (18 files) were missing entirely, so the task-3
 # id-schema change moved `tests/r3a3-goldens/` behind a green `check-goldens` — the
@@ -18,11 +20,11 @@
 # `REGEN_TEMP_GOLDENS=1 cargo test` could. `--test program_resolve_harness` was also
 # missing (`tests/goldens/semantic-edges/`, 2 non-CDO byte-compared goldens).
 #
-# Golden directory -> owning test target map (keep in sync with CLAUDE.md "Goldens").
-# Every directory below is a `REGEN_TEMP_GOLDENS`-gated byte comparison:
+# Golden directory -> owning test target map (30 directories; keep in sync with
+# CLAUDE.md "Goldens"). Every directory below is a `REGEN_TEMP_GOLDENS`-gated byte
+# comparison:
 #   tests/r4-goldens/, tests/r4f-goldens/                     -> --test r4
 #   tests/ir-l2-goldens/            (the l2_features.snapshot) -> --test l2_ir
-#   tests/r2c-goldens/              (l3eg_oracles)             -> --test l3
 #   tests/cli-a-goldens/, cli-b-, cli-c-, cli-c-events-,
 #     cli-c-policy-, cli-query-goldens/, gate-goldens/,
 #     al2dump-smoke-goldens/, aldump-smoke-goldens/            -> --test cli
@@ -31,6 +33,14 @@
 #   tests/r2-5a-goldens/, r2-5b-{cg,cov,eg,rt}-goldens/        -> --test r25_abi
 #   tests/l4-summary-baseline/                                 -> --test l4_summary_differential
 #   tests/goldens/semantic-edges/                              -> --test program_resolve_harness
+#
+# ⟨final-branch-review-l3.md M-5⟩ `--test l3` (the l3cg/l3cov/l3eg/l3rt oracle +
+# vectors suite) owns NO byte-compared golden directory of its own — despite the
+# name, `l3eg_oracles.rs` explicitly documents that it is NOT a golden diff
+# against al-sem expected strings; that comparison is `tests/r2c-goldens/*.l3eg.
+# golden.json`, read only by `tests/differential.rs` (already listed above). It
+# stays in `targets` below because it is still part of the suite this script runs
+# `--no-fail-fast` together, not because it owns a golden directory.
 #
 # ⟨Task 6⟩ `tests/cli-query-goldens/` (the `alsem query` db-effect query family)
 # needs no new target — it is a member of the `cli` umbrella, which is already

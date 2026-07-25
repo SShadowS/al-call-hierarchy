@@ -436,13 +436,17 @@ under `docs/superpowers/specs/`.
   |------------|-------------|
   | `tests/r4-goldens/`, `tests/r4f-goldens/` | `--test r4` |
   | `tests/ir-l2-goldens/` (the `l2_features.snapshot`) | `--test l2_ir` |
-  | `tests/r2c-goldens/` (l3eg) | `--test l3` + `--test differential` |
   | `tests/cli-{a,b,c,c-events,c-policy,query}-goldens/`, `tests/gate-goldens/`, `tests/{al2,al}dump-smoke-goldens/` | `--test cli` |
-  | `tests/r{0,1a,2a,2b,2c,2d}-goldens/` | `--test differential` |
+  | `tests/r{0,1a,2a,2b,2c,2d}-goldens/` (r2c is the `l3eg` family, byte-compared only by `tests/differential.rs` — `--test l3`'s own `l3eg_oracles` is a *different*, non-golden check) | `--test differential` |
   | `tests/r3a{1,2,3,4,5}-goldens/` | `--test r3` |
   | `tests/r2-5a-goldens/`, `tests/r2-5b-{cg,cov,eg,rt}-goldens/` | `--test r25_abi` |
   | `tests/l4-summary-baseline/` | `--test l4_summary_differential` |
   | `tests/goldens/semantic-edges/` | `--test program_resolve_harness` |
+
+  The ninth target, `--test l3` (l3cg/l3cov/l3eg/l3rt oracle + vectors), owns no
+  byte-compared golden directory of its own — despite the name, `l3eg_oracles.rs`
+  is explicitly NOT a golden diff. `scripts/check-goldens` still runs it
+  `--no-fail-fast` alongside the eight golden-bearing targets above.
 
   Canonical loop: **`scripts/check-goldens --regen`** (regens all nine targets),
   inspect the diff, then **`scripts/check-goldens`** (no regen) to confirm green.
