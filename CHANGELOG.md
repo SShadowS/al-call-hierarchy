@@ -1124,7 +1124,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `variables`, so `L3Routine.variables` held **2,997,353 copies of 53,186
   distinct `(object, name)` pairs — a 56.4x replication costing ~443 MB of
   payload per workspace** on the 8020 corpus (`.superpowers/sdd/scope-l3-substrate.md`
-  §3.3). This is the L4 "replicate the parent's data into every child" pattern
+  §3.3). **That factor is corpus-shaped, not a constant**: re-measured on the real
+  CDO/DO workspace it is **16.8x** (record variables 20.2x vs 8020's 65.4x), so the
+  fractional payload recovered there is ~9% against the 8020 headline's ~25%
+  (§8, dated re-measure). Quote the 8020 figure only with the corpus named.
+  This is the L4 "replicate the parent's data into every child" pattern
   recurring in L3. The globals are byte-identical for every routine of an object
   (lowercased name, canonicalized declared type, `scope: Some("global")`, never a
   parameter, never an initializer), so nothing about them was ever per-routine.
