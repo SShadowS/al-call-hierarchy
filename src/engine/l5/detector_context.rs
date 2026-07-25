@@ -34,6 +34,7 @@ use crate::engine::l4::capability_cone::{
 use crate::engine::l4::combined_graph::{CombinedGraph, build_combined_graph};
 use crate::engine::l4::cone_derived::{ConeDerivedStore, ConeOutput};
 use crate::engine::l4::effect_store::SummaryBundle;
+use crate::engine::l4::reverse_index::ReverseEffectIndex;
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
 use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_bundle};
@@ -199,6 +200,22 @@ pub struct DetectorContext<'a> {
     /// eager expansion. `None` when the `CORE_SUMMARIES` substrate was not demanded
     /// (the summary solve is skipped entirely — no bundle exists to hold).
     pub db_effect_bundle: Option<SummaryBundle>,
+    /// ⟨Task 6⟩ The [`ReverseEffectIndex`] transpose over [`Self::db_effect_bundle`]
+    /// — the routine <-> table/effect inverted index a db-effect-reading detector
+    /// or the planned LSP hover would query.
+    ///
+    /// `Some` **only** when `demanded` carried
+    /// [`substrate::DB_EFFECT_REVERSE_INDEX`], which is deliberately outside
+    /// [`substrate::ALL`] and which no detector may declare (see that
+    /// constant's doc for the `gap_detector_substrate_parity` trap and the
+    /// one-line unlock). Left `None` costs a run exactly one `Option` field: no
+    /// allocation, no transpose pass, no perf span.
+    ///
+    /// Today's shipped consumer — `alsem query` — does NOT come through here at
+    /// all; it owns its own pipeline (`l4::effect_query_cli`), so it cannot
+    /// charge `analyze` even accidentally. This field is the seam for the
+    /// eventual in-context consumer.
+    pub reverse_effect_index: Option<ReverseEffectIndex>,
     /// The shared finding-fingerprint index (routine/object id maps + the
     /// internal→stable routine-id substitution map). Built ONCE per run —
     /// previously every detector rebuilt it (54 × ~2 String clones per routine).
@@ -788,6 +805,21 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         (HashMap::new(), HashMap::new(), Vec::new(), None)
     };
 
+    // ⟨Task 6⟩ The reverse transpose — built ONLY on explicit demand. Not in
+    // `substrate::ALL`, so the four `ALL`-passing non-registry callers never pay
+    // it, and `run_detectors` (which passes `demanded`, the fold of the selected
+    // detectors' `requires`) can never reach it either, since no detector may
+    // declare the bit. Unset ⇒ this is one `None` write: no allocation, no pass,
+    // and — because the span is INSIDE the branch — not even a trace entry.
+    // The named span is deliberate: when it IS built, its cost lands in the perf
+    // trace beside every other substrate rather than being guessed at.
+    let reverse_effect_index = if demanded & substrate::DB_EFFECT_REVERSE_INDEX != 0 {
+        let _s = pt::span("context", "context.reverse_effect_index");
+        db_effect_bundle.as_ref().map(ReverseEffectIndex::build)
+    } else {
+        None
+    };
+
     let _final_indexes_span = pt::span("context", "context.final_indexes");
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
     for r in &ws.routines {
@@ -851,6 +883,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         closed_world_temp_params,
         summarize_diagnostics,
         db_effect_bundle,
+        reverse_effect_index,
         fingerprint_index,
         cross_extension_subscribers,
     }
@@ -1107,6 +1140,10 @@ pub(crate) fn build_detector_context_cross_app(
         closed_world_temp_params,
         summarize_diagnostics,
         db_effect_bundle: Some(db_effect_bundle),
+        // ⟨Task 6⟩ The cross-app context takes no `demanded` mask, so there is
+        // no way to ask it for the transpose — and no cross-app consumer wants
+        // one (d13/d16/d17 read no db effects). `None` keeps this path free.
+        reverse_effect_index: None,
         fingerprint_index,
         cross_extension_subscribers,
     }
@@ -1432,5 +1469,108 @@ codeunit 50900 "FX1 Touch"
              db_effects row in the bundle, or the debug_assert in \
              `build_detector_context` is never exercised against a real effect"
         );
+    }
+
+    /// ⟨Task 6⟩ The demand gate on `DB_EFFECT_REVERSE_INDEX`, in BOTH
+    /// directions, on a workspace that really does produce db effects.
+    ///
+    /// The direction that matters is the negative one: wiring the index was
+    /// declined before precisely because "does `analyze` pay for it?" had no
+    /// answer. `analyze` reaches this function through `run_detectors`, which
+    /// passes `demanded` — the fold of every selected detector's `requires` —
+    /// and no detector may declare this bit (see the constant's doc), so the
+    /// production analyze path cannot set it. `substrate::ALL` is asserted here
+    /// as the standing proxy for that path: if someone ever folds the bit into
+    /// `ALL`, this test fails rather than the four `ALL`-passing CLI callers
+    /// silently starting to pay for a transpose none of them reads.
+    ///
+    /// The fixture's effect population is asserted as a PRECONDITION, not
+    /// assumed — an empty bundle would make the positive direction pass
+    /// vacuously.
+    #[test]
+    fn reverse_effect_index_is_built_only_when_its_bit_is_demanded() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50901 "FX2 Ledger"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+codeunit 50901 "FX2 Touch"
+{
+    procedure Touch()
+    var
+        Ledger: Record "FX2 Ledger";
+    begin
+        Ledger.Insert();
+    end;
+}
+"#;
+        let files = vec![("src/FX2Touch.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "11111111-0000-0000-0000-0000000fx002");
+
+        // The bit is NOT in `ALL` — asserted directly, so folding it in there
+        // fails here first.
+        assert_eq!(
+            substrate::ALL & substrate::DB_EFFECT_REVERSE_INDEX,
+            0,
+            "DB_EFFECT_REVERSE_INDEX must stay OUT of substrate::ALL — see its doc \
+             for the four ALL-passing callers this protects and the parity trap"
+        );
+
+        // NEGATIVE: the full `ALL` substrate — everything analyze can ever ask
+        // for — leaves the index unbuilt.
+        let ctx_all = build_detector_context(&resolved, substrate::ALL);
+        assert!(
+            ctx_all.db_effect_bundle.is_some(),
+            "ALL includes CORE_SUMMARIES, so the bundle IS built — which is what \
+             makes the next assertion meaningful rather than vacuous"
+        );
+        assert!(
+            ctx_all.reverse_effect_index.is_none(),
+            "substrate::ALL must NOT build the reverse index"
+        );
+
+        // POSITIVE: ask for it explicitly and it appears, correct and populated.
+        let ctx = build_detector_context(
+            &resolved,
+            substrate::CORE_SUMMARIES | substrate::DB_EFFECT_REVERSE_INDEX,
+        );
+        let bundle = ctx
+            .db_effect_bundle
+            .as_ref()
+            .expect("CORE_SUMMARIES demanded");
+        let index = ctx
+            .reverse_effect_index
+            .as_ref()
+            .expect("DB_EFFECT_REVERSE_INDEX demanded — the transpose must exist");
+
+        // Fixture precondition, hand-stated: there IS a table with effects to
+        // transpose. Without this the assertions below could all pass on an
+        // empty index.
+        let table_id = bundle
+            .routines_with_rows()
+            .flat_map(|rix| bundle.db_effects(rix))
+            .map(|e| e.table_id.to_string())
+            .next()
+            .expect(
+                "fixture precondition: `Ledger.Insert()` must produce at least one \
+                 db effect, or this test proves nothing about the transpose",
+            );
+
+        let up = index.up_table(&table_id);
+        assert!(
+            !up.is_empty(),
+            "the transpose must answer for a table the bundle really carries"
+        );
+        for &rix in &up {
+            assert!(
+                index.touches_table(bundle, rix, &table_id),
+                "up_table and touches_table must agree"
+            );
+        }
     }
 }

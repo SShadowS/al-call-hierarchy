@@ -21,6 +21,9 @@ use al_call_hierarchy::engine::gate::filter::Scope;
 use al_call_hierarchy::engine::gate::presets::PRESET_NAMES_LIST;
 use al_call_hierarchy::engine::gate::run::{AnalyzeArgs, OutputFormat, run_analyze_with_exit};
 use al_call_hierarchy::engine::gate::version::driver_version;
+use al_call_hierarchy::engine::l4::effect_query_cli::{
+    Direction, QueryRunResult, run_query_effects_pipeline, run_query_touches_pipeline,
+};
 use al_call_hierarchy::engine::l5::digest_cli::{
     ChangedAutoDetect, auto_detect_changed, run_digest_pipeline,
 };
@@ -64,6 +67,85 @@ enum Commands {
     Policy(PolicyCli),
     /// Inspect and maintain the dependency cache (cli-c/c3).
     Cache(CacheCli),
+    /// Query the db-effect store: which routines touch a table, and what a
+    /// routine's transitive db effects are.
+    Query(QueryCli),
+}
+
+/// `QueryCli` — top-level `query` subcommand group (the db-effect query surface
+/// over `l4::effect_query::DbEffectQuery`).
+#[derive(Parser)]
+struct QueryCli {
+    #[command(subcommand)]
+    command: QueryCommands,
+}
+
+#[derive(Subcommand)]
+enum QueryCommands {
+    /// Is a table touched by any DB action, transitively, up or down the call stack?
+    Touches(QueryTouchesCli),
+    /// A routine's complete transitive db-effect list, with `via` provenance.
+    Effects(QueryEffectsCli),
+}
+
+/// `QueryTouchesCli` — arguments for `alsem query touches <ws> --table T`.
+#[derive(Parser)]
+struct QueryTouchesCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Table selector: a table NAME, an internal table id, or the literal
+    /// `unknown` (the "effect is real, target table unresolved" bucket — not a
+    /// table).
+    #[arg(long = "table")]
+    table: String,
+
+    /// Scope the answer to one routine: internal id, StableRoutineId,
+    /// `Object.Routine`, or a bare routine name. Omit for the workspace-global
+    /// list (count reported first; the list is complete, never truncated).
+    #[arg(long = "from")]
+    from: Option<String>,
+
+    /// down | up | both. `up` is the ancestor-scoped query — which transitive
+    /// callers touch the table through OTHER branches. Requires --from.
+    #[arg(long = "direction", default_value = "both")]
+    direction: String,
+
+    /// Output format: human | json. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
+}
+
+/// `QueryEffectsCli` — arguments for `alsem query effects <ws> --routine R`.
+#[derive(Parser)]
+struct QueryEffectsCli {
+    /// Path to the AL workspace root.
+    workspace: String,
+
+    /// Routine selector: internal id, StableRoutineId, `Object.Routine`, or a
+    /// bare routine name.
+    #[arg(long = "routine")]
+    routine: String,
+
+    /// Output format: human | json. Defaults to human.
+    #[arg(long = "format", default_value = "human")]
+    format: String,
+
+    /// Write output to a file instead of stdout.
+    #[arg(long = "out")]
+    out: Option<String>,
+
+    /// Pin timestamps / version for byte-stable output.
+    #[arg(long, default_value_t = false)]
+    deterministic: bool,
 }
 
 /// `PolicyCli` — top-level `policy` subcommand group.
@@ -501,6 +583,99 @@ fn main() -> ExitCode {
         Commands::Cache(c) => match c.command {
             CacheCommands::Prune(p) => run_cache_prune_cmd(p),
         },
+        Commands::Query(q) => match q.command {
+            QueryCommands::Touches(t) => run_query_touches_cmd(t),
+            QueryCommands::Effects(e) => run_query_effects_cmd(e),
+        },
+    }
+}
+
+// ── query commands ───────────────────────────────────────────────────────────
+
+/// Write a query result to `--out` or stdout, returning its exit code.
+fn emit_query(label: &str, result: QueryRunResult, format: &str, out: Option<&str>) -> ExitCode {
+    let output = if format == "json" {
+        result.json_text
+    } else {
+        result.human_text
+    };
+    let write_result = if let Some(out_path) = out {
+        std::fs::write(out_path, &output).map_err(|e| format!("{e}"))
+    } else {
+        use std::io::Write;
+        std::io::stdout()
+            .write_all(output.as_bytes())
+            .map_err(|e| format!("{e}"))
+    };
+    if let Err(e) = write_result {
+        eprintln!("al-sem: {label}: write error: {e}");
+        return ExitCode::from(1);
+    }
+    ExitCode::from(result.exit_code)
+}
+
+const VALID_QUERY_FORMATS: &[&str] = &["human", "json"];
+
+fn run_query_touches_cmd(t: QueryTouchesCli) -> ExitCode {
+    if !VALID_QUERY_FORMATS.contains(&t.format.as_str()) {
+        eprintln!(
+            "al-sem query touches: invalid --format '{}'. Expected: human | json",
+            t.format
+        );
+        return ExitCode::from(1);
+    }
+    let direction = match Direction::parse(&t.direction) {
+        Ok(d) => d,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(1);
+        }
+    };
+    // `--direction up` without `--from` is the workspace-global list, which is
+    // what omitting `--from` already means; reject the combination rather than
+    // silently answering a different question than the one asked.
+    if t.from.is_none() && direction == Direction::Down {
+        eprintln!(
+            "al-sem query touches: --direction down requires --from <routine> (a down query \
+             is about one routine's cone)"
+        );
+        return ExitCode::from(1);
+    }
+
+    let workspace = std::path::Path::new(&t.workspace);
+    let version = driver_version();
+    match run_query_touches_pipeline(
+        workspace,
+        &t.table,
+        t.from.as_deref(),
+        direction,
+        &version,
+        t.deterministic,
+    ) {
+        Err(msg) => {
+            eprintln!("{msg}");
+            ExitCode::from(1)
+        }
+        Ok(result) => emit_query("query touches", result, &t.format, t.out.as_deref()),
+    }
+}
+
+fn run_query_effects_cmd(e: QueryEffectsCli) -> ExitCode {
+    if !VALID_QUERY_FORMATS.contains(&e.format.as_str()) {
+        eprintln!(
+            "al-sem query effects: invalid --format '{}'. Expected: human | json",
+            e.format
+        );
+        return ExitCode::from(1);
+    }
+    let workspace = std::path::Path::new(&e.workspace);
+    let version = driver_version();
+    match run_query_effects_pipeline(workspace, &e.routine, &version, e.deterministic) {
+        Err(msg) => {
+            eprintln!("{msg}");
+            ExitCode::from(1)
+        }
+        Ok(result) => emit_query("query effects", result, &e.format, e.out.as_deref()),
     }
 }
 

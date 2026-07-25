@@ -158,14 +158,21 @@ or consumed programmatically by `src/engine/l4`/`l5` (effect summaries, detector
 - `src/engine/l2/` - Structural body-walk + feature projection over the owned IR
 - `src/engine/l3/` - Legacy workspace symbol table + call resolver (the RETIRED al-sem
   port; `--l3-call-graph-stats` and siblings are advisory-only — see Project Direction)
-- `src/engine/l4/` - Per-routine effect summaries over the call graph's SCC condensation
+- `src/engine/l4/` - Per-routine effect summaries over the call graph's SCC condensation.
+  Its db-effect QUERY surface is `effect_query.rs` (`DbEffectQuery`: down / up-global /
+  the ancestor-scoped up-query) over `reverse_index.rs`'s transpose, with
+  `effect_query_cli.rs` as the `alsem query` transport + the `RoutineIx`→`L3Routine`
+  join. Read `effect_query.rs`'s module doc BEFORE building anything on it — it states
+  which question this substrate answers and which one `cone_derived.rs` already answers
+  better (physical-table WRITES), so a second answer to the same question is not built.
 - `src/engine/l5/` - Detectors + query substrate (findings, event-flow, digests, fingerprints)
 - `src/engine/gate/` - The production `analyze` CLI path (SARIF/JSON/HTML/terminal report,
   baseline diffing, inline suppression, policy)
 - `src/engine/deps/` - `.app` symbol-reference ingestion (manifest + SymbolReference.json → ABI)
 - `src/bin/aldump.rs` - Multi-mode dump CLI: `--program-call-graph-stats` (north-star),
   `--l2`/`--l3-*` (legacy engine layers), `--graphify-export`, etc. — see its `usage()`
-- `src/bin/alsem.rs` - The production `analyze`/diagnostics CLI (installed binary name)
+- `src/bin/alsem.rs` - The production `analyze`/diagnostics CLI (installed binary name);
+  also hosts `alsem query touches|effects` (the db-effect query surface above)
 - `src/bin/mint-goldens.rs` - Mints/regenerates committed golden fixtures
 
 **`crates/al-syntax`** is the **only** crate that touches tree-sitter: FFI grammar
@@ -423,14 +430,14 @@ under `docs/superpowers/specs/`.
 - **One change moves SEVERAL golden families — regen and run them together, never
   one at a time.** A change anywhere under `src/engine/`, `crates/al-syntax/src/`,
   `tests/r0-corpus/` (fixtures), `tests/fixtures/`, or any golden/vector dir can
-  move any of the **29 golden directories**, which map to **9 test targets**:
+  move any of the **30 golden directories**, which map to **9 test targets**:
 
   | Golden dir(s) | Test target |
   |------------|-------------|
   | `tests/r4-goldens/`, `tests/r4f-goldens/` | `--test r4` |
   | `tests/ir-l2-goldens/` (the `l2_features.snapshot`) | `--test l2_ir` |
   | `tests/r2c-goldens/` (l3eg) | `--test l3` + `--test differential` |
-  | `tests/cli-{a,b,c,c-events,c-policy}-goldens/`, `tests/gate-goldens/`, `tests/{al2,al}dump-smoke-goldens/` | `--test cli` |
+  | `tests/cli-{a,b,c,c-events,c-policy,query}-goldens/`, `tests/gate-goldens/`, `tests/{al2,al}dump-smoke-goldens/` | `--test cli` |
   | `tests/r{0,1a,2a,2b,2c,2d}-goldens/` | `--test differential` |
   | `tests/r3a{1,2,3,4,5}-goldens/` | `--test r3` |
   | `tests/r2-5a-goldens/`, `tests/r2-5b-{cg,cov,eg,rt}-goldens/` | `--test r25_abi` |

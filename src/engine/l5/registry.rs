@@ -74,6 +74,37 @@ pub mod substrate {
     /// None`; `FullRoutineSummary::inherited_raw` then panics rather than
     /// silently serving a direct-only view (R6).
     pub const RAW_INHERITED_FACTS: u32 = 1 << 4;
+    /// ⟨Task 6⟩ The [`crate::engine::l4::reverse_index::ReverseEffectIndex`]
+    /// transpose over `db_effect_bundle`, exposed as `ctx.reverse_effect_index`.
+    ///
+    /// **QUERY-ONLY, deliberately NOT part of [`ALL`], and — unlike every other
+    /// bit here — NOT a substrate a detector may declare in `requires`.** Same
+    /// contract as [`RAW_INHERITED_FACTS`], for a DIFFERENT and less obvious
+    /// reason, so read this before copying the pattern:
+    ///
+    /// `tests/gap/gap_detector_substrate_parity.rs` licenses each detector by
+    /// building a "full" context from `substrate::ALL` and a "minimal" one from
+    /// `det.requires`, then asserting identical findings. A detector declaring a
+    /// bit OUTSIDE `ALL` inverts that comparison — the *minimal* context would
+    /// have the substrate and the *full* one would not — so the detector's
+    /// findings would differ and the test would fail while PRODUCTION stayed
+    /// correct (`run_detectors` passes `demanded`, the fold of every selected
+    /// detector's `requires`, which does include the bit). A failing license
+    /// test that indicts correct code is worse than no test.
+    ///
+    /// **The one-line unlock**, when a detector genuinely needs this: change
+    /// that test's full context to `substrate::ALL | det.requires`. Do that
+    /// FIRST; do not add the bit to `ALL` (that would charge the four
+    /// `ALL`-passing non-registry callers — `gate/events.rs` ×2,
+    /// `l5/digest_cli.rs`, `l5/prove.rs`, plus `gate/policy/pipeline.rs` — for a
+    /// transpose none of them reads).
+    ///
+    /// Today's consumer is `alsem query`, which owns its own pipeline and never
+    /// builds a `DetectorContext` at all — so this bit costs the analyze path
+    /// nothing by construction. It exists for the eventual detector / LSP-hover
+    /// path. Implies [`CORE_SUMMARIES`] (there is no bundle to transpose
+    /// without it) — set both.
+    pub const DB_EFFECT_REVERSE_INDEX: u32 = 1 << 5;
     /// Every substrate — the eager, pre-W1.0 behavior. Full/preset/all-detector runs
     /// and every non-registry `build_detector_context` caller pass this.
     ///
@@ -84,6 +115,9 @@ pub mod substrate {
     /// raw-cone bit in here would re-materialize the whole 10.9 GB on all of
     /// them. Anything that needs the raw facts ORs the bit in at its own call
     /// site.
+    ///
+    /// ⟨Task 6⟩ [`DB_EFFECT_REVERSE_INDEX`] is excluded for the same reason plus
+    /// one more (the detector-parity trap) — see its own doc.
     pub const ALL: u32 = SUMMARIES | CORE_SUMMARIES | TRANSACTION_SPANS | CLOSED_WORLD_TEMP;
 }
 

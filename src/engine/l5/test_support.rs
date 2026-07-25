@@ -410,6 +410,7 @@ pub fn minimal_ctx<'a>(
         closed_world_temp_params: Default::default(),
         summarize_diagnostics: Vec::new(),
         db_effect_bundle: None,
+        reverse_effect_index: None,
         fingerprint_index: crate::engine::l5::fingerprint::FingerprintIndex::build(routines, &[]),
         cross_extension_subscribers: std::collections::BTreeMap::new(),
     }

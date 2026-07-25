@@ -1,0 +1,33 @@
+{
+  "alsemVersion": "cli-query-v1",
+  "deterministic": true,
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "kind": "query.touches",
+  "payload": {
+    "direction": "both",
+    "table": {
+      "id": "unknown",
+      "isUnknownBucket": true,
+      "resolution": "resolved",
+      "selector": "unknown"
+    },
+    "up": {
+      "note": "workspace-global: every routine whose transitive cone touches this table. Scope it with --from <routine> --direction up.",
+      "routineCount": 1,
+      "routines": [
+        {
+          "anchor": {
+            "column": 4,
+            "file": "ws:src/Codeunit.al",
+            "line": 9
+          },
+          "display": "DeclaredVars",
+          "objectDisplay": "Codeunit R2a Records",
+          "stableId": "2a000000-0000-0000-0000-0000000002aa:Codeunit:50900#c55cfb62b11616f98ad594b5e23d52bf9acef88743a0f51a3b687dff45ce314e"
+        }
+      ],
+      "scoped": false
+    }
+  },
+  "schemaVersion": "1.0.0"
+}

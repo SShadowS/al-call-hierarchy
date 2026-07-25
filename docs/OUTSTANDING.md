@@ -467,19 +467,6 @@ the bottom, CHANGELOG, and git log.
   d55 finding silently suppressed a second publish in the same loop, or the next
   deliberate fingerprint-moving change (piggyback — the cost is the same class as
   T4's 3 %).
-- [ ] **`ReverseEffectIndex` (779 lines, `src/engine/l4/reverse_index.rs`) is
-  built and tested but has zero production callers** — built at A4 with
-  wiring explicitly deferred to B1 ("the hover consumer"); B1 ran (retire +
-  migrate) and deliberately did NOT wire it (eager construction would add
-  unconsumed cost to every `analyze` run — the right call), so the stated
-  wake condition passed without being met. Every `ReverseEffectIndex::build`
-  call site is inside its own `#[cfg(test)]` module; its only other mentions
-  in the codebase are two doc comments (`summary_runner.rs`,
-  `detector_context.rs`). It has never executed against real data — no
-  golden, no DO run, no CDO run reaches it — so its 7 self-consistency tests
-  are its entire correctness evidence. **Wake:** the first db-effect-reading
-  consumer (originally planned: VSCode hover) or a future `finding`/query
-  surface that needs an effect/table ↔ routine lookup.
 - [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
   app's parse only (deps parse once in the fresh pass); on DO that's 407 files of a
   dep-dominated 4.8 s resolve → sub-second saving. Live BOM divergence (DO has 4

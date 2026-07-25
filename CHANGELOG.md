@@ -8,6 +8,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`alsem query touches` / `alsem query effects` — a db-effect query surface, and
+  with it the first production consumer of `ReverseEffectIndex`**
+  (`src/engine/l4/effect_query.rs`, `src/engine/l4/effect_query_cli.rs`,
+  `src/bin/alsem.rs`, `tests/cli-query-goldens/`;
+  `feat/l3-substrate-and-parked-items` Task 6). Answers *"is table X touched by any
+  DB action — read or write, temp or physical — transitively, up or down the call
+  stack from routine R?"*. `touches` reports the down cone with witnesses, the
+  workspace-global routine list, or — the new capability — the **ancestor-scoped**
+  answer: which transitive CALLERS of R touch X through a branch that does not go
+  through R. `effects` dumps one routine's complete transitive db-effect list with
+  `via` provenance. Both take `--format human|json`, `--out`, `--deterministic`;
+  a selector that matches nothing or is ambiguous produces a well-formed exit-2
+  document naming the failure rather than an empty result that reads as "no".
+  - **The ancestor-scoped up-query is new code, not new wiring.**
+    `reverse_index.rs`'s own module header had called it mandatory
+    (`GraphSccIx` reverse-DAG BFS) since A4 and it had never been implemented, so
+    the only up-direction that existed was `up_table` — workspace-global, a DO
+    median of 377 of 3 685 routines per table. `DbEffectQuery::ancestors_touching`
+    builds the reverse condensation once, BFSes it for depth, and filters by
+    `touches_table`, holding the notion discipline the two newtypes exist for:
+    steps 1-2 walk the ORIGINAL Tarjan condensation (`GraphSccIx`, where
+    reachability is intact), step 3 goes through `EffectClassIx`. Because
+    summaries are transitive-down, the answer is only informative when R itself
+    does NOT touch X — the payload says which case it is instead of presenting a
+    restatement as a finding.
+  - **Witnesses come from the bundle, membership from the index.** The posting
+    lists drop `ViaRank` and 98.8 % of real memberships are `inherited`, so every
+    hit is re-read from `SummaryBundle::db_effects` to recover `via` / `op` /
+    `tempState`, then joined to the routine + record operation that actually
+    performs it — a `via: inherited` answer anchors at the callee's own
+    `Cust.Modify()`, not at the routine asked about.
+  - **`"unknown"` is a labelled bucket, never a table.** `summary_runner` writes
+    the literal sentinel `"unknown"` when a record operation's target table cannot
+    be determined, and on DO that is the LARGEST posting of all (1 334 routines).
+    It stays queryable (`--table unknown`) and every rendering flags it
+    (`isUnknownBucket`, `tableName: null`); name resolution can never fall through
+    to it.
+  - **No caps.** The unscoped list reports `routineCount` first and then the
+    COMPLETE list — the size is made visible rather than truncated.
+- **`substrate::DB_EFFECT_REVERSE_INDEX` + `ctx.reverse_effect_index`**
+  (`src/engine/l5/registry.rs`, `src/engine/l5/detector_context.rs`) — the
+  demand-gated seam for the eventual detector / LSP-hover consumer. Deliberately
+  OUTSIDE `substrate::ALL` and, unlike every other bit, **not declarable by a
+  detector**: `gap_detector_substrate_parity` builds its "full" context from `ALL`
+  and its "minimal" one from `det.requires`, so a bit outside `ALL` inverts that
+  comparison and would fail a CORRECTLY-declared detector while production stayed
+  right. The one-line unlock (change that test's full context to
+  `substrate::ALL | det.requires`) is recorded in the constant's own doc so the
+  next person does not rediscover it. Unset costs a run one `None` field — no
+  allocation, no pass, not even a trace entry; `analyze` cannot set it at all.
+
+### Fixed
+- **`ReverseEffectIndex` build allocated 2 table-id `String`s per membership**
+  (`src/engine/l4/reverse_index.rs`). The transpose passes cloned
+  `universe.identity(eid).table_id` twice per (class, effect) pair — 2·B
+  allocations, where B is Σ-over-distinct-classes of base cardinality: ~131 k on
+  DO and an extrapolated ~4 M (~190 MB of churn, in peak RSS) at 8020 scale,
+  inside an arc whose point was killing a 24 GB allocation. The working maps now
+  key on `&str` borrowed from the frozen universe (which outlives the build), so
+  the only table-id `String`s minted are the `<= n_tables` surviving map keys.
+- **`ReverseEffectIndex::touches_effect` did not have the shape its doc claimed**
+  (`src/engine/l4/reverse_index.rs`). Documented as the "same no-decompression
+  shape" as `touches_table`, it was `effect_classes(effect).any(|c| c == class)` —
+  a linear walk of a SORTED posting, a full bit-scan in the dense case. Both arms
+  now go through `PostingList::contains` (binary search / one word test) via two
+  private accessors mirroring the public table pair.
+
 - **A recursive-SCC perf corpus + release gate for the SOLVER's own internal
   cost** (`tests/perf_support/mod.rs`, `tests/perf_bounds.rs`,
   `chore/l4-post-merge-minors`; final-branch-review finding **M-6**).

@@ -18,10 +18,15 @@
 //! ORIGINAL call-graph Tarjan condensation
 //! ([`SccResult::scc_id_by_routine`]), UNCHANGED by leaf removal. The effect
 //! transpose below (`down`/`touches_table`/`up_table`) uses `EffectClassIx`
-//! exclusively; a future ancestor-scoped hover ("callers of R that touch X")
-//! MUST use `GraphSccIx` for its reverse-DAG BFS instead —
-//! effective-SCC leaf-removal changes REACHABILITY (an edge through the
-//! removed leaf disappears), so the two are never interchangeable.
+//! exclusively; the ancestor-scoped query ("callers of R that touch X") MUST
+//! use `GraphSccIx` for its reverse-DAG BFS instead — effective-SCC
+//! leaf-removal changes REACHABILITY (an edge through the removed leaf
+//! disappears), so the two are never interchangeable. That query is
+//! IMPLEMENTED, in
+//! [`crate::engine::l4::effect_query::DbEffectQuery::ancestors_touching`]
+//! (Task 6) — it holds exactly this discipline: steps 1-2 (reverse
+//! condensation + BFS) walk `GraphSccIx`, step 3 (does this ancestor touch T?)
+//! goes through `EffectClassIx` via `touches_table`.
 //! [`class_of`]/[`graph_scc_of`] are free functions, not `ReverseEffectIndex`
 //! fields — each is a cheap live projection off `SummaryBundle`/`SccResult`,
 //! so there is only ONE place either notion is computed (no second,
@@ -49,6 +54,54 @@
 //! [`EffectSetId`] each) to populate `effect_to_sccs`/`table_to_sccs`, NOT
 //! the 7.1M routine memberships A3's sharing collapsed away — the same
 //! complexity-class win A3 made for storage applies to the reverse build.
+//!
+//! The transpose passes key their working maps on `&str` BORROWED from the
+//! frozen universe (which outlives the build), allocating a `String` only for
+//! the `<= n_tables` surviving map keys. The pre-Task-6 shape cloned the table
+//! id TWICE per (class, effect) membership — 2·B allocations, ~131k on DO and
+//! an extrapolated ~4M (~190 MB of churn) at 8020 scale, landing in peak RSS
+//! inside an arc whose point was killing a 24 GB allocation. `B` is
+//! Σ-over-distinct-classes of base cardinality, so that cost scaled with the
+//! transpose work, not with the (much smaller) table count it produced.
+//!
+//! ## Two rules every consumer must hold (they exist nowhere else)
+//!
+//! 1. **[`ReverseEffectIndex::class_members`] is an INTERNAL expansion vehicle
+//!    — never render it, and never describe it as "the routines in this
+//!    cycle".** [`EffectClassIx`] IS [`EffectSetId`], so two effective SCCs
+//!    with byte-identical terminal bases hash-cons into ONE class and
+//!    `class_members` returns the UNION of both SCCs' members — routines with
+//!    no call relationship at all. Every query this module ships stays correct
+//!    under that collapse (both SCCs genuinely carry the base, so every
+//!    routine `up_table`/`up_effect` returns genuinely touches the table, and
+//!    `touches_table` never flips); it is purely an expansion vehicle, and
+//!    nothing here derives reachability or cycle membership from it.
+//! 2. **Membership comes from the index; WITNESSES come from the bundle.** The
+//!    posting lists discard [`crate::engine::l4::effect_store::ViaRank`], and
+//!    98.8% of real memberships (DO: 219 727 / 222 483) are `via: inherited` —
+//!    so a surface that answers "does R touch T?" from postings alone and
+//!    stops there has answered the less useful half of the question ("does
+//!    THIS routine do it, or something twelve frames down?").
+//!    [`crate::engine::l4::effect_query::DbEffectQuery`] is the facade that
+//!    holds both halves together; prefer it over calling this module directly.
+//!
+//! ## Two things this module deliberately does NOT own
+//!
+//! - **`table_id` is not always a table.** `summary_runner`'s base extraction
+//!   substitutes the literal sentinel `"unknown"` when a record operation's
+//!   target table could not be determined (`summary_runner.rs`, the
+//!   `op.table_id.clone().unwrap_or_else(|| "unknown".to_string())` line), and
+//!   on DO that bucket is the LARGEST posting of all (1 334 routines). The
+//!   index stores it verbatim — it is a real, queryable effect population —
+//!   but any surface that renders a table must state what it is rather than
+//!   showing it as though it were a table id. See
+//!   [`crate::engine::l4::effect_query::UNKNOWN_TABLE_ID`].
+//! - **[`RoutineIx`] is not a user-facing identity.**
+//!   [`SummaryBundle::routine_id`] yields the INTERNAL id
+//!   (`<appGuid>:Codeunit:6175271#<bodyhash>`). Rendering needs a join to
+//!   `L3Routine` (`name` / `object_type` / `stable_routine_id` /
+//!   `source_anchor`); that join belongs to the CONSUMER, not here — see
+//!   `effect_query_cli.rs`.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -265,9 +318,16 @@ impl ReverseEffectIndex {
         //    effect_to_sccs + table_to_sccs (+ each class's touched-table set,
         //    which the delta pass below needs for the ⟨rev3⟩ disjoint
         //    contract).
+        //
+        //    Both table maps are keyed on `&str` BORROWED from `universe`
+        //    (which outlives this whole function — it is reached through the
+        //    `&SummaryBundle` parameter), so this pass allocates NOTHING per
+        //    membership; the only `String`s minted are the `<= n_tables`
+        //    surviving map keys, at the finalize below. See the module doc for
+        //    the 2·B-allocations cost this replaced.
         let mut effect_to_sccs_ids: Vec<Vec<u32>> = vec![Vec::new(); n_effects];
-        let mut table_to_sccs_ids: HashMap<String, Vec<u32>> = HashMap::new();
-        let mut class_tables: Vec<HashSet<String>> = vec![HashSet::new(); n_classes];
+        let mut table_to_sccs_ids: HashMap<&str, Vec<u32>> = HashMap::new();
+        let mut class_tables: Vec<HashSet<&str>> = vec![HashSet::new(); n_classes];
 
         for (class_ix, range) in class_members_ranges.iter().enumerate() {
             if range.is_empty() {
@@ -278,9 +338,9 @@ impl ReverseEffectIndex {
             let set = store.set(EffectSetId(class_ix as u32));
             for eid in set.iter() {
                 effect_to_sccs_ids[eid.0 as usize].push(class_ix as u32);
-                let table = universe.identity(eid).table_id.clone();
+                let table: &str = universe.identity(eid).table_id.as_str();
                 table_to_sccs_ids
-                    .entry(table.clone())
+                    .entry(table)
                     .or_default()
                     .push(class_ix as u32);
                 class_tables[class_ix].insert(table);
@@ -291,7 +351,7 @@ impl ReverseEffectIndex {
         //    table_to_delta_routines contract (⟨rev3⟩: R is posted under T
         //    iff delta(R) touches T AND base(class(R)) does not).
         let mut effect_to_delta_routines_ids: Vec<Vec<u32>> = vec![Vec::new(); n_effects];
-        let mut table_to_delta_routines_ids: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut table_to_delta_routines_ids: HashMap<&str, Vec<u32>> = HashMap::new();
 
         for r in bundle.routines_with_rows() {
             let Some(set_id) = bundle.terminal_base(r) else {
@@ -301,10 +361,10 @@ impl ReverseEffectIndex {
             let mut added_tables: HashSet<&str> = HashSet::new();
             for &eid in bundle.pd_delta_ids(r) {
                 effect_to_delta_routines_ids[eid.0 as usize].push(r.0);
-                let table = universe.identity(eid).table_id.as_str();
+                let table: &str = universe.identity(eid).table_id.as_str();
                 if !class_tables[class_ix].contains(table) && added_tables.insert(table) {
                     table_to_delta_routines_ids
-                        .entry(table.to_string())
+                        .entry(table)
                         .or_default()
                         .push(r.0);
                 }
@@ -322,13 +382,15 @@ impl ReverseEffectIndex {
                 .into_iter()
                 .map(PostingList::from_ids)
                 .collect(),
+            // The ONLY table-id `String` allocations in the whole build: one
+            // per surviving map key (<= n_tables), not one per membership.
             table_to_sccs: table_to_sccs_ids
                 .into_iter()
-                .map(|(t, ids)| (t, PostingList::from_ids(ids)))
+                .map(|(t, ids)| (t.to_string(), PostingList::from_ids(ids)))
                 .collect(),
             table_to_delta_routines: table_to_delta_routines_ids
                 .into_iter()
-                .map(|(t, ids)| (t, PostingList::from_ids(ids)))
+                .map(|(t, ids)| (t.to_string(), PostingList::from_ids(ids)))
                 .collect(),
         }
     }
@@ -398,14 +460,45 @@ impl ReverseEffectIndex {
             || self.table_touches_via_delta_routine(table_id, r)
     }
 
+    /// True iff `effect`'s CLASS posting includes `class` — the effect-
+    /// granularity counterpart of [`Self::table_touches_via_base`], and the
+    /// membership primitive [`Self::touches_effect`] is built on.
+    ///
+    /// Private on purpose: unlike the table pair, the two effect postings carry
+    /// NO disjointness contract between them (pass 4 posts every delta effect
+    /// unconditionally, since a routine's own PD delta and its class's terminal
+    /// base are disjoint EffectId sets by construction — spec Step 3 — so there
+    /// is nothing for a caller to reason about across the two).
+    fn effect_touches_via_base(&self, effect: EffectId, class: EffectClassIx) -> bool {
+        self.effect_to_sccs
+            .get(effect.0 as usize)
+            .is_some_and(|pl| pl.contains(class.0))
+    }
+
+    /// True iff `effect`'s DELTA posting includes `r`. Private — see
+    /// [`Self::effect_touches_via_base`].
+    fn effect_touches_via_delta_routine(&self, effect: EffectId, r: RoutineIx) -> bool {
+        self.effect_to_delta_routines
+            .get(effect.0 as usize)
+            .is_some_and(|pl| pl.contains(r.0))
+    }
+
     /// "Does routine `r` touch effect `effect`?" — the effect-granularity
     /// sibling of [`Self::touches_table`], same no-decompression shape.
+    ///
+    /// Both arms go through [`PostingList::contains`] (binary search on a
+    /// sparse posting, one word test on a dense one), NOT a linear `.any()`
+    /// scan of the iterator: the pre-Task-6 body read
+    /// `self.effect_classes(effect).any(|c| c == class)`, which walked a SORTED
+    /// posting element-by-element (a full bit-scan in the dense case) and so
+    /// contradicted this doc's own "same no-decompression shape" claim.
+    /// Harmless at DO's mean posting of 25, wrong asymptotics as written.
     pub fn touches_effect(&self, bundle: &SummaryBundle, r: RoutineIx, effect: EffectId) -> bool {
         let Some(class) = class_of(bundle, r) else {
             return false;
         };
-        self.effect_classes(effect).any(|c| c == class)
-            || self.effect_delta_routines(effect).any(|dr| dr == r)
+        self.effect_touches_via_base(effect, class)
+            || self.effect_touches_via_delta_routine(effect, r)
     }
 
     /// Up: every routine that touches `table_id`, as an ASCENDING-`RoutineIx`
@@ -457,7 +550,9 @@ mod tests {
         DbEffectRef, SummaryBundle, SummaryBundleBuilder, ViaRank, set_bit,
     };
     use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, GrowingEffectUniverse};
-    use crate::engine::l4::reverse_index::{ReverseEffectIndex, class_of, graph_scc_of};
+    use crate::engine::l4::reverse_index::{
+        POSTING_SPARSE_THRESHOLD, PostingList, ReverseEffectIndex, class_of, graph_scc_of,
+    };
     use crate::engine::l4::routine_interner::{RoutineInterner, RoutineIx};
     use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
     use std::collections::HashMap;
@@ -687,6 +782,149 @@ mod tests {
         assert_eq!(index.up_effect(fx.pd_t1), vec![fx.r1]);
         assert_eq!(index.up_effect(fx.pd_t2), vec![fx.r1]);
         assert_eq!(index.up_effect(fx.base_t3), vec![fx.r2]);
+    }
+
+    // ---- PostingList: the DENSE branch -------------------------------------
+    //
+    // ⟨Task 6, scope §1.5⟩ Before this, all 7 tests used postings of 1-2
+    // elements, so `Dense` construction, `Dense::contains`' word-bounds check
+    // and `iter_bits` were exercised by production data and by NOTHING else —
+    // on DO, 4 of 61 table postings cross `POSTING_SPARSE_THRESHOLD` (largest
+    // 650). The first two tests below hand-state the precondition (a literal
+    // >= 256-element id list) rather than depending on a bundle happening to
+    // produce one; the third then proves the production build path REACHES the
+    // dense branch, asserting that rather than assuming it.
+
+    /// The dense branch, with the input stated literally: 300 ids in, sorted
+    /// ascending out, membership exact in both directions, and the
+    /// `w < words.len()` bounds guard exercised by an id past the last word.
+    #[test]
+    fn posting_list_dense_branch_contains_and_iterates_exactly() {
+        // Deliberately UNSORTED and containing a duplicate, so `from_ids`'
+        // sort+dedup is exercised on the dense path too.
+        let mut ids: Vec<u32> = (0..300u32).map(|n| n * 2).collect();
+        ids.reverse();
+        ids.push(0);
+        let pl = PostingList::from_ids(ids);
+
+        assert!(
+            matches!(pl, PostingList::Dense(_)),
+            "300 unique ids >= POSTING_SPARSE_THRESHOLD ({POSTING_SPARSE_THRESHOLD}) must \
+             pick the Dense repr"
+        );
+        let expected: Vec<u32> = (0..300u32).map(|n| n * 2).collect();
+        assert_eq!(
+            pl.iter().collect::<Vec<u32>>(),
+            expected,
+            "ascending + deduped"
+        );
+        for &id in &expected {
+            assert!(pl.contains(id), "dense contains({id}) must be true");
+            assert!(
+                !pl.contains(id + 1),
+                "dense contains({}) must be false (odd ids were never inserted)",
+                id + 1
+            );
+        }
+        // The word-bounds guard: max id is 598 -> 10 words (bits 0..639), so an
+        // id in word 100 is past the end and must answer false, not panic.
+        assert!(
+            !pl.contains(6400),
+            "an id past the last word is absent, not a panic"
+        );
+    }
+
+    /// The sparse/dense crossover: 255 ids stay Sparse, 256 flip to Dense, and
+    /// both reprs answer `contains`/`iter` identically over the SAME id set.
+    /// Both cardinalities are stated literally.
+    #[test]
+    fn posting_list_reprs_agree_across_the_sparse_dense_threshold() {
+        let below: Vec<u32> = (0..(POSTING_SPARSE_THRESHOLD as u32 - 1)).collect();
+        let at: Vec<u32> = (0..(POSTING_SPARSE_THRESHOLD as u32)).collect();
+
+        let sparse = PostingList::from_ids(below.clone());
+        let dense = PostingList::from_ids(at.clone());
+        assert!(
+            matches!(sparse, PostingList::Sparse(_)),
+            "255 ids stay sparse"
+        );
+        assert!(
+            matches!(dense, PostingList::Dense(_)),
+            "256 ids flip to dense"
+        );
+
+        assert_eq!(sparse.iter().collect::<Vec<u32>>(), below);
+        assert_eq!(dense.iter().collect::<Vec<u32>>(), at);
+        // The one id that differs between the two sets is the discriminator.
+        let boundary = POSTING_SPARSE_THRESHOLD as u32 - 1;
+        assert!(!sparse.contains(boundary));
+        assert!(dense.contains(boundary));
+    }
+
+    /// The production BUILD path reaches the dense branch: 300 routines, each
+    /// its own distinct effect class, all touching one table `TBIG` — so
+    /// `table_to_sccs["TBIG"]` holds 300 class ids. The dense-ness is
+    /// ASSERTED (reaching into the private field from this child module), not
+    /// assumed, and `up_table` must still return all 300 routines ascending
+    /// (which routes the answer through `Dense::iter`/`iter_bits`).
+    #[test]
+    fn build_produces_a_dense_table_posting_and_up_table_still_answers_exactly() {
+        const N: u32 = 300;
+        assert!(
+            N as usize >= POSTING_SPARSE_THRESHOLD,
+            "fixture must exceed the threshold for this test to mean anything"
+        );
+
+        let mut u = GrowingEffectUniverse::new();
+        let eids: Vec<EffectId> = (0..N)
+            .map(|n| {
+                u.intern(&ident(
+                    "Insert",
+                    "TBIG",
+                    &format!("op{n:04}"),
+                    TempStateKind::Known(true),
+                ))
+            })
+            .collect();
+
+        let mut interner = RoutineInterner::new();
+        let routines: Vec<RoutineIx> = (0..N)
+            .map(|n| interner.intern(&format!("r{n:04}")))
+            .collect();
+
+        let mut b = SummaryBundleBuilder::new();
+        for (i, &r) in routines.iter().enumerate() {
+            // A DISTINCT singleton terminal set per routine => a distinct
+            // hash-consed class per routine => 300 class ids in TBIG's posting.
+            let set = b.push_terminal_set(bits_of(&[eids[i]]));
+            b.push_row(r, set, vec![ViaRank::Direct], vec![], vec![]);
+        }
+        let rvid: HashMap<String, Option<String>> = HashMap::new();
+        let bundle = b.finish(u.freeze(), interner, rvid);
+        assert_eq!(
+            bundle.effects().set_count(),
+            N as usize,
+            "each routine's singleton set is distinct — 300 classes, not one shared class"
+        );
+
+        let index = ReverseEffectIndex::build(&bundle);
+        assert!(
+            matches!(index.table_to_sccs.get("TBIG"), Some(PostingList::Dense(_))),
+            "the build path must have produced a DENSE table posting here — if this ever \
+             flips to Sparse the fixture stopped covering the dense branch and the rest of \
+             this test proves nothing"
+        );
+
+        assert_eq!(index.up_table("TBIG"), routines, "all 300, ascending");
+        for (i, &r) in routines.iter().enumerate() {
+            assert!(index.touches_table(&bundle, r, "TBIG"));
+            assert!(index.touches_effect(&bundle, r, eids[i]));
+            // Its NEIGHBOUR's effect is a different EffectId on the same table:
+            // table granularity says yes, effect granularity says no.
+            let other = eids[(i + 1) % N as usize];
+            assert!(!index.touches_effect(&bundle, r, other));
+        }
+        assert!(index.up_table("TNOPE").is_empty());
     }
 
     // ---- the two SCC notions are genuinely distinct ------------------------

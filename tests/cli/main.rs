@@ -40,6 +40,7 @@ mod cli_c_events_differential;
 mod cli_c_policy_differential;
 mod cli_p1_enclosing_member;
 mod cli_p1_inventory;
+mod cli_query_differential;
 mod d1_downgraded_to_info_oracle;
 mod gate_prsummary_differential;
 mod gate_sarif_differential;

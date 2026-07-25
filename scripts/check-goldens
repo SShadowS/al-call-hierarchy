@@ -24,13 +24,19 @@
 #   tests/ir-l2-goldens/            (the l2_features.snapshot) -> --test l2_ir
 #   tests/r2c-goldens/              (l3eg_oracles)             -> --test l3
 #   tests/cli-a-goldens/, cli-b-, cli-c-, cli-c-events-,
-#     cli-c-policy-, gate-goldens/, al2dump-smoke-goldens/,
-#     aldump-smoke-goldens/                                    -> --test cli
+#     cli-c-policy-, cli-query-goldens/, gate-goldens/,
+#     al2dump-smoke-goldens/, aldump-smoke-goldens/            -> --test cli
 #   tests/r0-, r1a-, r2a-, r2b-, r2c-, r2d-goldens/            -> --test differential
 #   tests/r3a1-, r3a2-, r3a3-, r3a4-, r3a5-goldens/            -> --test r3
 #   tests/r2-5a-goldens/, r2-5b-{cg,cov,eg,rt}-goldens/        -> --test r25_abi
 #   tests/l4-summary-baseline/                                 -> --test l4_summary_differential
 #   tests/goldens/semantic-edges/                              -> --test program_resolve_harness
+#
+# ⟨Task 6⟩ `tests/cli-query-goldens/` (the `alsem query` db-effect query family)
+# needs no new target — it is a member of the `cli` umbrella, which is already
+# listed. It IS the reason `ReverseEffectIndex` cannot go back to having zero
+# production callers: every run of this script executes the transpose, both
+# up-queries, the ancestor BFS and the facade, through the shipped binary.
 #
 # A note on `--regen` and `tests/r3a3-goldens/`: r3a3's regen path is
 # CONTENT-CHANGE-GATED by design (`tests/r3/r3a3_differential.rs` — it skips any
