@@ -408,6 +408,24 @@ under `docs/superpowers/specs/`.
 
 ## Testing Philosophy & Goldens
 
+- **A test must pin the USE, not just the helper — and you must prove it can fail.**
+  The recurring defect in this repo: a test calls a helper directly and asserts its
+  behaviour, so the production **call site** can be deleted while the test, the whole
+  suite and every golden stay green. The guard is gone and nothing says so. It appears
+  when a change makes production code **unable to produce the precondition** the old
+  test relied on, and the test gets "rescued" by pointing it at the function instead of
+  the scenario — which looks like preserved coverage and is not.
+  **Hand-state the precondition instead**: construct the input literally (two rows
+  carrying the same id *by assignment*, not by asking `compute_routine_id` for a
+  collision it can no longer produce). A test that states its precondition survives any
+  schema change, because it never depends on production code to create it.
+  **Then prove discrimination**: break the thing (delete the `.then_with`, flip
+  first-wins to last-wins, restore the `unwrap_or_default`), watch the test fail, revert,
+  watch it pass — and record both outcomes. This is not optional ceremony; in the arc
+  that produced this rule, **five** instances were caught in review and **zero** by
+  `cargo test`, and every real catch came with a discrimination proof while every miss
+  lacked one. Watch too for the over-claim that travels with it — docs asserting guards
+  are "each pinned executably" when only some are.
 - **The al-sem TypeScript reference is RETIRED.** This engine began as a faithful Rust
   port of al-sem (TS), validated by byte-for-byte differential goldens. That era is over.
   The engine is now **Rust-owned**: correctness and resolution precision take priority
