@@ -18,7 +18,8 @@
 //! `access_modifiers` map harvested from `L3Routine.access_modifier`;
 //! `internal_reachable_externally` DEFAULTS to `false` (see field doc).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{
@@ -56,6 +57,38 @@ pub struct DeclaredDep {
     pub min_version: String,
 }
 
+/// Hash-cons pool for [`DetectorContext::uncertainties_by_node`]'s per-node sets.
+///
+/// The L4 summary solver broadcasts an SCC's whole uncertainty union to each of its
+/// members, so on a large workspace thousands of nodes hold the byte-identical
+/// deduped set. This pool keys a set by its own CONTENT — `Arc<[Uncertainty]>`
+/// hashes and compares as `[Uncertainty]` does, and `Arc<T>: Borrow<T>` lets the
+/// lookup take a plain `&[Uncertainty]` with no probe allocation — so the second and
+/// every later node carrying an equal set gets a refcount bump instead of its own
+/// copy.
+///
+/// **Content, not identity.** Which node's `Vec` becomes the canonical allocation is
+/// therefore unobservable: the pool only ever hands back a slice `Eq` to the one it
+/// was asked for, so the map's VALUES are byte-identical to the un-pooled `Vec`s
+/// they replace, element for element and in the same order.
+#[derive(Default)]
+struct UncertaintySetPool {
+    sets: HashSet<Arc<[Uncertainty]>>,
+}
+
+impl UncertaintySetPool {
+    /// The shared handle for `set` — an existing one if an equal set was already
+    /// pooled, otherwise `set`'s own freshly-allocated one.
+    fn share(&mut self, set: Vec<Uncertainty>) -> Arc<[Uncertainty]> {
+        if let Some(existing) = self.sets.get(set.as_slice()) {
+            return Arc::clone(existing);
+        }
+        let shared: Arc<[Uncertainty]> = Arc::from(set);
+        self.sets.insert(Arc::clone(&shared));
+        shared
+    }
+}
+
 /// Shared context threaded into every detector.
 pub struct DetectorContext<'a> {
     /// The combined graph (al-sem passes this as the detector's `graph` arg;
@@ -85,7 +118,27 @@ pub struct DetectorContext<'a> {
     /// `RoutineSummary.uncertainties` first, then the combined-graph edge
     /// uncertainties — matching al-sem exactly before the dedupe. Keyed by
     /// internal routine id; `walk_evidence` reads it via this exact field.
-    pub uncertainties_by_node: HashMap<String, Vec<Uncertainty>>,
+    ///
+    /// **HASH-CONSED.** The value is an `Arc<[Uncertainty]>`, and every node whose
+    /// deduped set is byte-equal to another node's SHARES one allocation (see
+    /// [`UncertaintySetPool`]). This is not an optimisation of the reader surface —
+    /// `Arc<[T]>` derefs to `&[T]`, so every consumer (`walk_evidence`, d1's
+    /// `path_uncertainty_ids`, d2's `sub_summary_uncertainties`,
+    /// `d1_reach::node_has_uncertainty`) reads it exactly as it read the `Vec`.
+    /// It is a MEMORY fix: the L4 solver broadcasts an SCC's whole uncertainty union
+    /// to every member (`db_effect_solver.rs`'s per-member `shared_vec.clone()`), so
+    /// on BC Base App 8020 3,700,433 records across 27,037 nodes collapse to 507,437
+    /// records in 10,112 distinct sets — 729.1 MiB in 7,428,267 allocations becomes
+    /// 102.2 MiB in ~1.05 M. (On a customer workspace the whole structure is ~2.8 MiB;
+    /// this is a "survive BC Base App" fix, not a customer-workspace one.)
+    ///
+    /// Sharing is sound with no new invariant: nothing mutates a node's set after
+    /// this map is built (the only `insert`s outside the two builders are
+    /// `#[cfg(test)]`), and `dedupe_uncertainties` already makes each set canonical
+    /// — deduped by `uncertainty_key`, emitted in byte-sorted key order — so two
+    /// nodes with the same uncertainty set produce byte-identical slices. Sharing
+    /// changes lifetime and aliasing, never content or order.
+    pub uncertainties_by_node: HashMap<String, Arc<[Uncertainty]>>,
     /// Every call site indexed by id.
     pub call_site_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Per-routine `FullRoutineSummary` (direct + inherited facts + coverage).
@@ -640,7 +693,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         summarize_diagnostics,
         db_effect_bundle,
     ): (
-        HashMap<String, Vec<Uncertainty>>,
+        HashMap<String, Arc<[Uncertainty]>>,
         HashMap<String, Vec<RecordRoleSummary>>,
         Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
         Option<SummaryBundle>,
@@ -729,13 +782,14 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         // detector consumed. `summarize_diagnostics` carries the ROLES fixpoint's
         // cap-hit backstop (empty on the corpus — roles converge); the db_effects path
         // is closed-form and never caps.
-        let (db_effect_bundle, core_summaries, summarize_diagnostics) = compute_summaries_v2_bundle(
-            &ws.routines,
-            &graph,
-            &scc,
-            &calls.upgraded_bindings,
-            &field_index,
-        );
+        let (db_effect_bundle, mut core_summaries, summarize_diagnostics) =
+            compute_summaries_v2_bundle(
+                &ws.routines,
+                &graph,
+                &scc,
+                &calls.upgraded_bindings,
+                &field_index,
+            );
         drop(_summaries_span);
 
         // ⟨fix wave finding 2⟩ `compute_summaries_v2_bundle` is the LEAN entry point
@@ -761,15 +815,45 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
         // uncertainties FIRST, then the combined-graph edge uncertainties (converted
         // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
-        // then sorts by key, matching al-sem's `dedupeUncertainties`. This pass only
-        // BORROWS `core_summaries` (cloning the uncertainty entries — the union needs
-        // both sources), so `core_summaries` can then be drained for parameter_roles.
-        let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
+        // then sorts by key, matching al-sem's `dedupeUncertainties`.
+        //
+        // ONE pass now DRAINS `core_summaries` for BOTH harvests: the uncertainty
+        // union (which used to borrow-and-clone here, then hand the map to a second
+        // loop that drained it for roles) and `parameter_roles`. The clone was pure
+        // waste — `core_summaries` is dead after these two harvests, so the summary's
+        // uncertainty `Vec` can be MOVED into the union instead of deep-copied (on
+        // 8020 that copy was ~3.7 M records / ~730 MiB of transient churn).
+        //
+        // Draining makes the loop id-SENSITIVE where the old borrowing form was not,
+        // and internal routine ids are NOT unique (15 collision groups / 19 routines
+        // survive the member discriminator on 8020 — preproc `#if` alternatives and
+        // XMLport same-name elements; see `docs/OUTSTANDING.md`). Under a naive drain
+        // the second routine of a colliding pair would find `None`, recompute an
+        // edges-ONLY set, and overwrite the first routine's full union with that
+        // strict subset. `processed` closes that: both harvests are pure functions of
+        // `r.id` (`core_summaries[r.id]`, `uncertainty_edges_by_from[r.id]`), so
+        // running each DISTINCT id exactly once is exactly what the old
+        // recompute-and-overwrite form converged to — same keys, same values. Pinned
+        // by `colliding_ids_keep_the_full_summary_union_not_just_the_edges`.
+        let mut uncertainties_by_node: HashMap<String, Arc<[Uncertainty]>> = HashMap::new();
+        let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> =
+            HashMap::new();
+        let mut pool = UncertaintySetPool::default();
+        let mut processed: HashSet<&str> = HashSet::new();
         for r in &ws.routines {
-            let from_summary: &[Uncertainty] = core_summaries
-                .get(&r.id)
-                .map(|s| s.uncertainties.as_slice())
-                .unwrap_or(&[]);
+            if !processed.insert(r.id.as_str()) {
+                continue;
+            }
+            // Harvest the CORE parameter_roles per routine from the SAME recomputed
+            // core summaries (d37/d39 read these as `routine.summary.parameterRoles`),
+            // moved out with the uncertainties in this one `remove`.
+            let (from_summary, roles) = match core_summaries.remove(&r.id) {
+                Some(s) => (s.uncertainties, s.parameter_roles),
+                None => (Vec::new(), Vec::new()),
+            };
+            if !roles.is_empty() {
+                parameter_roles_by_routine.insert(r.id.clone(), roles);
+            }
             let from_edges: Vec<Uncertainty> = uncertainty_edges_by_from
                 .get(&r.id)
                 .map(|edges| edges.iter().map(Uncertainty::from).collect())
@@ -777,19 +861,14 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
             if from_summary.is_empty() && from_edges.is_empty() {
                 continue;
             }
-            let combined: Vec<Uncertainty> =
-                from_summary.iter().cloned().chain(from_edges).collect();
-            uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
+            let combined: Vec<Uncertainty> = from_summary.into_iter().chain(from_edges).collect();
+            uncertainties_by_node.insert(r.id.clone(), pool.share(dedupe_uncertainties(combined)));
         }
-
-        // Harvest the CORE parameter_roles per routine from the SAME recomputed core
-        // summaries (d37/d39 read these as `routine.summary.parameterRoles`) — draining
-        // `core_summaries` (now dead) by value so each non-empty role vec is MOVED, not
-        // cloned. Membership matches the prior `ws.routines`+lookup form exactly: only
-        // routines present in `core_summaries` with non-empty roles are inserted, and
-        // the result is an order-independent HashMap.
-        let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> =
-            HashMap::new();
+        // `parameter_roles_by_routine`'s membership was previously the WHOLE of
+        // `core_summaries`, not `ws.routines` — so anything the loop above did not
+        // reach still belongs in it. Empty in practice (the solver is driven by
+        // `ws.routines`), but membership is preserved by construction rather than by
+        // an assumption about the solver's key set.
         for (rid, s) in core_summaries {
             if !s.parameter_roles.is_empty() {
                 parameter_roles_by_routine.insert(rid, s.parameter_roles);
@@ -1044,7 +1123,7 @@ pub(crate) fn build_detector_context_cross_app(
     // populated — the only fields read below — while the compact rows stay queryable
     // via `db_effect_bundle` (held on the ctx). `summarize_diagnostics` carries the
     // roles fixpoint's cap-hit backstop (empty on the corpus).
-    let (db_effect_bundle, core_summaries, summarize_diagnostics) =
+    let (db_effect_bundle, mut core_summaries, summarize_diagnostics) =
         compute_summaries_v2_bundle_with_leaves(
             ws_routines,
             &graph,
@@ -1054,21 +1133,28 @@ pub(crate) fn build_detector_context_cross_app(
             &base.leaf_summaries,
         );
 
+    // One drained pass for both harvests, hash-consing the per-node uncertainty sets
+    // — the exact shape `build_detector_context` uses; see its own comment for why
+    // `processed` is required (colliding internal routine ids) and why draining is
+    // equivalent to the old borrow-and-clone form. Membership here stays
+    // `ws_routines`-driven for BOTH maps, matching what the two loops this replaces
+    // produced: the cross-app `parameter_roles_by_routine` never covered
+    // `core_summaries` keys outside `ws_routines`, so there is no trailing drain.
     let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
+    let mut uncertainties_by_node: HashMap<String, Arc<[Uncertainty]>> = HashMap::new();
+    let mut pool = UncertaintySetPool::default();
+    let mut processed: HashSet<&str> = HashSet::new();
     for r in ws_routines {
-        if let Some(s) = core_summaries.get(&r.id)
-            && !s.parameter_roles.is_empty()
-        {
-            parameter_roles_by_routine.insert(r.id.clone(), s.parameter_roles.clone());
+        if !processed.insert(r.id.as_str()) {
+            continue;
         }
-    }
-
-    let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
-    for r in ws_routines {
-        let from_summary: &[Uncertainty] = core_summaries
-            .get(&r.id)
-            .map(|s| s.uncertainties.as_slice())
-            .unwrap_or(&[]);
+        let (from_summary, roles) = match core_summaries.remove(&r.id) {
+            Some(s) => (s.uncertainties, s.parameter_roles),
+            None => (Vec::new(), Vec::new()),
+        };
+        if !roles.is_empty() {
+            parameter_roles_by_routine.insert(r.id.clone(), roles);
+        }
         let from_edges: Vec<Uncertainty> = uncertainty_edges_by_from
             .get(&r.id)
             .map(|edges| edges.iter().map(Uncertainty::from).collect())
@@ -1076,8 +1162,8 @@ pub(crate) fn build_detector_context_cross_app(
         if from_summary.is_empty() && from_edges.is_empty() {
             continue;
         }
-        let combined: Vec<Uncertainty> = from_summary.iter().cloned().chain(from_edges).collect();
-        uncertainties_by_node.insert(r.id.clone(), dedupe_uncertainties(combined));
+        let combined: Vec<Uncertainty> = from_summary.into_iter().chain(from_edges).collect();
+        uncertainties_by_node.insert(r.id.clone(), pool.share(dedupe_uncertainties(combined)));
     }
 
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
@@ -1572,5 +1658,234 @@ codeunit 50901 "FX2 Touch"
                 "up_table and touches_table must agree"
             );
         }
+    }
+
+    /// The hash-consing CONTRACT, pinned at the USE: two nodes whose deduped
+    /// uncertainty sets are equal must share ONE allocation on the built context,
+    /// not hold two copies.
+    ///
+    /// This is the whole point of [`UncertaintySetPool`] and the only reason
+    /// `uncertainties_by_node` is an `Arc<[Uncertainty]>` — on BC Base App 8020 the
+    /// L4 solver broadcasts each SCC's uncertainty union to every member, so
+    /// 3,700,433 records over 27,037 nodes are only 507,437 records in 10,112
+    /// distinct sets. A regression to a per-node copy (`Arc::from(...)` without the
+    /// pool) is INVISIBLE to every golden — the bytes are identical either way —
+    /// so a pointer assertion is the only thing that can catch it.
+    ///
+    /// The fixture is the smallest shape that produces one: `A`/`B` are mutually
+    /// recursive (one SCC) and `B` makes an unresolved call, so the solver hands
+    /// BOTH members the same one-record union `[unresolved-call at B/cs1]`. Value
+    /// equality is asserted first so a failure reads as "not shared" rather than
+    /// "not equal", and the set is asserted non-empty so the test cannot pass on two
+    /// empty slices.
+    #[test]
+    fn equal_uncertainty_sets_are_hash_consed_to_one_allocation() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+codeunit 50914 "HC Ring"
+{
+    procedure A()
+    begin
+        B();
+    end;
+
+    procedure B()
+    begin
+        A();
+        MissingRing();
+    end;
+}
+"#;
+        let files = vec![("src/HCRing.al".to_string(), src.to_string())];
+        let resolved = assemble_and_resolve_default(&files, "44444444-0000-0000-0000-0000000hc001");
+        let ctx = build_detector_context(&resolved, substrate::CORE_SUMMARIES);
+
+        let id_of = |name: &str| -> String {
+            resolved
+                .workspace
+                .routines
+                .iter()
+                .find(|r| r.name.eq_ignore_ascii_case(name))
+                .unwrap_or_else(|| panic!("fixture precondition: routine {name} must exist"))
+                .id
+                .clone()
+        };
+        let (a, b) = (id_of("A"), id_of("B"));
+
+        let ua = ctx.uncertainties_by_node.get(&a).unwrap_or_else(|| {
+            panic!(
+                "fixture precondition: the SCC broadcast must give A a non-empty \
+                 uncertainty set, or this test proves nothing"
+            )
+        });
+        let ub = ctx
+            .uncertainties_by_node
+            .get(&b)
+            .expect("fixture precondition: B must carry the same set");
+        assert!(
+            !ua.is_empty(),
+            "fixture precondition: the shared set must be NON-empty — two empty \
+             slices would compare equal for the wrong reason"
+        );
+        assert_eq!(
+            **ua, **ub,
+            "fixture precondition: both SCC members must hold the SAME uncertainty \
+             set (the solver's per-member broadcast); if this diverges the pointer \
+             assertion below is testing the wrong thing"
+        );
+
+        assert!(
+            Arc::ptr_eq(ua, ub),
+            "equal per-node uncertainty sets must be HASH-CONSED to one allocation \
+             — got two distinct allocations, so `UncertaintySetPool` is no longer \
+             being consulted and the 729 MiB -> 102 MiB reduction on BC Base App is \
+             gone (no golden can see this; only this assertion can)"
+        );
+    }
+
+    /// The drain's CONTRACT under colliding internal routine ids: the surviving
+    /// entry must be the FULL `summary ∪ edges` union, never the edges-only subset.
+    ///
+    /// `build_detector_context` now takes each routine's core summary out of
+    /// `core_summaries` by `remove` (moving the uncertainty vector instead of deep-
+    /// copying it). That makes the loop id-sensitive, and internal routine ids are
+    /// NOT unique — 15 collision groups / 19 routines survive the member
+    /// discriminator on BC Base App 8020 (`docs/OUTSTANDING.md`). Without the
+    /// `processed` guard the SECOND routine of a colliding pair finds `None`,
+    /// recomputes an edges-only set, and OVERWRITES the first routine's full union
+    /// with that strict subset — silently dropping every INHERITED uncertainty from
+    /// the node the whole path-walker substrate is built on.
+    ///
+    /// Neither net that guards this arc could see that: BC Base App is not a golden
+    /// corpus, and the DO byte-identity workspace has ZERO collision groups. So this
+    /// test STATES the collision by hand — the technique
+    /// [`hand_stated_id_collision_keeps_a_real_summary_and_derived_row`] introduced,
+    /// for the same reason: it holds under any future id schema because it never
+    /// asks `compute_routine_id` to produce a collision.
+    ///
+    /// The fixture is built so the two harvests are distinguishable: each `OnAction`
+    /// makes its OWN unresolved call (⇒ a non-empty `uncertainty_edges_by_from`
+    /// entry, without which the naive drain would `continue` instead of overwriting,
+    /// and the bug would not manifest) AND calls `Touch()`, which makes a further
+    /// unresolved call (⇒ an INHERITED uncertainty that lives ONLY in the core
+    /// summary). The union must therefore carry a `Touch`-owned callsite.
+    #[test]
+    fn colliding_ids_keep_the_full_summary_union_not_just_the_edges() {
+        use crate::engine::l3::l3_workspace::assemble_and_resolve_default;
+        use crate::engine::l5::registry::substrate;
+
+        let src = r#"
+table 50813 "CP3 Setup"
+{
+    fields { field(1; "No."; Code[20]) { } }
+    keys { key(PK; "No.") { } }
+}
+
+page 50813 "CP3 Wizard"
+{
+    PageType = Card;
+
+    actions
+    {
+        area(Processing)
+        {
+            action(Alpha)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                    MissingHere();
+                end;
+            }
+            action(Beta)
+            {
+                trigger OnAction()
+                begin
+                    Touch();
+                    MissingHere();
+                end;
+            }
+        }
+    }
+
+    local procedure Touch()
+    var
+        Setup: Record "CP3 Setup";
+    begin
+        Setup.Insert();
+        MissingDeeper();
+    end;
+}
+"#;
+        let files = vec![("src/CP3Wizard.al".to_string(), src.to_string())];
+        let mut resolved =
+            assemble_and_resolve_default(&files, "33333333-0000-0000-0000-0000000cp003");
+
+        const SHARED_ID: &str = "hand-stated-uncertainty-collision-id";
+        let mut forced = 0usize;
+        for r in resolved.workspace.routines.iter_mut() {
+            if r.name.eq_ignore_ascii_case("OnAction") {
+                r.id = SHARED_ID.to_string();
+                forced += 1;
+            }
+        }
+        assert_eq!(
+            forced, 2,
+            "fixture precondition: both OnAction trigger bodies must be in the model"
+        );
+        // Call-site ids were minted at assembly time from the ORIGINAL routine ids,
+        // so the two triggers keep DISTINCT callsite ids across the forced collision
+        // — which is what makes the merged edge set and the merged summary set
+        // distinguishable below.
+        let touch_id = resolved
+            .workspace
+            .routines
+            .iter()
+            .find(|r| r.name.eq_ignore_ascii_case("Touch"))
+            .expect("fixture precondition: Touch must be in the model")
+            .id
+            .clone();
+
+        let ctx = build_detector_context(&resolved, substrate::CORE_SUMMARIES);
+
+        let edges = ctx
+            .uncertainty_edges_by_from
+            .get(SHARED_ID)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        assert!(
+            edges > 0,
+            "fixture precondition: the colliding id must own a NON-empty \
+             uncertainty-edge set — with an empty one a naive drain would `continue` \
+             rather than overwrite, and this test would pass vacuously"
+        );
+
+        let union = ctx
+            .uncertainties_by_node
+            .get(SHARED_ID)
+            .expect("the colliding id must have a per-node uncertainty set at all");
+        let inherited: Vec<&Uncertainty> = union
+            .iter()
+            .filter(|u| {
+                u.callsite_id
+                    .as_deref()
+                    .is_some_and(|cs| cs.starts_with(&format!("{touch_id}/")))
+            })
+            .collect();
+        assert!(
+            !inherited.is_empty(),
+            "the surviving union must still carry Touch()'s INHERITED uncertainty — \
+             it exists ONLY in the core summary, never in `uncertainty_edges_by_from` \
+             for this node, so losing it means the drain overwrote the full union \
+             with the edges-only subset. union={union:?}"
+        );
+        assert!(
+            union.len() > edges,
+            "the union ({}) must be strictly larger than the edge set ({edges}) — \
+             equality is exactly the edges-only overwrite this guards",
+            union.len()
+        );
     }
 }

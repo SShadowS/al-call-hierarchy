@@ -20,6 +20,7 @@
 //! input. Nodes absent from the map contribute no uncertainties.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
@@ -149,12 +150,17 @@ pub struct WalkOpts {
 /// uncertainty set (`routine.summary.uncertainties ∪ uncertaintyEdgesByFrom`).
 /// Wiring this map from the real model/graph is deferred to the R4-D call site;
 /// pass an empty map when uncertainties are not under test.
+///
+/// The value is an `Arc<[Uncertainty]>` because
+/// [`DetectorContext::uncertainties_by_node`](crate::engine::l5::detector_context::DetectorContext::uncertainties_by_node)
+/// hash-conses equal sets across nodes. This walk only ever reads it as a slice —
+/// the sharing is invisible here and cannot change what the walk accumulates.
 pub fn walk_evidence<P: WalkPolicy>(
     start: &str,
     policy: &P,
     bounds: WalkBounds,
     opts: WalkOpts,
-    uncertainties_by_node: &HashMap<String, Vec<Uncertainty>>,
+    uncertainties_by_node: &HashMap<String, Arc<[Uncertainty]>>,
     mut stats: Option<&mut WalkTraceStats>,
 ) -> Vec<WalkResult> {
     let mut results: Vec<WalkResult> = Vec::new();
@@ -209,17 +215,15 @@ fn visit<P: WalkPolicy>(
     bounds: WalkBounds,
     nodes_visited: &mut usize,
     results: &mut Vec<WalkResult>,
-    uncertainties_by_node: &HashMap<String, Vec<Uncertainty>>,
+    uncertainties_by_node: &HashMap<String, Arc<[Uncertainty]>>,
     mut stats: Option<&mut WalkTraceStats>,
 ) {
     *nodes_visited += 1;
 
     // Build ctx_here: deduplicate (inherited ++ this node's own uncertainties).
     // Mirrors al-sem path-walker.ts line 117-120.
-    let node_uncertainties: &[Uncertainty] = uncertainties_by_node
-        .get(node)
-        .map(|v| v.as_slice())
-        .unwrap_or(&[]);
+    let node_uncertainties: &[Uncertainty] =
+        uncertainties_by_node.get(node).map(|v| &**v).unwrap_or(&[]);
     let combined: Vec<Uncertainty> = ctx
         .uncertainties
         .iter()
@@ -411,7 +415,7 @@ mod tests {
         }
     }
 
-    fn no_uncertainties() -> HashMap<String, Vec<Uncertainty>> {
+    fn no_uncertainties() -> HashMap<String, Arc<[Uncertainty]>> {
         HashMap::new()
     }
 
@@ -542,9 +546,9 @@ mod tests {
         // duplicate of ua1 by key
         let ua1_dup = make_uncertainty("unresolved-dispatch", Some("a_cs1"));
 
-        let mut ubn: HashMap<String, Vec<Uncertainty>> = HashMap::new();
-        ubn.insert("a".to_string(), vec![ua1.clone(), ua2.clone()]);
-        ubn.insert("b".to_string(), vec![ub1.clone(), ua1_dup]);
+        let mut ubn: HashMap<String, Arc<[Uncertainty]>> = HashMap::new();
+        ubn.insert("a".to_string(), Arc::from(vec![ua1.clone(), ua2.clone()]));
+        ubn.insert("b".to_string(), Arc::from(vec![ub1.clone(), ua1_dup]));
         // node c contributes nothing
 
         let results = walk_evidence(
@@ -614,8 +618,8 @@ mod tests {
     fn uncertainties_on_dead_end() {
         let p = map_policy(&[], &[], 0);
         let u = make_uncertainty("unresolved-dispatch", Some("x_cs1"));
-        let mut ubn: HashMap<String, Vec<Uncertainty>> = HashMap::new();
-        ubn.insert("a".to_string(), vec![u.clone()]);
+        let mut ubn: HashMap<String, Arc<[Uncertainty]>> = HashMap::new();
+        ubn.insert("a".to_string(), Arc::from(vec![u.clone()]));
 
         let results = walk_evidence(
             "a",

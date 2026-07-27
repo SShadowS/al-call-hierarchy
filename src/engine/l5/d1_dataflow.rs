@@ -3782,7 +3782,8 @@ mod tests {
                 operation_id: None,
                 routine_id: Some("X".to_string()),
                 interface_name: None,
-            }],
+            }]
+            .into(),
         );
 
         let workspace = ws(&routines);
@@ -5118,7 +5119,8 @@ mod tests {
                 operation_id: None,
                 routine_id: Some("X".to_string()),
                 interface_name: None,
-            }],
+            }]
+            .into(),
         );
 
         let workspace = ws(&routines);
