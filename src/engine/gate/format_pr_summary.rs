@@ -114,11 +114,13 @@ pub fn format_pr_summary(
             // Mirrors al-sem app-attribution.ts: `finding.primaryLocation.enclosingRoutineId`.
             let raw_primary_routine_id = finding.primary_location.enclosing_routine_id.as_str();
             let owner_app = app_for_finding(raw_primary_routine_id, &idx);
-            let evidence_routine_ids: Vec<String> = finding
-                .evidence_path
-                .iter()
-                .map(|s| s.routine_id.clone())
-                .collect();
+            // Through `evidence_path_of` (twice below): a cohort-bearing d1
+            // finding derives its path from `cohort_contexts[0].witness` rather
+            // than storing it. Materialised ONCE here and reused for the witness
+            // lines further down.
+            let evidence_path = crate::engine::l5::finding::evidence_path_of(finding);
+            let evidence_routine_ids: Vec<String> =
+                evidence_path.iter().map(|s| s.routine_id.clone()).collect();
             let blame = blame_for_finding(raw_primary_routine_id, &evidence_routine_ids, &idx);
 
             // --- finding header line ---
@@ -143,7 +145,7 @@ pub fn format_pr_summary(
             lines.push(format!("  App: {app_str}  —  {obj_name}.{routine_name}()"));
 
             // --- evidence witness path (file:line  note) ---
-            for step in &finding.evidence_path {
+            for step in evidence_path.iter() {
                 let anchor = &step.source_anchor;
                 let file_line = format!("{}:{}", anchor.source_unit_id, anchor.start_line + 1);
                 lines.push(format!("  {file_line}  {}", step.note));

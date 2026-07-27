@@ -697,8 +697,14 @@ fn build_finding_evidence(
                 None => (None, None),
             };
             FindingEvidence {
+                // Through `evidence_path_of`, not the field: a cohort-bearing d1
+                // finding derives its path from `cohort_contexts[0].witness`
+                // rather than storing it (see that function's doc). This surface
+                // has NO cohort exclusion — unlike `project_finding` — so it is
+                // the one place the field change would otherwise have been
+                // visible.
                 evidence_path: crate::engine::l5::finding::project_evidence_path(
-                    &finding.evidence_path,
+                    &crate::engine::l5::finding::evidence_path_of(finding),
                     &stable_map,
                 ),
                 enclosing_member,

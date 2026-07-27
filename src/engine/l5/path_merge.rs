@@ -223,11 +223,16 @@ pub fn merge_by_terminal(findings: Vec<Finding>) -> Vec<Finding> {
         let group_len = group.len();
 
         // additionalPaths = the non-canonical evidence paths, sorted by path key.
+        // Through `evidence_path_of` for uniformity: `merge_by_terminal`'s only
+        // caller is d2, which never sets `cohort_contexts`, so this is a plain
+        // borrow-and-clone of the stored field today — routing it through the
+        // accessor costs nothing and removes the latent trap of a cohort-bearing
+        // finding ever reaching here and silently merging empty paths.
         let mut other_paths: Vec<Vec<EvidenceStep>> = group
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != canon_idx)
-            .map(|(_, f)| f.evidence_path.clone())
+            .map(|(_, f)| crate::engine::l5::finding::evidence_path_of(f).into_owned())
             .collect();
         other_paths.sort_by(|a, b| compare_strings(&path_sort_key(a), &path_sort_key(b)));
 

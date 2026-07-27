@@ -126,7 +126,12 @@ fn finding_to_jv(f: &Finding) -> Jv {
         ),
         (
             "evidencePath".to_string(),
-            Jv::Arr(f.evidence_path.iter().map(evidence_step_to_jv).collect()),
+            Jv::Arr(
+                crate::engine::l5::finding::evidence_path_of(f)
+                    .iter()
+                    .map(evidence_step_to_jv)
+                    .collect(),
+            ),
         ),
         (
             "affectedObjects".to_string(),

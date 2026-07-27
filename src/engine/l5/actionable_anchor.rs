@@ -41,7 +41,10 @@ pub fn pick_actionable_anchor(
     }
 
     // Walk the evidence path; return the first step that belongs to a primary routine.
-    for step in &finding.evidence_path {
+    // Read through `evidence_path_of` rather than the field: a cohort-bearing d1
+    // finding does not STORE its path (see that function's doc), and this runs
+    // inside `assemble_cohort_findings` on exactly such a finding.
+    for step in crate::engine::l5::finding::evidence_path_of(finding).iter() {
         if is_primary_routine(&step.routine_id) {
             return Some(step.source_anchor.clone());
         }
@@ -156,6 +159,53 @@ mod tests {
         roles.insert("r_dep", "dependency");
         roles.insert("r_dep2", "dependency");
         assert_eq!(pick_actionable_anchor(&f, &roles), None);
+    }
+
+    /// The cohort-bearing case: a d1 finding carries an EMPTY `evidence_path`
+    /// and derives its path from `cohort_contexts[0].witness`, so this walk has
+    /// to read through `evidence_path_of` or it silently anchors nothing.
+    ///
+    /// `pick_actionable_anchor` is called from inside `assemble_cohort_findings`
+    /// on exactly such a finding, so this is the USE, not just the helper: the
+    /// finding below is shaped the way d1 builds one (empty field, populated
+    /// cohort witness) and the expected anchor exists ONLY in the witness.
+    /// Reverting the walk to `&finding.evidence_path` makes it return `None`.
+    #[test]
+    fn cohort_bearing_finding_anchors_through_the_witness() {
+        use crate::engine::l5::d1_witness::WitnessSummary;
+        use crate::engine::l5::finding::D1CohortContext;
+
+        let mut f = finding("r_dep", vec![]);
+        f.cohort_contexts = Some(vec![D1CohortContext {
+            severity: "high".to_string(),
+            verdict: "physical".to_string(),
+            depth_bucket: 1,
+            uncertain: false,
+            reachable_verdicts: vec!["physical".to_string()],
+            loop_set: crate::engine::l5::d1_cohort::LoopSetId(0),
+            loop_count: 1,
+            witness: WitnessSummary {
+                total_hops: 1,
+                first_steps: vec![step("ws:dep2.al", "r_dep2")],
+                omitted_hops: 0,
+                last_steps: vec![step("ws:pri.al", "r_pri")],
+                terminal_step: step("ws:term.al", "r_dep"),
+            },
+        }]);
+
+        let mut roles: HashMap<&str, &str> = HashMap::new();
+        roles.insert("r_dep", "dependency");
+        roles.insert("r_dep2", "dependency");
+        roles.insert("r_pri", "primary");
+
+        assert!(
+            f.evidence_path.is_empty(),
+            "d1 does not store the path — that is the point of this test"
+        );
+        let got = pick_actionable_anchor(&f, &roles)
+            .expect("the primary step lives in the cohort witness");
+        assert_eq!(got.source_unit_id, "ws:pri.al");
+        assert_eq!(got.enclosing_routine_id, "r_pri");
     }
 
     #[test]

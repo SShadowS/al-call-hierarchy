@@ -264,6 +264,67 @@ pub struct Finding {
     pub cohort_contexts: Option<Vec<D1CohortContext>>,
 }
 
+/// A finding's realizing witness path — the ONE place in the engine that knows
+/// where to find it.
+///
+/// For every detector but `d1` it is the stored [`Finding::evidence_path`],
+/// borrowed. For a **cohort-bearing** finding (`cohort_contexts.is_some()`, i.e.
+/// `d1`) the stored field is EMPTY by construction and the path is
+/// `flatten_witness(cohort_contexts[0].witness)` — the winner cohort's bounded
+/// representative witness, materialised here on demand.
+///
+/// ## Why the field is empty rather than filled
+/// Task C8 established that a cohort-bearing finding's `evidence_path` and
+/// `additional_paths` are 100% reconstructable from `cohort_contexts[0].witness`
+/// and `cohort_contexts[1..].witness`, and made `project_finding` emit
+/// `Vec::new()`/`None` for them — so they had been byte-for-byte TRIPLICATES of
+/// the cohort witnesses, built, retained for the whole run, and then discarded
+/// at the projection. On Base App 8020 that was **95.9 MiB in 1,085,149
+/// allocations** (`evidence_path` 59.9 / `additional_paths` 36.0) of retained
+/// heap for data no output ever carried. `d1` now stops building them and every
+/// reader derives through here instead.
+///
+/// `cohort_contexts[0]` is the winner: `assemble_cohort_findings` picks the
+/// winner cohort by `(sev_rank, verdict quality, min group asc)` and then sorts
+/// the finest cohorts by that same key, and a finest sub-cohort inherits its
+/// parent's `(severity, verdict)` while the sub-bitmaps partition the parent —
+/// so the minimum `min_group` over the max-`(sev, quality)` class is the winner
+/// cohort's own. `cohort_evidence_path_is_the_winner_witness` pins that equality
+/// against the pre-change expression.
+///
+/// Returns `Cow` so the common (non-cohort) case is a borrow and costs nothing.
+pub(crate) fn evidence_path_of(f: &Finding) -> std::borrow::Cow<'_, [EvidenceStep]> {
+    match &f.cohort_contexts {
+        Some(cohorts) => std::borrow::Cow::Owned(
+            cohorts
+                .first()
+                .map(|c| crate::engine::l5::d1_witness::flatten_witness(&c.witness))
+                .unwrap_or_default(),
+        ),
+        None => std::borrow::Cow::Borrowed(&f.evidence_path),
+    }
+}
+
+/// How many distinct realizing paths a finding has — al-sem's
+/// `1 + (finding.additionalPaths?.length ?? 0)`, which reaches the `analyze` JSON
+/// as `pathCount` and the terminal report as "+N other paths".
+///
+/// The sibling of [`evidence_path_of`] for the OTHER field `d1` stopped building.
+/// A cohort-bearing finding's `additional_paths` was
+/// `Some(cohort_contexts[1..].map(flatten_witness))` when there was more than one
+/// cohort and `None` otherwise, so `1 + len` is `cohort_contexts.len()` in BOTH
+/// cases — this returns exactly the number the stored field produced.
+///
+/// This is the ONE consumer of the dropped fields that is not a witness reader,
+/// and it sits on the default `analyze` output, so it is the one place the drop
+/// would otherwise have changed shipped bytes.
+pub(crate) fn realizing_path_count(f: &Finding) -> usize {
+    match &f.cohort_contexts {
+        Some(cohorts) => cohorts.len(),
+        None => 1 + f.additional_paths.as_ref().map(|p| p.len()).unwrap_or(0),
+    }
+}
+
 // ===========================================================================
 // STABLE projection types — the parity surface. Field declaration order MUST
 // match the golden's key insertion order exactly.

@@ -120,11 +120,136 @@ pub fn project_finding(finding: &Finding, idx: &ProjectionIndex) -> FindingSumma
             .fix_options
             .first()
             .map(|f| (f.description.clone(), f.safety.clone())),
-        // al-sem: `1 + (finding.additionalPaths?.length ?? 0)`.
-        path_count: 1 + finding
-            .additional_paths
-            .as_ref()
-            .map(|p| p.len())
-            .unwrap_or(0),
+        // al-sem: `1 + (finding.additionalPaths?.length ?? 0)` — read through
+        // `realizing_path_count`, because a cohort-bearing d1 finding no longer
+        // STORES `additional_paths` (it was a retained duplicate of
+        // `cohort_contexts[1..].witness`) and the accessor returns the same
+        // count from the cohorts themselves.
+        path_count: crate::engine::l5::finding::realizing_path_count(finding),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::l5::d1_cohort::LoopSetId;
+    use crate::engine::l5::d1_witness::WitnessSummary;
+    use crate::engine::l5::finding::{
+        D1CohortContext, EvidenceStep, FindingConfidence, SourceAnchor,
+    };
+
+    fn anchor() -> SourceAnchor {
+        SourceAnchor {
+            source_unit_id: "ws:t.al".to_string(),
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
+            enclosing_routine_id: "r".to_string(),
+            syntax_kind: "x".to_string(),
+            normalized_text_hash: None,
+            leading_context_hash: None,
+            trailing_context_hash: None,
+        }
+    }
+
+    fn step() -> EvidenceStep {
+        EvidenceStep {
+            routine_id: "r".to_string(),
+            operation_id: None,
+            callsite_id: None,
+            loop_id: None,
+            source_anchor: anchor(),
+            note: "n".to_string(),
+        }
+    }
+
+    fn cohort() -> D1CohortContext {
+        D1CohortContext {
+            severity: "high".to_string(),
+            verdict: "physical".to_string(),
+            depth_bucket: 1,
+            uncertain: false,
+            reachable_verdicts: vec!["physical".to_string()],
+            loop_set: LoopSetId(0),
+            loop_count: 1,
+            witness: WitnessSummary {
+                total_hops: 0,
+                first_steps: vec![step()],
+                omitted_hops: 0,
+                last_steps: vec![],
+                terminal_step: step(),
+            },
+        }
+    }
+
+    fn finding(cohorts: Option<Vec<D1CohortContext>>, extra: Option<usize>) -> Finding {
+        Finding {
+            id: "d1/x".to_string(),
+            root_cause_key: "k".to_string(),
+            detector: "d1-db-op-in-loop".to_string(),
+            title: "t".to_string(),
+            root_cause: "rc".to_string(),
+            severity: "high".to_string(),
+            confidence: FindingConfidence {
+                level: "likely".to_string(),
+                capped_by: None,
+                evidence: vec![],
+            },
+            primary_location: anchor(),
+            evidence_path: vec![],
+            additional_paths: extra.map(|n| vec![vec![step()]; n]),
+            affected_objects: vec![],
+            affected_tables: vec![],
+            fix_options: vec![],
+            provenance: vec![],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+            contexts: None,
+            cohort_contexts: cohorts,
+        }
+    }
+
+    /// `pathCount` reaches the DEFAULT `analyze --format json` output and the
+    /// terminal report's "+N other paths", so it is the one place d1 dropping
+    /// `additional_paths` could have changed shipped bytes — and no golden covers
+    /// it (the only d1 golden, `ws-d1-multi-caller`, has a single cohort and so
+    /// `pathCount: 1` either way).
+    ///
+    /// This drives the REAL `project_finding` — the USE, not the accessor — over a
+    /// finding shaped the way d1 now builds one: `additional_paths: None` with
+    /// THREE cohorts. Before the change that finding carried
+    /// `Some([witness, witness])` and projected `path_count: 3`; it must still.
+    /// Reverting `project_finding` to `1 + additional_paths.len()` makes this
+    /// answer 1.
+    #[test]
+    fn cohort_bearing_path_count_counts_cohorts_not_the_dropped_field() {
+        let objects: Vec<L3Object> = Vec::new();
+        let routines: Vec<L3Routine> = Vec::new();
+        let idx = ProjectionIndex::build(&objects, &routines);
+
+        let f = finding(Some(vec![cohort(), cohort(), cohort()]), None);
+        assert!(
+            f.additional_paths.is_none(),
+            "d1 no longer stores additional_paths — that is what this test is about"
+        );
+        assert_eq!(
+            project_finding(&f, &idx).path_count,
+            3,
+            "pathCount must equal the cohort count (1 winner + 2 others)"
+        );
+
+        // A single-cohort d1 finding still projects 1 — the shape every existing
+        // d1 golden carries, so this half proves the change is a no-op there.
+        let one = finding(Some(vec![cohort()]), None);
+        assert_eq!(project_finding(&one, &idx).path_count, 1);
+
+        // And a NON-cohort finding still reads the stored field, unchanged.
+        let plain = finding(None, Some(2));
+        assert_eq!(project_finding(&plain, &idx).path_count, 3);
+        let plain_none = finding(None, None);
+        assert_eq!(project_finding(&plain_none, &idx).path_count, 1);
     }
 }

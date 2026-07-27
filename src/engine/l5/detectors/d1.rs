@@ -62,7 +62,6 @@ use crate::engine::l5::d1_graph::build_d1_graph;
 use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
 #[cfg(test)]
 use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
-use crate::engine::l5::d1_witness::flatten_witness;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
@@ -1768,19 +1767,16 @@ fn assemble_cohort_findings(
             })
             .collect();
 
-        // evidence_path = winner's flattened representative witness; additional =
-        // the non-winner cohort witnesses in cohort_contexts order.
-        let evidence_path = flatten_witness(&winner_rep.witness);
-        let additional_paths = if cohort_contexts.len() > 1 {
-            Some(
-                cohort_contexts[1..]
-                    .iter()
-                    .map(|c| flatten_witness(&c.witness))
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        // `evidence_path`/`additional_paths` are deliberately NOT built here.
+        // They were the winner's flattened representative witness and the
+        // non-winner cohort witnesses in `cohort_contexts` order — i.e. a
+        // byte-for-byte second copy of `cohort_contexts[..].witness`, which Task
+        // C8 already stopped emitting (`project_finding` returns `Vec::new()`/
+        // `None` for a cohort-bearing finding). Retaining them cost 95.9 MiB in
+        // 1,085,149 allocations per Base App 8020 run for data no consumer ever
+        // received. Every reader now derives the path on demand via
+        // [`crate::engine::l5::finding::evidence_path_of`], which reconstructs
+        // exactly what this code used to store.
 
         // Identity + wording (all derived from the winner — preserved vs. old).
         let terminal_routine_id = terminal_routine.id.as_str();
@@ -1875,8 +1871,8 @@ fn assemble_cohort_findings(
             severity: winner_ck.severity.to_string(),
             confidence,
             primary_location: anchor_of(&terminal_op.source_anchor, terminal_routine),
-            evidence_path,
-            additional_paths,
+            evidence_path: Vec::new(),
+            additional_paths: None,
             affected_objects,
             affected_tables,
             fix_options,
@@ -2967,12 +2963,15 @@ mod shadow_tests {
     /// comparison (`extract_final_sev_by_key`), so the identity rule exists
     /// exactly once.
     fn finding_identity(f: &Finding) -> (String, String, String) {
-        let loop_id = f.evidence_path[0]
+        // Through `evidence_path_of`: `extract_final_sev_by_key` runs this over
+        // `detect_d1`'s REAL post-merge output, whose findings are cohort-bearing
+        // and therefore derive their path from `cohort_contexts[0].witness`.
+        let path = crate::engine::l5::finding::evidence_path_of(f);
+        let loop_id = path[0]
             .loop_id
             .clone()
             .expect("a d1 finding's first evidence step is always a loop step (build_finding)");
-        let last = f
-            .evidence_path
+        let last = path
             .last()
             .expect("a d1 finding's evidence_path is never empty");
         let routine_id = last.routine_id.clone();
@@ -3925,6 +3924,88 @@ mod assembly_tests {
             std::sync::Arc::ptr_eq(notes[0], notes[1]),
             "both findings' evidence notes must be clones of ONE table allocation, \
              not two independently formatted Strings"
+        );
+    }
+
+    /// A cohort-bearing finding no longer STORES `evidence_path`/
+    /// `additional_paths`, and `finding::evidence_path_of` must reconstruct
+    /// EXACTLY what `assemble_cohort_findings` used to store there — the WINNER
+    /// cohort's flattened representative witness.
+    ///
+    /// `severity_race_fixture` is chosen because it makes the two candidate
+    /// answers visibly different: ONE terminal (`H/op0`) reached by two loops of
+    /// DIFFERENT severity, `L2` (depth-2 → critical) and `L1` (high). So the
+    /// winner cohort's path starts in `L2` and the loser's in `L1`. A
+    /// `evidence_path_of` that read `cohort_contexts[1]`, or that fell back to
+    /// the (now empty) field, fails on the `L2` assertion rather than passing
+    /// vacuously — which the `.first()` → `.last()` perturbation confirms.
+    ///
+    /// The 4-step shape (`loop`, `call`, `hop`, `terminal`) is the same one the
+    /// pre-change `contexts` oracle pins for this fixture in
+    /// `winner_context_drives_finding_fields`, so the two paths agree on the
+    /// answer as well as on the mechanism.
+    #[test]
+    fn cohort_evidence_path_is_the_winner_witness() {
+        use crate::engine::l5::d1_witness::flatten_witness;
+        use crate::engine::l5::finding::evidence_path_of;
+
+        let (routines, edges, summaries) = severity_race_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 1, "one terminal -> one cohort finding");
+        let f = &findings[0];
+
+        assert!(
+            f.evidence_path.is_empty(),
+            "a cohort-bearing finding must NOT build evidence_path — it is 59.9 MiB \
+             of retained duplicate the projection already discards"
+        );
+        assert!(
+            f.additional_paths.is_none(),
+            "…and must not build additional_paths either (36.0 MiB more)"
+        );
+
+        let cohorts = f
+            .cohort_contexts
+            .as_ref()
+            .expect("d1 always emits cohort_contexts");
+        assert!(
+            cohorts.len() >= 2,
+            "the fixture reaches one terminal from two loops of different severity"
+        );
+        assert_eq!(cohorts[0].severity, "critical", "winner class first");
+        assert_eq!(
+            f.severity, "critical",
+            "the finding lifts the winner severity"
+        );
+
+        let path = evidence_path_of(f);
+        assert_eq!(
+            &*path,
+            flatten_witness(&cohorts[0].witness).as_slice(),
+            "the derived path IS the winner cohort's flattened witness"
+        );
+
+        // The discriminating half: the winner is L2's route, not L1's.
+        assert_eq!(path[0].routine_id, "L2", "path starts in the WINNER's loop");
+        assert_eq!(path[0].loop_id.as_deref(), Some("L2/loop0"));
+        assert_eq!(path.len(), 4, "loop, call, hop, terminal");
+        let last = path.last().expect("non-empty");
+        assert_eq!(last.routine_id, "H");
+        assert_eq!(last.operation_id.as_deref(), Some("H/op0"));
+
+        // `additional_paths` is gone too, and `pathCount` — which reaches the
+        // default `analyze` JSON — must still be `1 + (non-winner cohorts)`.
+        // This fixture has MORE than one cohort, so a `realizing_path_count`
+        // that fell back to the (now `None`) field would answer 1 here.
+        assert_eq!(
+            crate::engine::l5::finding::realizing_path_count(f),
+            cohorts.len(),
+            "pathCount must still count every realizing path, not just the winner"
+        );
+        assert!(
+            crate::engine::l5::finding::realizing_path_count(f) > 1,
+            "the fixture must actually exercise the >1 case or the assertion above \
+             passes vacuously"
         );
     }
 
