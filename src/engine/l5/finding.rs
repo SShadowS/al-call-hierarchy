@@ -37,11 +37,18 @@ use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detect
 ///
 /// al-sem's `Evidence` models `source` as free text because its evidence could
 /// come from more than one analyzer. In THIS engine there is exactly one
-/// analyzer, and every one of the 64 [`Evidence`] construction sites stamps this
-/// same compile-time literal — which the census confirms empirically:
-/// `distinct source = 1` over all 7,418,849 confidence-evidence records on Base
-/// App 8020. [`ConfidenceEvidence`] therefore does not STORE it; the projection
-/// re-materialises it here, once per projected record.
+/// analyzer, and every [`Evidence`] construction site (65 at this writing)
+/// stamps the LITERAL `"tree-sitter"` directly — **not this constant**; there
+/// is no compile-time link between the two. What the census confirms
+/// empirically is the consequence of that discipline, not a guarantee this
+/// constant provides: `distinct source = 1` over all 7,418,849
+/// confidence-evidence records on Base App 8020. [`ConfidenceEvidence`]
+/// therefore does not STORE it; this constant exists only READER-side, so the
+/// projection, `path_merge::merge_confidence`'s dedupe key and the policy JSON
+/// can re-materialise the same value once per projected record instead of each
+/// spelling the literal again. A second confidence-evidence `source` value is
+/// unrepresentable today for an unrelated reason: the type split leaves
+/// `ConfidenceEvidence` with no `source` field to set.
 pub const EVIDENCE_SOURCE: &str = "tree-sitter";
 
 /// `Evidence` (`model/graph.ts`): `{ source, note? }` — the **provenance** form,
@@ -367,9 +374,15 @@ pub(crate) fn evidence_path_of(f: &Finding) -> std::borrow::Cow<'_, [EvidenceSte
 /// This is the ONE consumer of the dropped fields that is not a witness reader,
 /// and it sits on the default `analyze` output, so it is the one place the drop
 /// would otherwise have changed shipped bytes.
+///
+/// `.max(1)` on the cohort arm: `cohorts.len()` is 0 only for `Some(vec![])`,
+/// which the real pipeline never produces (`assemble_cohort_findings` skips
+/// `tc.cohorts.is_empty()`), but the ported al-sem expression this function
+/// otherwise equals can never be 0 either — matching [`evidence_path_of`]'s own
+/// defensive handling of the same shape rather than trusting the caller.
 pub(crate) fn realizing_path_count(f: &Finding) -> usize {
     match &f.cohort_contexts {
-        Some(cohorts) => cohorts.len(),
+        Some(cohorts) => cohorts.len().max(1),
         None => 1 + f.additional_paths.as_ref().map(|p| p.len()).unwrap_or(0),
     }
 }
@@ -1539,5 +1552,64 @@ mod tests {
             let rebuilt_ids: Vec<GroupIx> = registry_back.to_registry().iter(c.loop_set).collect();
             assert_eq!(orig, rebuilt_ids);
         }
+    }
+
+    /// `realizing_path_count` must never return 0. The ported al-sem expression
+    /// (`1 + (finding.additionalPaths?.length ?? 0)`) can't, and `pathCount: 0`
+    /// would be a schema-violating value on the default `analyze --format json`
+    /// surface. `Some(cohorts)` with an EMPTY `cohorts` is unreachable through the
+    /// real pipeline today (`assemble_cohort_findings` skips
+    /// `tc.cohorts.is_empty()`), but the sibling accessor [`evidence_path_of`]
+    /// already handles the same shape defensively (`.unwrap_or_default()`), and
+    /// this pins `realizing_path_count` to the same discipline rather than
+    /// leaving it to trust the caller.
+    #[test]
+    fn realizing_path_count_is_never_zero_even_for_empty_cohorts() {
+        let mut f = Finding {
+            id: "d1/x".to_string(),
+            root_cause_key: "k".to_string(),
+            detector: "d1".to_string(),
+            title: "t".into(),
+            root_cause: "rc".to_string(),
+            severity: "high".to_string(),
+            confidence: FindingConfidence {
+                level: "likely".to_string(),
+                capped_by: None,
+                evidence: vec![],
+            },
+            primary_location: dummy_anchor("T"),
+            evidence_path: vec![],
+            additional_paths: None,
+            affected_objects: vec![],
+            affected_tables: vec![],
+            fix_options: vec![],
+            provenance: vec![],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+            contexts: None,
+            cohort_contexts: Some(vec![]),
+        };
+        assert_eq!(
+            realizing_path_count(&f),
+            1,
+            "an empty (but Some) cohort list must floor at 1, matching evidence_path_of \
+             and the al-sem expression this ports"
+        );
+
+        // The reachable shapes still behave as before: no regression from the floor.
+        f.cohort_contexts = Some(vec![]);
+        assert_eq!(
+            evidence_path_of(&f).len(),
+            0,
+            "no witness to flatten either"
+        );
+
+        f.cohort_contexts = None;
+        f.additional_paths = None;
+        assert_eq!(realizing_path_count(&f), 1);
+        f.additional_paths = Some(vec![vec![], vec![]]);
+        assert_eq!(realizing_path_count(&f), 3);
     }
 }

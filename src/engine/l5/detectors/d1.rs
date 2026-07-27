@@ -3842,9 +3842,16 @@ mod assembly_tests {
     /// - **Resolution** is exercised: three DISTINCT table entries, so an
     ///   off-by-one or a table mix-up changes a note.
     ///
-    /// Necessary because no committed golden covers this: every `d1` finding in
-    /// `tests/**/*.json` has an EMPTY `confidence.evidence`, i.e. the whole golden
-    /// suite exercises only `to_confidence`'s `is_empty()` fast path.
+    /// A golden now ALSO covers this — `tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`
+    /// (added at `fe8a018`, "test(d1): cover confidence.evidence with a golden") carries
+    /// one `d1-db-op-in-loop` finding with six non-empty `confidence.evidence` entries;
+    /// see `tests/r4/r4_differential.rs:693-704`, which documents it as the only golden
+    /// anywhere in this repository that covers `Finding.confidence.evidence` (every other
+    /// d1 golden's winner path is certain, so `to_confidence` takes its `is_empty()` fast
+    /// path there). This unit test stays as a second, independent guard: it asserts
+    /// against a hand-built fixture (`uncertain_winner_fixture`) rather than the golden's
+    /// fixed shape, so a change that happens to preserve the golden's exact bytes cannot
+    /// silently break ORDER, DEDUP or RESOLUTION in general.
     #[test]
     fn cohort_confidence_resolves_interned_uncertainties_in_key_order() {
         let (routines, edges, summaries) = uncertain_winner_fixture();
