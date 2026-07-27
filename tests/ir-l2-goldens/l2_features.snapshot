@@ -184,6 +184,16 @@ ws-d1-multi-caller/src/D1MultiCaller.al::1::CallerC	c7b545532038e0ab
 ws-d1-setup-singleton/src/Codeunit.al::0::InLoopSetupGet	e1091261003191ff
 ws-d1-setup-singleton/src/Codeunit.al::0::InLoopCustomerGet	f2d601dce7581e48
 ws-d1-setup-singleton/src/Codeunit.al::0::InLoopSetupFindSet	10810d55fe03b8ba
+ws-d1-uncertain-path/src/chain.al::0::Run	419ed08597b3d802
+ws-d1-uncertain-path/src/chain.al::1::Enter	1ce595669dd81c68
+ws-d1-uncertain-path/src/chain.al::2::Dispatch	ee27a13ecbdc7846
+ws-d1-uncertain-path/src/chain.al::3::Touch	db1e634bcf068b11
+ws-d1-uncertain-path/src/handlers.al::0::RunAlpha	900d8a4c2c587e2b
+ws-d1-uncertain-path/src/handlers.al::1::RunBeta	900d8a4c2c587e2b
+ws-d1-uncertain-path/src/handlers.al::2::RunGamma	900d8a4c2c587e2b
+ws-d1-uncertain-path/src/handlers.al::3::RunAlpha	bc66f26006be216a
+ws-d1-uncertain-path/src/handlers.al::4::RunBeta	c49a0e6868c1e6a7
+ws-d1-uncertain-path/src/handlers.al::5::RunGamma	fee17586d404b03c
 ws-d10-self-mod/src/codeunit.al::0::BadModify	1eca1380e9cd7a7a
 ws-d10-self-mod/src/codeunit.al::0::SafeModify	5f0d394f9848efe1
 ws-d11-modifyall-init/src/D11Patterns.al::0::SetBasedBulk	cf2293a9358ac43e

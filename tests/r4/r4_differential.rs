@@ -684,10 +684,24 @@ const WAVE_E2: &[Smoke] = &[
 /// MOST COMPLEX detector — its byte-match validates `walk_evidence` +
 /// `merge_by_terminal` + `describe_table` + `pick_actionable_anchor` together.
 /// ws-d1 (3 findings, one WITH additionalPaths), ws-d1-multi-caller (1 finding, 2
-/// additionalPaths — validates merge_by_terminal), ws-d1-setup-singleton (3).
-/// ws-d1-dep-terminal (0 findings — the explicit negative) is byte-matched
+/// additionalPaths — validates merge_by_terminal), ws-d1-setup-singleton (3),
+/// ws-d1-uncertain-path (1 finding WITH a non-empty `confidence.evidence` — see
+/// below). ws-d1-dep-terminal (0 findings — the explicit negative) is byte-matched
 /// separately below (its 0-count golden is exempt from the anti-degenerate ≥1
 /// check).
+///
+/// **`ws-d1-uncertain-path` is the ONLY golden anywhere in this repository that
+/// covers `Finding.confidence.evidence`.** Every other fixture's d1 winner path is
+/// certain, so `to_confidence` takes its `is_empty()` fast path and the field
+/// serializes as `[]`; and no `alsem analyze` golden family can EVER cover it,
+/// because `FindingSummary` projects only `{level, cappedBy}`. Its workspace
+/// (`tests/r0-corpus/ws-d1-uncertain-path/src/chain.al`, which documents the shape
+/// in full) is built so the emitted evidence pins ORDER (byte-sorted key order
+/// differs from path-discovery order), DE-DUPLICATION (one uncertainty spans two
+/// nodes of the same path) and RESOLUTION (four distinct entries, so an off-by-one
+/// in the id → value mapping shows). Byte-comparing it here is what keeps
+/// `d1_cohort.rs`'s interned `UncertaintyTable` — and anything that later rewrites
+/// how `Evidence` is built from it — honest.
 const WAVE_D1: &[Smoke] = &[
     Smoke {
         fixture: "ws-d1",
@@ -705,6 +719,13 @@ const WAVE_D1: &[Smoke] = &[
     },
     Smoke {
         fixture: "ws-d1-setup-singleton",
+        wave: "R4-D1",
+        detectors: &["d1-db-op-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d1-uncertain-path",
         wave: "R4-D1",
         detectors: &["d1-db-op-in-loop"],
         ported: true,

@@ -30,11 +30,8 @@ key read the same pair of fields: `uncertainty_key(u)` is
 `uncertainty_lites`' `at` uses that identical precedence — so
 `uncertainty_key(u) == format!("{}|{}", lite.kind, lite.at)`.
 
-Two tests pin the USE rather than the helper, because **no committed golden covers
-it**: every `d1` finding in `tests/**/*.json` has an empty `confidence.evidence`,
-i.e. the golden suite only ever exercises `to_confidence`'s `is_empty()` fast path,
-and the `score_batch_to_sink_matches_old` differential explicitly does not compare
-the representative. `cohort_confidence_resolves_interned_uncertainties_in_key_order`
+Two unit tests pin the USE rather than the helper.
+`cohort_confidence_resolves_interned_uncertainties_in_key_order`
 runs the real `search_loops_cohorts` + `assemble_cohort_findings` and asserts the
 resolved `Finding.confidence` exactly — level, `cappedBy`, and every evidence note
 in order — over a fixture whose sorted order differs from its discovery order and
@@ -45,10 +42,45 @@ different-`interface_name` case where keep-last is observable.
 `emit_finalize_census` (Hot-tier, zero cost when tracing is off) now also reports
 `uncertainty_ids` (Σ `CohortRep.uncertainties.len()`) against
 `distinct_uncertainties` (the table size) — the direct measurement of a population
-`.superpowers/sdd/scope-d1-memory.md` §2d could previously only derive.
+that could previously only be derived. First reading, Base App 8020, 2026-07-27:
+**10,266,162 records over 3,150 distinct values (3,259x duplication)**, inside the
+~8.3-10.7M band the arc's scoping pass had inferred. Plan:
+`docs/superpowers/plans/2026-07-27-d1-memory.md`.
 
 `Uncertainty` gains a derived `Hash` (field-wise, consistent with its derived
 `PartialEq`) so it can key the intern map.
+
+#### Review fix wave
+
+**`Finding.confidence.evidence` now has a committed golden — `ws-d1-uncertain-path`.**
+Before this fixture, every one of the 3,681 finding objects under `tests/**/*.json`
+carried an empty `confidence.evidence` (89 of them `d1`, zero non-empty for ANY
+detector), so the whole golden suite only ever exercised `to_confidence`'s
+`is_empty()` fast path; the `score_batch_to_sink_matches_old` differential does not
+compare the representative; and this change had just demoted `uncertainty_lites` to
+`#[cfg(test)]`, retiring the owned-value oracle. The r4 family is the ONLY one that
+can ever carry the field — `FindingSummary` projects `{level, cappedBy}` and drops
+`evidence`, so no `alsem analyze` golden can cover it at any scale. The new
+workspace's d1 winner path crosses three uncertain nodes and pins ORDER (byte-sorted
+key order differs from path-discovery order), DE-DUPLICATION (one uncertainty spans
+two nodes of the same path), RESOLUTION (six distinct entries) and the union's
+terminal-node read. Each property was falsified before being trusted: emitting the
+union in first-seen order, blanking `UncertaintyLite.at`, and dropping
+`path_uncertainty_ids`' terminal read each turn the golden RED, and each reverts
+clean. Its addition also appends 10 rows to `tests/ir-l2-goldens/l2_features.snapshot`
+(that family digests every routine in the corpus); no existing row moved.
+
+**`UncertaintyId` hardening.** The newtype's field is now private, so
+`UncertaintyTable::intern` is the only thing that can mint one — deliberately unlike
+`LoopSetId`, whose public field exists because a `LoopSetId` is always serialized
+alongside its registry while nothing pairs an `UncertaintyId` with its table.
+`get`/`key` resolve through a checked `resolve` that names the surviving hypothesis
+("minted by a DIFFERENT table") instead of panicking with a bare index-out-of-bounds;
+a mis-paired table is the one way left to get wrong evidence text with a right count,
+level and `cappedBy`. `intern` also switched from `entries.len() as u32` to
+`u32::try_from(..).expect(..)`: past `u32::MAX` the cast WRAPS and a new value would
+silently alias an existing id — unreachable at 3,150 distinct values, but a wrong
+answer rather than a crash, and the miss path runs ~3k times per run.
 
 ### Performance — L3 substrate + the two parked items (arc capstone)
 

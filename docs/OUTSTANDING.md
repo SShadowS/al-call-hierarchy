@@ -582,7 +582,7 @@ COHORT DATAFLOW (co-designed with gpt-5.6-sol; see memory `d1-output-bound-falsi
 
 ### Deferred d1 follow-ups (non-blocking; 8020 already finishes)
 1. **Witness/uncertainty polish (~130s residual)**: `build_cohort_rep`'s full-chain
-   `path_uncertainties` walk for UNCERTAIN cohorts is the residual (certain cohorts
+   `path_uncertainty_ids` walk for UNCERTAIN cohorts is the residual (certain cohorts
    already skipped, ee07983). Eliminate by accumulating uncertainty-KIND-SETS in the
    fixpoint (no walk) — output-identical, targets d1 ~10-30s. NEEDS A QUIET MACHINE
    to validate (these detached 8020 runs swing +/-80s; sub-fixes unmeasurable against

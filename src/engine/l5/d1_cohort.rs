@@ -414,22 +414,36 @@ impl std::hash::Hash for ContextKey {
 /// table that produced it and has no meaning outside that table (and never
 /// escapes into any output — the d1 report projects `kind`/`at` back to text at
 /// `detectors::d1`'s confidence build).
+///
+/// The field is PRIVATE, unlike [`LoopSetId`]'s. That is a deliberate divergence
+/// from the sibling convention rather than an oversight: a `LoopSetId` is always
+/// serialized alongside its [`StableLoopSetRegistry`], so the data model itself
+/// pairs an id with its table and `LoopSetId(0)` is a legitimate thing for
+/// deserialization to construct. Nothing pairs an `UncertaintyId` with its
+/// `UncertaintyTable` — they travel as two independent fields of `D1CohortRun`
+/// — so a mis-paired table would resolve IN-RANGE ids to DIFFERENT uncertainties:
+/// wrong evidence-note text with the right count, right level and right
+/// `cappedBy`. [`UncertaintyTable::intern`] is therefore the ONLY thing anywhere
+/// that can mint one, which makes "this id came from some other table" the sole
+/// remaining way to get it wrong, and [`UncertaintyTable::resolve`] names that
+/// hypothesis when the index is out of range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct UncertaintyId(pub u32);
+pub(crate) struct UncertaintyId(u32);
 
 /// The run-level de-duplicated [`Uncertainty`] store every [`CohortRep`]'s
 /// uncertainty union indexes into.
 ///
 /// **Why.** A cohort's union is the uncertainties of every node on its
-/// representative path, and those are drawn from a tiny closed vocabulary: on
-/// Base App 8020 the ~3.7M records in `ctx.uncertainties_by_node` collapse to
-/// ~3k distinct values (the census in `.superpowers/sdd/scope-d1-memory.md` §2c
-/// measures 3,073 distinct `"{kind} at {at}"` notes). Storing the values per
-/// cohort meant ~8-10M owned `Uncertainty` records — each 120 B of struct plus
-/// 2-3 `String`s — alive for the whole run inside [`TerminalSink`], which was
-/// the single largest contributor to `alsem analyze`'s peak RSS. Storing 4-byte
-/// ids into one shared table keeps EXACTLY the same values in EXACTLY the same
-/// per-cohort order; only the ownership changes.
+/// representative path, and those are drawn from a tiny closed vocabulary:
+/// measured on Base App 8020 (2026-07-27, heap census over the `pub`
+/// `DetectorOutput`), the ~3.7M records in `ctx.uncertainties_by_node` collapse
+/// to 3,073 distinct `"{kind} at {at}"` notes across 7,418,849 retained evidence
+/// records. Storing the values per cohort meant ~8-10M owned `Uncertainty`
+/// records — each 120 B of struct plus 2-3 `String`s — alive for the whole run
+/// inside [`TerminalSink`], which was the single largest contributor to `alsem
+/// analyze`'s peak RSS. Storing 4-byte ids into one shared table keeps EXACTLY
+/// the same values in EXACTLY the same per-cohort order; only the ownership
+/// changes.
 ///
 /// Interning is by the FULL value (all five fields), not by the `(kind, at)`
 /// pair the confidence mapper happens to read, so `id ↔ Uncertainty` is a
@@ -462,21 +476,53 @@ impl UncertaintyTable {
         if let Some(&id) = self.index.get(u) {
             return id;
         }
-        let id = UncertaintyId(self.entries.len() as u32);
+        // `try_from`, not `as`: past `u32::MAX` distinct values an `as` cast
+        // WRAPS, so a new value would silently alias an existing id — a wrong
+        // answer rather than a crash. Unreachable in practice (3,150 distinct on
+        // Base App 8020, bounded by the distinct values in
+        // `ctx.uncertainties_by_node`), and this runs only on the miss path, so
+        // making the impossible loud costs nothing.
+        let id = UncertaintyId(
+            u32::try_from(self.entries.len())
+                .expect("UncertaintyTable exceeded u32::MAX distinct uncertainties"),
+        );
         self.entries.push(u.clone());
         self.keys.push(uncertainty_key(u).into_boxed_str());
         self.index.insert(u.clone(), id);
         id
     }
 
+    /// `id`'s index into this table's positional `Vec`s, checked.
+    ///
+    /// Every [`UncertaintyId`] in existence was minted by THIS type's
+    /// [`Self::intern`] (the newtype's field is private — see its doc), so an
+    /// out-of-range index has exactly one cause worth naming: the id came from a
+    /// DIFFERENT `UncertaintyTable` than the one being resolved against. The
+    /// bare `self.entries[..]` this replaces panicked too, but with a bare
+    /// index-out-of-bounds that told the next reader nothing about which
+    /// invariant broke. Note this can only catch the OUT-OF-RANGE case; a
+    /// mis-paired table whose id happens to be in range still resolves silently
+    /// to the wrong value, which is why `finalize` hands the table and the ids
+    /// out together.
+    fn resolve(&self, id: UncertaintyId) -> usize {
+        let ix = id.0 as usize;
+        assert!(
+            ix < self.entries.len(),
+            "UncertaintyId({ix}) is out of range for an UncertaintyTable of {} entries \
+             — the id was almost certainly minted by a DIFFERENT table",
+            self.entries.len()
+        );
+        ix
+    }
+
     /// The [`Uncertainty`] `id` names.
     pub(crate) fn get(&self, id: UncertaintyId) -> &Uncertainty {
-        &self.entries[id.0 as usize]
+        &self.entries[self.resolve(id)]
     }
 
     /// `uncertainty_key` of the [`Uncertainty`] `id` names.
     pub(crate) fn key(&self, id: UncertaintyId) -> &str {
-        &self.keys[id.0 as usize]
+        &self.keys[self.resolve(id)]
     }
 
     /// The number of DISTINCT interned uncertainties.
@@ -750,10 +796,13 @@ pub(crate) fn emit_liveness_census(liveness: &Liveness, n_nodes: usize) {
 /// over all terminals), `unique_reached_terminals`, and the interned-uncertainty
 /// population — `uncertainty_ids` (Σ `CohortRep.uncertainties.len()`, the record
 /// count that USED to be one owned `Uncertainty` each) against
-/// `distinct_uncertainties` (the table's size). That pair is the direct
-/// measurement of the quantity `.superpowers/sdd/scope-d1-memory.md` §2d could
-/// only DERIVE (~8.3-10.7M records) before the ids existed. Zero cost when
-/// tracing is disabled.
+/// `distinct_uncertainties` (the table's size). That pair is the DIRECT
+/// measurement of a population that could previously only be derived (the
+/// pre-interning scoping estimate was a ~8.3-10.7M-record band, inferred from
+/// cohort counts × mean path length because nothing counted the records
+/// themselves). First reading, Base App 8020, 2026-07-27: 10,266,162
+/// `uncertainty_ids` over 3,150 `distinct_uncertainties` — 3,259x duplication,
+/// inside the derived band. Zero cost when tracing is disabled.
 pub(crate) fn emit_finalize_census(cohorts: &[TerminalCohorts], uncertainties: &UncertaintyTable) {
     if !crate::engine::perf_trace::enabled(crate::engine::perf_trace::Detail::Hot) {
         return;
@@ -861,6 +910,32 @@ mod tests {
         // entries share a key but are distinct uncertainties, so the table holds
         // 6 of the 7 inputs (only the exact duplicate collapses).
         assert_eq!(table.len(), 6, "interned by value, not by uncertainty_key");
+    }
+
+    /// Resolving an id against the WRONG [`UncertaintyTable`] must name that
+    /// hypothesis, not just index out of bounds.
+    ///
+    /// This pins the USE (`get`, the one production resolution site's own
+    /// entry point) rather than `resolve` itself, and it pins the MESSAGE: the
+    /// whole value of the check is that the next reader is told which invariant
+    /// broke, so a panic with the old bare `index out of bounds` text would be
+    /// no better than what it replaced. `#[should_panic(expected = ...)]`
+    /// substring-matches, so this fails if the "DIFFERENT table" wording is
+    /// dropped.
+    #[test]
+    #[should_panic(expected = "minted by a DIFFERENT table")]
+    fn resolving_an_id_from_another_table_names_the_invariant() {
+        let mut minted_from = UncertaintyTable::new();
+        minted_from.intern(&u("unresolved-call", Some("r/cs0"), None, None, None));
+        let id = minted_from.intern(&u("opaque-callee", Some("r/cs1"), None, None, None));
+
+        // A DIFFERENT table that never saw the second value — `id` is in range
+        // for `minted_from` but not for this one.
+        let mut other = UncertaintyTable::new();
+        other.intern(&u("unresolved-call", Some("r/cs0"), None, None, None));
+        assert_eq!(other.len(), 1, "the wrong table is genuinely shorter");
+
+        other.get(id);
     }
 
     /// A throwaway [`CohortRep`] for the sink unit tests — its contents are never

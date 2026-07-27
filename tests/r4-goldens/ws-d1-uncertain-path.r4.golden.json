@@ -1,0 +1,208 @@
+{
+  "fixtureName": "ws-d1-uncertain-path",
+  "detectors": [
+    "d1-db-op-in-loop"
+  ],
+  "findingCount": 1,
+  "findings": [
+    {
+      "detector": "d1-db-op-in-loop",
+      "id": "d1/11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683/11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683/op0",
+      "rootCauseKey": "d1/11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683/11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683/op0",
+      "title": "Database operation inside a loop",
+      "rootCause": "A loop in Run reaches FindSet on D1U Customer in Touch, which has no loop of its own — the operation runs once per iteration of that loop.",
+      "severity": "medium",
+      "confidence": {
+        "level": "possible",
+        "evidence": [
+          {
+            "source": "tree-sitter",
+            "note": "interface-open-world at r0/37cabfad7b0772f98f776bb956cc823a41468bba390c67e09e9758ef4e7e67dd/cs0"
+          },
+          {
+            "source": "tree-sitter",
+            "note": "interface-open-world at r0/3d8d4ed53e7988a06c9a8f52ccaa60e4485c9ec1a3e590842ab8ba9eee3c8d8f/cs0"
+          },
+          {
+            "source": "tree-sitter",
+            "note": "interface-open-world at r0/3d8d4ed53e7988a06c9a8f52ccaa60e4485c9ec1a3e590842ab8ba9eee3c8d8f/cs1"
+          },
+          {
+            "source": "tree-sitter",
+            "note": "opaque-callee at r0/37cabfad7b0772f98f776bb956cc823a41468bba390c67e09e9758ef4e7e67dd/cs0"
+          },
+          {
+            "source": "tree-sitter",
+            "note": "opaque-callee at r0/3d8d4ed53e7988a06c9a8f52ccaa60e4485c9ec1a3e590842ab8ba9eee3c8d8f/cs0"
+          },
+          {
+            "source": "tree-sitter",
+            "note": "opaque-callee at r0/3d8d4ed53e7988a06c9a8f52ccaa60e4485c9ec1a3e590842ab8ba9eee3c8d8f/cs1"
+          }
+        ],
+        "cappedBy": [
+          "dynamic-dispatch",
+          "opaque-callee"
+        ]
+      },
+      "primaryLocation": {
+        "sourceUnitId": "ws:src/chain.al",
+        "range": {
+          "startLine": 107,
+          "startColumn": 8,
+          "endLine": 107,
+          "endColumn": 26
+        },
+        "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683",
+        "syntaxKind": "call_expression"
+      },
+      "evidencePath": [],
+      "affectedObjects": [
+        "11111111-d100-0000-0000-000000000002:Codeunit:63201",
+        "11111111-d100-0000-0000-000000000002:Codeunit:63203"
+      ],
+      "affectedTables": [
+        "11111111-d100-0000-0000-000000000002:Table:63200"
+      ],
+      "fixOptions": [
+        {
+          "description": "Move the database operation outside the loop, or batch it into a set-based operation.",
+          "safety": "medium"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "cohortContexts": [
+        {
+          "severity": "medium",
+          "verdict": "physical",
+          "depthBucket": 1,
+          "uncertain": true,
+          "reachableVerdicts": [
+            "physical"
+          ],
+          "loopSet": 0,
+          "loopCount": 1,
+          "witness": {
+            "totalHops": 2,
+            "firstSteps": [
+              {
+                "routineId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/chain.al",
+                  "range": {
+                    "startLine": 58,
+                    "startColumn": 8,
+                    "endLine": 59,
+                    "endColumn": 24
+                  },
+                  "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+                  "syntaxKind": "for_statement"
+                },
+                "note": "for loop",
+                "loopId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/loop0"
+              },
+              {
+                "routineId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/chain.al",
+                  "range": {
+                    "startLine": 59,
+                    "startColumn": 12,
+                    "endLine": 59,
+                    "endColumn": 23
+                  },
+                  "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+                  "syntaxKind": "call_expression"
+                },
+                "note": "calls Enter",
+                "callsiteId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+              }
+            ],
+            "omittedHops": 0,
+            "lastSteps": [
+              {
+                "routineId": "11111111-d100-0000-0000-000000000002:Codeunit:63202#6517d3c43b0b718884fae1f5fb84d125229343e06aa624630627cb4fa1875761",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/chain.al",
+                  "range": {
+                    "startLine": 73,
+                    "startColumn": 8,
+                    "endLine": 73,
+                    "endColumn": 23
+                  },
+                  "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63202#6517d3c43b0b718884fae1f5fb84d125229343e06aa624630627cb4fa1875761",
+                  "syntaxKind": "call_expression"
+                },
+                "note": "calls Dispatch",
+                "callsiteId": "11111111-d100-0000-0000-000000000002:Codeunit:63202#6517d3c43b0b718884fae1f5fb84d125229343e06aa624630627cb4fa1875761/cs0"
+              },
+              {
+                "routineId": "11111111-d100-0000-0000-000000000002:Codeunit:63207#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+                "sourceAnchor": {
+                  "sourceUnitId": "ws:src/chain.al",
+                  "range": {
+                    "startLine": 91,
+                    "startColumn": 8,
+                    "endLine": 91,
+                    "endColumn": 20
+                  },
+                  "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63207#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c",
+                  "syntaxKind": "call_expression"
+                },
+                "note": "calls Touch",
+                "callsiteId": "11111111-d100-0000-0000-000000000002:Codeunit:63207#a7fb0558785e619af31738cadd2d7afa8ab700601febfeb22b1cdd14a02a6a0c/cs2"
+              }
+            ],
+            "terminalStep": {
+              "routineId": "11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683",
+              "sourceAnchor": {
+                "sourceUnitId": "ws:src/chain.al",
+                "range": {
+                  "startLine": 107,
+                  "startColumn": 8,
+                  "endLine": 107,
+                  "endColumn": 26
+                },
+                "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683",
+                "syntaxKind": "call_expression"
+              },
+              "note": "FindSet on D1U Customer",
+              "operationId": "11111111-d100-0000-0000-000000000002:Codeunit:63203#4f1cb1a45323c2e4642edf159d530eb5be1fac2d3889c1a8b6a22744289b7683/op0"
+            }
+          }
+        }
+      ],
+      "fingerprint": "5b5a0f85e510a9dd"
+    }
+  ],
+  "loopCatalog": [
+    {
+      "loopIx": 0,
+      "loopRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+      "loopId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/loop0",
+      "anchor": {
+        "sourceUnitId": "ws:src/chain.al",
+        "range": {
+          "startLine": 58,
+          "startColumn": 8,
+          "endLine": 59,
+          "endColumn": 24
+        },
+        "enclosingRoutineId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6",
+        "syntaxKind": "for_statement"
+      },
+      "entryCallsiteId": "11111111-d100-0000-0000-000000000002:Codeunit:63201#234129ee000c7de20fad2dc35dbe5676a8ba94802c5c0d9c411bf712350377a6/cs0"
+    }
+  ],
+  "loopSetRegistry": {
+    "sets": [
+      [
+        0
+      ]
+    ]
+  }
+}

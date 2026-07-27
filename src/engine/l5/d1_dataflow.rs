@@ -2552,7 +2552,7 @@ fn build_cohort_rep<'a>(
             let tn = term_node.expect("a Reach winner requires the terminal node");
             // Uncertainty union is EMPTY unless the winning path is uncertain
             // (`unc` == OR of node-has-uncertainty along the path; `unc == false`
-            // ⇒ no path node contributes an uncertainty ⇒ `path_uncertainties`
+            // ⇒ no path node contributes an uncertainty ⇒ `path_uncertainty_ids`
             // returns empty). So the O(chain) full-chain walk + union is skipped
             // for every CERTAIN cohort (the majority) — byte-identical, and the
             // dominant 8020 cost (3.2M→34,861 cohorts, but each still walked the
