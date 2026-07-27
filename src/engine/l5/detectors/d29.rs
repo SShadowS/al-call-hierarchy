@@ -221,7 +221,6 @@ fn emit(
                 "Either use Modify(false) to suppress trigger re-firing, perform the mutation \
                  on a fresh record loaded by primary key, or move the work outside the \
                  subscriber path."
-                    .to_string()
                     .into(),
             safety: "medium".into(),
         }],

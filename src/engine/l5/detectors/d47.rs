@@ -131,7 +131,6 @@ fn build_d47_finding(
                  side-effect without a corresponding DB record. If so, move the Commit() before \
                  the external IO, or ensure the IO is idempotent and the DB record is \
                  re-reconciled on retry."
-                    .to_string()
                     .into(),
             safety: "medium".into(),
         }]
@@ -141,7 +140,6 @@ fn build_d47_finding(
                 "Commit (or complete) the write transaction before making the external call, or \
                  move the external IO out of the transactional path entirely. Holding a write \
                  transaction open across a network call risks deadlocks and orphaned side effects."
-                    .to_string()
                     .into(),
             safety: "medium".into(),
         }]
@@ -323,7 +321,6 @@ fn build_d47_event_advisory_finding(
              Isolated=true ([IntegrationEvent(false, false, true)]) so subscribers run in a \
              separate transaction. Alternatively, move external IO out of the subscriber or \
              ensure it is idempotent."
-            .to_string()
             .into(),
         safety: "medium".into(),
     }];

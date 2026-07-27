@@ -143,16 +143,15 @@ pub fn detect_d54(
                 primary_location: anchor_of(&routine.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects: id_list(vec![
-                    routine.object_id.as_str().into(),
-                    publisher.object_id.clone(),
+                affected_objects: id_list([
+                    routine.object_id.as_str(),
+                    publisher.object_id.as_str(),
                 ]),
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Move the event publish outside the TryFunction boundary, or \
                                   document that subscriber errors are intentionally suppressed \
                                   on this path."
-                        .to_string()
                         .into(),
                     safety: "medium".into(),
                 }],

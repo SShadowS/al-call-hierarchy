@@ -250,7 +250,6 @@ fn emit_direct(
         fix_options: vec![FixOption {
             description: "Move the Commit outside the loop. If progress-saving is genuinely \
                           required, document a chunking strategy and consider a job queue."
-                .to_string()
                 .into(),
             safety: "medium".into(),
         }],
@@ -339,7 +338,6 @@ fn emit_transitive(
             description: "Verify the callee really needs to Commit. If the loop is correct as \
                           written, hoist the work that requires a Commit (or the Commit itself) \
                           outside the loop."
-                .to_string()
                 .into(),
             safety: "medium".into(),
         }],

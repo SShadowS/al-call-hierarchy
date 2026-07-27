@@ -141,7 +141,6 @@ fn build_d51_finding(
                  before the call, or ensure the external endpoint is idempotent. Alternatively, \
                  restructure the routine so errors are raised before the external call, or move \
                  the external call to an after-commit step."
-                    .to_string()
                     .into(),
             safety: "medium".into(),
         }],

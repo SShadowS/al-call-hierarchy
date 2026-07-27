@@ -157,7 +157,6 @@ pub fn detect_d10(
                 fix_options: vec![FixOption {
                     description: "Collect the keys first, then iterate a fresh recordset to \
                                   perform the modifications; or use ModifyAll with a filter."
-                        .to_string()
                         .into(),
                     safety: "medium".into(),
                 }],

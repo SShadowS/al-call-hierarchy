@@ -128,7 +128,6 @@ pub fn detect_d63(
                     description: "Encode interpolated values (replace <, >, &, \" before \
                                   splicing) or build the document with an XmlDocument/\
                                   template API instead of concatenation."
-                        .to_string()
                         .into(),
                     safety: "medium".into(),
                 }],

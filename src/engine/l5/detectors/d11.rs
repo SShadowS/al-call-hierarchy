@@ -162,7 +162,6 @@ pub fn detect_d11(
                     description:
                         "Load the record with Get / FindFirst before mutating, or pass it in \
                          as a var parameter from a caller that loaded it."
-                            .to_string()
                             .into(),
                     safety: "high".into(),
                 }],

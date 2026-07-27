@@ -111,7 +111,6 @@ pub fn detect_d19(
                         "Remove the parameter, or wire it into the procedure body. If callers \
                          must keep the existing signature, leave it and silence with an `_` \
                          prefix on the name."
-                            .to_string()
                             .into(),
                     safety: "low".into(),
                 }],

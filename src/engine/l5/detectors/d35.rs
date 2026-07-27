@@ -150,7 +150,6 @@ pub fn detect_d35(
                 description: "Remove the Commit from the subscriber path. If durable side effects \
                               are required, schedule them outside the publisher's transaction \
                               (e.g. a job-queue entry written without Commit, processed later)."
-                    .to_string()
                     .into(),
                 safety: "medium".into(),
             }],

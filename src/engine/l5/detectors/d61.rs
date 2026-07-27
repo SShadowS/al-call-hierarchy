@@ -241,16 +241,12 @@ pub fn detect_d61(
                         },
                     ],
                     additional_paths: None,
-                    affected_objects: id_list(vec![
-                        caller.object_id.as_str().into(),
-                        sub.object_id.clone(),
-                    ]),
+                    affected_objects: id_list([caller.object_id.as_str(), sub.object_id.as_str()]),
                     affected_tables: id_list(write.table_id.iter().cloned()),
                     fix_options: vec![FixOption {
                         description: "If the subscriber replaces the write, make it perform an \
                                       equivalent durable operation; otherwise restrict the \
                                       IsHandled contract to non-critical steps (split the event)."
-                            .to_string()
                             .into(),
                         safety: "low".into(),
                     }],

@@ -344,7 +344,6 @@ pub fn detect_d50(
                 description:
                     "If atomicity matters, avoid the checked Run mid-transaction or restructure \
                      so the posting completes before the implicit commit."
-                        .to_string()
                         .into(),
                 safety: "low".into(),
             }],

@@ -201,7 +201,6 @@ pub fn detect_d18(
                     description:
                         "Move the SetRange/SetFilter call outside the loop. The filter state \
                          persists across iterations until reset or cleared."
-                            .to_string()
                             .into(),
                     safety: "high".into(),
                 }],

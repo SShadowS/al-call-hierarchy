@@ -118,7 +118,6 @@ pub fn detect_d58(
                             fix_options: vec![FixOption {
                                 description: "Move the SetFilter/SetRange before Open(), or \
                                               Close() and re-Open() after changing filters."
-                                    .to_string()
                                     .into(),
                                 safety: "high".into(),
                             }],

@@ -217,7 +217,6 @@ pub fn detect_d4(
                         description:
                             "Move the lookup out of the loop into a local variable, then read \
                              fields from that variable inside the loop."
-                                .to_string()
                                 .into(),
                         safety: "high".into(),
                     }],

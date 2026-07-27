@@ -82,7 +82,6 @@ fn build_d49_finding(
             "Add a Commit() call before the window-opening UI call, or restructure the code so \
              the UI interaction happens outside the write transaction. Alternatively, consider \
              whether the write can be deferred until after the user interaction."
-                .to_string()
                 .into(),
         safety: "medium".into(),
     }];

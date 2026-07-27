@@ -260,7 +260,6 @@ pub fn detect_d7(
                 description:
                     "Break the cycle: either remove one of the event publishes from a subscriber, \
                      or gate the publish on a 'currently-processing' flag."
-                        .to_string()
                         .into(),
                 safety: "low".into(),
             }],

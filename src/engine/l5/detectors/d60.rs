@@ -204,7 +204,6 @@ pub fn detect_d60(
                     description: "Replace the loop with a DataTransfer (SourceTable/\
                                   DestinationTable + CopyFields/ConstantValue), or ModifyAll \
                                   when a single field gets a constant."
-                        .to_string()
                         .into(),
                     safety: "medium".into(),
                 }],

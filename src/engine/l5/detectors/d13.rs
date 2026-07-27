@@ -125,7 +125,6 @@ pub fn detect_d13(
                 fix_options: vec![FixOption {
                     description: "Use the dependency's public API instead, or request the routine \
                                   be promoted to Public upstream."
-                        .to_string()
                         .into(),
                     safety: "medium".into(),
                 }],

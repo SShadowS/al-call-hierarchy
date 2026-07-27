@@ -184,7 +184,6 @@ pub fn detect_d64(
                 description: "Declare the write surface explicitly: set InsertAllowed/\
                               ModifyAllowed/DeleteAllowed = false on read-only API pages \
                               (and Editable = false), or document the writable intent."
-                    .to_string()
                     .into(),
                 safety: "high".into(),
             }],

@@ -102,16 +102,12 @@ pub fn detect_d55(
                     },
                 ],
                 additional_paths: None,
-                affected_objects: id_list(vec![
-                    routine.object_id.as_str().into(),
-                    callee.object_id.clone(),
-                ]),
+                affected_objects: id_list([routine.object_id.as_str(), callee.object_id.as_str()]),
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Accumulate the per-row data and publish ONE event after the \
                                   loop (pass a collection/buffer), or document why per-row \
                                   dispatch is required."
-                        .to_string()
                         .into(),
                     safety: "medium".into(),
                 }],

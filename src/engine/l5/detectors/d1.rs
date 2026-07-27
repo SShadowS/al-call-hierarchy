@@ -571,7 +571,6 @@ fn build_finding(
             description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
                           typically O(1) after the first hit. Hoist the Get() outside the loop \
                           only if the call site shows up in a CPU profile."
-                .to_string()
                 .into(),
             safety: "high".into(),
         }]
@@ -579,7 +578,6 @@ fn build_finding(
         vec![FixOption {
             description: "Move the database operation outside the loop, or batch it into a \
                           set-based operation."
-                .to_string()
                 .into(),
             safety: "medium".into(),
         }]
@@ -1518,7 +1516,6 @@ fn build_group_finding(
             description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
                           typically O(1) after the first hit. Hoist the Get() outside the loop \
                           only if the call site shows up in a CPU profile."
-                .to_string()
                 .into(),
             safety: "high".into(),
         }]
@@ -1526,7 +1523,6 @@ fn build_group_finding(
         vec![FixOption {
             description: "Move the database operation outside the loop, or batch it into a \
                           set-based operation."
-                .to_string()
                 .into(),
             safety: "medium".into(),
         }]

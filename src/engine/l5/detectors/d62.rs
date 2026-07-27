@@ -304,7 +304,6 @@ pub fn detect_d62(
                 fix_options: vec![FixOption {
                     description: "Move LogUsage after the operation's success point (end of \
                                   the routine / after the final write)."
-                        .to_string()
                         .into(),
                     safety: "high".into(),
                 }],

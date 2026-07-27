@@ -104,7 +104,6 @@ pub fn detect_d12(
                 description:
                     "Either remove the event if it has no real extensibility purpose, or document \
                      why it exists for future subscribers."
-                        .to_string()
                         .into(),
                 safety: "medium".into(),
             }],

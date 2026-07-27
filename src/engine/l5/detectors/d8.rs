@@ -164,7 +164,6 @@ pub fn detect_d8(
             fix_options: vec![FixOption {
                 description: "Remove the Commit, or restructure so the surrounding transaction \
                               completes (returns control to its caller) before this code runs."
-                    .to_string()
                     .into(),
                 safety: "low".into(),
             }],

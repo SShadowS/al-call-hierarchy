@@ -113,7 +113,6 @@ pub fn detect_d20(
                     description:
                         "Remove the unreachable statement, or move the preceding exit / Error / \
                          Quit inside a conditional so the later code can run."
-                            .to_string()
                             .into(),
                     safety: "high".into(),
                 }],

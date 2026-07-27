@@ -158,7 +158,6 @@ pub fn detect_d21(
                     description:
                         "Load the record with Get / FindFirst before TestField/CalcFields, or \
                          pass it in as a var parameter from a caller that loaded it."
-                            .to_string()
                             .into(),
                     safety: "high".into(),
                 }],

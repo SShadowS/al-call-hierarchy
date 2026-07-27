@@ -233,7 +233,6 @@ pub fn detect_d14(
             fix_options: vec![FixOption {
                 description: "Remove the routine if truly unused, or wire it up to an entry \
                               point if intended to be invoked."
-                    .to_string()
                     .into(),
                 safety: "low".into(),
             }],
