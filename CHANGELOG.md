@@ -15,12 +15,21 @@ Measured on the 8020 corpus (100,941 routines). **Two probe shapes, never compar
 |---|---:|---:|
 | process peak (`peak_mb`, OS lifetime max) | 9,675 MB | **6,411 MB** (−33.7%) |
 | `detector.d1-db-op-in-loop` peak | 9,675 MB | **6,254 MB** |
-| wall | 310 s | **197 s** (−36%) |
+| wall | 310 s | **197 s** — see the qualifier below |
 
 | d1-only census probe (retained `DetectorOutput`) | base | final |
 |---|---:|---:|
 | retained bytes | 1,351.2 MiB | **195.0 MiB** (−85.6%) |
 | retained live allocations | 18,312,480 | **957,972** (−94.8%) |
+
+**The wall figure needs its qualifier.** `docs/OUTSTANDING.md` records that these
+detached 8020 runs swing **±80 s** for this corpus and probe, so a −113 s headline is
+not robust on its own. Roughly **48 s** is traceable to d1 spans in same-run traces
+(`detector.d1` 67.65 → 25.90 s; `assemble_cohort_findings` 6.27 → 1.59 s); the remainder
+is second-order (allocator and page pressure from a 3.3 GB lower peak), unattributed,
+and larger than d1's entire base cost of 67.6 s — so it cannot all be d1's own work.
+Treat **≥48 s** as the supported claim. The memory figures (census bytes, `peak_mb`)
+carry no such caveat.
 
 Three changes, all representation and ownership only — same uncertainties, same
 witnesses, same findings, byte-identical output at every step: cohort uncertainties
