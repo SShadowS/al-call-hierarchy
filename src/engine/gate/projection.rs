@@ -137,6 +137,7 @@ mod tests {
     use crate::engine::l5::finding::{
         D1CohortContext, EvidenceStep, FindingConfidence, SourceAnchor,
     };
+    use std::sync::Arc;
 
     fn anchor() -> SourceAnchor {
         SourceAnchor {
@@ -175,10 +176,10 @@ mod tests {
             loop_count: 1,
             witness: WitnessSummary {
                 total_hops: 0,
-                first_steps: vec![step()],
+                first_steps: vec![Arc::new(step())],
                 omitted_hops: 0,
                 last_steps: vec![],
-                terminal_step: step(),
+                terminal_step: Arc::new(step()),
             },
         }
     }

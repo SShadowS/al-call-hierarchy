@@ -174,6 +174,7 @@ mod tests {
     fn cohort_bearing_finding_anchors_through_the_witness() {
         use crate::engine::l5::d1_witness::WitnessSummary;
         use crate::engine::l5::finding::D1CohortContext;
+        use std::sync::Arc;
 
         let mut f = finding("r_dep", vec![]);
         f.cohort_contexts = Some(vec![D1CohortContext {
@@ -186,10 +187,10 @@ mod tests {
             loop_count: 1,
             witness: WitnessSummary {
                 total_hops: 1,
-                first_steps: vec![step("ws:dep2.al", "r_dep2")],
+                first_steps: vec![Arc::new(step("ws:dep2.al", "r_dep2"))],
                 omitted_hops: 0,
-                last_steps: vec![step("ws:pri.al", "r_pri")],
-                terminal_step: step("ws:term.al", "r_dep"),
+                last_steps: vec![Arc::new(step("ws:pri.al", "r_pri"))],
+                terminal_step: Arc::new(step("ws:term.al", "r_dep")),
             },
         }]);
 

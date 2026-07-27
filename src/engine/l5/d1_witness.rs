@@ -38,6 +38,8 @@
 //! derivation of those two fields.
 #![allow(dead_code)]
 
+use std::sync::Arc;
+
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l5::d1_dataflow::{
     BatchSolver, collect_reach_chain_b_bounded, collect_value_chain_b_bounded,
@@ -61,13 +63,28 @@ use crate::engine::l5::finding::EvidenceStep;
 /// Derives `Debug`/`Clone`/`PartialEq`/`Eq` (Task C4) so it can be embedded in
 /// [`crate::engine::l5::finding::D1CohortContext`], which follows `finding.rs`'s
 /// internal-type convention of deriving that same set.
+///
+/// ## Why the steps are `Arc<EvidenceStep>`
+/// A witness is the largest thing a cohort retains, and cohorts repeat their
+/// steps heavily: on Base App 8020 the 36,228 retained cohort witnesses hold
+/// **172,915 steps over 40,325 distinct values** — a **4.29x** sharing factor.
+/// Every cohort of one terminal repeats that terminal's step; every cohort
+/// seeded from one loop repeats its loop and call steps; every cohort crossing
+/// one graph edge repeats that hop step. As owned `Vec<EvidenceStep>` that was
+/// 95.5 MiB in 1,097,185 allocations (18.3% of everything d1 retains). Sharing
+/// one allocation per DISTINCT step — via [`StepInterner`], applied where the
+/// findings take their copy — costs an 8-byte slot per step instead of 280 bytes
+/// plus ~6 string allocations.
+///
+/// `PartialEq`/`Eq` on `Arc<T>` compare the POINTEES, so witness equality is
+/// unchanged by the handles, and `Clone` became a refcount bump.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessSummary {
     pub total_hops: u32,
     /// `[loop_step, call_step]` — ALWAYS exactly these two steps (Task C8: no
     /// hop steps live here any more, since materializing them would require
     /// walking forward from the seed, an O(total_hops) walk).
-    pub first_steps: Vec<EvidenceStep>,
+    pub first_steps: Vec<Arc<EvidenceStep>>,
     /// Hops skipped between the call step and `last_steps`' window.
     /// `total_hops.saturating_sub(m_last)` — `0` when the whole chain fits
     /// within `last_steps` (`total_hops <= m_last`, the shallow case).
@@ -75,8 +92,57 @@ pub struct WitnessSummary {
     /// Up to `m_last` hop steps immediately preceding the terminal, in
     /// seed->terminal order. Holds the WHOLE chain in the shallow case
     /// (`total_hops <= m_last`).
-    pub last_steps: Vec<EvidenceStep>,
-    pub terminal_step: EvidenceStep,
+    pub last_steps: Vec<Arc<EvidenceStep>>,
+    pub terminal_step: Arc<EvidenceStep>,
+}
+
+/// Hash-cons for [`EvidenceStep`]: hand back ONE `Arc` per distinct step value.
+///
+/// Scoped to a single d1 assembly pass and dropped with it, so the only thing it
+/// leaves behind is the sharing itself. Applied at the point the findings take
+/// their copy of a cohort's witness (`assemble_cohort_findings`), which is where
+/// the retention actually happens — the sink's own copies are transient and are
+/// freed with the run.
+///
+/// Correctness rests on `EvidenceStep`'s derived `Eq`/`Hash` agreeing, which they
+/// do by construction (both derived over the same fields). Two steps that intern
+/// to the same `Arc` were byte-equal, so nothing downstream can distinguish them:
+/// `PartialEq` on `Arc` compares pointees and every reader derefs.
+#[derive(Default)]
+pub(crate) struct StepInterner {
+    seen: std::collections::HashSet<Arc<EvidenceStep>>,
+}
+
+impl StepInterner {
+    /// The shared handle for `s` — an existing one when an equal step has been
+    /// seen, otherwise a fresh allocation this interner now owns a reference to.
+    pub(crate) fn intern(&mut self, s: &EvidenceStep) -> Arc<EvidenceStep> {
+        if let Some(existing) = self.seen.get(s) {
+            return Arc::clone(existing);
+        }
+        let fresh: Arc<EvidenceStep> = Arc::new(s.clone());
+        self.seen.insert(Arc::clone(&fresh));
+        fresh
+    }
+
+    /// `w` with every step replaced by its shared handle. Value-identical to `w`
+    /// (`WitnessSummary`'s `PartialEq` compares pointees), representation-shared.
+    pub(crate) fn intern_witness(&mut self, w: &WitnessSummary) -> WitnessSummary {
+        WitnessSummary {
+            total_hops: w.total_hops,
+            first_steps: w.first_steps.iter().map(|s| self.intern(s)).collect(),
+            omitted_hops: w.omitted_hops,
+            last_steps: w.last_steps.iter().map(|s| self.intern(s)).collect(),
+            terminal_step: self.intern(&w.terminal_step),
+        }
+    }
+
+    /// The number of DISTINCT steps interned so far (the census's
+    /// "distinct whole steps"). Test/diagnostic only.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.seen.len()
+    }
 }
 
 /// Build the representative witness for a DIRECT in-loop db op (old branch (a)):
@@ -100,10 +166,10 @@ pub(crate) fn direct_witness(
     );
     WitnessSummary {
         total_hops: 0,
-        first_steps: vec![loop_step],
+        first_steps: vec![Arc::new(loop_step)],
         omitted_hops: 0,
         last_steps: vec![],
-        terminal_step: op_step,
+        terminal_step: Arc::new(op_step),
     }
 }
 
@@ -114,11 +180,14 @@ pub(crate) fn direct_witness(
 /// hops) this reproduces the OLD full `evidence_path` BYTE-FOR-BYTE; for a
 /// deeper path it is the bounded representative (`[loop_step, call_step]` +
 /// suffix + terminal), the approved compression.
+/// Returns OWNED steps (the shared handles are materialised out) because every
+/// consumer wants a plain path it can read or project; the result is a
+/// short-lived derivation, not something the run retains.
 pub(crate) fn flatten_witness(w: &WitnessSummary) -> Vec<EvidenceStep> {
     let mut out = Vec::with_capacity(w.first_steps.len() + w.last_steps.len() + 1);
-    out.extend(w.first_steps.iter().cloned());
-    out.extend(w.last_steps.iter().cloned());
-    out.push(w.terminal_step.clone());
+    out.extend(w.first_steps.iter().map(|s| (**s).clone()));
+    out.extend(w.last_steps.iter().map(|s| (**s).clone()));
+    out.push((*w.terminal_step).clone());
     out
 }
 
@@ -272,14 +341,14 @@ pub(crate) fn representative_witness<'a>(
 
     // ALWAYS exactly [loop_step, call_step] — Task C8 dropped the first-K
     // prefix, which required a forward-from-seed walk to materialize.
-    let first_steps: Vec<EvidenceStep> = vec![
-        loop_step_ev(seed.loop_routine, seed.loop_info),
-        call_step_ev(seed, graph, ctx),
+    let first_steps: Vec<Arc<EvidenceStep>> = vec![
+        Arc::new(loop_step_ev(seed.loop_routine, seed.loop_info)),
+        Arc::new(call_step_ev(seed, graph, ctx)),
     ];
 
-    let last_steps: Vec<EvidenceStep> = hops_terminal_to_seed
+    let last_steps: Vec<Arc<EvidenceStep>> = hops_terminal_to_seed
         .iter()
-        .map(|&(from_node, edge_k)| render_hop(graph, ctx, from_node, edge_k))
+        .map(|&(from_node, edge_k)| Arc::new(render_hop(graph, ctx, from_node, edge_k)))
         .collect();
 
     let terminal_ev = terminal_step(
@@ -294,7 +363,7 @@ pub(crate) fn representative_witness<'a>(
         first_steps,
         omitted_hops,
         last_steps,
-        terminal_step: terminal_ev,
+        terminal_step: Arc::new(terminal_ev),
     }
 }
 
@@ -551,6 +620,58 @@ mod tests {
                 &w.terminal_step.routine_id,
             );
         }
+    }
+
+    /// `StepInterner`'s own contract, independent of d1: equal steps collapse to
+    /// ONE allocation, unequal steps do not, and `intern_witness` preserves the
+    /// witness VALUE while sharing its steps. The d1-level use is pinned by
+    /// `d1::assembly_tests::cohort_witness_steps_are_shared`.
+    #[test]
+    fn step_interner_shares_equal_steps_only() {
+        fn s(routine: &str, note: &str) -> EvidenceStep {
+            EvidenceStep {
+                routine_id: routine.to_string(),
+                operation_id: None,
+                callsite_id: None,
+                loop_id: None,
+                source_anchor: crate::engine::l5::finding::SourceAnchor {
+                    source_unit_id: "ws:t.al".to_string(),
+                    start_line: 1,
+                    start_column: 0,
+                    end_line: 1,
+                    end_column: 9,
+                    enclosing_routine_id: routine.to_string(),
+                    syntax_kind: "call".to_string(),
+                    normalized_text_hash: None,
+                    leading_context_hash: None,
+                    trailing_context_hash: None,
+                },
+                note: note.to_string(),
+            }
+        }
+
+        let mut i = StepInterner::default();
+        let a = i.intern(&s("R", "calls A"));
+        let b = i.intern(&s("R", "calls A"));
+        let c = i.intern(&s("R", "calls B"));
+        assert!(Arc::ptr_eq(&a, &b), "equal steps share one allocation");
+        assert!(!Arc::ptr_eq(&a, &c), "unequal steps must NOT be collapsed");
+        assert_eq!(&*c.note, "calls B", "…and keep their own value");
+        assert_eq!(i.len(), 2, "two distinct steps interned, not three");
+
+        // A witness interns to an EQUAL witness whose steps are the shared ones.
+        let w = WitnessSummary {
+            total_hops: 1,
+            first_steps: vec![Arc::new(s("R", "calls A")), Arc::new(s("R", "calls B"))],
+            omitted_hops: 0,
+            last_steps: vec![],
+            terminal_step: Arc::new(s("T", "Modify")),
+        };
+        let shared = i.intern_witness(&w);
+        assert_eq!(shared, w, "interning is value-preserving");
+        assert!(Arc::ptr_eq(&shared.first_steps[0], &a));
+        assert!(Arc::ptr_eq(&shared.first_steps[1], &c));
+        assert_eq!(i.len(), 3, "only the terminal step was new");
     }
 
     // === Deep fixture: hops > M — last-M + omitted, first_steps is just the

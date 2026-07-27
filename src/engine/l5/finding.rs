@@ -111,7 +111,10 @@ pub struct FindingConfidence {
 
 /// `SourceAnchor` (`model/identity.ts`) — INTERNAL form. `enclosing_routine_id` is
 /// an internal RoutineId; the projection maps it to stable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Hash` is derived (alongside the file's usual `Debug/Clone/PartialEq/Eq`) so
+/// [`EvidenceStep`] can be hash-consed — see that type's doc.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SourceAnchor {
     pub source_unit_id: String,
     pub start_line: u32,
@@ -126,7 +129,16 @@ pub struct SourceAnchor {
 }
 
 /// `EvidenceStep` (`model/finding.ts`) — INTERNAL form.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Hash` is derived so d1's cohort witnesses can be HASH-CONSED: a run's
+/// retained witness steps repeat heavily (172,915 steps over 40,325 distinct
+/// values on Base App 8020 — a 4.29x sharing factor, because every cohort of the
+/// same terminal repeats its terminal step, every cohort seeded from the same
+/// loop repeats its loop and call steps, and every cohort crossing the same
+/// graph edge repeats that hop step). `Eq`/`Hash` agree by construction (both
+/// derived over the same fields), which is what the interner's correctness rests
+/// on. See [`crate::engine::l5::d1_witness::StepInterner`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EvidenceStep {
     pub routine_id: String,
     pub operation_id: Option<String>,
@@ -1242,10 +1254,13 @@ mod tests {
     fn dummy_witness() -> WitnessSummary {
         WitnessSummary {
             total_hops: 1,
-            first_steps: vec![dummy_step("Loop", "loop"), dummy_step("Loop", "call")],
+            first_steps: vec![
+                Arc::new(dummy_step("Loop", "loop")),
+                Arc::new(dummy_step("Loop", "call")),
+            ],
             omitted_hops: 0,
             last_steps: vec![],
-            terminal_step: dummy_step("Term", "terminal"),
+            terminal_step: Arc::new(dummy_step("Term", "terminal")),
         }
     }
 

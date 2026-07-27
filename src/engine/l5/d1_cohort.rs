@@ -985,10 +985,10 @@ mod tests {
         CohortRep {
             witness: WitnessSummary {
                 total_hops: 0,
-                first_steps: vec![step.clone()],
+                first_steps: vec![std::sync::Arc::new(step.clone())],
                 omitted_hops: 0,
                 last_steps: vec![],
-                terminal_step: step,
+                terminal_step: std::sync::Arc::new(step),
             },
             uncertainties: vec![],
         }

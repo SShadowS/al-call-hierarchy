@@ -62,6 +62,7 @@ use crate::engine::l5::d1_graph::build_d1_graph;
 use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
 #[cfg(test)]
 use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
+use crate::engine::l5::d1_witness::StepInterner;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
@@ -1637,6 +1638,11 @@ fn assemble_cohort_findings(
     role_by_routine: &HashMap<&str, &str>,
 ) -> (Vec<Finding>, LoopSetRegistry) {
     let mut registry = LoopSetRegistry::new();
+    // Hash-cons for the witness steps the findings are about to RETAIN. The sink's
+    // copies are transient (freed with the run); these are not, and they repeat
+    // 4.29x across cohorts on Base App 8020. Local, so it is dropped with this
+    // call and leaves only the sharing behind. See `d1_witness::StepInterner`.
+    let mut steps = StepInterner::default();
     let mut out: Vec<Finding> = Vec::new();
 
     // Iterate terminals in a DETERMINISTIC key order so the run-level loop-set
@@ -1745,7 +1751,9 @@ fn assemble_cohort_findings(
                         reachable_verdicts: rv_labels,
                         loop_set: LoopSetId(0), // placeholder — assigned after the sort
                         loop_count,
-                        witness: rep.witness.clone(),
+                        // Value-identical to `rep.witness`; every step is the
+                        // run's ONE allocation for that step value.
+                        witness: steps.intern_witness(&rep.witness),
                     },
                 ));
             }
@@ -3873,6 +3881,75 @@ mod assembly_tests {
             .push(edge_kind("Y", "U", "Y/csU", "direct"));
         summaries.insert("U".to_string(), db_read_summary("U", "t/U"));
         (routines, edges, summaries)
+    }
+
+    /// **Pins the SHARED-witness-step representation at the use site.** A run's
+    /// retained cohort witnesses repeat their steps 4.29x on Base App 8020
+    /// (172,915 steps, 40,325 distinct), and `assemble_cohort_findings`
+    /// hash-conses them through a `StepInterner` so each distinct step is ONE
+    /// allocation. Equality alone cannot see that: a version that cloned per
+    /// cohort produces byte-identical output and costs 71 MiB more.
+    ///
+    /// Two independent shares are asserted, both through the real
+    /// `search_loops_cohorts` + `assemble_cohort_findings`:
+    ///
+    /// - ACROSS findings — `shared_uncertainty_two_terminals_fixture` reaches two
+    ///   terminals (two findings) from the SAME loop, so both findings' witnesses
+    ///   open with the same loop step. This is the strongest form: the sharing
+    ///   survives per-finding assembly rather than being an artifact of one call.
+    /// - WITHIN a finding — `severity_race_fixture` reaches ONE terminal from two
+    ///   loops of different severity, so the finding's two cohorts carry the same
+    ///   terminal step.
+    ///
+    /// Each `assert_eq!` on the step VALUE runs before its `ptr_eq`, so a real
+    /// divergence fails legibly instead of as an opaque pointer mismatch.
+    /// Replacing `steps.intern_witness(&rep.witness)` with `rep.witness.clone()`
+    /// turns this red and nothing else.
+    #[test]
+    fn cohort_witness_steps_are_shared() {
+        // --- across two findings, one shared loop ---
+        let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 2, "two terminals -> two findings");
+        let loop_steps: Vec<&std::sync::Arc<EvidenceStep>> = findings
+            .iter()
+            .map(|f| {
+                &f.cohort_contexts
+                    .as_ref()
+                    .expect("d1 emits cohort_contexts")[0]
+                    .witness
+                    .first_steps[0]
+            })
+            .collect();
+        assert_eq!(
+            loop_steps[0], loop_steps[1],
+            "both findings are reached from the same loop, so the loop step is equal"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(loop_steps[0], loop_steps[1]),
+            "…and must be ONE hash-consed allocation, not two equal copies"
+        );
+
+        // --- within one finding, two cohorts of one terminal ---
+        let (routines, edges, summaries) = severity_race_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 1);
+        let cohorts = findings[0]
+            .cohort_contexts
+            .as_ref()
+            .expect("d1 emits cohort_contexts");
+        assert!(cohorts.len() >= 2, "the fixture must produce >1 cohort");
+        assert_eq!(
+            cohorts[0].witness.terminal_step, cohorts[1].witness.terminal_step,
+            "every cohort of one terminal ends on the same terminal step"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(
+                &cohorts[0].witness.terminal_step,
+                &cohorts[1].witness.terminal_step
+            ),
+            "…and must be ONE hash-consed allocation"
+        );
     }
 
     /// **Pins the SHARED-note representation at the use site.** Every
