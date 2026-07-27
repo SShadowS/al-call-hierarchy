@@ -3877,9 +3877,9 @@ mod assembly_tests {
     }
 
     /// **Pins the SHARED-note representation at the use site.** Every
-    /// `Finding.confidence.evidence` record is an `Evidence` whose `note` is an
-    /// `Arc<str>` cloned from the run-level `UncertaintyTable` — one allocation
-    /// per DISTINCT uncertainty rather than one per record. That is the entire
+    /// `Finding.confidence.evidence` record is a `ConfidenceEvidence` whose
+    /// `note` is an `Arc<str>` cloned from the run-level `UncertaintyTable` — one
+    /// allocation per DISTINCT uncertainty rather than one per record. That is the entire
     /// memory claim of this change (7,418,849 records, 3,073 distinct notes on
     /// Base App 8020), and equality alone cannot see it: a version that rebuilt
     /// the string per record would still produce equal notes and identical
@@ -3913,7 +3913,6 @@ mod assembly_tests {
                     1,
                     "each winner path crosses Y exactly once"
                 );
-                assert_eq!(f.confidence.evidence[0].source, "tree-sitter");
                 f.confidence.evidence[0]
                     .note
                     .as_ref()

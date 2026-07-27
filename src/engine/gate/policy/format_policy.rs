@@ -82,7 +82,13 @@ fn finding_to_jv(f: &Finding) -> Jv {
                     .evidence
                     .iter()
                     .map(|e| {
-                        let mut p = vec![("source".to_string(), Jv::s(e.source))];
+                        // `source` is not stored on a `ConfidenceEvidence` — it is
+                        // the one engine-wide constant, re-materialised here
+                        // exactly as the R4 projection does.
+                        let mut p = vec![(
+                            "source".to_string(),
+                            Jv::s(crate::engine::l5::finding::EVIDENCE_SOURCE),
+                        )];
                         if let Some(n) = &e.note {
                             p.push(("note".to_string(), Jv::s(n)));
                         }

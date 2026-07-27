@@ -23,7 +23,9 @@
 //!
 //! Output is sorted by canonical finding `id` (`compareStrings`).
 
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence};
+use crate::engine::l5::finding::{
+    ConfidenceEvidence, EVIDENCE_SOURCE, EvidenceStep, Finding, FindingConfidence,
+};
 
 /// al-sem `compareStrings(a, b)`: `a < b ? -1 : a > b ? 1 : 0`. For `&str` this
 /// is exactly `Ord::cmp` (lexicographic by Unicode scalar value, matching JS
@@ -121,7 +123,7 @@ fn merge_confidence(group: &[Finding]) -> FindingConfidence {
     let mut best_level = "possible".to_string();
     let mut capped: Vec<String> = Vec::new();
     let mut capped_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut evidence: Vec<Evidence> = Vec::new();
+    let mut evidence: Vec<ConfidenceEvidence> = Vec::new();
     let mut evidence_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for f in group {
         if conf_rank(&f.confidence.level) > conf_rank(&best_level) {
@@ -136,8 +138,16 @@ fn merge_confidence(group: &[Finding]) -> FindingConfidence {
         }
         for e in &f.confidence.evidence {
             // al-sem keys evidence by JSON.stringify({source, note?}); replicate
-            // with a stable composite of the two fields.
-            let key = format!("{}\u{0}{}", e.source, e.note.as_deref().unwrap_or("\u{1}"));
+            // with a stable composite of the two fields. `source` is no longer
+            // STORED on a `ConfidenceEvidence` (it is the one engine-wide
+            // constant — see that type's doc), but it is still what the record
+            // projects with, so the key is composed from `EVIDENCE_SOURCE` and
+            // stays the byte-identical string it was when the field existed.
+            let key = format!(
+                "{}\u{0}{}",
+                EVIDENCE_SOURCE,
+                e.note.as_deref().unwrap_or("\u{1}")
+            );
             if evidence_seen.insert(key) {
                 evidence.push(e.clone());
             }

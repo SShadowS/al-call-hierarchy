@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use crate::engine::l4::summary::{Uncertainty, uncertainty_at};
-use crate::engine::l5::finding::{Evidence, FindingConfidence};
+use crate::engine::l5::finding::{ConfidenceEvidence, FindingConfidence};
 
 /// The `Uncertainty` kinds that are also valid `cappedBy` values
 /// (`VALID_CAPPED_BY` in confidence.ts).
@@ -37,13 +37,24 @@ const VALID_CAPPED_BY: &[&str] = &[
 /// costs two refcount bumps and no allocation. The four low-volume producers
 /// (d2/d3/d46/d48) call [`Self::new`] per record, which is one allocation
 /// *fewer* than the `{kind: String, at: String}` pair it replaces.
+///
+/// **Both fields are PRIVATE, and that is load-bearing rather than tidiness.**
+/// Before the note existed as a field, [`to_confidence`] derived it with a
+/// single `format!`, so no caller could produce a note that did not have the
+/// `"<kind> at <id>"` shape — the invariant was structural. Moving the `format!`
+/// up to [`Self::new`] kept the single production site but would, with a `pub`
+/// field, let any caller write `UncertaintyLite { note: <anything> }` and have
+/// that text flow unmodified into `ConfidenceEvidence.note` → `StableEvidence`
+/// → every golden. Keeping the fields private restores the guarantee: the two
+/// constructors below are the only way to obtain one, so the format is again
+/// enforced by the type rather than by a comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UncertaintyLite {
-    pub kind: Arc<str>,
+    kind: Arc<str>,
     /// The evidence note text, `"<kind> at <id>"` — the exact `String` that
     /// reaches `StableEvidence.note`, built once per distinct uncertainty and
-    /// shared by every [`Evidence`] this uncertainty produces.
-    pub note: Arc<str>,
+    /// shared by every [`ConfidenceEvidence`] this uncertainty produces.
+    note: Arc<str>,
 }
 
 impl UncertaintyLite {
@@ -67,6 +78,19 @@ impl UncertaintyLite {
     /// [`crate::engine::l4::summary::uncertainty_key`] de-dups by.
     pub fn of(u: &Uncertainty) -> Self {
         Self::new(&u.kind, uncertainty_at(u))
+    }
+
+    /// The uncertainty's `kind` — read by [`to_confidence`] for the `cappedBy`
+    /// mapping. An accessor rather than a `pub` field so the note-format
+    /// invariant above stays structural.
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    /// The materialised evidence note. Read by [`to_confidence`] only, which
+    /// clones the handle into every record it emits.
+    pub fn note(&self) -> &Arc<str> {
+        &self.note
     }
 }
 
@@ -117,7 +141,7 @@ pub fn to_confidence(uncertainties: &[UncertaintyLite], base_level: &str) -> Fin
     let mut capped_by_set: std::collections::BTreeSet<&'static str> =
         std::collections::BTreeSet::new();
     for u in uncertainties {
-        if let Some(mapped) = to_capped_by_kind(&u.kind) {
+        if let Some(mapped) = to_capped_by_kind(u.kind()) {
             capped_by_set.insert(mapped);
         }
     }
@@ -128,13 +152,13 @@ pub fn to_confidence(uncertainties: &[UncertaintyLite], base_level: &str) -> Fin
     };
 
     // Each record shares the uncertainty's already-materialised note: one
-    // refcount bump, no allocation. See [`Evidence`]'s doc for why that matters
-    // at 7.4M records.
+    // refcount bump, no allocation, and no stored `source` (there is one source
+    // value in the engine and the projection re-materialises it). See
+    // [`ConfidenceEvidence`]'s doc for why both matter at 7.4M records.
     let evidence = uncertainties
         .iter()
-        .map(|u| Evidence {
-            source: "tree-sitter",
-            note: Some(Arc::clone(&u.note)),
+        .map(|u| ConfidenceEvidence {
+            note: Some(Arc::clone(u.note())),
         })
         .collect();
 
@@ -220,8 +244,22 @@ mod tests {
                 .split_once('|')
                 .map(|(k, at)| (k.to_string(), at.to_string()))
                 .expect("uncertainty_key is kind|at");
-            assert_eq!(&*lite.kind, k);
-            assert_eq!(&*lite.note, format!("{k} at {at}"));
+            assert_eq!(lite.kind(), k);
+            assert_eq!(&**lite.note(), format!("{k} at {at}"));
         }
+    }
+
+    /// `ConfidenceEvidence` is the 7.4M-record type; every word of it is 56.6 MiB
+    /// of live heap on Base App 8020. This pins the representation the saving
+    /// rests on — two words, i.e. an `Option<Arc<str>>` and NOTHING else. A
+    /// future edit that puts a `source` (or any other field) back fails here
+    /// rather than silently costing 113 MiB.
+    #[test]
+    fn confidence_evidence_stays_two_words_wide() {
+        assert_eq!(
+            std::mem::size_of::<ConfidenceEvidence>(),
+            2 * std::mem::size_of::<usize>(),
+            "ConfidenceEvidence must stay just an Option<Arc<str>> — see its doc"
+        );
     }
 }

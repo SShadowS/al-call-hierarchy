@@ -33,33 +33,64 @@ use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detect
 // with internal ids, then the projection consumes it.
 // ===========================================================================
 
-/// `Evidence` (`model/graph.ts`): `{ source, note? }`.
+/// The `source` marker every piece of evidence this engine produces carries.
+///
+/// al-sem's `Evidence` models `source` as free text because its evidence could
+/// come from more than one analyzer. In THIS engine there is exactly one
+/// analyzer, and every one of the 64 [`Evidence`] construction sites stamps this
+/// same compile-time literal — which the census confirms empirically:
+/// `distinct source = 1` over all 7,418,849 confidence-evidence records on Base
+/// App 8020. [`ConfidenceEvidence`] therefore does not STORE it; the projection
+/// re-materialises it here, once per projected record.
+pub const EVIDENCE_SOURCE: &str = "tree-sitter";
+
+/// `Evidence` (`model/graph.ts`): `{ source, note? }` — the **provenance** form,
+/// which keeps its `source` field.
 ///
 /// Both fields are cheap, SHARED handles rather than owned text — deliberately,
-/// and measured. On Base App 8020 (2026-07-27, heap census over the retained
-/// `DetectorOutput`) `d1` holds **7,418,849** of these for the whole run, and
-/// between them they carry **one** distinct `source` and **3,073** distinct
-/// `note`s: as `{String, Option<String>}` that was 48 B of struct plus 14.84M
-/// heap allocations holding 715 MB of 2,395x-duplicated text — 78% of the
-/// retained findings' bytes, and the largest single item in `d1`'s memory
-/// profile after the cohort-union interning.
-///
-/// `source` is `&'static str` because every producer in this engine stamps a
-/// compile-time marker (today, only `"tree-sitter"`; 64 sites). `note` is
-/// `Option<Arc<str>>` because the only producer that sets one
-/// ([`crate::engine::l5::confidence::to_confidence`]) draws it from a table of
-/// distinct uncertainties, so the text is allocated once per distinct value and
-/// every record clones the handle.
+/// and measured. `source` is `&'static str` because every producer in this
+/// engine stamps a compile-time marker (today, only [`EVIDENCE_SOURCE`]; 64
+/// sites). `note` is `Option<Arc<str>>` so a producer that DOES set one pays for
+/// the text once rather than once per record.
 ///
 /// **This is representation only — the bytes reaching the output are
 /// unchanged.** [`StableEvidence`] materialises `source`/`note` with
 /// `to_string`, so the projected `String`s are byte-for-byte the ones the
-/// producer built; `stable_evidence_materialises_the_identical_strings` states
-/// exactly that, and `tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`
-/// byte-compares the end-to-end result.
+/// producer built.
+///
+/// The high-volume `FindingConfidence.evidence` list uses the narrower
+/// [`ConfidenceEvidence`] instead — see its doc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Evidence {
     pub source: &'static str,
+    pub note: Option<Arc<str>>,
+}
+
+/// One `FindingConfidence.evidence` record: the uncertainty NOTE, and nothing
+/// else. Projects to the same `{source, note?}` [`StableEvidence`] shape
+/// [`Evidence`] does, with `source` supplied from [`EVIDENCE_SOURCE`].
+///
+/// **Why this is a separate, narrower type.** On Base App 8020 (2026-07-27, heap
+/// census over the retained `DetectorOutput`) `d1` holds **7,418,849** of these
+/// for the whole run — 43.6% of everything `d1` retains, and the largest single
+/// item left in its memory profile. Each `source` word therefore costs
+/// `7,418,849 × 8 B = 56.6 MiB` of live heap, and `Evidence`'s `&'static str`
+/// source is TWO words. Dropping it takes the record from 32 B to **16 B**:
+/// −113.2 MiB with no information lost, because there is only one source value
+/// in the engine and it is a compile-time constant the compiler already proves
+/// (the field was `&'static str`, and the census measures `distinct source = 1`).
+///
+/// The modelling cost is stated plainly: `FindingConfidence.evidence` can no
+/// longer carry a per-record source while `provenance` still can. That is real
+/// but narrow — [`crate::engine::l5::confidence::to_confidence`] is the ONLY
+/// producer of a confidence-evidence record anywhere in the engine (every other
+/// `FindingConfidence` construction site builds an empty vec), and it stamps
+/// [`EVIDENCE_SOURCE`] unconditionally.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfidenceEvidence {
+    /// The evidence note, `"<kind> at <id>"`, shared with every other record
+    /// drawn from the same distinct uncertainty (3,073 allocations backing
+    /// 7,418,849 records on 8020).
     pub note: Option<Arc<str>>,
 }
 
@@ -75,7 +106,7 @@ pub struct FixOption {
 pub struct FindingConfidence {
     pub level: String,
     pub capped_by: Option<Vec<String>>,
-    pub evidence: Vec<Evidence>,
+    pub evidence: Vec<ConfidenceEvidence>,
 }
 
 /// `SourceAnchor` (`model/identity.ts`) — INTERNAL form. `enclosing_routine_id` is
@@ -583,6 +614,19 @@ fn project_evidence(e: &Evidence) -> StableEvidence {
     }
 }
 
+/// Materialise a [`ConfidenceEvidence`] into the same `{source, note?}`
+/// [`StableEvidence`] a provenance [`Evidence`] projects to. `source` is
+/// [`EVIDENCE_SOURCE`] — the ONE value the field could hold when it was stored
+/// (see [`ConfidenceEvidence`]'s doc), so this widening emits byte-for-byte the
+/// `String` the stored `&'static str` produced. `note` is the same pure widening
+/// as [`project_evidence`]'s.
+fn project_confidence_evidence(e: &ConfidenceEvidence) -> StableEvidence {
+    StableEvidence {
+        source: EVIDENCE_SOURCE.to_string(),
+        note: e.note.as_deref().map(str::to_string),
+    }
+}
+
 fn project_loop_context(c: &LoopContext, map: &HashMap<String, String>) -> StableLoopContext {
     StableLoopContext {
         loop_id: map_sub_id(&c.loop_id, map),
@@ -594,7 +638,12 @@ fn project_loop_context(c: &LoopContext, map: &HashMap<String, String>) -> Stabl
         severity: c.severity.clone(),
         confidence: StableConfidence {
             level: c.confidence.level.clone(),
-            evidence: c.confidence.evidence.iter().map(project_evidence).collect(),
+            evidence: c
+                .confidence
+                .evidence
+                .iter()
+                .map(project_confidence_evidence)
+                .collect(),
             capped_by: c.confidence.capped_by.clone(),
         },
         witness: c
@@ -713,7 +762,12 @@ fn project_finding(
         severity: f.severity.clone(),
         confidence: StableConfidence {
             level: f.confidence.level.clone(),
-            evidence: f.confidence.evidence.iter().map(project_evidence).collect(),
+            evidence: f
+                .confidence
+                .evidence
+                .iter()
+                .map(project_confidence_evidence)
+                .collect(),
             capped_by: f.confidence.capped_by.clone(),
         },
         primary_location: project_anchor(&f.primary_location, map),
@@ -962,7 +1016,7 @@ mod tests {
             let c = to_confidence(&[UncertaintyLite::new(kind, at)], "likely");
             assert_eq!(c.evidence.len(), 1);
             assert_eq!(
-                project_evidence(&c.evidence[0]),
+                project_confidence_evidence(&c.evidence[0]),
                 StableEvidence {
                     source: "tree-sitter".to_string(),
                     note: Some(format!("{kind} at {at}")),
@@ -1002,7 +1056,7 @@ mod tests {
         );
         let stable = StableConfidence {
             level: c.level.clone(),
-            evidence: c.evidence.iter().map(project_evidence).collect(),
+            evidence: c.evidence.iter().map(project_confidence_evidence).collect(),
             capped_by: c.capped_by.clone(),
         };
         assert_eq!(
@@ -1011,12 +1065,13 @@ mod tests {
         );
     }
 
-    /// Pins the representation the memory win rests on. `Evidence` is retained
-    /// 7.4M times per Base App 8020 run, so every word of it is ~59 MB of live
-    /// heap: at four words it is 237 MB, at the six words `{String,
-    /// Option<String>}` cost it was 356 MB plus 715 MB of duplicated text. A
-    /// future edit that puts an owned `String` back in either field fails here
-    /// rather than silently costing a gigabyte.
+    /// Pins the representation `provenance` rests on. `Evidence` is one record
+    /// per finding (22,383 on Base App 8020), so its own width is not the memory
+    /// story — but it shares the `&'static str` / `Arc<str>` discipline with the
+    /// 7.4M-record [`ConfidenceEvidence`] next to it, and an owned `String`
+    /// reappearing here is the first sign that discipline has lapsed. The
+    /// high-volume claim is pinned by
+    /// `confidence::tests::confidence_evidence_stays_two_words_wide`.
     #[test]
     fn evidence_stays_four_words_wide() {
         assert_eq!(
