@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — d1 memory arc (capstone)
+
+Measured on the 8020 corpus (100,941 routines). **Two probe shapes, never compared:**
+
+| default-preset `alsem analyze` | base `70a4f8b` | final |
+|---|---:|---:|
+| process peak (`peak_mb`, OS lifetime max) | 9,675 MB | **6,411 MB** (−33.7%) |
+| `detector.d1-db-op-in-loop` peak | 9,675 MB | **6,254 MB** |
+| wall | 310 s | **197 s** (−36%) |
+
+| d1-only census probe (retained `DetectorOutput`) | base | final |
+|---|---:|---:|
+| retained bytes | 1,351.2 MiB | **195.0 MiB** (−85.6%) |
+| retained live allocations | 18,312,480 | **957,972** (−94.8%) |
+
+Three changes, all representation and ownership only — same uncertainties, same
+witnesses, same findings, byte-identical output at every step: cohort uncertainties
+interned into a run-level table; `Evidence` reduced to shared handles with the
+`format!` moved up to the interning boundary (3,150 executions per run instead of
+7.4 M); and the retained remainder — 16-byte confidence evidence, never-built
+`evidence_path`/`additional_paths` for cohort-bearing findings, hash-consed witness
+steps, interned identity strings.
+
+**`d1` no longer sets the process peak** — its own high-water is now below it, first
+exceeded at `detector.d19-unused-parameter`. A consequence worth recording: once that
+became true, savings that remove only a *transient* inside `detect_d1` stopped moving
+the user-visible peak at all. Only retained reductions convert 1:1, which is why one
+planned item (sharing a witness between the sink and `cohort_contexts`, ~95 MB) was
+dropped rather than banked.
+
+**Not claimed: that d1 reached its floor.** The scoping band of 190–250 MB prices d1's
+transients as well as its output; its retained-only portion is ~110 MiB, and 195.0 MiB
+is ~1.8× that. The single named remainder — carrying the winner cohort's
+`Vec<UncertaintyId>` and materialising `Evidence` at the consumer, −78 MiB — closes the
+gap and is scoped but not built.
+
+
 ### Performance — d1 memory: the retained remainder (derive it, share it, or stop storing it)
 
 The retained `DetectorOutput` is now **195.0 MiB in 957,972 live allocations**, down
