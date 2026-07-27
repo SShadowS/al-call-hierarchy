@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — d1 memory: `CohortRep.uncertainties` interned to a run-level table
+
+`d1`'s per-cohort uncertainty union — held for the whole run inside `TerminalSink`,
+one owned `Uncertainty` (120 B of struct plus 2-3 `String`s) per record — is now a
+`Vec<UncertaintyId>` into one run-level `UncertaintyTable`
+(`src/engine/l5/d1_cohort.rs`), moved out of the sink at `finalize` and carried on
+`D1CohortRun`. The values live once; the cohorts hold 4-byte ids.
+
+**Representation and ownership only.** The same uncertainties, in the same order,
+with the same de-duplication: `UncertaintyTable::intern` is keyed by the FULL value
+(all five fields, so `id ↔ Uncertainty` is a bijection) and
+`UncertaintyTable::dedupe` reproduces `dedupe_uncertainties`' `uncertainty_key`
+ordering and last-write-wins collision rule. No cap, no sampling, no truncation.
+`scripts/check-goldens` passes with zero golden files touched and a DO-workspace
+`alsem analyze --format json --deterministic` run is byte-identical
+(SHA-256 `f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`).
+
+The substitution is safe because the confidence mapper's projection and the de-dup
+key read the same pair of fields: `uncertainty_key(u)` is
+`"{kind}|{callsite_id ?? operation_id ?? routine_id ?? \"\"}"`, and
+`uncertainty_lites`' `at` uses that identical precedence — so
+`uncertainty_key(u) == format!("{}|{}", lite.kind, lite.at)`.
+
+Two tests pin the USE rather than the helper, because **no committed golden covers
+it**: every `d1` finding in `tests/**/*.json` has an empty `confidence.evidence`,
+i.e. the golden suite only ever exercises `to_confidence`'s `is_empty()` fast path,
+and the `score_batch_to_sink_matches_old` differential explicitly does not compare
+the representative. `cohort_confidence_resolves_interned_uncertainties_in_key_order`
+runs the real `search_loops_cohorts` + `assemble_cohort_findings` and asserts the
+resolved `Finding.confidence` exactly — level, `cappedBy`, and every evidence note
+in order — over a fixture whose sorted order differs from its discovery order and
+whose duplicate spans two path nodes. `interned_dedupe_matches_dedupe_uncertainties`
+is a differential against `dedupe_uncertainties` itself, including the same-key /
+different-`interface_name` case where keep-last is observable.
+
+`emit_finalize_census` (Hot-tier, zero cost when tracing is off) now also reports
+`uncertainty_ids` (Σ `CohortRep.uncertainties.len()`) against
+`distinct_uncertainties` (the table size) — the direct measurement of a population
+`.superpowers/sdd/scope-d1-memory.md` §2d could previously only derive.
+
+`Uncertainty` gains a derived `Hash` (field-wise, consistent with its derived
+`PartialEq`) so it can key the intern map.
+
 ### Performance — L3 substrate + the two parked items (arc capstone)
 
 Whole-process peak on the 8020 corpus (`alsem analyze --detector

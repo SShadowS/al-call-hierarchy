@@ -52,7 +52,7 @@ use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::d1_cohort::{
-    GroupBitmap, LoopSetId, LoopSetRegistry, reachable_verdicts_of,
+    GroupBitmap, LoopSetId, LoopSetRegistry, UncertaintyId, UncertaintyTable, reachable_verdicts_of,
 };
 use crate::engine::l5::d1_graph::build_d1_graph;
 use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
@@ -401,25 +401,46 @@ pub(crate) fn severity_for(
     base
 }
 
-/// Convert a walk's accumulated `Uncertainty` set to the `UncertaintyLite` shape
-/// `to_confidence` consumes. Mirrors al-sem `describe(u)` id-precedence
-/// (callsiteId → operationId → routineId).
+/// Convert ONE `Uncertainty` to the `UncertaintyLite` shape `to_confidence`
+/// consumes. Mirrors al-sem `describe(u)` id-precedence (callsiteId →
+/// operationId → routineId), which is the SAME precedence
+/// [`crate::engine::l4::summary::uncertainty_key`] uses — so
+/// `uncertainty_key(u) == format!("{}|{}", lite.kind, lite.at)`. That identity is
+/// why the cohort path can carry interned ids: the de-dup key and the projection
+/// this function performs read the same pair of fields.
+fn uncertainty_lite_of(u: &Uncertainty) -> UncertaintyLite {
+    let at = if let Some(cs) = &u.callsite_id {
+        cs.clone()
+    } else if let Some(op) = &u.operation_id {
+        op.clone()
+    } else {
+        u.routine_id.clone().unwrap_or_default()
+    };
+    UncertaintyLite {
+        kind: u.kind.clone(),
+        at,
+    }
+}
+
+/// Convert a walk's accumulated OWNED `Uncertainty` set to `UncertaintyLite`s.
+/// `#[cfg(test)]` — only the `search_loops`/`WalkResult` oracle still holds owned
+/// uncertainties; the production cohort path uses
+/// [`uncertainty_lites_of_ids`].
+#[cfg(test)]
 fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
+    uncertainties.iter().map(uncertainty_lite_of).collect()
+}
+
+/// Convert a cohort's INTERNED uncertainty union to `UncertaintyLite`s, resolving
+/// each id through the run-level `table`. Order is the id sequence's order, which
+/// is the de-duped, key-sorted order `UncertaintyTable::dedupe` produced — the
+/// same sequence the owned-value form produced before the ids existed.
+fn uncertainty_lites_of_ids(
+    ids: &[UncertaintyId],
+    table: &UncertaintyTable,
+) -> Vec<UncertaintyLite> {
+    ids.iter()
+        .map(|&id| uncertainty_lite_of(table.get(id)))
         .collect()
 }
 
@@ -1837,8 +1858,10 @@ fn assemble_cohort_findings(
             None => Vec::new(),
         };
 
-        let confidence: FindingConfidence =
-            to_confidence(&uncertainty_lites(&winner_rep.uncertainties), "likely");
+        let confidence: FindingConfidence = to_confidence(
+            &uncertainty_lites_of_ids(&winner_rep.uncertainties, &run.uncertainties),
+            "likely",
+        );
 
         let fix_options = if setup_singleton {
             vec![FixOption {
@@ -3645,6 +3668,213 @@ mod assembly_tests {
             "wording names the winner's loop routine: {}",
             f.root_cause
         );
+    }
+
+    /// Run the PRODUCTION cohort pipeline over a fixture and return the assembled
+    /// findings — `search_loops_cohorts` (which interns each cohort's uncertainty
+    /// union into the run's [`UncertaintyTable`]) + `assemble_cohort_findings`
+    /// (which resolves the winner's ids back through it). Distinct from
+    /// [`assemble`] above, which drives the `#[cfg(test)]` `search_loops` oracle.
+    fn assemble_cohorts(
+        routines: &[L3Routine],
+        edges: HashMap<String, Vec<CombinedEdge>>,
+        summaries: HashMap<String, FullRoutineSummary>,
+    ) -> Vec<Finding> {
+        let ctx = minimal_ctx_with_uncertainties(routines, edges, summaries, HashMap::new());
+        cohort_findings(&ctx, routines)
+    }
+
+    /// [`minimal_ctx`] plus an injected `uncertainties_by_node` map (the substrate
+    /// `path_uncertainty_ids` unions along a cohort's representative path).
+    fn minimal_ctx_with_uncertainties<'a>(
+        routines: &'a [L3Routine],
+        edges: HashMap<String, Vec<CombinedEdge>>,
+        summaries: HashMap<String, FullRoutineSummary>,
+        uncertainties: HashMap<String, Vec<Uncertainty>>,
+    ) -> DetectorContext<'a> {
+        let mut ctx = minimal_ctx(routines, edges, summaries);
+        ctx.uncertainties_by_node = uncertainties;
+        ctx
+    }
+
+    /// The production cohort path over an already-built context.
+    fn cohort_findings(ctx: &DetectorContext, routines: &[L3Routine]) -> Vec<Finding> {
+        let workspace = ws(routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(ctx, &workspace, &mut memo);
+        let (direct_ops, _stats) = enumerate_direct_ops(&workspace, ctx);
+        let run = search_loops_cohorts(
+            &graph,
+            &seeds,
+            &direct_ops,
+            ctx,
+            &ctx.closed_world_temp_params,
+        );
+        assemble_cohort_findings(&run, ctx, &role_map(routines)).0
+    }
+
+    /// R's loop calls A; A reaches the terminal T BOTH directly (`A/csT`, no loop)
+    /// and via a deeper route `A/csX` (inside A's own loop) → X → Y → T. The deep
+    /// route wins on severity, so the winning cohort's representative path is
+    /// `A → X → Y → T` — which is where the uncertainties are injected. Shape
+    /// lifted from `d1_dataflow`'s `agrees_on_uncertain_winner`, the fixture that
+    /// established this route wins and carries `unc == true`.
+    fn uncertain_winner_fixture() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![
+            call_site("A/csT", "T", vec![]),
+            call_site("A/csX", "X", vec!["A/loop0".to_string()]),
+        ];
+        let x = routine("X", "procedure");
+        let y = routine("Y", "procedure");
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+        let routines = vec![r, a, x, y, t];
+
+        let mut edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        edges.insert(
+            "A".to_string(),
+            vec![
+                edge_kind("A", "T", "A/csT", "direct"),
+                edge_kind("A", "X", "A/csX", "direct"),
+            ],
+        );
+        edges.insert(
+            "X".to_string(),
+            vec![edge_kind("X", "Y", "X/csY", "direct")],
+        );
+        edges.insert(
+            "Y".to_string(),
+            vec![edge_kind("Y", "T", "Y/csT", "direct")],
+        );
+
+        let summaries: HashMap<String, FullRoutineSummary> = ["A", "X", "Y", "T"]
+            .iter()
+            .map(|id| (id.to_string(), db_read_summary(id, &format!("t/{id}"))))
+            .collect();
+        (routines, edges, summaries)
+    }
+
+    fn db_read_summary(id: &str, table: &str) -> FullRoutineSummary {
+        summary(
+            id,
+            vec![fact("read", "table", Some(table))],
+            vec![],
+            Some(coverage("complete")),
+        )
+    }
+
+    fn unc(kind: &str, callsite: Option<&str>, routine: Option<&str>) -> Uncertainty {
+        Uncertainty {
+            kind: kind.to_string(),
+            callsite_id: callsite.map(|s| s.to_string()),
+            operation_id: None,
+            routine_id: routine.map(|s| s.to_string()),
+            interface_name: None,
+        }
+    }
+
+    /// **Pins the interned-uncertainty USE, end to end.** The cohort's uncertainty
+    /// union is stored in `CohortRep` as `UncertaintyId`s into the run-level
+    /// `UncertaintyTable`; `assemble_cohort_findings` resolves them back at
+    /// `to_confidence`. This asserts the resolved `Finding.confidence` EXACTLY —
+    /// level, `cappedBy`, and every evidence note in order — so a wrong id, a
+    /// wrong table, a lost dedupe or a lost sort all fail here.
+    ///
+    /// The fixture is built so each of those is separately load-bearing:
+    /// - **Order** is not discovery order. The path is `A → X → Y → T`, so X's
+    ///   `external-target` is *discovered* before Y's `dynamic-dispatch`, but the
+    ///   emitted order must be key-sorted (`dynamic-dispatch|Y` <
+    ///   `external-target|X/csY` < `unresolved-call|A/csX`).
+    /// - **Dedup** is exercised: the same `unresolved-call at A/csX` sits on BOTH
+    ///   X and Y and must appear exactly once.
+    /// - **Resolution** is exercised: three DISTINCT table entries, so an
+    ///   off-by-one or a table mix-up changes a note.
+    ///
+    /// Necessary because no committed golden covers this: every `d1` finding in
+    /// `tests/**/*.json` has an EMPTY `confidence.evidence`, i.e. the whole golden
+    /// suite exercises only `to_confidence`'s `is_empty()` fast path.
+    #[test]
+    fn cohort_confidence_resolves_interned_uncertainties_in_key_order() {
+        let (routines, edges, summaries) = uncertain_winner_fixture();
+        let uncertainties: HashMap<String, Vec<Uncertainty>> = [
+            (
+                "X".to_string(),
+                vec![
+                    unc("external-target", Some("X/csY"), None),
+                    unc("unresolved-call", Some("A/csX"), None),
+                ],
+            ),
+            (
+                "Y".to_string(),
+                vec![
+                    unc("dynamic-dispatch", None, Some("Y")),
+                    unc("unresolved-call", Some("A/csX"), None),
+                ],
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let ctx = minimal_ctx_with_uncertainties(&routines, edges, summaries, uncertainties);
+        let findings = cohort_findings(&ctx, &routines);
+
+        assert_eq!(findings.len(), 1, "one terminal -> one finding");
+        let c = &findings[0].confidence;
+
+        assert_eq!(c.level, "possible", "any uncertainty caps the level");
+        assert_eq!(
+            c.capped_by,
+            Some(vec![
+                "dynamic-dispatch".to_string(),
+                "opaque-callee".to_string(), // alias of external-target
+                "unresolved-call".to_string(),
+            ]),
+        );
+        let notes: Vec<&str> = c
+            .evidence
+            .iter()
+            .filter_map(|e| e.note.as_deref())
+            .collect();
+        assert_eq!(
+            notes,
+            vec![
+                "dynamic-dispatch at Y",
+                "external-target at X/csY",
+                "unresolved-call at A/csX",
+            ],
+            "the winner cohort's interned ids must resolve to these three \
+             uncertainties, de-duped, in uncertainty_key order"
+        );
+    }
+
+    /// The same pipeline with NO uncertainties anywhere must leave the finding at
+    /// the base level with empty evidence — the negative half of the assertion
+    /// above, so a change that always emits (or never emits) evidence cannot pass
+    /// both.
+    #[test]
+    fn cohort_confidence_is_base_level_without_uncertainties() {
+        let (routines, edges, summaries) = uncertain_winner_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 1);
+        let c = &findings[0].confidence;
+        assert_eq!(c.level, "likely");
+        assert!(c.capped_by.is_none());
+        assert!(c.evidence.is_empty());
     }
 
     /// Bullet: terminal-based `id = root_cause_key = d1/{terminal}/{op}` AND the

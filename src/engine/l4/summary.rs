@@ -68,7 +68,12 @@ pub struct DbEffect {
 }
 
 /// One uncertainty (internal form). Mirrors al-sem `Uncertainty`.
-#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
+///
+/// `Hash` is derived (field-wise, consistent with the derived `PartialEq`) so the
+/// value can key an intern map — see
+/// [`crate::engine::l5::d1_cohort::UncertaintyTable`], which stores one copy of
+/// each distinct uncertainty for a whole d1 run and hands out [`u32`] ids.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, salsa::Update)]
 pub struct Uncertainty {
     pub kind: String,
     pub callsite_id: Option<String>,
