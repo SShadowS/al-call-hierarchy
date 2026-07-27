@@ -261,7 +261,7 @@ mod tests {
             id: root_cause_key.to_string(),
             root_cause_key: root_cause_key.to_string(),
             detector: detector.to_string(),
-            title: "Test finding".to_string(),
+            title: "Test finding".into(),
             root_cause: "root cause".to_string(),
             severity: "info".to_string(),
             confidence: FindingConfidence {
@@ -276,7 +276,7 @@ mod tests {
             affected_tables: Vec::new(),
             fix_options: Vec::new(),
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

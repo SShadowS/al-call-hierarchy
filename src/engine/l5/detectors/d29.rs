@@ -18,7 +18,9 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, is_known_temp};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
@@ -205,25 +207,25 @@ fn emit(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: "Event subscriber mutates the inbound record".to_string(),
+        title: "Event subscriber mutates the inbound record".into(),
         root_cause,
         severity: "medium".to_string(),
         confidence,
         primary_location: anchor_of(&op.source_anchor, routine),
         evidence_path: path,
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
-        affected_tables,
+        affected_objects: vec![routine.object_id.as_str().into()],
+        affected_tables: id_list(affected_tables),
         fix_options: vec![FixOption {
             description:
                 "Either use Modify(false) to suppress trigger re-firing, perform the mutation \
                  on a fresh record loaded by primary key, or move the work outside the \
                  subscriber path."
-                    .to_string(),
-            safety: "medium".to_string(),
+                    .into(),
+            safety: "medium".into(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

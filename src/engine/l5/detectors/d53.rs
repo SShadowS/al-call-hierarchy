@@ -84,7 +84,7 @@ pub fn detect_d53(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: "Ignored TryFunction result".to_string(),
+                title: "Ignored TryFunction result".into(),
                 root_cause: format!(
                     "{} calls the TryFunction {} in statement position — the Boolean result \
                      is discarded, so a caught error is silently swallowed and execution \
@@ -113,7 +113,7 @@ pub fn detect_d53(
                     },
                 ],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: format!(
@@ -121,11 +121,12 @@ pub fn detect_d53(
                          (GetLastErrorText), or drop the [TryFunction] attribute if errors \
                          must propagate.",
                         callee.name
-                    ),
-                    safety: "high".to_string(),
+                    )
+                    .into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

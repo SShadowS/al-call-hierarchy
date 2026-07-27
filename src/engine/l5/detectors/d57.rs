@@ -213,7 +213,7 @@ fn build_finding(
         id: id.clone(),
         root_cause_key: format!("d57/{}/{}", routine.id, var_name.to_lowercase()),
         detector: DETECTOR.to_string(),
-        title: "Growing global state in SingleInstance subscriber".to_string(),
+        title: "Growing global state in SingleInstance subscriber".into(),
         root_cause: root_cause.to_string(),
         severity: "medium".to_string(),
         confidence,
@@ -227,18 +227,19 @@ fn build_finding(
             note: format!("unbounded append to global {var_name}"),
         }],
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
+        affected_objects: vec![routine.object_id.as_str().into()],
         affected_tables: Vec::new(),
         fix_options: vec![FixOption {
             description: format!(
                 "Bound the growth: clear/drain {var_name} (Clear/Remove/DeleteAll) on a \
                  defined lifecycle point, or replace the session-lifetime cache with a \
                  keyed lookup that overwrites instead of appending."
-            ),
-            safety: "medium".to_string(),
+            )
+            .into(),
+            safety: "medium".into(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

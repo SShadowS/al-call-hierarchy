@@ -19,7 +19,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor, unquoted_field_name};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d22-flowfield-without-calcfields";
@@ -161,21 +163,21 @@ pub fn detect_d22(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "FlowField read without prior CalcFields".to_string(),
+                title: "FlowField read without prior CalcFields".into(),
                 root_cause,
                 severity: "medium".to_string(),
                 confidence,
                 primary_location: anchor_of(&fa.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects,
-                affected_tables,
+                affected_objects: id_list(affected_objects),
+                affected_tables: id_list(affected_tables),
                 fix_options: vec![FixOption {
-                    description: fix_desc,
-                    safety: "high".to_string(),
+                    description: fix_desc.into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

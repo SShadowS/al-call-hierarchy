@@ -24,7 +24,9 @@ use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d61-ishandled-bypasses-critical-write";
@@ -192,7 +194,7 @@ pub fn detect_d61(
                     id: format!("d61/{}/{}/{}", caller.id, cs.id, sub.id),
                     root_cause_key: format!("d61/{}/{}", caller.id, cs.id),
                     detector: DETECTOR.to_string(),
-                    title: "IsHandled bypasses critical write".to_string(),
+                    title: "IsHandled bypasses critical write".into(),
                     root_cause: format!(
                         "{} guards a {} on {} behind `if not {}` after publishing {}; \
                          subscriber {} sets {} := true{} — the write is silently skipped.",
@@ -239,17 +241,17 @@ pub fn detect_d61(
                         },
                     ],
                     additional_paths: None,
-                    affected_objects: vec![caller.object_id.clone(), sub.object_id.clone()],
-                    affected_tables: write.table_id.iter().cloned().collect(),
+                    affected_objects: id_list([caller.object_id.as_str(), sub.object_id.as_str()]),
+                    affected_tables: id_list(write.table_id.iter().cloned()),
                     fix_options: vec![FixOption {
                         description: "If the subscriber replaces the write, make it perform an \
                                       equivalent durable operation; otherwise restrict the \
                                       IsHandled contract to non-critical steps (split the event)."
-                            .to_string(),
-                        safety: "low".to_string(),
+                            .into(),
+                        safety: "low".into(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,

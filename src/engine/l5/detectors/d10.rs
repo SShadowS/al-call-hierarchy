@@ -17,7 +17,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d10-self-modifying-loop";
@@ -143,23 +145,23 @@ pub fn detect_d10(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "Self-modifying loop".to_string(),
+                title: "Self-modifying loop".into(),
                 root_cause,
                 severity: "high".to_string(),
                 confidence,
                 primary_location: anchor_of(&op.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects,
-                affected_tables,
+                affected_objects: id_list(affected_objects),
+                affected_tables: id_list(affected_tables),
                 fix_options: vec![FixOption {
                     description: "Collect the keys first, then iterate a fresh recordset to \
                                   perform the modifications; or use ModifyAll with a filter."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

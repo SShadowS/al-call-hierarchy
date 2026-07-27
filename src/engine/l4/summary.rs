@@ -68,7 +68,12 @@ pub struct DbEffect {
 }
 
 /// One uncertainty (internal form). Mirrors al-sem `Uncertainty`.
-#[derive(Debug, Clone, PartialEq, Eq, salsa::Update)]
+///
+/// `Hash` is derived (field-wise, consistent with the derived `PartialEq`) so the
+/// value can key an intern map — see
+/// [`crate::engine::l5::d1_cohort::UncertaintyTable`], which stores one copy of
+/// each distinct uncertainty for a whole d1 run and hands out [`u32`] ids.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, salsa::Update)]
 pub struct Uncertainty {
     pub kind: String,
     pub callsite_id: Option<String>,
@@ -96,15 +101,34 @@ impl From<&crate::engine::l4::combined_graph::Uncertainty> for Uncertainty {
     }
 }
 
-/// Stable key for an Uncertainty — mirrors al-sem `uncertaintyKey`.
-pub fn uncertainty_key(u: &Uncertainty) -> String {
+/// The descriptive id an [`Uncertainty`] is reported *at*: `callsiteId`, else
+/// `operationId`, else `routineId`, else `""`. Mirrors al-sem `describe(u)`'s
+/// id-precedence.
+///
+/// This is the SAME precedence [`uncertainty_key`] uses — enforced structurally,
+/// because that function is now written in terms of this one rather than
+/// repeating the `if let` chain. That identity,
+/// `uncertainty_key(u) == format!("{}|{}", u.kind, uncertainty_at(u))`, is what
+/// lets [`crate::engine::l5::d1_cohort::UncertaintyTable`] carry a cohort's
+/// uncertainty union as ids: the de-dup key and the confidence mapper's
+/// projection read the same pair of fields.
+///
+/// Five detectors (d1, d2, d3, d46, d48) previously each carried their own copy
+/// of this chain, cloning both `String`s per uncertainty; they now all go through
+/// [`crate::engine::l5::confidence::UncertaintyLite::of`], which borrows here.
+pub fn uncertainty_at(u: &Uncertainty) -> &str {
     if let Some(cs) = &u.callsite_id {
-        return format!("{}|{}", u.kind, cs);
+        return cs;
     }
     if let Some(op) = &u.operation_id {
-        return format!("{}|{}", u.kind, op);
+        return op;
     }
-    format!("{}|{}", u.kind, u.routine_id.as_deref().unwrap_or(""))
+    u.routine_id.as_deref().unwrap_or("")
+}
+
+/// Stable key for an Uncertainty — mirrors al-sem `uncertaintyKey`.
+pub fn uncertainty_key(u: &Uncertainty) -> String {
+    format!("{}|{}", u.kind, uncertainty_at(u))
 }
 
 /// De-duplicate a list of [`Uncertainty`] values by key, then sort by key. Mirrors

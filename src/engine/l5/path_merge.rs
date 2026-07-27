@@ -23,7 +23,9 @@
 //!
 //! Output is sorted by canonical finding `id` (`compareStrings`).
 
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence};
+use crate::engine::l5::finding::{
+    ConfidenceEvidence, EVIDENCE_SOURCE, EvidenceStep, Finding, FindingConfidence,
+};
 
 /// al-sem `compareStrings(a, b)`: `a < b ? -1 : a > b ? 1 : 0`. For `&str` this
 /// is exactly `Ord::cmp` (lexicographic by Unicode scalar value, matching JS
@@ -121,7 +123,7 @@ fn merge_confidence(group: &[Finding]) -> FindingConfidence {
     let mut best_level = "possible".to_string();
     let mut capped: Vec<String> = Vec::new();
     let mut capped_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut evidence: Vec<Evidence> = Vec::new();
+    let mut evidence: Vec<ConfidenceEvidence> = Vec::new();
     let mut evidence_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for f in group {
         if conf_rank(&f.confidence.level) > conf_rank(&best_level) {
@@ -136,8 +138,16 @@ fn merge_confidence(group: &[Finding]) -> FindingConfidence {
         }
         for e in &f.confidence.evidence {
             // al-sem keys evidence by JSON.stringify({source, note?}); replicate
-            // with a stable composite of the two fields.
-            let key = format!("{}\u{0}{}", e.source, e.note.as_deref().unwrap_or("\u{1}"));
+            // with a stable composite of the two fields. `source` is no longer
+            // STORED on a `ConfidenceEvidence` (it is the one engine-wide
+            // constant — see that type's doc), but it is still what the record
+            // projects with, so the key is composed from `EVIDENCE_SOURCE` and
+            // stays the byte-identical string it was when the field existed.
+            let key = format!(
+                "{}\u{0}{}",
+                EVIDENCE_SOURCE,
+                e.note.as_deref().unwrap_or("\u{1}")
+            );
             if evidence_seen.insert(key) {
                 evidence.push(e.clone());
             }
@@ -155,12 +165,15 @@ fn merge_confidence(group: &[Finding]) -> FindingConfidence {
     }
 }
 
-/// Union + dedup + sort a set of string lists. Mirrors al-sem `unionSorted`.
-fn union_sorted(lists: &[&[String]]) -> Vec<String> {
-    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+/// Union + dedup + sort a set of interned id lists. Mirrors al-sem `unionSorted`.
+/// `Arc<str>`'s `Ord` is `str`'s byte order, exactly as `String`'s is, so the
+/// emitted order is unchanged by the shared handles; the "clone" is a refcount bump.
+fn union_sorted(lists: &[&[std::sync::Arc<str>]]) -> Vec<std::sync::Arc<str>> {
+    let mut set: std::collections::BTreeSet<std::sync::Arc<str>> =
+        std::collections::BTreeSet::new();
     for list in lists {
         for v in *list {
-            set.insert(v.clone());
+            set.insert(std::sync::Arc::clone(v));
         }
     }
     set.into_iter().collect()
@@ -213,11 +226,16 @@ pub fn merge_by_terminal(findings: Vec<Finding>) -> Vec<Finding> {
         let group_len = group.len();
 
         // additionalPaths = the non-canonical evidence paths, sorted by path key.
+        // Through `evidence_path_of` for uniformity: `merge_by_terminal`'s only
+        // caller is d2, which never sets `cohort_contexts`, so this is a plain
+        // borrow-and-clone of the stored field today — routing it through the
+        // accessor costs nothing and removes the latent trap of a cohort-bearing
+        // finding ever reaching here and silently merging empty paths.
         let mut other_paths: Vec<Vec<EvidenceStep>> = group
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != canon_idx)
-            .map(|(_, f)| f.evidence_path.clone())
+            .map(|(_, f)| crate::engine::l5::finding::evidence_path_of(f).into_owned())
             .collect();
         other_paths.sort_by(|a, b| compare_strings(&path_sort_key(a), &path_sort_key(b)));
 
@@ -238,6 +256,11 @@ pub fn merge_by_terminal(findings: Vec<Finding>) -> Vec<Finding> {
         let canonical = &group[canon_idx];
         let merged = Finding {
             confidence,
+            // `union_sorted` already returns `Vec<Arc<str>>` built from `Arc::clone`
+            // (shared handles, refcount bumps only) — the field type matches exactly,
+            // so no `id_list` re-materialisation is needed here. `id_list` re-allocates
+            // a fresh `Arc<str>` per entry, which would silently undo that sharing on
+            // every call to `merge_by_terminal` (d2's path).
             affected_objects,
             affected_tables,
             root_cause: annotate_root_cause(&canonical.root_cause, group_len),
@@ -258,7 +281,11 @@ pub fn merge_by_terminal(findings: Vec<Finding>) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the test helper below still builds `Finding`s from owned `Vec<String>`
+    // ids, so `id_list` is a test-only import now that `merge_by_terminal` itself
+    // forwards `union_sorted`'s `Arc<str>` handles directly.
     use crate::engine::l5::finding::SourceAnchor;
+    use crate::engine::l5::finding::id_list;
 
     fn anchor(unit: &str, line: u32, col: u32, routine: &str) -> SourceAnchor {
         SourceAnchor {
@@ -301,7 +328,7 @@ mod tests {
             id: id.to_string(),
             root_cause_key: root_cause_key.to_string(),
             detector: "d1".to_string(),
-            title: "t".to_string(),
+            title: "t".into(),
             root_cause: "rc".to_string(),
             severity: severity.to_string(),
             confidence: FindingConfidence {
@@ -312,8 +339,8 @@ mod tests {
             primary_location: primary,
             evidence_path: path,
             additional_paths: None,
-            affected_objects,
-            affected_tables,
+            affected_objects: id_list(affected_objects),
+            affected_tables: id_list(affected_tables),
             fix_options: vec![],
             provenance: vec![],
             actionable_anchor: None,
@@ -364,12 +391,56 @@ mod tests {
         assert_eq!(ap.len(), 1);
         assert_eq!(ap[0][0].source_anchor.source_unit_id, "ws:lo.al");
         // unioned + sorted affected tables.
-        assert_eq!(m.affected_tables, vec!["g/table/18", "g/table/27"]);
-        assert_eq!(m.affected_objects, vec!["app/Codeunit/1", "app/Codeunit/2"]);
+        let tables: Vec<&str> = m.affected_tables.iter().map(|s| &**s).collect();
+        assert_eq!(tables, vec!["g/table/18", "g/table/27"]);
+        let objects: Vec<&str> = m.affected_objects.iter().map(|s| &**s).collect();
+        assert_eq!(objects, vec!["app/Codeunit/1", "app/Codeunit/2"]);
         // rootCause annotated with the other-path count (1 other ancestor).
         assert_eq!(
             m.root_cause,
             "rc (Also reached from 1 other in-loop ancestor.)"
+        );
+    }
+
+    #[test]
+    fn affected_object_ids_are_shared_not_reallocated_across_the_merge() {
+        // `union_sorted` clones the SAME `Arc<str>` handle contributed by whichever
+        // finding it saw first (a refcount bump, not a byte copy). The merge must
+        // forward that handle unchanged; wrapping it back through `id_list` (as the
+        // code did before this test) re-materialises a fresh `Arc<str>` from the
+        // text and silently undoes the sharing on every call to `merge_by_terminal`.
+        let shared: std::sync::Arc<str> = std::sync::Arc::from("app/Codeunit/1");
+        let primary = anchor("ws:term.al", 10, 4, "r_term");
+        let mut f_hi = finding(
+            "d1/b",
+            "k",
+            "critical",
+            "likely",
+            primary.clone(),
+            vec![step("ws:hi.al", 1, 0, "r_hi")],
+            vec![],
+            vec![],
+        );
+        f_hi.affected_objects = vec![std::sync::Arc::clone(&shared)];
+        let mut f_lo = finding(
+            "d1/a",
+            "k",
+            "low",
+            "confirmed",
+            primary,
+            vec![step("ws:lo.al", 2, 0, "r_lo")],
+            vec![],
+            vec![],
+        );
+        f_lo.affected_objects = vec![std::sync::Arc::clone(&shared)];
+
+        let merged = merge_by_terminal(vec![f_lo, f_hi]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].affected_objects.len(), 1);
+        assert!(
+            std::sync::Arc::ptr_eq(&merged[0].affected_objects[0], &shared),
+            "merge_by_terminal must forward union_sorted's Arc<str> handle unchanged, \
+             not re-allocate a new one from its text"
         );
     }
 

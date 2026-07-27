@@ -136,7 +136,7 @@ pub fn detect_d44(
             id: root_cause_key.clone(),
             root_cause_key: root_cause_key.clone(),
             detector: DETECTOR.to_string(),
-            title: "Multiple event subscribers write the same table".to_string(),
+            title: "Multiple event subscribers write the same table".into(),
             root_cause: format!(
                 "{} subscribers of event {event_id} write table {table_id} (ops: {})",
                 sub_list.len(),
@@ -152,13 +152,13 @@ pub fn detect_d44(
             evidence_path: evidence,
             additional_paths: None,
             affected_objects: Vec::new(),
-            affected_tables: vec![table_id.to_string()],
+            affected_tables: vec![table_id.to_string().into()],
             fix_options: vec![FixOption {
-                description: "Coordinate the writes (single subscriber, or merge intent) to avoid lost-update / ordering surprises.".to_string(),
-                safety: "medium".to_string(),
+                description: "Coordinate the writes (single subscriber, or merge intent) to avoid lost-update / ordering surprises.".into(),
+                safety: "medium".into(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,
@@ -260,7 +260,7 @@ pub fn detect_d44(
             id: root_cause_key.clone(),
             root_cause_key: root_cause_key.clone(),
             detector: DETECTOR.to_string(),
-            title: "Event subscriber reads a table that another subscriber writes".to_string(),
+            title: "Event subscriber reads a table that another subscriber writes".into(),
             root_cause: format!(
                 "On event {event_id}, subscribers {{{}}} write {table_id}; subscribers {{{}}} read {table_id}. AL subscriber order is undefined — reads may see pre- or post-mutation state.",
                 writer_list.join(", "),
@@ -276,13 +276,13 @@ pub fn detect_d44(
             evidence_path: evidence,
             additional_paths: None,
             affected_objects: Vec::new(),
-            affected_tables: vec![table_id.to_string()],
+            affected_tables: vec![table_id.to_string().into()],
             fix_options: vec![FixOption {
-                description: "Make subscriber ordering explicit, or move the read into the writing subscriber.".to_string(),
-                safety: "medium".to_string(),
+                description: "Make subscriber ordering explicit, or move the read into the writing subscriber.".into(),
+                safety: "medium".into(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

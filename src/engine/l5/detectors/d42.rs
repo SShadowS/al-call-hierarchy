@@ -27,7 +27,7 @@ use crate::engine::l5::detectors::{
     anchor_of, before_anchor, flow_field_names_lc, normalize_load_field_arg,
     primary_key_field_names_lc,
 };
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, id_list};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d42-cross-call-wrong-setloadfields";
@@ -284,7 +284,7 @@ pub fn detect_d42(
                     root_cause_key: id,
                     detector: DETECTOR.to_string(),
                     title: "Forwarded record's narrowed load misses a field the callee reads"
-                        .to_string(),
+                        .to_string().into(),
                     root_cause: format!(
                         "{} narrowed {}'s load to {} but forwards it to {}, which reads {} — defeats the partial-load optimisation.",
                         routine.name,
@@ -298,7 +298,7 @@ pub fn detect_d42(
                     primary_location: anchor_of(&binding.argument_anchor, routine),
                     evidence_path: path,
                     additional_paths: None,
-                    affected_objects,
+                    affected_objects: id_list(affected_objects),
                     affected_tables: Vec::new(),
                     fix_options: vec![FixOption {
                         description: format!(
@@ -306,11 +306,11 @@ pub fn detect_d42(
                             missing.join(", "),
                             src_or_record.unwrap_or("the record"),
                             callee.name
-                        ),
-                        safety: "high".to_string(),
+                        ).into(),
+                        safety: "high".into(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,

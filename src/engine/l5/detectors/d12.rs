@@ -91,24 +91,24 @@ pub fn detect_d12(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Integration event has no subscribers".to_string(),
+            title: "Integration event has no subscribers".into(),
             root_cause,
             severity: "info".to_string(),
             confidence,
             primary_location: anchor_of(&pub_routine.source_anchor, pub_routine),
             evidence_path: path,
             additional_paths: None,
-            affected_objects: vec![pub_routine.object_id.clone()],
+            affected_objects: vec![pub_routine.object_id.as_str().into()],
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
                 description:
                     "Either remove the event if it has no real extensibility purpose, or document \
                      why it exists for future subscribers."
-                        .to_string(),
-                safety: "medium".to_string(),
+                        .into(),
+                safety: "medium".into(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

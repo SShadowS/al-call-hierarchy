@@ -234,7 +234,7 @@ fn emit_direct(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: title.to_string(),
+        title: title.to_string().into(),
         root_cause: format!(
             "{} calls Commit inside a {} loop \u{2014} per-iteration commits break atomicity \
              and prevent the job from being retried safely.",
@@ -245,16 +245,16 @@ fn emit_direct(
         primary_location: site_anchor,
         evidence_path: path,
         additional_paths: None,
-        affected_objects: vec![object_id.to_string()],
+        affected_objects: vec![object_id.to_string().into()],
         affected_tables: Vec::new(),
         fix_options: vec![FixOption {
             description: "Move the Commit outside the loop. If progress-saving is genuinely \
                           required, document a chunking strategy and consider a job queue."
-                .to_string(),
-            safety: "medium".to_string(),
+                .into(),
+            safety: "medium".into(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -321,7 +321,7 @@ fn emit_transitive(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: "Loop reaches a Commit through a callee".to_string(),
+        title: "Loop reaches a Commit through a callee".into(),
         root_cause: format!(
             "{}'s {} loop calls {}, which commits \u{2014} per-iteration commits break atomicity \
              even when the Commit isn't visible at the loop site.",
@@ -332,17 +332,17 @@ fn emit_transitive(
         primary_location: callsite_anchor,
         evidence_path: path,
         additional_paths: None,
-        affected_objects: vec![object_id.to_string()],
+        affected_objects: vec![object_id.to_string().into()],
         affected_tables: Vec::new(),
         fix_options: vec![FixOption {
             description: "Verify the callee really needs to Commit. If the loop is correct as \
                           written, hoist the work that requires a Commit (or the Commit itself) \
                           outside the loop."
-                .to_string(),
-            safety: "medium".to_string(),
+                .into(),
+            safety: "medium".into(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

@@ -100,24 +100,24 @@ pub fn detect_d20(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "Unreachable statement after unconditional exit".to_string(),
+                title: "Unreachable statement after unconditional exit".into(),
                 root_cause,
                 severity: "low".to_string(),
                 confidence,
                 primary_location: anchor_of(&u.unreachable_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description:
                         "Remove the unreachable statement, or move the preceding exit / Error / \
                          Quit inside a conditional so the later code can run."
-                            .to_string(),
-                    safety: "high".to_string(),
+                            .into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

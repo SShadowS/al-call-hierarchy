@@ -74,9 +74,15 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::engine::l2::features::PLoop;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+// Owned-value uncertainties survive only on the `#[cfg(test)]` oracle path
+// (`build_transitive_witness`); the production cohort path interns them into the
+// sink's `UncertaintyTable` and carries `UncertaintyId`s.
+#[cfg(test)]
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
-use crate::engine::l5::d1_cohort::{CohortRep, ContextKey, GroupIx, TerminalSink};
+use crate::engine::l5::d1_cohort::{
+    CohortRep, ContextKey, GroupIx, TerminalSink, UncertaintyId, UncertaintyTable,
+};
 #[cfg(test)]
 use crate::engine::l5::d1_graph::D1Terminal;
 use crate::engine::l5::d1_graph::{D1Graph, D1Seed, NodeIx, edge_kind_binding_ok};
@@ -2466,35 +2472,44 @@ pub(crate) fn solve_batch<'a>(
 /// for the deep chains that drove the blowup.
 pub(crate) const WITNESS_M_LAST: usize = 4;
 
-/// The uncertainty union along a representative predecessor chain — the SAME
-/// seed→terminal-node concat + [`dedupe_uncertainties`] that
-/// [`build_transitive_witness`] computes, factored out so the cohort path builds
-/// it WITHOUT materializing the full witness. `hops` is TERMINAL→SEED order (as
-/// `collect_reach_chain_b`/`collect_value_chain_b` return); the path nodes are
-/// the hops' `from_node`s (seed entry … pre-terminal, in seed→terminal order)
-/// plus `terminal_node`. Preserving this exact order + dedup makes the cohort
-/// finding's confidence BYTE-IDENTICAL to the old per-loop winner's confidence
-/// (the cohort's first-seen representative IS the old winner-selection's
-/// lowest-`(loop_routine_id, loop_id)` reaching loop — see [`CohortRep`]).
-fn path_uncertainties(
+/// The uncertainty union along a representative predecessor chain, as INTERNED
+/// [`UncertaintyId`]s — the SAME seed→terminal-node concat + dedupe that
+/// [`build_transitive_witness`] computes with owned values, factored out so the
+/// cohort path builds it WITHOUT materializing the full witness. `hops` is
+/// TERMINAL→SEED order (as `collect_reach_chain_b`/`collect_value_chain_b`
+/// return); the path nodes are the hops' `from_node`s (seed entry … pre-terminal,
+/// in seed→terminal order) plus `terminal_node`. Preserving this exact order +
+/// dedup makes the cohort finding's confidence BYTE-IDENTICAL to the old per-loop
+/// winner's confidence (the cohort's first-seen representative IS the old
+/// winner-selection's lowest-`(loop_routine_id, loop_id)` reaching loop — see
+/// [`CohortRep`]).
+///
+/// The ONLY difference from the owned-value form is representation:
+/// [`UncertaintyTable::intern`] is value-keyed, so the id sequence is a faithful
+/// relabelling of the value sequence, and [`UncertaintyTable::dedupe`] reproduces
+/// [`crate::engine::l4::summary::dedupe_uncertainties`]' key ordering and
+/// last-write-wins collision rule (argued in its own doc). Nothing is sampled,
+/// capped, or dropped.
+fn path_uncertainty_ids(
     hops_terminal_to_seed: &[(NodeIx, usize)],
     terminal_node: NodeIx,
     graph: &D1Graph,
     ctx: &DetectorContext,
-) -> Vec<Uncertainty> {
-    let mut concat: Vec<Uncertainty> = Vec::new();
+    table: &mut UncertaintyTable,
+) -> Vec<UncertaintyId> {
+    let mut concat: Vec<UncertaintyId> = Vec::new();
     // Seed→terminal node order = the hops' from_nodes reversed, then the terminal.
     for (from_node, _edge_k) in hops_terminal_to_seed.iter().rev() {
         let nid = graph.node_ids[*from_node as usize];
         if let Some(v) = ctx.uncertainties_by_node.get(nid) {
-            concat.extend(v.iter().cloned());
+            concat.extend(v.iter().map(|u| table.intern(u)));
         }
     }
     let tid = graph.node_ids[terminal_node as usize];
     if let Some(v) = ctx.uncertainties_by_node.get(tid) {
-        concat.extend(v.iter().cloned());
+        concat.extend(v.iter().map(|u| table.intern(u)));
     }
-    dedupe_uncertainties(concat)
+    table.dedupe(&concat)
 }
 
 /// Build ONE representative [`CohortRep`] (bounded witness + path uncertainties)
@@ -2508,6 +2523,8 @@ fn path_uncertainties(
 /// a `Direct` winner carries its own loop/op); `term_node` is the terminal's
 /// graph node, `Some` on the terminal-outer scoring pass (where a fact winner is
 /// possible) and `None` on the direct-only pass (whose winners are all `Direct`).
+/// `table` is the owning sink's run-level [`UncertaintyTable`], which the
+/// uncertainty union is interned into.
 #[allow(clippy::too_many_arguments)]
 fn build_cohort_rep<'a>(
     b: &BestRef<'a>,
@@ -2519,6 +2536,7 @@ fn build_cohort_rep<'a>(
     owner: &'a L3Routine,
     op: &'a L3RecordOperation,
     term_node: Option<NodeIx>,
+    table: &mut UncertaintyTable,
 ) -> CohortRep {
     match b.source {
         BestSource::Direct {
@@ -2534,14 +2552,14 @@ fn build_cohort_rep<'a>(
             let tn = term_node.expect("a Reach winner requires the terminal node");
             // Uncertainty union is EMPTY unless the winning path is uncertain
             // (`unc` == OR of node-has-uncertainty along the path; `unc == false`
-            // ⇒ no path node contributes an uncertainty ⇒ `path_uncertainties`
+            // ⇒ no path node contributes an uncertainty ⇒ `path_uncertainty_ids`
             // returns empty). So the O(chain) full-chain walk + union is skipped
             // for every CERTAIN cohort (the majority) — byte-identical, and the
             // dominant 8020 cost (3.2M→34,861 cohorts, but each still walked the
             // full ~28k-hop chain here regardless of `unc`).
             let uncertainties = if b.rank.2 == 0 {
                 let (hops, _seed) = collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
-                path_uncertainties(&hops, tn, graph, ctx)
+                path_uncertainty_ids(&hops, tn, graph, ctx, table)
             } else {
                 Vec::new()
             };
@@ -2569,7 +2587,7 @@ fn build_cohort_rep<'a>(
             let uncertainties = if b.rank.2 == 0 {
                 let (hops, _seed) =
                     collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix);
-                path_uncertainties(&hops, tn, graph, ctx)
+                path_uncertainty_ids(&hops, tn, graph, ctx, table)
             } else {
                 Vec::new()
             };
@@ -2642,8 +2660,10 @@ fn sink_emit<'a>(
             (vmask[2] >> lane) & 1 == 1,
             (vmask[3] >> lane) & 1 == 1,
         ];
-        sink.insert(tix, group, ck, reachable, || {
-            build_cohort_rep(b, lane, solver, graph, ctx, seeds, owner, op, term_node)
+        sink.insert(tix, group, ck, reachable, |table| {
+            build_cohort_rep(
+                b, lane, solver, graph, ctx, seeds, owner, op, term_node, table,
+            )
         });
     }
 }
@@ -4857,8 +4877,8 @@ mod tests {
                 &mut sink,
             );
         }
-        let cohorts = sink.finalize();
-        emit_finalize_census(&cohorts);
+        let (cohorts, unc_table) = sink.finalize();
+        emit_finalize_census(&cohorts, &unc_table);
 
         // DECOMPRESS the sink: (group, owner_id, op_id) -> the cohort tuple.
         let mut new_map: HashMap<(u32, String, String), CohortRow> = HashMap::new();

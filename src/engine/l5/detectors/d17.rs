@@ -15,7 +15,9 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FixOption, SourceAnchor, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
@@ -189,25 +191,26 @@ pub fn detect_d17(
             id: id.clone(),
             root_cause_key: id,
             detector: DETECTOR.to_string(),
-            title: "Declared MinVersion is older than the resolved dependency version".to_string(),
+            title: "Declared MinVersion is older than the resolved dependency version".into(),
             root_cause,
             severity: "info".to_string(),
             confidence: to_confidence(&[], "possible"),
             primary_location: sample.anchor.clone(),
             evidence_path,
             additional_paths: None,
-            affected_objects,
+            affected_objects: id_list(affected_objects),
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
                 description: format!(
                     "Bump app.json dependencies[].version for {} to at least {}, or test that \
                      your code paths into this dep also work on {}.",
                     dep.name, resolved_version, dep.min_version
-                ),
-                safety: "medium".to_string(),
+                )
+                .into(),
+                safety: "medium".into(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

@@ -16,7 +16,9 @@ use crate::engine::l3::al_attributes::parse_routine_attributes;
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FixOption, SourceAnchor, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
@@ -111,23 +113,23 @@ pub fn detect_d13(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: "Cross-extension call into an internal procedure".to_string(),
+                title: "Cross-extension call into an internal procedure".into(),
                 root_cause,
                 severity: "high".to_string(),
                 confidence: to_confidence(&[], "confirmed"),
                 primary_location: anchor,
                 evidence_path,
                 additional_paths: None,
-                affected_objects,
+                affected_objects: id_list(affected_objects),
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Use the dependency's public API instead, or request the routine \
                                   be promoted to Public upstream."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

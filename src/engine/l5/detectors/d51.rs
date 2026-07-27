@@ -126,14 +126,14 @@ fn build_d51_finding(
         id: format!("d51/{}/{}", of.routine_id, fact.key),
         root_cause_key: format!("d51/{}", of.routine_id),
         detector: DETECTOR.to_string(),
-        title,
+        title: title.into(),
         root_cause,
         severity: sev.to_string(),
         confidence: to_confidence(&[], if retryable { "confirmed" } else { "likely" }),
         primary_location,
         evidence_path,
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
+        affected_objects: vec![routine.object_id.as_str().into()],
         affected_tables: Vec::new(),
         fix_options: vec![FixOption {
             description:
@@ -141,11 +141,11 @@ fn build_d51_finding(
                  before the call, or ensure the external endpoint is idempotent. Alternatively, \
                  restructure the routine so errors are raised before the external call, or move \
                  the external call to an after-commit step."
-                    .to_string(),
-            safety: "medium".to_string(),
+                    .into(),
+            safety: "medium".into(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

@@ -315,6 +315,24 @@ the bottom, CHANGELOG, and git log.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
+- [ ] **`ctx.uncertainties_by_node` interning — now the largest single structure in the
+  run, and larger than everything d1 retains.** Measured 2026-07-27: **729.1 MiB in
+  7,428,267 allocations**, alive for the whole run, against d1's total retained 195.0 MiB.
+  It draws from the *same* 3,073-value vocabulary the d1 arc interned one rung downstream.
+  **The blast-radius argument that parked it is materially weaker than when it was
+  written**: the d1 arc has since built the substrate it needs — `UncertaintyTable`,
+  `UncertaintyLite`, `uncertainty_at`, and a `to_confidence` whose signature is the only
+  thing the ~51 detector files touch. **Wake: this should be the next memory arc.**
+- [ ] **`FindingConfidence` carries ids, not records (−78 MiB retained in d1).** The
+  finding already holds the winner cohort's `Vec<UncertaintyId>`; carrying 4-byte ids and
+  materialising `Evidence` at the consumer takes d1's `confidence` bucket from 115.0 MiB
+  to ~37 MiB and lands its retained total at the ~110 MiB the scoping band actually
+  predicts. Three readers (`project_evidence`, `merge_confidence`,
+  `format_policy::finding_to_jv`) plus keeping the `UncertaintyTable` alive to projection.
+  Scoped in `.superpowers/sdd/task-3-review.md`; deliberately not built in the d1 arc.
+  **Wake: when d1 memory is worth another pass, or alongside the item above — they share
+  the same table.**
+
 - [ ] **Residual duplicate-id groups: 15 groups / 19 routines on BC Base App (0 on
   DO) still share BOTH the internal and the stable routine id.** ⟨task-4-review.md
   finding M-3, fix wave⟩ Promoted out of the CLOSED `compute_routine_id` entry
@@ -582,7 +600,7 @@ COHORT DATAFLOW (co-designed with gpt-5.6-sol; see memory `d1-output-bound-falsi
 
 ### Deferred d1 follow-ups (non-blocking; 8020 already finishes)
 1. **Witness/uncertainty polish (~130s residual)**: `build_cohort_rep`'s full-chain
-   `path_uncertainties` walk for UNCERTAIN cohorts is the residual (certain cohorts
+   `path_uncertainty_ids` walk for UNCERTAIN cohorts is the residual (certain cohorts
    already skipped, ee07983). Eliminate by accumulating uncertainty-KIND-SETS in the
    fixpoint (no walk) — output-identical, targets d1 ~10-30s. NEEDS A QUIET MACHINE
    to validate (these detached 8020 runs swing +/-80s; sub-fixes unmeasurable against

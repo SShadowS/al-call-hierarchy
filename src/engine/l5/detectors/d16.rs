@@ -13,7 +13,9 @@ use crate::engine::l3::al_attributes::{ObsoleteState, parse_routine_attributes};
 use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FixOption, SourceAnchor, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
@@ -97,21 +99,21 @@ pub fn detect_d16(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: format!("Call to obsolete routine ({})", state_label),
+                title: format!("Call to obsolete routine ({})", state_label).into(),
                 root_cause,
                 severity: severity.to_string(),
                 confidence: to_confidence(&[], "confirmed"),
                 primary_location: anchor,
                 evidence_path,
                 additional_paths: None,
-                affected_objects,
+                affected_objects: id_list(affected_objects),
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
-                    description: fix_description,
-                    safety: "high".to_string(),
+                    description: fix_description.into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

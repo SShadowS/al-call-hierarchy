@@ -21,7 +21,9 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, record_filter_applied_before, record_filtered_by_call_before,
 };
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d52-bulk-write-param-no-temp-guard";
@@ -124,7 +126,7 @@ pub fn detect_d52(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: format!("{} on unguarded record parameter", op.op),
+                title: format!("{} on unguarded record parameter", op.op).into(),
                 root_cause: format!(
                     "{} calls {} on the var record parameter {} ({}) without proving it \
                      temporary (no `temporary` declaration, no IsTemporary entry guard) and \
@@ -147,19 +149,20 @@ pub fn detect_d52(
                     ),
                 }],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
-                affected_tables: op.table_id.iter().cloned().collect(),
+                affected_objects: vec![routine.object_id.as_str().into()],
+                affected_tables: id_list(op.table_id.iter().cloned()),
                 fix_options: vec![FixOption {
                     description: format!(
                         "Add `if not {0}.IsTemporary() then Error(...)` as the first statement \
                          (or declare the parameter `temporary`), or apply a SetRange/SetFilter \
                          before {1}.",
                         op.record_variable_name, op.op
-                    ),
-                    safety: "high".to_string(),
+                    )
+                    .into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

@@ -401,7 +401,7 @@ fn emit_match_finding(
         id: root_cause_key.clone(),
         root_cause_key,
         detector: format!("policy-{}", rule.id),
-        title: rule.title.clone().unwrap_or_else(|| rule.id.clone()),
+        title: rule.title.clone().unwrap_or_else(|| rule.id.clone()).into(),
         root_cause,
         severity: rule.severity.clone(),
         confidence: FindingConfidence {
@@ -412,11 +412,11 @@ fn emit_match_finding(
         primary_location,
         evidence_path: evidence,
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
+        affected_objects: vec![routine.object_id.as_str().into()],
         affected_tables: Vec::new(),
         fix_options: Vec::new(),
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -443,7 +443,7 @@ fn emit_coverage_finding(
         id: root_cause_key.clone(),
         root_cause_key,
         detector: format!("policy-{}", rule.id),
-        title: rule.title.clone().unwrap_or_else(|| rule.id.clone()),
+        title: rule.title.clone().unwrap_or_else(|| rule.id.clone()).into(),
         root_cause: format!(
             "Coverage gate (requireCoverage={effective_gate}) failed: routine coverage is {status}."
         ),
@@ -463,11 +463,11 @@ fn emit_coverage_finding(
             note: format!("coverage={status}"),
         }],
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
+        affected_objects: vec![routine.object_id.as_str().into()],
         affected_tables: Vec::new(),
         fix_options: Vec::new(),
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -488,7 +488,7 @@ fn emit_unknown_finding(rule: &Rule, routine: &L3Routine, model: &PolicyModel) -
         id: root_cause_key.clone(),
         root_cause_key,
         detector: format!("policy-{}", rule.id),
-        title: rule.title.clone().unwrap_or_else(|| rule.id.clone()),
+        title: rule.title.clone().unwrap_or_else(|| rule.id.clone()).into(),
         root_cause: "Predicate could not be resolved on any fact; onUnknown=fail-closed."
             .to_string(),
         severity: rule.severity.clone(),
@@ -507,11 +507,11 @@ fn emit_unknown_finding(rule: &Rule, routine: &L3Routine, model: &PolicyModel) -
             note: "policy unknown — fail-closed".to_string(),
         }],
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
+        affected_objects: vec![routine.object_id.as_str().into()],
         affected_tables: Vec::new(),
         fix_options: Vec::new(),
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

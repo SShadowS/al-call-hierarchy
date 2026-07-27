@@ -26,7 +26,9 @@ use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, record_filter_applied_before, record_filtered_by_call_before,
 };
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d33-unfiltered-bulk-write";
@@ -161,21 +163,21 @@ pub fn detect_d33(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: format!("Unfiltered {}", op.op),
+                title: format!("Unfiltered {}", op.op).into(),
                 root_cause,
                 severity: severity.to_string(),
                 confidence,
                 primary_location: anchor_of(&op.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects,
-                affected_tables,
+                affected_objects: id_list(affected_objects),
+                affected_tables: id_list(affected_tables),
                 fix_options: vec![FixOption {
-                    description: fix_desc,
-                    safety: "high".to_string(),
+                    description: fix_desc.into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

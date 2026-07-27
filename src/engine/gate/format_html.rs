@@ -195,7 +195,10 @@ fn anchor_line(source_unit_id: &str, start_line: u32) -> String {
 // ---------------------------------------------------------------------------
 
 fn render_flow(finding: &Finding, m: &Maps) -> String {
-    let steps = &finding.evidence_path;
+    // Through `evidence_path_of`: a cohort-bearing d1 finding derives its path
+    // from `cohort_contexts[0].witness` rather than storing it.
+    let steps = crate::engine::l5::finding::evidence_path_of(finding);
+    let steps = &*steps;
     if steps.is_empty() {
         return String::new();
     }
@@ -1147,7 +1150,7 @@ mod tests {
             id: id.to_string(),
             root_cause_key: id.to_string(),
             detector: detector.to_string(),
-            title: format!("title {id}"),
+            title: format!("title {id}").into(),
             root_cause: format!("root cause {id}"),
             severity: "medium".to_string(),
             confidence: FindingConfidence {

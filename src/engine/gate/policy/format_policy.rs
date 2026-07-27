@@ -82,7 +82,13 @@ fn finding_to_jv(f: &Finding) -> Jv {
                     .evidence
                     .iter()
                     .map(|e| {
-                        let mut p = vec![("source".to_string(), Jv::s(&e.source))];
+                        // `source` is not stored on a `ConfidenceEvidence` — it is
+                        // the one engine-wide constant, re-materialised here
+                        // exactly as the R4 projection does.
+                        let mut p = vec![(
+                            "source".to_string(),
+                            Jv::s(crate::engine::l5::finding::EVIDENCE_SOURCE),
+                        )];
                         if let Some(n) = &e.note {
                             p.push(("note".to_string(), Jv::s(n)));
                         }
@@ -97,7 +103,7 @@ fn finding_to_jv(f: &Finding) -> Jv {
         f.provenance
             .iter()
             .map(|e| {
-                let mut p = vec![("source".to_string(), Jv::s(&e.source))];
+                let mut p = vec![("source".to_string(), Jv::s(e.source))];
                 if let Some(n) = &e.note {
                     p.push(("note".to_string(), Jv::s(n)));
                 }
@@ -120,7 +126,12 @@ fn finding_to_jv(f: &Finding) -> Jv {
         ),
         (
             "evidencePath".to_string(),
-            Jv::Arr(f.evidence_path.iter().map(evidence_step_to_jv).collect()),
+            Jv::Arr(
+                crate::engine::l5::finding::evidence_path_of(f)
+                    .iter()
+                    .map(evidence_step_to_jv)
+                    .collect(),
+            ),
         ),
         (
             "affectedObjects".to_string(),
@@ -374,7 +385,7 @@ pub fn format_policy_human(result: &PolicyRunResult) -> String {
     } else {
         lines.push(format!("Findings ({}):", result.findings.len()));
         for f in &result.findings {
-            let label = if !f.title.is_empty() {
+            let label: &str = if !f.title.is_empty() {
                 &f.title
             } else {
                 &f.root_cause

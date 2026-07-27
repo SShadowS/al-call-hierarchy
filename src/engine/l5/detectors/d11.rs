@@ -24,7 +24,9 @@ use crate::engine::l5::detectors::{
     RECORD_LOAD_OPS, anchor_of, before_anchor, is_platform_loaded_trigger_rec,
     record_loaded_by_assignment_before, record_loaded_by_call_before,
 };
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d11-modify-without-get";
@@ -147,24 +149,24 @@ pub fn detect_d11(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "Modify without Get".to_string(),
+                title: "Modify without Get".into(),
                 root_cause,
                 severity: "medium".to_string(),
                 confidence,
                 primary_location: anchor_of(&op.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects,
-                affected_tables,
+                affected_objects: id_list(affected_objects),
+                affected_tables: id_list(affected_tables),
                 fix_options: vec![FixOption {
                     description:
                         "Load the record with Get / FindFirst before mutating, or pass it in \
                          as a var parameter from a caller that loaded it."
-                            .to_string(),
-                    safety: "high".to_string(),
+                            .into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

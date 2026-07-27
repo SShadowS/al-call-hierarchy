@@ -351,19 +351,13 @@ pub fn detect_d3(
                     Some(e) => e,
                     None => {
                         bailout = true;
-                        uncertainties.push(UncertaintyLite {
-                            kind: "interface-dispatch".to_string(),
-                            at: cs.id.clone(),
-                        });
+                        uncertainties.push(UncertaintyLite::new("interface-dispatch", &cs.id));
                         continue;
                     }
                 };
                 if edge.kind == "interface" || edge.kind == "dynamic" {
                     bailout = true;
-                    uncertainties.push(UncertaintyLite {
-                        kind: "interface-dispatch".to_string(),
-                        at: cs.id.clone(),
-                    });
+                    uncertainties.push(UncertaintyLite::new("interface-dispatch", &cs.id));
                     continue;
                 }
                 let callee = ctx.routine_by_id.get(edge.to.as_str()).copied();
@@ -389,10 +383,10 @@ pub fn detect_d3(
                         || param_effect.may_use_record_ref)
                 {
                     bailout = true;
-                    uncertainties.push(UncertaintyLite {
-                        kind: "recordref-or-variant".to_string(),
-                        at: cs.operation_id.clone(),
-                    });
+                    uncertainties.push(UncertaintyLite::new(
+                        "recordref-or-variant",
+                        &cs.operation_id,
+                    ));
                     continue;
                 }
                 // reads = paramEffect.readsFields ("unknown" | field-id list)
@@ -541,21 +535,21 @@ pub fn detect_d3(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: title.to_string(),
+                title: title.to_string().into(),
                 root_cause,
                 severity: "medium".to_string(),
                 confidence: to_confidence(&uncertainties, base_level),
                 primary_location: anchor_of(retrieval_anchor, routine),
                 evidence_path,
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
-                affected_tables: vec![table_id],
+                affected_objects: vec![routine.object_id.as_str().into()],
+                affected_tables: vec![table_id.into()],
                 fix_options: vec![FixOption {
-                    description: fix_description,
-                    safety: "high".to_string(),
+                    description: fix_description.into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

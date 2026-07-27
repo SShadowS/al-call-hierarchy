@@ -29,7 +29,7 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor, is_platform_loaded_trigger_rec};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, id_list};
 use crate::engine::l5::fingerprint::FingerprintIndex;
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
@@ -297,7 +297,7 @@ fn emit(
         id: id.clone(),
         root_cause_key: id,
         detector: DETECTOR.to_string(),
-        title: "Validate changes are not persisted".to_string(),
+        title: "Validate changes are not persisted".into(),
         root_cause: format!(
             "{} calls Validate on {} but never persists the change with Modify / Insert before the record is reloaded or the routine returns — the field write is discarded.",
             routine.name, op.record_variable_name
@@ -307,17 +307,17 @@ fn emit(
         primary_location: anchor_of(&op.source_anchor, routine),
         evidence_path: path,
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
-        affected_tables,
+        affected_objects: vec![routine.object_id.as_str().into()],
+        affected_tables: id_list(affected_tables),
         fix_options: vec![FixOption {
             description: format!(
                 "Add {0}.Modify() after the Validate (or {0}.Insert() if the record is new). If the Validate is intentional (only running validation logic, not persisting), document the intent.",
                 op.record_variable_name
-            ),
-            safety: "high".to_string(),
+            ).into(),
+            safety: "high".into(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

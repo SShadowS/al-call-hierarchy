@@ -94,7 +94,7 @@ pub fn detect_d58(
                             id: id.clone(),
                             root_cause_key: id,
                             detector: DETECTOR.to_string(),
-                            title: "Query filter set after Open".to_string(),
+                            title: "Query filter set after Open".into(),
                             root_cause: format!(
                                 "{} sets a filter on the query variable {} AFTER Open() — \
                                  the open dataset ignores it; the filter only applies on \
@@ -113,16 +113,16 @@ pub fn detect_d58(
                                 note: "filter after Open (ignored by the open dataset)".to_string(),
                             }],
                             additional_paths: None,
-                            affected_objects: vec![routine.object_id.clone()],
+                            affected_objects: vec![routine.object_id.as_str().into()],
                             affected_tables: Vec::new(),
                             fix_options: vec![FixOption {
                                 description: "Move the SetFilter/SetRange before Open(), or \
                                               Close() and re-Open() after changing filters."
-                                    .to_string(),
-                                safety: "high".to_string(),
+                                    .into(),
+                                safety: "high".into(),
                             }],
                             provenance: vec![Evidence {
-                                source: "tree-sitter".to_string(),
+                                source: "tree-sitter",
                                 note: None,
                             }],
                             actionable_anchor: None,

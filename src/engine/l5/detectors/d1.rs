@@ -44,32 +44,37 @@
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::engine::l3::l3_workspace::L3Table;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l4::combined_graph::CombinedEdge;
+// Only the `search_loops`/`WalkResult` shadow oracle still handles OWNED
+// uncertainties; the production cohort path carries `UncertaintyId`s and resolves
+// them through the run-level `UncertaintyTable`.
+#[cfg(test)]
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::d1_cohort::{
-    GroupBitmap, LoopSetId, LoopSetRegistry, reachable_verdicts_of,
+    GroupBitmap, LoopSetId, LoopSetRegistry, UncertaintyId, UncertaintyTable, reachable_verdicts_of,
 };
 use crate::engine::l5::d1_graph::build_d1_graph;
 use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
 #[cfg(test)]
 use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
-use crate::engine::l5::d1_witness::flatten_witness;
+use crate::engine::l5::d1_witness::StepInterner;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
 };
-#[cfg(test)]
-use crate::engine::l5::finding::LoopContext;
 use crate::engine::l5::finding::{
     D1CohortContext, D1CohortIndex, Evidence, EvidenceStep, Finding, FindingConfidence, FixOption,
     SourceAnchor,
 };
+#[cfg(test)]
+use crate::engine::l5::finding::{LoopContext, id_list};
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{annotate_root_cause, sev_rank};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -401,26 +406,29 @@ pub(crate) fn severity_for(
     base
 }
 
-/// Convert a walk's accumulated `Uncertainty` set to the `UncertaintyLite` shape
-/// `to_confidence` consumes. Mirrors al-sem `describe(u)` id-precedence
-/// (callsiteId → operationId → routineId).
+/// Convert a walk's accumulated OWNED `Uncertainty` set to `UncertaintyLite`s.
+/// `#[cfg(test)]` — only the `search_loops`/`WalkResult` oracle still holds owned
+/// uncertainties; the production cohort path uses
+/// [`uncertainty_lites_of_ids`].
+#[cfg(test)]
 fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
-        .collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
+}
+
+/// Convert a cohort's INTERNED uncertainty union to `UncertaintyLite`s, resolving
+/// each id through the run-level `table`. Order is the id sequence's order, which
+/// is the de-duped, key-sorted order `UncertaintyTable::dedupe` produced — the
+/// same sequence the owned-value form produced before the ids existed.
+///
+/// The clone is a pair of refcount bumps, not text: the table materialised each
+/// distinct uncertainty's `kind` and evidence note once, and every
+/// `Evidence` this produces shares those allocations (see
+/// [`crate::engine::l5::finding::Evidence`]).
+fn uncertainty_lites_of_ids(
+    ids: &[UncertaintyId],
+    table: &UncertaintyTable,
+) -> Vec<UncertaintyLite> {
+    ids.iter().map(|&id| table.lite(id).clone()).collect()
 }
 
 /// `buildFinding(...)` — assemble the internal Finding for the OLD walker path.
@@ -563,15 +571,15 @@ fn build_finding(
             description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
                           typically O(1) after the first hit. Hoist the Get() outside the loop \
                           only if the call site shows up in a CPU profile."
-                .to_string(),
-            safety: "high".to_string(),
+                .into(),
+            safety: "high".into(),
         }]
     } else {
         vec![FixOption {
             description: "Move the database operation outside the loop, or batch it into a \
                           set-based operation."
-                .to_string(),
-            safety: "medium".to_string(),
+                .into(),
+            safety: "medium".into(),
         }]
     };
 
@@ -579,18 +587,18 @@ fn build_finding(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: "Database operation inside a loop".to_string(),
+        title: "Database operation inside a loop".into(),
         root_cause,
         severity: severity.to_string(),
         confidence,
         primary_location: terminal_op_anchor,
         evidence_path: result.path.clone(),
         additional_paths: None,
-        affected_objects,
-        affected_tables,
+        affected_objects: id_list(affected_objects),
+        affected_tables: id_list(affected_tables),
         fix_options,
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -1508,15 +1516,15 @@ fn build_group_finding(
             description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
                           typically O(1) after the first hit. Hoist the Get() outside the loop \
                           only if the call site shows up in a CPU profile."
-                .to_string(),
-            safety: "high".to_string(),
+                .into(),
+            safety: "high".into(),
         }]
     } else {
         vec![FixOption {
             description: "Move the database operation outside the loop, or batch it into a \
                           set-based operation."
-                .to_string(),
-            safety: "medium".to_string(),
+                .into(),
+            safety: "medium".into(),
         }]
     };
 
@@ -1526,7 +1534,7 @@ fn build_group_finding(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: "Database operation inside a loop".to_string(),
+        title: "Database operation inside a loop".into(),
         root_cause,
         // Severity + confidence from the SAME (winning) context.
         severity: agg.severity.to_string(),
@@ -1534,11 +1542,11 @@ fn build_group_finding(
         primary_location: anchor_of(&terminal_op.source_anchor, terminal_routine),
         evidence_path: agg.witness.clone(),
         additional_paths,
-        affected_objects,
-        affected_tables,
+        affected_objects: id_list(affected_objects),
+        affected_tables: id_list(affected_tables),
         fix_options,
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -1601,6 +1609,20 @@ fn min_group(bm: &GroupBitmap) -> u32 {
     bm.iter().next().unwrap_or(u32::MAX)
 }
 
+/// The run's ONE `Arc<str>` for an internal object/table id, minted on first
+/// sight. `cache` borrows its keys from the workspace (which outlives the
+/// assembly), so a repeat lookup allocates nothing at all.
+fn intern_id<'w>(cache: &mut HashMap<&'w str, Arc<str>>, id: &'w str) -> Arc<str> {
+    match cache.get(id) {
+        Some(a) => Arc::clone(a),
+        None => {
+            let a: Arc<str> = Arc::from(id);
+            cache.insert(id, Arc::clone(&a));
+            a
+        }
+    }
+}
+
 /// Assemble ONE compressed [`Finding`] per reached terminal from the cohort run
 /// (the C6 cutover replacement for [`assemble_findings`]), and build the
 /// run-level [`LoopSetRegistry`] as cohorts are interned.
@@ -1613,24 +1635,55 @@ fn min_group(bm: &GroupBitmap) -> u32 {
 ///   lowest group index and the global-min top-`(sev, verdict)` loop is the min of
 ///   its OWN cohort. So the finding's `severity` (the max), `confidence` (from the
 ///   winner cohort's representative-path uncertainties = the old winner's), the
-///   root-cause loop name, `primary_location`, `evidence_path` (the winner's
-///   witness) and fingerprint inputs are all PRESERVED across the cutover — only
-///   the witness becomes bounded and the per-loop `contexts` become per-class
+///   root-cause loop name, `primary_location`, realizing witness path and
+///   fingerprint inputs are all PRESERVED across the cutover — only the witness
+///   becomes bounded and the per-loop `contexts` become per-class
 ///   `cohort_contexts`.
 /// - `cohort_contexts` = every ContextKey cohort partitioned FURTHER by
 ///   `reachable_verdicts` (a per-`(loop, terminal)` property that can vary within a
 ///   ContextKey class), each with an interned `loop_set` + `loop_count` + the ck
 ///   cohort's shared bounded representative `witness`; ordered `(sev desc, verdict
 ///   quality desc, min group asc)` so `cohort_contexts[0]` is the winner class.
-/// - `evidence_path` = the winner cohort's flattened representative witness;
-///   `additional_paths` = the non-winner cohort_contexts' witnesses in the same
-///   order (so a SARIF code-flow index maps to a `cohort_contexts` index).
+/// - `evidence_path`/`additional_paths` are NOT built: they were byte-for-byte
+///   copies of `cohort_contexts[0].witness` / `cohort_contexts[1..].witness`,
+///   which `project_finding` has discarded since Task C8. Readers derive them
+///   through [`crate::engine::l5::finding::evidence_path_of`] /
+///   [`crate::engine::l5::finding::realizing_path_count`] instead (so a SARIF
+///   code-flow index still maps to a `cohort_contexts` index).
 fn assemble_cohort_findings(
     run: &D1CohortRun,
     ctx: &DetectorContext,
     role_by_routine: &HashMap<&str, &str>,
 ) -> (Vec<Finding>, LoopSetRegistry) {
     let mut registry = LoopSetRegistry::new();
+    // Hash-cons for the witness steps the findings are about to RETAIN. The sink's
+    // copies are transient (freed with the run); these are not, and they repeat
+    // 4.29x across cohorts on Base App 8020. Local, so it is dropped with this
+    // call and leaves only the sharing behind. See `d1_witness::StepInterner`.
+    let mut steps = StepInterner::default();
+    // The same idea for the object/table ids: 563,126 entries over 2,042
+    // distinct values on 8020 (276x duplication). See `affected_objects` below.
+    let mut object_ids: HashMap<&str, Arc<str>> = HashMap::new();
+    // Every d1 finding carries the SAME title and one of TWO fix options
+    // (census: `title` 1 distinct over 22,383 findings, `fix_options`
+    // description/safety 2 each). Hoisted out of the emit loop so the run holds
+    // one allocation of each instead of one per finding.
+    let title: Arc<str> = Arc::from("Database operation inside a loop");
+    let setup_fix = FixOption {
+        description: Arc::from(
+            "Setup tables are session-cached by BC, so a Get() inside a loop is \
+             typically O(1) after the first hit. Hoist the Get() outside the loop \
+             only if the call site shows up in a CPU profile.",
+        ),
+        safety: Arc::from("high"),
+    };
+    let general_fix = FixOption {
+        description: Arc::from(
+            "Move the database operation outside the loop, or batch it into a \
+             set-based operation.",
+        ),
+        safety: Arc::from("medium"),
+    };
     let mut out: Vec<Finding> = Vec::new();
 
     // Iterate terminals in a DETERMINISTIC key order so the run-level loop-set
@@ -1739,7 +1792,9 @@ fn assemble_cohort_findings(
                         reachable_verdicts: rv_labels,
                         loop_set: LoopSetId(0), // placeholder — assigned after the sort
                         loop_count,
-                        witness: rep.witness.clone(),
+                        // Value-identical to `rep.witness`; every step is the
+                        // run's ONE allocation for that step value.
+                        witness: steps.intern_witness(&rep.witness),
                     },
                 ));
             }
@@ -1761,19 +1816,16 @@ fn assemble_cohort_findings(
             })
             .collect();
 
-        // evidence_path = winner's flattened representative witness; additional =
-        // the non-winner cohort witnesses in cohort_contexts order.
-        let evidence_path = flatten_witness(&winner_rep.witness);
-        let additional_paths = if cohort_contexts.len() > 1 {
-            Some(
-                cohort_contexts[1..]
-                    .iter()
-                    .map(|c| flatten_witness(&c.witness))
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        // `evidence_path`/`additional_paths` are deliberately NOT built here.
+        // They were the winner's flattened representative witness and the
+        // non-winner cohort witnesses in `cohort_contexts` order — i.e. a
+        // byte-for-byte second copy of `cohort_contexts[..].witness`, which Task
+        // C8 already stopped emitting (`project_finding` returns `Vec::new()`/
+        // `None` for a cohort-bearing finding). Retaining them cost 95.9 MiB in
+        // 1,085,149 allocations per Base App 8020 run for data no consumer ever
+        // received. Every reader now derives the path on demand via
+        // [`crate::engine::l5::finding::evidence_path_of`], which reconstructs
+        // exactly what this code used to store.
 
         // Identity + wording (all derived from the winner — preserved vs. old).
         let terminal_routine_id = terminal_routine.id.as_str();
@@ -1820,59 +1872,64 @@ fn assemble_cohort_findings(
         let root_cause = annotate_root_cause(&base_root_cause, total_loops as usize);
 
         // affectedObjects = every reaching loop's routine object + the terminal's.
-        let mut affected_set: BTreeSet<String> = BTreeSet::new();
+        // Borrowed into the `BTreeSet` (the ids live in the workspace, which
+        // outlives this call) so the per-terminal set costs no allocation at all;
+        // only the survivors are interned below.
+        let mut affected_set: BTreeSet<&str> = BTreeSet::new();
         for (_ck, bm, _rep) in &tc.cohorts {
             for g in bm.iter() {
                 let lr_id = run.catalog[g as usize].loop_routine_id.as_str();
                 if let Some(r) = ctx.routine_by_id.get(lr_id) {
-                    affected_set.insert(r.object_id.clone());
+                    affected_set.insert(r.object_id.as_str());
                 }
             }
         }
-        affected_set.insert(terminal_routine.object_id.clone());
-        let affected_objects: Vec<String> = affected_set.into_iter().collect();
+        affected_set.insert(terminal_routine.object_id.as_str());
+        // Interned, NOT `id_list`: this is the site the whole `Arc<str>` id list
+        // exists for. Across a run d1 emits 563,126 object ids drawn from 2,042
+        // distinct values (27.6 MB of text, 276x duplication) — one per reaching
+        // loop's owning object, per finding — so a per-entry allocation is the
+        // cost. `object_ids` is a run-level cache, so each distinct id is
+        // allocated once and every finding holds handles.
+        let affected_objects: Vec<Arc<str>> = affected_set
+            .into_iter()
+            .map(|o| intern_id(&mut object_ids, o))
+            .collect();
 
-        let affected_tables: Vec<String> = match &terminal_op.table_id {
-            Some(t) => vec![t.clone()],
+        let affected_tables: Vec<Arc<str>> = match &terminal_op.table_id {
+            Some(t) => vec![intern_id(&mut object_ids, t.as_str())],
             None => Vec::new(),
         };
 
-        let confidence: FindingConfidence =
-            to_confidence(&uncertainty_lites(&winner_rep.uncertainties), "likely");
+        let confidence: FindingConfidence = to_confidence(
+            &uncertainty_lites_of_ids(&winner_rep.uncertainties, &run.uncertainties),
+            "likely",
+        );
 
-        let fix_options = if setup_singleton {
-            vec![FixOption {
-                description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
-                              typically O(1) after the first hit. Hoist the Get() outside the loop \
-                              only if the call site shows up in a CPU profile."
-                    .to_string(),
-                safety: "high".to_string(),
-            }]
+        // A refcount bump on one of the two hoisted options, not a fresh pair of
+        // allocations per finding.
+        let fix_options = vec![if setup_singleton {
+            setup_fix.clone()
         } else {
-            vec![FixOption {
-                description: "Move the database operation outside the loop, or batch it into a \
-                              set-based operation."
-                    .to_string(),
-                safety: "medium".to_string(),
-            }]
-        };
+            general_fix.clone()
+        }];
 
         let mut finding = Finding {
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Database operation inside a loop".to_string(),
+            title: Arc::clone(&title),
             root_cause,
             severity: winner_ck.severity.to_string(),
             confidence,
             primary_location: anchor_of(&terminal_op.source_anchor, terminal_routine),
-            evidence_path,
-            additional_paths,
+            evidence_path: Vec::new(),
+            additional_paths: None,
             affected_objects,
             affected_tables,
             fix_options,
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,
@@ -2958,12 +3015,15 @@ mod shadow_tests {
     /// comparison (`extract_final_sev_by_key`), so the identity rule exists
     /// exactly once.
     fn finding_identity(f: &Finding) -> (String, String, String) {
-        let loop_id = f.evidence_path[0]
+        // Through `evidence_path_of`: `extract_final_sev_by_key` runs this over
+        // `detect_d1`'s REAL post-merge output, whose findings are cohort-bearing
+        // and therefore derive their path from `cohort_contexts[0].witness`.
+        let path = crate::engine::l5::finding::evidence_path_of(f);
+        let loop_id = path[0]
             .loop_id
             .clone()
             .expect("a d1 finding's first evidence step is always a loop step (build_finding)");
-        let last = f
-            .evidence_path
+        let last = path
             .last()
             .expect("a d1 finding's evidence_path is never empty");
         let routine_id = last.routine_id.clone();
@@ -3645,6 +3705,500 @@ mod assembly_tests {
             "wording names the winner's loop routine: {}",
             f.root_cause
         );
+    }
+
+    /// Run the PRODUCTION cohort pipeline over a fixture and return the assembled
+    /// findings — `search_loops_cohorts` (which interns each cohort's uncertainty
+    /// union into the run's [`UncertaintyTable`]) + `assemble_cohort_findings`
+    /// (which resolves the winner's ids back through it). Distinct from
+    /// [`assemble`] above, which drives the `#[cfg(test)]` `search_loops` oracle.
+    fn assemble_cohorts(
+        routines: &[L3Routine],
+        edges: HashMap<String, Vec<CombinedEdge>>,
+        summaries: HashMap<String, FullRoutineSummary>,
+    ) -> Vec<Finding> {
+        let ctx = minimal_ctx_with_uncertainties(routines, edges, summaries, HashMap::new());
+        cohort_findings(&ctx, routines)
+    }
+
+    /// [`minimal_ctx`] plus an injected `uncertainties_by_node` map (the substrate
+    /// `path_uncertainty_ids` unions along a cohort's representative path).
+    fn minimal_ctx_with_uncertainties<'a>(
+        routines: &'a [L3Routine],
+        edges: HashMap<String, Vec<CombinedEdge>>,
+        summaries: HashMap<String, FullRoutineSummary>,
+        uncertainties: HashMap<String, Vec<Uncertainty>>,
+    ) -> DetectorContext<'a> {
+        let mut ctx = minimal_ctx(routines, edges, summaries);
+        ctx.uncertainties_by_node = uncertainties;
+        ctx
+    }
+
+    /// The production cohort path over an already-built context.
+    fn cohort_findings(ctx: &DetectorContext, routines: &[L3Routine]) -> Vec<Finding> {
+        let workspace = ws(routines);
+        let mut memo = HashMap::new();
+        let (graph, seeds) = build_d1_graph(ctx, &workspace, &mut memo);
+        let (direct_ops, _stats) = enumerate_direct_ops(&workspace, ctx);
+        let run = search_loops_cohorts(
+            &graph,
+            &seeds,
+            &direct_ops,
+            ctx,
+            &ctx.closed_world_temp_params,
+        );
+        assemble_cohort_findings(&run, ctx, &role_map(routines)).0
+    }
+
+    /// R's loop calls A; A reaches the terminal T BOTH directly (`A/csT`, no loop)
+    /// and via a deeper route `A/csX` (inside A's own loop) → X → Y → T. The deep
+    /// route wins on severity, so the winning cohort's representative path is
+    /// `A → X → Y → T` — which is where the uncertainties are injected. Shape
+    /// lifted from `d1_dataflow`'s `agrees_on_uncertain_winner`, the fixture that
+    /// established this route wins and carries `unc == true`.
+    fn uncertain_winner_fixture() -> Fixture {
+        let mut r = routine("R", "procedure");
+        r.loops = vec![loop_def("R/loop0")];
+        r.call_sites = vec![call_site("R/cs0", "A", vec!["R/loop0".to_string()])];
+        let mut a = routine("A", "procedure");
+        a.call_sites = vec![
+            call_site("A/csT", "T", vec![]),
+            call_site("A/csX", "X", vec!["A/loop0".to_string()]),
+        ];
+        let x = routine("X", "procedure");
+        let y = routine("Y", "procedure");
+        let mut t = routine("T", "procedure");
+        t.record_operations = vec![record_op(
+            "T/op0",
+            "FindSet",
+            "Rec",
+            Some("t/T"),
+            vec![],
+            false,
+        )];
+        let routines = vec![r, a, x, y, t];
+
+        let mut edges: HashMap<String, Vec<CombinedEdge>> = HashMap::new();
+        edges.insert(
+            "R".to_string(),
+            vec![edge_kind("R", "A", "R/cs0", "direct")],
+        );
+        edges.insert(
+            "A".to_string(),
+            vec![
+                edge_kind("A", "T", "A/csT", "direct"),
+                edge_kind("A", "X", "A/csX", "direct"),
+            ],
+        );
+        edges.insert(
+            "X".to_string(),
+            vec![edge_kind("X", "Y", "X/csY", "direct")],
+        );
+        edges.insert(
+            "Y".to_string(),
+            vec![edge_kind("Y", "T", "Y/csT", "direct")],
+        );
+
+        let summaries: HashMap<String, FullRoutineSummary> = ["A", "X", "Y", "T"]
+            .iter()
+            .map(|id| (id.to_string(), db_read_summary(id, &format!("t/{id}"))))
+            .collect();
+        (routines, edges, summaries)
+    }
+
+    fn db_read_summary(id: &str, table: &str) -> FullRoutineSummary {
+        summary(
+            id,
+            vec![fact("read", "table", Some(table))],
+            vec![],
+            Some(coverage("complete")),
+        )
+    }
+
+    fn unc(kind: &str, callsite: Option<&str>, routine: Option<&str>) -> Uncertainty {
+        Uncertainty {
+            kind: kind.to_string(),
+            callsite_id: callsite.map(|s| s.to_string()),
+            operation_id: None,
+            routine_id: routine.map(|s| s.to_string()),
+            interface_name: None,
+        }
+    }
+
+    /// **Pins the interned-uncertainty USE, end to end.** The cohort's uncertainty
+    /// union is stored in `CohortRep` as `UncertaintyId`s into the run-level
+    /// `UncertaintyTable`; `assemble_cohort_findings` resolves them back at
+    /// `to_confidence`. This asserts the resolved `Finding.confidence` EXACTLY —
+    /// level, `cappedBy`, and every evidence note in order — so a wrong id, a
+    /// wrong table, a lost dedupe or a lost sort all fail here.
+    ///
+    /// The fixture is built so each of those is separately load-bearing:
+    /// - **Order** is not discovery order. The path is `A → X → Y → T`, so X's
+    ///   `external-target` is *discovered* before Y's `dynamic-dispatch`, but the
+    ///   emitted order must be key-sorted (`dynamic-dispatch|Y` <
+    ///   `external-target|X/csY` < `unresolved-call|A/csX`).
+    /// - **Dedup** is exercised: the same `unresolved-call at A/csX` sits on BOTH
+    ///   X and Y and must appear exactly once.
+    /// - **Resolution** is exercised: three DISTINCT table entries, so an
+    ///   off-by-one or a table mix-up changes a note.
+    ///
+    /// A golden now ALSO covers this — `tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`
+    /// (added at `fe8a018`, "test(d1): cover confidence.evidence with a golden") carries
+    /// one `d1-db-op-in-loop` finding with six non-empty `confidence.evidence` entries;
+    /// see `tests/r4/r4_differential.rs:693-704`, which documents it as the only golden
+    /// anywhere in this repository that covers `Finding.confidence.evidence` (every other
+    /// d1 golden's winner path is certain, so `to_confidence` takes its `is_empty()` fast
+    /// path there). This unit test stays as a second, independent guard: it asserts
+    /// against a hand-built fixture (`uncertain_winner_fixture`) rather than the golden's
+    /// fixed shape, so a change that happens to preserve the golden's exact bytes cannot
+    /// silently break ORDER, DEDUP or RESOLUTION in general.
+    #[test]
+    fn cohort_confidence_resolves_interned_uncertainties_in_key_order() {
+        let (routines, edges, summaries) = uncertain_winner_fixture();
+        let uncertainties: HashMap<String, Vec<Uncertainty>> = [
+            (
+                "X".to_string(),
+                vec![
+                    unc("external-target", Some("X/csY"), None),
+                    unc("unresolved-call", Some("A/csX"), None),
+                ],
+            ),
+            (
+                "Y".to_string(),
+                vec![
+                    unc("dynamic-dispatch", None, Some("Y")),
+                    unc("unresolved-call", Some("A/csX"), None),
+                ],
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let ctx = minimal_ctx_with_uncertainties(&routines, edges, summaries, uncertainties);
+        let findings = cohort_findings(&ctx, &routines);
+
+        assert_eq!(findings.len(), 1, "one terminal -> one finding");
+        let c = &findings[0].confidence;
+
+        assert_eq!(c.level, "possible", "any uncertainty caps the level");
+        assert_eq!(
+            c.capped_by,
+            Some(vec![
+                "dynamic-dispatch".to_string(),
+                "opaque-callee".to_string(), // alias of external-target
+                "unresolved-call".to_string(),
+            ]),
+        );
+        let notes: Vec<&str> = c
+            .evidence
+            .iter()
+            .filter_map(|e| e.note.as_deref())
+            .collect();
+        assert_eq!(
+            notes,
+            vec![
+                "dynamic-dispatch at Y",
+                "external-target at X/csY",
+                "unresolved-call at A/csX",
+            ],
+            "the winner cohort's interned ids must resolve to these three \
+             uncertainties, de-duped, in uncertainty_key order"
+        );
+    }
+
+    /// [`uncertain_winner_fixture`] plus a SECOND terminal off the same uncertain
+    /// node `Y`, so two independent findings' confidence evidence is built from
+    /// the same interned uncertainty.
+    fn shared_uncertainty_two_terminals_fixture() -> Fixture {
+        let (mut routines, mut edges, mut summaries) = uncertain_winner_fixture();
+        let y = routines
+            .iter_mut()
+            .find(|r| r.id == "Y")
+            .expect("Y is in the base fixture");
+        y.call_sites = vec![call_site("Y/csU", "U", vec![])];
+        let mut u = routine("U", "procedure");
+        u.record_operations = vec![record_op(
+            "U/op0",
+            "FindSet",
+            "Rec",
+            Some("t/U"),
+            vec![],
+            false,
+        )];
+        routines.push(u);
+        edges
+            .get_mut("Y")
+            .expect("Y has edges in the base fixture")
+            .push(edge_kind("Y", "U", "Y/csU", "direct"));
+        summaries.insert("U".to_string(), db_read_summary("U", "t/U"));
+        (routines, edges, summaries)
+    }
+
+    /// **Pins the SHARED-witness-step representation at the use site.** A run's
+    /// retained cohort witnesses repeat their steps 4.29x on Base App 8020
+    /// (172,915 steps, 40,325 distinct), and `assemble_cohort_findings`
+    /// hash-conses them through a `StepInterner` so each distinct step is ONE
+    /// allocation. Equality alone cannot see that: a version that cloned per
+    /// cohort produces byte-identical output and costs 71 MiB more.
+    ///
+    /// Two independent shares are asserted, both through the real
+    /// `search_loops_cohorts` + `assemble_cohort_findings`:
+    ///
+    /// - ACROSS findings — `shared_uncertainty_two_terminals_fixture` reaches two
+    ///   terminals (two findings) from the SAME loop, so both findings' witnesses
+    ///   open with the same loop step. This is the strongest form: the sharing
+    ///   survives per-finding assembly rather than being an artifact of one call.
+    /// - WITHIN a finding — `severity_race_fixture` reaches ONE terminal from two
+    ///   loops of different severity, so the finding's two cohorts carry the same
+    ///   terminal step.
+    ///
+    /// Each `assert_eq!` on the step VALUE runs before its `ptr_eq`, so a real
+    /// divergence fails legibly instead of as an opaque pointer mismatch.
+    /// Replacing `steps.intern_witness(&rep.witness)` with `rep.witness.clone()`
+    /// turns this red and nothing else.
+    #[test]
+    fn cohort_witness_steps_are_shared() {
+        // --- across two findings, one shared loop ---
+        let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 2, "two terminals -> two findings");
+        let loop_steps: Vec<&std::sync::Arc<EvidenceStep>> = findings
+            .iter()
+            .map(|f| {
+                &f.cohort_contexts
+                    .as_ref()
+                    .expect("d1 emits cohort_contexts")[0]
+                    .witness
+                    .first_steps[0]
+            })
+            .collect();
+        assert_eq!(
+            loop_steps[0], loop_steps[1],
+            "both findings are reached from the same loop, so the loop step is equal"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(loop_steps[0], loop_steps[1]),
+            "…and must be ONE hash-consed allocation, not two equal copies"
+        );
+
+        // --- within one finding, two cohorts of one terminal ---
+        let (routines, edges, summaries) = severity_race_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 1);
+        let cohorts = findings[0]
+            .cohort_contexts
+            .as_ref()
+            .expect("d1 emits cohort_contexts");
+        assert!(cohorts.len() >= 2, "the fixture must produce >1 cohort");
+        assert_eq!(
+            cohorts[0].witness.terminal_step, cohorts[1].witness.terminal_step,
+            "every cohort of one terminal ends on the same terminal step"
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(
+                &cohorts[0].witness.terminal_step,
+                &cohorts[1].witness.terminal_step
+            ),
+            "…and must be ONE hash-consed allocation"
+        );
+    }
+
+    /// **Pins the SHARED identity/advice text at the use site.** Across a run,
+    /// `d1` emits 563,126 `affected_objects` entries over 2,042 distinct values,
+    /// 22,383 titles of ONE distinct value, and 22,383 fix options drawn from
+    /// TWO — so these are interned (`object_ids`) or hoisted out of the emit loop
+    /// (`title`, `setup_fix`/`general_fix`) rather than rebuilt per finding.
+    ///
+    /// Like the witness-step and note claims, equality cannot see this: a version
+    /// that allocated per finding produces byte-identical output. So this asserts
+    /// pointer identity across TWO findings from the real pipeline, with the value
+    /// asserted first so a genuine divergence fails legibly. Replacing
+    /// `intern_id(&mut object_ids, o)` with `Arc::from(o)`, or `Arc::clone(&title)`
+    /// with a fresh `Arc::from(...)`, turns the corresponding half red.
+    #[test]
+    fn cohort_ids_and_advice_text_are_shared_across_findings() {
+        let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 2, "two terminals -> two findings");
+        let (a, b) = (&findings[0], &findings[1]);
+
+        // affected_objects: both terminals live in the fixture's single object.
+        assert_eq!(a.affected_objects.len(), 1);
+        assert_eq!(&*a.affected_objects[0], "app/Codeunit/1");
+        assert_eq!(a.affected_objects, b.affected_objects);
+        assert!(
+            Arc::ptr_eq(&a.affected_objects[0], &b.affected_objects[0]),
+            "an object id repeated across findings must be ONE run-level allocation"
+        );
+
+        // title: one distinct value across every d1 finding in a run.
+        assert_eq!(&*a.title, "Database operation inside a loop");
+        assert_eq!(a.title, b.title);
+        assert!(
+            Arc::ptr_eq(&a.title, &b.title),
+            "the title must be hoisted out of the emit loop, not rebuilt per finding"
+        );
+
+        // fix_options: drawn from a two-entry menu, so the text is shared too.
+        assert_eq!(a.fix_options.len(), 1);
+        assert_eq!(a.fix_options[0], b.fix_options[0]);
+        assert!(
+            Arc::ptr_eq(&a.fix_options[0].description, &b.fix_options[0].description),
+            "fix-option description must be hoisted, not rebuilt per finding"
+        );
+        assert!(Arc::ptr_eq(
+            &a.fix_options[0].safety,
+            &b.fix_options[0].safety
+        ));
+    }
+
+    /// **Pins the SHARED-note representation at the use site.** Every
+    /// `Finding.confidence.evidence` record is a `ConfidenceEvidence` whose
+    /// `note` is an `Arc<str>` cloned from the run-level `UncertaintyTable` — one
+    /// allocation per DISTINCT uncertainty rather than one per record. That is the entire
+    /// memory claim of this change (7,418,849 records, 3,073 distinct notes on
+    /// Base App 8020), and equality alone cannot see it: a version that rebuilt
+    /// the string per record would still produce equal notes and identical
+    /// output, just a gigabyte heavier.
+    ///
+    /// So this asserts pointer identity, through the real
+    /// `search_loops_cohorts` + `assemble_cohort_findings`, across TWO separate
+    /// findings — the strongest available statement that the sharing survives
+    /// finding assembly rather than being an artifact of one `to_confidence`
+    /// call. The `assert_eq!` on the note text first keeps a failure legible:
+    /// if the text diverges, that fires before the pointer check.
+    #[test]
+    fn cohort_evidence_notes_are_shared_across_findings() {
+        let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
+        let uncertainties: HashMap<String, Vec<Uncertainty>> = [(
+            "Y".to_string(),
+            vec![unc("dynamic-dispatch", None, Some("Y"))],
+        )]
+        .into_iter()
+        .collect();
+
+        let ctx = minimal_ctx_with_uncertainties(&routines, edges, summaries, uncertainties);
+        let findings = cohort_findings(&ctx, &routines);
+
+        assert_eq!(findings.len(), 2, "two terminals -> two findings");
+        let notes: Vec<&std::sync::Arc<str>> = findings
+            .iter()
+            .map(|f| {
+                assert_eq!(
+                    f.confidence.evidence.len(),
+                    1,
+                    "each winner path crosses Y exactly once"
+                );
+                f.confidence.evidence[0]
+                    .note
+                    .as_ref()
+                    .expect("the uncertainty produces a note")
+            })
+            .collect();
+        assert_eq!(&**notes[0], "dynamic-dispatch at Y");
+        assert_eq!(&**notes[1], "dynamic-dispatch at Y");
+        assert!(
+            std::sync::Arc::ptr_eq(notes[0], notes[1]),
+            "both findings' evidence notes must be clones of ONE table allocation, \
+             not two independently formatted Strings"
+        );
+    }
+
+    /// A cohort-bearing finding no longer STORES `evidence_path`/
+    /// `additional_paths`, and `finding::evidence_path_of` must reconstruct
+    /// EXACTLY what `assemble_cohort_findings` used to store there — the WINNER
+    /// cohort's flattened representative witness.
+    ///
+    /// `severity_race_fixture` is chosen because it makes the two candidate
+    /// answers visibly different: ONE terminal (`H/op0`) reached by two loops of
+    /// DIFFERENT severity, `L2` (depth-2 → critical) and `L1` (high). So the
+    /// winner cohort's path starts in `L2` and the loser's in `L1`. A
+    /// `evidence_path_of` that read `cohort_contexts[1]`, or that fell back to
+    /// the (now empty) field, fails on the `L2` assertion rather than passing
+    /// vacuously — which the `.first()` → `.last()` perturbation confirms.
+    ///
+    /// The 4-step shape (`loop`, `call`, `hop`, `terminal`) is the same one the
+    /// pre-change `contexts` oracle pins for this fixture in
+    /// `winner_context_drives_finding_fields`, so the two paths agree on the
+    /// answer as well as on the mechanism.
+    #[test]
+    fn cohort_evidence_path_is_the_winner_witness() {
+        use crate::engine::l5::d1_witness::flatten_witness;
+        use crate::engine::l5::finding::evidence_path_of;
+
+        let (routines, edges, summaries) = severity_race_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 1, "one terminal -> one cohort finding");
+        let f = &findings[0];
+
+        assert!(
+            f.evidence_path.is_empty(),
+            "a cohort-bearing finding must NOT build evidence_path — it is 59.9 MiB \
+             of retained duplicate the projection already discards"
+        );
+        assert!(
+            f.additional_paths.is_none(),
+            "…and must not build additional_paths either (36.0 MiB more)"
+        );
+
+        let cohorts = f
+            .cohort_contexts
+            .as_ref()
+            .expect("d1 always emits cohort_contexts");
+        assert!(
+            cohorts.len() >= 2,
+            "the fixture reaches one terminal from two loops of different severity"
+        );
+        assert_eq!(cohorts[0].severity, "critical", "winner class first");
+        assert_eq!(
+            f.severity, "critical",
+            "the finding lifts the winner severity"
+        );
+
+        let path = evidence_path_of(f);
+        assert_eq!(
+            &*path,
+            flatten_witness(&cohorts[0].witness).as_slice(),
+            "the derived path IS the winner cohort's flattened witness"
+        );
+
+        // The discriminating half: the winner is L2's route, not L1's.
+        assert_eq!(path[0].routine_id, "L2", "path starts in the WINNER's loop");
+        assert_eq!(path[0].loop_id.as_deref(), Some("L2/loop0"));
+        assert_eq!(path.len(), 4, "loop, call, hop, terminal");
+        let last = path.last().expect("non-empty");
+        assert_eq!(last.routine_id, "H");
+        assert_eq!(last.operation_id.as_deref(), Some("H/op0"));
+
+        // `additional_paths` is gone too, and `pathCount` — which reaches the
+        // default `analyze` JSON — must still be `1 + (non-winner cohorts)`.
+        // This fixture has MORE than one cohort, so a `realizing_path_count`
+        // that fell back to the (now `None`) field would answer 1 here.
+        assert_eq!(
+            crate::engine::l5::finding::realizing_path_count(f),
+            cohorts.len(),
+            "pathCount must still count every realizing path, not just the winner"
+        );
+        assert!(
+            crate::engine::l5::finding::realizing_path_count(f) > 1,
+            "the fixture must actually exercise the >1 case or the assertion above \
+             passes vacuously"
+        );
+    }
+
+    /// The same pipeline with NO uncertainties anywhere must leave the finding at
+    /// the base level with empty evidence — the negative half of the assertion
+    /// above, so a change that always emits (or never emits) evidence cannot pass
+    /// both.
+    #[test]
+    fn cohort_confidence_is_base_level_without_uncertainties() {
+        let (routines, edges, summaries) = uncertain_winner_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 1);
+        let c = &findings[0].confidence;
+        assert_eq!(c.level, "likely");
+        assert!(c.capped_by.is_none());
+        assert!(c.evidence.is_empty());
     }
 
     /// Bullet: terminal-based `id = root_cause_key = d1/{terminal}/{op}` AND the

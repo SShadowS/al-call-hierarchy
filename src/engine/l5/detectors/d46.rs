@@ -52,24 +52,10 @@ fn anchor_from(a: &PAnchor, routine_id: &str) -> SourceAnchor {
 }
 
 /// Convert a walk's accumulated `Uncertainty` set to the `UncertaintyLite` shape
-/// `to_confidence` consumes (id-precedence callsiteId → operationId → routineId).
+/// `to_confidence` consumes (`UncertaintyLite::of` applies the shared
+/// callsiteId → operationId → routineId precedence).
 fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
-        .collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
 }
 
 /// The D46 WalkPolicy — follows non-event-dispatch call edges, terminates at any
@@ -295,7 +281,7 @@ pub fn detect_d46(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "Commit reachable from Install/Upgrade lifecycle trigger".to_string(),
+                title: "Commit reachable from Install/Upgrade lifecycle trigger".into(),
                 root_cause: format!(
                     "{} is an {} codeunit trigger that reaches Commit \u{2014} the platform's \
                      deploy transaction becomes non-atomic and cannot be rolled back if an \
@@ -307,17 +293,17 @@ pub fn detect_d46(
                 primary_location: anchor_from(&routine.source_anchor, &routine.id),
                 evidence_path: result.path.clone(),
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Remove the Commit from the install/upgrade path. The platform \
                                   wraps the Install/Upgrade trigger in its own transaction \u{2014} \
                                   an explicit Commit breaks that guarantee."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .to_string().into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

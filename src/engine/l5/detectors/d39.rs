@@ -22,7 +22,7 @@ use crate::engine::l4::effect_lattice::EffectPresence;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor, is_auto_persist_trigger_rec};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, id_list};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d39-record-left-dirty-across-chain";
@@ -190,7 +190,7 @@ pub fn detect_d39(
                     id: id.clone(),
                     root_cause_key: id,
                     detector: DETECTOR.to_string(),
-                    title: "Record left dirty across helper chain".to_string(),
+                    title: "Record left dirty across helper chain".into(),
                     root_cause: format!(
                         "{} forwards {} to {}, which leaves the record in a Validate-dirty state on at least one exit path. {} never persists after the call — the field write is silently discarded.",
                         caller.name,
@@ -203,7 +203,7 @@ pub fn detect_d39(
                     primary_location: anchor_of(&binding.argument_anchor, caller),
                     evidence_path: path,
                     additional_paths: None,
-                    affected_objects,
+                    affected_objects: id_list(affected_objects),
                     affected_tables: Vec::new(),
                     fix_options: vec![FixOption {
                         description: format!(
@@ -212,11 +212,11 @@ pub fn detect_d39(
                             caller.name,
                             callee.name,
                             callee.name
-                        ),
-                        safety: "high".to_string(),
+                        ).into(),
+                        safety: "high".into(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,

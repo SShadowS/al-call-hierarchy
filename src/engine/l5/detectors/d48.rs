@@ -33,7 +33,9 @@ use crate::engine::l4::cone_derived::{ConeDerivedStore, io_kind_bit};
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FixOption, SourceAnchor, id_list,
+};
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::path_walker::{
     PathCtx, Terminal, WalkBounds, WalkOpts, WalkPolicy, WalkStop, walk_evidence,
@@ -368,7 +370,7 @@ pub fn detect_d48(
                     id: format!("d48/{}/{}", routine.id, terminal.witness_callsite_id),
                     root_cause_key: format!("d48/{}", routine.id),
                     detector: DETECTOR.to_string(),
-                    title: "External IO inside a loop".to_string(),
+                    title: "External IO inside a loop".into(),
                     root_cause: format!(
                         "A {} loop in {} directly calls {} {} on every iteration.",
                         loop_info.loop_type,
@@ -381,18 +383,19 @@ pub fn detect_d48(
                     primary_location: terminal.source_anchor.clone(),
                     evidence_path: vec![loop_step, io_step],
                     additional_paths: None,
-                    affected_objects: vec![routine.object_id.clone()],
+                    affected_objects: vec![routine.object_id.as_str().into()],
                     affected_tables: Vec::new(),
                     fix_options: vec![FixOption {
                         description: format!(
                             "Move the {} call outside the loop or batch requests to avoid N \
                              external calls.",
                             terminal.io_kind.to_uppercase()
-                        ),
-                        safety: "medium".to_string(),
+                        )
+                        .into(),
+                        safety: "medium".into(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,
@@ -519,7 +522,7 @@ pub fn detect_d48(
                     ),
                     root_cause_key: format!("d48/{}", routine.id),
                     detector: DETECTOR.to_string(),
-                    title: "External IO inside a loop".to_string(),
+                    title: "External IO inside a loop".into(),
                     root_cause: format!(
                         "A {} loop in {} reaches {} in {} on every iteration.",
                         loop_info.loop_type, routine.name, io_method_note_s, terminal_routine_name
@@ -529,18 +532,19 @@ pub fn detect_d48(
                     primary_location: matched.source_anchor.clone(),
                     evidence_path: result.path.clone(),
                     additional_paths: None,
-                    affected_objects: affected_objects.into_iter().collect(),
+                    affected_objects: id_list(affected_objects),
                     affected_tables: Vec::new(),
                     fix_options: vec![FixOption {
                         description: format!(
                             "Move the {} call outside the loop or batch requests to avoid N \
                              external calls per iteration.",
                             matched.io_kind.to_uppercase()
-                        ),
-                        safety: "medium".to_string(),
+                        )
+                        .into(),
+                        safety: "medium".into(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,
@@ -579,25 +583,10 @@ pub fn detect_d48(
     })
 }
 
-/// Convert accumulated `Uncertainty` to `UncertaintyLite` (callsiteId → operationId
-/// → routineId precedence). Mirrors d1.
+/// Convert accumulated `Uncertainty` to `UncertaintyLite` (`UncertaintyLite::of`
+/// applies the shared callsiteId → operationId → routineId precedence).
 fn uncertainty_lites(
     uncertainties: &[crate::engine::l4::summary::Uncertainty],
 ) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
-        .collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
 }

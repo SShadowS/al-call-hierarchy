@@ -27,7 +27,7 @@ use crate::engine::l4::effect_lattice::EffectPresence;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, id_list};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d40-transitive-load-missing";
@@ -201,7 +201,7 @@ pub fn detect_d40(
                     id: id.clone(),
                     root_cause_key: id,
                     detector: DETECTOR.to_string(),
-                    title: format!("Forwarded record not loaded before {verb_ing} helper"),
+                    title: format!("Forwarded record not loaded before {verb_ing} helper").into(),
                     root_cause: format!(
                         "{} forwards {} to {}, which {} the record without loading it — the caller must Get/Find the record before the call.",
                         routine.name,
@@ -214,7 +214,7 @@ pub fn detect_d40(
                     primary_location: anchor_of(&binding.argument_anchor, routine),
                     evidence_path: path,
                     additional_paths: None,
-                    affected_objects,
+                    affected_objects: id_list(affected_objects),
                     affected_tables: Vec::new(),
                     fix_options: vec![FixOption {
                         description: format!(
@@ -222,11 +222,11 @@ pub fn detect_d40(
                             binding.source_variable_name.as_deref().unwrap_or(""),
                             callee.name,
                             callee.name
-                        ),
-                        safety: "high".to_string(),
+                        ).into(),
+                        safety: "high".into(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,

@@ -164,7 +164,7 @@ pub fn detect_d64(
             id: id.clone(),
             root_cause_key: id,
             detector: DETECTOR.to_string(),
-            title,
+            title: title.into(),
             root_cause,
             severity: severity.to_string(),
             confidence,
@@ -178,17 +178,17 @@ pub fn detect_d64(
                 note: format!("API page {}", o.name),
             }],
             additional_paths: None,
-            affected_objects: vec![o.id.clone()],
+            affected_objects: vec![o.id.as_str().into()],
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
                 description: "Declare the write surface explicitly: set InsertAllowed/\
                               ModifyAllowed/DeleteAllowed = false on read-only API pages \
                               (and Editable = false), or document the writable intent."
-                    .to_string(),
-                safety: "high".to_string(),
+                    .into(),
+                safety: "high".into(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

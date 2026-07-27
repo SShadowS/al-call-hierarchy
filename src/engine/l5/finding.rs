@@ -19,6 +19,7 @@
 //! ARE serialized; only the `Option` tail fields are `skip_serializing_if`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,18 +33,86 @@ use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detect
 // with internal ids, then the projection consumes it.
 // ===========================================================================
 
-/// `Evidence` (`model/graph.ts`): `{ source, note? }`.
+/// The `source` marker every piece of evidence this engine produces carries.
+///
+/// al-sem's `Evidence` models `source` as free text because its evidence could
+/// come from more than one analyzer. In THIS engine there is exactly one
+/// analyzer, and every [`Evidence`] construction site (65 at this writing)
+/// stamps the LITERAL `"tree-sitter"` directly — **not this constant**; there
+/// is no compile-time link between the two. What the census confirms
+/// empirically is the consequence of that discipline, not a guarantee this
+/// constant provides: `distinct source = 1` over all 7,418,849
+/// confidence-evidence records on Base App 8020. [`ConfidenceEvidence`]
+/// therefore does not STORE it; this constant exists only READER-side, so the
+/// projection, `path_merge::merge_confidence`'s dedupe key and the policy JSON
+/// can re-materialise the same value once per projected record instead of each
+/// spelling the literal again. A second confidence-evidence `source` value is
+/// unrepresentable today for an unrelated reason: the type split leaves
+/// `ConfidenceEvidence` with no `source` field to set.
+pub const EVIDENCE_SOURCE: &str = "tree-sitter";
+
+/// `Evidence` (`model/graph.ts`): `{ source, note? }` — the **provenance** form,
+/// which keeps its `source` field.
+///
+/// Both fields are cheap, SHARED handles rather than owned text — deliberately,
+/// and measured. `source` is `&'static str` because every producer in this
+/// engine stamps a compile-time marker (today, only [`EVIDENCE_SOURCE`]; 64
+/// sites). `note` is `Option<Arc<str>>` so a producer that DOES set one pays for
+/// the text once rather than once per record.
+///
+/// **This is representation only — the bytes reaching the output are
+/// unchanged.** [`StableEvidence`] materialises `source`/`note` with
+/// `to_string`, so the projected `String`s are byte-for-byte the ones the
+/// producer built.
+///
+/// The high-volume `FindingConfidence.evidence` list uses the narrower
+/// [`ConfidenceEvidence`] instead — see its doc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Evidence {
-    pub source: String,
-    pub note: Option<String>,
+    pub source: &'static str,
+    pub note: Option<Arc<str>>,
+}
+
+/// One `FindingConfidence.evidence` record: the uncertainty NOTE, and nothing
+/// else. Projects to the same `{source, note?}` [`StableEvidence`] shape
+/// [`Evidence`] does, with `source` supplied from [`EVIDENCE_SOURCE`].
+///
+/// **Why this is a separate, narrower type.** On Base App 8020 (2026-07-27, heap
+/// census over the retained `DetectorOutput`) `d1` holds **7,418,849** of these
+/// for the whole run — 43.6% of everything `d1` retains, and the largest single
+/// item left in its memory profile. Each `source` word therefore costs
+/// `7,418,849 × 8 B = 56.6 MiB` of live heap, and `Evidence`'s `&'static str`
+/// source is TWO words. Dropping it takes the record from 32 B to **16 B**:
+/// −113.2 MiB with no information lost, because there is only one source value
+/// in the engine and it is a compile-time constant the compiler already proves
+/// (the field was `&'static str`, and the census measures `distinct source = 1`).
+///
+/// The modelling cost is stated plainly: `FindingConfidence.evidence` can no
+/// longer carry a per-record source while `provenance` still can. That is real
+/// but narrow — [`crate::engine::l5::confidence::to_confidence`] is the ONLY
+/// producer of a confidence-evidence record anywhere in the engine (every other
+/// `FindingConfidence` construction site builds an empty vec), and it stamps
+/// [`EVIDENCE_SOURCE`] unconditionally.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfidenceEvidence {
+    /// The evidence note, `"<kind> at <id>"`, shared with every other record
+    /// drawn from the same distinct uncertainty (3,073 allocations backing
+    /// 7,418,849 records on 8020).
+    pub note: Option<Arc<str>>,
 }
 
 /// `FixOption` (`model/finding.ts`).
+///
+/// Both fields are `Arc<str>`. The census measures **two** distinct
+/// `description`s and **two** distinct `safety` values across `d1`'s 22,383
+/// findings — 2.1 MB of duplicated text in 44,766 allocations — because a
+/// detector picks its fix advice from a fixed menu. A producer that emits at
+/// volume hoists its handles out of the emit loop and hands out refcount bumps;
+/// a low-volume producer pays the same one allocation it always did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixOption {
-    pub description: String,
-    pub safety: String,
+    pub description: Arc<str>,
+    pub safety: Arc<str>,
 }
 
 /// `FindingConfidence` (`model/finding.ts`).
@@ -51,12 +120,15 @@ pub struct FixOption {
 pub struct FindingConfidence {
     pub level: String,
     pub capped_by: Option<Vec<String>>,
-    pub evidence: Vec<Evidence>,
+    pub evidence: Vec<ConfidenceEvidence>,
 }
 
 /// `SourceAnchor` (`model/identity.ts`) — INTERNAL form. `enclosing_routine_id` is
 /// an internal RoutineId; the projection maps it to stable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Hash` is derived (alongside the file's usual `Debug/Clone/PartialEq/Eq`) so
+/// [`EvidenceStep`] can be hash-consed — see that type's doc.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SourceAnchor {
     pub source_unit_id: String,
     pub start_line: u32,
@@ -71,7 +143,16 @@ pub struct SourceAnchor {
 }
 
 /// `EvidenceStep` (`model/finding.ts`) — INTERNAL form.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Hash` is derived so d1's cohort witnesses can be HASH-CONSED: a run's
+/// retained witness steps repeat heavily (172,915 steps over 40,325 distinct
+/// values on Base App 8020 — a 4.29x sharing factor, because every cohort of the
+/// same terminal repeats its terminal step, every cohort seeded from the same
+/// loop repeats its loop and call steps, and every cohort crossing the same
+/// graph edge repeats that hop step). `Eq`/`Hash` agree by construction (both
+/// derived over the same fields), which is what the interner's correctness rests
+/// on. See [`crate::engine::l5::d1_witness::StepInterner`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EvidenceStep {
     pub routine_id: String,
     pub operation_id: Option<String>,
@@ -183,15 +264,29 @@ pub struct Finding {
     pub id: String,
     pub root_cause_key: String,
     pub detector: String,
-    pub title: String,
+    /// The finding's headline. `Arc<str>` because most detectors stamp a
+    /// compile-time literal and the volume producer (`d1`) stamps ONE — the
+    /// census counts 22,383 allocations of a single distinct string. Not
+    /// `&'static str`: eight detectors `format!` their title from the shape they
+    /// found (`"Unfiltered {op}"`, `"Record cloned before {op} in loop"`, …) and
+    /// the policy engine takes its title from a user rule, so a `'static` bound
+    /// is simply false here.
+    pub title: Arc<str>,
     pub root_cause: String,
     pub severity: String,
     pub confidence: FindingConfidence,
     pub primary_location: SourceAnchor,
     pub evidence_path: Vec<EvidenceStep>,
     pub additional_paths: Option<Vec<Vec<EvidenceStep>>>,
-    pub affected_objects: Vec<String>,
-    pub affected_tables: Vec<String>,
+    /// Internal ObjectIds. `Arc<str>` because these repeat hard: `d1` retains
+    /// **563,126** of them over **2,042** distinct values (27.6 MB of text, 276x
+    /// duplication) — one entry per reaching loop's owning object, per finding.
+    /// Interning them at the producer collapses that to one allocation per
+    /// distinct object id.
+    pub affected_objects: Vec<Arc<str>>,
+    /// Internal TableIds — same reasoning as [`Finding::affected_objects`]
+    /// (21,758 entries over 1,141 distinct values).
+    pub affected_tables: Vec<Arc<str>>,
     pub fix_options: Vec<FixOption>,
     pub provenance: Vec<Evidence>,
     pub actionable_anchor: Option<SourceAnchor>,
@@ -207,6 +302,89 @@ pub struct Finding {
     /// by N loops" per verdict class instead of one [`LoopContext`] per loop. See
     /// [`D1CohortContext`].
     pub cohort_contexts: Option<Vec<D1CohortContext>>,
+}
+
+/// Build the `Arc<str>` id list [`Finding::affected_objects`] /
+/// [`Finding::affected_tables`] hold, from anything string-like.
+///
+/// For the ~50 low-volume detectors — one or two ids per finding — this costs
+/// the same single allocation the owned `String` did, and saves 8 bytes per slot.
+/// The SHARING the type exists for lives at the volume producer: `d1` emits
+/// 563,126 object ids over 2,042 distinct values, and interns them (see
+/// `d1`'s `object_ids` cache) instead of calling this per entry.
+pub fn id_list<I, S>(ids: I) -> Vec<Arc<str>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    ids.into_iter().map(|s| Arc::from(s.as_ref())).collect()
+}
+
+/// A finding's realizing witness path — the ONE place in the engine that knows
+/// where to find it.
+///
+/// For every detector but `d1` it is the stored [`Finding::evidence_path`],
+/// borrowed. For a **cohort-bearing** finding (`cohort_contexts.is_some()`, i.e.
+/// `d1`) the stored field is EMPTY by construction and the path is
+/// `flatten_witness(cohort_contexts[0].witness)` — the winner cohort's bounded
+/// representative witness, materialised here on demand.
+///
+/// ## Why the field is empty rather than filled
+/// Task C8 established that a cohort-bearing finding's `evidence_path` and
+/// `additional_paths` are 100% reconstructable from `cohort_contexts[0].witness`
+/// and `cohort_contexts[1..].witness`, and made `project_finding` emit
+/// `Vec::new()`/`None` for them — so they had been byte-for-byte TRIPLICATES of
+/// the cohort witnesses, built, retained for the whole run, and then discarded
+/// at the projection. On Base App 8020 that was **95.9 MiB in 1,085,149
+/// allocations** (`evidence_path` 59.9 / `additional_paths` 36.0) of retained
+/// heap for data no output ever carried. `d1` now stops building them and every
+/// reader derives through here instead.
+///
+/// `cohort_contexts[0]` is the winner: `assemble_cohort_findings` picks the
+/// winner cohort by `(sev_rank, verdict quality, min group asc)` and then sorts
+/// the finest cohorts by that same key, and a finest sub-cohort inherits its
+/// parent's `(severity, verdict)` while the sub-bitmaps partition the parent —
+/// so the minimum `min_group` over the max-`(sev, quality)` class is the winner
+/// cohort's own. `cohort_evidence_path_is_the_winner_witness` pins that equality
+/// against the pre-change expression.
+///
+/// Returns `Cow` so the common (non-cohort) case is a borrow and costs nothing.
+pub(crate) fn evidence_path_of(f: &Finding) -> std::borrow::Cow<'_, [EvidenceStep]> {
+    match &f.cohort_contexts {
+        Some(cohorts) => std::borrow::Cow::Owned(
+            cohorts
+                .first()
+                .map(|c| crate::engine::l5::d1_witness::flatten_witness(&c.witness))
+                .unwrap_or_default(),
+        ),
+        None => std::borrow::Cow::Borrowed(&f.evidence_path),
+    }
+}
+
+/// How many distinct realizing paths a finding has — al-sem's
+/// `1 + (finding.additionalPaths?.length ?? 0)`, which reaches the `analyze` JSON
+/// as `pathCount` and the terminal report as "+N other paths".
+///
+/// The sibling of [`evidence_path_of`] for the OTHER field `d1` stopped building.
+/// A cohort-bearing finding's `additional_paths` was
+/// `Some(cohort_contexts[1..].map(flatten_witness))` when there was more than one
+/// cohort and `None` otherwise, so `1 + len` is `cohort_contexts.len()` in BOTH
+/// cases — this returns exactly the number the stored field produced.
+///
+/// This is the ONE consumer of the dropped fields that is not a witness reader,
+/// and it sits on the default `analyze` output, so it is the one place the drop
+/// would otherwise have changed shipped bytes.
+///
+/// `.max(1)` on the cohort arm: `cohorts.len()` is 0 only for `Some(vec![])`,
+/// which the real pipeline never produces (`assemble_cohort_findings` skips
+/// `tc.cohorts.is_empty()`), but the ported al-sem expression this function
+/// otherwise equals can never be 0 either — matching [`evidence_path_of`]'s own
+/// defensive handling of the same shape rather than trusting the caller.
+pub(crate) fn realizing_path_count(f: &Finding) -> usize {
+    match &f.cohort_contexts {
+        Some(cohorts) => cohorts.len().max(1),
+        None => 1 + f.additional_paths.as_ref().map(|p| p.len()).unwrap_or(0),
+    }
 }
 
 // ===========================================================================
@@ -548,10 +726,27 @@ fn project_evidence_step(s: &EvidenceStep, map: &HashMap<String, String>) -> Sta
     }
 }
 
+/// Materialise an internal [`Evidence`]'s shared handles into the owned
+/// `String`s the stable projection serializes. This is the ONLY place the
+/// `&'static str` / `Arc<str>` representation is turned back into text, and it is
+/// a pure widening: `to_string` on the same bytes.
 fn project_evidence(e: &Evidence) -> StableEvidence {
     StableEvidence {
-        source: e.source.clone(),
-        note: e.note.clone(),
+        source: e.source.to_string(),
+        note: e.note.as_deref().map(str::to_string),
+    }
+}
+
+/// Materialise a [`ConfidenceEvidence`] into the same `{source, note?}`
+/// [`StableEvidence`] a provenance [`Evidence`] projects to. `source` is
+/// [`EVIDENCE_SOURCE`] — the ONE value the field could hold when it was stored
+/// (see [`ConfidenceEvidence`]'s doc), so this widening emits byte-for-byte the
+/// `String` the stored `&'static str` produced. `note` is the same pure widening
+/// as [`project_evidence`]'s.
+fn project_confidence_evidence(e: &ConfidenceEvidence) -> StableEvidence {
+    StableEvidence {
+        source: EVIDENCE_SOURCE.to_string(),
+        note: e.note.as_deref().map(str::to_string),
     }
 }
 
@@ -566,7 +761,12 @@ fn project_loop_context(c: &LoopContext, map: &HashMap<String, String>) -> Stabl
         severity: c.severity.clone(),
         confidence: StableConfidence {
             level: c.confidence.level.clone(),
-            evidence: c.confidence.evidence.iter().map(project_evidence).collect(),
+            evidence: c
+                .confidence
+                .evidence
+                .iter()
+                .map(project_confidence_evidence)
+                .collect(),
             capped_by: c.confidence.capped_by.clone(),
         },
         witness: c
@@ -680,12 +880,17 @@ fn project_finding(
         detector: f.detector.clone(),
         id: stable_finding_id(&f.id),
         root_cause_key: stable_finding_id(&f.root_cause_key),
-        title: f.title.clone(),
+        title: f.title.to_string(),
         root_cause: f.root_cause.clone(),
         severity: f.severity.clone(),
         confidence: StableConfidence {
             level: f.confidence.level.clone(),
-            evidence: f.confidence.evidence.iter().map(project_evidence).collect(),
+            evidence: f
+                .confidence
+                .evidence
+                .iter()
+                .map(project_confidence_evidence)
+                .collect(),
             capped_by: f.confidence.capped_by.clone(),
         },
         primary_location: project_anchor(&f.primary_location, map),
@@ -707,8 +912,8 @@ fn project_finding(
             .fix_options
             .iter()
             .map(|x| StableFixOption {
-                description: x.description.clone(),
-                safety: x.safety.clone(),
+                description: x.description.to_string(),
+                safety: x.safety.to_string(),
             })
             .collect(),
         provenance: f.provenance.iter().map(project_evidence).collect(),
@@ -907,6 +1112,98 @@ pub fn project_r4_findings_cross_app(
 mod tests {
     use super::*;
 
+    /// **The byte-identity statement for [`Evidence`]'s shared representation.**
+    ///
+    /// `Evidence` holds a `&'static str` source and an `Arc<str>` note instead of
+    /// two owned `String`s. That is only licensed if the STABLE projection —
+    /// the parity surface, the thing that reaches every golden — materialises
+    /// exactly the same text it did when the fields were owned. This walks the
+    /// real producer ([`crate::engine::l5::confidence::to_confidence`], the only
+    /// thing in the engine that ever sets a note) into the real projection
+    /// (`project_evidence`) and asserts the resulting `StableEvidence` equals a
+    /// literal built independently of both.
+    ///
+    /// The kind/at pairs cover the three shapes the note format has to survive: a
+    /// callsite-scoped id, a kind that is NOT a valid `cappedBy` (so the level is
+    /// capped by evidence alone), and the empty `at` an uncertainty with no
+    /// callsite/operation/routine id produces.
+    #[test]
+    fn stable_evidence_materialises_the_identical_strings() {
+        use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
+
+        for (kind, at) in [
+            ("interface-open-world", "r0/abc123/cs0"),
+            ("interface-dispatch", "r0/abc123/cs9"),
+            ("unresolved-call", ""),
+        ] {
+            let c = to_confidence(&[UncertaintyLite::new(kind, at)], "likely");
+            assert_eq!(c.evidence.len(), 1);
+            assert_eq!(
+                project_confidence_evidence(&c.evidence[0]),
+                StableEvidence {
+                    source: "tree-sitter".to_string(),
+                    note: Some(format!("{kind} at {at}")),
+                },
+                "the projected evidence for ({kind}, {at}) must be byte-identical \
+                 to the owned-String form"
+            );
+        }
+
+        // The note-less form every detector stamps on `provenance`.
+        assert_eq!(
+            project_evidence(&Evidence {
+                source: "tree-sitter",
+                note: None,
+            }),
+            StableEvidence {
+                source: "tree-sitter".to_string(),
+                note: None,
+            }
+        );
+    }
+
+    /// The same claim one level out, at the bytes serde actually writes: a
+    /// `StableConfidence` built from the shared representation must serialize to
+    /// the exact JSON the goldens carry, `evidence` before the optional
+    /// `cappedBy`, `note` present only when set.
+    #[test]
+    fn stable_confidence_serializes_to_the_golden_json_shape() {
+        use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
+
+        let c = to_confidence(
+            &[
+                UncertaintyLite::new("interface-open-world", "r0/aa/cs0"),
+                UncertaintyLite::new("opaque-callee", "r0/aa/cs0"),
+            ],
+            "likely",
+        );
+        let stable = StableConfidence {
+            level: c.level.clone(),
+            evidence: c.evidence.iter().map(project_confidence_evidence).collect(),
+            capped_by: c.capped_by.clone(),
+        };
+        assert_eq!(
+            serde_json::to_string(&stable).expect("StableConfidence serializes"),
+            r#"{"level":"possible","evidence":[{"source":"tree-sitter","note":"interface-open-world at r0/aa/cs0"},{"source":"tree-sitter","note":"opaque-callee at r0/aa/cs0"}],"cappedBy":["dynamic-dispatch","opaque-callee"]}"#
+        );
+    }
+
+    /// Pins the representation `provenance` rests on. `Evidence` is one record
+    /// per finding (22,383 on Base App 8020), so its own width is not the memory
+    /// story — but it shares the `&'static str` / `Arc<str>` discipline with the
+    /// 7.4M-record [`ConfidenceEvidence`] next to it, and an owned `String`
+    /// reappearing here is the first sign that discipline has lapsed. The
+    /// high-volume claim is pinned by
+    /// `confidence::tests::confidence_evidence_stays_two_words_wide`.
+    #[test]
+    fn evidence_stays_four_words_wide() {
+        assert_eq!(
+            std::mem::size_of::<Evidence>(),
+            4 * std::mem::size_of::<usize>(),
+            "Evidence must stay a &'static str + an Option<Arc<str>> — see its doc"
+        );
+    }
+
     #[test]
     fn table_id_projection_to_colon_form() {
         assert_eq!(
@@ -1007,10 +1304,13 @@ mod tests {
     fn dummy_witness() -> WitnessSummary {
         WitnessSummary {
             total_hops: 1,
-            first_steps: vec![dummy_step("Loop", "loop"), dummy_step("Loop", "call")],
+            first_steps: vec![
+                Arc::new(dummy_step("Loop", "loop")),
+                Arc::new(dummy_step("Loop", "call")),
+            ],
             omitted_hops: 0,
             last_steps: vec![],
-            terminal_step: dummy_step("Term", "terminal"),
+            terminal_step: Arc::new(dummy_step("Term", "terminal")),
         }
     }
 
@@ -1167,7 +1467,7 @@ mod tests {
             id: "d1/R0/T/T/op0".to_string(),
             root_cause_key: "d1/T/T/op0".to_string(),
             detector: "d1".to_string(),
-            title: "title".to_string(),
+            title: "title".into(),
             root_cause: "root cause".to_string(),
             severity: "high".to_string(),
             confidence: FindingConfidence {
@@ -1252,5 +1552,64 @@ mod tests {
             let rebuilt_ids: Vec<GroupIx> = registry_back.to_registry().iter(c.loop_set).collect();
             assert_eq!(orig, rebuilt_ids);
         }
+    }
+
+    /// `realizing_path_count` must never return 0. The ported al-sem expression
+    /// (`1 + (finding.additionalPaths?.length ?? 0)`) can't, and `pathCount: 0`
+    /// would be a schema-violating value on the default `analyze --format json`
+    /// surface. `Some(cohorts)` with an EMPTY `cohorts` is unreachable through the
+    /// real pipeline today (`assemble_cohort_findings` skips
+    /// `tc.cohorts.is_empty()`), but the sibling accessor [`evidence_path_of`]
+    /// already handles the same shape defensively (`.unwrap_or_default()`), and
+    /// this pins `realizing_path_count` to the same discipline rather than
+    /// leaving it to trust the caller.
+    #[test]
+    fn realizing_path_count_is_never_zero_even_for_empty_cohorts() {
+        let mut f = Finding {
+            id: "d1/x".to_string(),
+            root_cause_key: "k".to_string(),
+            detector: "d1".to_string(),
+            title: "t".into(),
+            root_cause: "rc".to_string(),
+            severity: "high".to_string(),
+            confidence: FindingConfidence {
+                level: "likely".to_string(),
+                capped_by: None,
+                evidence: vec![],
+            },
+            primary_location: dummy_anchor("T"),
+            evidence_path: vec![],
+            additional_paths: None,
+            affected_objects: vec![],
+            affected_tables: vec![],
+            fix_options: vec![],
+            provenance: vec![],
+            actionable_anchor: None,
+            fingerprint: None,
+            event_kind: None,
+            cross_extension_subscribers: None,
+            contexts: None,
+            cohort_contexts: Some(vec![]),
+        };
+        assert_eq!(
+            realizing_path_count(&f),
+            1,
+            "an empty (but Some) cohort list must floor at 1, matching evidence_path_of \
+             and the al-sem expression this ports"
+        );
+
+        // The reachable shapes still behave as before: no regression from the floor.
+        f.cohort_contexts = Some(vec![]);
+        assert_eq!(
+            evidence_path_of(&f).len(),
+            0,
+            "no witness to flatten either"
+        );
+
+        f.cohort_contexts = None;
+        f.additional_paths = None;
+        assert_eq!(realizing_path_count(&f), 1);
+        f.additional_paths = Some(vec![vec![], vec![]]);
+        assert_eq!(realizing_path_count(&f), 3);
     }
 }
