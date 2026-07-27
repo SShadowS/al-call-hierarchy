@@ -37,6 +37,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::summary::{Uncertainty, uncertainty_key};
@@ -245,10 +246,20 @@ pub struct LoopSetRegistry {
     /// id — `sets[id.0]` is `id`'s bitmap. Positional: `to_stable`/
     /// `StableLoopSetRegistry::to_registry` rely on `Vec` index == `LoopSetId.0`.
     sets: Vec<Box<[u64]>>,
-    /// Content -> id, for hash-consing. Duplicates `sets`' bytes (the standard
-    /// interner tradeoff — see `string-interner`, already a crate dependency for
-    /// the same reason) in exchange for O(1) intern lookups.
-    index: HashMap<Box<[u64]>, LoopSetId>,
+    /// Content DIGEST -> the ids whose words hash to it, for hash-consing.
+    ///
+    /// This used to be a `HashMap<Box<[u64]>, LoopSetId>`, i.e. a SECOND copy of
+    /// every interned set's words — the standard interner tradeoff, but a costly
+    /// one here: on Base App 8020 the registry's 8,291 sets span 511,430 words,
+    /// so the duplicate side was 4.1 MB of the registry's 8.1 MiB. Keying on a
+    /// 64-bit digest instead stores no words at all.
+    ///
+    /// The digest is NOT trusted as an identity: `intern` compares the candidate
+    /// ids' actual words in `sets` before returning one, so a hash collision
+    /// costs an extra comparison and never a wrong answer. (`SmallVec<[_; 2]>`
+    /// keeps the common no-collision bucket inline — the map itself allocates
+    /// nothing per entry.)
+    index: HashMap<u64, SmallVec<[LoopSetId; 2]>>,
 }
 
 impl LoopSetRegistry {
@@ -281,14 +292,29 @@ impl LoopSetRegistry {
     /// `finding::decompress_cohort_context` can still hold `&LoopSetRegistry`).
     pub(crate) fn intern(&mut self, bitmap: &GroupBitmap) -> LoopSetId {
         let key = Self::canonical_words(bitmap);
-        if let Some(&id) = self.index.get(key) {
-            return id;
+        let digest = Self::digest(key);
+        let bucket = self.index.entry(digest).or_default();
+        // The digest only narrows the search; the WORDS decide. A collision (two
+        // different sets sharing a digest) therefore costs one more comparison,
+        // never a wrong id.
+        for &id in bucket.iter() {
+            if &*self.sets[id.0 as usize] == key {
+                return id;
+            }
         }
-        let boxed: Box<[u64]> = key.to_vec().into_boxed_slice();
         let id = LoopSetId(self.sets.len() as u32);
-        self.sets.push(boxed.clone());
-        self.index.insert(boxed, id);
+        bucket.push(id);
+        self.sets.push(key.to_vec().into_boxed_slice());
         id
+    }
+
+    /// A 64-bit content digest over a canonical word sequence — the `index` key.
+    /// Never an identity on its own; see [`Self::intern`].
+    fn digest(words: &[u64]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        words.hash(&mut h);
+        h.finish()
     }
 
     /// Decompress `id` back to its interned [`GroupBitmap`] (a fresh owned copy —
@@ -370,8 +396,11 @@ impl StableLoopSetRegistry {
                 .to_vec()
                 .into_boxed_slice();
             let id = LoopSetId(reg.sets.len() as u32);
-            reg.sets.push(words.clone());
-            reg.index.insert(words, id);
+            reg.index
+                .entry(LoopSetRegistry::digest(&words))
+                .or_default()
+                .push(id);
+            reg.sets.push(words);
         }
         reg
     }
@@ -1244,6 +1273,38 @@ mod tests {
     }
 
     // === LoopSetRegistry — hash-cons interning (Task C4) =====================
+
+    #[test]
+    fn loop_set_registry_digest_collision_does_not_alias_distinct_sets() {
+        // The hash-cons index is keyed by a 64-bit content DIGEST rather than by
+        // a second copy of the words (which cost 4.1 MB on Base App 8020). That
+        // is only sound because `intern` compares the candidates' ACTUAL words
+        // before returning one. A real 64-bit collision is not reachable in a
+        // test, so this seeds the exact pathological state one would produce:
+        // `b`'s digest bucket already holding an UNRELATED set's id.
+        let mut reg = LoopSetRegistry::new();
+        let mut a = GroupBitmap::new();
+        a.set(1);
+        let id_a = reg.intern(&a);
+
+        let mut b = GroupBitmap::new();
+        b.set(70); // a different word AND a different bit
+        let digest_b = LoopSetRegistry::digest(LoopSetRegistry::canonical_words(&b));
+        reg.index.entry(digest_b).or_default().push(id_a);
+
+        let id_b = reg.intern(&b);
+        assert_ne!(
+            id_a, id_b,
+            "a digest collision must not alias two different loop sets — the words \
+             decide, not the digest"
+        );
+        assert_eq!(reg.iter(id_a).collect::<Vec<_>>(), vec![1]);
+        assert_eq!(reg.iter(id_b).collect::<Vec<_>>(), vec![70]);
+        // And an EQUAL set still hash-conses through the seeded bucket.
+        let mut b2 = GroupBitmap::new();
+        b2.set(70);
+        assert_eq!(reg.intern(&b2), id_b);
+    }
 
     #[test]
     fn loop_set_registry_interns_identical_bitmaps_to_same_id() {
