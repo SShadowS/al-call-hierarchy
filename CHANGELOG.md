@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — d1 memory: the retained remainder (derive it, share it, or stop storing it)
+
+The retained `DetectorOutput` is now **195.0 MB in 957,972 live allocations**, down
+from **523.3 MB in 3,455,472** — same heap census, same `DetectorOutput`, same
+corpus (`scratchpad/d1probe`, target dir `C:\l3pt`, Base App 8020, 2026-07-27).
+Across this arc: **1,351.2 -> 523.3 -> 195.0 MB** and **18,312,480 -> 3,455,472 ->
+957,972 allocations**, i.e. **-85.6% of the bytes and -94.8% of the allocations**
+d1 retained when the arc opened. 195.0 MB is inside the 190-250 MB live floor the
+arc's scoping pass derived from first principles.
+
+| bucket | before | after |
+|---|---:|---:|
+| `confidence` (`Evidence` records) | 228.2 MB / 89,722 allocs | **115.0 MB / 89,722** |
+| `cohort_contexts[].witness` steps | 95.5 MB / 1,097,185 | **24.3 MB / 341,970** |
+| `evidence_path` + `additional_paths` | 95.9 MB / 1,085,149 | **0 / 0** |
+| `affected_objects` + `affected_tables` | 40.7 MB / 629,025 | **9.1 MB / 47,324** |
+| `cohort_contexts` struct + strings | 16.5 MB / 167,413 | **7.1 MB / 167,413** |
+| `D1CohortIndex.registry` | 8.1 MB / 16,584 | **4.3 MB / 8,293** |
+| `fix_options` + `provenance` | 3.7 MB / 89,532 | **1.4 MB / 44,770** |
+| **retained total** | **523.3 MB / 3,455,472** | **195.0 MB / 957,972** |
+
+Five changes, each representation or ownership only — the same findings, the same
+uncertainties, the same witnesses, no cap and no sampling. `scripts/check-goldens`
+passes with **zero golden files touched** and **zero files under `tests/` changed by
+the whole task**; both `alsem analyze --format json --deterministic` runs are
+byte-identical to before: DO
+(`f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`, 3,858,637 B)
+and Base App 8020, the corpus that actually exercises these fields
+(`36151bf67e17620724abb6b2cdbad55bcf8f97ffe3c3237782a0cf4c25ecc5fb`, 251,169,091 B).
+
+**1. Confidence evidence drops its constant `source` (-113.2 MB).**
+`FindingConfidence.evidence` is `Vec<ConfidenceEvidence>` — the note and nothing
+else, **16 B** where `Evidence` was 32. There is exactly one `source` value in the
+engine: the census measures `distinct source = 1` across all 7,418,849 records, the
+field was already `&'static str`, and of the 20 `FindingConfidence` construction
+sites repo-wide 18 build an empty vec while the 19th only clones what the 20th
+(`to_confidence`) produced. A new `finding::EVIDENCE_SOURCE` constant is
+re-materialised by the projection, by `path_merge::merge_confidence`'s dedupe key
+(byte-identical to the key the stored field composed) and by the policy JSON.
+`UncertaintyLite`'s `kind`/`note` also become PRIVATE, restoring structurally the
+"one place produces the note" invariant that survived only as a comment after the
+`format!` moved: `new`/`of` are now the only ways to obtain one. Zero call-site
+changes — no reader outside `confidence.rs` ever touched a field.
+
+**2. The cohort witness path is derived, not retained (-95.9 MB, -1,085,149 allocs).**
+Task C8 established that a cohort-bearing finding's `evidence_path`/
+`additional_paths` are reconstructable from `cohort_contexts[..].witness` and made
+`project_finding` emit `Vec::new()`/`None` for them. The BUILD stayed — so d1 was
+materialising and retaining a byte-for-byte second copy of every cohort witness
+that the projection then discarded. d1 stops building them; readers go through new
+`finding::evidence_path_of` (a `Cow`, so the non-cohort case is a borrow) and
+`finding::realizing_path_count`. A repo-wide re-grep found **eight** readers, two
+more than the plan's list: `path_merge::merge_by_terminal` (d2-only, so a no-op)
+and — the one that mattered — **`gate::projection`'s `path_count`, which reaches
+the DEFAULT `analyze --format json` as `pathCount`** and is not a witness reader at
+all, so neither inventory caught it. For a cohort-bearing finding
+`1 + additional_paths.len()` is `cohort_contexts.len()`, which the accessor returns.
+
+**3. Witness steps are hash-consed (-71.2 MB, -755,215 allocs).** Measured, not
+assumed: the 36,228 retained cohort witnesses hold **172,915 steps carrying 40,325
+distinct values — a 4.29x sharing factor** (every cohort of one terminal repeats
+that terminal's step; every cohort seeded from one loop repeats its loop and call
+steps; every cohort crossing one graph edge repeats that hop step).
+`WitnessSummary`'s steps become `Arc<EvidenceStep>` and a new
+`d1_witness::StepInterner` hash-conses them in `assemble_cohort_findings`, where
+the retention actually happens. `PartialEq` on `Arc` compares pointees, so witness
+equality is unchanged; `flatten_witness` still hands consumers owned steps. A
+side effect worth naming: `D1CohortContext` shrinks **432 -> 160 B** (its
+`terminal_step` was a 280-byte `EvidenceStep` stored inline), which is most of the
+`cohort_contexts` row's own -9.4 MB.
+
+**4. Id lists interned, advice text hoisted (-31.6 MB + -2.3 MB, -626,463 allocs).**
+`affected_objects` is 563,126 entries over **2,042** distinct values (276x
+duplication); `affected_tables` 21,758 over 1,141; `title` 22,383 allocations of
+**one** string; `fix_options` 22,383 pairs drawn from **two**. Both id lists become
+`Vec<Arc<str>>` and `title`/`FixOption` become `Arc<str>`; d1 mints each distinct
+id once through a run-level cache whose keys BORROW from the workspace, and hoists
+its title and two fix options out of the emit loop. The ~50 low-volume detectors go
+through a new `finding::id_list`, which costs them the same single allocation the
+owned `String` did. **The plan asked for `&'static str` on `title`/`fix_options`;
+that is false** — eight detectors `format!` their title from the shape they found
+and the policy engine takes its title from a user rule, so the `'static` bound
+cannot hold. `Arc<str>` reaches the same numbers without the false claim.
+
+**5. `LoopSetRegistry`'s hash-cons index stops duplicating its words (-3.8 MB).**
+The index was a `HashMap<Box<[u64]>, LoopSetId>` — a second full copy of every
+interned bitmap (8,291 sets spanning 511,430 words). It is now keyed by a 64-bit
+content digest with the ids in an inline `SmallVec`, storing no words at all. The
+digest is not trusted as an identity: `intern` compares the candidates' actual
+words before returning one, so a collision costs a comparison, never a wrong id.
+
+**Whole-process effect, and an honest correction to how it was predicted.** On the
+8020 default preset (`ALSEM_TRACE_DETAIL=hot`, release-fast) the process RSS after
+the detector phase drops **4,326 -> 3,903 MB** at `l4_l5.run_detectors` and
+**5,104 -> 4,721 MB** at `gate.format` — the retained saving, visible 1:1. The
+process **PEAK** moves only **6,359 -> 6,337 MB (-22 MB)**. The arc's re-scope had
+predicted retained reductions would convert 1:1 into the peak; on this corpus they
+do not, and the trace says why: the run already stands at **6,075 MB before d1
+starts** (`context.final_indexes`), the whole detector phase adds only ~280 MB on
+top, and pages the substrate and earlier transients committed are never returned to
+the OS — so a live-bytes reduction *inside* that envelope lowers RSS afterwards
+without lowering the high-water. In the d1-only census probe, where the pre-d1
+baseline is lower, d1's contribution to the process peak goes from **137.7 MB to
+0** (the peak standing when `detect_d1` starts is never exceeded).
+
+Eight new tests, each proven able to fail before it was trusted. The strongest is
+`cohort_witness_steps_are_shared`: replacing the hash-cons with a per-cohort clone
+leaves **every output byte identical**, costs 71 MB, and turns **exactly one test
+of 2,702** red. `cohort_ids_and_advice_text_are_shared_across_findings` does the
+same for the id/title/fix-option sharing in three independently-falsified halves,
+and `loop_set_registry_digest_collision_does_not_alias_distinct_sets` seeds a
+digest collision white-box (a real one being unreachable) to prove the words decide.
+`cohort_bearing_path_count_counts_cohorts_not_the_dropped_field` exists because the
+first version of that assertion called the accessor directly and PASSED with
+`project_finding` reverted — no golden covers `pathCount` for a multi-cohort
+finding, so a helper-only test would have shipped the regression.
+
+
 ### Performance — d1 memory: `CohortRep.uncertainties` interned to a run-level table
 
 `d1`'s per-cohort uncertainty union — held for the whole run inside `TerminalSink`,
