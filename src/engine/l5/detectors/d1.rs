@@ -2361,8 +2361,9 @@ mod memo_tests {
             routine_id: None,
             interface_name: None,
         };
-        let mut uncertainties_by_node: HashMap<String, Vec<Uncertainty>> = HashMap::new();
-        uncertainties_by_node.insert("D".to_string(), vec![unc]);
+        let mut uncertainties_by_node: HashMap<String, std::sync::Arc<[Uncertainty]>> =
+            HashMap::new();
+        uncertainties_by_node.insert("D".to_string(), std::sync::Arc::from(vec![unc]));
 
         let cone_derived = crate::engine::l5::test_support::cone_store_of(&summaries);
         let policy = D1Policy {
@@ -3727,7 +3728,7 @@ mod assembly_tests {
         routines: &'a [L3Routine],
         edges: HashMap<String, Vec<CombinedEdge>>,
         summaries: HashMap<String, FullRoutineSummary>,
-        uncertainties: HashMap<String, Vec<Uncertainty>>,
+        uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>>,
     ) -> DetectorContext<'a> {
         let mut ctx = minimal_ctx(routines, edges, summaries);
         ctx.uncertainties_by_node = uncertainties;
@@ -3855,20 +3856,20 @@ mod assembly_tests {
     #[test]
     fn cohort_confidence_resolves_interned_uncertainties_in_key_order() {
         let (routines, edges, summaries) = uncertain_winner_fixture();
-        let uncertainties: HashMap<String, Vec<Uncertainty>> = [
+        let uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>> = [
             (
                 "X".to_string(),
-                vec![
+                std::sync::Arc::from(vec![
                     unc("external-target", Some("X/csY"), None),
                     unc("unresolved-call", Some("A/csX"), None),
-                ],
+                ]),
             ),
             (
                 "Y".to_string(),
-                vec![
+                std::sync::Arc::from(vec![
                     unc("dynamic-dispatch", None, Some("Y")),
                     unc("unresolved-call", Some("A/csX"), None),
-                ],
+                ]),
             ),
         ]
         .into_iter()
@@ -4070,9 +4071,9 @@ mod assembly_tests {
     #[test]
     fn cohort_evidence_notes_are_shared_across_findings() {
         let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
-        let uncertainties: HashMap<String, Vec<Uncertainty>> = [(
+        let uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>> = [(
             "Y".to_string(),
-            vec![unc("dynamic-dispatch", None, Some("Y"))],
+            std::sync::Arc::from(vec![unc("dynamic-dispatch", None, Some("Y"))]),
         )]
         .into_iter()
         .collect();

@@ -419,7 +419,7 @@ pub fn detect_d2(
 
                 any_db_subscriber = true;
                 affected_objects.insert(sub_routine.object_id.clone());
-                for u in &sub_summary_uncertainties(ctx, &sub_routine.id) {
+                for u in sub_summary_uncertainties(ctx, &sub_routine.id) {
                     uncertainties.push(u.clone());
                 }
                 for t in ctx.cone_derived.writes_tables_of(&sub_summary.routine_id) {
@@ -556,9 +556,14 @@ pub fn detect_d2(
 /// `subSummary.uncertainties`. (The supplementary walk then adds its own accumulated
 /// uncertainties, which al-sem's `walkEvidence` derives from the SAME union; deduped
 /// before to_confidence.)
-fn sub_summary_uncertainties(ctx: &DetectorContext, routine_id: &str) -> Vec<Uncertainty> {
+///
+/// Returns a BORROW. It used to `.cloned()` the whole `Vec` for its one caller to
+/// immediately re-clone element-by-element — a deep copy of a set that is read
+/// only, discarded immediately, and (since the ctx map is hash-consed) shared with
+/// every other node in the same SCC.
+fn sub_summary_uncertainties<'a>(ctx: &'a DetectorContext, routine_id: &str) -> &'a [Uncertainty] {
     ctx.uncertainties_by_node
         .get(routine_id)
-        .cloned()
-        .unwrap_or_default()
+        .map(|v| &**v)
+        .unwrap_or(&[])
 }

@@ -464,16 +464,27 @@ pub(crate) struct UncertaintyId(u32);
 /// uncertainty union indexes into.
 ///
 /// **Why.** A cohort's union is the uncertainties of every node on its
-/// representative path, and those are drawn from a tiny closed vocabulary:
+/// representative path, and those are drawn from a small closed vocabulary:
 /// measured on Base App 8020 (2026-07-27, heap census over the `pub`
-/// `DetectorOutput`), the ~3.7M records in `ctx.uncertainties_by_node` collapse
-/// to 3,073 distinct `"{kind} at {at}"` notes across 7,418,849 retained evidence
-/// records. Storing the values per cohort meant ~8-10M owned `Uncertainty`
-/// records — each 120 B of struct plus 2-3 `String`s — alive for the whole run
-/// inside [`TerminalSink`], which was the single largest contributor to `alsem
-/// analyze`'s peak RSS. Storing 4-byte ids into one shared table keeps EXACTLY
-/// the same values in EXACTLY the same per-cohort order; only the ownership
-/// changes.
+/// `DetectorOutput`), the 7,418,849 retained evidence records collapse to 3,073
+/// distinct `"{kind} at {at}"` notes, interned here as 3,150 distinct full
+/// `Uncertainty` values. Storing the values per cohort meant ~8-10M owned
+/// `Uncertainty` records — each 120 B of struct plus 2-3 `String`s — alive for
+/// the whole run inside [`TerminalSink`], which was the single largest
+/// contributor to `alsem analyze`'s peak RSS. Storing 4-byte ids into one shared
+/// table keeps EXACTLY the same values in EXACTLY the same per-cohort order; only
+/// the ownership changes.
+///
+/// **Those figures describe THIS table, which sees only the winning cohorts'
+/// representative paths — they are NOT the substrate's vocabulary.** The upstream
+/// `ctx.uncertainties_by_node` holds **19,311** distinct values (and 19,311
+/// distinct `uncertainty_key`s — zero key collisions) across 3,700,433 records on
+/// the same corpus, 6.3x this table's population. An earlier revision of this doc
+/// stated the 3,073 figure as what those 3.7 M substrate records collapse to,
+/// which mis-prices anything sized against the substrate by ~5x. The substrate has
+/// its own, separate memory fix — see
+/// [`DetectorContext::uncertainties_by_node`](crate::engine::l5::detector_context::DetectorContext::uncertainties_by_node),
+/// which hash-conses whole per-node SETS rather than interning elements.
 ///
 /// Interning is by the FULL value (all five fields), not by the `(kind, at)`
 /// pair the confidence mapper happens to read, so `id ↔ Uncertainty` is a
@@ -519,7 +530,7 @@ impl UncertaintyTable {
         // `try_from`, not `as`: past `u32::MAX` distinct values an `as` cast
         // WRAPS, so a new value would silently alias an existing id — a wrong
         // answer rather than a crash. Unreachable in practice (3,150 distinct on
-        // Base App 8020, bounded by the distinct values in
+        // Base App 8020, bounded above by the 19,311 distinct values in
         // `ctx.uncertainties_by_node`), and this runs only on the miss path, so
         // making the impossible loud costs nothing.
         let id = UncertaintyId(
