@@ -82,6 +82,78 @@ level and `cappedBy`. `intern` also switched from `entries.len() as u32` to
 silently alias an existing id — unreachable at 3,150 distinct values, but a wrong
 answer rather than a crash, and the miss path runs ~3k times per run.
 
+### Performance — d1 memory: `Evidence` holds shared handles, not owned text
+
+`Finding.confidence.evidence` was **1,055.5 MB in 14,924,347 live allocations** on the
+Base App 8020 corpus — 78% of the retained findings' bytes, and the largest single
+item left in `d1`'s profile after the cohort-union interning above. It is now
+**228.2 MB in 89,722**, measured by the same heap census over the same
+`DetectorOutput` (`scratchpad/d1probe`, target dir `C:\l3pt`; 2026-07-27):
+
+| | before | after |
+|---|---:|---:|
+| `confidence` (level + evidence + cappedBy) | 1,055.5 MB / 14,924,347 allocs | **228.2 MB / 89,722** |
+| retained `DetectorOutput` total | 1,351.2 MB / 18,312,480 allocs | **523.3 MB / 3,455,472** |
+| `detect_d1`'s contribution to process peak | 1,544.9 MB | **515.9 MB (-66.6%)** |
+
+`Evidence` is now `{ source: &'static str, note: Option<Arc<str>> }` (32 B, down from
+48) instead of `{ source: String, note: Option<String> }`. Between them the 7,418,849
+records carried **one** distinct `source` and **3,073** distinct `note`s — 2,395x
+duplication of a closed vocabulary. The note text is materialised once per DISTINCT
+uncertainty, at `UncertaintyLite::new`, and every record clones the handle: the census
+now reports **3,073 distinct note ALLOCATIONS for 3,073 distinct note VALUES**, i.e.
+fully shared, measured by `Arc` pointer identity rather than asserted.
+
+**Representation only — no cap, no sampling, no truncation.** The same uncertainties,
+the same order, the same notes. The `format!` that builds a note is the SAME
+expression with the SAME arguments, moved from once-per-record to once-per-distinct-
+value; `StableEvidence` materialises it back with `to_string`, so the projected
+`String`s are byte-for-byte the ones the producer built. `scripts/check-goldens`
+passes with **zero golden files touched**, and both `alsem analyze --format json
+--deterministic` runs are byte-identical: DO
+(`f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`, 3,858,637 B) and
+Base App 8020, the corpus that actually exercises the field with 14,395 evidence-
+bearing findings (`36151bf67e17620724abb6b2cdbad55bcf8f97ffe3c3237782a0cf4c25ecc5fb`,
+251,169,091 B).
+
+Whole-process effect on 8020 (`alsem analyze`, default preset, release-fast,
+`ALSEM_TRACE_DETAIL=hot`): `d1/assemble_cohort_findings` **+1,155 MB -> +166 MB
+(-85.6%)** and 6.27 s -> 1.59 s; `detector.d1-db-op-in-loop` +1,200 -> +195 MB;
+**process peak 7,531 MB -> 6,434 MB** and wall 193.6 s -> 165.7 s. Across this arc so
+far the peak is 9,675 -> 6,434 MB.
+
+Supporting changes, each removing a duplicated definition rather than a local cost:
+
+- **`uncertainty_at(u) -> &str`** (`src/engine/l4/summary.rs`) is now the single
+  definition of the `callsiteId -> operationId -> routineId` precedence, and
+  `uncertainty_key` is written in terms of it — so the identity
+  `uncertainty_key(u) == format!("{}|{}", u.kind, uncertainty_at(u))` that the interned
+  cohort union depends on is structural instead of a comment. Five detectors (d1, d2,
+  d3, d46, d48) each carried their own copy of that chain, cloning two `String`s per
+  uncertainty; all five now call `UncertaintyLite::of`.
+- **`UncertaintyLite`** is `{ kind: Arc<str>, note: Arc<str> }`. `UncertaintyTable`
+  stores one per distinct uncertainty alongside its existing `keys`, so resolving a
+  cohort's union is a pair of refcount bumps per record instead of two `String`
+  clones.
+- **`to_capped_by_kind` returns `Option<&'static str>`** from the same alias/identity
+  tables, and the `cappedBy` `BTreeSet` holds borrows — one fewer `String` allocation
+  per uncertainty on a path that carries up to 893 for a single finding. `&str`'s
+  `Ord` is byte order exactly as `String`'s is, so the emitted order is unchanged.
+
+Five tests, each proven able to fail before being trusted.
+`cohort_evidence_notes_are_shared_across_findings` asserts `Arc::ptr_eq` between two
+DIFFERENT findings' evidence notes through the real `search_loops_cohorts` +
+`assemble_cohort_findings`; replacing the shared clone with a fresh per-record
+allocation — which leaves every byte of output identical — turns **exactly one test in
+the 2,694-test suite** RED, and that one. `stable_evidence_materialises_the_identical_
+strings` and `stable_confidence_serializes_to_the_golden_json_shape` state the
+byte-identity claim at the projection and at the serde bytes;
+`evidence_stays_four_words_wide` pins the representation the saving rests on; and
+`lite_of_uncertainty_matches_the_uncertainty_key_precedence` pins the shared
+precedence, including its `""` fallback. Perturbing the note format turns the
+`ws-d1-uncertain-path` r4 golden RED — the golden Task 1's fix wave added
+specifically to guard this field does cover the new construction site.
+
 ### Performance — L3 substrate + the two parked items (arc capstone)
 
 Whole-process peak on the 8020 corpus (`alsem analyze --detector

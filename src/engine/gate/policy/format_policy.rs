@@ -82,7 +82,7 @@ fn finding_to_jv(f: &Finding) -> Jv {
                     .evidence
                     .iter()
                     .map(|e| {
-                        let mut p = vec![("source".to_string(), Jv::s(&e.source))];
+                        let mut p = vec![("source".to_string(), Jv::s(e.source))];
                         if let Some(n) = &e.note {
                             p.push(("note".to_string(), Jv::s(n)));
                         }
@@ -97,7 +97,7 @@ fn finding_to_jv(f: &Finding) -> Jv {
         f.provenance
             .iter()
             .map(|e| {
-                let mut p = vec![("source".to_string(), Jv::s(&e.source))];
+                let mut p = vec![("source".to_string(), Jv::s(e.source))];
                 if let Some(n) = &e.note {
                     p.push(("note".to_string(), Jv::s(n)));
                 }

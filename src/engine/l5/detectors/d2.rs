@@ -75,25 +75,11 @@ fn table_note(
     )
 }
 
-/// Convert accumulated `Uncertainty` to `UncertaintyLite` for `to_confidence`.
-/// Mirrors d1's id-precedence (callsiteId → operationId → routineId).
+/// Convert accumulated `Uncertainty` to `UncertaintyLite` for `to_confidence`
+/// (`UncertaintyLite::of` applies the shared callsiteId → operationId →
+/// routineId precedence).
 fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
-        .collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
 }
 
 /// The D2 WalkPolicy — identical in shape to D1's (terminals = db-touching record
@@ -513,7 +499,7 @@ pub fn detect_d2(
                     safety: "medium".to_string(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

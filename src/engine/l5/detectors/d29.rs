@@ -223,7 +223,7 @@ fn emit(
             safety: "medium".to_string(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

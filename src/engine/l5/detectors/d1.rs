@@ -48,6 +48,10 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::engine::l3::l3_workspace::L3Table;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine, L3Workspace};
 use crate::engine::l4::combined_graph::CombinedEdge;
+// Only the `search_loops`/`WalkResult` shadow oracle still handles OWNED
+// uncertainties; the production cohort path carries `UncertaintyId`s and resolves
+// them through the run-level `UncertaintyTable`.
+#[cfg(test)]
 use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
@@ -401,47 +405,29 @@ pub(crate) fn severity_for(
     base
 }
 
-/// Convert ONE `Uncertainty` to the `UncertaintyLite` shape `to_confidence`
-/// consumes. Mirrors al-sem `describe(u)` id-precedence (callsiteId →
-/// operationId → routineId), which is the SAME precedence
-/// [`crate::engine::l4::summary::uncertainty_key`] uses — so
-/// `uncertainty_key(u) == format!("{}|{}", lite.kind, lite.at)`. That identity is
-/// why the cohort path can carry interned ids: the de-dup key and the projection
-/// this function performs read the same pair of fields.
-fn uncertainty_lite_of(u: &Uncertainty) -> UncertaintyLite {
-    let at = if let Some(cs) = &u.callsite_id {
-        cs.clone()
-    } else if let Some(op) = &u.operation_id {
-        op.clone()
-    } else {
-        u.routine_id.clone().unwrap_or_default()
-    };
-    UncertaintyLite {
-        kind: u.kind.clone(),
-        at,
-    }
-}
-
 /// Convert a walk's accumulated OWNED `Uncertainty` set to `UncertaintyLite`s.
 /// `#[cfg(test)]` — only the `search_loops`/`WalkResult` oracle still holds owned
 /// uncertainties; the production cohort path uses
 /// [`uncertainty_lites_of_ids`].
 #[cfg(test)]
 fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
-    uncertainties.iter().map(uncertainty_lite_of).collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
 }
 
 /// Convert a cohort's INTERNED uncertainty union to `UncertaintyLite`s, resolving
 /// each id through the run-level `table`. Order is the id sequence's order, which
 /// is the de-duped, key-sorted order `UncertaintyTable::dedupe` produced — the
 /// same sequence the owned-value form produced before the ids existed.
+///
+/// The clone is a pair of refcount bumps, not text: the table materialised each
+/// distinct uncertainty's `kind` and evidence note once, and every
+/// `Evidence` this produces shares those allocations (see
+/// [`crate::engine::l5::finding::Evidence`]).
 fn uncertainty_lites_of_ids(
     ids: &[UncertaintyId],
     table: &UncertaintyTable,
 ) -> Vec<UncertaintyLite> {
-    ids.iter()
-        .map(|&id| uncertainty_lite_of(table.get(id)))
-        .collect()
+    ids.iter().map(|&id| table.lite(id).clone()).collect()
 }
 
 /// `buildFinding(...)` — assemble the internal Finding for the OLD walker path.
@@ -611,7 +597,7 @@ fn build_finding(
         affected_tables,
         fix_options,
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -1559,7 +1545,7 @@ fn build_group_finding(
         affected_tables,
         fix_options,
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -1895,7 +1881,7 @@ fn assemble_cohort_findings(
             affected_tables,
             fix_options,
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,
@@ -3859,6 +3845,87 @@ mod assembly_tests {
             ],
             "the winner cohort's interned ids must resolve to these three \
              uncertainties, de-duped, in uncertainty_key order"
+        );
+    }
+
+    /// [`uncertain_winner_fixture`] plus a SECOND terminal off the same uncertain
+    /// node `Y`, so two independent findings' confidence evidence is built from
+    /// the same interned uncertainty.
+    fn shared_uncertainty_two_terminals_fixture() -> Fixture {
+        let (mut routines, mut edges, mut summaries) = uncertain_winner_fixture();
+        let y = routines
+            .iter_mut()
+            .find(|r| r.id == "Y")
+            .expect("Y is in the base fixture");
+        y.call_sites = vec![call_site("Y/csU", "U", vec![])];
+        let mut u = routine("U", "procedure");
+        u.record_operations = vec![record_op(
+            "U/op0",
+            "FindSet",
+            "Rec",
+            Some("t/U"),
+            vec![],
+            false,
+        )];
+        routines.push(u);
+        edges
+            .get_mut("Y")
+            .expect("Y has edges in the base fixture")
+            .push(edge_kind("Y", "U", "Y/csU", "direct"));
+        summaries.insert("U".to_string(), db_read_summary("U", "t/U"));
+        (routines, edges, summaries)
+    }
+
+    /// **Pins the SHARED-note representation at the use site.** Every
+    /// `Finding.confidence.evidence` record is an `Evidence` whose `note` is an
+    /// `Arc<str>` cloned from the run-level `UncertaintyTable` — one allocation
+    /// per DISTINCT uncertainty rather than one per record. That is the entire
+    /// memory claim of this change (7,418,849 records, 3,073 distinct notes on
+    /// Base App 8020), and equality alone cannot see it: a version that rebuilt
+    /// the string per record would still produce equal notes and identical
+    /// output, just a gigabyte heavier.
+    ///
+    /// So this asserts pointer identity, through the real
+    /// `search_loops_cohorts` + `assemble_cohort_findings`, across TWO separate
+    /// findings — the strongest available statement that the sharing survives
+    /// finding assembly rather than being an artifact of one `to_confidence`
+    /// call. The `assert_eq!` on the note text first keeps a failure legible:
+    /// if the text diverges, that fires before the pointer check.
+    #[test]
+    fn cohort_evidence_notes_are_shared_across_findings() {
+        let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
+        let uncertainties: HashMap<String, Vec<Uncertainty>> = [(
+            "Y".to_string(),
+            vec![unc("dynamic-dispatch", None, Some("Y"))],
+        )]
+        .into_iter()
+        .collect();
+
+        let ctx = minimal_ctx_with_uncertainties(&routines, edges, summaries, uncertainties);
+        let findings = cohort_findings(&ctx, &routines);
+
+        assert_eq!(findings.len(), 2, "two terminals -> two findings");
+        let notes: Vec<&std::sync::Arc<str>> = findings
+            .iter()
+            .map(|f| {
+                assert_eq!(
+                    f.confidence.evidence.len(),
+                    1,
+                    "each winner path crosses Y exactly once"
+                );
+                assert_eq!(f.confidence.evidence[0].source, "tree-sitter");
+                f.confidence.evidence[0]
+                    .note
+                    .as_ref()
+                    .expect("the uncertainty produces a note")
+            })
+            .collect();
+        assert_eq!(&**notes[0], "dynamic-dispatch at Y");
+        assert_eq!(&**notes[1], "dynamic-dispatch at Y");
+        assert!(
+            std::sync::Arc::ptr_eq(notes[0], notes[1]),
+            "both findings' evidence notes must be clones of ONE table allocation, \
+             not two independently formatted Strings"
         );
     }
 

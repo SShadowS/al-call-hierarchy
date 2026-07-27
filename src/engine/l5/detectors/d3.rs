@@ -351,19 +351,13 @@ pub fn detect_d3(
                     Some(e) => e,
                     None => {
                         bailout = true;
-                        uncertainties.push(UncertaintyLite {
-                            kind: "interface-dispatch".to_string(),
-                            at: cs.id.clone(),
-                        });
+                        uncertainties.push(UncertaintyLite::new("interface-dispatch", &cs.id));
                         continue;
                     }
                 };
                 if edge.kind == "interface" || edge.kind == "dynamic" {
                     bailout = true;
-                    uncertainties.push(UncertaintyLite {
-                        kind: "interface-dispatch".to_string(),
-                        at: cs.id.clone(),
-                    });
+                    uncertainties.push(UncertaintyLite::new("interface-dispatch", &cs.id));
                     continue;
                 }
                 let callee = ctx.routine_by_id.get(edge.to.as_str()).copied();
@@ -389,10 +383,10 @@ pub fn detect_d3(
                         || param_effect.may_use_record_ref)
                 {
                     bailout = true;
-                    uncertainties.push(UncertaintyLite {
-                        kind: "recordref-or-variant".to_string(),
-                        at: cs.operation_id.clone(),
-                    });
+                    uncertainties.push(UncertaintyLite::new(
+                        "recordref-or-variant",
+                        &cs.operation_id,
+                    ));
                     continue;
                 }
                 // reads = paramEffect.readsFields ("unknown" | field-id list)
@@ -555,7 +549,7 @@ pub fn detect_d3(
                     safety: "high".to_string(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

@@ -416,7 +416,7 @@ fn emit_match_finding(
         affected_tables: Vec::new(),
         fix_options: Vec::new(),
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -467,7 +467,7 @@ fn emit_coverage_finding(
         affected_tables: Vec::new(),
         fix_options: Vec::new(),
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -511,7 +511,7 @@ fn emit_unknown_finding(rule: &Rule, routine: &L3Routine, model: &PolicyModel) -
         affected_tables: Vec::new(),
         fix_options: Vec::new(),
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

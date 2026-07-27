@@ -158,7 +158,7 @@ pub fn detect_d44(
                 safety: "medium".to_string(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,
@@ -282,7 +282,7 @@ pub fn detect_d44(
                 safety: "medium".to_string(),
             }],
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

@@ -52,24 +52,10 @@ fn anchor_from(a: &PAnchor, routine_id: &str) -> SourceAnchor {
 }
 
 /// Convert a walk's accumulated `Uncertainty` set to the `UncertaintyLite` shape
-/// `to_confidence` consumes (id-precedence callsiteId → operationId → routineId).
+/// `to_confidence` consumes (`UncertaintyLite::of` applies the shared
+/// callsiteId → operationId → routineId precedence).
 fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
-        .collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
 }
 
 /// The D46 WalkPolicy — follows non-event-dispatch call edges, terminates at any
@@ -317,7 +303,7 @@ pub fn detect_d46(
                     safety: "medium".to_string(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,

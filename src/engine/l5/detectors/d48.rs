@@ -392,7 +392,7 @@ pub fn detect_d48(
                         safety: "medium".to_string(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,
@@ -540,7 +540,7 @@ pub fn detect_d48(
                         safety: "medium".to_string(),
                     }],
                     provenance: vec![Evidence {
-                        source: "tree-sitter".to_string(),
+                        source: "tree-sitter",
                         note: None,
                     }],
                     actionable_anchor: None,
@@ -579,25 +579,10 @@ pub fn detect_d48(
     })
 }
 
-/// Convert accumulated `Uncertainty` to `UncertaintyLite` (callsiteId → operationId
-/// → routineId precedence). Mirrors d1.
+/// Convert accumulated `Uncertainty` to `UncertaintyLite` (`UncertaintyLite::of`
+/// applies the shared callsiteId → operationId → routineId precedence).
 fn uncertainty_lites(
     uncertainties: &[crate::engine::l4::summary::Uncertainty],
 ) -> Vec<UncertaintyLite> {
-    uncertainties
-        .iter()
-        .map(|u| {
-            let at = if let Some(cs) = &u.callsite_id {
-                cs.clone()
-            } else if let Some(op) = &u.operation_id {
-                op.clone()
-            } else {
-                u.routine_id.clone().unwrap_or_default()
-            };
-            UncertaintyLite {
-                kind: u.kind.clone(),
-                at,
-            }
-        })
-        .collect()
+    uncertainties.iter().map(UncertaintyLite::of).collect()
 }

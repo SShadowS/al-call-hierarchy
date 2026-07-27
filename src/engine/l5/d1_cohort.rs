@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 use crate::engine::l4::summary::{Uncertainty, uncertainty_key};
+use crate::engine::l5::confidence::UncertaintyLite;
 use crate::engine::l5::d1_liveness::Liveness;
 use crate::engine::l5::d1_witness::WitnessSummary;
 use crate::engine::l5::detectors::d1::TempVerdict;
@@ -461,6 +462,16 @@ pub(crate) struct UncertaintyTable {
     /// needs it once per id per cohort, and recomputing the `format!` there would
     /// reintroduce exactly the per-record allocation this table exists to remove.
     keys: Vec<Box<str>>,
+    /// The confidence mapper's view of `entries[i]` — its `kind` plus the
+    /// materialised `"{kind} at {at}"` evidence-note text — also precomputed at
+    /// intern time, for the same reason one rung further out: `d1` builds one
+    /// [`crate::engine::l5::finding::Evidence`] per id per winning cohort
+    /// (7,418,849 records on Base App 8020) and each one clones the
+    /// [`UncertaintyLite`] stored here, so the note text is allocated once per
+    /// DISTINCT uncertainty (3,150) instead of once per record. Note this is a
+    /// different string from `keys[i]`: `"{kind} at {at}"` vs `"{kind}|{at}"`,
+    /// and they do NOT sort alike, so neither can stand in for the other.
+    lites: Vec<UncertaintyLite>,
     /// Value -> id, for interning.
     index: HashMap<Uncertainty, UncertaintyId>,
 }
@@ -488,6 +499,7 @@ impl UncertaintyTable {
         );
         self.entries.push(u.clone());
         self.keys.push(uncertainty_key(u).into_boxed_str());
+        self.lites.push(UncertaintyLite::of(u));
         self.index.insert(u.clone(), id);
         id
     }
@@ -523,6 +535,14 @@ impl UncertaintyTable {
     /// `uncertainty_key` of the [`Uncertainty`] `id` names.
     pub(crate) fn key(&self, id: UncertaintyId) -> &str {
         &self.keys[self.resolve(id)]
+    }
+
+    /// The confidence mapper's view of the [`Uncertainty`] `id` names. Clone it
+    /// to build an [`crate::engine::l5::finding::Evidence`]: the clone shares
+    /// this table's note allocation, which is the whole point of storing it here
+    /// rather than re-deriving it per record.
+    pub(crate) fn lite(&self, id: UncertaintyId) -> &UncertaintyLite {
+        &self.lites[self.resolve(id)]
     }
 
     /// The number of DISTINCT interned uncertainties.

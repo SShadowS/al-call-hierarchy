@@ -19,6 +19,7 @@
 //! ARE serialized; only the `Option` tail fields are `skip_serializing_if`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -33,10 +34,33 @@ use crate::engine::l5::registry::{Detector, RunOutput, run_detectors, run_detect
 // ===========================================================================
 
 /// `Evidence` (`model/graph.ts`): `{ source, note? }`.
+///
+/// Both fields are cheap, SHARED handles rather than owned text — deliberately,
+/// and measured. On Base App 8020 (2026-07-27, heap census over the retained
+/// `DetectorOutput`) `d1` holds **7,418,849** of these for the whole run, and
+/// between them they carry **one** distinct `source` and **3,073** distinct
+/// `note`s: as `{String, Option<String>}` that was 48 B of struct plus 14.84M
+/// heap allocations holding 715 MB of 2,395x-duplicated text — 78% of the
+/// retained findings' bytes, and the largest single item in `d1`'s memory
+/// profile after the cohort-union interning.
+///
+/// `source` is `&'static str` because every producer in this engine stamps a
+/// compile-time marker (today, only `"tree-sitter"`; 64 sites). `note` is
+/// `Option<Arc<str>>` because the only producer that sets one
+/// ([`crate::engine::l5::confidence::to_confidence`]) draws it from a table of
+/// distinct uncertainties, so the text is allocated once per distinct value and
+/// every record clones the handle.
+///
+/// **This is representation only — the bytes reaching the output are
+/// unchanged.** [`StableEvidence`] materialises `source`/`note` with
+/// `to_string`, so the projected `String`s are byte-for-byte the ones the
+/// producer built; `stable_evidence_materialises_the_identical_strings` states
+/// exactly that, and `tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`
+/// byte-compares the end-to-end result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Evidence {
-    pub source: String,
-    pub note: Option<String>,
+    pub source: &'static str,
+    pub note: Option<Arc<str>>,
 }
 
 /// `FixOption` (`model/finding.ts`).
@@ -548,10 +572,14 @@ fn project_evidence_step(s: &EvidenceStep, map: &HashMap<String, String>) -> Sta
     }
 }
 
+/// Materialise an internal [`Evidence`]'s shared handles into the owned
+/// `String`s the stable projection serializes. This is the ONLY place the
+/// `&'static str` / `Arc<str>` representation is turned back into text, and it is
+/// a pure widening: `to_string` on the same bytes.
 fn project_evidence(e: &Evidence) -> StableEvidence {
     StableEvidence {
-        source: e.source.clone(),
-        note: e.note.clone(),
+        source: e.source.to_string(),
+        note: e.note.as_deref().map(str::to_string),
     }
 }
 
@@ -906,6 +934,97 @@ pub fn project_r4_findings_cross_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The byte-identity statement for [`Evidence`]'s shared representation.**
+    ///
+    /// `Evidence` holds a `&'static str` source and an `Arc<str>` note instead of
+    /// two owned `String`s. That is only licensed if the STABLE projection —
+    /// the parity surface, the thing that reaches every golden — materialises
+    /// exactly the same text it did when the fields were owned. This walks the
+    /// real producer ([`crate::engine::l5::confidence::to_confidence`], the only
+    /// thing in the engine that ever sets a note) into the real projection
+    /// (`project_evidence`) and asserts the resulting `StableEvidence` equals a
+    /// literal built independently of both.
+    ///
+    /// The kind/at pairs cover the three shapes the note format has to survive: a
+    /// callsite-scoped id, a kind that is NOT a valid `cappedBy` (so the level is
+    /// capped by evidence alone), and the empty `at` an uncertainty with no
+    /// callsite/operation/routine id produces.
+    #[test]
+    fn stable_evidence_materialises_the_identical_strings() {
+        use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
+
+        for (kind, at) in [
+            ("interface-open-world", "r0/abc123/cs0"),
+            ("interface-dispatch", "r0/abc123/cs9"),
+            ("unresolved-call", ""),
+        ] {
+            let c = to_confidence(&[UncertaintyLite::new(kind, at)], "likely");
+            assert_eq!(c.evidence.len(), 1);
+            assert_eq!(
+                project_evidence(&c.evidence[0]),
+                StableEvidence {
+                    source: "tree-sitter".to_string(),
+                    note: Some(format!("{kind} at {at}")),
+                },
+                "the projected evidence for ({kind}, {at}) must be byte-identical \
+                 to the owned-String form"
+            );
+        }
+
+        // The note-less form every detector stamps on `provenance`.
+        assert_eq!(
+            project_evidence(&Evidence {
+                source: "tree-sitter",
+                note: None,
+            }),
+            StableEvidence {
+                source: "tree-sitter".to_string(),
+                note: None,
+            }
+        );
+    }
+
+    /// The same claim one level out, at the bytes serde actually writes: a
+    /// `StableConfidence` built from the shared representation must serialize to
+    /// the exact JSON the goldens carry, `evidence` before the optional
+    /// `cappedBy`, `note` present only when set.
+    #[test]
+    fn stable_confidence_serializes_to_the_golden_json_shape() {
+        use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
+
+        let c = to_confidence(
+            &[
+                UncertaintyLite::new("interface-open-world", "r0/aa/cs0"),
+                UncertaintyLite::new("opaque-callee", "r0/aa/cs0"),
+            ],
+            "likely",
+        );
+        let stable = StableConfidence {
+            level: c.level.clone(),
+            evidence: c.evidence.iter().map(project_evidence).collect(),
+            capped_by: c.capped_by.clone(),
+        };
+        assert_eq!(
+            serde_json::to_string(&stable).expect("StableConfidence serializes"),
+            r#"{"level":"possible","evidence":[{"source":"tree-sitter","note":"interface-open-world at r0/aa/cs0"},{"source":"tree-sitter","note":"opaque-callee at r0/aa/cs0"}],"cappedBy":["dynamic-dispatch","opaque-callee"]}"#
+        );
+    }
+
+    /// Pins the representation the memory win rests on. `Evidence` is retained
+    /// 7.4M times per Base App 8020 run, so every word of it is ~59 MB of live
+    /// heap: at four words it is 237 MB, at the six words `{String,
+    /// Option<String>}` cost it was 356 MB plus 715 MB of duplicated text. A
+    /// future edit that puts an owned `String` back in either field fails here
+    /// rather than silently costing a gigabyte.
+    #[test]
+    fn evidence_stays_four_words_wide() {
+        assert_eq!(
+            std::mem::size_of::<Evidence>(),
+            4 * std::mem::size_of::<usize>(),
+            "Evidence must stay a &'static str + an Option<Arc<str>> — see its doc"
+        );
+    }
 
     #[test]
     fn table_id_projection_to_colon_form() {

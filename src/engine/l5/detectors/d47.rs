@@ -160,7 +160,7 @@ fn build_d47_finding(
         affected_tables: Vec::new(),
         fix_options,
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -340,7 +340,7 @@ fn build_d47_event_advisory_finding(
         affected_tables: Vec::new(),
         fix_options,
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

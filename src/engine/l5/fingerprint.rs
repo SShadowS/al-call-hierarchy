@@ -276,7 +276,7 @@ mod tests {
             affected_tables: Vec::new(),
             fix_options: Vec::new(),
             provenance: vec![Evidence {
-                source: "tree-sitter".to_string(),
+                source: "tree-sitter",
                 note: None,
             }],
             actionable_anchor: None,

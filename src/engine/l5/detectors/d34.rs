@@ -254,7 +254,7 @@ fn emit_direct(
             safety: "medium".to_string(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,
@@ -342,7 +342,7 @@ fn emit_transitive(
             safety: "medium".to_string(),
         }],
         provenance: vec![Evidence {
-            source: "tree-sitter".to_string(),
+            source: "tree-sitter",
             note: None,
         }],
         actionable_anchor: None,

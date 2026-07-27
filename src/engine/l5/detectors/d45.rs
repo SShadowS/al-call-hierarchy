@@ -191,7 +191,7 @@ pub fn detect_d45(
                     safety: "high".to_string(),
                 }],
                 provenance: vec![Evidence {
-                    source: "tree-sitter".to_string(),
+                    source: "tree-sitter",
                     note: None,
                 }],
                 actionable_anchor: None,
