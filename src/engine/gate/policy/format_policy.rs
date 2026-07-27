@@ -385,7 +385,7 @@ pub fn format_policy_human(result: &PolicyRunResult) -> String {
     } else {
         lines.push(format!("Findings ({}):", result.findings.len()));
         for f in &result.findings {
-            let label = if !f.title.is_empty() {
+            let label: &str = if !f.title.is_empty() {
                 &f.title
             } else {
                 &f.root_cause

@@ -249,7 +249,7 @@ mod tests {
             id: id.to_string(),
             root_cause_key: id.to_string(),
             detector: "d-test".to_string(),
-            title: "Test finding".to_string(),
+            title: "Test finding".into(),
             root_cause: "test".to_string(),
             severity: severity.to_string(),
             confidence: FindingConfidence {

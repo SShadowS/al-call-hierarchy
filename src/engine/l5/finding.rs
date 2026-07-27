@@ -95,10 +95,17 @@ pub struct ConfidenceEvidence {
 }
 
 /// `FixOption` (`model/finding.ts`).
+///
+/// Both fields are `Arc<str>`. The census measures **two** distinct
+/// `description`s and **two** distinct `safety` values across `d1`'s 22,383
+/// findings — 2.1 MB of duplicated text in 44,766 allocations — because a
+/// detector picks its fix advice from a fixed menu. A producer that emits at
+/// volume hoists its handles out of the emit loop and hands out refcount bumps;
+/// a low-volume producer pays the same one allocation it always did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixOption {
-    pub description: String,
-    pub safety: String,
+    pub description: Arc<str>,
+    pub safety: Arc<str>,
 }
 
 /// `FindingConfidence` (`model/finding.ts`).
@@ -250,15 +257,29 @@ pub struct Finding {
     pub id: String,
     pub root_cause_key: String,
     pub detector: String,
-    pub title: String,
+    /// The finding's headline. `Arc<str>` because most detectors stamp a
+    /// compile-time literal and the volume producer (`d1`) stamps ONE — the
+    /// census counts 22,383 allocations of a single distinct string. Not
+    /// `&'static str`: eight detectors `format!` their title from the shape they
+    /// found (`"Unfiltered {op}"`, `"Record cloned before {op} in loop"`, …) and
+    /// the policy engine takes its title from a user rule, so a `'static` bound
+    /// is simply false here.
+    pub title: Arc<str>,
     pub root_cause: String,
     pub severity: String,
     pub confidence: FindingConfidence,
     pub primary_location: SourceAnchor,
     pub evidence_path: Vec<EvidenceStep>,
     pub additional_paths: Option<Vec<Vec<EvidenceStep>>>,
-    pub affected_objects: Vec<String>,
-    pub affected_tables: Vec<String>,
+    /// Internal ObjectIds. `Arc<str>` because these repeat hard: `d1` retains
+    /// **563,126** of them over **2,042** distinct values (27.6 MB of text, 276x
+    /// duplication) — one entry per reaching loop's owning object, per finding.
+    /// Interning them at the producer collapses that to one allocation per
+    /// distinct object id.
+    pub affected_objects: Vec<Arc<str>>,
+    /// Internal TableIds — same reasoning as [`Finding::affected_objects`]
+    /// (21,758 entries over 1,141 distinct values).
+    pub affected_tables: Vec<Arc<str>>,
     pub fix_options: Vec<FixOption>,
     pub provenance: Vec<Evidence>,
     pub actionable_anchor: Option<SourceAnchor>,
@@ -274,6 +295,22 @@ pub struct Finding {
     /// by N loops" per verdict class instead of one [`LoopContext`] per loop. See
     /// [`D1CohortContext`].
     pub cohort_contexts: Option<Vec<D1CohortContext>>,
+}
+
+/// Build the `Arc<str>` id list [`Finding::affected_objects`] /
+/// [`Finding::affected_tables`] hold, from anything string-like.
+///
+/// For the ~50 low-volume detectors — one or two ids per finding — this costs
+/// the same single allocation the owned `String` did, and saves 8 bytes per slot.
+/// The SHARING the type exists for lives at the volume producer: `d1` emits
+/// 563,126 object ids over 2,042 distinct values, and interns them (see
+/// `d1`'s `object_ids` cache) instead of calling this per entry.
+pub fn id_list<I, S>(ids: I) -> Vec<Arc<str>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    ids.into_iter().map(|s| Arc::from(s.as_ref())).collect()
 }
 
 /// A finding's realizing witness path — the ONE place in the engine that knows
@@ -830,7 +867,7 @@ fn project_finding(
         detector: f.detector.clone(),
         id: stable_finding_id(&f.id),
         root_cause_key: stable_finding_id(&f.root_cause_key),
-        title: f.title.clone(),
+        title: f.title.to_string(),
         root_cause: f.root_cause.clone(),
         severity: f.severity.clone(),
         confidence: StableConfidence {
@@ -862,8 +899,8 @@ fn project_finding(
             .fix_options
             .iter()
             .map(|x| StableFixOption {
-                description: x.description.clone(),
-                safety: x.safety.clone(),
+                description: x.description.to_string(),
+                safety: x.safety.to_string(),
             })
             .collect(),
         provenance: f.provenance.iter().map(project_evidence).collect(),
@@ -1417,7 +1454,7 @@ mod tests {
             id: "d1/R0/T/T/op0".to_string(),
             root_cause_key: "d1/T/T/op0".to_string(),
             detector: "d1".to_string(),
-            title: "title".to_string(),
+            title: "title".into(),
             root_cause: "root cause".to_string(),
             severity: "high".to_string(),
             confidence: FindingConfidence {

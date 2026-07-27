@@ -27,7 +27,7 @@ use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::finding::{
-    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor, id_list,
 };
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
@@ -247,21 +247,22 @@ pub fn detect_d7(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Event subscriber chain forms a cycle".to_string(),
+            title: "Event subscriber chain forms a cycle".into(),
             root_cause,
             severity: "high".to_string(),
             confidence,
             primary_location: routine_anchor(&anchor_routine.source_anchor, anchor_routine),
             evidence_path: path,
             additional_paths: None,
-            affected_objects,
+            affected_objects: id_list(affected_objects),
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
                 description:
                     "Break the cycle: either remove one of the event publishes from a subscriber, \
                      or gate the publish on a 'currently-processing' flag."
-                        .to_string(),
-                safety: "low".to_string(),
+                        .to_string()
+                        .into(),
+                safety: "low".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

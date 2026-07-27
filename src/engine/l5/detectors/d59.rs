@@ -68,7 +68,7 @@ pub fn detect_d59(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: "Writable security-guard parameter on integration event".to_string(),
+                title: "Writable security-guard parameter on integration event".into(),
                 root_cause: format!(
                     "Integration event {} exposes `var {}: Boolean` — any subscriber \
                      (including third-party extensions) can flip this guard and bypass the \
@@ -90,15 +90,16 @@ pub fn detect_d59(
                     ),
                 }],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: format!(
                         "Make {} non-var (informational), or replace the writable guard with \
                          an explicit, audited decision API the publisher controls.",
                         p.name
-                    ),
-                    safety: "medium".to_string(),
+                    )
+                    .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

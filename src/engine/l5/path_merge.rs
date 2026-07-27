@@ -24,7 +24,7 @@
 //! Output is sorted by canonical finding `id` (`compareStrings`).
 
 use crate::engine::l5::finding::{
-    ConfidenceEvidence, EVIDENCE_SOURCE, EvidenceStep, Finding, FindingConfidence,
+    ConfidenceEvidence, EVIDENCE_SOURCE, EvidenceStep, Finding, FindingConfidence, id_list,
 };
 
 /// al-sem `compareStrings(a, b)`: `a < b ? -1 : a > b ? 1 : 0`. For `&str` this
@@ -165,12 +165,15 @@ fn merge_confidence(group: &[Finding]) -> FindingConfidence {
     }
 }
 
-/// Union + dedup + sort a set of string lists. Mirrors al-sem `unionSorted`.
-fn union_sorted(lists: &[&[String]]) -> Vec<String> {
-    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+/// Union + dedup + sort a set of interned id lists. Mirrors al-sem `unionSorted`.
+/// `Arc<str>`'s `Ord` is `str`'s byte order, exactly as `String`'s is, so the
+/// emitted order is unchanged by the shared handles; the "clone" is a refcount bump.
+fn union_sorted(lists: &[&[std::sync::Arc<str>]]) -> Vec<std::sync::Arc<str>> {
+    let mut set: std::collections::BTreeSet<std::sync::Arc<str>> =
+        std::collections::BTreeSet::new();
     for list in lists {
         for v in *list {
-            set.insert(v.clone());
+            set.insert(std::sync::Arc::clone(v));
         }
     }
     set.into_iter().collect()
@@ -253,8 +256,8 @@ pub fn merge_by_terminal(findings: Vec<Finding>) -> Vec<Finding> {
         let canonical = &group[canon_idx];
         let merged = Finding {
             confidence,
-            affected_objects,
-            affected_tables,
+            affected_objects: id_list(affected_objects),
+            affected_tables: id_list(affected_tables),
             root_cause: annotate_root_cause(&canonical.root_cause, group_len),
             additional_paths: Some(other_paths),
             ..canonical.clone()
@@ -316,7 +319,7 @@ mod tests {
             id: id.to_string(),
             root_cause_key: root_cause_key.to_string(),
             detector: "d1".to_string(),
-            title: "t".to_string(),
+            title: "t".into(),
             root_cause: "rc".to_string(),
             severity: severity.to_string(),
             confidence: FindingConfidence {
@@ -327,8 +330,8 @@ mod tests {
             primary_location: primary,
             evidence_path: path,
             additional_paths: None,
-            affected_objects,
-            affected_tables,
+            affected_objects: id_list(affected_objects),
+            affected_tables: id_list(affected_tables),
             fix_options: vec![],
             provenance: vec![],
             actionable_anchor: None,
@@ -379,8 +382,10 @@ mod tests {
         assert_eq!(ap.len(), 1);
         assert_eq!(ap[0][0].source_anchor.source_unit_id, "ws:lo.al");
         // unioned + sorted affected tables.
-        assert_eq!(m.affected_tables, vec!["g/table/18", "g/table/27"]);
-        assert_eq!(m.affected_objects, vec!["app/Codeunit/1", "app/Codeunit/2"]);
+        let tables: Vec<&str> = m.affected_tables.iter().map(|s| &**s).collect();
+        assert_eq!(tables, vec!["g/table/18", "g/table/27"]);
+        let objects: Vec<&str> = m.affected_objects.iter().map(|s| &**s).collect();
+        assert_eq!(objects, vec!["app/Codeunit/1", "app/Codeunit/2"]);
         // rootCause annotated with the other-path count (1 other ancestor).
         assert_eq!(
             m.root_cause,

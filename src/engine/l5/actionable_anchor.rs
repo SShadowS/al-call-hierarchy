@@ -93,7 +93,7 @@ mod tests {
             id: "d1/x".to_string(),
             root_cause_key: "k".to_string(),
             detector: "d1".to_string(),
-            title: "t".to_string(),
+            title: "t".into(),
             root_cause: "rc".to_string(),
             severity: "high".to_string(),
             confidence: FindingConfidence {

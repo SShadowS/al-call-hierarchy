@@ -82,22 +82,23 @@ fn build_d49_finding(
             "Add a Commit() call before the window-opening UI call, or restructure the code so \
              the UI interaction happens outside the write transaction. Alternatively, consider \
              whether the write can be deferred until after the user interaction."
-                .to_string(),
-        safety: "medium".to_string(),
+                .to_string()
+                .into(),
+        safety: "medium".into(),
     }];
 
     let mut finding = Finding {
         id: format!("d49/{}/{}", of.routine_id, fact.key),
         root_cause_key: format!("d49/{}", of.routine_id),
         detector: DETECTOR.to_string(),
-        title,
+        title: title.into(),
         root_cause,
         severity: sev.to_string(),
         confidence: to_confidence(&[], "likely"),
         primary_location,
         evidence_path,
         additional_paths: None,
-        affected_objects: vec![routine.object_id.clone()],
+        affected_objects: vec![routine.object_id.as_str().into()],
         affected_tables: Vec::new(),
         fix_options,
         provenance: vec![Evidence {

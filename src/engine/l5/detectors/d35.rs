@@ -128,7 +128,7 @@ pub fn detect_d35(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: format!("Commit reachable from event subscriber{}", title_suffix),
+            title: format!("Commit reachable from event subscriber{}", title_suffix).into(),
             root_cause: format!(
                 "{} is an event subscriber that {} \u{2014} the publisher cannot roll back the \
                  committed state if its work later fails.",
@@ -144,14 +144,15 @@ pub fn detect_d35(
             primary_location: anchor,
             evidence_path: path,
             additional_paths: None,
-            affected_objects: vec![routine.object_id.clone()],
+            affected_objects: vec![routine.object_id.as_str().into()],
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
                 description: "Remove the Commit from the subscriber path. If durable side effects \
                               are required, schedule them outside the publisher's transaction \
                               (e.g. a job-queue entry written without Commit, processed later)."
-                    .to_string(),
-                safety: "medium".to_string(),
+                    .to_string()
+                    .into(),
+                safety: "medium".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

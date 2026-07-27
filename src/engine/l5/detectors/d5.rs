@@ -12,7 +12,9 @@ use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d5-set-based-opportunity";
@@ -179,20 +181,20 @@ pub fn detect_d5(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "Loop-and-Modify could be ModifyAll".to_string(),
+                title: "Loop-and-Modify could be ModifyAll".into(),
                 root_cause,
                 severity: "info".to_string(),
                 confidence,
                 primary_location: anchor_of(&modify.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects,
-                affected_tables,
+                affected_objects: id_list(affected_objects),
+                affected_tables: id_list(affected_tables),
                 fix_options: vec![FixOption {
                     description:
                         "Replace the FindSet+repeat+Modify pattern with ModifyAll on the same filter."
-                            .to_string(),
-                    safety: "medium".to_string(),
+                            .to_string().into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

@@ -41,7 +41,7 @@ use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
 };
 use crate::engine::l5::finding::{
-    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor,
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, SourceAnchor, id_list,
 };
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::merge_by_terminal;
@@ -479,7 +479,7 @@ pub fn detect_d2(
                 id: format!("d2/{loop_id}/{event_id}"),
                 root_cause_key: format!("d2/{event_id}"),
                 detector: DETECTOR.to_string(),
-                title: "Event raised inside a loop fans out to database work".to_string(),
+                title: "Event raised inside a loop fans out to database work".into(),
                 root_cause: format!(
                     "{} raises {event_name} inside a loop; subscribers touch the database \
                      every iteration.",
@@ -490,13 +490,13 @@ pub fn detect_d2(
                 primary_location: anchor_of(&cs.source_anchor, routine),
                 evidence_path,
                 additional_paths: None,
-                affected_objects: affected_objects.into_iter().collect(),
-                affected_tables: affected_tables.into_iter().collect(),
+                affected_objects: id_list(affected_objects),
+                affected_tables: id_list(affected_tables),
                 fix_options: vec![FixOption {
                     description:
                         "Raise the event once outside the loop, or batch the work the subscribers do."
-                            .to_string(),
-                    safety: "medium".to_string(),
+                            .to_string().into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

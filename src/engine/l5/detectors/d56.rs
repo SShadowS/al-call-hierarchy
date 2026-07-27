@@ -44,7 +44,9 @@ use crate::engine::l5::detectors::{
     anchor_of, anchor_within, before_anchor, is_known_temp_var, normalize_load_field_arg,
     primary_key_field_names_lc,
 };
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d56-clone-before-write-in-loop";
@@ -196,7 +198,7 @@ pub fn detect_d56(
                 id: id.clone(),
                 root_cause_key: format!("d56/{}/{}", routine.id, lp.id),
                 detector: DETECTOR.to_string(),
-                title: format!("Record cloned before {} in loop", write.op),
+                title: format!("Record cloned before {} in loop", write.op).into(),
                 root_cause: format!(
                     "{} copies the loop cursor {} into {} and calls {} on the copy inside \
                      the loop — an extra SQL round-trip per row; the cursor already holds \
@@ -228,15 +230,16 @@ pub fn detect_d56(
                     },
                 ],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
-                affected_tables: write.table_id.iter().cloned().collect(),
+                affected_objects: vec![routine.object_id.as_str().into()],
+                affected_tables: id_list(write.table_id.iter().cloned()),
                 fix_options: vec![FixOption {
                     description: format!(
                         "Call {} on the cursor ({}) directly, or restructure to a set-based \
                          write (ModifyAll/DeleteAll) outside the loop.",
                         write.op, rhs_lc
-                    ),
-                    safety: "medium".to_string(),
+                    )
+                    .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

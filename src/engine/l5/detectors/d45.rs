@@ -168,7 +168,7 @@ pub fn detect_d45(
                 id: root_cause_key.clone(),
                 root_cause_key: root_cause_key.clone(),
                 detector: DETECTOR.to_string(),
-                title: "Event subscribers expose table transitively from publisher".to_string(),
+                title: "Event subscribers expose table transitively from publisher".into(),
                 root_cause: format!(
                     "Publisher {publisher} dispatches to {} subscriber(s) that write table {table}; reach={coverage_reach}; publisherAlsoWrites={publisher_also_writes}; subscriberCoverage={sub_cov_worst}",
                     writer_subs.len()
@@ -183,12 +183,12 @@ pub fn detect_d45(
                 evidence_path: evidence,
                 additional_paths: None,
                 affected_objects: Vec::new(),
-                affected_tables: vec![table.clone()],
+                affected_tables: vec![table.as_str().into()],
                 fix_options: vec![FixOption {
                     description: format!(
                         "Treat {table} as part of this event's effect surface for permission/transaction reasoning."
-                    ),
-                    safety: "high".to_string(),
+                    ).into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

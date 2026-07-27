@@ -14,7 +14,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::transaction_spans::SeedKind;
 
@@ -145,7 +147,7 @@ pub fn detect_d8(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Commit inside a posting transaction span".to_string(),
+            title: "Commit inside a posting transaction span".into(),
             root_cause: format!(
                 "{} calls Commit while reachable from {}, which writes {} tables. \
                  A mid-transaction Commit breaks rollback semantics \u{2014} if the surrounding \
@@ -157,13 +159,14 @@ pub fn detect_d8(
             primary_location: commit_anchor,
             evidence_path: path,
             additional_paths: None,
-            affected_objects,
-            affected_tables: span.writes_tables.clone(),
+            affected_objects: id_list(affected_objects),
+            affected_tables: id_list(span.writes_tables.clone()),
             fix_options: vec![FixOption {
                 description: "Remove the Commit, or restructure so the surrounding transaction \
                               completes (returns control to its caller) before this code runs."
-                    .to_string(),
-                safety: "low".to_string(),
+                    .to_string()
+                    .into(),
+                safety: "low".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

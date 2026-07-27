@@ -106,20 +106,28 @@ pub fn project_finding(finding: &Finding, idx: &ProjectionIndex) -> FindingSumma
             .clone()
             .unwrap_or_else(|| finding.id.clone()),
         detector: finding.detector.clone(),
-        title: finding.title.clone(),
+        title: finding.title.to_string(),
         root_cause: finding.root_cause.clone(),
         severity: finding.severity.clone(),
         confidence_level: finding.confidence.level.clone(),
         confidence_capped_by: finding.confidence.capped_by.clone(),
         primary_location: primary,
         terminal_location: terminal,
-        affected_objects: finding.affected_objects.clone(),
-        affected_tables: finding.affected_tables.clone(),
+        affected_objects: finding
+            .affected_objects
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        affected_tables: finding
+            .affected_tables
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         // al-sem: `finding.fixOptions[0]` (the first fix option, if any).
         fix_hint: finding
             .fix_options
             .first()
-            .map(|f| (f.description.clone(), f.safety.clone())),
+            .map(|f| (f.description.to_string(), f.safety.to_string())),
         // al-sem: `1 + (finding.additionalPaths?.length ?? 0)` — read through
         // `realizing_path_count`, because a cohort-bearing d1 finding no longer
         // STORES `additional_paths` (it was a retained duplicate of
@@ -189,7 +197,7 @@ mod tests {
             id: "d1/x".to_string(),
             root_cause_key: "k".to_string(),
             detector: "d1-db-op-in-loop".to_string(),
-            title: "t".to_string(),
+            title: "t".into(),
             root_cause: "rc".to_string(),
             severity: "high".to_string(),
             confidence: FindingConfidence {

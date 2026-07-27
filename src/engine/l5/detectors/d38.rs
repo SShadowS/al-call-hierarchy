@@ -18,7 +18,9 @@ use crate::engine::l3::event_graph::EventSymbol;
 use crate::engine::l3::l3_workspace::{L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 use super::anchor_of;
@@ -146,18 +148,18 @@ pub fn detect_d38(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: format!("Subscriber bound to obsolete event ({})", state_label),
+            title: format!("Subscriber bound to obsolete event ({})", state_label).into(),
             root_cause,
             severity: severity.to_string(),
             confidence,
             primary_location: anchor_of(&subscriber.source_anchor, subscriber),
             evidence_path: path,
             additional_paths: None,
-            affected_objects,
+            affected_objects: id_list(affected_objects),
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
-                description: fix_description,
-                safety: "high".to_string(),
+                description: fix_description.into(),
+                safety: "high".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

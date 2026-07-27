@@ -102,7 +102,7 @@ pub fn detect_d63(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: "HTML built by string concatenation".to_string(),
+                title: "HTML built by string concatenation".into(),
                 root_cause: format!(
                     "{} concatenates data into an HTML literal ({}) — AL has no built-in \
                      HtmlEncode, so any user-influenced value is an injection risk where \
@@ -122,14 +122,15 @@ pub fn detect_d63(
                     note: "HTML literal + concatenation in argument".to_string(),
                 }],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Encode interpolated values (replace <, >, &, \" before \
                                   splicing) or build the document with an XmlDocument/\
                                   template API instead of concatenation."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .to_string()
+                        .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

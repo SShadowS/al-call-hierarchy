@@ -16,7 +16,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d55-event-publish-in-loop";
@@ -72,7 +74,7 @@ pub fn detect_d55(
                 id: id.clone(),
                 root_cause_key: format!("d55/{}/{}", routine.id, loop_info.id),
                 detector: DETECTOR.to_string(),
-                title: "Event published inside loop".to_string(),
+                title: "Event published inside loop".into(),
                 root_cause: format!(
                     "{} publishes {} inside a {} loop — every subscriber runs once per \
                      iteration, and the cost grows as third parties subscribe.",
@@ -100,14 +102,18 @@ pub fn detect_d55(
                     },
                 ],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone(), callee.object_id.clone()],
+                affected_objects: id_list(vec![
+                    routine.object_id.as_str().into(),
+                    callee.object_id.clone(),
+                ]),
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Accumulate the per-row data and publish ONE event after the \
                                   loop (pass a collection/buffer), or document why per-row \
                                   dispatch is required."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .to_string()
+                        .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

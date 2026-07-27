@@ -663,7 +663,7 @@ mod tests {
             id: id.to_string(),
             root_cause_key: id.to_string(),
             detector: "test-ok-detector".to_string(),
-            title: "test finding".to_string(),
+            title: "test finding".into(),
             root_cause: "test root cause".to_string(),
             severity: "info".to_string(),
             confidence: FindingConfidence {

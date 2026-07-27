@@ -20,7 +20,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, group_and_cap};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d54-publish-in-tryfunction-cone";
@@ -122,7 +124,8 @@ pub fn detect_d54(
                 title: format!(
                     "Event published inside TryFunction cone{}",
                     if direct { "" } else { " (via callee)" }
-                ),
+                )
+                .into(),
                 root_cause: format!(
                     "{} is a TryFunction that {} the event publisher {} — errors raised by \
                      subscribers are swallowed by the try boundary, silencing third-party \
@@ -140,14 +143,18 @@ pub fn detect_d54(
                 primary_location: anchor_of(&routine.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone(), publisher.object_id.clone()],
+                affected_objects: id_list(vec![
+                    routine.object_id.as_str().into(),
+                    publisher.object_id.clone(),
+                ]),
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Move the event publish outside the TryFunction boundary, or \
                                   document that subscriber errors are intentionally suppressed \
                                   on this path."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .to_string()
+                        .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

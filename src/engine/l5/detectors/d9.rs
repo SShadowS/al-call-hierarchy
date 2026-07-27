@@ -11,7 +11,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::transaction_spans::SeedKind;
 
@@ -81,7 +83,7 @@ pub fn detect_d9(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Transaction span summary".to_string(),
+            title: "Transaction span summary".into(),
             root_cause: format!(
                 "Transaction ending at {}'s Commit spans {} routines, {}, publishes {} event(s). \
                  Consider whether all of this needs to be atomic.",
@@ -95,13 +97,13 @@ pub fn detect_d9(
             primary_location: commit_anchor,
             evidence_path: path,
             additional_paths: None,
-            affected_objects: vec![commit_routine.object_id.clone()],
-            affected_tables: span.writes_tables.clone(),
+            affected_objects: vec![commit_routine.object_id.as_str().into()],
+            affected_tables: id_list(span.writes_tables.clone()),
             fix_options: vec![FixOption {
                 description: "If the span includes operations that are logically independent, \
                               split them into separate transactions with their own Commit boundaries."
-                    .to_string(),
-                safety: "low".to_string(),
+                    .to_string().into(),
+                safety: "low".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

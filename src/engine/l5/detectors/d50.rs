@@ -20,7 +20,9 @@ use crate::engine::l3::l3_workspace::{L3Object, L3Resolved, L3Routine};
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, SourceAnchor};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FixOption, SourceAnchor, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 use crate::engine::l5::transaction_spans::SeedKind;
 
@@ -329,21 +331,22 @@ pub fn detect_d50(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Codeunit.Run implicit commit within a posting span".to_string(),
+            title: "Codeunit.Run implicit commit within a posting span".into(),
             root_cause,
             severity: severity.to_string(),
             confidence: to_confidence(&[], "possible"),
             primary_location: callsite_anchor,
             evidence_path,
             additional_paths: None,
-            affected_objects,
-            affected_tables: span.writes_tables.clone(),
+            affected_objects: id_list(affected_objects),
+            affected_tables: id_list(span.writes_tables.clone()),
             fix_options: vec![FixOption {
                 description:
                     "If atomicity matters, avoid the checked Run mid-transaction or restructure \
                      so the posting completes before the implicit commit."
-                        .to_string(),
-                safety: "low".to_string(),
+                        .to_string()
+                        .into(),
+                safety: "low".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

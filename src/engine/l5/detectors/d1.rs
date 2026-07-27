@@ -44,6 +44,7 @@
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::engine::l3::l3_workspace::L3Table;
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Resolved, L3Routine, L3Workspace};
@@ -68,12 +69,12 @@ use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
 };
-#[cfg(test)]
-use crate::engine::l5::finding::LoopContext;
 use crate::engine::l5::finding::{
     D1CohortContext, D1CohortIndex, Evidence, EvidenceStep, Finding, FindingConfidence, FixOption,
     SourceAnchor,
 };
+#[cfg(test)]
+use crate::engine::l5::finding::{LoopContext, id_list};
 use crate::engine::l5::op_classification::{classify_op, is_db_touching_class};
 use crate::engine::l5::path_merge::{annotate_root_cause, sev_rank};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
@@ -570,15 +571,17 @@ fn build_finding(
             description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
                           typically O(1) after the first hit. Hoist the Get() outside the loop \
                           only if the call site shows up in a CPU profile."
-                .to_string(),
-            safety: "high".to_string(),
+                .to_string()
+                .into(),
+            safety: "high".into(),
         }]
     } else {
         vec![FixOption {
             description: "Move the database operation outside the loop, or batch it into a \
                           set-based operation."
-                .to_string(),
-            safety: "medium".to_string(),
+                .to_string()
+                .into(),
+            safety: "medium".into(),
         }]
     };
 
@@ -586,15 +589,15 @@ fn build_finding(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: "Database operation inside a loop".to_string(),
+        title: "Database operation inside a loop".into(),
         root_cause,
         severity: severity.to_string(),
         confidence,
         primary_location: terminal_op_anchor,
         evidence_path: result.path.clone(),
         additional_paths: None,
-        affected_objects,
-        affected_tables,
+        affected_objects: id_list(affected_objects),
+        affected_tables: id_list(affected_tables),
         fix_options,
         provenance: vec![Evidence {
             source: "tree-sitter",
@@ -1515,15 +1518,17 @@ fn build_group_finding(
             description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
                           typically O(1) after the first hit. Hoist the Get() outside the loop \
                           only if the call site shows up in a CPU profile."
-                .to_string(),
-            safety: "high".to_string(),
+                .to_string()
+                .into(),
+            safety: "high".into(),
         }]
     } else {
         vec![FixOption {
             description: "Move the database operation outside the loop, or batch it into a \
                           set-based operation."
-                .to_string(),
-            safety: "medium".to_string(),
+                .to_string()
+                .into(),
+            safety: "medium".into(),
         }]
     };
 
@@ -1533,7 +1538,7 @@ fn build_group_finding(
         id,
         root_cause_key,
         detector: DETECTOR.to_string(),
-        title: "Database operation inside a loop".to_string(),
+        title: "Database operation inside a loop".into(),
         root_cause,
         // Severity + confidence from the SAME (winning) context.
         severity: agg.severity.to_string(),
@@ -1541,8 +1546,8 @@ fn build_group_finding(
         primary_location: anchor_of(&terminal_op.source_anchor, terminal_routine),
         evidence_path: agg.witness.clone(),
         additional_paths,
-        affected_objects,
-        affected_tables,
+        affected_objects: id_list(affected_objects),
+        affected_tables: id_list(affected_tables),
         fix_options,
         provenance: vec![Evidence {
             source: "tree-sitter",
@@ -1608,6 +1613,20 @@ fn min_group(bm: &GroupBitmap) -> u32 {
     bm.iter().next().unwrap_or(u32::MAX)
 }
 
+/// The run's ONE `Arc<str>` for an internal object/table id, minted on first
+/// sight. `cache` borrows its keys from the workspace (which outlives the
+/// assembly), so a repeat lookup allocates nothing at all.
+fn intern_id<'w>(cache: &mut HashMap<&'w str, Arc<str>>, id: &'w str) -> Arc<str> {
+    match cache.get(id) {
+        Some(a) => Arc::clone(a),
+        None => {
+            let a: Arc<str> = Arc::from(id);
+            cache.insert(id, Arc::clone(&a));
+            a
+        }
+    }
+}
+
 /// Assemble ONE compressed [`Finding`] per reached terminal from the cohort run
 /// (the C6 cutover replacement for [`assemble_findings`]), and build the
 /// run-level [`LoopSetRegistry`] as cohorts are interned.
@@ -1620,18 +1639,21 @@ fn min_group(bm: &GroupBitmap) -> u32 {
 ///   lowest group index and the global-min top-`(sev, verdict)` loop is the min of
 ///   its OWN cohort. So the finding's `severity` (the max), `confidence` (from the
 ///   winner cohort's representative-path uncertainties = the old winner's), the
-///   root-cause loop name, `primary_location`, `evidence_path` (the winner's
-///   witness) and fingerprint inputs are all PRESERVED across the cutover — only
-///   the witness becomes bounded and the per-loop `contexts` become per-class
+///   root-cause loop name, `primary_location`, realizing witness path and
+///   fingerprint inputs are all PRESERVED across the cutover — only the witness
+///   becomes bounded and the per-loop `contexts` become per-class
 ///   `cohort_contexts`.
 /// - `cohort_contexts` = every ContextKey cohort partitioned FURTHER by
 ///   `reachable_verdicts` (a per-`(loop, terminal)` property that can vary within a
 ///   ContextKey class), each with an interned `loop_set` + `loop_count` + the ck
 ///   cohort's shared bounded representative `witness`; ordered `(sev desc, verdict
 ///   quality desc, min group asc)` so `cohort_contexts[0]` is the winner class.
-/// - `evidence_path` = the winner cohort's flattened representative witness;
-///   `additional_paths` = the non-winner cohort_contexts' witnesses in the same
-///   order (so a SARIF code-flow index maps to a `cohort_contexts` index).
+/// - `evidence_path`/`additional_paths` are NOT built: they were byte-for-byte
+///   copies of `cohort_contexts[0].witness` / `cohort_contexts[1..].witness`,
+///   which `project_finding` has discarded since Task C8. Readers derive them
+///   through [`crate::engine::l5::finding::evidence_path_of`] /
+///   [`crate::engine::l5::finding::realizing_path_count`] instead (so a SARIF
+///   code-flow index still maps to a `cohort_contexts` index).
 fn assemble_cohort_findings(
     run: &D1CohortRun,
     ctx: &DetectorContext,
@@ -1643,6 +1665,29 @@ fn assemble_cohort_findings(
     // 4.29x across cohorts on Base App 8020. Local, so it is dropped with this
     // call and leaves only the sharing behind. See `d1_witness::StepInterner`.
     let mut steps = StepInterner::default();
+    // The same idea for the object/table ids: 563,126 entries over 2,042
+    // distinct values on 8020 (276x duplication). See `affected_objects` below.
+    let mut object_ids: HashMap<&str, Arc<str>> = HashMap::new();
+    // Every d1 finding carries the SAME title and one of TWO fix options
+    // (census: `title` 1 distinct over 22,383 findings, `fix_options`
+    // description/safety 2 each). Hoisted out of the emit loop so the run holds
+    // one allocation of each instead of one per finding.
+    let title: Arc<str> = Arc::from("Database operation inside a loop");
+    let setup_fix = FixOption {
+        description: Arc::from(
+            "Setup tables are session-cached by BC, so a Get() inside a loop is \
+             typically O(1) after the first hit. Hoist the Get() outside the loop \
+             only if the call site shows up in a CPU profile.",
+        ),
+        safety: Arc::from("high"),
+    };
+    let general_fix = FixOption {
+        description: Arc::from(
+            "Move the database operation outside the loop, or batch it into a \
+             set-based operation.",
+        ),
+        safety: Arc::from("medium"),
+    };
     let mut out: Vec<Finding> = Vec::new();
 
     // Iterate terminals in a DETERMINISTIC key order so the run-level loop-set
@@ -1831,20 +1876,32 @@ fn assemble_cohort_findings(
         let root_cause = annotate_root_cause(&base_root_cause, total_loops as usize);
 
         // affectedObjects = every reaching loop's routine object + the terminal's.
-        let mut affected_set: BTreeSet<String> = BTreeSet::new();
+        // Borrowed into the `BTreeSet` (the ids live in the workspace, which
+        // outlives this call) so the per-terminal set costs no allocation at all;
+        // only the survivors are interned below.
+        let mut affected_set: BTreeSet<&str> = BTreeSet::new();
         for (_ck, bm, _rep) in &tc.cohorts {
             for g in bm.iter() {
                 let lr_id = run.catalog[g as usize].loop_routine_id.as_str();
                 if let Some(r) = ctx.routine_by_id.get(lr_id) {
-                    affected_set.insert(r.object_id.clone());
+                    affected_set.insert(r.object_id.as_str());
                 }
             }
         }
-        affected_set.insert(terminal_routine.object_id.clone());
-        let affected_objects: Vec<String> = affected_set.into_iter().collect();
+        affected_set.insert(terminal_routine.object_id.as_str());
+        // Interned, NOT `id_list`: this is the site the whole `Arc<str>` id list
+        // exists for. Across a run d1 emits 563,126 object ids drawn from 2,042
+        // distinct values (27.6 MB of text, 276x duplication) — one per reaching
+        // loop's owning object, per finding — so a per-entry allocation is the
+        // cost. `object_ids` is a run-level cache, so each distinct id is
+        // allocated once and every finding holds handles.
+        let affected_objects: Vec<Arc<str>> = affected_set
+            .into_iter()
+            .map(|o| intern_id(&mut object_ids, o))
+            .collect();
 
-        let affected_tables: Vec<String> = match &terminal_op.table_id {
-            Some(t) => vec![t.clone()],
+        let affected_tables: Vec<Arc<str>> = match &terminal_op.table_id {
+            Some(t) => vec![intern_id(&mut object_ids, t.as_str())],
             None => Vec::new(),
         };
 
@@ -1853,28 +1910,19 @@ fn assemble_cohort_findings(
             "likely",
         );
 
-        let fix_options = if setup_singleton {
-            vec![FixOption {
-                description: "Setup tables are session-cached by BC, so a Get() inside a loop is \
-                              typically O(1) after the first hit. Hoist the Get() outside the loop \
-                              only if the call site shows up in a CPU profile."
-                    .to_string(),
-                safety: "high".to_string(),
-            }]
+        // A refcount bump on one of the two hoisted options, not a fresh pair of
+        // allocations per finding.
+        let fix_options = vec![if setup_singleton {
+            setup_fix.clone()
         } else {
-            vec![FixOption {
-                description: "Move the database operation outside the loop, or batch it into a \
-                              set-based operation."
-                    .to_string(),
-                safety: "medium".to_string(),
-            }]
-        };
+            general_fix.clone()
+        }];
 
         let mut finding = Finding {
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Database operation inside a loop".to_string(),
+            title: Arc::clone(&title),
             root_cause,
             severity: winner_ck.severity.to_string(),
             confidence,
@@ -3950,6 +3998,55 @@ mod assembly_tests {
             ),
             "…and must be ONE hash-consed allocation"
         );
+    }
+
+    /// **Pins the SHARED identity/advice text at the use site.** Across a run,
+    /// `d1` emits 563,126 `affected_objects` entries over 2,042 distinct values,
+    /// 22,383 titles of ONE distinct value, and 22,383 fix options drawn from
+    /// TWO — so these are interned (`object_ids`) or hoisted out of the emit loop
+    /// (`title`, `setup_fix`/`general_fix`) rather than rebuilt per finding.
+    ///
+    /// Like the witness-step and note claims, equality cannot see this: a version
+    /// that allocated per finding produces byte-identical output. So this asserts
+    /// pointer identity across TWO findings from the real pipeline, with the value
+    /// asserted first so a genuine divergence fails legibly. Replacing
+    /// `intern_id(&mut object_ids, o)` with `Arc::from(o)`, or `Arc::clone(&title)`
+    /// with a fresh `Arc::from(...)`, turns the corresponding half red.
+    #[test]
+    fn cohort_ids_and_advice_text_are_shared_across_findings() {
+        let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
+        let findings = assemble_cohorts(&routines, edges, summaries);
+        assert_eq!(findings.len(), 2, "two terminals -> two findings");
+        let (a, b) = (&findings[0], &findings[1]);
+
+        // affected_objects: both terminals live in the fixture's single object.
+        assert_eq!(a.affected_objects.len(), 1);
+        assert_eq!(&*a.affected_objects[0], "app/Codeunit/1");
+        assert_eq!(a.affected_objects, b.affected_objects);
+        assert!(
+            Arc::ptr_eq(&a.affected_objects[0], &b.affected_objects[0]),
+            "an object id repeated across findings must be ONE run-level allocation"
+        );
+
+        // title: one distinct value across every d1 finding in a run.
+        assert_eq!(&*a.title, "Database operation inside a loop");
+        assert_eq!(a.title, b.title);
+        assert!(
+            Arc::ptr_eq(&a.title, &b.title),
+            "the title must be hoisted out of the emit loop, not rebuilt per finding"
+        );
+
+        // fix_options: drawn from a two-entry menu, so the text is shared too.
+        assert_eq!(a.fix_options.len(), 1);
+        assert_eq!(a.fix_options[0], b.fix_options[0]);
+        assert!(
+            Arc::ptr_eq(&a.fix_options[0].description, &b.fix_options[0].description),
+            "fix-option description must be hoisted, not rebuilt per finding"
+        );
+        assert!(Arc::ptr_eq(
+            &a.fix_options[0].safety,
+            &b.fix_options[0].safety
+        ));
     }
 
     /// **Pins the SHARED-note representation at the use site.** Every

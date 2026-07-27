@@ -217,7 +217,7 @@ pub fn detect_d14(
             id,
             root_cause_key,
             detector: DETECTOR.to_string(),
-            title: "Routine is unreachable from any entry point".to_string(),
+            title: "Routine is unreachable from any entry point".into(),
             root_cause: format!(
                 "{} on {} is not called from any page action, trigger, OnRun, web service, \
                  or event subscriber in this app \u{2014} appears to be dead code.{}",
@@ -228,13 +228,14 @@ pub fn detect_d14(
             primary_location,
             evidence_path,
             additional_paths: None,
-            affected_objects: vec![r.object_id.clone()],
+            affected_objects: vec![r.object_id.as_str().into()],
             affected_tables: Vec::new(),
             fix_options: vec![FixOption {
                 description: "Remove the routine if truly unused, or wire it up to an entry \
                               point if intended to be invoked."
-                    .to_string(),
-                safety: "low".to_string(),
+                    .to_string()
+                    .into(),
+                safety: "low".into(),
             }],
             provenance: vec![Evidence {
                 source: "tree-sitter",

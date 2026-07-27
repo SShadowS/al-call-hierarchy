@@ -97,22 +97,23 @@ pub fn detect_d19(
                 id,
                 root_cause_key,
                 detector: DETECTOR.to_string(),
-                title: "Procedure parameter is never used".to_string(),
+                title: "Procedure parameter is never used".into(),
                 root_cause,
                 severity: "info".to_string(),
                 confidence,
                 primary_location: anchor_of(&routine.source_anchor, routine),
                 evidence_path: path,
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description:
                         "Remove the parameter, or wire it into the procedure body. If callers \
                          must keep the existing signature, leave it and silence with an `_` \
                          prefix on the name."
-                            .to_string(),
-                    safety: "low".to_string(),
+                            .to_string()
+                            .into(),
+                    safety: "low".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

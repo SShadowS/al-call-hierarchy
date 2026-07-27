@@ -530,7 +530,7 @@ pub fn detect_d43(
                     id: root_cause_key.clone(),
                     root_cause_key: root_cause_key.clone(),
                     detector: DETECTOR.to_string(),
-                    title: "Event subscriber sets IsHandled but does not perform the publisher's default write".to_string(),
+                    title: "Event subscriber sets IsHandled but does not perform the publisher's default write".into(),
                     root_cause: format!(
                         "Caller {} guards table writes on IsHandled; subscriber {} sets it true but doesn't write {}. coverage={}",
                         site.caller_routine, setter, table, coverage_status
@@ -545,10 +545,10 @@ pub fn detect_d43(
                     evidence_path: vec![step1, step2],
                     additional_paths: None,
                     affected_objects: Vec::new(),
-                    affected_tables: vec![(*table).clone()],
+                    affected_tables: vec![(*table).as_str().into()],
                     fix_options: vec![FixOption {
-                        description: "Either perform the missing write in the subscriber, or stop setting IsHandled := true.".to_string(),
-                        safety: "high".to_string(),
+                        description: "Either perform the missing write in the subscriber, or stop setting IsHandled := true.".into(),
+                        safety: "high".into(),
                     }],
                     provenance: vec![Evidence {
                         source: "tree-sitter",

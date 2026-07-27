@@ -20,7 +20,9 @@ use crate::engine::l3::l3_workspace::L3Resolved;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::anchor_of;
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FindingConfidence, FixOption};
+use crate::engine::l5::finding::{
+    Evidence, EvidenceStep, Finding, FindingConfidence, FixOption, id_list,
+};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d60-upgrade-loop-should-be-datatransfer";
@@ -167,7 +169,7 @@ pub fn detect_d60(
                 id: format!("d60/{}/{}/{}", routine.id, loop_info.id, op.id),
                 root_cause_key: format!("d60/{}/{}/{}", routine.id, loop_info.id, var_lc),
                 detector: DETECTOR.to_string(),
-                title: "Row-by-row upgrade loop (use DataTransfer)".to_string(),
+                title: "Row-by-row upgrade loop (use DataTransfer)".into(),
                 root_cause: format!(
                     "{} (upgrade/install codeunit) rewrites {} row-by-row in a {} loop — \
                      DataTransfer performs the same bulk init/copy set-based, without \
@@ -196,14 +198,15 @@ pub fn detect_d60(
                     },
                 ],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
-                affected_tables: op.table_id.iter().cloned().collect(),
+                affected_objects: vec![routine.object_id.as_str().into()],
+                affected_tables: id_list(op.table_id.iter().cloned()),
                 fix_options: vec![FixOption {
                     description: "Replace the loop with a DataTransfer (SourceTable/\
                                   DestinationTable + CopyFields/ConstantValue), or ModifyAll \
                                   when a single field gets a constant."
-                        .to_string(),
-                    safety: "medium".to_string(),
+                        .to_string()
+                        .into(),
+                    safety: "medium".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

@@ -20,7 +20,7 @@ use crate::engine::l4::effect_lattice::EffectPresence;
 use crate::engine::l5::confidence::to_confidence;
 use crate::engine::l5::detector_context::DetectorContext;
 use crate::engine::l5::detectors::{anchor_of, before_anchor};
-use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption};
+use crate::engine::l5::finding::{Evidence, EvidenceStep, Finding, FixOption, id_list};
 use crate::engine::l5::registry::{DetectorError, DetectorOutput, DetectorStats};
 
 const DETECTOR: &str = "d41-transitive-filter-loss";
@@ -205,7 +205,7 @@ pub fn detect_d41(
                     id: id.clone(),
                     root_cause_key: id,
                     detector: DETECTOR.to_string(),
-                    title: "Filter silently lost across helper call".to_string(),
+                    title: "Filter silently lost across helper call".into(),
                     root_cause: format!(
                         "{} filters {} before calling {}, which calls Reset; the subsequent {} operates on the unfiltered set.",
                         routine.name, source_name_lc, callee.name, first_sensitive.op
@@ -215,14 +215,14 @@ pub fn detect_d41(
                     primary_location: anchor_of(&binding.argument_anchor, routine),
                     evidence_path: path,
                     additional_paths: None,
-                    affected_objects,
+                    affected_objects: id_list(affected_objects),
                     affected_tables: Vec::new(),
                     fix_options: vec![FixOption {
                         description: format!(
                             "Re-apply the SetRange/SetFilter on {} after the call to {}, or restructure to avoid the call inside the filtered scope.",
                             source_name_lc, callee.name
-                        ),
-                        safety: "high".to_string(),
+                        ).into(),
+                        safety: "high".into(),
                     }],
                     provenance: vec![Evidence {
                         source: "tree-sitter",

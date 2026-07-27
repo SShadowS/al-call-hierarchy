@@ -281,7 +281,7 @@ pub fn detect_d62(
                 id: id.clone(),
                 root_cause_key: id,
                 detector: DETECTOR.to_string(),
-                title: "Feature usage logged before success".to_string(),
+                title: "Feature usage logged before success".into(),
                 root_cause: format!(
                     "{} calls FeatureTelemetry.LogUsage before fallible work later in the \
                      routine — runs that fail after the log still count as feature usage.",
@@ -299,13 +299,14 @@ pub fn detect_d62(
                     note: "LogUsage before fallible operations".to_string(),
                 }],
                 additional_paths: None,
-                affected_objects: vec![routine.object_id.clone()],
+                affected_objects: vec![routine.object_id.as_str().into()],
                 affected_tables: Vec::new(),
                 fix_options: vec![FixOption {
                     description: "Move LogUsage after the operation's success point (end of \
                                   the routine / after the final write)."
-                        .to_string(),
-                    safety: "high".to_string(),
+                        .to_string()
+                        .into(),
+                    safety: "high".into(),
                 }],
                 provenance: vec![Evidence {
                     source: "tree-sitter",

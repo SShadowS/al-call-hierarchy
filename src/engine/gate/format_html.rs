@@ -1150,7 +1150,7 @@ mod tests {
             id: id.to_string(),
             root_cause_key: id.to_string(),
             detector: detector.to_string(),
-            title: format!("title {id}"),
+            title: format!("title {id}").into(),
             root_cause: format!("root cause {id}"),
             severity: "medium".to_string(),
             confidence: FindingConfidence {
