@@ -315,14 +315,33 @@ the bottom, CHANGELOG, and git log.
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
-- [ ] **`ctx.uncertainties_by_node` interning — now the largest single structure in the
-  run, and larger than everything d1 retains.** Measured 2026-07-27: **729.1 MiB in
-  7,428,267 allocations**, alive for the whole run, against d1's total retained 195.0 MiB.
-  It draws from the *same* 3,073-value vocabulary the d1 arc interned one rung downstream.
-  **The blast-radius argument that parked it is materially weaker than when it was
-  written**: the d1 arc has since built the substrate it needs — `UncertaintyTable`,
-  `UncertaintyLite`, `uncertainty_at`, and a `to_confidence` whose signature is the only
-  thing the ~51 detector files touch. **Wake: this should be the next memory arc.**
+- [ ] **`ctx.uncertainties_by_node` — Step 2: intern the ELEMENTS to ids (~−88 MiB more).**
+  Step 1 (hash-consing the per-node SETS into `Arc<[Uncertainty]>`) **is done** — see the
+  CHANGELOG entry for the uncertainty-substrate arc; it took the structure from
+  **729.1 MiB in 7,428,267 allocations to 102.2 MiB in ~1.05 M** on BC Base App 8020, with
+  zero detector edits and zero golden movement. Step 2 replaces the shared slices'
+  ELEMENTS with `UncertaintyId`s resolved against one ctx-level `UncertaintyTable`,
+  landing at ~14 MiB live. It is worth roughly a further 88 MiB live / ~105 MiB RSS.
+  **Precondition — do NOT start without it: give `d2` a non-empty `confidence.evidence`
+  golden first.** Step 2 rewrites the `walk_evidence` uncertainty path, and exactly ONE
+  golden file in the repository carries a non-empty `confidence.evidence`
+  (`tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`, 6 records) — a **d1** finding.
+  d2's, d46's and d48's uncertainty-bearing confidence output has **zero** golden coverage
+  of any kind, so a regression in the path Step 2 rewrites would not turn a single golden
+  red. `tests/r0-corpus/ws-d2` exists and `ws-d1-uncertain-path` shows the shape. This is
+  the same "add the missing golden mid-flight" move the d1 arc had to make before it could
+  trust its own work.
+  **Sizing correction, and the corpus caveat — both load-bearing.** This structure draws
+  from a **19,311**-value vocabulary on 8020 (19,311 distinct `uncertainty_key`s too —
+  zero key collisions), *not* the 3,073 an earlier revision of this entry and of
+  `d1_cohort.rs`'s `UncertaintyTable` doc claimed. 3,073 is the distinct-NOTE count in the
+  downstream retained winner-cohort evidence, a subset; a plan sized against it mis-prices
+  the post-intern residual by ~5x. And **on the real DO customer workspace this whole
+  structure is 2.8 MiB** (1,808 nodes / 13,489 records, 2.8 records per routine against
+  8020's 36.7): the blow-up is super-linear in SCC structure, not in workspace size, so
+  this is a *"make `alsem analyze` survive BC Base App"* item and must not be read as a
+  customer-workspace improvement. **Wake: when the last ~88 MiB is wanted AND the d2
+  golden above exists.**
 - [ ] **`FindingConfidence` carries ids, not records (−78 MiB retained in d1).** The
   finding already holds the winner cohort's `Vec<UncertaintyId>`; carrying 4-byte ids and
   materialising `Evidence` at the consumer takes d1's `confidence` bucket from 115.0 MiB

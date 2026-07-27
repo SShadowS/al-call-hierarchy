@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — uncertainty substrate (`ctx.uncertainties_by_node`)
+
+`ctx.uncertainties_by_node` was the largest single named structure left alive for the
+whole of `alsem analyze` — larger than everything `d1` retains after the arc below.
+Hash-consing its per-node sets into `Arc<[Uncertainty]>` collapses it. The element type
+is unchanged and no detector was edited: every consumer reads the value as a slice, and
+`Arc<[T]>` derefs to `&[T]`.
+
+**Three probe shapes, never compared.** (1) a ctx-build census (`substrate::ALL`, no
+detectors run); (2) a default-preset whole-run `alsem analyze --format json`, process
+peak polled from `PeakWorkingSet64` (the OS lifetime max); (3) `--deterministic` byte
+comparison. Corpus 8020 = BC Base App, 8,020 `.al` / 100,941 routines.
+
+| census of the structure, 8020 | base `7dc0bb1` | after |
+|---|---:|---:|
+| live bytes | 729.1 MiB | **102.0 MiB** (−86.0%) |
+| live allocations | 7,428,267 | **1,025,350** (−86.2%) |
+| distinct backing buffers | 27,037 | **10,112** |
+
+| default-preset whole run, 8020 | base | after |
+|---|---:|---:|
+| process peak (`peak_mb`) | 6,409.8 MB | **5,394.5 MB** (−1,015.3 MB, −15.8%) |
+| wall | 166.2 s | 157.9 s — not a claim; see the d1 arc's ±80 s note below |
+
+The populations are byte-for-byte unchanged: 27,037 nodes, 3,700,433 records, 19,311
+distinct values, 19,311 distinct `uncertainty_key`s (zero key collisions), 10,112
+distinct sets by VALUE. Backing buffers now equal that last figure exactly, so the
+sharing is complete — nothing shareable is left. The whole-run reduction exceeds the
+627 MiB of retained bytes because the build also stopped making a transient full copy
+(below).
+
+**This is a "survive BC Base App" fix, not a customer-workspace one.** On the real DO
+workspace the whole structure is **2.8 MiB** (1,808 nodes / 13,489 records) before and
+0.5 MiB after. The blow-up is super-linear in SCC structure, not workspace size: the L4
+solver broadcasts an SCC's whole uncertainty union to every member, and Base App has one
+enormous SCC.
+
+Two waste fixes ride along. The two `build_detector_context` variants now DRAIN
+`core_summaries` in one pass for both the uncertainty union and `parameter_roles`,
+moving the summary's uncertainty vector instead of deep-copying it and then draining the
+same map a second time. Draining makes the loop id-SENSITIVE, and internal routine ids
+are not unique (15 collision groups / 19 routines on 8020), so a `processed` guard runs
+each DISTINCT id once — without it the second routine of a colliding pair overwrites the
+first's full `summary ∪ edges` union with an edges-only subset. Neither the golden suite
+(8020 is not a golden corpus) nor a DO byte-identity run (zero collision groups there)
+could have caught that; `colliding_ids_keep_the_full_summary_union_not_just_the_edges`
+pins it, and `equal_uncertainty_sets_are_hash_consed_to_one_allocation` pins the sharing
+with an `Arc::ptr_eq` no golden can see. And d2's `sub_summary_uncertainties` returns a
+borrow instead of deep-cloning a `Vec` for its one caller to re-clone element by element.
+
+Output is byte-identical: `scripts/check-goldens` green with zero files under `tests/`
+moved, plus `--deterministic` runs matching SHA-256 on **both** corpora — DO
+(`f022f677…`) and 8020 (`36151bf6…`, 251,169,091 bytes, the corpus that actually
+exercises the 3.7 M-record substrate and the collision groups).
+
+Also corrected in passing: `docs/OUTSTANDING.md` and `d1_cohort.rs`'s `UncertaintyTable`
+doc both stated this structure draws from a "~3,073-value vocabulary". Measured, it is
+**19,311** distinct values; 3,073 is the distinct-note count in the *downstream* retained
+winner-cohort evidence, a subset. Duplication is 192× either way, so nothing about the
+work changes — but a follow-on plan sized against 3,073 would mis-price the residual ~5×.
+
 ### Performance — d1 memory arc (capstone)
 
 Measured on the 8020 corpus (100,941 routines). **Two probe shapes, never compared:**
