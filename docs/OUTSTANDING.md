@@ -318,10 +318,11 @@ the bottom, CHANGELOG, and git log.
 - [ ] **`ctx.uncertainties_by_node` — Step 2: intern the ELEMENTS to ids (~−88 MiB more).**
   Step 1 (hash-consing the per-node SETS into `Arc<[Uncertainty]>`) **is done** — see the
   CHANGELOG entry for the uncertainty-substrate arc; it took the structure from
-  **729.1 MiB in 7,428,267 allocations to 102.2 MiB in ~1.05 M** on BC Base App 8020, with
-  zero detector edits and zero golden movement. Step 2 replaces the shared slices'
-  ELEMENTS with `UncertaintyId`s resolved against one ctx-level `UncertaintyTable`,
-  landing at ~14 MiB live. It is worth roughly a further 88 MiB live / ~105 MiB RSS.
+  **729.1 MiB in 7,428,267 allocations to 102.0 MiB in 1,025,350** (measured) on BC Base
+  App 8020, with zero detector edits and zero golden movement. Step 2 replaces the
+  shared slices' ELEMENTS with `UncertaintyId`s resolved against one ctx-level
+  `UncertaintyTable`, landing at ~14 MiB live. It is worth roughly a further 88 MiB
+  live / ~105 MiB RSS.
   **Precondition — do NOT start without it: give `d2` a non-empty `confidence.evidence`
   golden first.** Step 2 rewrites the `walk_evidence` uncertainty path, and exactly ONE
   golden file in the repository carries a non-empty `confidence.evidence`

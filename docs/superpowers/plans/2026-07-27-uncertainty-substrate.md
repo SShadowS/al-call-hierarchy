@@ -16,7 +16,7 @@ gitignored), so every load-bearing figure is restated here and at its use site.
   Duplication is still **192×**, so the arc holds; but anything sized against
   "3,073 × 200 B" mis-prices the residual by ~5×. **Correcting those two statements is
   part of this task.**
-- **The blast radius is 6 production call sites in 4 files, not ~51** — and
+- **The blast radius is 6 production call sites in 5 files, not ~51** — and
   `to_confidence`'s signature does not change at all. That argument parked this work
   twice; it was wrong.
 - **On a real customer workspace (DO) this structure is 2.8 MiB.** This is a BC Base App
@@ -31,6 +31,14 @@ stage freed. **Measured by context-build peak alone, this arc would appear cappe
 ~871 MiB and would hit the cone stage as its new floor.** It is not: the win comes off
 the **whole-run** peak, which occurs later (inside `d1/assemble_cohort_findings`) with
 this structure still alive. Measure the whole-run peak, on a default preset.
+
+> **Superseded.** The peak location above is stale — carried over from before the d1
+> memory arc landed. `CHANGELOG.md`'s d1-memory entry records that `d1` no longer sets
+> the process peak; it is first exceeded at `detector.d19-unused-parameter`. The
+> operative instruction here (measure the whole-run peak, default preset) was correct
+> and was followed regardless, so this did not change what got measured — but this
+> paragraph's stale premise is what made the completed task's now-corrected "the drain
+> explains the overshoot" claim look plausible. See the task report / CHANGELOG fix.
 
 ## Global Constraints (bind the task)
 

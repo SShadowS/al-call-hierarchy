@@ -34,15 +34,27 @@ comparison. Corpus 8020 = BC Base App, 8,020 `.al` / 100,941 routines.
 The populations are byte-for-byte unchanged: 27,037 nodes, 3,700,433 records, 19,311
 distinct values, 19,311 distinct `uncertainty_key`s (zero key collisions), 10,112
 distinct sets by VALUE. Backing buffers now equal that last figure exactly, so the
-sharing is complete — nothing shareable is left. The whole-run reduction exceeds the
-627 MiB of retained bytes because the build also stopped making a transient full copy
-(below).
+sharing is complete — nothing shareable is left.
+
+**657.6 MB of the −1,015.3 MB whole-run drop is the 627.1 MiB retained reduction
+converting 1:1.** The remaining ~358 MB is second-order — allocator and page pressure
+from 6.4 M fewer live allocations at the `detector.d19-unused-parameter` peak (the same
+peak location the immediately preceding arc recorded, below) — unattributed, the same
+class the d1 capstone declined to attribute. It is **not** the drain's transient
+(below): a context-build-only probe that itself contains the drain shows transient
+headroom (peak above post-build working set) moving from 340.4 MiB to 338.6 MiB —
+**1.8 MiB**, not ~358 MB — because the ctx-build stage finishes long before the d19
+peak is reached. The governing rule is the one the preceding arc already wrote down:
+only retained reductions convert 1:1.
 
 **This is a "survive BC Base App" fix, not a customer-workspace one.** On the real DO
 workspace the whole structure is **2.8 MiB** (1,808 nodes / 13,489 records) before and
-0.5 MiB after. The blow-up is super-linear in SCC structure, not workspace size: the L4
-solver broadcasts an SCC's whole uncertainty union to every member, and Base App has one
-enormous SCC.
+0.5 MiB after this task alone (no DO census artifact survives this run to corroborate
+it byte-for-byte; scoping's own pre-implementation estimate for BOTH substrate tasks
+combined was ~0.7 MiB — low-stakes either way, since the DO figure exists only to
+deflate the arc's claim, not to support it). The blow-up is super-linear in SCC
+structure, not workspace size: the L4 solver broadcasts an SCC's whole uncertainty
+union to every member, and Base App has one enormous SCC.
 
 Two waste fixes ride along. The two `build_detector_context` variants now DRAIN
 `core_summaries` in one pass for both the uncertainty union and `parameter_roles`,

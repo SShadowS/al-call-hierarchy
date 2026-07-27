@@ -129,8 +129,9 @@ pub struct DetectorContext<'a> {
     /// to every member (`db_effect_solver.rs`'s per-member `shared_vec.clone()`), so
     /// on BC Base App 8020 3,700,433 records across 27,037 nodes collapse to 507,437
     /// records in 10,112 distinct sets — 729.1 MiB in 7,428,267 allocations becomes
-    /// 102.2 MiB in ~1.05 M. (On a customer workspace the whole structure is ~2.8 MiB;
-    /// this is a "survive BC Base App" fix, not a customer-workspace one.)
+    /// **102.0 MiB in 1,025,350** (measured; see the CHANGELOG entry). (On a customer
+    /// workspace the whole structure is ~2.8 MiB; this is a "survive BC Base App" fix,
+    /// not a customer-workspace one.)
     ///
     /// Sharing is sound with no new invariant: nothing mutates a node's set after
     /// this map is built (the only `insert`s outside the two builders are
@@ -814,15 +815,19 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         // uncertaintiesAt(node) per routine: [...fromSummary, ...fromEdges], deduped.
         // Union ORDER mirrors al-sem `[...fromSummary, ...fromEdges]` — core summary
         // uncertainties FIRST, then the combined-graph edge uncertainties (converted
-        // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps first-seen
-        // then sorts by key, matching al-sem's `dedupeUncertainties`.
+        // to the summary `Uncertainty` form). `dedupe_uncertainties` keeps LAST-WRITE-WINS
+        // per key then sorts by key, matching al-sem's `dedupeUncertainties` (see that
+        // function's own doc — a same-key `interface-open-world` divergence is the one
+        // case keep-first vs. keep-last would differ, and keep-last is what both engines do).
         //
         // ONE pass now DRAINS `core_summaries` for BOTH harvests: the uncertainty
         // union (which used to borrow-and-clone here, then hand the map to a second
         // loop that drained it for roles) and `parameter_roles`. The clone was pure
         // waste — `core_summaries` is dead after these two harvests, so the summary's
         // uncertainty `Vec` can be MOVED into the union instead of deep-copied (on
-        // 8020 that copy was ~3.7 M records / ~730 MiB of transient churn).
+        // 8020 the clone was of `s.uncertainties` alone, bounded above by the ≤3.7 M
+        // records / ≤730 MiB of the summary∪edges union — no probe separates the
+        // summary-side share of that from the edge-side share).
         //
         // Draining makes the loop id-SENSITIVE where the old borrowing form was not,
         // and internal routine ids are NOT unique (15 collision groups / 19 routines
