@@ -70,6 +70,107 @@
 #   scripts/check-goldens --regen    # REGEN_TEMP_GOLDENS=1 first (inspect the diff!), then verify
 set -uo pipefail
 
+# ---------------------------------------------------------------------------
+# COVERAGE GUARD — `--verify-coverage`
+#
+# WHY THIS EXISTS: this script silently covered 15 of the then-27 golden
+# directories for two whole arcs. Every "goldens clean" claim in that window
+# rested on it, and nothing in the repo noticed — it took a whole-branch review,
+# and the first two repairs of the gap were ALSO incomplete (they missed
+# `src/bin/` and `src/program/`, where the binaries that mint several families
+# actually live). The failure mode is not "someone forgets to run the gate", it
+# is "the gate runs, passes, and was never looking at the new family".
+#
+# So: the enumeration below is DECLARED, and `--verify-coverage` fails when a
+# golden-bearing directory exists on disk that is not in it. Adding a family now
+# forces a conscious edit here — which is the moment to also add its owning
+# target to `targets` above. Run by `scripts/git-hooks/pre-commit`.
+#
+# A directory belongs here if it holds byte-compared regression data: the
+# `*goldens*` dirs, `tests/goldens/`, the frozen `l4-summary-baseline/`, and the
+# `*-vectors/` oracles (`r0-vectors/encoder-vectors.json` is the encoder's only
+# remaining oracle now that the al-sem differential is retired).
+declared_dirs=(
+    tests/al2dump-smoke-goldens
+    tests/aldump-smoke-goldens
+    tests/cli-a-goldens
+    tests/cli-b-goldens
+    tests/cli-c-events-goldens
+    tests/cli-c-goldens
+    tests/cli-c-policy-goldens
+    tests/cli-query-goldens
+    tests/gate-goldens
+    tests/goldens
+    tests/ir-l2-goldens
+    tests/l4-summary-baseline
+    tests/r0-goldens
+    tests/r0-vectors
+    tests/r1a-goldens
+    tests/r1a-vectors
+    tests/r1b-vectors
+    tests/r1c-vectors
+    tests/r1d-vectors
+    tests/r2-5a-goldens
+    tests/r2-5a-vectors
+    tests/r2-5b-cg-goldens
+    tests/r2-5b-cov-goldens
+    tests/r2-5b-eg-goldens
+    tests/r2-5b-rt-goldens
+    tests/r2a-goldens
+    tests/r2a-vectors
+    tests/r2b-goldens
+    tests/r2b-vectors
+    tests/r2c-goldens
+    tests/r2c-vectors
+    tests/r2d-goldens
+    tests/r2d-vectors
+    tests/r3a1-goldens
+    tests/r3a1-vectors
+    tests/r3a2-goldens
+    tests/r3a2-vectors
+    tests/r3a3-goldens
+    tests/r3a3-vectors
+    tests/r3a4-goldens
+    tests/r3a4-vectors
+    tests/r3a5-goldens
+    tests/r4-goldens
+    tests/r4f-goldens
+)
+
+if [[ "${1:-}" == "--verify-coverage" ]]; then
+    repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    cd "$repo_root" || exit 1
+    on_disk=$(ls -d tests/*goldens*/ tests/goldens/ tests/l4-summary-baseline/                      tests/*-vectors/ 2>/dev/null | sed 's|/$||' | sort -u)
+    declared=$(printf '%s
+' "${declared_dirs[@]}" | sort -u)
+    undeclared=$(comm -23 <(printf '%s
+' "$on_disk") <(printf '%s
+' "$declared"))
+    missing=$(comm -13 <(printf '%s
+' "$on_disk") <(printf '%s
+' "$declared"))
+    rc=0
+    if [[ -n "$undeclared" ]]; then
+        echo "check-goldens: UNDECLARED golden directories (on disk, not in declared_dirs):" >&2
+        printf '  %s
+' $undeclared >&2
+        echo "  -> add each to declared_dirs in scripts/check-goldens AND make sure its" >&2
+        echo "     owning test target is in the 'targets' array, or the gate will pass" >&2
+        echo "     while never looking at it. That has already happened twice." >&2
+        rc=1
+    fi
+    if [[ -n "$missing" ]]; then
+        echo "check-goldens: declared golden directories that no longer exist:" >&2
+        printf '  %s
+' $missing >&2
+        echo "  -> remove them from declared_dirs (a stale entry hides a real gap)." >&2
+        rc=1
+    fi
+    [[ $rc -eq 0 ]] && echo "check-goldens: coverage OK ($(printf '%s
+' "$on_disk" | wc -l) golden dirs declared)"
+    exit $rc
+fi
+
 targets=(
     --test r4
     --test l2_ir

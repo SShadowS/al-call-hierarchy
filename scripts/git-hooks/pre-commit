@@ -66,6 +66,15 @@ if ! git diff --cached --name-only | grep -qE "$golden_paths"; then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
+
+# Coverage first, and it is cheap (a directory listing). A golden family that no
+# target runs is invisible to the verification below — the gate passes while never
+# looking at it, which is exactly how 15-of-27 coverage survived two arcs.
+if ! "$repo_root/scripts/check-goldens" --verify-coverage; then
+    echo "pre-commit: golden COVERAGE check failed (see above) — fix scripts/check-goldens" >&2
+    exit 1
+fi
+
 echo "pre-commit: engine/fixture/golden change staged — verifying goldens..."
 if ! "$repo_root/scripts/check-goldens"; then
     echo "pre-commit: golden verification FAILED. Regenerate + inspect:" >&2
