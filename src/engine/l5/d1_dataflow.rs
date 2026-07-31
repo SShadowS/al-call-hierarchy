@@ -82,7 +82,6 @@ use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::d1_cohort::{
     CohortRep, ContextKey, GroupIx, PathUncertaintyCache, TerminalSink, UncertaintyId,
-    UncertaintyTable,
 };
 #[cfg(test)]
 use crate::engine::l5::d1_graph::D1Terminal;
@@ -2518,7 +2517,6 @@ fn path_uncertainty_ids(
     terminal_node: NodeIx,
     graph: &D1Graph,
     ctx: &DetectorContext,
-    table: &mut UncertaintyTable,
     cache: &mut PathUncertaintyCache,
 ) -> Arc<[UncertaintyId]> {
     // Seed→terminal node order = the hops' from_nodes reversed, then the terminal.
@@ -2552,13 +2550,17 @@ fn path_uncertainty_ids(
         return hit;
     }
 
+    // The elements are ALREADY interned — `ctx.uncertainties.elements(sid)` is the
+    // substrate's own id slice, so there is nothing to intern here and no per-set
+    // memo to keep. This is what the identity substrate bought: the 2,229,391
+    // per-run interns this function used to perform are now zero.
     let mut concat: Vec<UncertaintyId> = Vec::new();
     for &sid in &sig {
-        let ids = cache.ids_of(sid, &ctx.uncertainties, table);
+        let ids = ctx.uncertainties.elements(sid);
         scoring_census::add(&scoring_census::UNC_ELEMS, ids.len() as u64);
-        concat.extend_from_slice(&ids);
+        concat.extend_from_slice(ids);
     }
-    let out: Arc<[UncertaintyId]> = table.dedupe(&concat).into();
+    let out: Arc<[UncertaintyId]> = ctx.uncertainties.dedupe(&concat).into();
     scoring_census::add(&scoring_census::UNC_RESULT, out.len() as u64);
     cache.put_path(sig, Arc::clone(&out));
     out
@@ -2588,7 +2590,6 @@ fn build_cohort_rep<'a>(
     owner: &'a L3Routine,
     op: &'a L3RecordOperation,
     term_node: Option<NodeIx>,
-    table: &mut UncertaintyTable,
     cache: &mut PathUncertaintyCache,
 ) -> CohortRep {
     match b.source {
@@ -2617,7 +2618,7 @@ fn build_cohort_rep<'a>(
             let uncertainties = if b.rank.2 == 0 {
                 let t0 = std::time::Instant::now();
                 let (hops, _seed) = collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
-                let out = path_uncertainty_ids(&hops, tn, graph, ctx, table, cache);
+                let out = path_uncertainty_ids(&hops, tn, graph, ctx, cache);
                 scoring_census::add(&scoring_census::UNC_WALKS, 1);
                 scoring_census::add(&scoring_census::UNC_HOPS, hops.len() as u64);
                 scoring_census::add(&scoring_census::UNC_NANOS, t0.elapsed().as_nanos() as u64);
@@ -2656,7 +2657,7 @@ fn build_cohort_rep<'a>(
                 let t0 = std::time::Instant::now();
                 let (hops, _seed) =
                     collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix);
-                let out = path_uncertainty_ids(&hops, tn, graph, ctx, table, cache);
+                let out = path_uncertainty_ids(&hops, tn, graph, ctx, cache);
                 scoring_census::add(&scoring_census::UNC_WALKS, 1);
                 scoring_census::add(&scoring_census::UNC_HOPS, hops.len() as u64);
                 scoring_census::add(&scoring_census::UNC_NANOS, t0.elapsed().as_nanos() as u64);
@@ -2736,6 +2737,11 @@ pub(crate) mod scoring_census {
     pub(crate) static UNC_WALKS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static UNC_HOPS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static UNC_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// Elements CONCATENATED into a union before dedupe. This used to be
+    /// `unc_elems_interned` and counted `UncertaintyTable::intern` calls; since
+    /// the substrate hands d1 an already-interned slice, interning here is ZERO by
+    /// construction and only the copy remains. Renamed rather than left reading as
+    /// work that no longer happens.
     pub(crate) static UNC_ELEMS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static UNC_RESULT: AtomicU64 = AtomicU64::new(0);
     pub(crate) static UNC_NODES_WITH_SET: AtomicU64 = AtomicU64::new(0);
@@ -2802,7 +2808,7 @@ pub(crate) mod scoring_census {
             pct(unc),
         );
         eprintln!(
-            "[d1-scoring-census] unc_elems_interned={} unc_nodes_with_set={} unc_result_ids={}",
+            "[d1-scoring-census] unc_elems_concat={} unc_nodes_with_set={} unc_result_ids={}",
             get(&UNC_ELEMS),
             get(&UNC_NODES_WITH_SET),
             get(&UNC_RESULT),
@@ -2859,10 +2865,9 @@ fn sink_emit<'a>(
             (vmask[2] >> lane) & 1 == 1,
             (vmask[3] >> lane) & 1 == 1,
         ];
-        sink.insert(tix, group, ck, reachable, |table, cache| {
+        sink.insert(tix, group, ck, reachable, |cache| {
             build_cohort_rep(
-                best_ref, lane, b.solver, b.graph, b.ctx, b.seeds, owner, op, term_node, table,
-                cache,
+                best_ref, lane, b.solver, b.graph, b.ctx, b.seeds, owner, op, term_node, cache,
             )
         });
     }
@@ -5092,8 +5097,8 @@ mod tests {
                 &mut sink,
             );
         }
-        let (cohorts, unc_table) = sink.finalize();
-        emit_finalize_census(&cohorts, &unc_table);
+        let cohorts = sink.finalize();
+        emit_finalize_census(&cohorts, &ctx.uncertainties);
 
         // DECOMPRESS the sink: (group, owner_id, op_id) -> the cohort tuple.
         let mut new_map: HashMap<(u32, String, String), CohortRow> = HashMap::new();

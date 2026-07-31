@@ -57,16 +57,16 @@ use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::d1_cohort::{
-    GroupBitmap, LoopSetId, LoopSetRegistry, UncertaintyId, UncertaintyTable, reachable_verdicts_of,
+    GroupBitmap, LoopSetId, LoopSetRegistry, UncertaintyId, reachable_verdicts_of,
 };
 use crate::engine::l5::d1_graph::build_d1_graph;
 use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
 #[cfg(test)]
 use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
 use crate::engine::l5::d1_witness::StepInterner;
-use crate::engine::l5::detector_context::DetectorContext;
 #[cfg(test)]
 use crate::engine::l5::detector_context::OwnedUncertainties;
+use crate::engine::l5::detector_context::{DetectorContext, UncertaintyIndex};
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
@@ -428,9 +428,9 @@ fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
 /// [`crate::engine::l5::finding::Evidence`]).
 fn uncertainty_lites_of_ids(
     ids: &[UncertaintyId],
-    table: &UncertaintyTable,
+    index: &UncertaintyIndex,
 ) -> Vec<UncertaintyLite> {
-    ids.iter().map(|&id| table.lite(id).clone()).collect()
+    ids.iter().map(|&id| index.lite(id).clone()).collect()
 }
 
 /// `buildFinding(...)` — assemble the internal Finding for the OLD walker path.
@@ -1925,7 +1925,7 @@ fn assemble_cohort_findings(
         };
 
         let confidence: FindingConfidence = to_confidence(
-            &uncertainty_lites_of_ids(&winner_rep.uncertainties, &run.uncertainties),
+            &uncertainty_lites_of_ids(&winner_rep.uncertainties, &ctx.uncertainties),
             "likely",
         );
 

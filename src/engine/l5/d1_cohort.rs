@@ -41,10 +41,11 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
+#[cfg(test)]
 use crate::engine::l4::summary::{Uncertainty, uncertainty_key};
-use crate::engine::l5::confidence::UncertaintyLite;
 use crate::engine::l5::d1_liveness::Liveness;
 use crate::engine::l5::d1_witness::WitnessSummary;
+pub(crate) use crate::engine::l5::detector_context::UncertaintyId;
 use crate::engine::l5::detector_context::{UncertaintyIndex, UncertaintySetId};
 use crate::engine::l5::detectors::d1::TempVerdict;
 
@@ -438,275 +439,56 @@ impl std::hash::Hash for ContextKey {
 }
 
 // ===========================================================================
-// UncertaintyId / UncertaintyTable — run-level Uncertainty interning
+// Uncertainty interning — MOVED to the substrate
 // ===========================================================================
-
-/// An interned [`Uncertainty`] handle — assigned first-seen by
-/// [`UncertaintyTable::intern`]. Run-scoped and opaque: it is an index into the
-/// table that produced it and has no meaning outside that table (and never
-/// escapes into any output — the d1 report projects `kind`/`at` back to text at
-/// `detectors::d1`'s confidence build).
-///
-/// The field is PRIVATE, unlike [`LoopSetId`]'s. That is a deliberate divergence
-/// from the sibling convention rather than an oversight: a `LoopSetId` is always
-/// serialized alongside its [`StableLoopSetRegistry`], so the data model itself
-/// pairs an id with its table and `LoopSetId(0)` is a legitimate thing for
-/// deserialization to construct. Nothing pairs an `UncertaintyId` with its
-/// `UncertaintyTable` — they travel as two independent fields of `D1CohortRun`
-/// — so a mis-paired table would resolve IN-RANGE ids to DIFFERENT uncertainties:
-/// wrong evidence-note text with the right count, right level and right
-/// `cappedBy`. [`UncertaintyTable::intern`] is therefore the ONLY thing anywhere
-/// that can mint one, which makes "this id came from some other table" the sole
-/// remaining way to get it wrong, and [`UncertaintyTable::resolve`] names that
-/// hypothesis when the index is out of range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct UncertaintyId(u32);
-
-impl UncertaintyId {
-    /// Test-only constructor — the field is private on purpose (only
-    /// [`UncertaintyTable::intern`] mints these), but a cache test needs a
-    /// stand-in id that never came from a table.
-    #[cfg(test)]
-    pub(crate) fn for_test(n: u32) -> Self {
-        UncertaintyId(n)
-    }
-}
-
-/// The run-level de-duplicated [`Uncertainty`] store every [`CohortRep`]'s
-/// uncertainty union indexes into.
-///
-/// **Why.** A cohort's union is the uncertainties of every node on its
-/// representative path, and those are drawn from a small closed vocabulary:
-/// measured on Base App 8020 (2026-07-27, heap census over the `pub`
-/// `DetectorOutput`), the 7,418,849 retained evidence records collapse to 3,073
-/// distinct `"{kind} at {at}"` notes, interned here as 3,150 distinct full
-/// `Uncertainty` values. Storing the values per cohort meant ~8-10M owned
-/// `Uncertainty` records — each 120 B of struct plus 2-3 `String`s — alive for
-/// the whole run inside [`TerminalSink`], which was the single largest
-/// contributor to `alsem analyze`'s peak RSS. Storing 4-byte ids into one shared
-/// table keeps EXACTLY the same values in EXACTLY the same per-cohort order; only
-/// the ownership changes.
-///
-/// **Those figures describe THIS table, which sees only the winning cohorts'
-/// representative paths — they are NOT the substrate's vocabulary.** The upstream
-/// `ctx.uncertainties_by_node` holds **19,311** distinct values (and 19,311
-/// distinct `uncertainty_key`s — zero key collisions) across 3,700,433 records on
-/// the same corpus, 6.3x this table's population. An earlier revision of this doc
-/// stated the 3,073 figure as what those 3.7 M substrate records collapse to,
-/// which mis-prices anything sized against the substrate by ~5x. The substrate has
-/// its own, separate memory fix — see
-/// [`DetectorContext::uncertainties_by_node`](crate::engine::l5::detector_context::DetectorContext::uncertainties_by_node),
-/// which hash-conses whole per-node SETS rather than interning elements.
-///
-/// Interning is by the FULL value (all five fields), not by the `(kind, at)`
-/// pair the confidence mapper happens to read, so `id ↔ Uncertainty` is a
-/// bijection and no field is silently dropped by the representation.
-///
-/// Mirrors the [`LoopSetRegistry`] convention already in this module: a newtype
-/// id, a positional `Vec` of values, and a content→id map that duplicates the
-/// values' bytes in exchange for O(1) interning (the standard interner tradeoff
-/// — negligible here, at ~3k entries).
-#[derive(Debug, Clone, Default)]
-pub(crate) struct UncertaintyTable {
-    /// Value per interned id — `entries[id.0]` is `id`'s uncertainty.
-    entries: Vec<Uncertainty>,
-    /// `uncertainty_key(entries[i])`, precomputed at intern time: [`Self::dedupe`]
-    /// needs it once per id per cohort, and recomputing the `format!` there would
-    /// reintroduce exactly the per-record allocation this table exists to remove.
-    keys: Vec<Box<str>>,
-    /// The confidence mapper's view of `entries[i]` — its `kind` plus the
-    /// materialised `"{kind} at {at}"` evidence-note text — also precomputed at
-    /// intern time, for the same reason one rung further out: `d1` builds one
-    /// [`crate::engine::l5::finding::Evidence`] per id per winning cohort
-    /// (7,418,849 records on Base App 8020) and each one clones the
-    /// [`UncertaintyLite`] stored here, so the note text is allocated once per
-    /// DISTINCT uncertainty (3,150) instead of once per record. Note this is a
-    /// different string from `keys[i]`: `"{kind} at {at}"` vs `"{kind}|{at}"`,
-    /// and they do NOT sort alike, so neither can stand in for the other.
-    lites: Vec<UncertaintyLite>,
-    /// Value -> id, for interning.
-    index: HashMap<Uncertainty, UncertaintyId>,
-}
-
-impl UncertaintyTable {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Number of DISTINCT values interned so far. Test-only: it exists so a test
-    /// can assert that a second visit to an already-seen set interned NOTHING,
-    /// which is the whole point of the per-set memo and is invisible to any
-    /// value assertion.
-    #[cfg(test)]
-    pub(crate) fn len_for_test(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Intern `u`, returning its id — equal values always return the SAME id, a
-    /// new value gets the next one.
-    pub(crate) fn intern(&mut self, u: &Uncertainty) -> UncertaintyId {
-        if let Some(&id) = self.index.get(u) {
-            return id;
-        }
-        // `try_from`, not `as`: past `u32::MAX` distinct values an `as` cast
-        // WRAPS, so a new value would silently alias an existing id — a wrong
-        // answer rather than a crash. Unreachable in practice (3,150 distinct on
-        // Base App 8020, bounded above by the 19,311 distinct values in
-        // `ctx.uncertainties_by_node`), and this runs only on the miss path, so
-        // making the impossible loud costs nothing.
-        let id = UncertaintyId(
-            u32::try_from(self.entries.len())
-                .expect("UncertaintyTable exceeded u32::MAX distinct uncertainties"),
-        );
-        self.entries.push(u.clone());
-        self.keys.push(uncertainty_key(u).into_boxed_str());
-        self.lites.push(UncertaintyLite::of(u));
-        self.index.insert(u.clone(), id);
-        id
-    }
-
-    /// `id`'s index into this table's positional `Vec`s, checked.
-    ///
-    /// Every [`UncertaintyId`] in existence was minted by THIS type's
-    /// [`Self::intern`] (the newtype's field is private — see its doc), so an
-    /// out-of-range index has exactly one cause worth naming: the id came from a
-    /// DIFFERENT `UncertaintyTable` than the one being resolved against. The
-    /// bare `self.entries[..]` this replaces panicked too, but with a bare
-    /// index-out-of-bounds that told the next reader nothing about which
-    /// invariant broke. Note this can only catch the OUT-OF-RANGE case; a
-    /// mis-paired table whose id happens to be in range still resolves silently
-    /// to the wrong value, which is why `finalize` hands the table and the ids
-    /// out together.
-    fn resolve(&self, id: UncertaintyId) -> usize {
-        let ix = id.0 as usize;
-        assert!(
-            ix < self.entries.len(),
-            "UncertaintyId({ix}) is out of range for an UncertaintyTable of {} entries \
-             — the id was almost certainly minted by a DIFFERENT table",
-            self.entries.len()
-        );
-        ix
-    }
-
-    /// The [`Uncertainty`] `id` names.
-    pub(crate) fn get(&self, id: UncertaintyId) -> &Uncertainty {
-        &self.entries[self.resolve(id)]
-    }
-
-    /// `uncertainty_key` of the [`Uncertainty`] `id` names.
-    pub(crate) fn key(&self, id: UncertaintyId) -> &str {
-        &self.keys[self.resolve(id)]
-    }
-
-    /// The confidence mapper's view of the [`Uncertainty`] `id` names. Clone it
-    /// to build an [`crate::engine::l5::finding::Evidence`]: the clone shares
-    /// this table's note allocation, which is the whole point of storing it here
-    /// rather than re-deriving it per record.
-    pub(crate) fn lite(&self, id: UncertaintyId) -> &UncertaintyLite {
-        &self.lites[self.resolve(id)]
-    }
-
-    /// The number of DISTINCT interned uncertainties.
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// De-duplicate a concatenated id sequence EXACTLY as
-    /// [`crate::engine::l4::summary::dedupe_uncertainties`] de-duplicates the
-    /// values themselves: keyed by `uncertainty_key`, **last-write-wins** on a key
-    /// collision, emitted in byte-sorted key order.
-    ///
-    /// This is the one place the id substitution has to be argued rather than
-    /// merely asserted, so, explicitly: two ids collide here iff their VALUES
-    /// have the same `uncertainty_key`, which is the same condition under which
-    /// the value-keyed `BTreeMap<String, Uncertainty>` collided; the surviving id
-    /// is the last-inserted, as `Map.set`/`BTreeMap::insert` are; and `&str`'s
-    /// `Ord` is byte order, as `String`'s is. So the emitted sequence is
-    /// positionally identical to `dedupe_uncertainties`' on the same input.
-    pub(crate) fn dedupe(&self, ids: &[UncertaintyId]) -> Vec<UncertaintyId> {
-        let mut seen: std::collections::BTreeMap<&str, UncertaintyId> =
-            std::collections::BTreeMap::new();
-        for &id in ids {
-            seen.insert(self.key(id), id); // last-write-wins, matching dedupe_uncertainties
-        }
-        seen.into_values().collect()
-    }
-}
+//
+// `UncertaintyId` and `UncertaintyTable` used to live here: a run-level, d1-LOCAL
+// interner that re-derived, per detector run, identity the context build had
+// already computed and thrown away. Both are deleted. `UncertaintyIndex`
+// (`detector_context.rs`) now mints the ids, and `ctx.uncertainties.elements(sid)`
+// hands d1 an already-interned slice — so the 2,229,391 interns this path
+// performed per BC Base App run are gone, along with the "a mis-paired table
+// resolves in-range ids to DIFFERENT uncertainties" hazard the old id's doc
+// spent a paragraph on: there is now exactly one table, owned by the context.
 
 /// The representative evidence for a `(terminal, ContextKey)` cohort — built
-/// ONCE, FIRST-SEEN (Task C6 cutover), while the per-batch fact arena is still
-/// alive (the arena-lifetime constraint: `score_batch_to_sink` drops its
-/// `BatchSolver` per batch, so the witness must be materialized at insert time).
-/// Carries the bounded representative [`WitnessSummary`] (Task C3) AND the
-/// uncertainty union along that representative path — the latter drives the
-/// finding-level confidence, which the OLD per-loop path derived from the
-/// winner's own path uncertainties (so computing it along the first-seen
-/// representative, which for a cohort IS the lowest-group-index — hence the OLD
-/// winner-selection's `loop_routine_id`/`loop_id`-min — reaching loop, preserves
-/// the finding's confidence exactly).
+/// ONCE, FIRST-SEEN, while the per-batch fact arena is still alive (the arena is
+/// dropped per batch, so the witness cannot be deferred to finalize).
 ///
-/// The union is stored as [`UncertaintyId`]s into the run-level
-/// [`UncertaintyTable`] the owning [`TerminalSink`] holds — same uncertainties,
-/// same order, 4 bytes per entry instead of an owned record. Resolve them with
-/// [`UncertaintyTable::get`].
+/// Carries the bounded representative [`WitnessSummary`] AND the uncertainty union
+/// along that representative path. The union drives the finding-level confidence,
+/// which the OLD per-loop path derived from the winner's own path uncertainties —
+/// computing it along the first-seen representative (which for a cohort IS the
+/// lowest-group-index reaching loop) preserves the finding's confidence exactly.
 #[derive(Debug, Clone)]
 pub(crate) struct CohortRep {
     pub witness: WitnessSummary,
     /// SHARED, not owned: cohorts whose representative paths cross the same
     /// uncertainty sets get the same allocation from [`PathUncertaintyCache`]
-    /// (2,444 distinct unions across 21,661 walks on Base App 8020, and
-    /// 10,266,162 ids in total).
+    /// (2,444 distinct unions across 21,661 walks on BC Base App 8020). The ids
+    /// are the CONTEXT's — `ctx.uncertainties` resolves them.
     pub uncertainties: Arc<[UncertaintyId]>,
 }
 
-/// Memo for the representative path's uncertainty union.
+/// Memo for the representative path's uncertainty union, keyed by the ORDERED
+/// sequence of [`UncertaintySetId`]s the path crosses.
 ///
-/// **What it exploits.** `ctx.uncertainties_by_node` names each node's set with an
-/// [`UncertaintySetId`] minted once by [`UncertaintyIndex`] at context build.
-/// Censused on BC Base App 8020, the union path was re-deriving the same answers
-/// relentlessly: 164,644 node-visits-with-a-set contained only 54,506 distinct
-/// sets (2.5 per walk against 7.6 hops), and 21,661 walks had only 2,444 distinct
-/// set signatures. So there are two levels — per SET (its elements interned into
-/// the run's [`UncertaintyTable`] once) and per PATH (the deduped union).
+/// Censused on BC Base App 8020: 21,661 walks have only 2,444 distinct set
+/// signatures, so 88.5 % of unions are answered from here. The per-SET level this
+/// type used to carry is GONE — `ctx.uncertainties.elements(sid)` is already an
+/// interned id slice, so there is nothing left to intern per set.
 ///
-/// **This used to key on a raw POINTER** (`Arc::as_ptr` of the hash-consed set),
-/// which needed each entry to own an `Arc` clone purely so the address could not
-/// be recycled — a soundness argument carried in a comment. The substrate now
-/// hands out a dense id, so the key is just that id and the argument is gone.
+/// It also used to key on a raw `Arc::as_ptr`, with each entry holding an `Arc`
+/// clone purely so the address could not be recycled. The substrate's dense ids
+/// removed both the key and that argument.
 #[derive(Default)]
 pub(crate) struct PathUncertaintyCache {
-    by_set: HashMap<UncertaintySetId, Arc<[UncertaintyId]>>,
     by_path: HashMap<Vec<UncertaintySetId>, Arc<[UncertaintyId]>>,
 }
 
 impl PathUncertaintyCache {
     pub(crate) fn new() -> Self {
         Self::default()
-    }
-
-    /// This set's elements interned into `table`, in the set's OWN order,
-    /// computed once per distinct set. Order is preserved because the caller's
-    /// dedupe is last-write-wins by key and therefore order-sensitive.
-    pub(crate) fn ids_of(
-        &mut self,
-        sid: UncertaintySetId,
-        index: &UncertaintyIndex,
-        table: &mut UncertaintyTable,
-    ) -> Arc<[UncertaintyId]> {
-        if let Some(ids) = self.by_set.get(&sid) {
-            return Arc::clone(ids);
-        }
-        let ids: Arc<[UncertaintyId]> = index
-            .elements(sid)
-            .iter()
-            .map(|uid| table.intern(index.value(*uid)))
-            .collect();
-        self.by_set.insert(sid, Arc::clone(&ids));
-        ids
     }
 
     pub(crate) fn get_path(&self, sig: &[UncertaintySetId]) -> Option<Arc<[UncertaintyId]>> {
@@ -765,7 +547,6 @@ pub(crate) struct TerminalSink<'a> {
     /// borrows), which keeps `score_batch_to_sink`/`sink_emit` free of a second
     /// threaded parameter. Moved out by [`Self::finalize`] to live on the run
     /// alongside the cohorts that reference it.
-    uncertainties: UncertaintyTable,
     /// The union memo paired with `uncertainties` — its ids are only meaningful
     /// against THAT table, which is why the two live together and are handed to
     /// `build_rep` together.
@@ -783,7 +564,6 @@ impl<'a> TerminalSink<'a> {
             cohorts: Vec::with_capacity(n_terminals),
             verdicts: Vec::with_capacity(n_terminals),
             seen: Vec::with_capacity(n_terminals),
-            uncertainties: UncertaintyTable::new(),
             path_cache: PathUncertaintyCache::new(),
         }
     }
@@ -833,7 +613,7 @@ impl<'a> TerminalSink<'a> {
         group: GroupIx,
         ctx: ContextKey,
         reachable: [bool; 4],
-        build_rep: impl FnOnce(&mut UncertaintyTable, &mut PathUncertaintyCache) -> CohortRep,
+        build_rep: impl FnOnce(&mut PathUncertaintyCache) -> CohortRep,
     ) {
         debug_assert!(
             (group as usize) < self.n_groups,
@@ -847,11 +627,10 @@ impl<'a> TerminalSink<'a> {
              per (terminal, loop))"
         );
         self.seen[terminal].set(group);
-        let table = &mut self.uncertainties;
         let path_cache = &mut self.path_cache;
         let entry = self.cohorts[terminal]
             .entry(ctx)
-            .or_insert_with(|| (GroupBitmap::new(), build_rep(table, path_cache)));
+            .or_insert_with(|| (GroupBitmap::new(), build_rep(path_cache)));
         entry.0.set(group);
         for (v, &r) in reachable.iter().enumerate() {
             if r {
@@ -871,7 +650,7 @@ impl<'a> TerminalSink<'a> {
     /// the cohorts are meaningless without it, so the two travel together). Each
     /// loop appears in exactly ONE ctx cohort per terminal (the disjointness
     /// invariant), so no cross-cohort subtraction is needed.
-    pub(crate) fn finalize(self) -> (Vec<TerminalCohorts<'a>>, UncertaintyTable) {
+    pub(crate) fn finalize(self) -> Vec<TerminalCohorts<'a>> {
         let mut out = Vec::with_capacity(self.terminals.len());
         for ((key, cmap), vsets) in self
             .terminals
@@ -889,7 +668,7 @@ impl<'a> TerminalSink<'a> {
                 verdict_sets: vsets,
             });
         }
-        (out, self.uncertainties)
+        out
     }
 }
 
@@ -949,7 +728,7 @@ pub(crate) fn emit_liveness_census(liveness: &Liveness, n_nodes: usize) {
 /// themselves). First reading, Base App 8020, 2026-07-27: 10,266,162
 /// `uncertainty_ids` over 3,150 `distinct_uncertainties` — 3,259x duplication,
 /// inside the derived band. Zero cost when tracing is disabled.
-pub(crate) fn emit_finalize_census(cohorts: &[TerminalCohorts], uncertainties: &UncertaintyTable) {
+pub(crate) fn emit_finalize_census(cohorts: &[TerminalCohorts], index: &UncertaintyIndex) {
     if !crate::engine::perf_trace::enabled(crate::engine::perf_trace::Detail::Hot) {
         return;
     }
@@ -960,7 +739,7 @@ pub(crate) fn emit_finalize_census(cohorts: &[TerminalCohorts], uncertainties: &
         .flat_map(|t| t.cohorts.iter())
         .map(|(_ck, _bm, rep)| rep.uncertainties.len() as u64)
         .sum();
-    let distinct_uncertainties = uncertainties.len() as u64;
+    let distinct_uncertainties = index.value_count() as u64;
     crate::engine::perf_trace::instant_lazy("d1.cohort", "finalize_census", || {
         serde_json::json!({
             "total_cohorts": total_cohorts,
@@ -1030,12 +809,12 @@ mod tests {
             u("member-not-found", None, Some("r/op0"), None, None),
         ];
 
-        let mut table = UncertaintyTable::new();
-        let ids: Vec<UncertaintyId> = list.iter().map(|x| table.intern(x)).collect();
-        let via_ids: Vec<Uncertainty> = table
+        let mut index = UncertaintyIndex::default();
+        let ids: Vec<UncertaintyId> = list.iter().map(|x| index.intern_value(x)).collect();
+        let via_ids: Vec<Uncertainty> = index
             .dedupe(&ids)
             .into_iter()
-            .map(|id| table.get(id).clone())
+            .map(|id| index.value(id).clone())
             .collect();
 
         assert_eq!(
@@ -1055,12 +834,13 @@ mod tests {
         // Interning is by FULL VALUE, not by key: the two `interface-open-world`
         // entries share a key but are distinct uncertainties, so the table holds
         // 6 of the 7 inputs (only the exact duplicate collapses).
-        assert_eq!(table.len(), 6, "interned by value, not by uncertainty_key");
+        assert_eq!(
+            index.value_count(),
+            6,
+            "interned by value, not by uncertainty_key"
+        );
     }
 
-    /// Resolving an id against the WRONG [`UncertaintyTable`] must name that
-    /// hypothesis, not just index out of bounds.
-    ///
     /// This pins the USE (`get`, the one production resolution site's own
     /// entry point) rather than `resolve` itself, and it pins the MESSAGE: the
     /// whole value of the check is that the next reader is told which invariant
@@ -1068,27 +848,11 @@ mod tests {
     /// no better than what it replaced. `#[should_panic(expected = ...)]`
     /// substring-matches, so this fails if the "DIFFERENT table" wording is
     /// dropped.
-    #[test]
-    #[should_panic(expected = "minted by a DIFFERENT table")]
-    fn resolving_an_id_from_another_table_names_the_invariant() {
-        let mut minted_from = UncertaintyTable::new();
-        minted_from.intern(&u("unresolved-call", Some("r/cs0"), None, None, None));
-        let id = minted_from.intern(&u("opaque-callee", Some("r/cs1"), None, None, None));
-
-        // A DIFFERENT table that never saw the second value — `id` is in range
-        // for `minted_from` but not for this one.
-        let mut other = UncertaintyTable::new();
-        other.intern(&u("unresolved-call", Some("r/cs0"), None, None, None));
-        assert_eq!(other.len(), 1, "the wrong table is genuinely shorter");
-
-        other.get(id);
-    }
-
     /// A throwaway [`CohortRep`] for the sink unit tests — its contents are never
     /// inspected here (the differential in `d1_dataflow` proves the real
     /// witness/uncertainty build); these tests only exercise the bitmap-cohort
     /// bookkeeping (interning, disjointness, verdict decompression).
-    fn dummy_rep(_table: &mut UncertaintyTable, _cache: &mut PathUncertaintyCache) -> CohortRep {
+    fn dummy_rep(_cache: &mut PathUncertaintyCache) -> CohortRep {
         let step = EvidenceStep {
             routine_id: "R".to_string(),
             operation_id: None,
@@ -1119,6 +883,14 @@ mod tests {
             uncertainties: Arc::from(Vec::new()),
         }
     }
+
+    // RETIRED: `resolving_an_id_from_another_table_names_the_invariant` pinned a
+    // hazard that no longer exists. It asserted that resolving an id minted by a
+    // DIFFERENT UncertaintyTable panics with a named message — a real risk when
+    // every d1 run built its own table and ids travelled beside it as two
+    // independent fields. There is now exactly ONE table, owned by
+    // `DetectorContext`, and ids are resolved through it, so "some other table"
+    // is not constructible. Deleted rather than left passing vacuously.
 
     #[test]
     fn group_bitmap_set_contains_iter_count() {
@@ -1303,7 +1075,7 @@ mod tests {
         // t1: loop 2 -> ctx_a.
         sink.insert(t1, 2, ctx_a, [false, true, false, false], dummy_rep);
 
-        let (finalized, _unc) = sink.finalize();
+        let finalized = sink.finalize();
         // Decompress into (group, key) -> (verdict, depth, unc, reachable).
         type Row = (TempVerdict, i64, bool, Vec<TempVerdict>);
         let mut got: HashMap<(GroupIx, &str, &str), Row> = HashMap::new();
@@ -1531,31 +1303,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn path_cache_interns_a_shared_set_once_and_returns_the_same_allocation() {
-        let mut index = UncertaintyIndex::default();
-        let sid = index.intern_set(vec![iow("IAlpha"), iow("IBeta")]);
-        // The SAME set id, as two nodes carrying an equal set now receive.
-        let alias = index.intern_set(vec![iow("IAlpha"), iow("IBeta")]);
-        assert_eq!(sid, alias, "precondition: equal sets intern to one id");
-
-        let mut table = UncertaintyTable::new();
-        let mut cache = PathUncertaintyCache::new();
-        let first = cache.ids_of(sid, &index, &mut table);
-        let entries_after_first = table.len_for_test();
-        let second = cache.ids_of(alias, &index, &mut table);
-
-        assert_eq!(&*first, &*second, "same ids");
-        assert!(
-            Arc::ptr_eq(&first, &second),
-            "a second visit to the same set must not re-intern or re-allocate"
-        );
-        assert_eq!(
-            table.len_for_test(),
-            entries_after_first,
-            "the second visit interned nothing new"
-        );
-    }
+    // RETIRED: `path_cache_interns_a_shared_set_once_and_returns_the_same_allocation`
+    // pinned this cache's per-SET memo — that a second visit to the same set
+    // re-interned nothing. That level is gone: `ctx.uncertainties.elements(sid)`
+    // is already an interned slice, so there is nothing to intern per set and
+    // nothing to memoize. The property it protected now lives one layer down, as
+    // `interning_equal_sets_yields_one_set_id_and_one_element_window` in
+    // `detector_context`. Deleted rather than rewritten into a tautology.
 
     #[test]
     fn path_cache_stores_and_returns_a_union_by_signature() {

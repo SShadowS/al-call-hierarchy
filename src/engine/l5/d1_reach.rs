@@ -61,9 +61,7 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 #[cfg(test)]
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
-use crate::engine::l5::d1_cohort::{
-    TerminalCohorts, TerminalSink, UncertaintyTable, emit_finalize_census,
-};
+use crate::engine::l5::d1_cohort::{TerminalCohorts, TerminalSink, emit_finalize_census};
 #[cfg(test)]
 use crate::engine::l5::d1_dataflow::solve_batch;
 use crate::engine::l5::d1_dataflow::{
@@ -815,11 +813,6 @@ pub(crate) fn search_loops<'a>(
 pub(crate) struct D1CohortRun<'a> {
     pub terminals: Vec<TerminalCohorts<'a>>,
     pub catalog: Vec<LoopCatalogEntry>,
-    /// The run-level interned [`crate::engine::l4::summary::Uncertainty`] store
-    /// every cohort's `CohortRep.uncertainties` id sequence indexes into. Moved
-    /// out of the sink at `finalize` — the cohorts cannot be read without it, so
-    /// it travels with them.
-    pub uncertainties: UncertaintyTable,
 }
 
 /// Run the reachability search over every loop group, EMITTING per-terminal
@@ -945,13 +938,9 @@ pub(crate) fn search_loops_cohorts<'a>(
         }
     }
 
-    let (terminals, uncertainties) = sink.finalize();
-    emit_finalize_census(&terminals, &uncertainties);
-    D1CohortRun {
-        terminals,
-        catalog,
-        uncertainties,
-    }
+    let terminals = sink.finalize();
+    emit_finalize_census(&terminals, &ctx.uncertainties);
+    D1CohortRun { terminals, catalog }
 }
 
 #[cfg(test)]

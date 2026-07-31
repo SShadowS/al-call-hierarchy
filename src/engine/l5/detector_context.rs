@@ -36,8 +36,11 @@ use crate::engine::l4::cone_derived::{ConeDerivedStore, ConeOutput};
 use crate::engine::l4::effect_store::SummaryBundle;
 use crate::engine::l4::reverse_index::ReverseEffectIndex;
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
-use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
+use crate::engine::l4::summary::{
+    RecordRoleSummary, Uncertainty, dedupe_uncertainties, uncertainty_key,
+};
 use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_bundle};
+use crate::engine::l5::confidence::UncertaintyLite;
 use crate::engine::l5::entry_points::AccessModifier;
 use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
@@ -124,11 +127,30 @@ pub struct UncertaintySetId(pub u32);
 #[derive(Default)]
 pub struct UncertaintyIndex {
     values: Vec<Uncertainty>,
+    /// `uncertainty_key(values[i])`, precomputed at intern time: `dedupe` needs it
+    /// once per id per union, and recomputing the `format!` there would reintroduce
+    /// exactly the per-record allocation this index exists to remove.
+    keys: Vec<Box<str>>,
+    /// The confidence mapper's view of `values[i]` — its kind plus the
+    /// materialised `"{kind} at {at}"` note text. d1 builds one `Evidence` per id
+    /// per winning cohort, so this is allocated once per DISTINCT value rather
+    /// than once per record. Note it is a DIFFERENT string from `keys[i]`
+    /// (`"{kind} at {at}"` vs `"{kind}|{at}"`) and they do NOT sort alike, so
+    /// neither can stand in for the other.
+    lites: Vec<UncertaintyLite>,
     by_value: HashMap<Uncertainty, UncertaintyId>,
     /// Flat element pool; a set's elements are a window into it.
     set_elems: Vec<UncertaintyId>,
     set_span: Vec<(u32, u32)>,
     by_set: HashMap<Box<[UncertaintyId]>, UncertaintySetId>,
+}
+
+impl UncertaintyId {
+    /// Test-only: a stand-in id that never came from an index.
+    #[cfg(test)]
+    pub(crate) fn for_test(n: u32) -> Self {
+        UncertaintyId(n)
+    }
 }
 
 impl UncertaintyIndex {
@@ -144,8 +166,34 @@ impl UncertaintyIndex {
                 .expect("UncertaintyIndex exceeded u32::MAX distinct uncertainties"),
         );
         self.values.push(u.clone());
+        self.keys.push(uncertainty_key(u).into_boxed_str());
+        self.lites.push(UncertaintyLite::of(u));
         self.by_value.insert(u.clone(), id);
         id
+    }
+
+    /// `uncertainty_key(value(id))`, precomputed.
+    pub fn key(&self, id: UncertaintyId) -> &str {
+        &self.keys[id.0 as usize]
+    }
+
+    /// The confidence mapper's view of `id`, precomputed.
+    pub fn lite(&self, id: UncertaintyId) -> &UncertaintyLite {
+        &self.lites[id.0 as usize]
+    }
+
+    /// Dedupe by `uncertainty_key`, LAST-WRITE-WINS, emitted in byte-sorted key
+    /// order — the same contract as `dedupe_uncertainties` on values, and the
+    /// reason a union's input order is load-bearing (two `interface-open-world`
+    /// values differing only in `interfaceName` share a key, and the later one
+    /// wins).
+    pub fn dedupe(&self, ids: &[UncertaintyId]) -> Vec<UncertaintyId> {
+        let mut seen: std::collections::BTreeMap<&str, UncertaintyId> =
+            std::collections::BTreeMap::new();
+        for &id in ids {
+            seen.insert(self.key(id), id);
+        }
+        seen.into_values().collect()
     }
 
     /// Intern one SET, returning the id of an equal (same values, same ORDER) set
