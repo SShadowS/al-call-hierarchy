@@ -24,6 +24,14 @@ Thumbs.db
 # Scratch artifacts (root-level analysis output)
 /out*.sarif
 /perf_stderr.txt
+# Measurement/run logs (perf traces, detached 8020 runs) and demo/report output —
+# large, machine-local, regenerable; never part of the repo's evidence surface
+# (committed evidence lives in docs/ and .superpowers/sdd/ reports).
+/logs/
+/demo-out/
+# Local tooling state (panel-review scratch, Serena project cache)
+/.panel/
+/.serena/
 
 # 1B.3b Task 1: local-only de-anonymization map (AnonId -> plaintext) for the
 # committed anonymized CDO goldens under tests/goldens/semantic-edges/. NEVER

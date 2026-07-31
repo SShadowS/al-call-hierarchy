@@ -3,7 +3,9 @@
 Living checklist — tick items (`- [x]` + landing commit/date) as they land; add new
 items as they surface. Rewritten clean 2026-07-17 (post preflight-fresh-coverage +
 outstanding-sweep runs); the full histories of completed arcs live in the Archive at
-the bottom, CHANGELOG, and git log.
+the bottom, CHANGELOG, and git log. Consolidated again 2026-07-31 (Wave-2/3 entry
+re-based on the post-d1-memory/post-uncertainty 8020 numbers; the d1 follow-up
+sizings marked pre-arc).
 
 ## Open — needs the user
 
@@ -79,68 +81,36 @@ the bottom, CHANGELOG, and git log.
   A9' parallel diagnostics re-parse. Decision (a): substrate-skipping runs omit
   summarize cap-hit diagnostics (only permitted output change). Wave-1 outcome
   table: findings doc §7b
-- [ ] **Engine memory/speed Wave 2/3 (Track B)** — Wave-2a (measure-first
-  root-cause + mechanical fixes) DONE 2026-07-18 (`e2e34fc` structural
-  stable-id substitution in `fingerprint_of`; `136c4e2` zero-alloc
-  `reachable()` iteration + memoized `touches_db` in d1; both byte-stable,
-  goldens + DO diff clean). Slice-5400 full-default 2,608s→304.2s (8.6×;
-  d19 988→0.23s and d12 425→0.07s effectively eliminated, d1 448→157.9s —
-  2.8× but still 87.7% of the loop); 8020 3-detector 90.3s→40.9s (2.2×); DO
-  unchanged (9.0s). **8020 full-default STILL DNF** (2h cap, 45.2 GB peak;
-  d1 alone runs ~93 min and never finishes) — walk-graph SIZE at 846-SCC
-  density, not per-step allocation cost, is now the measured limiter. The
-  846-SCC's trigger-edge over-approximation hypothesis (the fusion driver)
-  is source-sampling VERIFIED: 20/20 sampled intra-SCC implicit-trigger
-  edges over-approximated, 97.1% (1,046/1,077) a field-collapsed OnValidate
-  target-collision (Sales Header alone collapses 93 distinct field triggers
-  onto one graph node). Full numbers + derivation:
-  `docs/superpowers/specs/2026-07-18-wave2-measurements.md` §2/§3/§3a/§4/
-  §4a/§6.
+- [ ] **Engine memory/speed Wave 2/3 (Track B)** — *consolidated 2026-07-31; the
+  per-wave narrative that used to live here (Wave-2a/2b/2c, the "8020 full-default
+  DNF at 45.2 GB" measurements, the falsified 846-SCC trigger-edge perf hypothesis,
+  and the falsified OUTPUT-BOUND attribution) is in
+  `docs/superpowers/specs/2026-07-18-wave2-measurements.md` §2–§9 and in the d1
+  section at the bottom of this file. It described a corpus state three arcs out of
+  date and is not repeated.*
 
-  **Wave-2b (trigger-edge builder parity) DONE 2026-07-18** — `a640815` +
-  `f9ff427` (field-specific OnValidate targeting + RunTrigger gate in
-  `build_implicit_trigger_edges`, mirroring `implicit_trigger_route_applicable`;
-  TDD incl. quoted-field normalization guards; zero golden movement — the
-  committed corpus never exercised the pathology; DO findings byte-identical
-  with 65 over-approximated edges pruned, telemetry-only). **The performance
-  hypothesis was FALSIFIED**: 8020 max_scc 846→797 (-5.8%), timings flat —
-  the SCC is fused by direct(1067)/method(262) call cycles, and retargeted
-  per-field OnValidate edges stay inside the component. The fix STANDS on
-  precision/parity grounds; its perf claim is dead. Full honest numbers:
-  measurements doc §7 (Wave-2b outcome).
+  **Current 8020 state (BC Base App, 100,941 routines, default preset,
+  `release-fast`): ~158 s wall / ~5,394 MB process peak** — from DNF@2h/45.2 GB,
+  via the d1 cohort redesign (`ee3aa45`), the d1 memory arc (peak 9,675 → 6,411 MB,
+  wall 310 → 197 s) and the uncertainty substrate (`93bb9af`, peak 6,409.8 →
+  5,394.5 MB). Wall figures for this corpus/probe swing **±80 s** — see the d1
+  capstone's qualifier in CHANGELOG; only the memory figures are robust singly.
 
-  **Wave-2c (d1 walk_evidence memoization) DONE 2026-07-18** — `511845c`:
-  per-callee memo (caller-independence proven — prefix + additive-depth
-  transform; full-field memoized≡fresh test), byte-identical (goldens + DO
-  clean), O(in-loop-callsites)→O(distinct callees) walk count. **The 8020
-  full-default finish bar is STILL UNMET** (2h cap, 51.9 GB peak) — but this
-  measurement batch is HONEST-BLIND: probes were swept and ~55% ambient
-  machine load inflated even non-d1 control runs, so the batch's numbers are
-  unusable in either direction (measurements doc §8).
+  **Still open in this track:**
+  - **B1 — interned ids + bitsets.** SEQUENCE with the `str::to_lowercase()`
+    census below (same call sites, one churn).
+  - **B2 — SCC-shared cones** (8.34 M-cardinality summary mass). Partially
+    overtaken by C1's `ConeDerivedStore`; re-scope against the post-C1 peak
+    before building — the largest remaining spans are now all L3-substrate
+    (`l3.assemble_resolve` 3,381 MB, `l3.parse_project_parallel` 2,770 MB,
+    `context.symbols_resolve_calls` 1,723 MB, `gate.coverage` 1,157 MB).
+  - **B3 — single-substrate unification.** Needs a detector-feature parity
+    harness first.
+  - **d1 typed-receiver §7 guard-tag / flow-insensitive redesign** — a
+    precision item, not a perf one, now that d1 no longer sets the peak.
 
-  **ATTRIBUTION DELIVERED 2026-07-19** (permanent perf_trace layer + three
-  traced d1-only runs; measurements doc §9): d1 is OUTPUT-BOUND on
-  complete-path multiplicity — 69.1% of retained walk results are genuine
-  complete witness paths (~126/walk, ~900k for the full census ≈ 3h),
-  Jacobi/substrate CLEAN at ~24 min / 43.5 GB.
-  **RESOLVED 2026-07-19 — d1-reachability redesign (Tasks 1-5,
-  `feat/d1-reachability`)**: the "output-bound" premise was FALSE (the ~900k
-  paths never reached output — first-wins dedupe discarded them; the cost was
-  the enumeration). NO caps taken. `detect_d1` now runs an unbounded filtered
-  reachability search (`d1_graph` + `d1_reach`) + terminal-centric assembly
-  (one finding per `(terminal routine, op)` with per-loop `LoopContext`s); the
-  old walk is deleted from d1 (survives only as the `#[cfg(test)]` shadow
-  oracle). DO semantic-diff vs old: 828→908 findings (+80 budget-free), 61
-  severity upgrades, 0 downgrades / 0 vanished keys, 5.2 s. Goldens rebaselined
-  + triaged. Task 6 = perf re-measure at 8020 density + handoff §4 closure.
-  Downstream candidates once attributed: d1 typed-receiver-§7
-  guard-tag/flow-insensitive redesign; B1 interned ids + bitsets / B2
-  SCC-shared cones (8.34M-cardinality summary mass, Jacobi plateau); B3
-  single-substrate unification (needs detector-feature parity harness).
-  SEQUENCE B1 with the `to_lowercase()` census below (same call sites, one
-  churn). The change-impact wedge's effects-on-fresh fork still consumes
-  B1/B2's bitset cones; the findings doc remains the evidence AGAINST making
-  L3 load-bearing again
+  The change-impact wedge's effects-on-fresh fork still consumes B1/B2's bitset
+  cones; the findings doc remains the evidence AGAINST making L3 load-bearing again.
 - [x] **tree-sitter-al quirks list** — WAS ALREADY DONE, stale item (live-verified
   2026-07-17 against pinned v3.2.0 `14bd55c`): `statement_block`/`argument_list`/
   `parenthesized_expression` carry ZERO fields (left/operator/right pollution gone,
@@ -619,12 +589,23 @@ COHORT DATAFLOW (co-designed with gpt-5.6-sol; see memory `d1-output-bound-falsi
   pathCount now counts verdict-classes.
 
 ### Deferred d1 follow-ups (non-blocking; 8020 already finishes)
-1. **Witness/uncertainty polish (~130s residual)**: `build_cohort_rep`'s full-chain
-   `path_uncertainty_ids` walk for UNCERTAIN cohorts is the residual (certain cohorts
-   already skipped, ee07983). Eliminate by accumulating uncertainty-KIND-SETS in the
-   fixpoint (no walk) — output-identical, targets d1 ~10-30s. NEEDS A QUIET MACHINE
-   to validate (these detached 8020 runs swing +/-80s; sub-fixes unmeasurable against
-   that noise).
+
+> **These five were written 2026-07-21, BEFORE the d1 memory arc (`6e136e2`) and the
+> uncertainty substrate (`93bb9af`). Their sizings are pre-arc and several are known
+> stale — re-measure before building any of them.** Same-run traced spans after the
+> memory arc: `detector.d1` **67.65 → 25.90 s**, `assemble_cohort_findings`
+> **6.27 → 1.59 s**; d1 no longer sets the process peak (first exceeded at
+> `detector.d19-unused-parameter`), so a saving that removes only a d1 *transient*
+> no longer moves the user-visible peak at all.
+
+1. **Witness/uncertainty polish** — `build_cohort_rep`'s full-chain
+   `path_uncertainty_ids` walk for UNCERTAIN cohorts (certain cohorts already skipped,
+   ee07983). Eliminate by accumulating uncertainty-KIND-SETS in the fixpoint (no walk)
+   — output-identical. **The "~130 s residual / targets d1 ~10-30 s" sizing is STALE**:
+   it was written when d1's own span was ~140-250 s; the span is 25.90 s now, so the
+   whole remaining envelope is smaller than the claimed saving. Re-attribute against a
+   current trace first. NEEDS A QUIET MACHINE either way (detached 8020 runs swing
+   ±80 s; sub-fixes are unmeasurable against that noise).
 2. **`affected_objects` bitmap-partition** (d1.rs ~1807): a `bm.iter()` loop over the
    ~3.2M (loop,terminal) population, same shape C9 bitmap-partitioned for `by_rv`.
 3. **`finding.rs` LoopContext/StableLoopContext cleanup**: the superseded Task-5
