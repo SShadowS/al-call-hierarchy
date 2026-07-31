@@ -71,20 +71,138 @@ pub struct DeclaredDep {
 /// therefore unobservable: the pool only ever hands back a slice `Eq` to the one it
 /// was asked for, so the map's VALUES are byte-identical to the un-pooled `Vec`s
 /// they replace, element for element and in the same order.
+/// A distinct uncertainty VALUE, interned run-globally at context build.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub struct UncertaintyId(pub u32);
+
+/// A distinct uncertainty SET — the per-node set the pool already collapses by
+/// content.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub struct UncertaintySetId(pub u32);
+
+/// The uncertainty identity substrate: every distinct VALUE and every distinct
+/// SET, each named once.
+///
+/// **Why this type exists.** [`UncertaintySetPool`] (which it replaces) already
+/// computed exactly this identity — it keys per-node sets by CONTENT, collapsing
+/// 27,037 nodes onto 10,112 distinct allocations over a 19,311-value vocabulary on
+/// BC Base App — and then discarded it, returning only `Arc<[Uncertainty]>`. Every
+/// consumer downstream then re-derived it: `d1` re-interned 2,229,391 elements per
+/// run into a detector-local table and memoized per-set work behind a raw POINTER
+/// key, and `d1_reach` answered "does this node carry uncertainty" with a
+/// `HashMap<String, _>` lookup. Naming the identity once, here, removes all of it.
+///
+/// **Order is part of set identity, deliberately.** The union these sets feed is
+/// last-write-wins by `uncertainty_key`, so two sets holding the same values in a
+/// different order are NOT interchangeable — collapsing them would silently change
+/// which value wins. `intern_set` therefore keys on the id sequence as given, and
+/// does NOT dedupe or sort: its input is already `dedupe_uncertainties`' output,
+/// and re-deduping here would change the sequence the caller round-trips back.
+#[derive(Default)]
+pub struct UncertaintyIndex {
+    values: Vec<Uncertainty>,
+    by_value: HashMap<Uncertainty, UncertaintyId>,
+    /// Flat element pool; a set's elements are a window into it.
+    set_elems: Vec<UncertaintyId>,
+    set_span: Vec<(u32, u32)>,
+    by_set: HashMap<Box<[UncertaintyId]>, UncertaintySetId>,
+}
+
+impl UncertaintyIndex {
+    /// Intern one VALUE.
+    pub fn intern_value(&mut self, u: &Uncertainty) -> UncertaintyId {
+        if let Some(&id) = self.by_value.get(u) {
+            return id;
+        }
+        // `try_from`, not `as`: past `u32::MAX` an `as` cast WRAPS and a new value
+        // would silently alias an existing id — a wrong answer rather than a crash.
+        let id = UncertaintyId(
+            u32::try_from(self.values.len())
+                .expect("UncertaintyIndex exceeded u32::MAX distinct uncertainties"),
+        );
+        self.values.push(u.clone());
+        self.by_value.insert(u.clone(), id);
+        id
+    }
+
+    /// Intern one SET, returning the id of an equal (same values, same ORDER) set
+    /// if one was already interned.
+    pub fn intern_set(&mut self, set: Vec<Uncertainty>) -> UncertaintySetId {
+        let ids: Box<[UncertaintyId]> = set.iter().map(|u| self.intern_value(u)).collect();
+        if let Some(&sid) = self.by_set.get(&ids) {
+            return sid;
+        }
+        let start = u32::try_from(self.set_elems.len()).expect("set element pool exceeded u32");
+        self.set_elems.extend_from_slice(&ids);
+        let end = u32::try_from(self.set_elems.len()).expect("set element pool exceeded u32");
+        let sid = UncertaintySetId(
+            u32::try_from(self.set_span.len()).expect("UncertaintyIndex exceeded u32::MAX sets"),
+        );
+        self.set_span.push((start, end));
+        self.by_set.insert(ids, sid);
+        sid
+    }
+
+    pub fn elements(&self, s: UncertaintySetId) -> &[UncertaintyId] {
+        let (a, b) = self.set_span[s.0 as usize];
+        &self.set_elems[a as usize..b as usize]
+    }
+
+    /// O(1), no map lookup and no allocation — the replacement for
+    /// `uncertainties_by_node.get(id).is_none_or(|v| v.is_empty())`.
+    pub fn is_empty_set(&self, s: UncertaintySetId) -> bool {
+        let (a, b) = self.set_span[s.0 as usize];
+        a == b
+    }
+
+    pub fn value(&self, id: UncertaintyId) -> &Uncertainty {
+        &self.values[id.0 as usize]
+    }
+
+    pub fn value_count(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn set_count(&self) -> usize {
+        self.set_span.len()
+    }
+}
+
+/// Hash-cons front for [`UncertaintyIndex`], preserving the `Arc<[Uncertainty]>`
+/// hand-out its callers still expect.
+///
+/// Identity now comes from the index; this type only MATERIALIZES it, once per
+/// distinct set. The `Arc` it returns is byte-identical to the one the old
+/// content-keyed pool returned — same values, same order — which is what keeps
+/// this change invisible to every consumer until they migrate to ids.
 #[derive(Default)]
 struct UncertaintySetPool {
-    sets: HashSet<Arc<[Uncertainty]>>,
+    index: UncertaintyIndex,
+    materialized: Vec<Arc<[Uncertainty]>>,
 }
 
 impl UncertaintySetPool {
     /// The shared handle for `set` — an existing one if an equal set was already
-    /// pooled, otherwise `set`'s own freshly-allocated one.
+    /// pooled, otherwise a freshly-allocated one recorded for reuse.
     fn share(&mut self, set: Vec<Uncertainty>) -> Arc<[Uncertainty]> {
-        if let Some(existing) = self.sets.get(set.as_slice()) {
-            return Arc::clone(existing);
+        let sid = self.index.intern_set(set);
+        let ix = sid.0 as usize;
+        if ix < self.materialized.len() {
+            return Arc::clone(&self.materialized[ix]);
         }
-        let shared: Arc<[Uncertainty]> = Arc::from(set);
-        self.sets.insert(Arc::clone(&shared));
+        debug_assert_eq!(
+            ix,
+            self.materialized.len(),
+            "set ids are dense and assigned in order, so a miss is always the NEXT slot"
+        );
+        let values: Vec<Uncertainty> = self
+            .index
+            .elements(sid)
+            .iter()
+            .map(|id| self.index.value(*id).clone())
+            .collect();
+        let shared: Arc<[Uncertainty]> = Arc::from(values);
+        self.materialized.push(Arc::clone(&shared));
         shared
     }
 }
@@ -1892,5 +2010,89 @@ page 50813 "CP3 Wizard"
              equality is exactly the edges-only overwrite this guards",
             union.len()
         );
+    }
+
+    // -- UncertaintyIndex ------------------------------------------------------
+
+    /// Two `interface-open-world` uncertainties differing ONLY in `interface_name`
+    /// share an `uncertainty_key` (`"{kind}|{at}"` does not read it) while being
+    /// DIFFERENT values. Every ordering assertion below is hand-stated on that
+    /// shape, because it is the only one where last-write-wins is observable.
+    fn u_iow(interface: &str) -> Uncertainty {
+        Uncertainty {
+            kind: "interface-open-world".to_string(),
+            callsite_id: Some("cs/1".to_string()),
+            operation_id: None,
+            routine_id: None,
+            interface_name: Some(interface.to_string()),
+        }
+    }
+
+    #[test]
+    fn interning_equal_sets_yields_one_set_id_and_one_element_window() {
+        let mut ix = UncertaintyIndex::default();
+        let a = ix.intern_set(vec![u_iow("IAlpha"), u_iow("IBeta")]);
+        let b = ix.intern_set(vec![u_iow("IAlpha"), u_iow("IBeta")]);
+        assert_eq!(a, b, "equal sets are ONE set id");
+        assert_eq!(ix.elements(a), ix.elements(b));
+        assert_eq!(
+            ix.value_count(),
+            2,
+            "two distinct values, interned once each"
+        );
+        assert_eq!(ix.set_count(), 1, "…and one distinct set");
+    }
+
+    /// Set identity is by content AND ORDER. A reordered set is a DIFFERENT set,
+    /// because the union that consumes it is last-write-wins by key and therefore
+    /// order-sensitive — collapsing the two would silently change which value wins.
+    #[test]
+    fn a_reordered_set_is_a_distinct_set_id() {
+        let mut ix = UncertaintyIndex::default();
+        let a = ix.intern_set(vec![u_iow("IAlpha"), u_iow("IBeta")]);
+        let b = ix.intern_set(vec![u_iow("IBeta"), u_iow("IAlpha")]);
+        assert_ne!(a, b);
+        assert_eq!(
+            ix.value_count(),
+            2,
+            "…while still interning only two values"
+        );
+    }
+
+    /// Round-trip: the elements resolve back to the EXACT input sequence. This is
+    /// what lets `share()` hand out an `Arc<[Uncertainty]>` byte-identical to the
+    /// one it used to build directly.
+    #[test]
+    fn elements_round_trip_to_the_input_sequence() {
+        let mut ix = UncertaintyIndex::default();
+        // A CONSECUTIVE duplicate and a non-consecutive one. The consecutive pair
+        // is deliberate: `Vec::dedup` only collapses adjacent equals, so an input
+        // without one cannot detect a stray dedupe in `intern_set` at all.
+        let input = vec![
+            u_iow("IBeta"),
+            u_iow("IBeta"),
+            u_iow("IAlpha"),
+            u_iow("IBeta"),
+        ];
+        let sid = ix.intern_set(input.clone());
+        let back: Vec<Uncertainty> = ix
+            .elements(sid)
+            .iter()
+            .map(|id| ix.value(*id).clone())
+            .collect();
+        assert_eq!(back, input, "same values, same order, duplicates preserved");
+    }
+
+    /// An empty set is a real set id, and `is_empty_set` answers O(1) — this is
+    /// what replaces `HashMap::get(..).is_none()` as the "does this node carry
+    /// uncertainty" test.
+    #[test]
+    fn the_empty_set_is_interned_and_reported_empty() {
+        let mut ix = UncertaintyIndex::default();
+        let e = ix.intern_set(Vec::new());
+        assert!(ix.is_empty_set(e));
+        assert_eq!(ix.elements(e), &[] as &[UncertaintyId]);
+        let n = ix.intern_set(vec![u_iow("IAlpha")]);
+        assert!(!ix.is_empty_set(n));
     }
 }
