@@ -426,6 +426,15 @@ under `docs/superpowers/specs/`.
   `cargo test`, and every real catch came with a discrimination proof while every miss
   lacked one. Watch too for the over-claim that travels with it — docs asserting guards
   are "each pinned executably" when only some are.
+  **A discrimination proof that PASSES is evidence about the TEST, not the code.** Three
+  times in the 2026-07-31 substrate arc a break came back green: once because `rustfmt`
+  had reflowed the target text so a scripted patch matched nothing at all, once because
+  `Vec::dedup` collapses only ADJACENT equals and the fixture carried no consecutive
+  duplicate, and once because the contribution broken was redundant with a second code
+  path. The first two were test/tooling defects and were fixed; the third was a real
+  property of the code and was recorded as a stated LIMIT of that golden. Always assert
+  that a scripted break actually applied (`assert s.count(old) == 1`) — an unasserted
+  scripted break proves nothing, and its green run reads exactly like a passing test.
 - **The al-sem TypeScript reference is RETIRED.** This engine began as a faithful Rust
   port of al-sem (TS), validated by byte-for-byte differential goldens. That era is over.
   The engine is now **Rust-owned**: correctness and resolution precision take priority
@@ -476,6 +485,16 @@ under `docs/superpowers/specs/`.
   enabled via `git config core.hooksPath scripts/git-hooks`) blocks a commit
   touching any of those paths unless `check-goldens` passes; enable it once per
   clone. It costs ~23s warm-cache when it fires, plus any debug rebuild.
+- **A NEW `tests/r0-corpus/` fixture moves THREE golden families, and
+  `--test r4` alone will not tell you.** Adding `ws-d2-uncertain` (2026-07-31) needed
+  `tests/r4-goldens/*.r4.golden.json`, `tests/r2c-goldens/*.l3eg.golden.json` (the l3eg
+  differential walks every corpus dir and flags any non-golden fixture that produces
+  events) and `tests/ir-l2-goldens/l2_features.snapshot` (+1 line per routine). `--test
+  r4` was GREEN while the repository was red; only `scripts/check-goldens` caught it.
+  Also: **the golden-regen env var only REWRITES existing goldens, it cannot mint one.**
+  `run_smoke_entry` asserts the golden file exists BEFORE the regen runs, so a new r4
+  fixture needs a seed file (the projection shape, `findingCount` 0, empty `findings`)
+  committed first, which the regen then fills. The l3eg regen does mint.
 - **New advisory L5 detector = triage on a real workspace BEFORE shipping DEFAULT.**
   Run it on DO/CDO, triage every finding against real source (the `triage-findings`
   skill; or `/triage-wave` to fan out one subagent per detector). A detector with

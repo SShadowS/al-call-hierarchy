@@ -306,34 +306,42 @@ sizings marked pre-arc).
 
 ## Parked — deferred WITH evidence; do NOT start without the wake condition
 
-- [ ] **`ctx.uncertainties_by_node` — Step 2: intern the ELEMENTS to ids (~−88 MiB more).**
-  Step 1 (hash-consing the per-node SETS into `Arc<[Uncertainty]>`) **is done** — see the
-  CHANGELOG entry for the uncertainty-substrate arc; it took the structure from
-  **729.1 MiB in 7,428,267 allocations to 102.0 MiB in 1,025,350** (measured) on BC Base
-  App 8020, with zero detector edits and zero golden movement. Step 2 replaces the
-  shared slices' ELEMENTS with `UncertaintyId`s resolved against one ctx-level
-  `UncertaintyTable`, landing at ~14 MiB live. It is worth roughly a further 88 MiB
-  live / ~105 MiB RSS.
-  **Precondition — do NOT start without it: give `d2` a non-empty `confidence.evidence`
-  golden first.** Step 2 rewrites the `walk_evidence` uncertainty path, and exactly ONE
-  golden file in the repository carries a non-empty `confidence.evidence`
-  (`tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`, 6 records) — a **d1** finding.
-  d2's, d46's and d48's uncertainty-bearing confidence output has **zero** golden coverage
-  of any kind, so a regression in the path Step 2 rewrites would not turn a single golden
-  red. `tests/r0-corpus/ws-d2` exists and `ws-d1-uncertain-path` shows the shape. This is
-  the same "add the missing golden mid-flight" move the d1 arc had to make before it could
-  trust its own work.
-  **Sizing correction, and the corpus caveat — both load-bearing.** This structure draws
-  from a **19,311**-value vocabulary on 8020 (19,311 distinct `uncertainty_key`s too —
-  zero key collisions), *not* the 3,073 an earlier revision of this entry and of
-  `d1_cohort.rs`'s `UncertaintyTable` doc claimed. 3,073 is the distinct-NOTE count in the
-  downstream retained winner-cohort evidence, a subset; a plan sized against it mis-prices
-  the post-intern residual by ~5x. And **on the real DO customer workspace this whole
-  structure is 2.8 MiB** (1,808 nodes / 13,489 records, 2.8 records per routine against
-  8020's 36.7): the blow-up is super-linear in SCC structure, not in workspace size, so
-  this is a *"make `alsem analyze` survive BC Base App"* item and must not be read as a
-  customer-workspace improvement. **Wake: when the last ~88 MiB is wanted AND the d2
-  golden above exists.**
+- [x] **`ctx.uncertainties_by_node` — Step 2: intern the ELEMENTS to ids** — DONE
+  2026-07-31, branch `perf/d1-followups`, plan
+  `docs/superpowers/plans/2026-07-31-uncertainty-identity-substrate.md`. Delivered as a
+  consequence of an IDENTITY correction rather than as a memory task: the context-build
+  hash-cons pool already computed set identity by content and then discarded it, so d1
+  re-derived it per run (2,229,391 interns into a detector-local table, memoized behind a
+  RAW POINTER key needing an `Arc` keep-alive to be sound) and `d1_reach` answered
+  "does this node carry uncertainty" with a `HashMap<String, _>` lookup.
+  `UncertaintyIndex` now mints `UncertaintyId` per distinct value and `UncertaintySetId`
+  per distinct set; `uncertainties_by_node` carries set ids; every consumer reads one
+  `UncertaintyView`; `UncertaintySetPool`, `d1_cohort::UncertaintyTable` and
+  `d1_cohort::UncertaintyId` are all DELETED, and with them the pointer key and its
+  soundness argument. Its precondition — the missing d2 golden — was built first
+  (`c16c552`) and PROVEN to fail (deleting d2's `dedupe_uncertainties` makes it red with
+  4 evidence entries instead of 2, nothing else moving).
+
+  **MEASURED (`ALSEM_UNCERTAINTY_CENSUS=1`, which prices both shapes from one run):**
+  8020 **74.5 MiB → 17.4 MiB, −57.2 MiB**, over the same populations this entry recorded
+  (27,037 nodes / 19,311 distinct values / 10,112 distinct sets — an independent
+  cross-check). **NOT the −88 MiB predicted here**, and the difference is accounting, not
+  disagreement: the 102.0 MiB baseline above came from an allocation-tracking census
+  (allocator bytes, `Arc` headers, rounding over 10,112 buffers) while the new census is a
+  by-hand byte count that models none of that and prices the same data at 74.5 MiB. The
+  real saving is therefore larger than −57.2 MiB; −88 MiB is not claimed as delivered.
+
+  **The trade this entry did NOT record: on a small workspace the substrate costs MORE.**
+  DO measures 0.4 MiB → 0.8 MiB (**+0.4 MiB**) — 777 distinct sets over 1,808 nodes leaves
+  nothing to amortize, so the value table, the precomputed keys/lites and the `by_value`
+  reverse map exceed the records they replace. The entry said "survive Base App, not a
+  customer-workspace win"; the sign is actually negative there.
+
+  **Next, if this is ever squeezed again:** `by_value` holds a second copy of every value
+  (2.8 MiB on 8020) and `by_set` a second copy of every id slice (2.0 MiB). Both are
+  interner-BUILD scaffolding, never read after context build.
+
+
 - [ ] **`FindingConfidence` carries ids, not records (−78 MiB retained in d1).** The
   finding already holds the winner cohort's `Vec<UncertaintyId>`; carrying 4-byte ids and
   materialising `Evidence` at the consumer takes d1's `confidence` bucket from 115.0 MiB
@@ -341,8 +349,20 @@ sizings marked pre-arc).
   predicts. Three readers (`project_evidence`, `merge_confidence`,
   `format_policy::finding_to_jv`) plus keeping the `UncertaintyTable` alive to projection.
   Scoped in `.superpowers/sdd/task-3-review.md`; deliberately not built in the d1 arc.
-  **Wake: when d1 memory is worth another pass, or alongside the item above — they share
-  the same table.**
+  **Wake: when d1 memory is worth another pass.** Two things changed 2026-07-31 (branch
+  `perf/d1-followups`) and both make this EASIER, not done:
+  - The blocker is gone. This was awkward because ids were d1-LOCAL and died with the
+    detector; they are now run-global (`ctx.uncertainties`), so a `FindingConfidence`
+    holding ids no longer needs a table shipped beside it. The three readers named above
+    are unchanged.
+  - **Its gate is UNEVALUATED, not passed.** The plan gated building this on d1's retained
+    `confidence` bucket still being near the ~115 MiB predicted here. That could not be
+    checked: the d1-memory arc's retained-`DetectorOutput` census was a one-off probe and
+    no longer exists in-tree — the only censuses that survive are
+    `ALSEM_UNCERTAINTY_CENSUS` (the ctx substrate), `ALSEM_D1_SCORING_CENSUS` and
+    `ALSEM_TXSPAN_CENSUS`, none of which measure it. **Re-measure d1's retained output
+    before building; do not code to the ~115 MiB / −78 MiB prediction, which is now two
+    arcs old.**
 
 - [ ] **Residual duplicate-id groups: 15 groups / 19 routines on BC Base App (0 on
   DO) still share BOTH the internal and the stable routine id.** ⟨task-4-review.md

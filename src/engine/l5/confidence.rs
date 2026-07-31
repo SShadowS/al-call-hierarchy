@@ -58,6 +58,12 @@ pub struct UncertaintyLite {
 }
 
 impl UncertaintyLite {
+    /// ⟨census⟩ Heap bytes of this lite's two shared strings. Diagnostic only —
+    /// charged once per DISTINCT uncertainty, which is the point of interning it.
+    pub(crate) fn census_heap_bytes(&self) -> u64 {
+        self.kind.len() as u64 + self.note.len() as u64 + 32
+    }
+
     /// Build from a `kind` and the descriptive id it is reported *at*
     /// (callsiteId | operationId | routineId).
     ///

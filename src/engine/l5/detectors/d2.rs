@@ -409,7 +409,7 @@ pub fn detect_d2(
                         initial_loop_depth: 0,
                         initial_steps: Vec::new(),
                     },
-                    &ctx.uncertainties_by_node,
+                    ctx.uncertainty_view(),
                     // Hot-tier walk stats are a d1-only concern for now.
                     None,
                 );
@@ -557,13 +557,13 @@ pub fn detect_d2(
 /// uncertainties, which al-sem's `walkEvidence` derives from the SAME union; deduped
 /// before to_confidence.)
 ///
-/// Returns a BORROW. It used to `.cloned()` the whole `Vec` for its one caller to
+/// Returns an ITERATOR of borrows, resolved from the node's interned set on
+/// demand. It used to `.cloned()` the whole `Vec` for its one caller to
 /// immediately re-clone element-by-element — a deep copy of a set that is read
-/// only, discarded immediately, and (since the ctx map is hash-consed) shared with
-/// every other node in the same SCC.
-fn sub_summary_uncertainties<'a>(ctx: &'a DetectorContext, routine_id: &str) -> &'a [Uncertainty] {
-    ctx.uncertainties_by_node
-        .get(routine_id)
-        .map(|v| &**v)
-        .unwrap_or(&[])
+/// only, discarded immediately, and shared with every other node in the same SCC.
+fn sub_summary_uncertainties<'a>(
+    ctx: &'a DetectorContext,
+    routine_id: &str,
+) -> impl Iterator<Item = &'a Uncertainty> + 'a {
+    ctx.uncertainty_view().values_of(routine_id)
 }

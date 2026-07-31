@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — uncertainty identity is established once, where it is discovered
+
+`UncertaintySetPool` (context build) already computed the identity this engine kept
+re-deriving: it keyed per-node uncertainty sets by CONTENT, collapsing 27,037 nodes onto
+10,112 distinct allocations over a 19,311-value vocabulary on BC Base App 8020. It then
+threw that identity away and handed out only `Arc<[Uncertainty]>`. Three consumers paid
+to reconstruct it — `d1` re-interned **2,229,391 elements per run** into a detector-local
+table and memoized per-set work behind a **raw pointer key** whose soundness needed an
+`Arc` keep-alive clone to argue; `d1_reach` answered "does this node carry uncertainty"
+through a `HashMap<String, _>` lookup; `d2` borrowed slices straight out of the map.
+
+`UncertaintyIndex` now mints `UncertaintyId` per distinct VALUE and `UncertaintySetId`
+per distinct SET, with elements in a flat pool. `ctx.uncertainties_by_node` carries set
+ids; every consumer reads the pair through one `UncertaintyView` (an id is meaningless
+without its index, so the two travel together rather than as parameters a caller could
+mismatch). **Deleted: `UncertaintySetPool`, `d1_cohort::UncertaintyTable`,
+`d1_cohort::UncertaintyId`, `PathUncertaintyCache`'s per-set level, and the pointer key
+with its keep-alive.** `node_has_uncertainty` is an O(1) window check. Keys and
+confidence-lites are precomputed once per ANALYZE run instead of once per d1 run.
+
+**Its precondition was built first, and proven to fail.** Exactly one golden in the
+repository covered a non-empty `confidence.evidence`, and it was a **d1** finding — so
+d2/d46/d48's half of this substrate had no coverage that could go red. `ws-d2-uncertain`
+closes that: deleting d2's `dedupe_uncertainties` makes it fail with four evidence
+entries instead of two, with nothing else moving. Its LIMIT is recorded too — dropping
+the `sub_summary_uncertainties` borrow leaves it green, because d2 collects the same
+uncertainties again through the subscriber walk.
+
+**Measured** (`ALSEM_UNCERTAINTY_CENSUS=1`, which prices both shapes from one run rather
+than quoting a deleted shape from a previous arc's differently-accounted census):
+
+| substrate | 8020 | DO |
+|---|---:|---:|
+| now | **17.4 MiB** | 0.8 MiB |
+| same sets priced as records | 74.5 MiB | 0.4 MiB |
+| delta | **−57.2 MiB** | **+0.4 MiB** |
+
+The 8020 populations match the uncertainty-substrate arc's independently recorded figures
+exactly, which cross-checks the census against a number it did not produce.
+
+**Two honest qualifications.** The parked item predicted −88 MiB; that came from an
+allocation-tracking baseline (allocator bytes, `Arc` headers, rounding over 10,112
+buffers) while this census is a by-hand byte count pricing the same data at 74.5 MiB — so
+the real saving exceeds −57.2 MiB, but −88 MiB is not claimed as delivered. And **on a
+small workspace the substrate costs MORE**: DO regresses by 0.4 MiB, because 777 distinct
+sets over 1,808 nodes leave nothing to amortize. This is a "survive BC Base App" change
+with a small negative on customer-sized workspaces, not a universal win.
+
+**Not a speed change** and not claimed as one: `d1.cohort/scoring` moved 1.11 s → 1.03 s
+and `detector.d1` 4.40 s → 4.26 s, both inside this corpus's noise band.
+
+Output byte-identical on BOTH corpora at every task — DO `f022f677…`, 8020 `36151bf6…` —
+`scripts/check-goldens` green with zero files under `tests/` moved, clippy clean. Two
+tests were RETIRED rather than rewritten, each with its reason recorded in place: the
+mis-paired-table panic test (with one context-owned table, "another table" is not
+constructible) and the per-set memo test (that level no longer exists; its property moved
+to `interning_equal_sets_yields_one_set_id_and_one_element_window`).
+
+
 ### Performance — transaction spans (the union stops materializing strings)
 
 `context.transaction_spans` was **58.90 s of a 206.43 s `alsem analyze`** on BC Base App

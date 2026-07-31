@@ -19,7 +19,6 @@
 //! `internal_reachable_externally` DEFAULTS to `false` (see field doc).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::engine::l2::features::PCallSite;
 use crate::engine::l3::call_resolver::{
@@ -37,8 +36,11 @@ use crate::engine::l4::cone_derived::{ConeDerivedStore, ConeOutput};
 use crate::engine::l4::effect_store::SummaryBundle;
 use crate::engine::l4::reverse_index::ReverseEffectIndex;
 use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
-use crate::engine::l4::summary::{RecordRoleSummary, Uncertainty, dedupe_uncertainties};
+use crate::engine::l4::summary::{
+    RecordRoleSummary, Uncertainty, dedupe_uncertainties, uncertainty_key,
+};
 use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_bundle};
+use crate::engine::l5::confidence::UncertaintyLite;
 use crate::engine::l5::entry_points::AccessModifier;
 use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
 use crate::engine::l5::full_summary::FullRoutineSummary;
@@ -57,6 +59,30 @@ pub struct DeclaredDep {
     pub min_version: String,
 }
 
+/// An OWNED uncertainty substrate — the index plus the node map — for callers that
+/// build one outside a [`DetectorContext`] (fixtures, and any walker driven
+/// directly). Hands out a [`UncertaintyView`] over itself.
+#[derive(Default)]
+pub struct OwnedUncertainties {
+    pub index: UncertaintyIndex,
+    pub by_node: HashMap<String, UncertaintySetId>,
+}
+
+impl OwnedUncertainties {
+    pub fn view(&self) -> UncertaintyView<'_> {
+        UncertaintyView {
+            index: &self.index,
+            by_node: &self.by_node,
+        }
+    }
+
+    /// Intern `set` and attach it to `node`, replacing any previous set.
+    pub fn insert(&mut self, node: &str, set: Vec<Uncertainty>) {
+        let sid = self.index.intern_set(set);
+        self.by_node.insert(node.to_string(), sid);
+    }
+}
+
 /// Hash-cons pool for [`DetectorContext::uncertainties_by_node`]'s per-node sets.
 ///
 /// The L4 summary solver broadcasts an SCC's whole uncertainty union to each of its
@@ -71,21 +97,283 @@ pub struct DeclaredDep {
 /// therefore unobservable: the pool only ever hands back a slice `Eq` to the one it
 /// was asked for, so the map's VALUES are byte-identical to the un-pooled `Vec`s
 /// they replace, element for element and in the same order.
+/// A distinct uncertainty VALUE, interned run-globally at context build.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub struct UncertaintyId(pub u32);
+
+/// A distinct uncertainty SET — the per-node set the pool already collapses by
+/// content.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub struct UncertaintySetId(pub u32);
+
+/// The uncertainty identity substrate: every distinct VALUE and every distinct
+/// SET, each named once.
+///
+/// **Why this type exists.** [`UncertaintySetPool`] (which it replaces) already
+/// computed exactly this identity — it keys per-node sets by CONTENT, collapsing
+/// 27,037 nodes onto 10,112 distinct allocations over a 19,311-value vocabulary on
+/// BC Base App — and then discarded it, returning only `Arc<[Uncertainty]>`. Every
+/// consumer downstream then re-derived it: `d1` re-interned 2,229,391 elements per
+/// run into a detector-local table and memoized per-set work behind a raw POINTER
+/// key, and `d1_reach` answered "does this node carry uncertainty" with a
+/// `HashMap<String, _>` lookup. Naming the identity once, here, removes all of it.
+///
+/// **Order is part of set identity, deliberately.** The union these sets feed is
+/// last-write-wins by `uncertainty_key`, so two sets holding the same values in a
+/// different order are NOT interchangeable — collapsing them would silently change
+/// which value wins. `intern_set` therefore keys on the id sequence as given, and
+/// does NOT dedupe or sort: its input is already `dedupe_uncertainties`' output,
+/// and re-deduping here would change the sequence the caller round-trips back.
 #[derive(Default)]
-struct UncertaintySetPool {
-    sets: HashSet<Arc<[Uncertainty]>>,
+pub struct UncertaintyIndex {
+    values: Vec<Uncertainty>,
+    /// `uncertainty_key(values[i])`, precomputed at intern time: `dedupe` needs it
+    /// once per id per union, and recomputing the `format!` there would reintroduce
+    /// exactly the per-record allocation this index exists to remove.
+    keys: Vec<Box<str>>,
+    /// The confidence mapper's view of `values[i]` — its kind plus the
+    /// materialised `"{kind} at {at}"` note text. d1 builds one `Evidence` per id
+    /// per winning cohort, so this is allocated once per DISTINCT value rather
+    /// than once per record. Note it is a DIFFERENT string from `keys[i]`
+    /// (`"{kind} at {at}"` vs `"{kind}|{at}"`) and they do NOT sort alike, so
+    /// neither can stand in for the other.
+    lites: Vec<UncertaintyLite>,
+    by_value: HashMap<Uncertainty, UncertaintyId>,
+    /// Flat element pool; a set's elements are a window into it.
+    set_elems: Vec<UncertaintyId>,
+    set_span: Vec<(u32, u32)>,
+    by_set: HashMap<Box<[UncertaintyId]>, UncertaintySetId>,
 }
 
-impl UncertaintySetPool {
-    /// The shared handle for `set` — an existing one if an equal set was already
-    /// pooled, otherwise `set`'s own freshly-allocated one.
-    fn share(&mut self, set: Vec<Uncertainty>) -> Arc<[Uncertainty]> {
-        if let Some(existing) = self.sets.get(set.as_slice()) {
-            return Arc::clone(existing);
+impl UncertaintyId {
+    /// Test-only: a stand-in id that never came from an index.
+    #[cfg(test)]
+    pub(crate) fn for_test(n: u32) -> Self {
+        UncertaintyId(n)
+    }
+}
+
+impl UncertaintyIndex {
+    /// Intern one VALUE.
+    pub fn intern_value(&mut self, u: &Uncertainty) -> UncertaintyId {
+        if let Some(&id) = self.by_value.get(u) {
+            return id;
         }
-        let shared: Arc<[Uncertainty]> = Arc::from(set);
-        self.sets.insert(Arc::clone(&shared));
-        shared
+        // `try_from`, not `as`: past `u32::MAX` an `as` cast WRAPS and a new value
+        // would silently alias an existing id — a wrong answer rather than a crash.
+        let id = UncertaintyId(
+            u32::try_from(self.values.len())
+                .expect("UncertaintyIndex exceeded u32::MAX distinct uncertainties"),
+        );
+        self.values.push(u.clone());
+        self.keys.push(uncertainty_key(u).into_boxed_str());
+        self.lites.push(UncertaintyLite::of(u));
+        self.by_value.insert(u.clone(), id);
+        id
+    }
+
+    /// `uncertainty_key(value(id))`, precomputed.
+    pub fn key(&self, id: UncertaintyId) -> &str {
+        &self.keys[id.0 as usize]
+    }
+
+    /// The confidence mapper's view of `id`, precomputed.
+    pub fn lite(&self, id: UncertaintyId) -> &UncertaintyLite {
+        &self.lites[id.0 as usize]
+    }
+
+    /// Dedupe by `uncertainty_key`, LAST-WRITE-WINS, emitted in byte-sorted key
+    /// order — the same contract as `dedupe_uncertainties` on values, and the
+    /// reason a union's input order is load-bearing (two `interface-open-world`
+    /// values differing only in `interfaceName` share a key, and the later one
+    /// wins).
+    pub fn dedupe(&self, ids: &[UncertaintyId]) -> Vec<UncertaintyId> {
+        let mut seen: std::collections::BTreeMap<&str, UncertaintyId> =
+            std::collections::BTreeMap::new();
+        for &id in ids {
+            seen.insert(self.key(id), id);
+        }
+        seen.into_values().collect()
+    }
+
+    /// Intern one SET, returning the id of an equal (same values, same ORDER) set
+    /// if one was already interned.
+    pub fn intern_set(&mut self, set: Vec<Uncertainty>) -> UncertaintySetId {
+        let ids: Box<[UncertaintyId]> = set.iter().map(|u| self.intern_value(u)).collect();
+        if let Some(&sid) = self.by_set.get(&ids) {
+            return sid;
+        }
+        let start = u32::try_from(self.set_elems.len()).expect("set element pool exceeded u32");
+        self.set_elems.extend_from_slice(&ids);
+        let end = u32::try_from(self.set_elems.len()).expect("set element pool exceeded u32");
+        let sid = UncertaintySetId(
+            u32::try_from(self.set_span.len()).expect("UncertaintyIndex exceeded u32::MAX sets"),
+        );
+        self.set_span.push((start, end));
+        self.by_set.insert(ids, sid);
+        sid
+    }
+
+    pub fn elements(&self, s: UncertaintySetId) -> &[UncertaintyId] {
+        let (a, b) = self.set_span[s.0 as usize];
+        &self.set_elems[a as usize..b as usize]
+    }
+
+    /// O(1), no map lookup and no allocation — the replacement for
+    /// `uncertainties_by_node.get(id).is_none_or(|v| v.is_empty())`.
+    pub fn is_empty_set(&self, s: UncertaintySetId) -> bool {
+        let (a, b) = self.set_span[s.0 as usize];
+        a == b
+    }
+
+    pub fn value(&self, id: UncertaintyId) -> &Uncertainty {
+        &self.values[id.0 as usize]
+    }
+
+    pub fn value_count(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn set_count(&self) -> usize {
+        self.set_span.len()
+    }
+}
+
+impl UncertaintyIndex {
+    /// `ALSEM_UNCERTAINTY_CENSUS=1` — live bytes of the uncertainty substrate,
+    /// priced BOTH ways from the same run: as it is now (per-set windows of 4-byte
+    /// ids into one value table) and as the pre-substrate shape would have cost
+    /// (each distinct set a hash-consed `Arc<[Uncertainty]>` of full records).
+    ///
+    /// Pricing both from one measurement is deliberate: the old shape's code is
+    /// deleted, so a "before" number could otherwise only be quoted from a
+    /// previous arc's census — a different probe, on a different build, counting
+    /// slightly differently. The distinct-set population is identical either way,
+    /// so charging it twice from the same data is an apples-to-apples comparison
+    /// rather than a cross-run one.
+    ///
+    /// Heap bytes only — the `String`/`Arc<str>` payloads and the backing buffers.
+    /// `HashMap` control-byte overhead and allocator rounding are NOT modelled, so
+    /// both sides UNDERSTATE by the same convention; the DELTA is the claim, not
+    /// the absolute.
+    pub fn emit_census(&self, by_node: &HashMap<String, UncertaintySetId>) {
+        if std::env::var("ALSEM_UNCERTAINTY_CENSUS").as_deref() != Ok("1") {
+            return;
+        }
+        fn rec_bytes(u: &Uncertainty) -> u64 {
+            let opt = |o: &Option<String>| o.as_ref().map_or(0, |s| s.len() as u64 + 24);
+            // 24 = String's own ptr/len/cap words, charged per field.
+            u.kind.len() as u64
+                + 24
+                + opt(&u.callsite_id)
+                + opt(&u.operation_id)
+                + opt(&u.routine_id)
+                + opt(&u.interface_name)
+        }
+
+        let values_bytes: u64 = self.values.iter().map(rec_bytes).sum();
+        let keys_bytes: u64 = self.keys.iter().map(|k| k.len() as u64 + 16).sum();
+        let lites_bytes: u64 = self.lites.iter().map(|l| l.census_heap_bytes()).sum();
+        // `by_value` stores a SECOND copy of every value as its key.
+        let by_value_bytes: u64 = values_bytes + (self.by_value.len() as u64 * 4);
+        let set_elems_bytes = self.set_elems.len() as u64 * 4;
+        let set_span_bytes = self.set_span.len() as u64 * 8;
+        // `by_set` stores a second copy of every set's id slice as its key.
+        let by_set_bytes: u64 = set_elems_bytes + (self.by_set.len() as u64 * 4);
+        let node_map_bytes: u64 = by_node.keys().map(|k| k.len() as u64 + 24 + 4).sum();
+
+        let now = values_bytes
+            + keys_bytes
+            + lites_bytes
+            + by_value_bytes
+            + set_elems_bytes
+            + set_span_bytes
+            + by_set_bytes
+            + node_map_bytes;
+
+        // The pre-substrate shape: one `Arc<[Uncertainty]>` per DISTINCT set,
+        // holding full records, plus a node map of 8-byte `Arc` pointers. It had
+        // no value table, no key/lite precompute and no id pools.
+        let as_records: u64 = (0..self.set_span.len())
+            .map(|i| {
+                self.elements(UncertaintySetId(i as u32))
+                    .iter()
+                    .map(|id| rec_bytes(self.value(*id)))
+                    .sum::<u64>()
+            })
+            .sum();
+        let then = as_records + by_node.keys().map(|k| k.len() as u64 + 24 + 8).sum::<u64>();
+
+        let mib = |b: u64| b as f64 / (1024.0 * 1024.0);
+        eprintln!(
+            "[uncertainty-census] nodes={} distinct_values={} distinct_sets={} set_elements={}",
+            by_node.len(),
+            self.values.len(),
+            self.set_span.len(),
+            self.set_elems.len(),
+        );
+        eprintln!(
+            "[uncertainty-census] now={:.1}MiB = values {:.1} + keys {:.1} + lites {:.1} + by_value {:.1} + set_elems {:.1} + set_span {:.1} + by_set {:.1} + node_map {:.1}",
+            mib(now),
+            mib(values_bytes),
+            mib(keys_bytes),
+            mib(lites_bytes),
+            mib(by_value_bytes),
+            mib(set_elems_bytes),
+            mib(set_span_bytes),
+            mib(by_set_bytes),
+            mib(node_map_bytes),
+        );
+        eprintln!(
+            "[uncertainty-census] same sets priced as RECORDS (pre-substrate shape) = {:.1}MiB; delta = {:+.1}MiB",
+            mib(then),
+            mib(then) - mib(now),
+        );
+    }
+}
+
+/// A borrowed view of the uncertainty substrate: the node → set map plus the
+/// index its ids resolve against.
+///
+/// The two are meaningless apart — a `UncertaintySetId` names nothing without the
+/// index that minted it — so they travel together rather than being threaded as
+/// two parameters that a caller could mismatch. Walkers take this instead of the
+/// whole [`DetectorContext`], which is why `path_walker` still has no dependency
+/// on the context type.
+#[derive(Clone, Copy)]
+pub struct UncertaintyView<'a> {
+    pub index: &'a UncertaintyIndex,
+    pub by_node: &'a HashMap<String, UncertaintySetId>,
+}
+
+impl<'a> UncertaintyView<'a> {
+    /// This node's interned uncertainty ids; EMPTY for a node with no entry.
+    ///
+    /// A node with no entry and a node carrying an empty set are deliberately
+    /// indistinguishable here, exactly as they were when this was a
+    /// `HashMap<String, Arc<[Uncertainty]>>` read through
+    /// `get(..).is_some_and(|v| !v.is_empty())`. `ContextKey.unc` depends on that
+    /// equivalence.
+    pub fn ids_of(self, node_id: &str) -> &'a [UncertaintyId] {
+        match self.by_node.get(node_id) {
+            Some(&sid) => self.index.elements(sid),
+            None => &[],
+        }
+    }
+
+    /// The same set as values, resolved on demand.
+    pub fn values_of(self, node_id: &str) -> impl Iterator<Item = &'a Uncertainty> + 'a {
+        let index = self.index;
+        self.ids_of(node_id).iter().map(move |id| index.value(*id))
+    }
+
+    /// `true` iff this node carries at least one uncertainty. O(1): a window
+    /// length check, no map-value deref and no allocation.
+    pub fn has_any(self, node_id: &str) -> bool {
+        match self.by_node.get(node_id) {
+            Some(&sid) => !self.index.is_empty_set(sid),
+            None => false,
+        }
     }
 }
 
@@ -139,7 +427,11 @@ pub struct DetectorContext<'a> {
     /// — deduped by `uncertainty_key`, emitted in byte-sorted key order — so two
     /// nodes with the same uncertainty set produce byte-identical slices. Sharing
     /// changes lifetime and aliasing, never content or order.
-    pub uncertainties_by_node: HashMap<String, Arc<[Uncertainty]>>,
+    pub uncertainties_by_node: HashMap<String, UncertaintySetId>,
+    /// The identity substrate `uncertainties_by_node`'s ids name. Read through
+    /// [`DetectorContext::uncertainty_view`] rather than directly — an id is
+    /// meaningless without this index.
+    pub uncertainties: UncertaintyIndex,
     /// Every call site indexed by id.
     pub call_site_by_id: HashMap<&'a str, &'a PCallSite>,
     /// Per-routine `FullRoutineSummary` (direct + inherited facts + coverage).
@@ -282,6 +574,22 @@ pub struct DetectorContext<'a> {
 }
 
 impl DetectorContext<'_> {
+    /// The uncertainty substrate as one borrowed view — the id map and the index
+    /// its ids resolve against, which are meaningless apart.
+    /// Test-only: intern `set` and attach it to `node` on this context.
+    #[cfg(test)]
+    pub(crate) fn set_uncertainties_for_test(&mut self, node: &str, set: Vec<Uncertainty>) {
+        let sid = self.uncertainties.intern_set(set);
+        self.uncertainties_by_node.insert(node.to_string(), sid);
+    }
+
+    pub fn uncertainty_view(&self) -> UncertaintyView<'_> {
+        UncertaintyView {
+            index: &self.uncertainties,
+            by_node: &self.uncertainties_by_node,
+        }
+    }
+
     /// The L4.5 ordering facts, keyed by `StableRoutineId`. Lazily computed on
     /// first access (memoized via `OnceLock` — thread-safe for future parallel
     /// detector runs). d47/d49/d51 look up their reportable routine's facts here
@@ -690,11 +998,13 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
     #[allow(clippy::type_complexity)]
     let (
         uncertainties_by_node,
+        uncertainties,
         parameter_roles_by_routine,
         summarize_diagnostics,
         db_effect_bundle,
     ): (
-        HashMap<String, Arc<[Uncertainty]>>,
+        HashMap<String, UncertaintySetId>,
+        UncertaintyIndex,
         HashMap<String, Vec<RecordRoleSummary>>,
         Vec<crate::engine::l4::summary_runner::SummarizeDiagnostic>,
         Option<SummaryBundle>,
@@ -840,10 +1150,10 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         // running each DISTINCT id exactly once is exactly what the old
         // recompute-and-overwrite form converged to — same keys, same values. Pinned
         // by `colliding_ids_keep_the_full_summary_union_not_just_the_edges`.
-        let mut uncertainties_by_node: HashMap<String, Arc<[Uncertainty]>> = HashMap::new();
+        let mut uncertainties_by_node: HashMap<String, UncertaintySetId> = HashMap::new();
         let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> =
             HashMap::new();
-        let mut pool = UncertaintySetPool::default();
+        let mut uncertainties = UncertaintyIndex::default();
         let mut processed: HashSet<&str> = HashSet::new();
         for r in &ws.routines {
             if !processed.insert(r.id.as_str()) {
@@ -867,7 +1177,10 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 continue;
             }
             let combined: Vec<Uncertainty> = from_summary.into_iter().chain(from_edges).collect();
-            uncertainties_by_node.insert(r.id.clone(), pool.share(dedupe_uncertainties(combined)));
+            uncertainties_by_node.insert(
+                r.id.clone(),
+                uncertainties.intern_set(dedupe_uncertainties(combined)),
+            );
         }
         // `parameter_roles_by_routine`'s membership was previously the WHOLE of
         // `core_summaries`, not `ws.routines` — so anything the loop above did not
@@ -881,12 +1194,19 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         }
         (
             uncertainties_by_node,
+            uncertainties,
             parameter_roles_by_routine,
             summarize_diagnostics,
             Some(db_effect_bundle),
         )
     } else {
-        (HashMap::new(), HashMap::new(), Vec::new(), None)
+        (
+            HashMap::new(),
+            UncertaintyIndex::default(),
+            HashMap::new(),
+            Vec::new(),
+            None,
+        )
     };
 
     // ⟨Task 6⟩ The reverse transpose — built ONLY on explicit demand. Not in
@@ -937,6 +1257,9 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         crate::engine::l5::fingerprint::FingerprintIndex::build(&ws.routines, &ws.objects);
     drop(_final_indexes_span);
 
+    // ⟨substrate census⟩ `ALSEM_UNCERTAINTY_CENSUS=1` — see `UncertaintyIndex::emit_census`.
+    uncertainties.emit_census(&uncertainties_by_node);
+
     DetectorContext {
         graph,
         event_graph,
@@ -949,6 +1272,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         resolved_call_edge_by_callsite,
         uncertainty_edges_by_from,
         uncertainties_by_node,
+        uncertainties,
         call_site_by_id,
         summaries,
         cone_derived,
@@ -1146,8 +1470,8 @@ pub(crate) fn build_detector_context_cross_app(
     // produced: the cross-app `parameter_roles_by_routine` never covered
     // `core_summaries` keys outside `ws_routines`, so there is no trailing drain.
     let mut parameter_roles_by_routine: HashMap<String, Vec<RecordRoleSummary>> = HashMap::new();
-    let mut uncertainties_by_node: HashMap<String, Arc<[Uncertainty]>> = HashMap::new();
-    let mut pool = UncertaintySetPool::default();
+    let mut uncertainties_by_node: HashMap<String, UncertaintySetId> = HashMap::new();
+    let mut uncertainties = UncertaintyIndex::default();
     let mut processed: HashSet<&str> = HashSet::new();
     for r in ws_routines {
         if !processed.insert(r.id.as_str()) {
@@ -1168,7 +1492,10 @@ pub(crate) fn build_detector_context_cross_app(
             continue;
         }
         let combined: Vec<Uncertainty> = from_summary.into_iter().chain(from_edges).collect();
-        uncertainties_by_node.insert(r.id.clone(), pool.share(dedupe_uncertainties(combined)));
+        uncertainties_by_node.insert(
+            r.id.clone(),
+            uncertainties.intern_set(dedupe_uncertainties(combined)),
+        );
     }
 
     let mut call_site_by_id: HashMap<&str, &PCallSite> = HashMap::new();
@@ -1202,6 +1529,9 @@ pub(crate) fn build_detector_context_cross_app(
         })
         .collect();
 
+    // ⟨substrate census⟩ `ALSEM_UNCERTAINTY_CENSUS=1` — see `UncertaintyIndex::emit_census`.
+    uncertainties.emit_census(&uncertainties_by_node);
+
     DetectorContext {
         graph,
         event_graph: base.event_graph.clone(),
@@ -1214,6 +1544,7 @@ pub(crate) fn build_detector_context_cross_app(
         resolved_call_edge_by_callsite,
         uncertainty_edges_by_from,
         uncertainties_by_node,
+        uncertainties,
         call_site_by_id,
         summaries,
         cone_derived,
@@ -1719,34 +2050,28 @@ codeunit 50914 "HC Ring"
         };
         let (a, b) = (id_of("A"), id_of("B"));
 
-        let ua = ctx.uncertainties_by_node.get(&a).unwrap_or_else(|| {
+        let &sa = ctx.uncertainties_by_node.get(&a).unwrap_or_else(|| {
             panic!(
-                "fixture precondition: the SCC broadcast must give A a non-empty \
-                 uncertainty set, or this test proves nothing"
+                "fixture precondition: the SCC broadcast must give A a non-empty                  uncertainty set, or this test proves nothing"
             )
         });
-        let ub = ctx
+        let &sb = ctx
             .uncertainties_by_node
             .get(&b)
             .expect("fixture precondition: B must carry the same set");
         assert!(
-            !ua.is_empty(),
-            "fixture precondition: the shared set must be NON-empty — two empty \
-             slices would compare equal for the wrong reason"
+            ctx.uncertainty_view().has_any(&a),
+            "fixture precondition: the shared set must be NON-empty — two empty              sets would compare equal for the wrong reason"
         );
         assert_eq!(
-            **ua, **ub,
-            "fixture precondition: both SCC members must hold the SAME uncertainty \
-             set (the solver's per-member broadcast); if this diverges the pointer \
-             assertion below is testing the wrong thing"
+            ctx.uncertainties.elements(sa),
+            ctx.uncertainties.elements(sb),
+            "fixture precondition: both SCC members must hold the SAME uncertainty              set (the solver per-member broadcast); if this diverges the identity              assertion below is testing the wrong thing"
         );
 
-        assert!(
-            Arc::ptr_eq(ua, ub),
-            "equal per-node uncertainty sets must be HASH-CONSED to one allocation \
-             — got two distinct allocations, so `UncertaintySetPool` is no longer \
-             being consulted and the 729 MiB -> 102 MiB reduction on BC Base App is \
-             gone (no golden can see this; only this assertion can)"
+        assert_eq!(
+            sa, sb,
+            "equal per-node uncertainty sets must intern to ONE UncertaintySetId —              two distinct ids mean UncertaintyIndex is no longer collapsing them, and              the 729 MiB -> 102 MiB reduction on BC Base App is gone (no golden can              see this; only this assertion can)"
         );
     }
 
@@ -1867,11 +2192,17 @@ page 50813 "CP3 Wizard"
              rather than overwrite, and this test would pass vacuously"
         );
 
-        let union = ctx
+        let &union_sid = ctx
             .uncertainties_by_node
             .get(SHARED_ID)
             .expect("the colliding id must have a per-node uncertainty set at all");
-        let inherited: Vec<&Uncertainty> = union
+        let union: Vec<&Uncertainty> = ctx
+            .uncertainties
+            .elements(union_sid)
+            .iter()
+            .map(|id| ctx.uncertainties.value(*id))
+            .collect();
+        let inherited: Vec<&&Uncertainty> = union
             .iter()
             .filter(|u| {
                 u.callsite_id
@@ -1881,16 +2212,133 @@ page 50813 "CP3 Wizard"
             .collect();
         assert!(
             !inherited.is_empty(),
-            "the surviving union must still carry Touch()'s INHERITED uncertainty — \
-             it exists ONLY in the core summary, never in `uncertainty_edges_by_from` \
-             for this node, so losing it means the drain overwrote the full union \
-             with the edges-only subset. union={union:?}"
+            "the surviving union must still carry Touch()'s INHERITED uncertainty —              it exists ONLY in the core summary, never in `uncertainty_edges_by_from`              for this node, so losing it means the drain overwrote the full union              with the edges-only subset. union={union:?}"
         );
         assert!(
             union.len() > edges,
-            "the union ({}) must be strictly larger than the edge set ({edges}) — \
-             equality is exactly the edges-only overwrite this guards",
+            "the union ({}) must be strictly larger than the edge set ({edges}) —              equality is exactly the edges-only overwrite this guards",
             union.len()
         );
+    }
+
+    // -- UncertaintyIndex ------------------------------------------------------
+
+    /// Two `interface-open-world` uncertainties differing ONLY in `interface_name`
+    /// share an `uncertainty_key` (`"{kind}|{at}"` does not read it) while being
+    /// DIFFERENT values. Every ordering assertion below is hand-stated on that
+    /// shape, because it is the only one where last-write-wins is observable.
+    fn u_iow(interface: &str) -> Uncertainty {
+        Uncertainty {
+            kind: "interface-open-world".to_string(),
+            callsite_id: Some("cs/1".to_string()),
+            operation_id: None,
+            routine_id: None,
+            interface_name: Some(interface.to_string()),
+        }
+    }
+
+    #[test]
+    fn interning_equal_sets_yields_one_set_id_and_one_element_window() {
+        let mut ix = UncertaintyIndex::default();
+        let a = ix.intern_set(vec![u_iow("IAlpha"), u_iow("IBeta")]);
+        let b = ix.intern_set(vec![u_iow("IAlpha"), u_iow("IBeta")]);
+        assert_eq!(a, b, "equal sets are ONE set id");
+        assert_eq!(ix.elements(a), ix.elements(b));
+        assert_eq!(
+            ix.value_count(),
+            2,
+            "two distinct values, interned once each"
+        );
+        assert_eq!(ix.set_count(), 1, "…and one distinct set");
+    }
+
+    /// Set identity is by content AND ORDER. A reordered set is a DIFFERENT set,
+    /// because the union that consumes it is last-write-wins by key and therefore
+    /// order-sensitive — collapsing the two would silently change which value wins.
+    #[test]
+    fn a_reordered_set_is_a_distinct_set_id() {
+        let mut ix = UncertaintyIndex::default();
+        let a = ix.intern_set(vec![u_iow("IAlpha"), u_iow("IBeta")]);
+        let b = ix.intern_set(vec![u_iow("IBeta"), u_iow("IAlpha")]);
+        assert_ne!(a, b);
+        assert_eq!(
+            ix.value_count(),
+            2,
+            "…while still interning only two values"
+        );
+    }
+
+    /// Round-trip: the elements resolve back to the EXACT input sequence. This is
+    /// what lets `share()` hand out an `Arc<[Uncertainty]>` byte-identical to the
+    /// one it used to build directly.
+    #[test]
+    fn elements_round_trip_to_the_input_sequence() {
+        let mut ix = UncertaintyIndex::default();
+        // A CONSECUTIVE duplicate and a non-consecutive one. The consecutive pair
+        // is deliberate: `Vec::dedup` only collapses adjacent equals, so an input
+        // without one cannot detect a stray dedupe in `intern_set` at all.
+        let input = vec![
+            u_iow("IBeta"),
+            u_iow("IBeta"),
+            u_iow("IAlpha"),
+            u_iow("IBeta"),
+        ];
+        let sid = ix.intern_set(input.clone());
+        let back: Vec<Uncertainty> = ix
+            .elements(sid)
+            .iter()
+            .map(|id| ix.value(*id).clone())
+            .collect();
+        assert_eq!(back, input, "same values, same order, duplicates preserved");
+    }
+
+    /// The three cases `node_has_uncertainty` must keep distinguishing — or
+    /// rather, must keep NOT distinguishing. Hand-stated because the migration
+    /// from `HashMap<String, Arc<[Uncertainty]>>` to `HashMap<String,
+    /// UncertaintySetId>` changes what "absent" means at the type level: a node
+    /// with NO ENTRY and a node with an EMPTY SET were both `false` before
+    /// (`get(..).is_some_and(|v| !v.is_empty())`) and must both stay `false`.
+    /// This predicate feeds `ContextKey.unc`, so a change here re-partitions d1's
+    /// cohorts and moves output.
+    #[test]
+    fn absent_and_empty_are_both_no_uncertainty_and_nonempty_is_yes() {
+        let mut ix = UncertaintyIndex::default();
+        let empty = ix.intern_set(Vec::new());
+        let full = ix.intern_set(vec![u_iow("IAlpha")]);
+        let mut by_node: HashMap<String, UncertaintySetId> = HashMap::new();
+        by_node.insert("has-empty".to_string(), empty);
+        by_node.insert("has-one".to_string(), full);
+        // "absent" is deliberately never inserted.
+        let view = UncertaintyView {
+            index: &ix,
+            by_node: &by_node,
+        };
+
+        assert!(!view.has_any("absent"), "no entry ⇒ no uncertainty");
+        assert!(!view.has_any("has-empty"), "empty set ⇒ no uncertainty");
+        assert!(view.has_any("has-one"));
+
+        assert_eq!(view.ids_of("absent"), &[] as &[UncertaintyId]);
+        assert_eq!(view.ids_of("has-empty"), &[] as &[UncertaintyId]);
+        assert_eq!(view.ids_of("has-one").len(), 1);
+
+        // The value view agrees with the id view, element for element.
+        let vals: Vec<&Uncertainty> = view.values_of("has-one").collect();
+        assert_eq!(vals.len(), 1);
+        assert_eq!(vals[0], ix.value(view.ids_of("has-one")[0]));
+        assert_eq!(view.values_of("absent").count(), 0);
+    }
+
+    /// An empty set is a real set id, and `is_empty_set` answers O(1) — this is
+    /// what replaces `HashMap::get(..).is_none()` as the "does this node carry
+    /// uncertainty" test.
+    #[test]
+    fn the_empty_set_is_interned_and_reported_empty() {
+        let mut ix = UncertaintyIndex::default();
+        let e = ix.intern_set(Vec::new());
+        assert!(ix.is_empty_set(e));
+        assert_eq!(ix.elements(e), &[] as &[UncertaintyId]);
+        let n = ix.intern_set(vec![u_iow("IAlpha")]);
+        assert!(!ix.is_empty_set(n));
     }
 }

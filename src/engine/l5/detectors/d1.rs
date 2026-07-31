@@ -57,14 +57,16 @@ use crate::engine::l4::summary::Uncertainty;
 use crate::engine::l5::actionable_anchor::pick_actionable_anchor;
 use crate::engine::l5::confidence::{UncertaintyLite, to_confidence};
 use crate::engine::l5::d1_cohort::{
-    GroupBitmap, LoopSetId, LoopSetRegistry, UncertaintyId, UncertaintyTable, reachable_verdicts_of,
+    GroupBitmap, LoopSetId, LoopSetRegistry, UncertaintyId, reachable_verdicts_of,
 };
 use crate::engine::l5::d1_graph::build_d1_graph;
 use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
 #[cfg(test)]
 use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
 use crate::engine::l5::d1_witness::StepInterner;
-use crate::engine::l5::detector_context::DetectorContext;
+#[cfg(test)]
+use crate::engine::l5::detector_context::OwnedUncertainties;
+use crate::engine::l5::detector_context::{DetectorContext, UncertaintyIndex};
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
@@ -426,9 +428,9 @@ fn uncertainty_lites(uncertainties: &[Uncertainty]) -> Vec<UncertaintyLite> {
 /// [`crate::engine::l5::finding::Evidence`]).
 fn uncertainty_lites_of_ids(
     ids: &[UncertaintyId],
-    table: &UncertaintyTable,
+    index: &UncertaintyIndex,
 ) -> Vec<UncertaintyLite> {
-    ids.iter().map(|&id| table.lite(id).clone()).collect()
+    ids.iter().map(|&id| index.lite(id).clone()).collect()
 }
 
 /// `buildFinding(...)` — assemble the internal Finding for the OLD walker path.
@@ -1167,7 +1169,7 @@ pub(crate) fn detect_d1_premerge(resolved: &L3Resolved, ctx: &DetectorContext) -
                             initial_loop_depth: 0,
                             initial_steps: Vec::new(),
                         },
-                        &ctx.uncertainties_by_node,
+                        ctx.uncertainty_view(),
                         None,
                     );
                     let rc = Rc::new(results);
@@ -1664,6 +1666,25 @@ fn assemble_cohort_findings(
     // The same idea for the object/table ids: 563,126 entries over 2,042
     // distinct values on 8020 (276x duplication). See `affected_objects` below.
     let mut object_ids: HashMap<&str, Arc<str>> = HashMap::new();
+    // Catalog group -> its loop routine's OWNING OBJECT id, resolved ONCE per
+    // distinct loop instead of once per (cohort, set bit). The `affected_objects`
+    // loop below runs over every reaching loop of every cohort of every terminal
+    // — the ~3.2M `(loop, terminal)` population the cohort redesign compressed
+    // everywhere EXCEPT here — and each visit used to pay a `HashMap<&str, _>`
+    // lookup keyed by the loop routine's id string. The catalog is `run`-lifetime
+    // and immutable, so one pass over it answers every visit by index. `None`
+    // reproduces the old miss arm (a catalog loop whose routine is absent from
+    // `routine_by_id` contributes no object), so the `BTreeSet` this feeds — and
+    // therefore `affectedObjects`' content and order — is unchanged.
+    let loop_object_of: Vec<Option<&str>> = run
+        .catalog
+        .iter()
+        .map(|l| {
+            ctx.routine_by_id
+                .get(l.loop_routine_id.as_str())
+                .map(|r| r.object_id.as_str())
+        })
+        .collect();
     // Every d1 finding carries the SAME title and one of TWO fix options
     // (census: `title` 1 distinct over 22,383 findings, `fix_options`
     // description/safety 2 each). Hoisted out of the emit loop so the run holds
@@ -1878,9 +1899,11 @@ fn assemble_cohort_findings(
         let mut affected_set: BTreeSet<&str> = BTreeSet::new();
         for (_ck, bm, _rep) in &tc.cohorts {
             for g in bm.iter() {
-                let lr_id = run.catalog[g as usize].loop_routine_id.as_str();
-                if let Some(r) = ctx.routine_by_id.get(lr_id) {
-                    affected_set.insert(r.object_id.as_str());
+                // `loop_object_of` replaces what used to be a `routine_by_id`
+                // HASH LOOKUP on a `String` key here — once per set bit, summed
+                // over every cohort of every terminal.
+                if let Some(obj) = loop_object_of[g as usize] {
+                    affected_set.insert(obj);
                 }
             }
         }
@@ -1902,7 +1925,7 @@ fn assemble_cohort_findings(
         };
 
         let confidence: FindingConfidence = to_confidence(
-            &uncertainty_lites_of_ids(&winner_rep.uncertainties, &run.uncertainties),
+            &uncertainty_lites_of_ids(&winner_rep.uncertainties, &ctx.uncertainties),
             "likely",
         );
 
@@ -2004,6 +2027,13 @@ pub fn detect_d1(
         lc.set("terminals", run.terminals.len() as u64);
         lc.set("loop_groups", run.catalog.len() as u64);
         lc.flush("d1.cohort");
+    }
+
+    // ⟨ALSEM_D1_SCORING_CENSUS=1⟩ Attribution inside the `d1.cohort / scoring`
+    // span — see `d1_dataflow::scoring_census`. Reported here, once, after every
+    // batch has scored.
+    if crate::engine::l5::d1_dataflow::scoring_census::enabled() {
+        crate::engine::l5::d1_dataflow::scoring_census::report();
     }
 
     // (4) Assemble ONE compressed terminal-centric finding per reached terminal;
@@ -2361,9 +2391,8 @@ mod memo_tests {
             routine_id: None,
             interface_name: None,
         };
-        let mut uncertainties_by_node: HashMap<String, std::sync::Arc<[Uncertainty]>> =
-            HashMap::new();
-        uncertainties_by_node.insert("D".to_string(), std::sync::Arc::from(vec![unc]));
+        let mut uncertainties = OwnedUncertainties::default();
+        uncertainties.insert("D", vec![unc]);
 
         let cone_derived = crate::engine::l5::test_support::cone_store_of(&summaries);
         let policy = D1Policy {
@@ -2390,7 +2419,7 @@ mod memo_tests {
                 initial_loop_depth: 1,
                 initial_steps: prefix1.clone(),
             },
-            &uncertainties_by_node,
+            uncertainties.view(),
             None,
         );
         let fresh_2 = walk_evidence(
@@ -2401,7 +2430,7 @@ mod memo_tests {
                 initial_loop_depth: 2,
                 initial_steps: prefix2.clone(),
             },
-            &uncertainties_by_node,
+            uncertainties.view(),
             None,
         );
 
@@ -2414,7 +2443,7 @@ mod memo_tests {
                 initial_loop_depth: 0,
                 initial_steps: Vec::new(),
             },
-            &uncertainties_by_node,
+            uncertainties.view(),
             None,
         );
 
@@ -3718,7 +3747,7 @@ mod assembly_tests {
         edges: HashMap<String, Vec<CombinedEdge>>,
         summaries: HashMap<String, FullRoutineSummary>,
     ) -> Vec<Finding> {
-        let ctx = minimal_ctx_with_uncertainties(routines, edges, summaries, HashMap::new());
+        let ctx = minimal_ctx_with_uncertainties(routines, edges, summaries, Vec::new());
         cohort_findings(&ctx, routines)
     }
 
@@ -3728,10 +3757,12 @@ mod assembly_tests {
         routines: &'a [L3Routine],
         edges: HashMap<String, Vec<CombinedEdge>>,
         summaries: HashMap<String, FullRoutineSummary>,
-        uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>>,
+        uncertainties: Vec<(String, Vec<Uncertainty>)>,
     ) -> DetectorContext<'a> {
         let mut ctx = minimal_ctx(routines, edges, summaries);
-        ctx.uncertainties_by_node = uncertainties;
+        for (node, set) in uncertainties {
+            ctx.set_uncertainties_for_test(&node, set);
+        }
         ctx
     }
 
@@ -3856,20 +3887,20 @@ mod assembly_tests {
     #[test]
     fn cohort_confidence_resolves_interned_uncertainties_in_key_order() {
         let (routines, edges, summaries) = uncertain_winner_fixture();
-        let uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>> = [
+        let uncertainties: Vec<(String, Vec<Uncertainty>)> = [
             (
                 "X".to_string(),
-                std::sync::Arc::from(vec![
+                vec![
                     unc("external-target", Some("X/csY"), None),
                     unc("unresolved-call", Some("A/csX"), None),
-                ]),
+                ],
             ),
             (
                 "Y".to_string(),
-                std::sync::Arc::from(vec![
+                vec![
                     unc("dynamic-dispatch", None, Some("Y")),
                     unc("unresolved-call", Some("A/csX"), None),
-                ]),
+                ],
             ),
         ]
         .into_iter()
@@ -4071,12 +4102,10 @@ mod assembly_tests {
     #[test]
     fn cohort_evidence_notes_are_shared_across_findings() {
         let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
-        let uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>> = [(
+        let uncertainties: Vec<(String, Vec<Uncertainty>)> = vec![(
             "Y".to_string(),
-            std::sync::Arc::from(vec![unc("dynamic-dispatch", None, Some("Y"))]),
-        )]
-        .into_iter()
-        .collect();
+            vec![unc("dynamic-dispatch", None, Some("Y"))],
+        )];
 
         let ctx = minimal_ctx_with_uncertainties(&routines, edges, summaries, uncertainties);
         let findings = cohort_findings(&ctx, &routines);

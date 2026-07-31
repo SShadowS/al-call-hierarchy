@@ -258,7 +258,7 @@ pub fn detect_d46(
                 initial_loop_depth: 0,
                 initial_steps,
             },
-            &ctx.uncertainties_by_node,
+            ctx.uncertainty_view(),
             // Hot-tier walk stats are a d1-only concern for now.
             None,
         );

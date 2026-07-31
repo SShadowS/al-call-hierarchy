@@ -469,7 +469,7 @@ pub fn detect_d48(
                     initial_loop_depth: cs.loop_stack.len() as i64,
                     initial_steps: vec![loop_step, call_step],
                 },
-                &ctx.uncertainties_by_node,
+                ctx.uncertainty_view(),
                 // Hot-tier walk stats are a d1-only concern for now.
                 None,
             );

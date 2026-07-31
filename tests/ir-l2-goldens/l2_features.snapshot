@@ -245,6 +245,11 @@ ws-d2/src/publisher.al::0::OnProcessLine	56f8f0c4c452bc12
 ws-d2/src/publisher.al::0::OnQuietEvent	ef037f9afdf30526
 ws-d2/src/subscriber.al::0::HandleProcessLine	6b4f8937aff02c77
 ws-d2/src/subscriber.al::0::HandleQuietEvent	009d4f16102d7c9e
+ws-d2-uncertain/src/handlers.al::0::RunAlpha	900d8a4c2c587e2b
+ws-d2-uncertain/src/handlers.al::1::RunAlpha	b31d2a5b3e173e36
+ws-d2-uncertain/src/publisher.al::0::RaiseInLoop	51f22150ab79ffe9
+ws-d2-uncertain/src/publisher.al::0::OnProcessLine	3e8ae41bb0e902bc
+ws-d2-uncertain/src/subscriber.al::0::HandleProcessLine	10efe0fa6dae9a8f
 ws-d20/src/Codeunit.al::0::ExitThenStatement	204222343779e21c
 ws-d20/src/Codeunit.al::0::ErrorThenStatement	aaf93bc1e1983e24
 ws-d20/src/Codeunit.al::0::ConditionalExit	f9dffad718a3cd95

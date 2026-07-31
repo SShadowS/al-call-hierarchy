@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "id": "22222222-d200-0000-0000-00000000d2c1:Codeunit:64201::OnProcessLine::d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "publisherObjectId": "22222222-d200-0000-0000-00000000d2c1:Codeunit:64201",
+      "eventName": "OnProcessLine",
+      "eventKind": "integration",
+      "signatureHash": "d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "parameters": [],
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ],
+      "publisherRoutineId": "22222222-d200-0000-0000-00000000d2c1:Codeunit:64201#d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92"
+    }
+  ],
+  "edges": [
+    {
+      "eventId": "22222222-d200-0000-0000-00000000d2c1:Codeunit:64201::OnProcessLine::d96efb00d9e8a0bfcd862b8a0683eb5afca10c6dbd8c1238053bc8c31a75ca92",
+      "subscriberRoutineId": "22222222-d200-0000-0000-00000000d2c1:Codeunit:64202#4d03e01dd65f3dc7bc13cc1c58f845ff3b6497d6cd06c9382ee206d2d4997b7b",
+      "subscriberAppId": "22222222-d200-0000-0000-00000000d2c1",
+      "resolution": "resolved",
+      "provenance": [
+        {
+          "source": "tree-sitter"
+        }
+      ]
+    }
+  ]
+}

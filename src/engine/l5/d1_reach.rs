@@ -61,9 +61,7 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine, L3Table};
 #[cfg(test)]
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
-use crate::engine::l5::d1_cohort::{
-    TerminalCohorts, TerminalSink, UncertaintyTable, emit_finalize_census,
-};
+use crate::engine::l5::d1_cohort::{TerminalCohorts, TerminalSink, emit_finalize_census};
 #[cfg(test)]
 use crate::engine::l5::d1_dataflow::solve_batch;
 use crate::engine::l5::d1_dataflow::{
@@ -182,9 +180,11 @@ enum CandKind<'a> {
 
 /// `true` iff `node_id` has a non-empty per-node uncertainty set.
 pub(crate) fn node_has_uncertainty(ctx: &DetectorContext, node_id: &str) -> bool {
-    ctx.uncertainties_by_node
-        .get(node_id)
-        .is_some_and(|v| !v.is_empty())
+    // A node with NO entry and a node carrying an EMPTY set are both `false`,
+    // exactly as when this read a `HashMap<String, Arc<[Uncertainty]>>`. Pinned by
+    // `absent_and_empty_are_both_no_uncertainty_and_nonempty_is_yes`; this feeds
+    // `ContextKey.unc`, so changing it re-partitions d1's cohorts.
+    ctx.uncertainty_view().has_any(node_id)
 }
 
 /// The terminal-op verdict: `resolve_terminal`'s [`ParamTemp`] mapped to a
@@ -416,11 +416,10 @@ fn materialize_transitive<'a>(
     // Uncertainty union: concat uncertainties_by_node in seed -> terminal order,
     // then dedupe (== the walker's running per-node dedupe; see `path_walker`).
     let mut concat: Vec<Uncertainty> = Vec::new();
+    let view = ctx.uncertainty_view();
     for &n in nodes_rev.iter().rev() {
         let nid = graph.node_ids[n as usize];
-        if let Some(v) = ctx.uncertainties_by_node.get(nid) {
-            concat.extend(v.iter().cloned());
-        }
+        concat.extend(view.values_of(nid).cloned());
     }
     (witness, dedupe_uncertainties(concat))
 }
@@ -814,11 +813,6 @@ pub(crate) fn search_loops<'a>(
 pub(crate) struct D1CohortRun<'a> {
     pub terminals: Vec<TerminalCohorts<'a>>,
     pub catalog: Vec<LoopCatalogEntry>,
-    /// The run-level interned [`crate::engine::l4::summary::Uncertainty`] store
-    /// every cohort's `CohortRep.uncertainties` id sequence indexes into. Moved
-    /// out of the sink at `finalize` — the cohorts cannot be read without it, so
-    /// it travels with them.
-    pub uncertainties: UncertaintyTable,
 }
 
 /// Run the reachability search over every loop group, EMITTING per-terminal
@@ -944,13 +938,9 @@ pub(crate) fn search_loops_cohorts<'a>(
         }
     }
 
-    let (terminals, uncertainties) = sink.finalize();
-    emit_finalize_census(&terminals, &uncertainties);
-    D1CohortRun {
-        terminals,
-        catalog,
-        uncertainties,
-    }
+    let terminals = sink.finalize();
+    emit_finalize_census(&terminals, &ctx.uncertainties);
+    D1CohortRun { terminals, catalog }
 }
 
 #[cfg(test)]

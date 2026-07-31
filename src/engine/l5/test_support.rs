@@ -391,6 +391,7 @@ pub fn minimal_ctx<'a>(
         resolved_call_edge_by_callsite: HashMap::new(),
         uncertainty_edges_by_from: HashMap::new(),
         uncertainties_by_node: HashMap::new(),
+        uncertainties: Default::default(),
         call_site_by_id,
         // ⟨C1⟩ Fold BEFORE the move so the derived substrate always mirrors this
         // context's own summaries.
