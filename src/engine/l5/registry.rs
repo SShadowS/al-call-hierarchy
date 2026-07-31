@@ -360,7 +360,16 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
     // detector actually reads. A full/preset/all-detector selection unions to
     // `substrate::ALL`, so the context — and the whole report — stays byte-identical.
     let demanded = detectors.iter().fold(0u32, |acc, d| acc | d.requires);
-    let ctx = build_detector_context(resolved, demanded);
+    // `context.build_total` brackets the WHOLE context build so its own
+    // unspanned stretches show up as this span's self time rather than as
+    // `l4_l5.run_detectors`'. `build_detector_context` opens eight `context.*`
+    // spans internally, but they do not tile it — a 4-run 8020 profile left
+    // 9.3 % of the whole run (≈ 7.1 s) in `l4_l5.run_detectors`' self time with
+    // nothing naming it.
+    let ctx = {
+        let _s = pt::span("context", "context.build_total");
+        build_detector_context(resolved, demanded)
+    };
     let summarize_diagnostics: Vec<Diagnostic> = ctx
         .summarize_diagnostics
         .iter()
@@ -369,16 +378,30 @@ pub fn run_detectors(resolved: &L3Resolved, detectors: &[Detector]) -> RunOutput
     let (findings, diagnostics, detector_stats, d1_cohort_index) =
         run_each(resolved, &ctx, detectors);
 
+    // The context dies here either way — it is a local of this function and
+    // borrows nothing that outlives it. Dropping it explicitly, inside a span,
+    // prices the teardown of the cones/summaries/spans substrate instead of
+    // leaving it in this function's unattributed self time. No `Drop` impl is
+    // involved (the engine's only two are `perf_trace`'s guards), so the
+    // reorder is pure deallocation and not observable.
+    {
+        let _s = pt::span("context", "context.ctx_drop");
+        drop(ctx);
+    }
+
     // Role-scoping filter (registry.ts:161-172). Source-only: every routine's role
     // is "primary" (no analysisRole), so the predicate keeps everything.
-    let role_by_routine: std::collections::HashMap<&str, &str> = resolved
-        .workspace
-        .routines
-        .iter()
-        // analysisRole is not modeled on L3Routine (source-only ⇒ always primary).
-        .map(|r| (r.id.as_str(), "primary"))
-        .collect();
-    let scoped = role_scope_and_sort(findings, &role_by_routine);
+    let scoped = {
+        let _s = pt::span("l4_l5", "l4_l5.role_scope_and_sort");
+        let role_by_routine: std::collections::HashMap<&str, &str> = resolved
+            .workspace
+            .routines
+            .iter()
+            // analysisRole is not modeled on L3Routine (source-only ⇒ always primary).
+            .map(|r| (r.id.as_str(), "primary"))
+            .collect();
+        role_scope_and_sort(findings, &role_by_routine)
+    };
 
     RunOutput {
         findings: scoped,

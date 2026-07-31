@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the 8020 profile is fully attributed, and a quarter of it was unmeasured
+
+Two of the three spans the lever list in `docs/OUTSTANDING.md` was ordered by had
+just moved, so the ranking was re-measured before anything was chosen. Ranking by
+SELF time (exclusive of nested spans) rather than inclusive total put **24.8 % of
+the run — 18.9 s of a 76.2 s median — inside two spans that named none of it**:
+`analyze.total` (15.5 %) and `l4_l5.run_detectors` (9.3 %), both long-lived
+brackets whose children do not tile them. That is more than the largest named
+lever.
+
+Five spans added (`gate.model_instance_id`, `gate.teardown`, `context.build_total`,
+`context.ctx_drop`, `l4_l5.role_scope_and_sort`). They ARE the census — `pt::span`
+costs one `OnceLock` read with tracing off — so this is permanent attribution, not
+a probe to remove. `gate.teardown`/`context.ctx_drop` make already-happening drops
+explicit; that is a reorder, not a behaviour change (the structures were freed
+inside those spans anyway, and the engine's only two `Drop` impls are
+`perf_trace`'s own guards). **`analyze.total` self 12,995 → 2.9 ms;
+`l4_l5.run_detectors` self 8,456 → 0.2 ms.**
+
+**What it was: `gate.teardown` 13.8 % + `context.ctx_drop` 2.8 % = 16.6 % of the
+run (14.9 s) is `free()`** — deallocating the L3 model, the detector context, the
+findings and the projection index costs more than `context.compute_summaries`
+computes them in. A structural property of a batch CLI whose resident model is
+millions of small `String`s, not a defect in any one function.
+
+Falsified in passing: **`gate.model_instance_id` costs 51 ms**, not seconds — it
+was the one named candidate for `analyze.total`'s self time (a second full
+`discover_al_files` disk walk on top of `l3.discover_read`'s). The duplicate walk
+is real and remains a tiny redundancy; it is not a lever. And **d1 is off the
+list**: `OUTSTANDING.md` ranked its `scoring` third overall at 10.56 s / 13.9 %,
+measured against a profile taken before the d1 interning fix — it is **1.8 %**.
+
+Absolute wall on this machine is worthless for this corpus (four runs of the SAME
+binary: 56.5 / 63.5 / 88.9 / 91.6 s), so only same-run shares are claimed; every
+share above held within about a point across all runs. Ledger:
+`docs/2026-07-31-profile-attribution.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens` green with zero files
+under `tests/` moved, clippy clean.
+
 ### Changed — the cone singleton walk stops cloning its keys (−14.8 %)
 
 `ALSEM_CONES_CENSUS=1` gained a split of `inherited_facts_for_singleton`, which the

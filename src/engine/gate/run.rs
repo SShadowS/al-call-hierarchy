@@ -207,11 +207,18 @@ pub fn run_analyze_with_exit(
         let _s = pt::span("preflight", "preflight.fresh_coverage");
         crate::program::resolve::full::fresh_coverage(ws_path)
     };
-    let model_instance_id = match compute_gate_model_instance_id(ws_path) {
-        Some(id) => id,
-        // Fail-closed layout → empty output; preflight now says could-not-verify
-        // (never a fabricated clean — spec §3), gated on `fresh` above.
-        None => return empty_output_result(args, &version, &fresh),
+    // Its own span: this is a SECOND full `discover_al_files` disk walk of the
+    // workspace (plus a sort + SHA-256 over one `ws:<rel>` string per file), and
+    // it sat inside `analyze.total`'s unattributed self time until it was
+    // measured — see this function's `gate.teardown` note.
+    let model_instance_id = {
+        let _s = pt::span("gate", "gate.model_instance_id");
+        match compute_gate_model_instance_id(ws_path) {
+            Some(id) => id,
+            // Fail-closed layout → empty output; preflight now says could-not-verify
+            // (never a fabricated clean — spec §3), gated on `fresh` above.
+            None => return empty_output_result(args, &version, &fresh),
+        }
     };
     let resolved = {
         let _s = pt::span("l3", "l3.assemble_resolve");
@@ -480,6 +487,30 @@ pub fn run_analyze_with_exit(
         let severities: Vec<&str> = paired.iter().map(|(s, _)| s.severity.as_str()).collect();
         compute_finding_exit(&severities, args.fail_on.as_deref())
     };
+
+    // --- teardown, MEASURED ------------------------------------------------
+    // These drops happened here anyway: `_analyze_span` is the FIRST local
+    // declared, so it is the LAST dropped, and every structure below was
+    // already being freed inside the `analyze.total` span. Naming them makes
+    // that cost visible instead of leaving it in the span's unattributed self
+    // time — a 4-run 8020 profile put `analyze.total`'s own self time at
+    // 15.5 % of the whole run (≈ 11.8 s at the 76.2 s median), the SECOND
+    // largest region in the profile, with nothing saying what was in it.
+    //
+    // Order is forced by the borrows, not chosen: `paired` holds `&Finding`s
+    // into `run.findings` and `idx` borrows `resolved.workspace`, so both must
+    // go before their owners. Nothing here has a `Drop` impl (the only two in
+    // the engine are `perf_trace`'s own guards), so this is pure deallocation
+    // and reordering it is not observable.
+    {
+        let _s = pt::span("gate", "gate.teardown");
+        drop(paired);
+        drop(idx);
+        drop(run_diagnostics);
+        drop(coverage);
+        drop(run);
+        drop(resolved);
+    }
 
     Ok((output, exit_code, stderr_warning))
 }
