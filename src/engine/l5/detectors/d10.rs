@@ -168,7 +168,6 @@ pub fn detect_d10(
                 fingerprint: None,
                 event_kind: None,
                 cross_extension_subscribers: None,
-                contexts: None,
                 cohort_contexts: None,
             };
             finding.fingerprint = Some(fp_index.fingerprint_of(&finding));

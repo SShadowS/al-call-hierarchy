@@ -162,7 +162,18 @@ pub struct EvidenceStep {
     pub note: String,
 }
 
-/// `LoopContext` — INTERNAL form. One per loop that reaches a d1 finding's
+/// `LoopContext` — the RETIRED per-loop d1 schema, `#[cfg(test)]`-only.
+///
+/// The production path emits `Finding::cohort_contexts` (one entry per verdict
+/// CLASS, with a loop-set bitmap) and has since the C6 cohort cutover; this
+/// per-LOOP form survives solely as the shadow oracle's own representation in
+/// `detectors::d1`'s test module, which the cohort differential compares against.
+/// It is no longer a field of `Finding` and has no serialized form: the oracle
+/// returns it alongside the finding instead of inside it.
+///
+/// Original doc follows.
+///
+/// One per loop that reaches a d1 finding's
 /// terminal op (the terminal-centric schema, `.superpowers/sdd/task-5-brief.md`).
 /// `contexts[0]` is the WINNER (context order: severity rank desc, verdict
 /// quality desc, loop routine id asc, loop id asc); the finding's severity,
@@ -174,6 +185,7 @@ pub struct EvidenceStep {
 /// serialized), this INTERNAL form is a plain struct; its serialized surface is
 /// [`StableLoopContext`] below (camelCase, `StableEvidenceStep`-mirrored
 /// witness), emitted by the R4 projection.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopContext {
     pub loop_id: String,
@@ -294,8 +306,6 @@ pub struct Finding {
     pub event_kind: Option<String>,
     pub cross_extension_subscribers: Option<Vec<String>>,
     /// Terminal-centric per-loop contexts (d1 only; `None` for every other
-    /// detector). `contexts[0]` is the winner — see [`LoopContext`].
-    pub contexts: Option<Vec<LoopContext>>,
     /// Compressed, verdict-class cohorts (d1 only; `None` for every other
     /// detector, and for every `contexts`-path d1 finding until the consumer
     /// cutover, Task C6) — the output-shape replacement for `contexts`: "reached
@@ -470,24 +480,6 @@ pub struct StableEvidenceStep {
     pub loop_id: Option<String>,
 }
 
-/// `LoopContext` — STABLE (serialized) form. camelCase field names; the witness
-/// is `StableEvidenceStep`-mirrored and the confidence is `StableConfidence`, so
-/// the whole context projects to the same stable id space as the finding.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct StableLoopContext {
-    pub loop_id: String,
-    pub loop_routine_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entry_callsite_id: Option<String>,
-    pub verdict: String,
-    pub reachable_verdicts: Vec<String>,
-    pub depth_class: String,
-    pub severity: String,
-    pub confidence: StableConfidence,
-    pub witness: Vec<StableEvidenceStep>,
-}
-
 /// `WitnessSummary` (`d1_witness.rs`) — STABLE (serialized) form. `first_steps`/
 /// `last_steps`/`terminal_step` are `StableEvidenceStep`-mirrored (same as
 /// `StableLoopContext::witness`), so a compressed cohort's witness projects to
@@ -560,8 +552,6 @@ pub struct StableFinding {
     pub provenance: Vec<StableEvidence>,
     #[serde(rename = "additionalPaths", skip_serializing_if = "Option::is_none")]
     pub additional_paths: Option<Vec<Vec<StableEvidenceStep>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contexts: Option<Vec<StableLoopContext>>,
     #[serde(rename = "cohortContexts", skip_serializing_if = "Option::is_none")]
     pub cohort_contexts: Option<Vec<StableD1CohortContext>>,
     #[serde(rename = "actionableAnchor", skip_serializing_if = "Option::is_none")]
@@ -750,33 +740,6 @@ fn project_confidence_evidence(e: &ConfidenceEvidence) -> StableEvidence {
     }
 }
 
-fn project_loop_context(c: &LoopContext, map: &HashMap<String, String>) -> StableLoopContext {
-    StableLoopContext {
-        loop_id: map_sub_id(&c.loop_id, map),
-        loop_routine_id: map_routine_id(&c.loop_routine_id, map),
-        entry_callsite_id: c.entry_callsite_id.as_ref().map(|id| map_sub_id(id, map)),
-        verdict: c.verdict.clone(),
-        reachable_verdicts: c.reachable_verdicts.clone(),
-        depth_class: c.depth_class.clone(),
-        severity: c.severity.clone(),
-        confidence: StableConfidence {
-            level: c.confidence.level.clone(),
-            evidence: c
-                .confidence
-                .evidence
-                .iter()
-                .map(project_confidence_evidence)
-                .collect(),
-            capped_by: c.confidence.capped_by.clone(),
-        },
-        witness: c
-            .witness
-            .iter()
-            .map(|s| project_evidence_step(s, map))
-            .collect(),
-    }
-}
-
 fn project_witness_summary(
     w: &WitnessSummary,
     map: &HashMap<String, String>,
@@ -927,10 +890,6 @@ fn project_finding(
                     .collect()
             })
         },
-        contexts: f
-            .contexts
-            .as_ref()
-            .map(|cs| cs.iter().map(|c| project_loop_context(c, map)).collect()),
         cohort_contexts: f.cohort_contexts.as_ref().map(|cs| {
             cs.iter()
                 .map(|c| project_d1_cohort_context(c, map))
@@ -1486,7 +1445,6 @@ mod tests {
             fingerprint: None,
             event_kind: None,
             cross_extension_subscribers: None,
-            contexts: None,
             cohort_contexts: Some(vec![
                 D1CohortContext {
                     severity: "high".to_string(),
@@ -1588,7 +1546,6 @@ mod tests {
             fingerprint: None,
             event_kind: None,
             cross_extension_subscribers: None,
-            contexts: None,
             cohort_contexts: Some(vec![]),
         };
         assert_eq!(
