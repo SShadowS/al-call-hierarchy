@@ -239,6 +239,99 @@ impl UncertaintyIndex {
     }
 }
 
+impl UncertaintyIndex {
+    /// `ALSEM_UNCERTAINTY_CENSUS=1` — live bytes of the uncertainty substrate,
+    /// priced BOTH ways from the same run: as it is now (per-set windows of 4-byte
+    /// ids into one value table) and as the pre-substrate shape would have cost
+    /// (each distinct set a hash-consed `Arc<[Uncertainty]>` of full records).
+    ///
+    /// Pricing both from one measurement is deliberate: the old shape's code is
+    /// deleted, so a "before" number could otherwise only be quoted from a
+    /// previous arc's census — a different probe, on a different build, counting
+    /// slightly differently. The distinct-set population is identical either way,
+    /// so charging it twice from the same data is an apples-to-apples comparison
+    /// rather than a cross-run one.
+    ///
+    /// Heap bytes only — the `String`/`Arc<str>` payloads and the backing buffers.
+    /// `HashMap` control-byte overhead and allocator rounding are NOT modelled, so
+    /// both sides UNDERSTATE by the same convention; the DELTA is the claim, not
+    /// the absolute.
+    pub fn emit_census(&self, by_node: &HashMap<String, UncertaintySetId>) {
+        if std::env::var("ALSEM_UNCERTAINTY_CENSUS").as_deref() != Ok("1") {
+            return;
+        }
+        fn rec_bytes(u: &Uncertainty) -> u64 {
+            let opt = |o: &Option<String>| o.as_ref().map_or(0, |s| s.len() as u64 + 24);
+            // 24 = String's own ptr/len/cap words, charged per field.
+            u.kind.len() as u64
+                + 24
+                + opt(&u.callsite_id)
+                + opt(&u.operation_id)
+                + opt(&u.routine_id)
+                + opt(&u.interface_name)
+        }
+
+        let values_bytes: u64 = self.values.iter().map(rec_bytes).sum();
+        let keys_bytes: u64 = self.keys.iter().map(|k| k.len() as u64 + 16).sum();
+        let lites_bytes: u64 = self.lites.iter().map(|l| l.census_heap_bytes()).sum();
+        // `by_value` stores a SECOND copy of every value as its key.
+        let by_value_bytes: u64 = values_bytes + (self.by_value.len() as u64 * 4);
+        let set_elems_bytes = self.set_elems.len() as u64 * 4;
+        let set_span_bytes = self.set_span.len() as u64 * 8;
+        // `by_set` stores a second copy of every set's id slice as its key.
+        let by_set_bytes: u64 = set_elems_bytes + (self.by_set.len() as u64 * 4);
+        let node_map_bytes: u64 = by_node.keys().map(|k| k.len() as u64 + 24 + 4).sum();
+
+        let now = values_bytes
+            + keys_bytes
+            + lites_bytes
+            + by_value_bytes
+            + set_elems_bytes
+            + set_span_bytes
+            + by_set_bytes
+            + node_map_bytes;
+
+        // The pre-substrate shape: one `Arc<[Uncertainty]>` per DISTINCT set,
+        // holding full records, plus a node map of 8-byte `Arc` pointers. It had
+        // no value table, no key/lite precompute and no id pools.
+        let as_records: u64 = (0..self.set_span.len())
+            .map(|i| {
+                self.elements(UncertaintySetId(i as u32))
+                    .iter()
+                    .map(|id| rec_bytes(self.value(*id)))
+                    .sum::<u64>()
+            })
+            .sum();
+        let then = as_records + by_node.keys().map(|k| k.len() as u64 + 24 + 8).sum::<u64>();
+
+        let mib = |b: u64| b as f64 / (1024.0 * 1024.0);
+        eprintln!(
+            "[uncertainty-census] nodes={} distinct_values={} distinct_sets={} set_elements={}",
+            by_node.len(),
+            self.values.len(),
+            self.set_span.len(),
+            self.set_elems.len(),
+        );
+        eprintln!(
+            "[uncertainty-census] now={:.1}MiB = values {:.1} + keys {:.1} + lites {:.1} + by_value {:.1} + set_elems {:.1} + set_span {:.1} + by_set {:.1} + node_map {:.1}",
+            mib(now),
+            mib(values_bytes),
+            mib(keys_bytes),
+            mib(lites_bytes),
+            mib(by_value_bytes),
+            mib(set_elems_bytes),
+            mib(set_span_bytes),
+            mib(by_set_bytes),
+            mib(node_map_bytes),
+        );
+        eprintln!(
+            "[uncertainty-census] same sets priced as RECORDS (pre-substrate shape) = {:.1}MiB; delta = {:+.1}MiB",
+            mib(then),
+            mib(then) - mib(now),
+        );
+    }
+}
+
 /// A borrowed view of the uncertainty substrate: the node → set map plus the
 /// index its ids resolve against.
 ///
@@ -1164,6 +1257,9 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         crate::engine::l5::fingerprint::FingerprintIndex::build(&ws.routines, &ws.objects);
     drop(_final_indexes_span);
 
+    // ⟨substrate census⟩ `ALSEM_UNCERTAINTY_CENSUS=1` — see `UncertaintyIndex::emit_census`.
+    uncertainties.emit_census(&uncertainties_by_node);
+
     DetectorContext {
         graph,
         event_graph,
@@ -1432,6 +1528,9 @@ pub(crate) fn build_detector_context_cross_app(
             min_version: d.min_version.clone(),
         })
         .collect();
+
+    // ⟨substrate census⟩ `ALSEM_UNCERTAINTY_CENSUS=1` — see `UncertaintyIndex::emit_census`.
+    uncertainties.emit_census(&uncertainties_by_node);
 
     DetectorContext {
         graph,
