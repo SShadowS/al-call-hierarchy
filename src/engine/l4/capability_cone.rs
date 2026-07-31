@@ -1375,18 +1375,35 @@ struct ConeFactEntry {
 }
 
 /// A fact cone: dedup key → entry (min dist, tie-broken by canonical rep).
-type ConeFacts = BTreeMap<String, ConeFactEntry>;
+///
+/// The key is `Arc<str>`, not `String`, for the same reason [`ConeFactEntry`]'s
+/// `rep`/`rep_key` are: a cone entry is copied into every predecessor's cone, and
+/// its key is IMMUTABLE across those copies. `ALSEM_CONES_CENSUS=1` counted
+/// **6,556,465 `merge_cone` calls per BC Base App 8020 run**, each of which used
+/// to pass an owned `key.clone()` — a fresh heap copy of a string that already
+/// existed in the successor cone being read. Only ~121,387 of those (one per
+/// direct fact) genuinely mint a key; the other ~6.43 M are re-copies.
+///
+/// `Arc<str>` orders through `str`'s `Ord`, exactly as `String` does, so the
+/// `BTreeMap`'s iteration order — which every downstream consumer depends on — is
+/// unchanged by construction.
+type ConeFacts = BTreeMap<Arc<str>, ConeFactEntry>;
 
 /// Merge `entry` (already distance-shifted) into `dst` at `key`, keeping min
 /// dist; tie-break by canonical rep. Mirrors `mergeCone`.
-fn merge_cone(dst: &mut ConeFacts, key: String, entry: ConeFactEntry) {
+///
+/// `key` is BORROWED: the lookup goes through `Arc<str>: Borrow<str>`, so a merge
+/// that loses its tie-break — 1,243,002 of the calls collide, and a collision that
+/// loses inserts nothing — touches no refcount at all, and a winning merge pays
+/// one `Arc::clone` rather than a heap copy.
+fn merge_cone(dst: &mut ConeFacts, key: &Arc<str>, entry: ConeFactEntry) {
     crate::engine::l5::detector_context::cones_census::add_gated(
         &crate::engine::l5::detector_context::cones_census::MERGE_CALLS,
         1,
     );
-    match dst.get(&key) {
+    match dst.get(&**key) {
         None => {
-            dst.insert(key, entry);
+            dst.insert(Arc::clone(key), entry);
         }
         Some(existing) => {
             crate::engine::l5::detector_context::cones_census::add_gated(
@@ -1397,7 +1414,7 @@ fn merge_cone(dst: &mut ConeFacts, key: String, entry: ConeFactEntry) {
             let wins = entry.dist < existing.dist
                 || (entry.dist == existing.dist && entry.rep_key < existing.rep_key);
             if wins {
-                dst.insert(key, entry);
+                dst.insert(Arc::clone(key), entry);
             }
         }
     }
@@ -1522,7 +1539,7 @@ fn inherited_facts_for_singleton<'g>(
             let cand_dist = entry.dist + 1;
             // min dist wins; equal dist → smaller edgeSortKey wins (the
             // first-hop tie-breaker). Mirrors inheritedFactsForSingleton.
-            let wins = match best.get(key.as_str()) {
+            let wins = match best.get(&**key) {
                 None => true,
                 Some(cur) => {
                     cand_dist < cur.dist
@@ -1532,7 +1549,7 @@ fn inherited_facts_for_singleton<'g>(
             if wins {
                 c_wins += 1;
                 best.insert(
-                    key.as_str(),
+                    &**key,
                     Best {
                         rep: &entry.rep,
                         dist: cand_dist,
@@ -1701,8 +1718,12 @@ fn inherited_facts_by_bfs<'g>(
             let ycone = their_scc.and_then(|yj| cones.get(&yj));
             if let Some(ycone) = ycone {
                 for (key, entry) in ycone {
-                    if !seen.contains(key) {
-                        seen.insert(key.clone());
+                    // `key` is the cone's `Arc<str>`; `seen` stays `BTreeSet<String>`
+                    // because the sibling branch above feeds it `direct`'s own
+                    // `String` keys. This walk runs 503 times per 8020 run, so the
+                    // one owned copy per newly-seen key is not on any hot path.
+                    if !seen.contains(&**key) {
+                        seen.insert(key.to_string());
                         emit(&entry.rep, first_hop, &mut out);
                     }
                 }
@@ -1750,9 +1771,14 @@ fn fact_cone_for_scc(
     for m in members {
         if let Some(byk) = direct.get(m) {
             for (key, f) in byk {
+                // The ONE place a cone key is minted: `direct`'s keys are
+                // `String`s owned by the per-routine dedup map, so a dist-0 entry
+                // allocates its `Arc<str>` here. That is once per direct fact
+                // (121,387 per 8020 run), not once per merge — every merge below
+                // and in every predecessor cone then shares this allocation.
                 merge_cone(
                     &mut cone,
-                    key.clone(),
+                    &Arc::from(key.as_str()),
                     ConeFactEntry {
                         rep: Arc::new(f.clone()),
                         rep_key: Arc::from(rep_key(f)),
@@ -1779,7 +1805,7 @@ fn fact_cone_for_scc(
             for (key, entry) in yc {
                 merge_cone(
                     &mut cone,
-                    key.clone(),
+                    key,
                     ConeFactEntry {
                         rep: Arc::clone(&entry.rep),
                         rep_key: Arc::clone(&entry.rep_key),

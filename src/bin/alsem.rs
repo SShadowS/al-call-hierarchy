@@ -12,6 +12,54 @@
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
+/// The analyze path is allocation-bound end to end: an attributed 8020 profile
+/// put **16.6 % of the whole run inside `free()` alone** (`gate.teardown` 13.8 %
+/// plus `context.ctx_drop` 2.8 %), on top of allocation costs spread through
+/// every other span. Swapping the platform allocator is therefore a global
+/// multiplier on this workload, not a micro-optimization.
+///
+/// **Scoped to this binary on purpose.** A `#[global_allocator]` is
+/// per-executable, so the library, the LSP server (`src/main.rs` — a long-lived
+/// process with different allocator trade-offs, and unmeasured here), the benches
+/// and every test target keep the platform default.
+///
+/// This does NOT excuse allocation churn — it makes a future churn regression
+/// *cheaper*, and therefore harder to see. Keep counting allocations.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// mimalloc's `purge_delay` option: freed OS pages are held for N milliseconds
+/// before being returned (default 10). `alsem` sets it to 0 — purge immediately.
+///
+/// **This is load-bearing, not tuning.** With the default delay mimalloc is a
+/// peak-RSS REGRESSION on a small workspace: DO measured 1,598 MB under the
+/// platform allocator and 1,717 MB under mimalloc (+7.4 %). At 0 it measures
+/// 1,577 MB — below the platform allocator — and BC Base App 8020 drops from
+/// 5,320 MB to ~4,945 MB. The cost is real and paid knowingly: immediate purging
+/// gives back roughly 7–9 % of the wall-clock win.
+///
+/// `libmimalloc-sys` exports no constant for it (`mi_option_eager_commit_delay`,
+/// its lower neighbour, is behind that crate's `v2` feature and so is unusable
+/// here), so it is derived from `mi_option_use_numa_nodes`, which IS exported
+/// unconditionally. Both the v2 and the v3 `mimalloc.h` run
+/// `… purge_delay, use_numa_nodes, …`, so `purge_delay` is exactly one slot
+/// below it. The const assertions pin the surrounding numbering against the two
+/// unconditionally-exported neighbours; if the binding's option numbering ever
+/// shifts, this fails to COMPILE rather than silently setting a different option.
+///
+/// The semantic check is the measurement: a wrong index cannot move peak RSS, and
+/// this moves it to exactly the figure the `MIMALLOC_PURGE_DELAY=0` env-var
+/// control run produces.
+const MI_OPTION_PURGE_DELAY: libmimalloc_sys::mi_option_t =
+    libmimalloc_sys::mi_option_use_numa_nodes - 1;
+const _: () = assert!(
+    libmimalloc_sys::mi_option_use_numa_nodes == 16
+        && libmimalloc_sys::mi_option_limit_os_alloc
+            == libmimalloc_sys::mi_option_use_numa_nodes + 1,
+    "libmimalloc-sys' option numbering shifted — re-derive purge_delay's index \
+     from mimalloc.h before trusting MI_OPTION_PURGE_DELAY"
+);
+
 use al_call_hierarchy::engine::gate::cache_prune::{format_prune_report, prune_cache};
 use al_call_hierarchy::engine::gate::events::{
     EventsChainsOptions, EventsFanoutOptions, run_events_chains, run_events_fanout,
@@ -565,6 +613,16 @@ struct DigestCli {
 }
 
 fn main() -> ExitCode {
+    // FIRST statement: mimalloc reads an option lazily and then caches it, and
+    // the first purge cannot happen before the process has allocated its way
+    // through argument parsing. See `MI_OPTION_PURGE_DELAY`'s doc for why 0 is
+    // load-bearing (without it this allocator REGRESSES peak RSS on a small
+    // workspace) and how the index is pinned.
+    //
+    // SAFETY: an FFI call into mimalloc's own option table. It is
+    // thread-safe by contract, and this runs before the process starts any
+    // thread of its own.
+    unsafe { libmimalloc_sys::mi_option_set(MI_OPTION_PURGE_DELAY, 0) };
     let cli = Cli::parse();
     match cli.command {
         Commands::Analyze(a) => run_analyze_cmd(a),

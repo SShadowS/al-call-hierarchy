@@ -7,6 +7,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — cone fact keys are shared, not copied 6.4 M times per run
+
+The post-allocator re-census of `context.capability_cones` (still the largest single
+span, ~23 % of an 8020 run) put `fact_cone` second at 1,687.8 ms over 65,822 calls
+and **6,556,465 `merge_cone` merges** — and `merge_cone` took an OWNED `String`, so
+every merge passed `key.clone()`: a fresh heap copy of a string that already existed,
+immutably, in the successor cone being read. The same shape the singleton walk was
+fixed for one level down.
+
+`ConeFacts` is now `BTreeMap<Arc<str>, ConeFactEntry>` and `merge_cone` takes the key
+BORROWED, cloning the `Arc` only on an insert (so a merge that loses its tie-break —
+1,243,002 of the calls collide — touches no refcount at all). `Arc<str>` orders
+through `str`'s `Ord` exactly as `String` does, so map iteration order is unchanged by
+construction. Only the ~121,387 dist-0 entries still mint a key: **6,435,078 heap key
+copies per 8020 run, gone**, and a cone entry copied into N predecessor cones now
+shares one allocation instead of holding N.
+
+**MEASURED — paired A/B, 3 pairs.** Every population is byte-identical between the two
+binaries (`calls` 6,556,465, `tiebreaks` 1,243,002, `cone_entries` 12,170,325, `wins`
+10,522,793, `bests` 10,030,145), proving only allocation behaviour changed.
+**`fact_cone` 1,976.8 → 1,783.0 ms (−9.8 %), all three pairs negative (0.90/0.92/0.86)
+against untouched controls flat within ±3 %** (`scan` +3.0 %, `singleton` +0.3 %,
+`derived_fold` −0.5 %, `coverage_cone` +1.0 %). `phases_total` −4.4 % and the
+`context.capability_cones` span −6.3 % each have ONE contrary pair and sit barely above
+that floor — read as "roughly −4 to −6 %", not as figures. Peak RSS ≈ −17 MB (all three
+D runs below all three C runs); whole-run wall is flat and nothing is claimed from it.
+Three small untouched phases moved the wrong way beyond the floor (`scc` +23 %, `dedup`
++19.6 %, `graph` +5.7 %, all on 100–320 ms spans) — that is noise at that size, reported
+rather than dropped. DO: same direction, `fact_cone` −11.9 %, peak flat.
+
+**The allocator swap masked most of this, and that is the point worth recording.** The
+previous entry's own warning — that a faster allocator makes churn regressions cheaper
+and therefore harder to see — is demonstrated one commit later on the very next change:
+6.4 M removed heap copies buy −9.8 % of one phase instead of the much larger number the
+pre-mimalloc profile would have shown. The allocation COUNT remains the noise-free part
+of the claim, and is now the only part that stays legible.
+
+Ledger: `docs/2026-07-31-cone-arc-keys.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens` green (9 targets, zero files
+under `tests/` moved), 1,716 lib tests green, clippy clean.
+
+### Changed — `alsem` swaps its global allocator (8020 −41 %, DO −24 %, peak down on both)
+
+The attribution below ended somewhere none of the structural levers pointed:
+**16.6 % of an 8020 run is `free()`**. A workload whose teardown alone outweighs
+`context.compute_summaries` is asking what the allocator costs before it is asking
+for another data-structure rewrite, so that was measured first — eight lines, and a
+global multiplier on every span at once.
+
+`alsem` now installs `mimalloc` with `purge_delay = 0`. **MEASURED, paired A/B built
+from one tree and run ALTERNATELY, 4 pairs on 8020 and 5 on DO:**
+
+| corpus | `analyze.total` per-pair | median | peak RSS |
+|---|---|---:|---|
+| 8020 | 0.605 / 0.637 / 0.571 / 0.563 | **−41.2 %** | 5,312 → 4,961 MB (**−6.6 %**) |
+| DO | 0.733 / 0.720 / 0.762 / 0.794 / 0.775 | **−23.8 %** | 1,603 → 1,580 MB (**−1.4 %**) |
+
+Every pair negative on both corpora. The two pure-`free()` spans move most, which is
+the prediction the attribution made and the closest thing to a control an allocator
+swap can have: `gate.teardown` −87.0 %, `context.ctx_drop` −81.6 %.
+
+**`purge_delay = 0` is load-bearing, not tuning.** mimalloc's default 10 ms page-hold
+amortizes at Base App scale and does NOT at customer scale: plain mimalloc is a
+peak-RSS REGRESSION on DO (1,598 → 1,717 MB, +7.4 %). Shipping that would have
+repeated this repo's own recorded failure (the uncertainty substrate's silent DO
++0.4 MiB) at 300× the size. Immediate purging gives back ~7–9 % of the wall win and
+buys a configuration that regresses neither axis on either corpus. `libmimalloc-sys`
+exports no constant for the option (its lower neighbour is behind that crate's `v2`
+feature), so the index is derived from `mi_option_use_numa_nodes` and pinned by a
+`const` assertion — a numbering shift fails to COMPILE. The semantic check is the
+measurement: a wrong index cannot move the peak, and setting it in code reproduces
+the `MIMALLOC_PURGE_DELAY=0` env-var control to within 2 MB.
+
+**Scope and limits, stated:** a `#[global_allocator]` is per-executable, so the
+library, the LSP server (`src/main.rs` — long-lived, different trade-offs,
+unmeasured), `aldump`, the benches and every test target keep the platform default.
+Figures are Windows 11, the least favourable case for this workload; CI is
+`ubuntu-latest` against glibc `malloc` and a smaller gain should be expected there.
+And this does **not** excuse allocation churn — it makes a future churn regression
+cheaper and therefore harder to see. Two spans did not improve and are reported
+rather than dropped: `l3.discover_read` +0.9 % (disk-bound, flat) and
+`detector.d33-unfiltered-bulk-write` +10.5 % on ratios 1.14/1.13/2.29/0.87 — a 291 ms
+span with one wild outlier, i.e. noise at that size.
+
+Ledger: `docs/2026-07-31-allocator-swap.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`) — the strong form of "an allocator cannot change
+output", checked rather than assumed. `scripts/check-goldens` green (9 targets, zero
+files under `tests/` moved), 1,716 lib tests green, clippy clean.
+
+### Changed — the 8020 profile is fully attributed, and a quarter of it was unmeasured
+
+Two of the three spans the lever list in `docs/OUTSTANDING.md` was ordered by had
+just moved, so the ranking was re-measured before anything was chosen. Ranking by
+SELF time (exclusive of nested spans) rather than inclusive total put **24.8 % of
+the run — 18.9 s of a 76.2 s median — inside two spans that named none of it**:
+`analyze.total` (15.5 %) and `l4_l5.run_detectors` (9.3 %), both long-lived
+brackets whose children do not tile them. That is more than the largest named
+lever.
+
+Five spans added (`gate.model_instance_id`, `gate.teardown`, `context.build_total`,
+`context.ctx_drop`, `l4_l5.role_scope_and_sort`). They ARE the census — `pt::span`
+costs one `OnceLock` read with tracing off — so this is permanent attribution, not
+a probe to remove. `gate.teardown`/`context.ctx_drop` make already-happening drops
+explicit; that is a reorder, not a behaviour change (the structures were freed
+inside those spans anyway, and the engine's only two `Drop` impls are
+`perf_trace`'s own guards). **`analyze.total` self 12,995 → 2.9 ms;
+`l4_l5.run_detectors` self 8,456 → 0.2 ms.**
+
+**What it was: `gate.teardown` 13.8 % + `context.ctx_drop` 2.8 % = 16.6 % of the
+run (14.9 s) is `free()`** — deallocating the L3 model, the detector context, the
+findings and the projection index costs more than `context.compute_summaries`
+computes them in. A structural property of a batch CLI whose resident model is
+millions of small `String`s, not a defect in any one function.
+
+Falsified in passing: **`gate.model_instance_id` costs 51 ms**, not seconds — it
+was the one named candidate for `analyze.total`'s self time (a second full
+`discover_al_files` disk walk on top of `l3.discover_read`'s). The duplicate walk
+is real and remains a tiny redundancy; it is not a lever. And **d1 is off the
+list**: `OUTSTANDING.md` ranked its `scoring` third overall at 10.56 s / 13.9 %,
+measured against a profile taken before the d1 interning fix — it is **1.8 %**.
+
+Absolute wall on this machine is worthless for this corpus (four runs of the SAME
+binary: 56.5 / 63.5 / 88.9 / 91.6 s), so only same-run shares are claimed; every
+share above held within about a point across all runs. Ledger:
+`docs/2026-07-31-profile-attribution.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens` green with zero files
+under `tests/` moved, clippy clean.
+
 ### Changed — the cone singleton walk stops cloning its keys (−14.8 %)
 
 `ALSEM_CONES_CENSUS=1` gained a split of `inherited_facts_for_singleton`, which the
