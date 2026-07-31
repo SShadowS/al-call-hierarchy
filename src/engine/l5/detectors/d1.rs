@@ -2006,6 +2006,13 @@ pub fn detect_d1(
         lc.flush("d1.cohort");
     }
 
+    // ⟨ALSEM_D1_SCORING_CENSUS=1⟩ Attribution inside the `d1.cohort / scoring`
+    // span — see `d1_dataflow::scoring_census`. Reported here, once, after every
+    // batch has scored.
+    if crate::engine::l5::d1_dataflow::scoring_census::enabled() {
+        crate::engine::l5::d1_dataflow::scoring_census::report();
+    }
+
     // (4) Assemble ONE compressed terminal-centric finding per reached terminal;
     // the run-level loop-set registry is built as cohorts are interned.
     let g_asm = pt::span("d1", "assemble_cohort_findings");

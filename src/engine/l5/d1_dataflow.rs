@@ -2502,14 +2502,39 @@ fn path_uncertainty_ids(
     for (from_node, _edge_k) in hops_terminal_to_seed.iter().rev() {
         let nid = graph.node_ids[*from_node as usize];
         if let Some(v) = ctx.uncertainties_by_node.get(nid) {
+            scoring_census::add(&scoring_census::UNC_NODES_WITH_SET, 1);
+            scoring_census::add(&scoring_census::UNC_ELEMS, v.len() as u64);
             concat.extend(v.iter().map(|u| table.intern(u)));
         }
     }
     let tid = graph.node_ids[terminal_node as usize];
     if let Some(v) = ctx.uncertainties_by_node.get(tid) {
+        scoring_census::add(&scoring_census::UNC_NODES_WITH_SET, 1);
+        scoring_census::add(&scoring_census::UNC_ELEMS, v.len() as u64);
         concat.extend(v.iter().map(|u| table.intern(u)));
     }
-    table.dedupe(&concat)
+    let out = table.dedupe(&concat);
+    scoring_census::add(&scoring_census::UNC_RESULT, out.len() as u64);
+    if scoring_census::enabled() {
+        // The path's set IDENTITIES, by backing-buffer pointer — `uncertainties_by_node`
+        // holds hash-consed `Arc<[Uncertainty]>`, so equal sets ARE one allocation.
+        let mut sig: Vec<usize> = Vec::new();
+        for (from_node, _k) in hops_terminal_to_seed.iter().rev() {
+            let nid = graph.node_ids[*from_node as usize];
+            if let Some(v) = ctx.uncertainties_by_node.get(nid) {
+                sig.push(std::sync::Arc::as_ptr(v) as *const u8 as usize);
+            }
+        }
+        let tid = graph.node_ids[terminal_node as usize];
+        if let Some(v) = ctx.uncertainties_by_node.get(tid) {
+            sig.push(std::sync::Arc::as_ptr(v) as *const u8 as usize);
+        }
+        sig.sort_unstable();
+        sig.dedup();
+        scoring_census::add(&scoring_census::UNC_DISTINCT_SETS_ON_PATH, sig.len() as u64);
+        scoring_census::note_signature(sig);
+    }
+    out
 }
 
 /// Build ONE representative [`CohortRep`] (bounded witness + path uncertainties)
@@ -2544,10 +2569,13 @@ fn build_cohort_rep<'a>(
             loop_info,
             op: dop,
             ..
-        } => CohortRep {
-            witness: direct_witness(routine, loop_info, dop, ctx),
-            uncertainties: Vec::new(),
-        },
+        } => {
+            scoring_census::add(&scoring_census::REPS_DIRECT, 1);
+            CohortRep {
+                witness: direct_witness(routine, loop_info, dop, ctx),
+                uncertainties: Vec::new(),
+            }
+        }
         BestSource::Reach { fact_ix } => {
             let tn = term_node.expect("a Reach winner requires the terminal node");
             // Uncertainty union is EMPTY unless the winning path is uncertain
@@ -2557,12 +2585,19 @@ fn build_cohort_rep<'a>(
             // for every CERTAIN cohort (the majority) — byte-identical, and the
             // dominant 8020 cost (3.2M→34,861 cohorts, but each still walked the
             // full ~28k-hop chain here regardless of `unc`).
+            scoring_census::add(&scoring_census::REPS_REACH, 1);
             let uncertainties = if b.rank.2 == 0 {
+                let t0 = std::time::Instant::now();
                 let (hops, _seed) = collect_reach_chain_b(&solver.reach_pred, lane, fact_ix);
-                path_uncertainty_ids(&hops, tn, graph, ctx, table)
+                let out = path_uncertainty_ids(&hops, tn, graph, ctx, table);
+                scoring_census::add(&scoring_census::UNC_WALKS, 1);
+                scoring_census::add(&scoring_census::UNC_HOPS, hops.len() as u64);
+                scoring_census::add(&scoring_census::UNC_NANOS, t0.elapsed().as_nanos() as u64);
+                out
             } else {
                 Vec::new()
             };
+            let t_w = std::time::Instant::now();
             let witness = representative_witness(
                 solver,
                 graph,
@@ -2576,6 +2611,10 @@ fn build_cohort_rep<'a>(
                 op,
                 WITNESS_M_LAST,
             );
+            scoring_census::add(
+                &scoring_census::WITNESS_NANOS,
+                t_w.elapsed().as_nanos() as u64,
+            );
             CohortRep {
                 witness,
                 uncertainties,
@@ -2584,13 +2623,20 @@ fn build_cohort_rep<'a>(
         BestSource::Value { fact_ix } => {
             let tn = term_node.expect("a Value winner requires the terminal node");
             // See the Reach arm: skip the O(chain) walk + union for certain paths.
+            scoring_census::add(&scoring_census::REPS_VALUE, 1);
             let uncertainties = if b.rank.2 == 0 {
+                let t0 = std::time::Instant::now();
                 let (hops, _seed) =
                     collect_value_chain_b(&solver.value_pred, &solver.reach_pred, lane, fact_ix);
-                path_uncertainty_ids(&hops, tn, graph, ctx, table)
+                let out = path_uncertainty_ids(&hops, tn, graph, ctx, table);
+                scoring_census::add(&scoring_census::UNC_WALKS, 1);
+                scoring_census::add(&scoring_census::UNC_HOPS, hops.len() as u64);
+                scoring_census::add(&scoring_census::UNC_NANOS, t0.elapsed().as_nanos() as u64);
+                out
             } else {
                 Vec::new()
             };
+            let t_w = std::time::Instant::now();
             let witness = representative_witness(
                 solver,
                 graph,
@@ -2603,6 +2649,10 @@ fn build_cohort_rep<'a>(
                 owner,
                 op,
                 WITNESS_M_LAST,
+            );
+            scoring_census::add(
+                &scoring_census::WITNESS_NANOS,
+                t_w.elapsed().as_nanos() as u64,
             );
             CohortRep {
                 witness,
@@ -2625,6 +2675,135 @@ fn build_cohort_rep<'a>(
 /// [`TerminalSink::insert`] — only for the FIRST loop landing in each cohort —
 /// off the still-alive `solver`.
 #[allow(clippy::too_many_arguments)]
+/// `ALSEM_D1_SCORING_CENSUS=1` — attribution inside the `d1.cohort / scoring`
+/// span, which the trace shows as the single largest item in `detector.d1` but
+/// cannot break down further (a span measures a region, not which line inside it).
+///
+/// The split that matters is three-way: the running-best FACT SCAN over every
+/// terminal-bearing node, versus [`sink_emit`]'s per-cohort work, versus — inside
+/// that — the two chain walks [`build_cohort_rep`] performs (the bounded
+/// `representative_witness`, run for EVERY cohort, and the full-chain
+/// `path_uncertainty_ids`, run only for UNCERTAIN ones). `docs/OUTSTANDING.md`'s
+/// deferred d1 follow-up #1 assumes the uncertainty walk is the residual; this
+/// census is what decides whether that is true before anything is rewritten.
+///
+/// Counters only, plus `Instant` pairs around regions entered at most once per
+/// cohort — nothing here allocates, and with the env var unset it is a handful of
+/// relaxed atomic loads. Serial by construction: `d1_dataflow` uses no rayon.
+pub(crate) mod scoring_census {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    pub(crate) static ENTRIES_SCANNED: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static ENTRIES_SKIPPED: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static FACTS_SCANNED: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static LANE_BITS_FOLDED: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SCORING_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static EMIT_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static EMIT_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static REPS_DIRECT: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static REPS_REACH: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static REPS_VALUE: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static WITNESS_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_WALKS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_HOPS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_ELEMS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_RESULT: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_NODES_WITH_SET: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_DISTINCT_SETS_ON_PATH: AtomicU64 = AtomicU64::new(0);
+    /// Distinct walk SIGNATURES (the sorted distinct set-identities on the path).
+    /// If this is far below `UNC_WALKS`, memoizing the whole result per signature
+    /// removes most walks outright; if it is close to it, only the per-element
+    /// cost can be attacked.
+    pub(crate) static UNC_SIGNATURES: std::sync::Mutex<
+        Option<std::collections::HashSet<Vec<usize>>>,
+    > = std::sync::Mutex::new(None);
+
+    pub(crate) fn note_signature(sig: Vec<usize>) {
+        let mut g = UNC_SIGNATURES.lock().expect("census mutex");
+        g.get_or_insert_with(Default::default).insert(sig);
+    }
+
+    pub(crate) fn signature_count() -> usize {
+        UNC_SIGNATURES
+            .lock()
+            .expect("census mutex")
+            .as_ref()
+            .map_or(0, |h| h.len())
+    }
+
+    pub(crate) fn enabled() -> bool {
+        static E: OnceLock<bool> = OnceLock::new();
+        *E.get_or_init(|| std::env::var("ALSEM_D1_SCORING_CENSUS").as_deref() == Ok("1"))
+    }
+
+    pub(crate) fn add(c: &AtomicU64, v: u64) {
+        c.fetch_add(v, Ordering::Relaxed);
+    }
+
+    fn get(c: &AtomicU64) -> u64 {
+        c.load(Ordering::Relaxed)
+    }
+
+    /// Print the census. Called once, after the cohort run completes.
+    pub(crate) fn report() {
+        let scoring = get(&SCORING_NANOS);
+        let emit = get(&EMIT_NANOS);
+        let witness = get(&WITNESS_NANOS);
+        let unc = get(&UNC_NANOS);
+        let ms = |n: u64| n as f64 / 1e6;
+        let pct = |n: u64| {
+            if scoring == 0 {
+                0.0
+            } else {
+                100.0 * n as f64 / scoring as f64
+            }
+        };
+        eprintln!(
+            "[d1-scoring-census] scoring={:.1}ms entries_scanned={} entries_skipped={} \
+             facts_scanned={} lane_bits_folded={}",
+            ms(scoring),
+            get(&ENTRIES_SCANNED),
+            get(&ENTRIES_SKIPPED),
+            get(&FACTS_SCANNED),
+            get(&LANE_BITS_FOLDED),
+        );
+        eprintln!(
+            "[d1-scoring-census] emit={:.1}ms ({:.1}%) calls={} | scan_residual={:.1}ms ({:.1}%)",
+            ms(emit),
+            pct(emit),
+            get(&EMIT_CALLS),
+            ms(scoring.saturating_sub(emit)),
+            pct(scoring.saturating_sub(emit)),
+        );
+        eprintln!(
+            "[d1-scoring-census] reps direct={} reach={} value={} | witness={:.1}ms ({:.1}%) \
+             unc_walks={} unc_hops={} unc={:.1}ms ({:.1}%)",
+            get(&REPS_DIRECT),
+            get(&REPS_REACH),
+            get(&REPS_VALUE),
+            ms(witness),
+            pct(witness),
+            get(&UNC_WALKS),
+            get(&UNC_HOPS),
+            ms(unc),
+            pct(unc),
+        );
+        eprintln!(
+            "[d1-scoring-census] unc_elems_interned={} unc_nodes_with_set={} unc_result_ids={}",
+            get(&UNC_ELEMS),
+            get(&UNC_NODES_WITH_SET),
+            get(&UNC_RESULT),
+        );
+        eprintln!(
+            "[d1-scoring-census] unc_distinct_sets_on_path={} unc_distinct_signatures={}",
+            get(&UNC_DISTINCT_SETS_ON_PATH),
+            signature_count(),
+        );
+    }
+}
+
 fn sink_emit<'a>(
     sink: &mut TerminalSink<'a>,
     owner: &'a L3Routine,
@@ -2948,6 +3127,7 @@ pub(crate) fn score_batch_to_sink<'a>(
     // as `solve_batch`'s; only the terminal loop's tail (`sink_emit` vs
     // `emit_lane_aggregates`) differs.
     let _scoring_span = crate::engine::perf_trace::span("d1.cohort", "scoring");
+    let t_scoring = std::time::Instant::now();
     let lanes = batch.len();
 
     let mut direct_by_key: HashMap<(&'a str, &'a str), Vec<DirectCand<'a>>> = HashMap::new();
@@ -2985,8 +3165,14 @@ pub(crate) fn score_batch_to_sink<'a>(
     for entry in &plan.entries {
         let node = entry.node;
         if solver.reach_at[node as usize].is_empty() && solver.value_at[node as usize].is_empty() {
+            scoring_census::add(&scoring_census::ENTRIES_SKIPPED, 1);
             continue;
         }
+        scoring_census::add(&scoring_census::ENTRIES_SCANNED, 1);
+        scoring_census::add(
+            &scoring_census::FACTS_SCANNED,
+            (solver.reach_at[node as usize].len() + solver.value_at[node as usize].len()) as u64,
+        );
         let key = (entry.owner.id.as_str(), entry.op.id.as_str());
         let mut best: [Option<BestRef<'a>>; BATCH_WIDTH] = [None; BATCH_WIDTH];
         let mut vmask = [0u64; 4];
@@ -3017,6 +3203,7 @@ pub(crate) fn score_batch_to_sink<'a>(
                     while m != 0 {
                         let lane = m.trailing_zeros() as usize;
                         m &= m - 1;
+                        scoring_census::add(&scoring_census::LANE_BITS_FOLDED, 1);
                         let rank = (sev_r, q, unc_pref, -(hops[lane] as i64), db);
                         if best[lane].is_none_or(|b| rank > b.rank) {
                             best[lane] = Some(BestRef {
@@ -3054,6 +3241,7 @@ pub(crate) fn score_batch_to_sink<'a>(
                     while m != 0 {
                         let lane = m.trailing_zeros() as usize;
                         m &= m - 1;
+                        scoring_census::add(&scoring_census::LANE_BITS_FOLDED, 1);
                         let rank = (sev_r, q, unc_pref, -(hops[lane] as i64), db);
                         if best[lane].is_none_or(|b| rank > b.rank) {
                             best[lane] = Some(BestRef {
@@ -3069,6 +3257,7 @@ pub(crate) fn score_batch_to_sink<'a>(
             }
         }
 
+        let t_emit = std::time::Instant::now();
         sink_emit(
             sink,
             entry.owner,
@@ -3082,6 +3271,11 @@ pub(crate) fn score_batch_to_sink<'a>(
             ctx,
             seeds,
             Some(entry.node),
+        );
+        scoring_census::add(&scoring_census::EMIT_CALLS, 1);
+        scoring_census::add(
+            &scoring_census::EMIT_NANOS,
+            t_emit.elapsed().as_nanos() as u64,
         );
     }
 
@@ -3098,6 +3292,7 @@ pub(crate) fn score_batch_to_sink<'a>(
         // its own witness inputs; `owner`/`op` come from any cand (all share the
         // key) and `term_node` is `None` (never read on the Direct arm).
         let any = &cands[0];
+        let t_emit = std::time::Instant::now();
         sink_emit(
             sink,
             any.routine,
@@ -3112,7 +3307,16 @@ pub(crate) fn score_batch_to_sink<'a>(
             seeds,
             None,
         );
+        scoring_census::add(&scoring_census::EMIT_CALLS, 1);
+        scoring_census::add(
+            &scoring_census::EMIT_NANOS,
+            t_emit.elapsed().as_nanos() as u64,
+        );
     }
+    scoring_census::add(
+        &scoring_census::SCORING_NANOS,
+        t_scoring.elapsed().as_nanos() as u64,
+    );
 }
 
 /// Test-only: drive the SAME fixpoint (Rules 1-3 — seed every lane's frontier,
