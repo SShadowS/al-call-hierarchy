@@ -39,7 +39,9 @@ use crate::engine::l4::scc::{SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{
     RecordRoleSummary, Uncertainty, dedupe_uncertainties, uncertainty_key,
 };
-use crate::engine::l4::summary_runner::{FieldIndex, compute_summaries_v2_bundle};
+use crate::engine::l4::summary_runner::{
+    FieldIndex, compute_summaries_v2_bundle, summaries_census,
+};
 use crate::engine::l5::confidence::UncertaintyLite;
 use crate::engine::l5::entry_points::AccessModifier;
 use crate::engine::l5::event_flow::{EventFlowIndexes, build_event_flow_indexes};
@@ -1240,6 +1242,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         // Field-resolution index (keyed (tableId, lowercased field name)) — mirrors
         // summary.rs `run_and_project`; parameterRoles need it, uncertainties don't,
         // but `compute_summaries_v2` takes it.
+        let _fi_t = summaries_census::start();
         let mut field_index: FieldIndex = HashMap::new();
         for table in &ws.tables {
             for field in &table.fields {
@@ -1248,6 +1251,11 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                     .or_insert_with(|| field.id.clone());
             }
         }
+        summaries_census::add_since(&summaries_census::FIELD_INDEX_NANOS, _fi_t);
+        summaries_census::add(
+            &summaries_census::FIELD_INDEX_ENTRIES,
+            field_index.len() as u64,
+        );
         // v2 db-effect solver — ⟨Task B1⟩ the LEAN bundle entry point: it returns the
         // compact `SummaryBundle` PLUS a `core_summaries` map whose `db_effects` are
         // EMPTY (never re-materialized) while `.uncertainties` / `.parameter_roles` are
@@ -1266,6 +1274,10 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 &field_index,
             );
         drop(_summaries_span);
+        // ⟨substrate census⟩ `ALSEM_SUMMARIES_CENSUS=1` — the phase split inside the
+        // span that just closed. Emitted here, at the span boundary, so the report
+        // and the span it attributes are read together.
+        summaries_census::report();
 
         // ⟨fix wave finding 2⟩ `compute_summaries_v2_bundle` is the LEAN entry point
         // (⟨Task B1⟩ — see its own doc): `core_summaries`' `db_effects` field stays

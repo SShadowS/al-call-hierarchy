@@ -42,6 +42,243 @@ use serde_json::json;
 
 const MAX_FIXED_POINT_ITERATIONS: usize = 1000;
 
+/// `ALSEM_SUMMARIES_CENSUS=1` — attribution inside the
+/// `context.compute_summaries` span (~9.9 s of ~66 s on BC Base App 8020, and
+/// the largest span in the run with NO attribution at all).
+///
+/// A span measures a REGION, not which line inside it costs. This splits the
+/// region into the phases it is actually made of: the caller's `field_index`
+/// build, then — inside [`compute_summaries_v2_bundle_with_leaves`] — the
+/// per-routine scaffolding prologue (six separate maps, each its own counter),
+/// the per-Tarjan-SCC loop (roles fixpoint / closed-form db-effect solve /
+/// member assembly), and the freeze+finish epilogue.
+///
+/// Every timer goes through [`start`]/[`add_since`], which take no `Instant` at
+/// all when the census is off — the per-SCC probes would otherwise be ~4 clock
+/// reads per SCC on a corpus with tens of thousands of SCCs, i.e. a probe that
+/// distorts the number it reports (`cones_census`'s own doc records the 1.8 s
+/// this cost there).
+pub(crate) mod summaries_census {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Phase 0 — the caller's own work inside the span (`detector_context`'s
+    /// `FieldIndex` build, which lowercases every field name in the workspace).
+    pub(crate) static FIELD_INDEX_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // --- Prologue: the per-routine scaffolding maps, one counter each. ---
+    pub(crate) static ROUTINES_BY_ID_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static BODY_AVAIL_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static BASE_SUMMARIES_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static STABLE_MAP_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static INTERNER_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static UNC_EDGES_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SEED_LEAVES_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static RVID_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // --- The per-Tarjan-SCC loop. ---
+    pub(crate) static ROLES_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// The member-assembly tail of each SCC iteration (`RoutineSummary` build +
+    /// `v2_map.insert`) — inside the loop but covered by neither timer above.
+    pub(crate) static ASSEMBLE_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // --- Inside `db_solver`: the per-effective-SCC pipeline
+    // (`solve_scc_db_effects` -> `solve_one_effective_scc`). ---
+    pub(crate) static DB_EFFSCC_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// The multi-sibling general path's `settled.clone()` + its per-solved-member
+    /// re-insert — the only place a whole workspace-sized map is copied per SCC.
+    pub(crate) static DB_LOCALSETTLED_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_PD_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_UNION_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_VIA_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_PDVIA_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_SIDE_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_WRITE_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_OUT_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// How many Tarjan SCCs took the multi-sibling general path (the one that
+    /// clones `settled`), vs the single-effective-SCC fast path.
+    pub(crate) static DB_MULTI_EFF_SCCS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DB_EFF_SCC_SOLVES: AtomicU64 = AtomicU64::new(0);
+
+    // --- Inside `side_facts` (the dominant db_solver phase). ---
+    /// The per-member production loop, split three ways.
+    pub(crate) static SF_BASE_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_EDGE_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_UNCEDGE_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// The final per-member assembly: `shared_vec.clone()` + extend + dedupe.
+    pub(crate) static SF_ASSEMBLE_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// Populations these times are per. Accumulated in plain locals inside
+    /// `solve_side_facts` and folded in with ONE `fetch_add` per call, so a
+    /// per-edge / per-uncertainty counter never touches an atomic on the hot path.
+    pub(crate) static SF_EDGES: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_SHARED_INSERTS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_OPAQUE_PUSHES: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_DEDUPE_ELEMS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_SHARED_CLONE_ELEMS: AtomicU64 = AtomicU64::new(0);
+
+    // --- Epilogue. ---
+    pub(crate) static FINISH_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // --- Populations (what the times are per). ---
+    pub(crate) static ROUTINES: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SCCS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static MEMBERS_ASSEMBLED: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static BASE_SUMMARIES_BUILT: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static RVID_ENTRIES: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static FIELD_INDEX_ENTRIES: AtomicU64 = AtomicU64::new(0);
+
+    pub(crate) fn enabled() -> bool {
+        static E: OnceLock<bool> = OnceLock::new();
+        *E.get_or_init(|| std::env::var("ALSEM_SUMMARIES_CENSUS").as_deref() == Ok("1"))
+    }
+
+    pub(crate) fn add(c: &AtomicU64, v: u64) {
+        c.fetch_add(v, Ordering::Relaxed);
+    }
+
+    /// A timer ONLY when the census is enabled — off-census this is a bool load
+    /// and a `None`, so no clock is read on any of the per-SCC probe sites.
+    pub(crate) fn start() -> Option<std::time::Instant> {
+        enabled().then(std::time::Instant::now)
+    }
+
+    /// Charge `t`'s elapsed time to `c`, if the census is on.
+    pub(crate) fn add_since(c: &AtomicU64, t: Option<std::time::Instant>) {
+        if let Some(t) = t {
+            c.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+
+    pub(crate) fn report() {
+        if !enabled() {
+            return;
+        }
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let ms = |n: u64| n as f64 / 1e6;
+
+        let field_index = g(&FIELD_INDEX_NANOS);
+        let routines_by_id = g(&ROUTINES_BY_ID_NANOS);
+        let body_avail = g(&BODY_AVAIL_NANOS);
+        let base = g(&BASE_SUMMARIES_NANOS);
+        let stable = g(&STABLE_MAP_NANOS);
+        let interner = g(&INTERNER_NANOS);
+        let unc_edges = g(&UNC_EDGES_NANOS);
+        let seed = g(&SEED_LEAVES_NANOS);
+        let rvid = g(&RVID_NANOS);
+        let roles = g(&ROLES_NANOS);
+        let db = g(&DB_NANOS);
+        let assemble = g(&ASSEMBLE_NANOS);
+        let finish = g(&FINISH_NANOS);
+
+        let prologue =
+            routines_by_id + body_avail + base + stable + interner + unc_edges + seed + rvid;
+        let loop_total = roles + db + assemble;
+        let total = field_index + prologue + loop_total + finish;
+        let pct = |n: u64| {
+            if total == 0 {
+                0.0
+            } else {
+                100.0 * n as f64 / total as f64
+            }
+        };
+
+        eprintln!(
+            "[summaries-census] routines={} sccs={} members_assembled={} phases_total={:.1}ms",
+            g(&ROUTINES),
+            g(&SCCS),
+            g(&MEMBERS_ASSEMBLED),
+            ms(total),
+        );
+        eprintln!(
+            "[summaries-census] field_index={:.1}ms ({:.1}%) prologue={:.1}ms ({:.1}%) scc_loop={:.1}ms ({:.1}%) finish={:.1}ms ({:.1}%)",
+            ms(field_index),
+            pct(field_index),
+            ms(prologue),
+            pct(prologue),
+            ms(loop_total),
+            pct(loop_total),
+            ms(finish),
+            pct(finish),
+        );
+        eprintln!(
+            "[summaries-census]   prologue: routines_by_id={:.1}ms body_avail={:.1}ms base_summaries={:.1}ms x{} stable_map={:.1}ms",
+            ms(routines_by_id),
+            ms(body_avail),
+            ms(base),
+            g(&BASE_SUMMARIES_BUILT),
+            ms(stable),
+        );
+        eprintln!(
+            "[summaries-census]   prologue: interner={:.1}ms unc_edges={:.1}ms seed_leaves={:.1}ms rvid_by_opid={:.1}ms (entries={})",
+            ms(interner),
+            ms(unc_edges),
+            ms(seed),
+            ms(rvid),
+            g(&RVID_ENTRIES),
+        );
+        eprintln!(
+            "[summaries-census]   scc_loop: roles={:.1}ms ({:.1}%) db_solver={:.1}ms ({:.1}%) assemble={:.1}ms ({:.1}%)",
+            ms(roles),
+            pct(roles),
+            ms(db),
+            pct(db),
+            ms(assemble),
+            pct(assemble),
+        );
+        eprintln!(
+            "[summaries-census]   db_solver: eff_sccs={:.1}ms local_settled={:.1}ms (multi_eff_sccs={}) solves={}",
+            ms(g(&DB_EFFSCC_NANOS)),
+            ms(g(&DB_LOCALSETTLED_NANOS)),
+            g(&DB_MULTI_EFF_SCCS),
+            g(&DB_EFF_SCC_SOLVES),
+        );
+        eprintln!(
+            "[summaries-census]   db_solver: pd_reach={:.1}ms ({:.1}%) union={:.1}ms ({:.1}%) via={:.1}ms ({:.1}%) pd_via={:.1}ms ({:.1}%)",
+            ms(g(&DB_PD_NANOS)),
+            pct(g(&DB_PD_NANOS)),
+            ms(g(&DB_UNION_NANOS)),
+            pct(g(&DB_UNION_NANOS)),
+            ms(g(&DB_VIA_NANOS)),
+            pct(g(&DB_VIA_NANOS)),
+            ms(g(&DB_PDVIA_NANOS)),
+            pct(g(&DB_PDVIA_NANOS)),
+        );
+        eprintln!(
+            "[summaries-census]   db_solver: side_facts={:.1}ms ({:.1}%) write_rows={:.1}ms ({:.1}%) out_assemble={:.1}ms ({:.1}%)",
+            ms(g(&DB_SIDE_NANOS)),
+            pct(g(&DB_SIDE_NANOS)),
+            ms(g(&DB_WRITE_NANOS)),
+            pct(g(&DB_WRITE_NANOS)),
+            ms(g(&DB_OUT_NANOS)),
+            pct(g(&DB_OUT_NANOS)),
+        );
+        eprintln!(
+            "[summaries-census]   side_facts: base={:.1}ms ({:.1}%) edges={:.1}ms ({:.1}%) unc_edges={:.1}ms ({:.1}%) assemble={:.1}ms ({:.1}%)",
+            ms(g(&SF_BASE_NANOS)),
+            pct(g(&SF_BASE_NANOS)),
+            ms(g(&SF_EDGE_NANOS)),
+            pct(g(&SF_EDGE_NANOS)),
+            ms(g(&SF_UNCEDGE_NANOS)),
+            pct(g(&SF_UNCEDGE_NANOS)),
+            ms(g(&SF_ASSEMBLE_NANOS)),
+            pct(g(&SF_ASSEMBLE_NANOS)),
+        );
+        eprintln!(
+            "[summaries-census]   side_facts pop: edges={} shared_inserts={} opaque_pushes={} dedupe_elems={} shared_clone_elems={}",
+            g(&SF_EDGES),
+            g(&SF_SHARED_INSERTS),
+            g(&SF_OPAQUE_PUSHES),
+            g(&SF_DEDUPE_ELEMS),
+            g(&SF_SHARED_CLONE_ELEMS),
+        );
+        eprintln!(
+            "[summaries-census]   field_index entries={}",
+            g(&FIELD_INDEX_ENTRIES),
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Op classification (ports src/engine/op-classification.ts).
 // ---------------------------------------------------------------------------
@@ -685,16 +922,24 @@ pub fn compute_summaries_v2_bundle_with_leaves(
 ) {
     // --- Scaffolding: mirrors what the retired `compute_summaries_with_leaves`
     // built (in the pre-`b4181d8` tree). ---
+    summaries_census::add(&summaries_census::ROUTINES, routines.len() as u64);
+    summaries_census::add(&summaries_census::SCCS, scc.sccs.len() as u64);
+
+    let _t = summaries_census::start();
     let routines_by_id: HashMap<String, &L3Routine> =
         routines.iter().map(|r| (r.id.clone(), r)).collect();
+    summaries_census::add_since(&summaries_census::ROUTINES_BY_ID_NANOS, _t);
 
+    let _t = summaries_census::start();
     let body_avail_by_id: HashMap<String, bool> = routines
         .iter()
         .map(|r| (r.id.clone(), r.body_available))
         .collect();
+    summaries_census::add_since(&summaries_census::BODY_AVAIL_NANOS, _t);
 
     // Base intraprocedural summaries for NON-LEAF routines only (a leaf carries
     // its own summary; its EMPTY merged features must never overwrite it).
+    let _t = summaries_census::start();
     let base_summaries: HashMap<String, RoutineSummary> = routines
         .iter()
         .filter(|r| !leaf_summaries.contains_key(&r.id))
@@ -705,11 +950,18 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             )
         })
         .collect();
+    summaries_census::add_since(&summaries_census::BASE_SUMMARIES_NANOS, _t);
+    summaries_census::add(
+        &summaries_census::BASE_SUMMARIES_BUILT,
+        base_summaries.len() as u64,
+    );
 
+    let _t = summaries_census::start();
     let stable_map: HashMap<String, String> = routines
         .iter()
         .map(|r| (r.id.clone(), r.stable_routine_id.clone()))
         .collect();
+    summaries_census::add_since(&summaries_census::STABLE_MAP_NANOS, _t);
 
     // Task A1/A3: intern every workspace routine id once, up front, in the
     // CANONICAL `stable_routine_id`-sorted order (spec rev4) — so ascending
@@ -722,13 +974,16 @@ pub fn compute_summaries_v2_bundle_with_leaves(
     // row; a leaf outside `routines` has no `stable_routine_id` here, so its
     // own id is its canonical sort key (deterministic, and dedups against the
     // `routines` entry when the leaf is also a workspace routine).
+    let _t = summaries_census::start();
     let routine_interner = RoutineInterner::build_canonical(
         routines
             .iter()
             .map(|r| (r.id.as_str(), r.stable_routine_id.as_str()))
             .chain(leaf_summaries.keys().map(|id| (id.as_str(), id.as_str()))),
     );
+    summaries_census::add_since(&summaries_census::INTERNER_NANOS, _t);
 
+    let _t = summaries_census::start();
     let mut uncertainty_edges_by_from: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, ue) in graph.uncertainty_edges.iter().enumerate() {
         uncertainty_edges_by_from
@@ -736,6 +991,7 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             .or_default()
             .push(i);
     }
+    summaries_census::add_since(&summaries_census::UNC_EDGES_NANOS, _t);
 
     // A member is RECOMPUTED (contributes to an effective SCC) iff it is neither
     // a fixed leaf NOR missing from the workspace — the exact predicate the
@@ -784,12 +1040,14 @@ pub fn compute_summaries_v2_bundle_with_leaves(
     // routine (preserving their own via). This interns every leaf effect
     // identity into `universe` up front (complete pre-freeze identity
     // discovery).
+    let _t = summaries_census::start();
     seed_fixed_leaf_rows(
         leaf_summaries,
         &mut universe,
         &routine_interner,
         &mut bundle_builder,
     );
+    summaries_census::add_since(&summaries_census::SEED_LEAVES_NANOS, _t);
 
     // Summarize-stage diagnostics raised by the roles fixpoint's convergence
     // backstop. Empty on every real SCC (roles converge) — see [`RolesSccOut`].
@@ -803,14 +1061,21 @@ pub fn compute_summaries_v2_bundle_with_leaves(
     // used to be rebuilt inside `solve_scc_db_effects` on every call (once
     // per Tarjan SCC), an O(total-workspace-db_effects) cost paid N times —
     // O(N^2) in routine count. Hoisting it here makes it O(total) ONCE.
+    let _t = summaries_census::start();
     let rvid_by_opid = build_rvid_by_opid(&base_summaries, leaf_summaries);
+    summaries_census::add_since(&summaries_census::RVID_NANOS, _t);
+    summaries_census::add(&summaries_census::RVID_ENTRIES, rvid_by_opid.len() as u64);
 
     // Phase-split attribution (observability only): accumulate wall time spent in
     // the roles-only fixpoint vs the closed-form db-effect solver across all SCCs,
     // emitted once after the loop. Instant::now() is ~20ns; the per-SCC overhead is
     // negligible and the aggregate is only serialized when a tracer is active.
-    let mut roles_us: u128 = 0;
-    let mut db_us: u128 = 0;
+    //
+    // Accumulated in NANOseconds, not micros: with tens of thousands of SCCs a
+    // per-SCC `as_micros()` truncation loses up to one whole microsecond EACH,
+    // i.e. tens of milliseconds of systematic under-count across the loop.
+    let mut roles_ns: u128 = 0;
+    let mut db_ns: u128 = 0;
 
     for scc_entry in &scc.sccs {
         // parameter_roles from the roles-ONLY fixpoint (the old db_effects JACOBI
@@ -821,7 +1086,7 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             roles,
             cap_hit_stable_members,
         } = run_one_scc_roles(scc_entry, &v2_map, &ctx);
-        roles_us += _roles_t.elapsed().as_micros();
+        roles_ns += _roles_t.elapsed().as_nanos();
 
         // Surface the roles fixpoint's cap-hit as a summarize-stage diagnostic,
         // byte-identical to the OLD solver's message shape (severity/stage/text).
@@ -860,7 +1125,7 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             &routine_interner,
             &mut bundle_builder,
         );
-        db_us += _db_t.elapsed().as_micros();
+        db_ns += _db_t.elapsed().as_nanos();
 
         // Assemble each member: uncertainties/has_unresolved from the solver
         // (db_effects left EMPTY here — filled from the frozen bundle's lazy
@@ -870,6 +1135,8 @@ pub fn compute_summaries_v2_bundle_with_leaves(
         // solver's recomputed set); a missing side-facts entry falls back to
         // empty (which fails the differential loudly rather than silently
         // masking a dropped member).
+        let _asm_t = summaries_census::start();
+        summaries_census::add(&summaries_census::MEMBERS_ASSEMBLED, roles.len() as u64);
         for (id, parameter_roles) in roles {
             let (mut uncertainties, has_unresolved_calls) =
                 side_facts.get(&id).cloned().unwrap_or_default();
@@ -898,15 +1165,18 @@ pub fn compute_summaries_v2_bundle_with_leaves(
             };
             v2_map.insert(id, assembled);
         }
+        summaries_census::add_since(&summaries_census::ASSEMBLE_NANOS, _asm_t);
     }
+    summaries_census::add(&summaries_census::ROLES_NANOS, roles_ns as u64);
+    summaries_census::add(&summaries_census::DB_NANOS, db_ns as u64);
 
     // Phase-split attribution: roles-only fixpoint vs closed-form db-effect solver.
     // Emitted once (tracer-gated; no-op off-trace) so `context.compute_summaries`'s
     // cost can be attributed without per-SCC span spam.
     pt::instant_lazy("l4", "compute_summaries_v2_phase_split", || {
         json!({
-            "roles_ms": (roles_us / 1000) as u64,
-            "db_solver_ms": (db_us / 1000) as u64,
+            "roles_ms": (roles_ns / 1_000_000) as u64,
+            "db_solver_ms": (db_ns / 1_000_000) as u64,
             "sccs": scc.sccs.len(),
         })
     });
@@ -915,7 +1185,9 @@ pub fn compute_summaries_v2_bundle_with_leaves(
     // then `finish` hash-conses the shared terminal-set arena into the
     // `EffectStore` and reorders each row's via/PD arrays to `key_rank` output
     // order. After this no new identity can be minted (compile-enforced).
+    let _t = summaries_census::start();
     let bundle = bundle_builder.finish(universe.freeze(), routine_interner, rvid_by_opid);
+    summaries_census::add_since(&summaries_census::FINISH_NANOS, _t);
     (bundle, v2_map, diagnostics)
 }
 
