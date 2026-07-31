@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — transaction spans (the union stops materializing strings)
+
+`context.transaction_spans` was **58.90 s of a 206.43 s `alsem analyze`** on BC Base App
+8020 — the largest single span in the run, and on no outstanding list. It is now **1.14 s**.
+
+**Three probe shapes, never compared.** (1) an `ALSEM_TXSPAN_CENSUS=1` population census —
+counts only, no timing, no noise band; (2) an `ALSEM_TRACE=1 ALSEM_TRACE_DETAIL=hot` whole
+run, span totals aggregated from the B/E records; (3) `--deterministic` byte comparison.
+Corpora: 8020 = BC Base App (8,020 `.al` / 100,941 routines), DO = the real Continia
+customer workspace (4,842 routines).
+
+**The census came first, and it falsified two of the three cost centres this work was
+planned around.** The plan assumed the module's `String`-keyed backward BFS was the
+problem; measured, that BFS runs **927 walks over 129,350 visited-routine steps in
+total**, which cannot be seconds — the planned interned-ix rewrite (`SpanIndex`, CSR
+reverse adjacency, generation-stamped visited array) was **not built**. The plan also
+assumed the per-commit-op payload clone mattered; measured, 1,061 spans come from 927
+templates, so only 134 payloads are duplicated — that task was gated on a measurement and
+then skipped by its own gate.
+
+What the census found instead: `aggregate_span` called
+`ConeDerivedStore::writes_tables_of` / `publishes_events_of` **once per visited routine**,
+and each call resolves that routine's whole folded-cone window into a fresh `Vec<String>`
+whose every element is then inserted into a `BTreeSet<String>` and dropped —
+**261,772,789 `String`s allocated and discarded per 8020 run**, 2,023 per visited routine.
+(Base App's single enormous SCC is why one routine's folded cone names thousands of
+tables and events.)
+
+The union now rides interned `ResId`s in a caller-owned `ResBitset` — one word-OR per id,
+no per-element allocation, and dedupe for free, because the interner is injective so
+id-dedupe IS string-dedupe — and resolves to `String` ONCE per span template.
+`ConeDerivedStore` gained the borrowing half of its query surface
+(`writes_table_ids_of` / `event_ids_of` / `resolve_res` / `res_universe_len`); the
+existing `String` accessors are untouched.
+
+| 8020 | before | after |
+|---|---:|---:|
+| strings materialized in the union | 261,772,789 | **1,762,840** (−99.33 %) |
+| `context.transaction_spans` | 58.90 s | **1.14 s** (−57.76 s) |
+
+Every other census figure is byte-for-byte unchanged — `template_calls` 955, `templates`
+927, `visited_total` 129,350, `spans_emitted` 1,061, `payload_strings` 2,390,888 — so the
+walk, the template cache and the emitted payloads are untouched; only the union's
+representation moved.
+
+**A bitset, deliberately, and not a `Vec<ResId>` accumulator.** Accumulating the windows
+and deduping at the end would hold 261,772,789 `u32`s — 1.05 GB — trading 57 s of CPU for
+a gigabyte of RSS on a span that retains 73 MB. `ResBitset`'s doc comment records this so
+the obvious-but-wrong first move is not made later.
+
+**Output is byte-identical on BOTH corpora, each matching a hash recorded independently by
+the preceding arc**: DO `f022f677…` and 8020 `36151bf6…` (251,169,091 bytes). The two
+non-deterministic 8020 runs differ in exactly 6 bytes, all inside the `generatedAt`
+timestamp. `scripts/check-goldens` green with zero files under `tests/` moved. Four
+discrimination proofs are recorded in the commit (each break run, failure observed,
+reverted, re-passed) — one of which first reported a FALSE pass because `rustfmt` had
+reflowed the target text so the break never applied; asserting on the patch text is what
+caught it.
+
+**Not claimed.** `analyze.total` moved 206.43 s → 76.15 s across the two runs, and that is
+NOT this change's doing: `preflight.fresh_coverage`, which this work does not touch, moved
+71.81 s → 4.89 s in the same pair — a cold-vs-warm file-cache artefact. The supported
+claims are the span delta and the allocation census. Full ledger:
+`docs/2026-07-31-transaction-spans-measurements.md`.
+
 ### Performance — uncertainty substrate (`ctx.uncertainties_by_node`)
 
 `ctx.uncertainties_by_node` was the largest single named structure left alive for the

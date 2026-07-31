@@ -264,31 +264,44 @@ impl TxSpanCensus {
 /// the same routine AND for §B seeds of the same routine (see the CRITICAL
 /// semantics note at both call sites), so compute it at most once per distinct
 /// seed routine id and cache it.
+/// The read-only inputs every span template derives from — grouped so
+/// `span_template` takes four parameters instead of nine.
+struct SpanInputs<'a> {
+    commits_by_routine: &'a BTreeMap<String, Vec<String>>,
+    reverse: &'a ReverseCallGraph,
+    summaries: &'a HashMap<String, FullRoutineSummary>,
+    cone_derived: &'a ConeDerivedStore,
+}
+
+/// Run-lifetime scratch: the two id bitsets the union fills and clears per
+/// template (allocated ONCE for the whole run — see `aggregate_span`) plus the
+/// census counters.
+struct SpanScratch {
+    writes: ResBitset,
+    events: ResBitset,
+    census: TxSpanCensus,
+}
+
 fn span_template<'c>(
     seed: &str,
-    commits_by_routine: &BTreeMap<String, Vec<String>>,
-    reverse: &ReverseCallGraph,
-    summaries: &HashMap<String, FullRoutineSummary>,
-    cone_derived: &ConeDerivedStore,
+    inputs: &SpanInputs<'_>,
     cache: &'c mut HashMap<String, SpanTemplate>,
-    writes_bs: &mut ResBitset,
-    events_bs: &mut ResBitset,
-    census: &mut TxSpanCensus,
+    scratch: &mut SpanScratch,
 ) -> &'c SpanTemplate {
-    census.template_calls += 1;
+    scratch.census.template_calls += 1;
     if !cache.contains_key(seed) {
-        let visited = backward_cone(seed, commits_by_routine, reverse);
-        census.templates += 1;
-        census.visited_total += visited.len();
+        let visited = backward_cone(seed, inputs.commits_by_routine, inputs.reverse);
+        scratch.census.templates += 1;
+        scratch.census.visited_total += visited.len();
         let (writes_tables, publishes_events, coverage_complete) = aggregate_span(
             &visited,
-            summaries,
-            cone_derived,
-            writes_bs,
-            events_bs,
-            census,
+            inputs.summaries,
+            inputs.cone_derived,
+            &mut scratch.writes,
+            &mut scratch.events,
+            &mut scratch.census,
         );
-        let span_roots = span_roots_of(&visited, reverse);
+        let span_roots = span_roots_of(&visited, inputs.reverse);
         cache.insert(
             seed.to_string(),
             SpanTemplate {
@@ -348,30 +361,33 @@ pub fn compute_transaction_spans(
     // Everything about a span that depends only on the seed ROUTINE — cached
     // per distinct seed routine id (see `span_template` above `compute_transaction_spans`).
     let mut template_cache: HashMap<String, SpanTemplate> = HashMap::new();
-    let mut census = TxSpanCensus::default();
+    let inputs = SpanInputs {
+        commits_by_routine: &commits_by_routine,
+        reverse,
+        summaries,
+        cone_derived,
+    };
     // ONE bitset pair for the whole run: `aggregate_span` clears and refills them
     // per template, so the union never allocates per routine or per element.
-    let mut writes_bs = ResBitset::new(cone_derived.res_universe_len());
-    let mut events_bs = ResBitset::new(cone_derived.res_universe_len());
+    let mut scratch = SpanScratch {
+        writes: ResBitset::new(cone_derived.res_universe_len()),
+        events: ResBitset::new(cone_derived.res_universe_len()),
+        census: TxSpanCensus::default(),
+    };
 
     // --- explicit-commit seeds ---
     for (commit_routine_id, commit_ops) in &commits_by_routine {
         let t = span_template(
             commit_routine_id,
-            &commits_by_routine,
-            reverse,
-            summaries,
-            cone_derived,
+            &inputs,
             &mut template_cache,
-            &mut writes_bs,
-            &mut events_bs,
-            &mut census,
+            &mut scratch,
         );
         // clone the template fields once per OP (same values every op — was a
         // full recompute per op before)
         for commit_operation_id in commit_ops {
-            census.spans_emitted += 1;
-            census.payload_strings += t.routines_in_span.len()
+            scratch.census.spans_emitted += 1;
+            scratch.census.payload_strings += t.routines_in_span.len()
                 + t.writes_tables.len()
                 + t.publishes_events.len()
                 + t.span_roots.len();
@@ -406,19 +422,9 @@ pub fn compute_transaction_spans(
             if cs.object_run_return_used != Some(true) {
                 continue;
             }
-            let t = span_template(
-                &r.id,
-                &commits_by_routine,
-                reverse,
-                summaries,
-                cone_derived,
-                &mut template_cache,
-                &mut writes_bs,
-                &mut events_bs,
-                &mut census,
-            );
-            census.spans_emitted += 1;
-            census.payload_strings += t.routines_in_span.len()
+            let t = span_template(&r.id, &inputs, &mut template_cache, &mut scratch);
+            scratch.census.spans_emitted += 1;
+            scratch.census.payload_strings += t.routines_in_span.len()
                 + t.writes_tables.len()
                 + t.publishes_events.len()
                 + t.span_roots.len();
@@ -439,7 +445,7 @@ pub fn compute_transaction_spans(
     }
 
     if TxSpanCensus::enabled() {
-        census.report();
+        scratch.census.report();
     }
     spans
 }

@@ -158,6 +158,44 @@ baseline section already flagged. The supported claim is the
 `context.transaction_spans` delta (−57.76 s) plus the allocation census (−260.0 M
 strings); the rest of the wall movement is cache state, not this arc.
 
+### Task R2 — SKIPPED by its own gate
+
+The plan gated the payload-sharing task on "build only if, after R1,
+`context.transaction_spans` is still worth attacking". It is **1.14 s**, under the plan's
+own ~5 s skip threshold, and the census had already shown the sharing would touch only
+134 of 1,061 spans. Not built. `TransactionSpan` keeps its `Vec<String>` payload fields
+and `d8`/`d9`/`d50` are untouched — a consumer-wide type change was not spent on a 13 %
+saving in a span that is no longer on the critical path.
+
+### Task R3 — capstone
+
+- `cargo test`: EXIT 0, 20 test targets, zero failures.
+- `cargo clippy --all-targets --all-features`: EXIT 0. It first flagged
+  `span_template` at 9 arguments (the census + bitsets pushed it over); grouping the
+  read-only inputs into `SpanInputs` and the run-lifetime scratch into `SpanScratch`
+  took it to 4 and cleared the warning rather than silencing it.
+- `scripts/check-goldens`: EXIT 0, zero files under `tests/` modified.
+- DO `--deterministic` after the refactor: `f022f677…`, unchanged.
+
+### Post-fix 8020 profile — the re-ranked lever list
+
+Warm run, `analyze.total` 76.15 s:
+
+| span | wall | % |
+|---|---:|---:|
+| `context.capability_cones` | 14.53 s | 19.1 % |
+| `detector.d1` › `search_loops_cohorts` › `scoring` | 10.56 s | 13.9 % |
+| `context.compute_summaries` | 8.60 s | 11.3 % |
+| `preflight.fresh_coverage` | 4.89 s | 6.4 % |
+| `detector.d2-event-fanout-in-loop` | 3.46 s | 4.5 % |
+| `context.transaction_spans` | **1.14 s** | 1.5 % |
+
+Two notes for whoever picks this up next. `preflight.fresh_coverage`'s 71.81 s in the
+cold baseline was file-cache, not cost — do not target it on that number. And the d1
+witness/uncertainty follow-up in `docs/OUTSTANDING.md` is a REAL item again: its
+documented "~130 s residual" was stale in the pessimistic direction, but `scoring` at
+10.56 s is now the second-largest single item in the run.
+
 ## Build hazard recorded
 
 `cargo build` reports **exit 101 with `error: failed to remove file … alsem.exe` /
