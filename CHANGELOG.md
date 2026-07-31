@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — cone fact keys are shared, not copied 6.4 M times per run
+
+The post-allocator re-census of `context.capability_cones` (still the largest single
+span, ~23 % of an 8020 run) put `fact_cone` second at 1,687.8 ms over 65,822 calls
+and **6,556,465 `merge_cone` merges** — and `merge_cone` took an OWNED `String`, so
+every merge passed `key.clone()`: a fresh heap copy of a string that already existed,
+immutably, in the successor cone being read. The same shape the singleton walk was
+fixed for one level down.
+
+`ConeFacts` is now `BTreeMap<Arc<str>, ConeFactEntry>` and `merge_cone` takes the key
+BORROWED, cloning the `Arc` only on an insert (so a merge that loses its tie-break —
+1,243,002 of the calls collide — touches no refcount at all). `Arc<str>` orders
+through `str`'s `Ord` exactly as `String` does, so map iteration order is unchanged by
+construction. Only the ~121,387 dist-0 entries still mint a key: **6,435,078 heap key
+copies per 8020 run, gone**, and a cone entry copied into N predecessor cones now
+shares one allocation instead of holding N.
+
+**MEASURED — paired A/B, 3 pairs.** Every population is byte-identical between the two
+binaries (`calls` 6,556,465, `tiebreaks` 1,243,002, `cone_entries` 12,170,325, `wins`
+10,522,793, `bests` 10,030,145), proving only allocation behaviour changed.
+**`fact_cone` 1,976.8 → 1,783.0 ms (−9.8 %), all three pairs negative (0.90/0.92/0.86)
+against untouched controls flat within ±3 %** (`scan` +3.0 %, `singleton` +0.3 %,
+`derived_fold` −0.5 %, `coverage_cone` +1.0 %). `phases_total` −4.4 % and the
+`context.capability_cones` span −6.3 % each have ONE contrary pair and sit barely above
+that floor — read as "roughly −4 to −6 %", not as figures. Peak RSS ≈ −17 MB (all three
+D runs below all three C runs); whole-run wall is flat and nothing is claimed from it.
+Three small untouched phases moved the wrong way beyond the floor (`scc` +23 %, `dedup`
++19.6 %, `graph` +5.7 %, all on 100–320 ms spans) — that is noise at that size, reported
+rather than dropped. DO: same direction, `fact_cone` −11.9 %, peak flat.
+
+**The allocator swap masked most of this, and that is the point worth recording.** The
+previous entry's own warning — that a faster allocator makes churn regressions cheaper
+and therefore harder to see — is demonstrated one commit later on the very next change:
+6.4 M removed heap copies buy −9.8 % of one phase instead of the much larger number the
+pre-mimalloc profile would have shown. The allocation COUNT remains the noise-free part
+of the claim, and is now the only part that stays legible.
+
+Ledger: `docs/2026-07-31-cone-arc-keys.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens` green (9 targets, zero files
+under `tests/` moved), 1,716 lib tests green, clippy clean.
+
 ### Changed — `alsem` swaps its global allocator (8020 −41 %, DO −24 %, peak down on both)
 
 The attribution below ended somewhere none of the structural levers pointed:
