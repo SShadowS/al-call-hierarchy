@@ -182,9 +182,11 @@ enum CandKind<'a> {
 
 /// `true` iff `node_id` has a non-empty per-node uncertainty set.
 pub(crate) fn node_has_uncertainty(ctx: &DetectorContext, node_id: &str) -> bool {
-    ctx.uncertainties_by_node
-        .get(node_id)
-        .is_some_and(|v| !v.is_empty())
+    // A node with NO entry and a node carrying an EMPTY set are both `false`,
+    // exactly as when this read a `HashMap<String, Arc<[Uncertainty]>>`. Pinned by
+    // `absent_and_empty_are_both_no_uncertainty_and_nonempty_is_yes`; this feeds
+    // `ContextKey.unc`, so changing it re-partitions d1's cohorts.
+    ctx.uncertainty_view().has_any(node_id)
 }
 
 /// The terminal-op verdict: `resolve_terminal`'s [`ParamTemp`] mapped to a
@@ -416,11 +418,10 @@ fn materialize_transitive<'a>(
     // Uncertainty union: concat uncertainties_by_node in seed -> terminal order,
     // then dedupe (== the walker's running per-node dedupe; see `path_walker`).
     let mut concat: Vec<Uncertainty> = Vec::new();
+    let view = ctx.uncertainty_view();
     for &n in nodes_rev.iter().rev() {
         let nid = graph.node_ids[n as usize];
-        if let Some(v) = ctx.uncertainties_by_node.get(nid) {
-            concat.extend(v.iter().cloned());
-        }
+        concat.extend(view.values_of(nid).cloned());
     }
     (witness, dedupe_uncertainties(concat))
 }

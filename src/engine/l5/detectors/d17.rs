@@ -472,6 +472,7 @@ mod tests {
             resolved_call_edge_by_callsite: HashMap::new(),
             uncertainty_edges_by_from: HashMap::new(),
             uncertainties_by_node: HashMap::new(),
+            uncertainties: Default::default(),
             call_site_by_id: HashMap::new(),
             summaries: HashMap::new(),
             // ⟨C1⟩ No summaries ⇒ no derived cone rows.

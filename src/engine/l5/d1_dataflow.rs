@@ -77,9 +77,8 @@ use crate::engine::l3::l3_workspace::{L3RecordOperation, L3Routine};
 // Owned-value uncertainties survive only on the `#[cfg(test)]` oracle path
 // (`build_transitive_witness`); the production cohort path interns them into the
 // sink's `UncertaintyTable` and carries `UncertaintyId`s.
-use crate::engine::l4::summary::Uncertainty;
 #[cfg(test)]
-use crate::engine::l4::summary::dedupe_uncertainties;
+use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 use crate::engine::l5::closed_world_temp::ClosedWorldTempParams;
 use crate::engine::l5::d1_cohort::{
     CohortRep, ContextKey, GroupIx, PathUncertaintyCache, TerminalSink, UncertaintyId,
@@ -98,7 +97,7 @@ use crate::engine::l5::d1_temp::{
     ParamTemp, TempVec, cross_hop, lookup, resolve_terminal, root_state,
 };
 use crate::engine::l5::d1_witness::{direct_witness, representative_witness};
-use crate::engine::l5::detector_context::DetectorContext;
+use crate::engine::l5::detector_context::{DetectorContext, UncertaintySetId};
 use crate::engine::l5::detectors::d1::{TempVerdict, is_setup_singleton_get, severity_for};
 #[cfg(test)]
 use crate::engine::l5::detectors::d1::{hop_step, terminal_step};
@@ -403,11 +402,10 @@ fn build_transitive_witness<'a>(
 
     // Uncertainty union along the witness (seed -> terminal node order).
     let mut concat: Vec<Uncertainty> = Vec::new();
+    let view = ctx.uncertainty_view();
     for &n in &path_nodes {
         let nid = graph.node_ids[n as usize];
-        if let Some(v) = ctx.uncertainties_by_node.get(nid) {
-            concat.extend(v.iter().cloned());
-        }
+        concat.extend(view.values_of(nid).cloned());
     }
     let uncertainties = dedupe_uncertainties(concat);
     let effective = seed.seed_depth + sum_edges + terminal_local_depth;
@@ -2524,38 +2522,29 @@ fn path_uncertainty_ids(
     cache: &mut PathUncertaintyCache,
 ) -> Arc<[UncertaintyId]> {
     // Seed→terminal node order = the hops' from_nodes reversed, then the terminal.
-    let mut sets: Vec<&Arc<[Uncertainty]>> = Vec::new();
+    let mut sets: Vec<UncertaintySetId> = Vec::new();
     for (from_node, _edge_k) in hops_terminal_to_seed.iter().rev() {
         let nid = graph.node_ids[*from_node as usize];
-        if let Some(v) = ctx.uncertainties_by_node.get(nid) {
-            sets.push(v);
+        if let Some(&sid) = ctx.uncertainties_by_node.get(nid) {
+            sets.push(sid);
         }
     }
     let tid = graph.node_ids[terminal_node as usize];
-    if let Some(v) = ctx.uncertainties_by_node.get(tid) {
-        sets.push(v);
+    if let Some(&sid) = ctx.uncertainties_by_node.get(tid) {
+        sets.push(sid);
     }
     scoring_census::add(&scoring_census::UNC_NODES_WITH_SET, sets.len() as u64);
 
     // Keep only the LAST occurrence of each distinct set (see the doc's
     // equivalence argument), preserving relative order.
-    let mut sig: Vec<usize> = Vec::with_capacity(sets.len());
-    let mut kept: Vec<&Arc<[Uncertainty]>> = Vec::with_capacity(sets.len());
-    for (i, set) in sets.iter().enumerate() {
-        let id = PathUncertaintyCache::set_id(set);
-        if sets[i + 1..]
-            .iter()
-            .any(|later| PathUncertaintyCache::set_id(later) == id)
-        {
-            continue; // a later occurrence of this same allocation wins
+    let mut sig: Vec<UncertaintySetId> = Vec::with_capacity(sets.len());
+    for (i, &sid) in sets.iter().enumerate() {
+        if sets[i + 1..].contains(&sid) {
+            continue; // a later occurrence of this same set wins
         }
-        sig.push(id);
-        kept.push(set);
+        sig.push(sid);
     }
-    scoring_census::add(
-        &scoring_census::UNC_DISTINCT_SETS_ON_PATH,
-        kept.len() as u64,
-    );
+    scoring_census::add(&scoring_census::UNC_DISTINCT_SETS_ON_PATH, sig.len() as u64);
 
     if let Some(hit) = cache.get_path(&sig) {
         scoring_census::add(&scoring_census::UNC_PATH_HITS, 1);
@@ -2564,9 +2553,10 @@ fn path_uncertainty_ids(
     }
 
     let mut concat: Vec<UncertaintyId> = Vec::new();
-    for set in &kept {
-        scoring_census::add(&scoring_census::UNC_ELEMS, set.len() as u64);
-        concat.extend_from_slice(&cache.ids_of(set, table));
+    for &sid in &sig {
+        let ids = cache.ids_of(sid, &ctx.uncertainties, table);
+        scoring_census::add(&scoring_census::UNC_ELEMS, ids.len() as u64);
+        concat.extend_from_slice(&ids);
     }
     let out: Arc<[UncertaintyId]> = table.dedupe(&concat).into();
     scoring_census::add(&scoring_census::UNC_RESULT, out.len() as u64);
@@ -3999,16 +3989,15 @@ mod tests {
 
         let mut ctx = minimal_ctx(&routines, graph_edges, summaries);
         // Inject an uncertainty on node X — on the winning deep route only.
-        ctx.uncertainties_by_node.insert(
-            "X".to_string(),
+        ctx.set_uncertainties_for_test(
+            "X",
             vec![Uncertainty {
                 kind: "dynamic-dispatch".to_string(),
                 callsite_id: None,
                 operation_id: None,
                 routine_id: Some("X".to_string()),
                 interface_name: None,
-            }]
-            .into(),
+            }],
         );
 
         let workspace = ws(&routines);
@@ -5336,16 +5325,15 @@ mod tests {
             .collect();
 
         let mut ctx = minimal_ctx(&routines, graph_edges, summaries);
-        ctx.uncertainties_by_node.insert(
-            "X".to_string(),
+        ctx.set_uncertainties_for_test(
+            "X",
             vec![Uncertainty {
                 kind: "dynamic-dispatch".to_string(),
                 callsite_id: None,
                 operation_id: None,
                 routine_id: Some("X".to_string()),
                 interface_name: None,
-            }]
-            .into(),
+            }],
         );
 
         let workspace = ws(&routines);

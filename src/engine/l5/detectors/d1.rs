@@ -65,6 +65,8 @@ use crate::engine::l5::d1_reach::{D1CohortRun, DirectOp, search_loops_cohorts};
 use crate::engine::l5::d1_reach::{LoopTerminalAgg, search_loops};
 use crate::engine::l5::d1_witness::StepInterner;
 use crate::engine::l5::detector_context::DetectorContext;
+#[cfg(test)]
+use crate::engine::l5::detector_context::OwnedUncertainties;
 use crate::engine::l5::detectors::{
     anchor_of, is_known_temp, is_terminator_next, op_targets_virtual_system_table,
     unquoted_field_name,
@@ -1167,7 +1169,7 @@ pub(crate) fn detect_d1_premerge(resolved: &L3Resolved, ctx: &DetectorContext) -
                             initial_loop_depth: 0,
                             initial_steps: Vec::new(),
                         },
-                        &ctx.uncertainties_by_node,
+                        ctx.uncertainty_view(),
                         None,
                     );
                     let rc = Rc::new(results);
@@ -2389,9 +2391,8 @@ mod memo_tests {
             routine_id: None,
             interface_name: None,
         };
-        let mut uncertainties_by_node: HashMap<String, std::sync::Arc<[Uncertainty]>> =
-            HashMap::new();
-        uncertainties_by_node.insert("D".to_string(), std::sync::Arc::from(vec![unc]));
+        let mut uncertainties = OwnedUncertainties::default();
+        uncertainties.insert("D", vec![unc]);
 
         let cone_derived = crate::engine::l5::test_support::cone_store_of(&summaries);
         let policy = D1Policy {
@@ -2418,7 +2419,7 @@ mod memo_tests {
                 initial_loop_depth: 1,
                 initial_steps: prefix1.clone(),
             },
-            &uncertainties_by_node,
+            uncertainties.view(),
             None,
         );
         let fresh_2 = walk_evidence(
@@ -2429,7 +2430,7 @@ mod memo_tests {
                 initial_loop_depth: 2,
                 initial_steps: prefix2.clone(),
             },
-            &uncertainties_by_node,
+            uncertainties.view(),
             None,
         );
 
@@ -2442,7 +2443,7 @@ mod memo_tests {
                 initial_loop_depth: 0,
                 initial_steps: Vec::new(),
             },
-            &uncertainties_by_node,
+            uncertainties.view(),
             None,
         );
 
@@ -3746,7 +3747,7 @@ mod assembly_tests {
         edges: HashMap<String, Vec<CombinedEdge>>,
         summaries: HashMap<String, FullRoutineSummary>,
     ) -> Vec<Finding> {
-        let ctx = minimal_ctx_with_uncertainties(routines, edges, summaries, HashMap::new());
+        let ctx = minimal_ctx_with_uncertainties(routines, edges, summaries, Vec::new());
         cohort_findings(&ctx, routines)
     }
 
@@ -3756,10 +3757,12 @@ mod assembly_tests {
         routines: &'a [L3Routine],
         edges: HashMap<String, Vec<CombinedEdge>>,
         summaries: HashMap<String, FullRoutineSummary>,
-        uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>>,
+        uncertainties: Vec<(String, Vec<Uncertainty>)>,
     ) -> DetectorContext<'a> {
         let mut ctx = minimal_ctx(routines, edges, summaries);
-        ctx.uncertainties_by_node = uncertainties;
+        for (node, set) in uncertainties {
+            ctx.set_uncertainties_for_test(&node, set);
+        }
         ctx
     }
 
@@ -3884,20 +3887,20 @@ mod assembly_tests {
     #[test]
     fn cohort_confidence_resolves_interned_uncertainties_in_key_order() {
         let (routines, edges, summaries) = uncertain_winner_fixture();
-        let uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>> = [
+        let uncertainties: Vec<(String, Vec<Uncertainty>)> = [
             (
                 "X".to_string(),
-                std::sync::Arc::from(vec![
+                vec![
                     unc("external-target", Some("X/csY"), None),
                     unc("unresolved-call", Some("A/csX"), None),
-                ]),
+                ],
             ),
             (
                 "Y".to_string(),
-                std::sync::Arc::from(vec![
+                vec![
                     unc("dynamic-dispatch", None, Some("Y")),
                     unc("unresolved-call", Some("A/csX"), None),
-                ]),
+                ],
             ),
         ]
         .into_iter()
@@ -4099,12 +4102,10 @@ mod assembly_tests {
     #[test]
     fn cohort_evidence_notes_are_shared_across_findings() {
         let (routines, edges, summaries) = shared_uncertainty_two_terminals_fixture();
-        let uncertainties: HashMap<String, std::sync::Arc<[Uncertainty]>> = [(
+        let uncertainties: Vec<(String, Vec<Uncertainty>)> = vec![(
             "Y".to_string(),
-            std::sync::Arc::from(vec![unc("dynamic-dispatch", None, Some("Y"))]),
-        )]
-        .into_iter()
-        .collect();
+            vec![unc("dynamic-dispatch", None, Some("Y"))],
+        )];
 
         let ctx = minimal_ctx_with_uncertainties(&routines, edges, summaries, uncertainties);
         let findings = cohort_findings(&ctx, &routines);
