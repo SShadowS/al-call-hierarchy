@@ -374,6 +374,10 @@ pub(crate) mod cones_census {
     /// direct facts, built once per non-root SCC.
     pub(crate) static FACTCONE_NANOS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static FACTCONE_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// `merge_cone` traffic: total merges, and how many hit the tie-break path
+    /// that calls `rep_key` TWICE (each call JSON-serializes two fields).
+    pub(crate) static MERGE_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static MERGE_TIEBREAKS: AtomicU64 = AtomicU64::new(0);
 
     pub(crate) fn enabled() -> bool {
         static E: OnceLock<bool> = OnceLock::new();
@@ -382,6 +386,16 @@ pub(crate) mod cones_census {
 
     pub(crate) fn add(c: &AtomicU64, v: u64) {
         c.fetch_add(v, Ordering::Relaxed);
+    }
+
+    /// `add`, but only when the census is on. For counters on paths that run
+    /// millions of times per run (`merge_cone`: 6,556,465), an unconditional
+    /// `fetch_add` is not free — it inflated `compose` from ~11.0 s to ~12.8 s,
+    /// i.e. the probe was distorting the very number it reported.
+    pub(crate) fn add_gated(c: &AtomicU64, v: u64) {
+        if enabled() {
+            c.fetch_add(v, Ordering::Relaxed);
+        }
     }
 
     pub(crate) fn max(c: &AtomicU64, v: u64) {
@@ -460,6 +474,11 @@ pub(crate) mod cones_census {
             ms(DERIVED_NANOS.load(Ordering::Relaxed)),
             ms(FACTCONE_NANOS.load(Ordering::Relaxed)),
             FACTCONE_CALLS.load(Ordering::Relaxed),
+        );
+        eprintln!(
+            "[cones-census]   merge_cone: calls={} tiebreaks={} (a tiebreak = 2x rep_key, each JSON-serializing)",
+            MERGE_CALLS.load(Ordering::Relaxed),
+            MERGE_TIEBREAKS.load(Ordering::Relaxed),
         );
     }
 }
