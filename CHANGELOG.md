@@ -37,11 +37,20 @@ The preflight returns FOUR SCALARS and then destroys the whole model
 (`preflight.ctx_drop`), so on DO the CLI spends 2.64 s of a 3.17 s run building,
 resolving and discarding a whole-program model of ~11,600 mostly-unchanged dependency
 files to produce four numbers. The ceiling is therefore in not redoing the work, not in
-making it faster: dependency-parse/ABI caching across runs (note `build_context_res`
-constructs `AbiCache::new()` fresh on every call, so the one cache that exists is
-always empty), or caching `FreshCoverage` itself on a workspace+dependency content
-hash — `compute_gate_model_instance_id` already computes such a hash in 51 ms. Both
+making it faster: dependency-PARSE caching across runs, or caching `FreshCoverage`
+itself on a workspace+dependency CONTENT hash (an identical-input-rerun win only —
+any primary edit is a guaranteed miss, so it does not help the edit loop). Both
 unbuilt and unmeasured; the ledger is what they would be built against.
+
+Two claims in this entry's first draft were **wrong and are corrected in the ledger**:
+`AbiCache` is a process-level in-memory map, so constructing it fresh per call costs
+nothing across runs and it is not a cross-run lever at all (and its key is
+version-based, not content-based, so persisting it as-is would be unsound); and
+`compute_gate_model_instance_id` hashes file PATHS, never file content
+(`model_instance_id.rs:82-88`), so it is unusable as a cache key — it would serve a
+stale verdict after any edit. The house pattern to copy is `src/snapshot/cache.rs`,
+a live content-addressed on-disk cache (blake3 of the whole `.app`) that already
+caches dep source EXTRACTION across runs — the parse of that text is what repeats.
 
 Ledger: `docs/2026-07-31-preflight-census.md`. Byte-identical on both corpora (DO
 `f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens` green (9 targets, zero files
