@@ -35,6 +35,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -460,6 +461,16 @@ impl std::hash::Hash for ContextKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct UncertaintyId(u32);
 
+impl UncertaintyId {
+    /// Test-only constructor — the field is private on purpose (only
+    /// [`UncertaintyTable::intern`] mints these), but a cache test needs a
+    /// stand-in id that never came from a table.
+    #[cfg(test)]
+    pub(crate) fn for_test(n: u32) -> Self {
+        UncertaintyId(n)
+    }
+}
+
 /// The run-level de-duplicated [`Uncertainty`] store every [`CohortRep`]'s
 /// uncertainty union indexes into.
 ///
@@ -519,6 +530,15 @@ pub(crate) struct UncertaintyTable {
 impl UncertaintyTable {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// Number of DISTINCT values interned so far. Test-only: it exists so a test
+    /// can assert that a second visit to an already-seen set interned NOTHING,
+    /// which is the whole point of the per-set memo and is invisible to any
+    /// value assertion.
+    #[cfg(test)]
+    pub(crate) fn len_for_test(&self) -> usize {
+        self.entries.len()
     }
 
     /// Intern `u`, returning its id — equal values always return the SAME id, a
@@ -635,7 +655,93 @@ impl UncertaintyTable {
 #[derive(Debug, Clone)]
 pub(crate) struct CohortRep {
     pub witness: WitnessSummary,
-    pub uncertainties: Vec<UncertaintyId>,
+    /// SHARED, not owned: cohorts whose representative paths cross the same
+    /// uncertainty sets get the same allocation from [`PathUncertaintyCache`]
+    /// (2,444 distinct unions across 21,661 walks on Base App 8020, and
+    /// 10,266,162 ids in total).
+    pub uncertainties: Arc<[UncertaintyId]>,
+}
+
+/// Memo for the representative path's uncertainty union — the structure that
+/// makes [`crate::engine::l5::d1_dataflow::path_uncertainty_ids`] cheap.
+///
+/// **What it exploits.** `DetectorContext::uncertainties_by_node` holds
+/// HASH-CONSED `Arc<[Uncertainty]>` sets (the uncertainty-substrate arc: 27,037
+/// nodes over 10,112 distinct backing buffers), so two nodes carrying an equal set
+/// carry the SAME allocation, and pointer identity is set identity. Censused on
+/// 8020, the union path was re-deriving the same answers relentlessly: 164,644
+/// node-visits-with-a-set contained only 54,506 distinct sets (2.5 per walk
+/// against 7.6 hops), and 21,661 walks had only 2,444 distinct set signatures.
+///
+/// So there are two levels, and both are needed — the per-set level removes the
+/// 92,054,600 `HashMap<Uncertainty, _>` lookups (each hashing a struct of
+/// `String`s), the per-path level removes 89 % of the dedupe passes.
+///
+/// **Why a raw pointer is a sound key here.** Each entry OWNS an `Arc` clone of
+/// the set it is keyed by, so the allocation cannot be freed — and therefore its
+/// address cannot be recycled to a different set — while the entry lives. Without
+/// that clone this would be unsound the moment any set were dropped mid-run.
+pub(crate) struct PathUncertaintyCache {
+    by_set: HashMap<usize, SetEntry>,
+    by_path: HashMap<Vec<usize>, Arc<[UncertaintyId]>>,
+}
+
+struct SetEntry {
+    /// Pins the allocation this entry's pointer key names. Never read — its
+    /// existence IS the invariant (see the type's doc).
+    _keep_alive: Arc<[Uncertainty]>,
+    ids: Arc<[UncertaintyId]>,
+}
+
+impl Default for PathUncertaintyCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PathUncertaintyCache {
+    pub(crate) fn new() -> Self {
+        PathUncertaintyCache {
+            by_set: HashMap::new(),
+            by_path: HashMap::new(),
+        }
+    }
+
+    /// The identity of one hash-consed set — its backing-buffer address.
+    pub(crate) fn set_id(set: &Arc<[Uncertainty]>) -> usize {
+        Arc::as_ptr(set) as *const u8 as usize
+    }
+
+    /// This set's elements interned into `table`, in the set's OWN order,
+    /// computed once per distinct allocation. Order is preserved because the
+    /// caller's dedupe is last-write-wins by key and therefore order-sensitive.
+    pub(crate) fn ids_of(
+        &mut self,
+        set: &Arc<[Uncertainty]>,
+        table: &mut UncertaintyTable,
+    ) -> Arc<[UncertaintyId]> {
+        let key = Self::set_id(set);
+        if let Some(e) = self.by_set.get(&key) {
+            return Arc::clone(&e.ids);
+        }
+        let ids: Arc<[UncertaintyId]> = set.iter().map(|u| table.intern(u)).collect();
+        self.by_set.insert(
+            key,
+            SetEntry {
+                _keep_alive: Arc::clone(set),
+                ids: Arc::clone(&ids),
+            },
+        );
+        ids
+    }
+
+    pub(crate) fn get_path(&self, sig: &[usize]) -> Option<Arc<[UncertaintyId]>> {
+        self.by_path.get(sig).map(Arc::clone)
+    }
+
+    pub(crate) fn put_path(&mut self, sig: Vec<usize>, ids: Arc<[UncertaintyId]>) {
+        self.by_path.insert(sig, ids);
+    }
 }
 
 // ===========================================================================
@@ -686,6 +792,10 @@ pub(crate) struct TerminalSink<'a> {
     /// threaded parameter. Moved out by [`Self::finalize`] to live on the run
     /// alongside the cohorts that reference it.
     uncertainties: UncertaintyTable,
+    /// The union memo paired with `uncertainties` — its ids are only meaningful
+    /// against THAT table, which is why the two live together and are handed to
+    /// `build_rep` together.
+    path_cache: PathUncertaintyCache,
 }
 
 impl<'a> TerminalSink<'a> {
@@ -700,6 +810,7 @@ impl<'a> TerminalSink<'a> {
             verdicts: Vec::with_capacity(n_terminals),
             seen: Vec::with_capacity(n_terminals),
             uncertainties: UncertaintyTable::new(),
+            path_cache: PathUncertaintyCache::new(),
         }
     }
 
@@ -748,7 +859,7 @@ impl<'a> TerminalSink<'a> {
         group: GroupIx,
         ctx: ContextKey,
         reachable: [bool; 4],
-        build_rep: impl FnOnce(&mut UncertaintyTable) -> CohortRep,
+        build_rep: impl FnOnce(&mut UncertaintyTable, &mut PathUncertaintyCache) -> CohortRep,
     ) {
         debug_assert!(
             (group as usize) < self.n_groups,
@@ -763,9 +874,10 @@ impl<'a> TerminalSink<'a> {
         );
         self.seen[terminal].set(group);
         let table = &mut self.uncertainties;
+        let path_cache = &mut self.path_cache;
         let entry = self.cohorts[terminal]
             .entry(ctx)
-            .or_insert_with(|| (GroupBitmap::new(), build_rep(table)));
+            .or_insert_with(|| (GroupBitmap::new(), build_rep(table, path_cache)));
         entry.0.set(group);
         for (v, &r) in reachable.iter().enumerate() {
             if r {
@@ -1002,7 +1114,7 @@ mod tests {
     /// inspected here (the differential in `d1_dataflow` proves the real
     /// witness/uncertainty build); these tests only exercise the bitmap-cohort
     /// bookkeeping (interning, disjointness, verdict decompression).
-    fn dummy_rep(_table: &mut UncertaintyTable) -> CohortRep {
+    fn dummy_rep(_table: &mut UncertaintyTable, _cache: &mut PathUncertaintyCache) -> CohortRep {
         let step = EvidenceStep {
             routine_id: "R".to_string(),
             operation_id: None,
@@ -1030,7 +1142,7 @@ mod tests {
                 last_steps: vec![],
                 terminal_step: std::sync::Arc::new(step),
             },
-            uncertainties: vec![],
+            uncertainties: Arc::from(Vec::new()),
         }
     }
 
@@ -1413,5 +1525,77 @@ mod tests {
         assert_eq!(serde_json::to_string(&id).unwrap(), "42");
         let back: LoopSetId = serde_json::from_str("42").unwrap();
         assert_eq!(back, id);
+    }
+
+    // -- PathUncertaintyCache ------------------------------------------------
+
+    /// Two `interface-open-world` uncertainties differing ONLY in
+    /// `interface_name` share an `uncertainty_key` (`"{kind}|{at}"` ignores it)
+    /// while being DIFFERENT values with different ids. That is the one shape
+    /// where the union's last-write-wins ordering is observable, so every
+    /// ordering test below is hand-stated on it rather than on a shape where any
+    /// order gives the same answer.
+    fn iow(interface: &str) -> Uncertainty {
+        Uncertainty {
+            kind: "interface-open-world".to_string(),
+            callsite_id: Some("cs/1".to_string()),
+            operation_id: None,
+            routine_id: None,
+            interface_name: Some(interface.to_string()),
+        }
+    }
+
+    #[test]
+    fn colliding_key_uncertainties_are_distinct_values_with_one_key() {
+        let a = iow("IAlpha");
+        let b = iow("IBeta");
+        assert_ne!(a, b, "different values");
+        assert_eq!(
+            uncertainty_key(&a),
+            uncertainty_key(&b),
+            "…but ONE key — this is the precondition the ordering tests need"
+        );
+    }
+
+    #[test]
+    fn path_cache_interns_a_shared_set_once_and_returns_the_same_allocation() {
+        let mut table = UncertaintyTable::new();
+        let mut cache = PathUncertaintyCache::new();
+        let set: Arc<[Uncertainty]> = Arc::from(vec![iow("IAlpha"), iow("IBeta")]);
+        // The SAME allocation, as the hash-consed substrate hands out.
+        let alias = Arc::clone(&set);
+
+        let first = cache.ids_of(&set, &mut table);
+        let entries_after_first = table.len_for_test();
+        let second = cache.ids_of(&alias, &mut table);
+
+        assert_eq!(&*first, &*second, "same ids");
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "a second visit to the same set must not re-intern or re-allocate"
+        );
+        assert_eq!(
+            table.len_for_test(),
+            entries_after_first,
+            "the second visit interned nothing new"
+        );
+    }
+
+    #[test]
+    fn path_cache_stores_and_returns_a_union_by_signature() {
+        let mut cache = PathUncertaintyCache::new();
+        let sig = vec![7usize, 3usize];
+        assert!(cache.get_path(&sig).is_none(), "cold");
+        let ids: Arc<[UncertaintyId]> = Arc::from(vec![UncertaintyId::for_test(1)]);
+        cache.put_path(sig.clone(), Arc::clone(&ids));
+        let hit = cache.get_path(&sig).expect("warm");
+        assert!(
+            Arc::ptr_eq(&hit, &ids),
+            "a hit shares the stored allocation"
+        );
+        assert!(
+            cache.get_path(&[3usize, 7usize]).is_none(),
+            "the signature is ORDERED — the reverse order is a different path,              because order decides the winner when two sets share a key"
+        );
     }
 }
