@@ -21,6 +21,17 @@ al-syntax = { path = "crates/al-syntax" }
 # Parallelism
 rayon = "1.10"
 
+# Global allocator for the `alsem` CLI ONLY (installed in `src/bin/alsem.rs`, not
+# in the library — the LSP server, the benches and every test keep the platform
+# default). The analyze path is allocation-bound end to end and the 8020 profile
+# measured 16.6 % of the run inside `free()` alone.
+mimalloc = "0.1"
+# `extended` exposes `mi_option_set` — `alsem` sets `purge_delay = 0` so the
+# allocator does not hold freed pages. Without it mimalloc is a peak-RSS
+# REGRESSION on a small workspace (DO 1,598 -> 1,717 MB); with it, it is a win on
+# both corpora. See `src/bin/alsem.rs`.
+libmimalloc-sys = { version = "0.1", features = ["extended"] }
+
 # LSP
 lsp-server = "0.7"
 lsp-types = "0.97"

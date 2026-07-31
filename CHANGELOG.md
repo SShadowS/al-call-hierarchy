@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `alsem` swaps its global allocator (8020 −41 %, DO −24 %, peak down on both)
+
+The attribution below ended somewhere none of the structural levers pointed:
+**16.6 % of an 8020 run is `free()`**. A workload whose teardown alone outweighs
+`context.compute_summaries` is asking what the allocator costs before it is asking
+for another data-structure rewrite, so that was measured first — eight lines, and a
+global multiplier on every span at once.
+
+`alsem` now installs `mimalloc` with `purge_delay = 0`. **MEASURED, paired A/B built
+from one tree and run ALTERNATELY, 4 pairs on 8020 and 5 on DO:**
+
+| corpus | `analyze.total` per-pair | median | peak RSS |
+|---|---|---:|---|
+| 8020 | 0.605 / 0.637 / 0.571 / 0.563 | **−41.2 %** | 5,312 → 4,961 MB (**−6.6 %**) |
+| DO | 0.733 / 0.720 / 0.762 / 0.794 / 0.775 | **−23.8 %** | 1,603 → 1,580 MB (**−1.4 %**) |
+
+Every pair negative on both corpora. The two pure-`free()` spans move most, which is
+the prediction the attribution made and the closest thing to a control an allocator
+swap can have: `gate.teardown` −87.0 %, `context.ctx_drop` −81.6 %.
+
+**`purge_delay = 0` is load-bearing, not tuning.** mimalloc's default 10 ms page-hold
+amortizes at Base App scale and does NOT at customer scale: plain mimalloc is a
+peak-RSS REGRESSION on DO (1,598 → 1,717 MB, +7.4 %). Shipping that would have
+repeated this repo's own recorded failure (the uncertainty substrate's silent DO
++0.4 MiB) at 300× the size. Immediate purging gives back ~7–9 % of the wall win and
+buys a configuration that regresses neither axis on either corpus. `libmimalloc-sys`
+exports no constant for the option (its lower neighbour is behind that crate's `v2`
+feature), so the index is derived from `mi_option_use_numa_nodes` and pinned by a
+`const` assertion — a numbering shift fails to COMPILE. The semantic check is the
+measurement: a wrong index cannot move the peak, and setting it in code reproduces
+the `MIMALLOC_PURGE_DELAY=0` env-var control to within 2 MB.
+
+**Scope and limits, stated:** a `#[global_allocator]` is per-executable, so the
+library, the LSP server (`src/main.rs` — long-lived, different trade-offs,
+unmeasured), `aldump`, the benches and every test target keep the platform default.
+Figures are Windows 11, the least favourable case for this workload; CI is
+`ubuntu-latest` against glibc `malloc` and a smaller gain should be expected there.
+And this does **not** excuse allocation churn — it makes a future churn regression
+cheaper and therefore harder to see. Two spans did not improve and are reported
+rather than dropped: `l3.discover_read` +0.9 % (disk-bound, flat) and
+`detector.d33-unfiltered-bulk-write` +10.5 % on ratios 1.14/1.13/2.29/0.87 — a 291 ms
+span with one wild outlier, i.e. noise at that size.
+
+Ledger: `docs/2026-07-31-allocator-swap.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`) — the strong form of "an allocator cannot change
+output", checked rather than assumed. `scripts/check-goldens` green (9 targets, zero
+files under `tests/` moved), 1,716 lib tests green, clippy clean.
+
 ### Changed — the 8020 profile is fully attributed, and a quarter of it was unmeasured
 
 Two of the three spans the lever list in `docs/OUTSTANDING.md` was ordered by had
