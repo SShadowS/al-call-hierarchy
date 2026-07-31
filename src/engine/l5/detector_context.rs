@@ -332,6 +332,138 @@ impl UncertaintyIndex {
     }
 }
 
+/// `ALSEM_CONES_CENSUS=1` — attribution inside the `context.capability_cones`
+/// span, which the post-substrate profile shows as the largest single item in an
+/// `alsem analyze` run (~15.8 s of ~66 s on BC Base App 8020) but which a span
+/// cannot break down: it measures a region, not which of the three phases inside
+/// it costs.
+///
+/// The three phases are the whole span: per-routine DIRECT fact extraction
+/// (`direct_facts_for_routine` over every routine), the SCC cone WALK
+/// (`compose_cone_over_graph`), and per-routine summary ASSEMBLY (draining the
+/// cones into `FullRoutineSummary`). Counters plus three `Instant` pairs taken
+/// once each — nothing per-routine, so the probe cannot distort what it measures.
+pub(crate) mod cones_census {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    pub(crate) static ROUTINES: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DIRECT_FACTS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static DIRECT_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static WALK_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static ASSEMBLE_NANOS: AtomicU64 = AtomicU64::new(0);
+    // Inside the walk: typed-edge graph build, Tarjan, direct-fact dedup, and the
+    // SCC-order cone composition itself.
+    pub(crate) static WALK_GRAPH_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static WALK_SCC_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static WALK_DEDUP_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static WALK_COMPOSE_NANOS: AtomicU64 = AtomicU64::new(0);
+    // Inside compose: the two per-member inherited-fact walks.
+    pub(crate) static BFS_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static BFS_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SINGLETON_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SINGLETON_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static MAX_SCC_MEMBERS: AtomicU64 = AtomicU64::new(0);
+    /// The rest of compose: the per-SCC coverage cone, and the per-member
+    /// `CoverageRecord` build + `out.insert` that follows the inherited walk.
+    pub(crate) static COVERAGE_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static EMIT_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// `ConeDerivedBuilder` folding: begin/fold_fact/finish per routine.
+    pub(crate) static DERIVED_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// The per-SCC FACT cone: union of the successors' cones + this SCC's own
+    /// direct facts, built once per non-root SCC.
+    pub(crate) static FACTCONE_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static FACTCONE_CALLS: AtomicU64 = AtomicU64::new(0);
+
+    pub(crate) fn enabled() -> bool {
+        static E: OnceLock<bool> = OnceLock::new();
+        *E.get_or_init(|| std::env::var("ALSEM_CONES_CENSUS").as_deref() == Ok("1"))
+    }
+
+    pub(crate) fn add(c: &AtomicU64, v: u64) {
+        c.fetch_add(v, Ordering::Relaxed);
+    }
+
+    pub(crate) fn max(c: &AtomicU64, v: u64) {
+        c.fetch_max(v, Ordering::Relaxed);
+    }
+
+    /// A timer ONLY when the census is enabled. With it off this is a bool load
+    /// and a `None`, so the ~1 M `Instant::now()` pairs these probe sites would
+    /// otherwise take per BC Base App run — three per routine plus two per SCC —
+    /// are not taken at all. A diagnostic that costs production time is a
+    /// diagnostic that eventually gets deleted for the wrong reason.
+    pub(crate) fn start() -> Option<std::time::Instant> {
+        enabled().then(std::time::Instant::now)
+    }
+
+    /// Charge `t`'s elapsed time to `c`, if the census is on.
+    pub(crate) fn add_since(c: &AtomicU64, t: Option<std::time::Instant>) {
+        if let Some(t) = t {
+            c.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+
+    pub(crate) fn report() {
+        if !enabled() {
+            return;
+        }
+        let d = DIRECT_NANOS.load(Ordering::Relaxed);
+        let w = WALK_NANOS.load(Ordering::Relaxed);
+        let a = ASSEMBLE_NANOS.load(Ordering::Relaxed);
+        let total = d + w + a;
+        let ms = |n: u64| n as f64 / 1e6;
+        let pct = |n: u64| {
+            if total == 0 {
+                0.0
+            } else {
+                100.0 * n as f64 / total as f64
+            }
+        };
+        eprintln!(
+            "[cones-census] routines={} direct_facts={} phases_total={:.1}ms",
+            ROUTINES.load(Ordering::Relaxed),
+            DIRECT_FACTS.load(Ordering::Relaxed),
+            ms(total),
+        );
+        eprintln!(
+            "[cones-census] direct={:.1}ms ({:.1}%) walk={:.1}ms ({:.1}%) assemble={:.1}ms ({:.1}%)",
+            ms(d),
+            pct(d),
+            ms(w),
+            pct(w),
+            ms(a),
+            pct(a),
+        );
+        eprintln!(
+            "[cones-census]   walk: graph={:.1}ms scc={:.1}ms dedup={:.1}ms compose={:.1}ms",
+            ms(WALK_GRAPH_NANOS.load(Ordering::Relaxed)),
+            ms(WALK_SCC_NANOS.load(Ordering::Relaxed)),
+            ms(WALK_DEDUP_NANOS.load(Ordering::Relaxed)),
+            ms(WALK_COMPOSE_NANOS.load(Ordering::Relaxed)),
+        );
+        eprintln!(
+            "[cones-census]   compose: bfs={:.1}ms x{} singleton={:.1}ms x{} max_scc_members={}",
+            ms(BFS_NANOS.load(Ordering::Relaxed)),
+            BFS_CALLS.load(Ordering::Relaxed),
+            ms(SINGLETON_NANOS.load(Ordering::Relaxed)),
+            SINGLETON_CALLS.load(Ordering::Relaxed),
+            MAX_SCC_MEMBERS.load(Ordering::Relaxed),
+        );
+        eprintln!(
+            "[cones-census]   compose rest: coverage_cone={:.1}ms emit_record={:.1}ms",
+            ms(COVERAGE_NANOS.load(Ordering::Relaxed)),
+            ms(EMIT_NANOS.load(Ordering::Relaxed)),
+        );
+        eprintln!(
+            "[cones-census]   compose rest: derived_fold={:.1}ms fact_cone={:.1}ms x{}",
+            ms(DERIVED_NANOS.load(Ordering::Relaxed)),
+            ms(FACTCONE_NANOS.load(Ordering::Relaxed)),
+            FACTCONE_CALLS.load(Ordering::Relaxed),
+        );
+    }
+}
+
 /// A borrowed view of the uncertainty substrate: the node → set map plus the
 /// index its ids resolve against.
 ///
@@ -708,6 +840,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         let mut direct_full: HashMap<String, Vec<CapabilityFact>> = HashMap::new();
         let mut coverage_in: HashMap<String, (String, Vec<String>)> = HashMap::new();
         let nodes: Vec<String> = ws.routines.iter().map(|r| r.id.clone()).collect();
+        let _t_direct = cones_census::start();
         for r in &ws.routines {
             let pubs = publisher_events_by_routine.get(&r.id).unwrap_or(&empty_pub);
             let (facts, status, reasons) = direct_facts_for_routine(r, pubs);
@@ -722,7 +855,16 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         } else {
             ConeOutput::DerivedOnly
         };
+        cones_census::add_since(&cones_census::DIRECT_NANOS, _t_direct);
+        cones_census::add(&cones_census::ROUTINES, ws.routines.len() as u64);
+        cones_census::add(
+            &cones_census::DIRECT_FACTS,
+            direct_full.values().map(|v| v.len() as u64).sum::<u64>(),
+        );
+
+        let _t_walk = cones_census::start();
         let outcome = compose_cone_over_graph(&graph, &nodes, &direct_full, &coverage_in, mode);
+        cones_census::add_since(&cones_census::WALK_NANOS, _t_walk);
         let mut cones = outcome.cones;
         cone_derived = outcome.derived;
         // ⟨C1 Task 4⟩ Both cone inputs are dead here; free them before the
@@ -735,6 +877,7 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
         // `cones` and `direct_full` are locally owned and dead after this loop, so
         // move their payloads into the summaries instead of cloning them out.
         let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+        let _t_assemble = cones_census::start();
         for r in &ws.routines {
             let cone_entry = cones.remove(&r.id);
             let direct = direct_full.remove(&r.id);
@@ -854,6 +997,8 @@ pub fn build_detector_context(resolved: &L3Resolved, demanded: u32) -> DetectorC
                 ),
             );
         }
+        cones_census::add_since(&cones_census::ASSEMBLE_NANOS, _t_assemble);
+        cones_census::report();
         summaries
     } else {
         HashMap::new()
