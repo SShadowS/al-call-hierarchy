@@ -421,17 +421,20 @@ under `docs/superpowers/specs/`.
   schema change, because it never depends on production code to create it.
   **Then prove discrimination**: break the thing (delete the `.then_with`, flip
   first-wins to last-wins, restore the `unwrap_or_default`), watch the test fail, revert,
-  watch it pass — and record both outcomes. **A discrimination proof that PASSES is
-  evidence about the TEST, not the code** — three times in the 2026-07-31 arc a break
-  came back green: once because `rustfmt` had reflowed the target text so a scripted
-  patch matched nothing, once because `Vec::dedup` only collapses ADJACENT equals and the
-  fixture had no consecutive duplicate, once because the broken contribution was
-  redundant with another code path. Assert that a scripted break actually applied
-  (`assert s.count(old) == 1`); an unasserted scripted break proves nothing. This is not optional ceremony; in the arc
+  watch it pass — and record both outcomes. This is not optional ceremony; in the arc
   that produced this rule, **five** instances were caught in review and **zero** by
   `cargo test`, and every real catch came with a discrimination proof while every miss
   lacked one. Watch too for the over-claim that travels with it — docs asserting guards
   are "each pinned executably" when only some are.
+  **A discrimination proof that PASSES is evidence about the TEST, not the code.** Three
+  times in the 2026-07-31 substrate arc a break came back green: once because `rustfmt`
+  had reflowed the target text so a scripted patch matched nothing at all, once because
+  `Vec::dedup` collapses only ADJACENT equals and the fixture carried no consecutive
+  duplicate, and once because the contribution broken was redundant with a second code
+  path. The first two were test/tooling defects and were fixed; the third was a real
+  property of the code and was recorded as a stated LIMIT of that golden. Always assert
+  that a scripted break actually applied (`assert s.count(old) == 1`) — an unasserted
+  scripted break proves nothing, and its green run reads exactly like a passing test.
 - **The al-sem TypeScript reference is RETIRED.** This engine began as a faithful Rust
   port of al-sem (TS), validated by byte-for-byte differential goldens. That era is over.
   The engine is now **Rust-owned**: correctness and resolution precision take priority
