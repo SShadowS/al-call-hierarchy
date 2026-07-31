@@ -85,16 +85,36 @@ numbers.
 
 Not in making any of these phases faster. In not redoing them:
 
-- **Dependency-parse / ABI caching across runs.** The dependency `.app` set is
-  content-addressed already and changes only when a package is upgraded. Note
-  `build_context_res` constructs `AbiCache::new()` **fresh on every call**, so the
-  one cache that does exist is always empty. Ceiling on DO: most of
-  `parse_snapshot`'s 1,139 ms + `dep_layer`'s 142 ms + a share of `snapshot_build`.
-- **Caching `FreshCoverage` itself**, keyed on a content hash of the workspace +
-  dependency set. `compute_gate_model_instance_id` already computes exactly such a
-  hash for the workspace, in 51 ms. Ceiling on DO: the whole **2.64 s / 83.4 %** on
-  a warm repeat. `src/engine/gate/cache_prune.rs` shows the repo already has a
-  cache concept to hang this on.
+- **Dependency-parse caching across runs.** The dependency `.app` set is
+  content-addressed already and changes only when a package is upgraded. Ceiling on
+  DO: most of `parse_snapshot`'s 1,139 ms + `dep_layer`'s 142 ms.
+- **Caching `FreshCoverage` itself**, keyed on a CONTENT hash of the workspace +
+  dependency set. Ceiling on DO: the whole **2.64 s / 83.4 %** on a warm repeat —
+  but only on an identical-input rerun (CI, a second `--format`, a no-op re-run);
+  any primary-source edit is a guaranteed miss by construction, so this does NOT
+  help the edit loop. `src/snapshot/cache.rs` — a live content-addressed on-disk
+  cache for embedded `.app` source EXTRACTION, keyed on blake3 of the whole `.app`
+  — is the house pattern to copy (atomic tmp+rename, fall through on a corrupt
+  entry, never fatal). Note what it means: dep source TEXT is already cached across
+  runs; the ~11,600-file PARSE of it is not.
+
+**Two corrections to an earlier draft of this section, both verified at source:**
+
+- **`AbiCache` is NOT a cross-run lever.** It is a process-level
+  `Mutex<HashMap<(guid,name,publisher,version), Arc<SymbolReferenceAbi>>>`
+  (`src/program/abi_ingest.rs:121-135`). `build_context_res` constructing it fresh
+  per call costs nothing across runs — an in-memory cache cannot survive a process
+  either way. It would matter only if `build_dep_layer` ran twice in one process
+  (the LSP updater, not `alsem analyze`). Worse, its key is VERSION-based, not
+  content-based, so persisting it as-is would be unsound: rebuilding a dep `.app`
+  at the same version with different content is routine. And on DO the deps ship
+  embedded source, so they are parsed as source, not ingested as ABI — this path
+  is a slice of `dep_layer`'s 141.9 ms, not of the 1,139 ms parse.
+- **`compute_gate_model_instance_id` is unusable as a cache key.** It hashes
+  `"{guid}@{version}"` plus one `ws:<relPosix>` string per discovered file
+  (`src/engine/gate/model_instance_id.rs:82-88`) — file NAMES, never file CONTENT.
+  Edit any file body and the id is unchanged. A cache keyed on it would serve a
+  stale verdict on every edit. It is a model-instance id, not a content hash.
 
 Both are unbuilt and unmeasured here. This document is the attribution they would
 have to be built against.

@@ -229,17 +229,47 @@ sizings marked pre-arc).
   dependency source re-parsed from scratch on every run**.
   **The ceiling is in not redoing the work, not in making it faster** — the
   preflight returns FOUR SCALARS and then destroys the whole model:
-  - **Dep-parse / ABI caching across runs.** `build_context_res` constructs
-    `AbiCache::new()` FRESH on every call, so the one cache that exists is always
-    empty. Ceiling on DO: most of `parse_snapshot` + `dep_layer` + part of
-    `snapshot_build`.
-  - **Cache `FreshCoverage` itself** on a workspace+dependency content hash —
-    `compute_gate_model_instance_id` already computes such a hash in 51 ms, and
-    `src/engine/gate/cache_prune.rs` is an existing cache concept to hang it on.
-    Ceiling on DO: the whole **2.64 s / 83.4 %** on a warm repeat.
-    Correctness constraint: the preflight is the "no silent clean" gate, so a
-    cache must fail CLOSED — a stale or unverifiable key means recompute, never
-    a reused verdict.
+  - **Cache `FreshCoverage` itself** on a workspace+dependency CONTENT hash.
+    Ceiling on DO: the whole **2.64 s / 83.4 %** per warm hit, minus a deliberate
+    `snapshot_build` (~459 ms) floor — the sound key derives FROM the snapshot, and
+    a cheaper pre-snapshot key would mean a second discovery implementation that
+    can drift from the real one. **Identical-input reruns only** (CI, a second
+    `--format`, a no-op re-run): any primary edit is a guaranteed miss by
+    construction, so this does NOT help the edit loop.
+  - **Dep-parse artifact caching** — the edit-loop lever, and the bigger design.
+    Blocked on two questions (below) plus the fact that `al_syntax::ir` has ZERO
+    serde derives today.
+  - Correctness constraint on both: the preflight is the "no silent clean" gate,
+    so a cache must fail CLOSED — stale, missing, corrupt or unverifiable means
+    recompute, never a reused verdict. Cache `Ok` only: `fresh` is a `Result` and
+    its `Err` ("could-not-verify") captures TRANSIENT environment, so caching it
+    would laminate an I/O flake into a persistent verdict.
+  - **Corrections to this entry's first draft, both verified at source:**
+    `AbiCache` (`abi_ingest.rs:121-135`) is a process-level in-memory
+    `Mutex<HashMap>`, so constructing it fresh per call costs nothing across runs
+    — it is NOT a cross-run lever, and its key is version-based rather than
+    content-based, so persisting it as-is would be unsound. And
+    `compute_gate_model_instance_id` (`model_instance_id.rs:82-88`) hashes file
+    PATHS plus `guid@version`, never file CONTENT — unusable as a cache key; it
+    would serve a stale verdict after any edit. The house pattern is
+    `src/snapshot/cache.rs`, a live content-addressed cache (blake3 of the whole
+    `.app`) that already caches dep source EXTRACTION across runs; what repeats is
+    the ~11,600-file PARSE of that text.
+  - **Two open questions gate the dep-parse lever** (design pointers in
+    `docs/superpowers/notes/2026-08-01-preflight-cache-pointers.md`): (Q1) the
+    preflight's `unknown` is primary-scoped but `coverage_holds`/`recovered_files`
+    are WHOLE-PROGRAM, so "skip dep bodies" is a deliberate contract change to what
+    the gate vouches for, never a silent side effect of caching; (Q2) event-
+    subscriber wiring is whole-snapshot-scoped, so dep-derived edges may not be a
+    pure function of the dep universe — if a dep subscriber can bind a primary
+    publisher, a dep-only-keyed artifact is unsound. Settle both before speccing.
+  - **Latent soundness bug found while scoping this, independent of any cache:**
+    `SourceRoot.content_hash` (`snapshot/provider.rs:59-64`) folds only
+    `f.text.as_bytes()`, concatenated — no `virtual_path`, no length prefix. Two
+    workspaces that differ by a file RENAME, or by re-splitting the same bytes
+    across different file boundaries, hash identically. The second is
+    verdict-changing (the files parse completely differently). Consumers to audit
+    before changing it: `snapshot/verify.rs`, `snapshot.rs:154-265`.
 
   **Still open in this track:**
   - **`l4_l5.role_scope_and_sort` — a comparator that allocates per COMPARISON.**
