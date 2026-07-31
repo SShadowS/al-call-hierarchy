@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `solve_side_facts` stops allocating: `context.compute_summaries` −32 %
+
+Built against the census below, which named the cost precisely: `solve_side_facts`
+was 46.5 % of the span, and NOT because of the graph walk. Four changes, all inside
+the two loops the census named:
+
+1. **`fold_shared`** — the SCC-shared fold ran 4,397,866 times per 8020 run as
+   `shared.insert(uncertainty_key(u), u.clone())`: 4.4 M `format!` allocations plus
+   4.4 M five-`Option<String>` deep clones, for a map holding only the distinct keys.
+   The key is now built into a REUSED buffer and hashed as `&str` (allocating only
+   for a genuinely new key), and a repeat COMPARES the stored record instead of
+   overwriting it. Last-write-wins survives **by construction** — equal ⇒ the
+   overwrite was a no-op, different ⇒ it still happens — not by appeal to the corpus.
+2. **`dedupe_uncertainties`** — a `BTreeMap<String, _>` building one key `String`
+   per element, for 3,708,222 elements per run, became a stable sort on the new
+   `cmp_uncertainty_key` plus a keep-LAST pass. The sort is on the CONCATENATED
+   `"kind|at"` bytes; a `(kind, at)` tuple sort is a DIFFERENT order (`'|'` is 0x7C,
+   above most identifier bytes), and both that and keep-last are now pinned by tests
+   that hand-state their preconditions and were **proven to discriminate in both
+   directions**.
+3. **The last member of each effective SCC takes `shared_vec` by MOVE** — 100,010 of
+   100,922 members are the sole member of their effective SCC, taking cloned records
+   3,687,409 → 507,045 (`shared_moved_elems` 3,180,364; the two counters still sum to
+   the old population, so the saving reads as movement, not as a vanished number).
+4. **Two `get(..).cloned()` sites became `remove(..)`** — each was deep-cloning all
+   3,700,433 output records and dropping the original immediately.
+
+**MEASURED — paired A/B, two binaries from one tree run ALTERNATELY, 3 runs each,
+medians** (absolute single-run numbers are worthless here: the baseline binary
+measured the same span at 10,781.6 / 8,877.8 / 8,012.8 ms):
+`phases_total` **8,877.8 → 6,018.5 ms (−32.2 %)** · `db_solver` 6,448.5 → 3,965.2
+(−38.5 %) · `side_facts` 4,230.2 → 2,519.9 (−40.4 %) · its assemble loop 2,003.3 →
+932.5 (−53.5 %) · its edge loop 2,017.9 → 1,534.9 (−23.9 %) · `out_assemble` 458.1
+→ 17.5 (**−96.2 %**). **`roles`, a phase this branch does not touch, moved −3.9 %** —
+that is the noise floor these deltas stand above. DO does not regress: its whole
+span went 130.0 → 96.7 ms and `shared_clone_elems` reached 0.
+
+**Change 2 was a REGRESSION before it was a win, and the allocation count did not
+reveal it.** Its first `cmp_uncertainty_key` compared two chained byte iterators;
+in that form the assemble share moved the WRONG way (21.8 % → 24.6 %) — removing
+3.7 M allocations lost to the byte-at-a-time comparison replacing them. Rewritten
+as a `memcmp`-backed slice compare with a single boundary byte, an isolating A/B
+(same tree, only `dedupe_uncertainties` swapped) prices it at **−33.9 %** on the
+assemble loop against two controls at +0.4 % and +1.4 %.
+
+Byte-identical on both corpora with the final binary (DO `f022f677…`, 8020
+`36151bf6…`; 8020 additionally reproduced across all 12 A/B runs), goldens green
+with zero files under `tests/` moved, clippy clean, 1,716 lib tests green. Ledger:
+`docs/2026-07-31-compute-summaries-census.md` Part 2.
+
 ### Added — `ALSEM_SUMMARIES_CENSUS=1`: `context.compute_summaries` is no longer unmeasured
 
 `context.compute_summaries` was ~10 s of a ~75 s BC Base App 8020 `analyze` run with

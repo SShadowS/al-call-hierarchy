@@ -115,7 +115,23 @@ pub(crate) mod summaries_census {
     pub(crate) static SF_SHARED_INSERTS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static SF_OPAQUE_PUSHES: AtomicU64 = AtomicU64::new(0);
     pub(crate) static SF_DEDUPE_ELEMS: AtomicU64 = AtomicU64::new(0);
+    /// Elements COPIED by `shared_vec.clone()`. Since the last member of each
+    /// effective SCC takes `shared_vec` by MOVE, this counts only the copies
+    /// that are still made; `SF_SHARED_MOVED_ELEMS` counts the ones that are
+    /// not. The two together are the population the pre-move code cloned, so a
+    /// drop here reads as a saving rather than as a vanished counter.
     pub(crate) static SF_SHARED_CLONE_ELEMS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SF_SHARED_MOVED_ELEMS: AtomicU64 = AtomicU64::new(0);
+    /// Elements ACTUALLY emitted by `solve_side_facts` (post-dedupe), the
+    /// materialization a record-carrying design has to pay no matter what.
+    pub(crate) static SF_OUTPUT_ELEMS: AtomicU64 = AtomicU64::new(0);
+    /// `uncertainty_key` collisions where the two records DIFFER — the only case
+    /// `dedupe_uncertainties`' last-write-wins is observable (the key is
+    /// `kind|at`, dropping `interface_name` and the losing id fields). Measured
+    /// **0** on both 8020 and DO. NOT gated and free: `fold_shared` compares the
+    /// stored record instead of overwriting it, so this increments only on the
+    /// branch that comparison already has to take.
+    pub(crate) static SF_KEY_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 
     // --- Epilogue. ---
     pub(crate) static FINISH_NANOS: AtomicU64 = AtomicU64::new(0);
@@ -271,6 +287,12 @@ pub(crate) mod summaries_census {
             g(&SF_OPAQUE_PUSHES),
             g(&SF_DEDUPE_ELEMS),
             g(&SF_SHARED_CLONE_ELEMS),
+        );
+        eprintln!(
+            "[summaries-census]   side_facts pop: output_elems={} shared_moved_elems={} key_conflicts={} (a conflict = one uncertainty_key, two DIFFERENT records)",
+            g(&SF_OUTPUT_ELEMS),
+            g(&SF_SHARED_MOVED_ELEMS),
+            g(&SF_KEY_CONFLICTS),
         );
         eprintln!(
             "[summaries-census]   field_index entries={}",
@@ -1111,7 +1133,7 @@ pub fn compute_summaries_v2_bundle_with_leaves(
         // `body_avail_by_id` is the workspace-wide, run-invariant map built
         // once above — NOT rebuilt per SCC.
         let _db_t = std::time::Instant::now();
-        let side_facts = solve_scc_db_effects(
+        let mut side_facts = solve_scc_db_effects(
             scc_entry,
             graph,
             &routines_by_id,
@@ -1138,8 +1160,13 @@ pub fn compute_summaries_v2_bundle_with_leaves(
         let _asm_t = summaries_census::start();
         summaries_census::add(&summaries_census::MEMBERS_ASSEMBLED, roles.len() as u64);
         for (id, parameter_roles) in roles {
+            // MOVE, not clone: `side_facts` is this iteration's own map and is
+            // dropped at the end of it, and `roles` is a map so `id` is distinct
+            // per member — so each entry is taken at most once. Cloning here deep-
+            // copied all 3,700,433 `Uncertainty` records the census counts per
+            // 8020 run, a second time, purely to drop the originals.
             let (mut uncertainties, has_unresolved_calls) =
-                side_facts.get(&id).cloned().unwrap_or_default();
+                side_facts.remove(&id).unwrap_or_default();
             // On a roles cap-hit, attach the per-member `fixpoint-capped`
             // Uncertainty EXACTLY as the OLD solver did (appended AFTER the
             // solver's dedup+sorted uncertainties, mirroring old's post-fixpoint

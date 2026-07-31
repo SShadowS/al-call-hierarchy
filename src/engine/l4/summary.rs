@@ -139,13 +139,94 @@ pub fn uncertainty_key(u: &Uncertainty) -> String {
 /// ASCII-key `compareStrings`). (Keep-first would diverge only for same-key
 /// `interface-open-world` uncertainties with differing `interfaceName`, but matching
 /// keep-last removes the reliance on that one-interface-per-callsite invariant.)
-pub(crate) fn dedupe_uncertainties(list: Vec<Uncertainty>) -> Vec<Uncertainty> {
-    use std::collections::BTreeMap;
-    let mut seen: BTreeMap<String, Uncertainty> = BTreeMap::new();
-    for u in list {
-        seen.insert(uncertainty_key(&u), u); // last-write-wins, matching JS Map.set
+///
+/// ## Why this is a sort, not a `BTreeMap<String, _>`
+///
+/// The `BTreeMap` form built ONE `format!("{}|{}", kind, at)` key `String` per
+/// element. `ALSEM_SUMMARIES_CENSUS=1` measured 3,708,222 elements passing
+/// through this function per BC Base App 8020 run (inside `solve_side_facts`
+/// alone) — i.e. 3.7 M heap allocations whose only purpose was to be compared and
+/// dropped. [`cmp_uncertainty_key`] compares the same key without materializing
+/// it, so the map is replaced by a stable sort plus a keep-LAST pass. The
+/// contract is unchanged and reproduced exactly:
+///
+/// - **Order**: the sort is on the CONCATENATED `"kind|at"` byte sequence (see
+///   [`cmp_uncertainty_key`] — a `(kind, at)` TUPLE comparison would be a
+///   different order, because `'|'` (0x7C) outranks most identifier bytes).
+/// - **Last-write-wins**: `sort_by` is stable, so an equal-key run keeps its
+///   original insertion order; taking the LAST element of each run is exactly
+///   what `BTreeMap::insert`'s overwrite did.
+pub(crate) fn dedupe_uncertainties(mut list: Vec<Uncertainty>) -> Vec<Uncertainty> {
+    list.sort_by(cmp_uncertainty_key);
+    // Keep the LAST element of each equal-key run. `dedup_by` removes the element
+    // passed as `a` (the LATER one) when the closure returns true, so returning
+    // `keys equal` would keep the FIRST — hence the swap, which makes the
+    // survivor of each run the last-inserted one.
+    list.dedup_by(|a, b| {
+        if cmp_uncertainty_key(a, b) == std::cmp::Ordering::Equal {
+            std::mem::swap(a, b);
+            true
+        } else {
+            false
+        }
+    });
+    list
+}
+
+/// Compare two uncertainties by [`uncertainty_key`] WITHOUT building it: the
+/// key is `format!("{}|{}", u.kind, uncertainty_at(u))`, so its byte sequence is
+/// `kind` bytes, then `b'|'`, then `at` bytes. Chaining the iterators compares
+/// that exact sequence with no allocation.
+///
+/// Comparing the `(kind, at)` pair as a tuple instead would NOT be the same
+/// order — `("a", "b")` < `("ab", "c")` as a tuple, while `"a|b"` > `"ab|c"` as
+/// a string, because `'|'` (0x7C) > `'b'` (0x62). The goldens are on the string
+/// order, so this reproduces the string order.
+pub(crate) fn cmp_uncertainty_key(a: &Uncertainty, b: &Uncertainty) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (ka, kb) = (a.kind.as_bytes(), b.kind.as_bytes());
+    let n = ka.len().min(kb.len());
+    // Slice compare lowers to `memcmp`; the byte-at-a-time iterator form this
+    // replaced was measurably slower than the `format!` allocations it removed
+    // (`side_facts`' assemble phase moved 21.8 % -> 24.6 % of the span on it).
+    match ka[..n].cmp(&kb[..n]) {
+        Ordering::Equal => {}
+        ord => return ord,
     }
-    seen.into_values().collect() // BTreeMap iterates keys in sorted order
+    // Common prefix. Whichever key's `kind` ran out continues with `'|'`; the
+    // other continues with its next `kind` byte.
+    match ka.len().cmp(&kb.len()) {
+        Ordering::Equal => uncertainty_at(a)
+            .as_bytes()
+            .cmp(uncertainty_at(b).as_bytes()),
+        Ordering::Less => match b'|'.cmp(&kb[n]) {
+            Ordering::Equal => cmp_uncertainty_key_bytewise(a, b),
+            ord => ord,
+        },
+        Ordering::Greater => match ka[n].cmp(&b'|') {
+            Ordering::Equal => cmp_uncertainty_key_bytewise(a, b),
+            ord => ord,
+        },
+    }
+}
+
+/// The fallback [`cmp_uncertainty_key`] defers to when a `kind` itself contains
+/// the `'|'` separator at exactly the position where the shorter kind ends — the
+/// one case the fast path cannot decide from a single byte. No AL uncertainty
+/// kind contains `'|'` (they are fixed literals like `opaque-callee`), so this is
+/// unreachable in practice; it exists so the fast path is an OPTIMIZATION of the
+/// key order rather than a redefinition of it.
+fn cmp_uncertainty_key_bytewise(a: &Uncertainty, b: &Uncertainty) -> std::cmp::Ordering {
+    let seq = |u: &Uncertainty| {
+        u.kind
+            .as_bytes()
+            .iter()
+            .copied()
+            .chain(std::iter::once(b'|'))
+            .chain(uncertainty_at(u).as_bytes().iter().copied())
+            .collect::<Vec<u8>>()
+    };
+    seq(a).cmp(&seq(b))
 }
 
 /// Per-record-parameter role summary (internal form). Mirrors al-sem
@@ -802,6 +883,98 @@ fn run_and_project(resolved: &L3Resolved) -> Vec<PRoutineSummaryCore> {
     projected.sort_by(|a, b| a.routine_id.cmp(&b.routine_id));
 
     projected
+}
+
+#[cfg(test)]
+mod dedupe_uncertainties_tests {
+    use super::*;
+
+    fn u(kind: &str, callsite: Option<&str>, iface: Option<&str>) -> Uncertainty {
+        Uncertainty {
+            kind: kind.to_string(),
+            callsite_id: callsite.map(str::to_string),
+            operation_id: None,
+            routine_id: None,
+            interface_name: iface.map(str::to_string),
+        }
+    }
+
+    /// The ORDER contract, hand-stated so it survives any rewrite of the
+    /// implementation: the sort is on the concatenated `"kind|at"` string, NOT on
+    /// the `(kind, at)` tuple. These two inputs are the minimal pair that
+    /// separates the two orders — `("a","b") < ("ab","c")` as a tuple, but
+    /// `"a|b" > "ab|c"` as a string because `'|'` (0x7C) > `'b'` (0x62).
+    ///
+    /// DISCRIMINATION PROOF (recorded, both directions): replacing
+    /// `cmp_uncertainty_key`'s chained-byte comparison with the tuple form
+    /// `(a.kind.as_str(), uncertainty_at(a)).cmp(&(b.kind.as_str(), uncertainty_at(b)))`
+    /// makes this test FAIL with `["a|b", "ab|c"]`; restoring it passes.
+    #[test]
+    fn sort_is_on_the_concatenated_key_not_the_field_tuple() {
+        // Deliberately fed in the order the tuple sort would produce, so a tuple
+        // comparator would leave it untouched and look correct.
+        let out = dedupe_uncertainties(vec![u("a", Some("b"), None), u("ab", Some("c"), None)]);
+        let keys: Vec<String> = out.iter().map(uncertainty_key).collect();
+        assert_eq!(
+            keys,
+            vec!["ab|c".to_string(), "a|b".to_string()],
+            "'|' (0x7C) outranks 'b' (0x62), so ab|c sorts BEFORE a|b"
+        );
+    }
+
+    /// The COLLISION contract: on two records sharing a key, the LAST one in the
+    /// input wins (al-sem `Map.set` / the retired `BTreeMap::insert` overwrite).
+    /// The precondition is hand-stated — two records built to share a key while
+    /// differing in `interface_name`, the one field `uncertainty_key` drops —
+    /// rather than obtained by asking production code to produce a collision.
+    ///
+    /// DISCRIMINATION PROOF (recorded, both directions): deleting the
+    /// `std::mem::swap(a, b)` from `dedupe_uncertainties`' `dedup_by` (which
+    /// makes it keep-FIRST) makes this test FAIL with `Some("iface-first")`;
+    /// restoring it passes.
+    #[test]
+    fn same_key_keeps_the_last_record_not_the_first() {
+        let first = u("interface-open-world", Some("cs1"), Some("iface-first"));
+        let last = u("interface-open-world", Some("cs1"), Some("iface-last"));
+        assert_eq!(
+            uncertainty_key(&first),
+            uncertainty_key(&last),
+            "precondition: these two records share a key by construction"
+        );
+        assert_ne!(first, last, "precondition: and are otherwise different");
+
+        let out = dedupe_uncertainties(vec![first, last]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].interface_name.as_deref(), Some("iface-last"));
+    }
+
+    /// Keep-last must hold for a run of THREE, not just a pair — a keep-first
+    /// implementation that happens to reverse pairs would still pass the test
+    /// above.
+    #[test]
+    fn same_key_run_of_three_keeps_the_last() {
+        let out = dedupe_uncertainties(vec![
+            u("k", Some("cs"), Some("a")),
+            u("k", Some("cs"), Some("b")),
+            u("k", Some("cs"), Some("c")),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].interface_name.as_deref(), Some("c"));
+    }
+
+    /// Distinct keys all survive, in key-sorted order, and the whole thing is a
+    /// no-op on an empty list.
+    #[test]
+    fn distinct_keys_survive_in_key_order() {
+        assert!(dedupe_uncertainties(Vec::new()).is_empty());
+        let out = dedupe_uncertainties(vec![
+            u("zzz", Some("1"), None),
+            u("aaa", Some("2"), None),
+            u("aaa", Some("1"), None),
+        ]);
+        let keys: Vec<String> = out.iter().map(uncertainty_key).collect();
+        assert_eq!(keys, vec!["aaa|1", "aaa|2", "zzz|1"]);
+    }
 }
 
 #[cfg(test)]
