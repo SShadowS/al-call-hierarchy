@@ -154,7 +154,82 @@ sizings marked pre-arc).
   removing 3.7 M allocations lost to the byte-iterator comparator that replaced
   them; an allocation count alone is not evidence of a win.
 
+  **DONE 2026-07-31 — the profile is FULLY ATTRIBUTED, and a quarter of it was
+  never measured** (branch `perf/attribute-unmeasured`, ledger
+  `docs/2026-07-31-profile-attribution.md`). Ranking by SELF time (exclusive of
+  nested spans) instead of inclusive total put **24.8 % of the run — 18.9 s of a
+  76.2 s median — inside two brackets that named none of it**: `analyze.total`
+  (15.5 %) and `l4_l5.run_detectors` (9.3 %), more than the largest named lever.
+  Five spans added (`gate.model_instance_id`, `gate.teardown`,
+  `context.build_total`, `context.ctx_drop`, `l4_l5.role_scope_and_sort`) took
+  those two to 2.9 ms and 0.2 ms of self time. **What it was: `gate.teardown`
+  13.8 % + `context.ctx_drop` 2.8 % = 16.6 % of the run (14.9 s) is `free()`.**
+  Falsified in passing: `gate.model_instance_id` (a SECOND full
+  `discover_al_files` walk, the one named suspect) is **51 ms**, not seconds —
+  the duplicate walk is a real but tiny redundancy, not a lever; and **d1 is off
+  this list** — the "scoring 10.56 s / 13.9 %, third overall" figure this entry
+  used to carry was measured before the d1 interning fix and is **1.8 %**.
+
+  **DONE 2026-07-31 — the allocator swap** (ledger
+  `docs/2026-07-31-allocator-swap.md`). That `free()` result pointed away from
+  every structural lever, so `alsem` now installs `mimalloc` with
+  `purge_delay = 0` (8 lines, `#[global_allocator]` scoped to that ONE binary).
+  Paired A/B, alternating, 4 pairs on 8020 and 5 on DO: **8020 −41.2 %**
+  (per-pair 0.605/0.637/0.571/0.563) with **peak 5,312 → 4,961 MB (−6.6 %)**;
+  **DO −23.8 %** (0.733/0.720/0.762/0.794/0.775) with **peak 1,603 → 1,580 MB
+  (−1.4 %)**. `gate.teardown` −87.0 %, `context.ctx_drop` −81.6 %.
+  `purge_delay = 0` is load-bearing: plain mimalloc is a peak REGRESSION on DO
+  (+7.4 %), and immediate purging costs ~7–9 % of the wall win to avoid it.
+  **Caveat that now applies to every future entry in this track: a faster
+  allocator makes an allocation-churn regression cheaper and therefore HARDER TO
+  SEE. Keep counting allocations — the count is the part that stays legible.**
+  Scope limits: library / LSP server / `aldump` / benches / tests keep the
+  platform default; figures are Windows 11 (the least favourable case), CI is
+  ubuntu/glibc and should show less.
+
+  **DONE 2026-07-31 — cone fact keys are `Arc<str>`** (ledger
+  `docs/2026-07-31-cone-arc-keys.md`). `merge_cone` took an OWNED `String`, so
+  all **6,556,465** merges per 8020 run passed `key.clone()`. Now borrowed, with
+  the `Arc` cloned only on insert: **6,435,078 heap key copies gone**, and a cone
+  entry copied into N predecessor cones shares one allocation instead of holding
+  N. `fact_cone` **1,976.8 → 1,783.0 ms (−9.8 %)**, 3/3 pairs negative against
+  untouched controls flat within ±3 %; peak ≈ −17 MB. This is the caveat above in
+  action — pre-mimalloc those 6.4 M copies would have been worth much more.
+
+  **The re-ranked lever list (post-allocator, 8020, `release-fast`, ~35–37 s
+  run).** Re-measure before picking: this list has now been wrong twice by being
+  a profile out of date.
+
+  | region (SELF) | ms | note |
+  |---|---:|---|
+  | `context.capability_cones` | ~8,200 | ~23 % — the dominant lever, twice the next item |
+  | `context.compute_summaries` | ~4,100 | `solve_side_facts` residual below |
+  | `preflight.fresh_coverage` | ~3,700 | never yet censused |
+  | `gate.workspace_diagnostics` | ~1,330 | never yet censused |
+  | `l3.parse_project_parallel` | ~1,310 | |
+  | `search_loops_cohorts` (self) | ~1,270 | d1 |
+  | `gate.format` | ~1,240 | 143,926 findings serialized |
+  | `context.build_total` (self) | ~1,195 | the unspanned stretches of the context build |
+  | `gate.teardown` | ~1,100 | was 12,430 |
+  | `gate.project_filter_scope_baseline_suppress` | ~1,000 | 143,926 findings projected |
+  | `l4_l5.role_scope_and_sort` | ~990 | see below |
+
   **Still open in this track:**
+  - **`l4_l5.role_scope_and_sort` — a comparator that allocates per COMPARISON.**
+    Newly named by the attribution. It sorts **143,926 findings** (8020) with
+    `sort_by(|a, b| compare_natural(&a.detector, &b.detector).then_with(||
+    primary_location_key(a).cmp(&primary_location_key(b))) …)`, and BOTH of those
+    build fresh heap values on every call: `compare_natural` runs `tokenize` twice
+    (a `Vec<String>` each) and `primary_location_key` is a `format!`. That is
+    ~2.5 M comparisons paying ~10–16 allocations apiece where N key builds would
+    do. The fix is decorate-sort-undecorate; the detector-name component collapses
+    to a `u32` rank over the ~54 distinct names (assign equal ranks to
+    natural-EQUAL names so the rank is an exact monotone image of the comparator's
+    preorder), and the location key must stay a STRING — `format!("{u}:{l}:{c}")`
+    compared as text is NOT the same order as comparing `(u, l, c)` field-wise
+    (`"a1:…" < "a:…"` because `'1' < ':'`). **`finding.rs:962` and `:1051` carry
+    the identical comparator** on the r4 projection paths. Not built here; sized,
+    not measured.
   - **`solve_side_facts`' remaining 2,519.9 ms** — still the largest item in the
     span. Its edge loop's residual is the 4,397,866 folds themselves: no longer
     allocating, but still hashing a key and walking a settled callee's WHOLE
@@ -177,7 +252,13 @@ sizings marked pre-arc).
     covers 4,158,131 of the 12.17 M entries, since a one-cone `best` is just a
     copy of a `BTreeMap` already in the right key order), and the fold's
     10,030,145 `fold_fact` calls, mostly `interner.intern(rid)` — the re-intern
-    shape the uncertainty substrate fixed one layer up.
+    shape the uncertainty substrate fixed one layer up. Re-censused 2026-07-31
+    post-allocator: `singleton` 3,339.7 ms of a 7,981.7 ms span, split
+    scan 2,173.6 / fold 1,041.1 / raw 0.0; populations unchanged. Note the
+    single-cone fast path removes the SCAN for those 30,160 calls but NOT the
+    fold — killing the fold too needs a per-cone derived digest memoized at the
+    cone, since a 1-cone call's derived contribution is a pure function of that
+    one cone.
   - **B2 — SCC-shared cones** — RE-SCOPED 2026-07-31 by `ALSEM_CONES_CENSUS=1`
     (`a822da9`). `context.capability_cones` is ~12.9 s of ~66 s on 8020 and
     attributes to exactly TWO costs inside `compose_inherited_cones`
