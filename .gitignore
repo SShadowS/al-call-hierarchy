@@ -33,6 +33,13 @@ Thumbs.db
 /.panel/
 /.serena/
 
+# MCP server config — LOCAL ONLY. The working copy carries per-developer service
+# endpoints AND credentials in its `env` blocks (bc / bc-dev container logins), so
+# it must never be committed as-is. It is deliberately NOT shared: sharing it with
+# the team means first moving every secret out of `env` into environment variables
+# and committing only the indirection.
+/.mcp.json
+
 # 1B.3b Task 1: local-only de-anonymization map (AnonId -> plaintext) for the
 # committed anonymized CDO goldens under tests/goldens/semantic-edges/. NEVER
 # committed — see src/program/resolve/anon.rs's module docs.
