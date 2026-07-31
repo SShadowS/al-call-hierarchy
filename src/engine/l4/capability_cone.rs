@@ -28,6 +28,7 @@
 //! each member at most once.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 
 use super::combined_graph::{CombinedGraph, TypedEdge, build_combined_graph};
 use super::cone_census;
@@ -1104,6 +1105,15 @@ struct TypedOutEdge {
     kind: String,
     callsite: Option<String>,
     event_id: Option<String>,
+    /// `edge_sort_key(self)`, computed ONCE at graph build.
+    ///
+    /// It is both the out-edge sort key and the first-hop tie-breaker in
+    /// `inherited_facts_for_singleton`, which used to call `edge_sort_key` TWICE
+    /// per comparison — each call a `format!` allocation — inside a loop that runs
+    /// per cone entry per out-edge over 100,419 singleton routines. The value is a
+    /// pure function of the edge's four fields, none of which change after
+    /// construction, so computing it here is the same string, once.
+    sort_key: String,
 }
 
 /// The typed-edge graph: per-routine sorted out-edges + the unresolved sources.
@@ -1165,16 +1175,18 @@ fn build_typed_edge_graph(graph: &CombinedGraph, nodes: &[String]) -> TypedEdgeG
         let Some(to) = &edge.to else {
             continue;
         };
-        let out = TypedOutEdge {
+        let mut out = TypedOutEdge {
             to: to.clone(),
             kind: edge.kind.clone(),
             callsite: callsite_id_for_edge(edge),
             event_id: edge.event_id.clone(),
+            sort_key: String::new(),
         };
+        out.sort_key = edge_sort_key(&out);
         outgoing.entry(edge.from.clone()).or_default().push(out);
     }
     for list in outgoing.values_mut() {
-        list.sort_by_key(edge_sort_key);
+        list.sort_by(|a, b| a.sort_key.cmp(&b.sort_key));
     }
 
     let mut sorted_nodes = nodes.to_vec();
@@ -1347,7 +1359,18 @@ fn rep_key(f: &CapabilityFact) -> String {
 /// One cone fact entry: the representative DIRECT fact + its min hop distance.
 #[derive(Debug, Clone)]
 struct ConeFactEntry {
-    rep: CapabilityFact,
+    /// SHARED: a cone entry is copied into every predecessor's cone, and the rep
+    /// itself never changes across those merges (only `dist` does), so a merge is
+    /// a refcount bump rather than a deep clone of a `CapabilityFact`'s five-plus
+    /// `String`s. 6,556,465 merges per BC Base App run went through here.
+    rep: Arc<CapabilityFact>,
+    /// `rep_key(rep)`, computed ONCE when the entry is minted.
+    ///
+    /// `merge_cone`'s tie-break used to call `rep_key` on BOTH sides of every
+    /// collision — 1,243,002 collisions per 8020 run, so ~2.5 M calls, each one
+    /// building a `String` by JSON-serializing `resource_arg_source` and `extra`.
+    /// The rep is immutable across merges, so the key is too.
+    rep_key: Arc<str>,
     dist: usize,
 }
 
@@ -1357,14 +1380,22 @@ type ConeFacts = BTreeMap<String, ConeFactEntry>;
 /// Merge `entry` (already distance-shifted) into `dst` at `key`, keeping min
 /// dist; tie-break by canonical rep. Mirrors `mergeCone`.
 fn merge_cone(dst: &mut ConeFacts, key: String, entry: ConeFactEntry) {
+    crate::engine::l5::detector_context::cones_census::add_gated(
+        &crate::engine::l5::detector_context::cones_census::MERGE_CALLS,
+        1,
+    );
     match dst.get(&key) {
         None => {
             dst.insert(key, entry);
         }
         Some(existing) => {
+            crate::engine::l5::detector_context::cones_census::add_gated(
+                &crate::engine::l5::detector_context::cones_census::MERGE_TIEBREAKS,
+                1,
+            );
             // min dist wins; equal dist → smaller canonical rep wins (mergeCone).
             let wins = entry.dist < existing.dist
-                || (entry.dist == existing.dist && rep_key(&entry.rep) < rep_key(&existing.rep));
+                || (entry.dist == existing.dist && entry.rep_key < existing.rep_key);
             if wins {
                 dst.insert(key, entry);
             }
@@ -1481,7 +1512,7 @@ fn inherited_facts_for_singleton<'g>(
                 None => true,
                 Some(cur) => {
                     cand_dist < cur.dist
-                        || (cand_dist == cur.dist && edge_sort_key(edge) < edge_sort_key(cur.edge))
+                        || (cand_dist == cur.dist && edge.sort_key < cur.edge.sort_key)
                 }
             };
             if wins {
@@ -1656,7 +1687,8 @@ fn fact_cone_for_scc(
                     &mut cone,
                     key.clone(),
                     ConeFactEntry {
-                        rep: f.clone(),
+                        rep: Arc::new(f.clone()),
+                        rep_key: Arc::from(rep_key(f)),
                         dist: 0,
                     },
                 );
@@ -1682,7 +1714,8 @@ fn fact_cone_for_scc(
                     &mut cone,
                     key.clone(),
                     ConeFactEntry {
-                        rep: entry.rep.clone(),
+                        rep: Arc::clone(&entry.rep),
+                        rep_key: Arc::clone(&entry.rep_key),
                         dist: entry.dist + 1,
                     },
                 );
