@@ -1815,12 +1815,22 @@ fn compose_inherited_cones(
         // held, so skipping stays sound.)
         let root_scc = remaining_uses[i] == 0;
         if !root_scc {
+            let _t_fc = crate::engine::l5::detector_context::cones_census::start();
             let fcone = fact_cone_for_scc(&scc_entry.members, succ_ids, &fact_cones, direct);
             fact_cones.insert(i, fcone);
+            crate::engine::l5::detector_context::cones_census::add_since(
+                &crate::engine::l5::detector_context::cones_census::FACTCONE_NANOS,
+                _t_fc,
+            );
+            crate::engine::l5::detector_context::cones_census::add(
+                &crate::engine::l5::detector_context::cones_census::FACTCONE_CALLS,
+                1,
+            );
         }
         // The coverage cone is ALWAYS computed — `ccone` is what this SCC's own
         // members' `CoverageRecord`s are built from below — but a root's copy is
         // never published for the same reason.
+        let _t_cov = crate::engine::l5::detector_context::cones_census::start();
         let ccone = coverage_cone_for_scc(
             &scc_entry.members,
             succ_ids,
@@ -1828,18 +1838,32 @@ fn compose_inherited_cones(
             cov,
             &g.unresolved_sources,
         );
+        crate::engine::l5::detector_context::cones_census::add_since(
+            &crate::engine::l5::detector_context::cones_census::COVERAGE_NANOS,
+            _t_cov,
+        );
         if !root_scc {
             cov_cones.insert(i, ccone.clone());
         }
 
+        crate::engine::l5::detector_context::cones_census::max(
+            &crate::engine::l5::detector_context::cones_census::MAX_SCC_MEMBERS,
+            scc_entry.members.len() as u64,
+        );
         let recursive = scc_entry.recursive;
         for m in &scc_entry.members {
             if !routine_ids.contains(m) {
                 continue;
             }
             if mode.wants_derived() {
+                let _t_der0 = crate::engine::l5::detector_context::cones_census::start();
                 derived.begin_routine();
+                crate::engine::l5::detector_context::cones_census::add_since(
+                    &crate::engine::l5::detector_context::cones_census::DERIVED_NANOS,
+                    _t_der0,
+                );
             }
+            let _t_walk = crate::engine::l5::detector_context::cones_census::start();
             let inherited = if recursive {
                 inherited_facts_by_bfs(
                     m,
@@ -1860,17 +1884,42 @@ fn compose_inherited_cones(
                     &mut derived,
                 )
             };
+            if recursive {
+                crate::engine::l5::detector_context::cones_census::add_since(
+                    &crate::engine::l5::detector_context::cones_census::BFS_NANOS,
+                    _t_walk,
+                );
+                crate::engine::l5::detector_context::cones_census::add(
+                    &crate::engine::l5::detector_context::cones_census::BFS_CALLS,
+                    1,
+                );
+            } else {
+                crate::engine::l5::detector_context::cones_census::add_since(
+                    &crate::engine::l5::detector_context::cones_census::SINGLETON_NANOS,
+                    _t_walk,
+                );
+                crate::engine::l5::detector_context::cones_census::add(
+                    &crate::engine::l5::detector_context::cones_census::SINGLETON_CALLS,
+                    1,
+                );
+            }
             if mode.wants_derived() {
                 // The SELF half — the routine's RAW direct facts, one fold each
                 // (they are stored un-deduped and the reachable sequence scans
                 // every one of them).
+                let _t_der1 = crate::engine::l5::detector_context::cones_census::start();
                 if let Some(own) = direct_raw.get(m) {
                     for f in own {
                         derived.fold_fact(f);
                     }
                 }
                 derived.finish_routine(m);
+                crate::engine::l5::detector_context::cones_census::add_since(
+                    &crate::engine::l5::detector_context::cones_census::DERIVED_NANOS,
+                    _t_der1,
+                );
             }
+            let _t_emit = crate::engine::l5::detector_context::cones_census::start();
             let d_status = cov
                 .get(m)
                 .map(|c| c.direct_status.clone())
@@ -1891,6 +1940,10 @@ fn compose_inherited_cones(
                         unknown_targets: ccone.unknown_targets.clone(),
                     },
                 },
+            );
+            crate::engine::l5::detector_context::cones_census::add_since(
+                &crate::engine::l5::detector_context::cones_census::EMIT_NANOS,
+                _t_emit,
             );
         }
 
@@ -2024,11 +2077,17 @@ pub fn compose_cone_over_graph(
     coverage_in: &HashMap<String, (String, Vec<String>)>,
     mode: ConeOutput,
 ) -> ConeOutcome {
+    let _t_graph = crate::engine::l5::detector_context::cones_census::start();
     let g = build_typed_edge_graph(graph, nodes);
     let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
     for (from, list) in &g.outgoing {
         adjacency.insert(from.clone(), list.iter().map(|e| e.to.clone()).collect());
     }
+    crate::engine::l5::detector_context::cones_census::add_since(
+        &crate::engine::l5::detector_context::cones_census::WALK_GRAPH_NANOS,
+        _t_graph,
+    );
+    let _t_scc = crate::engine::l5::detector_context::cones_census::start();
     let scc = tarjan_scc(&SccInputGraph {
         nodes: &g.nodes,
         edges_by_from: &adjacency,
@@ -2040,6 +2099,11 @@ pub fn compose_cone_over_graph(
 
     // Per-routine dedup-keyed direct facts (canonical rep per key) + direct
     // coverage + the routine-id set — mirrors the assembly in project_r3a3.
+    crate::engine::l5::detector_context::cones_census::add_since(
+        &crate::engine::l5::detector_context::cones_census::WALK_SCC_NANOS,
+        _t_scc,
+    );
+    let _t_dedup = crate::engine::l5::detector_context::cones_census::start();
     let mut direct: RoutineDirectFacts = HashMap::new();
     let mut cov: RoutineDirectCoverage = HashMap::new();
     let mut routine_ids: BTreeSet<String> = BTreeSet::new();
@@ -2071,8 +2135,17 @@ pub fn compose_cone_over_graph(
         }
     }
 
+    crate::engine::l5::detector_context::cones_census::add_since(
+        &crate::engine::l5::detector_context::cones_census::WALK_DEDUP_NANOS,
+        _t_dedup,
+    );
+    let _t_compose = crate::engine::l5::detector_context::cones_census::start();
     let (cones, derived) =
         compose_inherited_cones(&g, &scc, &direct, direct_in, &cov, &routine_ids, mode);
+    crate::engine::l5::detector_context::cones_census::add_since(
+        &crate::engine::l5::detector_context::cones_census::WALK_COMPOSE_NANOS,
+        _t_compose,
+    );
 
     // ⟨C1 census⟩ `direct` — the SCC walk's per-routine DEDUP-KEYED direct-fact
     // map (`inherited_fact_key` -> canonical rep) — is alive for the whole
