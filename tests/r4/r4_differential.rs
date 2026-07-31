@@ -690,8 +690,13 @@ const WAVE_E2: &[Smoke] = &[
 /// separately below (its 0-count golden is exempt from the anti-degenerate ≥1
 /// check).
 ///
-/// **`ws-d1-uncertain-path` is the ONLY golden anywhere in this repository that
-/// covers `Finding.confidence.evidence`.** Every other fixture's d1 winner path is
+/// **`ws-d1-uncertain-path` covers `Finding.confidence.evidence` for d1**, and
+/// `ws-d2-uncertain` (in `WAVE_D2` below) does the same for d2 — together they are
+/// the only goldens in this repository that cover the field at all. Until
+/// `ws-d2-uncertain` was added, d1's was the ONLY one, which left d2's half of the
+/// same substrate (`sub_summary_uncertainties` borrows straight out of
+/// `ctx.uncertainties_by_node`) with no coverage that could fail. Every other
+/// fixture's d1 winner path is
 /// certain, so `to_confidence` takes its `is_empty()` fast path and the field
 /// serializes as `[]`; and no `alsem analyze` golden family can EVER cover it,
 /// because `FindingSummary` projects only `{level, cappedBy}`. Its workspace
@@ -737,13 +742,38 @@ const WAVE_D1: &[Smoke] = &[
 /// ws-d2 (1 finding, WITH additionalPaths — two loops publish the same event, folded
 /// by merge_by_terminal). Validates the event-dispatch-following WalkPolicy + the
 /// subscriber DB-effect terminal + merge_by_terminal on rootCauseKey `d2/{eventId}`.
-const WAVE_D2: &[Smoke] = &[Smoke {
-    fixture: "ws-d2",
-    wave: "R4-D2",
-    detectors: &["d2-event-fanout-in-loop"],
-    ported: true,
-    corpus_dir: None,
-}];
+/// `ws-d2-uncertain` (1 finding WITH a non-empty `confidence.evidence`) is the d2
+/// counterpart of `ws-d1-uncertain-path`: its subscriber both touches the database
+/// AND dispatches through an interface, so `sub_summary_uncertainties` returns a
+/// non-empty set and d2's `to_confidence` leaves its `is_empty()` fast path. See
+/// `tests/r0-corpus/ws-d2-uncertain/src/subscriber.al`.
+///
+/// **What it pins, measured by breaking it** (not asserted from reading the code):
+/// deleting d2's `dedupe_uncertainties` call makes this golden fail with four
+/// evidence entries instead of two, and NO other fixture moves. What it does NOT
+/// pin: dropping the `sub_summary_uncertainties(ctx, ..)` contribution entirely
+/// leaves this golden GREEN, because d2 collects the same uncertainties a second
+/// time through the subscriber walk and the dedupe collapses them. So a change
+/// that breaks ONLY the direct `ctx.uncertainties_by_node` borrow — which is
+/// exactly what a substrate migration touches — would not be caught here. Pinning
+/// that would need a subscriber whose own uncertainty set is not re-derivable from
+/// its walk.
+const WAVE_D2: &[Smoke] = &[
+    Smoke {
+        fixture: "ws-d2",
+        wave: "R4-D2",
+        detectors: &["d2-event-fanout-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+    Smoke {
+        fixture: "ws-d2-uncertain",
+        wave: "R4-D2",
+        detectors: &["d2-event-fanout-in-loop"],
+        ported: true,
+        corpus_dir: None,
+    },
+];
 
 /// D48 per-detector positive fixture (http/file IO inside a loop). ws-txn-d48-pos
 /// (2 findings: one transitive HTTP Send via a call chain, one direct FILE IO).
