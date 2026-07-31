@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `ALSEM_SUMMARIES_CENSUS=1`: `context.compute_summaries` is no longer unmeasured
+
+`context.compute_summaries` was ~10 s of a ~75 s BC Base App 8020 `analyze` run with
+**zero attribution** — a span measures a region, not which line inside it costs. The new
+census splits it four levels deep and names the cost: the caller's `field_index` build,
+the six-map scaffolding prologue, the per-Tarjan-SCC loop (roles fixpoint / db-effect
+solve / member assembly), and the freeze+finish epilogue; then inside the db-effect solve,
+its seven sub-phases; then inside the dominant one, its four. `phases_total` accounts for
+**97 %** of the traced span, so nothing large sits outside the probes.
+
+**MEASURED (8020, `release-fast`, default preset — same-run shares only; `analyze.total`
+swings ±80 s on this machine):** `scc_loop` 86.1 % › `db_solver` 71.4 % ›
+**`solve_side_facts` 46.5 %** (1,773 ms in its per-member edge loop + 1,724 ms in its
+final assemble loop). **The edge loop's cost is not the edges**: 1,773 ms over 150,211
+edges is 11.8 µs each, because the loop performs **4,397,866
+`shared.insert(uncertainty_key(u), u.clone())`** calls — 29.3 per edge — each building a
+fresh `String` key and deep-cloning a five-`Option<String>` `Uncertainty`. The assemble
+loop then copies the same data again (**3,687,409** elements cloned from `shared_vec`,
+**3,708,222** passed to `dedupe_uncertainties`). ~8.1 M deep clones and ~4.4 M key strings
+per run, for an output of 27,037 nodes over 19,311 distinct values.
+
+**Two hypotheses the census FALSIFIED before any fix was written.** (1) The
+workspace-sized `settled.clone()` in `solve_scc_db_effects`'s multi-sibling general path
+**never executes** — `multi_eff_sccs=0` on 8020 AND on DO; every Tarjan SCC decomposes
+into exactly one effective SCC. (2) The surviving roles JACOBI fixpoint is **9.8 %**, not
+the cost. DO's shape is different again (whole span 130 ms; `roles` 42.2 % EXCEEDS
+`db_solver` 40.1 %, `side_facts` 12.6 %), so anything built here is a survive-Base-App
+item whose DO effect must not be negative.
+
+Every timer is `start()`/`add_since()`-gated (no clock is read off-census) and every
+population is accumulated in plain locals folded into the atomics ONCE per call, so no
+per-edge atomic exists on the hot path — the distortion `cones_census` measured on itself.
+Verified not to distort: a census-OFF control run measured the span at 10.22 s against
+8.14 s census-ON, with every other span moving by the same ~1.25 × machine factor. Byte
+identity held on both gates (DO `f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens`
+green with zero files under `tests/` moved. Full ledger:
+`docs/2026-07-31-compute-summaries-census.md`.
+
+Also, unrelated to the probe: the pre-existing `compute_summaries_v2_phase_split` trace
+instant accumulated its two timers with `as_micros()` per SCC, truncating up to one whole
+microsecond on each of 100,010 SCCs. Now accumulated in nanoseconds.
+
 ### Changed — uncertainty identity is established once, where it is discovered
 
 `UncertaintySetPool` (context build) already computed the identity this engine kept

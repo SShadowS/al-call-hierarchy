@@ -117,7 +117,34 @@ sizings marked pre-arc).
   `detector.d2` 3.46 s. Note this makes the d1 witness/uncertainty follow-up below a
   REAL item again, at a re-measured envelope of ≤10.56 s.
 
+  **MEASURED 2026-07-31 — `context.compute_summaries`** (branch
+  `perf/summaries-census`, ledger `docs/2026-07-31-compute-summaries-census.md`,
+  probe `ALSEM_SUMMARIES_CENSUS=1`). Attribution only — **no fix built yet**. The
+  span was ~10 s of ~75 s on 8020 with zero attribution; the census accounts for
+  97 % of it. `scc_loop` 86.1 % › `db_solver` 71.4 % › **`solve_side_facts`
+  46.5 %**, which splits evenly between its per-member edge loop (1,773 ms) and
+  its final assemble loop (1,724 ms). **The edge loop is not edge-bound**: 150,211
+  edges but **4,397,866** `shared.insert(uncertainty_key(u), u.clone())` calls
+  (29.3 per edge — every external edge re-folds the settled callee's whole
+  `uncertainties` vector), each a fresh key `String` plus a five-`Option<String>`
+  deep clone; the assemble loop then re-copies **3,687,409** elements and feeds
+  **3,708,222** to `dedupe_uncertainties`. ~8.1 M deep clones + ~4.4 M key strings
+  per run, for an output of 27,037 nodes / 19,311 distinct values / 10,112
+  distinct sets — the transaction-spans over-materialization shape again.
+  Everything else is small: `finish` 9.0 %, `roles` (the surviving JACOBI
+  fixpoint) 9.8 %, the whole prologue 4.6 %, `field_index` 0.2 %.
+  **Falsified by the census before anything was built:** (a) the workspace-sized
+  `settled.clone()` in `solve_scc_db_effects`'s multi-sibling path NEVER runs —
+  `multi_eff_sccs=0` on 8020 and on DO; (b) the roles fixpoint is not the cost.
+  **DO's shape is different** (span 130 ms; `roles` 42.2 % > `db_solver` 40.1 %,
+  `side_facts` 12.6 %) — survive-Base-App item, like B2, and its DO effect must
+  not be negative.
+
   **Still open in this track:**
+  - **`context.compute_summaries` — the fix.** Target is the ~8.1 M
+    `Uncertainty` deep clones / ~4.4 M `uncertainty_key` strings above, NOT the
+    edge walk and NOT the roles fixpoint. Ceiling if `solve_side_facts` went to
+    zero: 46.5 % of the span.
   - **B1 — interned ids + bitsets.** SEQUENCE with the `str::to_lowercase()`
     census below (same call sites, one churn).
   - **B2 — SCC-shared cones** — RE-SCOPED 2026-07-31 by `ALSEM_CONES_CENSUS=1`

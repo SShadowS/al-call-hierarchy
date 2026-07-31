@@ -32,6 +32,7 @@ use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{
     DbEffect, RoutineSummary, TempState, Uncertainty, dedupe_uncertainties, uncertainty_key,
 };
+use crate::engine::l4::summary_runner::summaries_census;
 use crate::engine::l4::summary_runner::{
     FieldIndex, base_intraprocedural_summary, substitute_pd_temp_state,
 };
@@ -927,7 +928,16 @@ pub fn solve_side_facts(
     // The SCC-wide has_unresolved_calls OR — `shared_has_unresolved` above.
     let mut shared_has_unresolved = false;
 
+    // Census populations: plain locals, folded into the atomics ONCE at the end
+    // of this call, so a per-edge counter never touches an atomic on the hot path.
+    let mut c_edges: u64 = 0;
+    let mut c_shared_inserts: u64 = 0;
+    let mut c_opaque: u64 = 0;
+    let mut c_dedupe_elems: u64 = 0;
+    let mut c_shared_clone_elems: u64 = 0;
+
     for m in &eff.members {
+        let _t = summaries_census::start();
         let computed_base;
         let base: &RoutineSummary = if let Some(b) = base_summaries.get(m) {
             b
@@ -943,10 +953,14 @@ pub fn solve_side_facts(
         for u in &own {
             if !is_callsite_local_kind(&u.kind) {
                 shared.insert(uncertainty_key(u), u.clone());
+                c_shared_inserts += 1;
             }
         }
+        summaries_census::add_since(&summaries_census::SF_BASE_NANOS, _t);
 
+        let _t = summaries_census::start();
         for edge in graph.edges_by_from.get(m).into_iter().flatten() {
+            c_edges += 1;
             if !member_set.contains(edge.to.as_str()) {
                 match settled.get(&edge.to) {
                     None => {
@@ -964,6 +978,7 @@ pub fn solve_side_facts(
                         for u in &callee.uncertainties {
                             if !is_callsite_local_kind(&u.kind) {
                                 shared.insert(uncertainty_key(u), u.clone());
+                                c_shared_inserts += 1;
                             }
                         }
                     }
@@ -993,12 +1008,16 @@ pub fn solve_side_facts(
                         interface_name: None,
                     };
                     shared.insert(uncertainty_key(&u), u.clone());
+                    c_shared_inserts += 1;
+                    c_opaque += 1;
                     own.push(u);
                 }
                 local_hu = true;
             }
         }
+        summaries_census::add_since(&summaries_census::SF_EDGE_NANOS, _t);
 
+        let _t = summaries_census::start();
         if let Some(idxs) = uncertainty_edges_by_from.get(m) {
             if !idxs.is_empty() {
                 local_hu = true;
@@ -1012,10 +1031,12 @@ pub fn solve_side_facts(
                 // hardcoding that fact.
                 if !is_callsite_local_kind(&u.kind) {
                     shared.insert(uncertainty_key(&u), u.clone());
+                    c_shared_inserts += 1;
                 }
                 own.push(u);
             }
         }
+        summaries_census::add_since(&summaries_census::SF_UNCEDGE_NANOS, _t);
 
         if local_hu {
             shared_has_unresolved = true;
@@ -1026,6 +1047,7 @@ pub fn solve_side_facts(
         own_by_member.insert(m_ix, own);
     }
 
+    let _t = summaries_census::start();
     let shared_vec: Vec<Uncertainty> = shared.into_values().collect();
     let mut uncertainties: HashMap<RoutineIx, Vec<Uncertainty>> = HashMap::new();
     let mut has_unresolved: HashMap<RoutineIx, bool> = HashMap::new();
@@ -1034,10 +1056,22 @@ pub fn solve_side_facts(
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
         let mut all = shared_vec.clone();
+        c_shared_clone_elems += shared_vec.len() as u64;
         all.extend(own_by_member.remove(&m_ix).unwrap_or_default());
+        c_dedupe_elems += all.len() as u64;
         uncertainties.insert(m_ix, dedupe_uncertainties(all));
         has_unresolved.insert(m_ix, shared_has_unresolved);
     }
+    summaries_census::add_since(&summaries_census::SF_ASSEMBLE_NANOS, _t);
+
+    summaries_census::add(&summaries_census::SF_EDGES, c_edges);
+    summaries_census::add(&summaries_census::SF_SHARED_INSERTS, c_shared_inserts);
+    summaries_census::add(&summaries_census::SF_OPAQUE_PUSHES, c_opaque);
+    summaries_census::add(&summaries_census::SF_DEDUPE_ELEMS, c_dedupe_elems);
+    summaries_census::add(
+        &summaries_census::SF_SHARED_CLONE_ELEMS,
+        c_shared_clone_elems,
+    );
 
     SideFacts {
         uncertainties,
@@ -1286,6 +1320,8 @@ fn solve_one_effective_scc(
     // the write phase after `presence`/`via_map` are fully owned. ---
 
     // Step A: PD substitution as reachability.
+    summaries_census::add(&summaries_census::DB_EFF_SCC_SOLVES, 1);
+    let _t = summaries_census::start();
     let (pd_facts, terminal_emissions) = solve_pd_reachability(
         eff,
         graph,
@@ -1295,8 +1331,10 @@ fn solve_one_effective_scc(
         &*universe,
         interner,
     );
+    summaries_census::add_since(&summaries_census::DB_PD_NANOS, _t);
 
     // Steps B/C: closed-form terminal union + per-member PD presence.
+    let _t = summaries_census::start();
     let presence = closed_form_union(
         eff,
         graph,
@@ -1308,9 +1346,11 @@ fn solve_one_effective_scc(
         universe,
         interner,
     );
+    summaries_census::add_since(&summaries_census::DB_UNION_NANOS, _t);
 
     // Step D: via reconstruction (base + terminal-inherited) then the
     // PD-substituted via attribution.
+    let _t = summaries_census::start();
     let mut via_map = reconstruct_via(
         eff,
         graph,
@@ -1320,6 +1360,8 @@ fn solve_one_effective_scc(
         &*universe,
         interner,
     );
+    summaries_census::add_since(&summaries_census::DB_VIA_NANOS, _t);
+    let _t = summaries_census::start();
     attribute_pd_substituted_via(
         eff,
         graph,
@@ -1330,9 +1372,11 @@ fn solve_one_effective_scc(
         interner,
         &mut via_map,
     );
+    summaries_census::add_since(&summaries_census::DB_PDVIA_NANOS, _t);
 
     // Side-facts: uncertainties + has_unresolved_calls (read from the
     // `RoutineSummary` settled map, not the db-effect feed-forward).
+    let _t = summaries_census::start();
     let side = solve_side_facts(
         eff,
         graph,
@@ -1343,9 +1387,11 @@ fn solve_one_effective_scc(
         body_avail_by_id,
         interner,
     );
+    summaries_census::add_since(&summaries_census::DB_SIDE_NANOS, _t);
 
     // --- Write phase: record the shared terminal set ONCE, then every
     // member's compact row against it (Task A3 SCC-sharing). ---
+    let _t = summaries_census::start();
     let terminal_set = bundle.push_terminal_set(presence.terminal_union.clone());
     for m in &eff.members {
         let m_ix = interner
@@ -1353,7 +1399,9 @@ fn solve_one_effective_scc(
             .expect("every effective-SCC member is interned at workspace setup");
         materialize_member_row(m_ix, &presence, &via_map, terminal_set, bundle);
     }
+    summaries_census::add_since(&summaries_census::DB_WRITE_NANOS, _t);
 
+    let _t = summaries_census::start();
     let mut out: HashMap<String, (Vec<Uncertainty>, bool)> = HashMap::new();
     for m in &eff.members {
         let m_ix = interner
@@ -1363,6 +1411,7 @@ fn solve_one_effective_scc(
         let has_unresolved = side.has_unresolved.get(&m_ix).copied().unwrap_or(false);
         out.insert(m.clone(), (uncertainties, has_unresolved));
     }
+    summaries_census::add_since(&summaries_census::DB_OUT_NANOS, _t);
     out
 }
 
@@ -1412,7 +1461,9 @@ pub fn solve_scc_db_effects(
     interner: &RoutineInterner,
     bundle: &mut SummaryBundleBuilder,
 ) -> HashMap<String, (Vec<Uncertainty>, bool)> {
+    let _t = summaries_census::start();
     let eff_sccs = effective_sccs(scc_entry, graph, is_recomputed);
+    summaries_census::add_since(&summaries_census::DB_EFFSCC_NANOS, _t);
     let mut results: HashMap<String, (Vec<Uncertainty>, bool)> = HashMap::new();
     if eff_sccs.is_empty() {
         return results;
@@ -1441,7 +1492,10 @@ pub fn solve_scc_db_effects(
     // db-effect feed-forward is on `bundle` (global); `local_settled` carries
     // ONLY the side-facts (uncertainties/has_unresolved) — its db_effects are
     // deliberately empty (never read by the sub-solvers post-A3).
+    summaries_census::add(&summaries_census::DB_MULTI_EFF_SCCS, 1);
+    let _t = summaries_census::start();
     let mut local_settled: HashMap<String, RoutineSummary> = settled.clone();
+    summaries_census::add_since(&summaries_census::DB_LOCALSETTLED_NANOS, _t);
     for eff in &eff_sccs {
         let solved = solve_one_effective_scc(
             eff,
@@ -1456,6 +1510,7 @@ pub fn solve_scc_db_effects(
             interner,
             bundle,
         );
+        let _t = summaries_census::start();
         for (id, (uncertainties, has_unresolved)) in &solved {
             local_settled.insert(
                 id.clone(),
@@ -1469,6 +1524,7 @@ pub fn solve_scc_db_effects(
                 },
             );
         }
+        summaries_census::add_since(&summaries_census::DB_LOCALSETTLED_NANOS, _t);
         results.extend(solved);
     }
     results
