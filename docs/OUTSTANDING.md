@@ -120,8 +120,21 @@ sizings marked pre-arc).
   **Still open in this track:**
   - **B1 — interned ids + bitsets.** SEQUENCE with the `str::to_lowercase()`
     census below (same call sites, one churn).
-  - **B2 — SCC-shared cones** (8.34 M-cardinality summary mass). Partially
-    overtaken by C1's `ConeDerivedStore`; re-scope against the post-C1 peak
+  - **B2 — SCC-shared cones** — RE-SCOPED 2026-07-31 by `ALSEM_CONES_CENSUS=1`
+    (`a822da9`). `context.capability_cones` is ~12.9 s of ~66 s on 8020 and
+    attributes to exactly TWO costs inside `compose_inherited_cones`
+    (11.4 s): the per-routine singleton inherited walks (**4.8 s over 100,419
+    calls**) and `fact_cone_for_scc` (**4.3 s over 65,822 non-root SCCs**). BFS
+    is 0.9 s over 503 calls, and everything else — graph build, Tarjan, dedup,
+    derived fold, coverage cone, record emit, summary assembly — totals ~1.5 s.
+    **The SCC-structure framing this entry carried is FALSIFIED for this graph:
+    `max_scc_members` is 126.** The 797-member SCC belongs to the COMBINED graph
+    (d1's), not the typed-edge graph the cones walk, so there is no giant-SCC
+    quadratic here to share cones against. Any fix targets one of the two costs
+    above, and either alone caps at ~35 % of the span. DO's whole span is 96 ms,
+    so this is a survive-Base-App item. Original text (now historical):
+    8.34 M-cardinality summary mass, partially overtaken by C1's
+    `ConeDerivedStore`; re-scope against the post-C1 peak
     before building — the largest remaining spans are now all L3-substrate
     (`l3.assemble_resolve` 3,381 MB, `l3.parse_project_parallel` 2,770 MB,
     `context.symbols_resolve_calls` 1,723 MB, `gate.coverage` 1,157 MB).
