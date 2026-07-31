@@ -140,11 +140,28 @@ sizings marked pre-arc).
   `side_facts` 12.6 %) — survive-Base-App item, like B2, and its DO effect must
   not be negative.
 
+  **DONE 2026-07-31 — the `solve_side_facts` fix** (branch `perf/side-facts`,
+  Part 2 of the same ledger). `fold_shared` (reused key buffer + compare-don't-
+  overwrite), an allocation-free `dedupe_uncertainties` (stable sort on a
+  `memcmp`-backed concatenated-key comparator + keep-last), a MOVE of `shared_vec`
+  into each effective SCC's last member, and two `get().cloned()` → `remove()`
+  sites. **Paired A/B, alternating runs, 3 each, medians**: `phases_total`
+  8,877.8 → **6,018.5 ms (−32.2 %)**, `side_facts` 4,230.2 → 2,519.9 (−40.4 %),
+  `out_assemble` 458.1 → 17.5 (−96.2 %), with the untouched `roles` control at
+  −3.9 % (the noise floor). DO improved too (130.0 → 96.7 ms), so unlike the
+  uncertainty substrate this one has no negative small-workspace side. Both gate
+  hashes exact. **The dedupe change was a measured REGRESSION in its first form** —
+  removing 3.7 M allocations lost to the byte-iterator comparator that replaced
+  them; an allocation count alone is not evidence of a win.
+
   **Still open in this track:**
-  - **`context.compute_summaries` — the fix.** Target is the ~8.1 M
-    `Uncertainty` deep clones / ~4.4 M `uncertainty_key` strings above, NOT the
-    edge walk and NOT the roles fixpoint. Ceiling if `solve_side_facts` went to
-    zero: 46.5 % of the span.
+  - **`solve_side_facts`' remaining 2,519.9 ms** — still the largest item in the
+    span. Its edge loop's residual is the 4,397,866 folds themselves: no longer
+    allocating, but still hashing a key and walking a settled callee's WHOLE
+    `uncertainties` vector once per external edge. Killing that needs the callee's
+    propagatable set carried as an interned id set instead of re-folded per edge —
+    the move `ctx.uncertainties`/`UncertaintyIndex` already made one layer up.
+    Needs its own census round before it is sized.
   - **B1 — interned ids + bitsets.** SEQUENCE with the `str::to_lowercase()`
     census below (same call sites, one churn).
   - **B2 — SCC-shared cones** — RE-SCOPED 2026-07-31 by `ALSEM_CONES_CENSUS=1`

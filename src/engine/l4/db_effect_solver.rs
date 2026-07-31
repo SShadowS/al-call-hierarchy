@@ -30,7 +30,7 @@ use crate::engine::l4::effect_universe::{EffectId, EffectIdentity, GrowingEffect
 use crate::engine::l4::routine_interner::{RoutineInterner, RoutineIx};
 use crate::engine::l4::scc::{Scc, SccInputGraph, tarjan_scc};
 use crate::engine::l4::summary::{
-    DbEffect, RoutineSummary, TempState, Uncertainty, dedupe_uncertainties, uncertainty_key,
+    DbEffect, RoutineSummary, TempState, Uncertainty, dedupe_uncertainties, uncertainty_at,
 };
 use crate::engine::l4::summary_runner::summaries_census;
 use crate::engine::l4::summary_runner::{
@@ -837,6 +837,56 @@ pub struct SideFacts {
     pub has_unresolved: HashMap<RoutineIx, bool>,
 }
 
+/// Fold `u` into the SCC-shared uncertainty map under its [`uncertainty_key`],
+/// last-write-wins — WITHOUT allocating the key and WITHOUT deep-cloning the
+/// record on the overwhelmingly common repeat.
+///
+/// `ALSEM_SUMMARIES_CENSUS=1` measured **4,397,866** calls to this fold per BC
+/// Base App 8020 run over only 150,211 edges (29.3 per edge — every external
+/// edge re-folds the settled callee's ENTIRE `uncertainties` vector). The
+/// straightforward `shared.insert(uncertainty_key(u), u.clone())` therefore paid
+/// 4.4 M `format!` allocations plus 4.4 M five-`Option<String>` deep clones, for
+/// a map that ends up holding only the distinct keys.
+///
+/// Two changes, neither of which weakens the contract:
+///
+/// 1. The key is formed into a REUSED `String` buffer and hashed as a `&str`, so
+///    an allocation happens only when a genuinely NEW key is inserted.
+/// 2. On a repeat, the stored record is compared instead of overwritten. Last-
+///    write-wins is preserved BY CONSTRUCTION: when the two records are equal,
+///    overwriting is a no-op, so skipping it cannot change the result; when they
+///    differ, the overwrite still happens. This is not a corpus-conditional
+///    argument — it holds for any input.
+///
+/// `conflicts` counts the differing case, which is the ONLY case in which
+/// `dedupe_uncertainties`' last-write-wins is observable at all (the key is
+/// `kind|at`, so it drops `interface_name` and the losing id fields). It measured
+/// **0** on both 8020 and DO, and is now reported by the census permanently and
+/// for free — the counter increments only on the branch that is never taken.
+#[inline]
+fn fold_shared(
+    shared: &mut HashMap<String, Uncertainty>,
+    keybuf: &mut String,
+    u: &Uncertainty,
+    conflicts: &mut u64,
+) {
+    keybuf.clear();
+    keybuf.push_str(&u.kind);
+    keybuf.push('|');
+    keybuf.push_str(uncertainty_at(u));
+    match shared.get_mut(keybuf.as_str()) {
+        Some(slot) => {
+            if slot != u {
+                *conflicts += 1;
+                *slot = u.clone();
+            }
+        }
+        None => {
+            shared.insert(keybuf.clone(), u.clone());
+        }
+    }
+}
+
 /// Solve BOTH side-facts for one effective SCC (`eff`) in a single closed-form
 /// pass, reproducing the retired JACOBI `compose_routine` fold (in the
 /// pre-`b4181d8` tree) EXACTLY at its FIXED POINT — not its iteration.
@@ -925,6 +975,8 @@ pub fn solve_side_facts(
     // so a legitimate duplicate (the same source reached via two different
     // members' edges) collapses for free.
     let mut shared: HashMap<String, Uncertainty> = HashMap::new();
+    // Reused across every fold in this call — see `fold_shared`.
+    let mut keybuf = String::new();
     // The SCC-wide has_unresolved_calls OR — `shared_has_unresolved` above.
     let mut shared_has_unresolved = false;
 
@@ -935,6 +987,9 @@ pub fn solve_side_facts(
     let mut c_opaque: u64 = 0;
     let mut c_dedupe_elems: u64 = 0;
     let mut c_shared_clone_elems: u64 = 0;
+    let mut c_shared_moved_elems: u64 = 0;
+    let mut c_key_conflicts: u64 = 0;
+    let mut c_output_elems: u64 = 0;
 
     for m in &eff.members {
         let _t = summaries_census::start();
@@ -952,7 +1007,7 @@ pub fn solve_side_facts(
         let mut local_hu = base.has_unresolved_calls;
         for u in &own {
             if !is_callsite_local_kind(&u.kind) {
-                shared.insert(uncertainty_key(u), u.clone());
+                fold_shared(&mut shared, &mut keybuf, u, &mut c_key_conflicts);
                 c_shared_inserts += 1;
             }
         }
@@ -977,7 +1032,7 @@ pub fn solve_side_facts(
                         }
                         for u in &callee.uncertainties {
                             if !is_callsite_local_kind(&u.kind) {
-                                shared.insert(uncertainty_key(u), u.clone());
+                                fold_shared(&mut shared, &mut keybuf, u, &mut c_key_conflicts);
                                 c_shared_inserts += 1;
                             }
                         }
@@ -1007,7 +1062,7 @@ pub fn solve_side_facts(
                         routine_id: None,
                         interface_name: None,
                     };
-                    shared.insert(uncertainty_key(&u), u.clone());
+                    fold_shared(&mut shared, &mut keybuf, &u, &mut c_key_conflicts);
                     c_shared_inserts += 1;
                     c_opaque += 1;
                     own.push(u);
@@ -1030,7 +1085,7 @@ pub fn solve_side_facts(
                 // apply the SAME generic filter check here rather than
                 // hardcoding that fact.
                 if !is_callsite_local_kind(&u.kind) {
-                    shared.insert(uncertainty_key(&u), u.clone());
+                    fold_shared(&mut shared, &mut keybuf, &u, &mut c_key_conflicts);
                     c_shared_inserts += 1;
                 }
                 own.push(u);
@@ -1048,18 +1103,32 @@ pub fn solve_side_facts(
     }
 
     let _t = summaries_census::start();
-    let shared_vec: Vec<Uncertainty> = shared.into_values().collect();
+    let mut shared_vec: Vec<Uncertainty> = shared.into_values().collect();
     let mut uncertainties: HashMap<RoutineIx, Vec<Uncertainty>> = HashMap::new();
     let mut has_unresolved: HashMap<RoutineIx, bool> = HashMap::new();
-    for m in &eff.members {
+    let member_count = eff.members.len();
+    for (i, m) in eff.members.iter().enumerate() {
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
-        let mut all = shared_vec.clone();
-        c_shared_clone_elems += shared_vec.len() as u64;
+        // The LAST member takes `shared_vec` by move rather than by clone: it is
+        // the final reader, so the copy it would make is the copy that is then
+        // dropped. The contents `all` starts from are identical either way.
+        // 100,010 of the 100,922 members on 8020 are the sole member of their
+        // effective SCC, so this alone removes ~3.65 M of the 3,687,409
+        // `Uncertainty` deep clones the census counted here.
+        let mut all = if i + 1 == member_count {
+            c_shared_moved_elems += shared_vec.len() as u64;
+            std::mem::take(&mut shared_vec)
+        } else {
+            c_shared_clone_elems += shared_vec.len() as u64;
+            shared_vec.clone()
+        };
         all.extend(own_by_member.remove(&m_ix).unwrap_or_default());
         c_dedupe_elems += all.len() as u64;
-        uncertainties.insert(m_ix, dedupe_uncertainties(all));
+        let deduped = dedupe_uncertainties(all);
+        c_output_elems += deduped.len() as u64;
+        uncertainties.insert(m_ix, deduped);
         has_unresolved.insert(m_ix, shared_has_unresolved);
     }
     summaries_census::add_since(&summaries_census::SF_ASSEMBLE_NANOS, _t);
@@ -1072,6 +1141,12 @@ pub fn solve_side_facts(
         &summaries_census::SF_SHARED_CLONE_ELEMS,
         c_shared_clone_elems,
     );
+    summaries_census::add(&summaries_census::SF_OUTPUT_ELEMS, c_output_elems);
+    summaries_census::add(
+        &summaries_census::SF_SHARED_MOVED_ELEMS,
+        c_shared_moved_elems,
+    );
+    summaries_census::add(&summaries_census::SF_KEY_CONFLICTS, c_key_conflicts);
 
     SideFacts {
         uncertainties,
@@ -1402,12 +1477,19 @@ fn solve_one_effective_scc(
     summaries_census::add_since(&summaries_census::DB_WRITE_NANOS, _t);
 
     let _t = summaries_census::start();
+    let mut side = side;
     let mut out: HashMap<String, (Vec<Uncertainty>, bool)> = HashMap::new();
     for m in &eff.members {
         let m_ix = interner
             .get(m)
             .expect("every effective-SCC member is interned at workspace setup");
-        let uncertainties = side.uncertainties.get(&m_ix).cloned().unwrap_or_default();
+        // MOVE the member's vector out rather than deep-cloning it: `side` is
+        // local and dead after this loop, and an SCC's members are distinct
+        // (Tarjan), so each key is taken at most once. The census counted
+        // 3,700,433 `Uncertainty` records passing through here per 8020 run —
+        // every one of them was being cloned and the original immediately
+        // dropped.
+        let uncertainties = side.uncertainties.remove(&m_ix).unwrap_or_default();
         let has_unresolved = side.has_unresolved.get(&m_ix).copied().unwrap_or(false);
         out.insert(m.clone(), (uncertainties, has_unresolved));
     }

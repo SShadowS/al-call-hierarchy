@@ -160,3 +160,149 @@ All under `logs/` on branch `perf/summaries-census`:
 `err-8020-census.log` (level 1), `err-8020-census2.log` (level 2),
 `err-8020-census3.log` (levels 3–4), `do-err-on.log` (DO),
 `trace-8020-off.json` (census-off control), `trace-8020-census{,2,3}.json`.
+
+
+---
+
+# Part 2 — the fix (branch `perf/side-facts`)
+
+Built against the attribution above, not against a guess. Four changes, all inside
+the two loops the census named, none of which changes an output byte.
+
+## Probe shape for this part
+
+`analyze.total` and even a single span's absolute ms swing far too much on this
+machine to carry a claim (the baseline binary measured `phases_total` at 10,781.6 /
+8,877.8 / 8,012.8 ms across three consecutive runs of the SAME binary). So the
+claim here is a **paired A/B**: two binaries built from the same tree, run
+**alternately** in one session, three runs each, medians compared — plus
+`roles`, a phase NO change in this branch touches, reported as the control.
+
+## What changed
+
+1. **`fold_shared` — the SCC-shared fold stops allocating a key and stops cloning
+   on a repeat.** `shared.insert(uncertainty_key(u), u.clone())` ran 4,397,866
+   times per 8020 run: 4.4 M `format!` allocations plus 4.4 M five-`Option<String>`
+   deep clones, for a map holding only the distinct keys. The key is now formed
+   into a REUSED buffer and hashed as a `&str` (allocating only for a genuinely
+   new key), and a repeat COMPARES the stored record instead of overwriting it.
+   Last-write-wins survives by construction: equal ⇒ the overwrite was a no-op;
+   different ⇒ it still happens. That is not a corpus-conditional argument.
+2. **`dedupe_uncertainties` — sort instead of `BTreeMap<String, _>`.** It was
+   building one `format!("{}|{}")` key per element for 3,708,222 elements per run.
+   Now a stable sort on [`cmp_uncertainty_key`] plus a keep-LAST pass. The sort is
+   on the CONCATENATED `"kind|at"` byte sequence — a `(kind, at)` tuple sort is a
+   DIFFERENT order, because `'|'` (0x7C) outranks most identifier bytes — and
+   `sort_by`'s stability plus keep-last reproduces `BTreeMap::insert`'s overwrite
+   exactly.
+3. **The last member of each effective SCC takes `shared_vec` by MOVE.** 100,010
+   of 100,922 members are the sole member of their effective SCC, so this alone
+   turns 3,687,409 cloned `Uncertainty` records into 507,045 (`shared_moved_elems`
+   3,180,364 — the two counters sum to the old population exactly, so the saving
+   reads as movement between counters rather than as a vanished number).
+4. **Two `get(..).cloned()` sites became `remove(..)`** — `solve_one_effective_scc`'s
+   `out` assembly and `compute_summaries_v2_bundle_with_leaves`' member assembly.
+   Each was deep-cloning all 3,700,433 output records and dropping the original
+   immediately. Both maps are locally owned and dead afterwards, and both key sets
+   are distinct by construction (Tarjan members / a `HashMap`'s keys).
+
+## MEASURED — paired A/B, 3 alternating runs each, medians
+
+| phase | base | fix | Δ |
+|---|---:|---:|---:|
+| `phases_total` (the whole span) | 8,877.8 ms | **6,018.5 ms** | **−32.2 %** |
+| `db_solver` | 6,448.5 ms | 3,965.2 ms | −38.5 % |
+| `side_facts` | 4,230.2 ms | 2,519.9 ms | −40.4 % |
+| ├ its edge loop | 2,017.9 ms | 1,534.9 ms | −23.9 % |
+| └ its assemble loop | 2,003.3 ms | 932.5 ms | −53.5 % |
+| `db_solver`'s `out_assemble` | 458.1 ms | 17.5 ms | **−96.2 %** |
+| the SCC loop's member `assemble` | 429.0 ms | 57.5 ms | −86.6 % |
+| **`roles` (control — untouched)** | 858.4 ms | 824.9 ms | −3.9 % |
+
+The control moving −3.9 % is the noise floor these deltas stand above.
+Normalizing every run to its own `roles` (which removes the between-run machine
+factor entirely) gives the same answer: `side_facts` −38.5 %, `phases_total`
+−30.6 %. The fix binary's spread is also much tighter (5,917–6,073 ms vs
+8,013–10,782 ms), consistent with the removed allocator pressure.
+
+Allocation counts, which carry no noise at all:
+
+| counter | base | fix |
+|---|---:|---:|
+| `format!` key allocations in the shared fold | 4,397,866 | ≈ distinct keys only |
+| `format!` key allocations in `dedupe_uncertainties` | 3,708,222 | 0 |
+| `Uncertainty` records cloned by `shared_vec.clone()` | 3,687,409 | 507,045 |
+| `Uncertainty` records cloned by the two `get().cloned()` sites | 2 × 3,700,433 | 0 |
+
+## The change that was a LOSS before it was a win
+
+Change 2 was measured as a **regression** in its first form and kept only after
+being fixed. `cmp_uncertainty_key` originally compared two chained byte iterators;
+in that form the span's assemble share moved the WRONG way (21.8 % → 24.6 %) —
+the byte-at-a-time comparison cost more than the 3.7 M allocations it removed.
+Rewriting it to a `memcmp`-backed slice compare with a single boundary byte turned
+it around. An isolating A/B (same tree, only `dedupe_uncertainties` swapped, 3
+alternating runs each) prices change 2 on its own:
+
+| phase | `BTreeMap` dedupe | sort dedupe | Δ |
+|---|---:|---:|---:|
+| `side_facts`' assemble loop | 1,351.9 ms | 893.3 ms | **−33.9 %** |
+| `side_facts` | 2,882.4 ms | 2,444.2 ms | −15.2 % |
+| `roles` (control) | 790.2 ms | 793.5 ms | +0.4 % |
+| its edge loop (control) | 1,469.7 ms | 1,490.6 ms | +1.4 % |
+
+Two controls at +0.4 % / +1.4 % against a −33.9 % target: the attribution is the
+change, not the machine. **The lesson is that the allocation COUNT was not
+sufficient evidence on its own** — removing 3.7 M allocations was a net loss until
+the thing replacing them was also fast.
+
+## DO does not regress
+
+DO's whole span went 130.0 ms → 96.7 ms, and `shared_clone_elems` reached **0**
+(every DO effective SCC is a singleton, so every member takes the move path). This
+is the check the uncertainty-substrate arc failed — that substrate cost DO
++0.4 MiB. This one does not cost DO anything.
+
+## Gates
+
+Byte identity, both corpora, `--deterministic`, with the FINAL binary:
+
+```
+f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea  DO
+36151bf67e17620724abb6b2cdbad55bcf8f97ffe3c3237782a0cf4c25ecc5fb  8020
+```
+
+8020 additionally reproduced that hash on all 12 A/B runs (both binaries, both
+variants). `scripts/check-goldens` green (9/9 targets), zero files under `tests/`
+moved. `cargo clippy --all-targets --all-features` clean.
+
+Four new tests pin `dedupe_uncertainties`' two contracts by HAND-STATING their
+preconditions (two records built to share a key while differing in
+`interface_name` — the field the key drops — rather than asking production code to
+produce a collision), and **both were proven to discriminate, both directions**:
+swapping in the tuple comparator fails `sort_is_on_the_concatenated_key_not_the_field_tuple`
+with `["a|b", "ab|c"]`, and deleting the `mem::swap` from the keep-last pass fails
+`same_key_keeps_the_last_record_not_the_first` with `Some("iface-first")` and
+`same_key_run_of_three_keeps_the_last` with `Some("a")`. Restoring each passes.
+
+## A scripted edit silently moved an attribute — clippy caught it, not the tests
+
+Inserting `fold_shared` at the anchor `pub fn solve_side_facts(` put it between
+that function's `#[allow(clippy::too_many_arguments)]` and the function itself,
+so the attribute silently re-attached to the NEW function and `solve_side_facts`'
+own 60-line doc block did too. Every test stayed green, both gate hashes stayed
+exact, and `check-goldens` passed — the only signal was one clippy warning
+pointing at a function whose signature the diff had not touched. Recorded because
+the repo's scripted-edit rule is about match COUNTS, and this edit's counts were
+all correct: the hazard was the anchor's POSITION, not its multiplicity. Anchor
+above the doc block, or assert on what sits immediately before the anchor.
+
+## What is left in this span
+
+`side_facts` is still 2,519.9 ms — the largest item in the span. Its edge loop's
+remaining cost is the 4,397,866 folds themselves, which no longer allocate but
+still hash a key and walk a settled callee's whole `uncertainties` vector per
+external edge. Eliminating THAT needs the callee's propagatable set carried as an
+interned id set rather than re-folded per edge — the same move
+`ctx.uncertainties`/`UncertaintyIndex` already made one layer up. Not built here;
+sizing it needs its own census round.
