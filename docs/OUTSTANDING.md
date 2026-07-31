@@ -631,6 +631,15 @@ COHORT DATAFLOW (co-designed with gpt-5.6-sol; see memory `d1-output-bound-falsi
 
 ### Deferred d1 follow-ups (non-blocking; 8020 already finishes)
 
+> **STATUS 2026-07-31: items 1-3 are DONE** — 1 and 2 on branch
+> `perf/d1-followups` (`12f7e95`, `d92df42`), 3 as `286814d`. Items 4 and 5 remain
+> open and unchanged. Item 1's premise was FALSIFIED before it was built: a census
+> showed its walk is 7.5 hops, never the cost; the cost was 92,054,600 per-run
+> string interns, and the fix that followed took `d1.cohort/scoring` from
+> 10,568 ms to 1,105 ms. Item 2's whole ceiling turned out to be ~1.2 s and its
+> timing is explicitly not claimed. Read the entries below as the pre-arc
+> reasoning they were, not as live scoping.
+>
 > **These five were written 2026-07-21, BEFORE the d1 memory arc (`6e136e2`) and the
 > uncertainty substrate (`93bb9af`). Their sizings are pre-arc and several are known
 > stale — re-measure before building any of them.** Same-run traced spans after the
@@ -649,9 +658,18 @@ COHORT DATAFLOW (co-designed with gpt-5.6-sol; see memory `d1-output-bound-falsi
    ±80 s; sub-fixes are unmeasurable against that noise).
 2. **`affected_objects` bitmap-partition** (d1.rs ~1807): a `bm.iter()` loop over the
    ~3.2M (loop,terminal) population, same shape C9 bitmap-partitioned for `by_rv`.
-3. **`finding.rs` LoopContext/StableLoopContext cleanup**: the superseded Task-5
-   per-loop schema is dead-in-practice but referenced from the generic
-   `project_finding` — removing needs a Finding/StableFinding schema change.
+3. ~~**`finding.rs` LoopContext/StableLoopContext cleanup**~~ — DONE 2026-07-31
+   (`286814d`). `Finding.contexts`, `StableFinding.contexts`, `StableLoopContext`
+   and `project_loop_context` deleted; `LoopContext` survives `#[cfg(test)]`-only
+   for the shadow oracle, which now returns `(Finding, Vec<LoopContext>)` rather
+   than stuffing contexts into the finding — that kept the two tests asserting
+   per-loop context ORDER alive instead of deleting them with the field. The
+   cutover guard `assert!(f.contexts.is_none(), …)` was deleted WITH its reason
+   in place: the field is gone, so the state it guarded is unrepresentable.
+   **Scope was 71 sites across 63 files, not the 139 this entry's discussion
+   assumed** — that number matched `contexts: None` as a substring and counted
+   every `cohort_contexts: None`, the field that stays. Byte-identical on both
+   corpora, zero golden movement.
 4. **Global-arrival-cohort solver** (the "full" redesign, deferred): only if the
    FIXPOINT ever becomes the bottleneck (currently 9.35s, fine).
 5. **Depth-semantics**: the 22,511 reached terminals include deep-chain findings
