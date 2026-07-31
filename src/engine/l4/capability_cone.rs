@@ -1486,10 +1486,22 @@ fn inherited_facts_for_singleton<'g>(
     // SCC. Assert it: a silent `None` here (via the `let else` below) would
     // read as "no inherited facts from this hop" instead of the bug it is.
     let my_scc = scc_id_by_routine.get(subject).copied();
-    let mut best: BTreeMap<String, Best<'g>> = BTreeMap::new();
+    // Keys BORROW from `cones` (lifetime `'g`) instead of being cloned. The
+    // census counted 10,522,793 `best` insertions per 8020 run against only
+    // 136,952 out-edges — i.e. the walk is cone-ENTRY-bound, and every one of
+    // those insertions was allocating a fresh `String` copy of a key that
+    // already lives in `cones` for the whole walk.
+    let mut best: BTreeMap<&'g str, Best<'g>> = BTreeMap::new();
     let out_edges: &'g [TypedOutEdge] =
         g.outgoing.get(subject).map(|v| v.as_slice()).unwrap_or(&[]);
+    // Census populations: plain locals, folded into the atomics ONCE per call.
+    let mut c_edges: u64 = 0;
+    let mut c_entries: u64 = 0;
+    let mut c_wins: u64 = 0;
+    let mut c_cone_edges: u64 = 0;
+    let _scan_t = crate::engine::l5::detector_context::cones_census::start();
     for edge in out_edges {
+        c_edges += 1;
         let Some(yj) = scc_id_by_routine.get(&edge.to) else {
             continue;
         };
@@ -1504,11 +1516,13 @@ fn inherited_facts_for_singleton<'g>(
         let Some(ycone) = cones.get(yj) else {
             continue;
         };
+        c_cone_edges += 1;
         for (key, entry) in ycone {
+            c_entries += 1;
             let cand_dist = entry.dist + 1;
             // min dist wins; equal dist → smaller edgeSortKey wins (the
             // first-hop tie-breaker). Mirrors inheritedFactsForSingleton.
-            let wins = match best.get(key) {
+            let wins = match best.get(key.as_str()) {
                 None => true,
                 Some(cur) => {
                     cand_dist < cur.dist
@@ -1516,8 +1530,9 @@ fn inherited_facts_for_singleton<'g>(
                 }
             };
             if wins {
+                c_wins += 1;
                 best.insert(
-                    key.clone(),
+                    key.as_str(),
                     Best {
                         rep: &entry.rep,
                         dist: cand_dist,
@@ -1527,19 +1542,71 @@ fn inherited_facts_for_singleton<'g>(
             }
         }
     }
+    crate::engine::l5::detector_context::cones_census::add_since(
+        &crate::engine::l5::detector_context::cones_census::SGL_SCAN_NANOS,
+        _scan_t,
+    );
+    crate::engine::l5::detector_context::cones_census::add(
+        &crate::engine::l5::detector_context::cones_census::SGL_EDGES,
+        c_edges,
+    );
+    crate::engine::l5::detector_context::cones_census::add(
+        &crate::engine::l5::detector_context::cones_census::SGL_CONE_ENTRIES,
+        c_entries,
+    );
+    crate::engine::l5::detector_context::cones_census::add(
+        &crate::engine::l5::detector_context::cones_census::SGL_WINS,
+        c_wins,
+    );
+    match c_cone_edges {
+        0 => crate::engine::l5::detector_context::cones_census::add(
+            &crate::engine::l5::detector_context::cones_census::SGL_CALLS_0_CONES,
+            1,
+        ),
+        1 => crate::engine::l5::detector_context::cones_census::add(
+            &crate::engine::l5::detector_context::cones_census::SGL_CALLS_1_CONE,
+            1,
+        ),
+        _ => {
+            crate::engine::l5::detector_context::cones_census::add(
+                &crate::engine::l5::detector_context::cones_census::SGL_CALLS_N_CONES,
+                1,
+            );
+            crate::engine::l5::detector_context::cones_census::add(
+                &crate::engine::l5::detector_context::cones_census::SGL_ENTRIES_N_CONES,
+                c_entries,
+            );
+        }
+    }
+    crate::engine::l5::detector_context::cones_census::add(
+        &crate::engine::l5::detector_context::cones_census::SGL_BESTS,
+        best.len() as u64,
+    );
+
     if mode.wants_derived() {
+        let _t = crate::engine::l5::detector_context::cones_census::start();
         for b in best.values() {
             derived.fold_fact(b.rep);
         }
+        crate::engine::l5::detector_context::cones_census::add_since(
+            &crate::engine::l5::detector_context::cones_census::SGL_FOLD_NANOS,
+            _t,
+        );
     }
     if !mode.wants_raw() {
         return Vec::new();
     }
+    let _t = crate::engine::l5::detector_context::cones_census::start();
     let out: Vec<CapabilityFact> = best
         .values()
         .map(|b| retag(b.rep, subject, b.edge))
         .collect();
-    sort_inherited(out)
+    let sorted = sort_inherited(out);
+    crate::engine::l5::detector_context::cones_census::add_since(
+        &crate::engine::l5::detector_context::cones_census::SGL_RAW_NANOS,
+        _t,
+    );
+    sorted
 }
 
 /// Set-correct path for routines in recursive SCCs. Mirrors
