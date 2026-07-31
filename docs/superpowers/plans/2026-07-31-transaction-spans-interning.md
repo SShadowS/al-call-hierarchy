@@ -8,18 +8,30 @@
 `Vec<String>` materialization and its per-commit-op payload clones with interned `u32`
 ids, borrowed id windows and shared payloads.
 
-**Architecture:** `compute_transaction_spans` is a faithful al-sem port that still
-carries al-sem's data model: `BTreeSet<String>` visited sets, `VecDeque<(String, usize)>`
-queues that clone a `String` per push, a `HashMap<String, FullRoutineSummary>` lookup per
-visited routine, `ConeDerivedStore::writes_tables_of` / `publishes_events_of` calls that
-allocate a fresh `Vec<String>` per visited routine only to union it into a
-`BTreeSet<String>` and drop it, and finally a full deep clone of every payload per commit
-operation. This plan keeps the algorithm and its results EXACTLY as they are and changes
-only the representation: one local routine-id interner assigned in **sorted id order** (so
-ascending `SpanIx` IS lexicographic order, which is what every output list is sorted by),
-a CSR reverse-adjacency built once, a generation-stamped visited array, `ResId` set unions
-resolved to `String` once per template instead of once per visited routine, and
-`Arc<[String]>` payloads shared across a seed routine's commit operations.
+**Architecture:** `compute_transaction_spans` is a faithful al-sem port that still carries
+al-sem's data model. **Task 0's census identified which part of that model actually costs
+the 58.90 s, and it is not the part this plan originally assumed** — see the REVISION
+below. The cost is `aggregate_span`'s per-visited-routine union: for every routine in
+every span's cone it calls `ConeDerivedStore::writes_tables_of` / `publishes_events_of`,
+each of which resolves that routine's whole interned cone window into a **freshly
+allocated `Vec<String>`**, inserts every element into a `BTreeSet<String>` (another
+allocation each) and drops it. Measured on 8020: **261,772,789 strings allocated and
+discarded**, 2,023 per visited routine. The fix keeps the algorithm and results EXACTLY as
+they are and changes only the representation — union the interned `ResId`s in a bitset and
+resolve to `String` ONCE per span template.
+
+## REVISION 2026-07-31 (after Task 0) — what the census falsified
+
+The plan as first written blamed three cost centres. The census priced them:
+
+| assumed cost centre | measured population (8020) | verdict |
+|---|---|---|
+| `String`-keyed backward BFS (`backward_cone`) | 927 walks / **129,350** visited steps total | **FALSIFIED** — cannot be seconds. Task 1 as written (SpanIndex/CSR/interned-ix BFS) is NOT built. |
+| per-visited-routine `Vec<String>` materialization | **261,772,789** strings allocated and dropped | **CONFIRMED — this is the whole cost.** Now Task 1. |
+| per-commit-op payload deep clone | 1,061 spans from 927 templates ⇒ only 134 duplicated payloads, 2,390,888 payload strings retained | **MOSTLY FALSIFIED** — the sharing saves ~13 % of a retained set that is not the bottleneck. Demoted to optional Task 2, gated on a measurement. |
+
+The original Task 1/2/3 texts are preserved below the line as ARCHIVED so the falsified
+predictions stay auditable; the live tasks are the revised ones.
 
 **Tech Stack:** Rust (edition per workspace `Cargo.toml`), no new dependencies. Reuses
 `crate::engine::l4::cone_derived::{ConeDerivedStore, ResId}` and the existing
@@ -234,7 +246,394 @@ git commit -m "perf(l5): census the transaction-spans population before changing
 
 ---
 
-### Task 1: Interned-ix backward cone
+## LIVE TASKS (post-census)
+
+### Task R1: Union interned ids in a bitset; resolve once per template
+
+**Files:**
+- Modify: `src/engine/l4/cone_derived.rs` (borrowing accessors + `resolve_res`)
+- Modify: `src/engine/l5/transaction_spans.rs` (`aggregate_span`)
+- Test: both of the above
+
+**Interfaces:**
+- Produces:
+  - `ConeDerivedStore::writes_table_ids_of(&self, routine_id: &str) -> &[ResId]`
+  - `ConeDerivedStore::event_ids_of(&self, routine_id: &str) -> &[ResId]`
+  - `ConeDerivedStore::resolve_res(&self, id: ResId) -> &str`
+  - `ConeDerivedStore::res_universe_len(&self) -> usize` — the bitset width
+  - `struct ResBitset { words: Vec<u64> }` with `insert_all(&mut self, ids: &[ResId])`,
+    `clear(&mut self)`, `iter_ids(&self) -> impl Iterator<Item = ResId> + '_`
+
+**Why a bitset and NOT a `Vec<ResId>` accumulator.** Accumulating the windows would push
+**261,772,789** `u32`s — 1.05 GB of scratch — to dedupe at the end. That trades 58.90 s of
+CPU for a gigabyte of RSS, which this arc explicitly must not do (`context.transaction_spans`
+retains only 73 MB today). A bitset over the resource-id universe is a few KB, costs one
+word-OR per id, and dedupes for free. This paragraph exists because the accumulator is the
+obvious first move and it is wrong.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `src/engine/l4/cone_derived.rs`'s `mod tests` — the accessors agree with the
+`String`-materializing ones, stated over TWO routines so a window/pool mix-up cannot pass:
+
+```rust
+    #[test]
+    fn id_accessors_agree_with_the_string_accessors() {
+        use crate::engine::l5::test_support::{cone_store_of, coverage, fact, summary};
+        use std::collections::HashMap;
+
+        let mut summaries: HashMap<String, crate::engine::l5::full_summary::FullRoutineSummary> =
+            HashMap::new();
+        summaries.insert(
+            "r/one".to_string(),
+            summary(
+                "r/one",
+                vec![
+                    fact("insert", "table", Some("t/B")),
+                    fact("insert", "table", Some("t/A")),
+                    fact("publish", "event", Some("e/Z")),
+                ],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        );
+        summaries.insert(
+            "r/two".to_string(),
+            summary(
+                "r/two",
+                vec![fact("insert", "table", Some("t/A"))],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        );
+        let store = cone_store_of(&summaries);
+
+        for rid in ["r/one", "r/two"] {
+            let mut via_ids: Vec<String> = store
+                .writes_table_ids_of(rid)
+                .iter()
+                .map(|id| store.resolve_res(*id).to_string())
+                .collect();
+            via_ids.sort();
+            assert_eq!(via_ids, store.writes_tables_of(rid), "writes mismatch for {rid}");
+
+            let mut ev: Vec<String> = store
+                .event_ids_of(rid)
+                .iter()
+                .map(|id| store.resolve_res(*id).to_string())
+                .collect();
+            ev.sort();
+            assert_eq!(ev, store.publishes_events_of(rid), "events mismatch for {rid}");
+        }
+    }
+
+    #[test]
+    fn res_bitset_dedupes_and_iterates_ascending() {
+        let mut bs = ResBitset::new(8);
+        bs.insert_all(&[5, 1, 5, 3]);
+        bs.insert_all(&[3, 7]);
+        assert_eq!(bs.iter_ids().collect::<Vec<ResId>>(), vec![1, 3, 5, 7]);
+        bs.clear();
+        assert_eq!(bs.iter_ids().collect::<Vec<ResId>>(), Vec::<ResId>::new());
+    }
+```
+
+In `src/engine/l5/transaction_spans.rs`'s `mod tests` — the union is deduped across
+routines and a missing summary still poisons coverage (this is the REGRESSION pin for the
+rewrite; Step 4 proves it discriminates):
+
+```rust
+    #[test]
+    fn aggregate_unions_deduped_and_a_missing_summary_breaks_coverage() {
+        let routines = vec![
+            routine("root", "trigger"),
+            routine("mid", "procedure"),
+            op_commit_routine("committer", "procedure", &["c/op"]),
+        ];
+        let graph = graph_from_edges(
+            &["root", "mid", "committer"],
+            &[edge("root", "mid", "cs1"), edge("mid", "committer", "cs2")],
+        );
+        let reverse = build_reverse_call_graph(&graph);
+
+        let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+        // BOTH write t/A; committer also writes t/B. `root` has NO summary at all.
+        summaries.insert(
+            "committer".to_string(),
+            summary(
+                "committer",
+                vec![
+                    fact("insert", "table", Some("t/A")),
+                    fact("insert", "table", Some("t/B")),
+                ],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        );
+        summaries.insert(
+            "mid".to_string(),
+            summary(
+                "mid",
+                vec![fact("insert", "table", Some("t/A"))],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        );
+
+        let no_deps = BTreeSet::new();
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].writes_tables, vec!["t/A", "t/B"], "sorted + deduped union");
+        assert!(
+            !spans[0].coverage_complete,
+            "`root` has no summary, so the span is not coverage-complete"
+        );
+    }
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+```bash
+cd "$WT"
+cargo test -p al-call-hierarchy --lib cone_derived > logs/r1-red.log 2>&1
+grep -E "^error|cannot find|no method" logs/r1-red.log | head -5
+```
+
+Expected: FAIL — `no method named writes_table_ids_of`, `cannot find type ResBitset`.
+
+- [ ] **Step 3: Implement**
+
+In `src/engine/l4/cone_derived.rs`, beside `writes_tables_of`:
+
+```rust
+    /// The routine's written-TableId window as interned ids, BORROWED — the
+    /// allocation-free half of [`Self::writes_tables_of`]. The window is sorted and
+    /// deduped BY ID (`freeze_ids`), which is NOT the order of the resolved strings,
+    /// so a caller that needs string order resolves and sorts. A caller that unions
+    /// across many routines should union the IDS and resolve once — that is the whole
+    /// point of this accessor (`transaction_spans` was allocating 261,772,789 strings
+    /// per 8020 run through the `String` variant).
+    pub fn writes_table_ids_of(&self, routine_id: &str) -> &[ResId] {
+        window(&self.writes_all_pool, &self.row(routine_id).table_writes_all)
+    }
+
+    /// The routine's published-EventId window as interned ids, BORROWED. Same
+    /// contract as [`Self::writes_table_ids_of`].
+    pub fn event_ids_of(&self, routine_id: &str) -> &[ResId] {
+        window(&self.events_pool, &self.row(routine_id).event_publishes)
+    }
+
+    /// Resolve one interned resource id, for callers that union borrowed id windows
+    /// and materialize the result themselves.
+    pub fn resolve_res(&self, id: ResId) -> &str {
+        self.interner.resolve(id)
+    }
+
+    /// Number of distinct interned resource ids — the width a [`ResBitset`] needs to
+    /// hold any set this store can produce.
+    pub fn res_universe_len(&self) -> usize {
+        self.interner.len()
+    }
+```
+
+And the bitset, in the same file next to `ResId`:
+
+```rust
+/// A dense set of [`ResId`]s over the store's resource-id universe. Exists so a caller
+/// unioning many routines' id windows pays one word-OR per id and no allocation per
+/// element, instead of resolving each window into a `Vec<String>` and inserting every
+/// element into a `BTreeSet<String>`.
+///
+/// `iter_ids` yields ascending ID order, which is intern order — NOT lexicographic. A
+/// caller that needs the old `BTreeSet<String>` order resolves and then sorts by string.
+#[derive(Debug, Default)]
+pub struct ResBitset {
+    words: Vec<u64>,
+}
+
+impl ResBitset {
+    pub fn new(universe_len: usize) -> Self {
+        ResBitset {
+            words: vec![0u64; universe_len.div_ceil(64)],
+        }
+    }
+
+    pub fn insert_all(&mut self, ids: &[ResId]) {
+        for &id in ids {
+            let w = (id as usize) / 64;
+            if w >= self.words.len() {
+                self.words.resize(w + 1, 0);
+            }
+            self.words[w] |= 1u64 << ((id as usize) % 64);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.words.iter_mut().for_each(|w| *w = 0);
+    }
+
+    pub fn iter_ids(&self) -> impl Iterator<Item = ResId> + '_ {
+        self.words.iter().enumerate().flat_map(|(wi, &w)| {
+            let mut bits = w;
+            std::iter::from_fn(move || {
+                if bits == 0 {
+                    return None;
+                }
+                let b = bits.trailing_zeros();
+                bits &= bits - 1;
+                Some((wi as u32) * 64 + b)
+            })
+        })
+    }
+}
+```
+
+In `src/engine/l5/transaction_spans.rs`, rewrite `aggregate_span` to take two caller-owned
+bitsets and resolve once:
+
+```rust
+fn aggregate_span(
+    visited: &BTreeSet<String>,
+    summaries: &HashMap<String, FullRoutineSummary>,
+    cone_derived: &ConeDerivedStore,
+    writes_bs: &mut ResBitset,
+    events_bs: &mut ResBitset,
+    census: &mut TxSpanCensus,
+) -> (Vec<String>, Vec<String>, bool) {
+    writes_bs.clear();
+    events_bs.clear();
+    let mut coverage_complete = true;
+    for rid in visited {
+        let Some(summary) = summaries.get(rid) else {
+            coverage_complete = false;
+            continue;
+        };
+        writes_bs.insert_all(cone_derived.writes_table_ids_of(&summary.routine_id));
+        events_bs.insert_all(cone_derived.event_ids_of(&summary.routine_id));
+        if reachable_coverage(summary, None) != "complete" {
+            coverage_complete = false;
+        }
+    }
+    let writes = resolve_sorted_ids(writes_bs, cone_derived, census);
+    let events = resolve_sorted_ids(events_bs, cone_derived, census);
+    (writes, events, coverage_complete)
+}
+
+/// Resolve a `ResId` set into the sorted-unique `Vec<String>` the old
+/// `BTreeSet<String>` produced. The set is already unique (a bitset cannot hold a
+/// duplicate) and the interner is injective, so id-dedupe IS string-dedupe; the sort is
+/// by STRING because intern order is not lexicographic.
+fn resolve_sorted_ids(
+    bs: &ResBitset,
+    cone_derived: &ConeDerivedStore,
+    census: &mut TxSpanCensus,
+) -> Vec<String> {
+    let mut out: Vec<String> = bs
+        .iter_ids()
+        .map(|id| cone_derived.resolve_res(id).to_string())
+        .collect();
+    census.materialized_strings += out.len();
+    out.sort();
+    out
+}
+```
+
+Allocate the two bitsets ONCE in `compute_transaction_spans` (before the seed loops) and
+thread them through `span_template`:
+
+```rust
+    let mut writes_bs = ResBitset::new(cone_derived.res_universe_len());
+    let mut events_bs = ResBitset::new(cone_derived.res_universe_len());
+```
+
+- [ ] **Step 4: Run the tests, then prove they discriminate**
+
+```bash
+cargo test -p al-call-hierarchy --lib cone_derived > logs/r1-green-cone.log 2>&1
+cargo test -p al-call-hierarchy --lib transaction_spans > logs/r1-green-tx.log 2>&1
+grep -E "test result" logs/r1-green-cone.log logs/r1-green-tx.log
+```
+
+Expected: `ok` for both, every pre-existing `transaction_spans` test included — they are
+the semantic oracle for this rewrite.
+
+Then break each, record PASS→FAIL→PASS:
+1. `resolve_sorted_ids`: drop the `out.sort()`. Expected:
+   `aggregate_unions_deduped_and_a_missing_summary_breaks_coverage` FAILS whenever intern
+   order differs from lexicographic — if it passes, the fixture is too weak; extend it
+   with a table pair whose intern order is the reverse of their string order and re-run.
+2. `aggregate_span`: change the missing-summary arm to a bare `continue;`. Expected: the
+   same test FAILS on the coverage assertion.
+3. `ResBitset::insert_all`: use `=` instead of `|=`. Expected:
+   `res_bitset_dedupes_and_iterates_ascending` FAILS.
+4. `writes_table_ids_of`: return the whole `&self.writes_all_pool`. Expected:
+   `id_accessors_agree_with_the_string_accessors` FAILS.
+
+- [ ] **Step 5: Byte-identity gate**
+
+```bash
+TREE_SITTER_AL_PATH=U:/Git/al-call-hierarchy/tree-sitter-al \
+  cargo build --profile release-fast --bin alsem > logs/r1-build.log 2>&1
+echo "CARGO_EXIT=$?"; ls -la target/release-fast/alsem.exe   # mtime MUST move (lock hazard)
+./target/release-fast/alsem.exe analyze "$DO_WS" --format json --deterministic \
+  > logs/txspan-r1-do.json 2>/dev/null
+sha256sum logs/txspan-r1-do.json; cat logs/txspan-base-do.sha256
+bash scripts/check-goldens > logs/r1-goldens.log 2>&1; echo "EXIT=$?"
+git status --short tests/ | head
+```
+
+Expected: SHA equals `f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`,
+`check-goldens` EXIT=0, zero files under `tests/` modified.
+
+- [ ] **Step 6: Measure and commit**
+
+```bash
+ALSEM_TXSPAN_CENSUS=1 ALSEM_TRACE=1 ALSEM_TRACE_DETAIL=hot \
+  ALSEM_TRACE_FILE="$WT/logs/trace-txspan-r1.json" \
+  ./target/release-fast/alsem.exe analyze "$CORPUS_8020" --format json \
+  > /dev/null 2> logs/r1-8020.err
+grep txspan-census logs/r1-8020.err
+# span totals via the Task 0 Step 3 python snippet against trace-txspan-r1.json
+rustfmt src/engine/l4/cone_derived.rs src/engine/l5/transaction_spans.rs
+git add -u src/engine docs/2026-07-31-transaction-spans-measurements.md
+git commit -m "perf(l5): span unions ride interned ids in a bitset, resolved once"
+```
+
+The commit message states: `materialized_strings` before/after (261,772,789 → measured),
+the `context.transaction_spans` span total before/after, the four discrimination results,
+and the DO SHA.
+
+### Task R2 (OPTIONAL — gated): share span payloads across a seed's commit ops
+
+**Gate:** build this ONLY if, after R1, `context.transaction_spans` is still worth
+attacking AND the retained payload matters. The census says 1,061 spans come from 927
+templates, so sharing removes duplicate payloads for **134 spans** — roughly 13 % of
+2,390,888 retained payload strings. If R1 leaves the span under ~5 s, record the
+measurement and SKIP this task rather than spending a consumer-wide type change on it.
+
+If built, it is the ARCHIVED Task 3 below, unchanged: `TransactionSpan`'s four payload
+fields become `Arc<[String]>`, emission becomes `Arc::clone`, and `d8`/`d9`/`d50`/`d17`/
+`detector_context` are updated in the same commit. Its `Arc::ptr_eq` test and its
+discrimination proof are as written there.
+
+### Task R3: Capstone
+
+As ARCHIVED Task 4 below, with one addition: the CHANGELOG and the measurements doc must
+record the **falsified premise** (interned-ix BFS, 129,350 visited steps) alongside the
+confirmed one, because the census that killed it is the reusable lesson — measure the
+population before building the taxonomy for it.
+
+---
+
+## ARCHIVED TASKS (premise falsified by Task 0 — kept for audit, NOT executed)
+
+### Task 1 (ARCHIVED): Interned-ix backward cone
 
 **Files:**
 - Modify: `src/engine/l5/transaction_spans.rs`
@@ -614,7 +1013,7 @@ The commit message MUST state the three discrimination results from Step 6 and t
 
 ---
 
-### Task 2: Aggregate over `ResId` sets instead of per-routine `Vec<String>`
+### Task 2 (ARCHIVED): Aggregate over `ResId` sets instead of per-routine `Vec<String>`
 
 **Files:**
 - Modify: `src/engine/l4/cone_derived.rs` (two borrowing accessors)
@@ -885,7 +1284,7 @@ git commit -m "perf(l5): span aggregation unions interned ids, resolves once"
 
 ---
 
-### Task 3: Share span payloads instead of cloning them per commit op
+### Task 3 (ARCHIVED — superseded by Task R2): Share span payloads instead of cloning them per commit op
 
 **Files:**
 - Modify: `src/engine/l5/transaction_spans.rs` (`TransactionSpan` field types + emission)
@@ -1024,7 +1423,7 @@ git commit -m "perf(l5): span payloads are shared, not deep-cloned per commit op
 
 ---
 
-### Task 4: Capstone — re-measure, gate everything, record honestly
+### Task 4 (ARCHIVED — superseded by Task R3): Capstone — re-measure, gate everything, record honestly
 
 **Files:**
 - Modify: `docs/2026-07-31-transaction-spans-measurements.md`

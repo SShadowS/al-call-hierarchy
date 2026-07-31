@@ -129,6 +129,7 @@ fn aggregate_span(
     visited: &BTreeSet<String>,
     summaries: &HashMap<String, FullRoutineSummary>,
     cone_derived: &ConeDerivedStore,
+    census: &mut TxSpanCensus,
 ) -> (Vec<String>, Vec<String>, bool) {
     let mut writes: BTreeSet<String> = BTreeSet::new();
     let mut events: BTreeSet<String> = BTreeSet::new();
@@ -138,10 +139,13 @@ fn aggregate_span(
             coverage_complete = false;
             continue;
         };
-        for t in cone_derived.writes_tables_of(&summary.routine_id) {
+        let w = cone_derived.writes_tables_of(&summary.routine_id);
+        let e = cone_derived.publishes_events_of(&summary.routine_id);
+        census.materialized_strings += w.len() + e.len();
+        for t in w {
             writes.insert(t);
         }
-        for e in cone_derived.publishes_events_of(&summary.routine_id) {
+        for e in e {
             events.insert(e);
         }
         if reachable_coverage(summary, None) != "complete" {
@@ -176,6 +180,58 @@ struct SpanTemplate {
     coverage_complete: bool,
 }
 
+/// `ALSEM_TXSPAN_CENSUS=1` — the population this module actually processes,
+/// printed to stderr at the end of [`compute_transaction_spans`]. Diagnostic
+/// only: no production path reads it, and with the env var unset it costs a
+/// handful of counter increments and allocates nothing. Mirrors the
+/// `C1_CONE_CENSUS` convention in [`crate::engine::l4::cone_census`].
+///
+/// These are the figures that PRICE this module. `template_calls` is how many
+/// seed occurrences ask for a span; `templates` is how many of those actually
+/// walk (the cache collapses every commit op of one seed routine onto one
+/// walk), so `templates` — not the seed count — is the BFS multiplier.
+/// `visited_total` is the number of per-routine aggregate steps summed over
+/// those walks: the population every per-visited-routine cost is multiplied by.
+/// `payload_strings` is how many `String`s the emitted spans retain in their
+/// four id lists.
+#[derive(Default)]
+struct TxSpanCensus {
+    template_calls: usize,
+    templates: usize,
+    visited_total: usize,
+    spans_emitted: usize,
+    payload_strings: usize,
+    /// Strings ALLOCATED and thrown away inside the per-visited-routine union:
+    /// `writes_tables_of` / `publishes_events_of` each resolve their whole
+    /// interned window into a fresh `Vec<String>` per visited routine, which is
+    /// then inserted into a `BTreeSet<String>` and dropped.
+    materialized_strings: usize,
+}
+
+impl TxSpanCensus {
+    fn enabled() -> bool {
+        std::env::var("ALSEM_TXSPAN_CENSUS").as_deref() == Ok("1")
+    }
+
+    fn report(&self) {
+        eprintln!(
+            "[txspan-census] template_calls={} templates={} visited_total={} \
+             spans_emitted={} payload_strings={} materialized_strings={} mean_cone={:.1}",
+            self.template_calls,
+            self.templates,
+            self.visited_total,
+            self.spans_emitted,
+            self.payload_strings,
+            self.materialized_strings,
+            if self.templates == 0 {
+                0.0
+            } else {
+                self.visited_total as f64 / self.templates as f64
+            },
+        );
+    }
+}
+
 /// Compute-or-lookup the per-seed-routine template: `backward_cone` +
 /// `aggregate_span` + `span_roots_of` depend only on `(seed,
 /// commits_by_routine, reverse, summaries)` — identical for every commit op on
@@ -189,11 +245,15 @@ fn span_template<'c>(
     summaries: &HashMap<String, FullRoutineSummary>,
     cone_derived: &ConeDerivedStore,
     cache: &'c mut HashMap<String, SpanTemplate>,
+    census: &mut TxSpanCensus,
 ) -> &'c SpanTemplate {
+    census.template_calls += 1;
     if !cache.contains_key(seed) {
         let visited = backward_cone(seed, commits_by_routine, reverse);
+        census.templates += 1;
+        census.visited_total += visited.len();
         let (writes_tables, publishes_events, coverage_complete) =
-            aggregate_span(&visited, summaries, cone_derived);
+            aggregate_span(&visited, summaries, cone_derived, census);
         let span_roots = span_roots_of(&visited, reverse);
         cache.insert(
             seed.to_string(),
@@ -254,6 +314,7 @@ pub fn compute_transaction_spans(
     // Everything about a span that depends only on the seed ROUTINE — cached
     // per distinct seed routine id (see `span_template` above `compute_transaction_spans`).
     let mut template_cache: HashMap<String, SpanTemplate> = HashMap::new();
+    let mut census = TxSpanCensus::default();
 
     // --- explicit-commit seeds ---
     for (commit_routine_id, commit_ops) in &commits_by_routine {
@@ -264,10 +325,16 @@ pub fn compute_transaction_spans(
             summaries,
             cone_derived,
             &mut template_cache,
+            &mut census,
         );
         // clone the template fields once per OP (same values every op — was a
         // full recompute per op before)
         for commit_operation_id in commit_ops {
+            census.spans_emitted += 1;
+            census.payload_strings += t.routines_in_span.len()
+                + t.writes_tables.len()
+                + t.publishes_events.len()
+                + t.span_roots.len();
             spans.push(TransactionSpan {
                 seed_kind: SeedKind::ExplicitCommit,
                 commit_operation_id: commit_operation_id.clone(),
@@ -306,7 +373,13 @@ pub fn compute_transaction_spans(
                 summaries,
                 cone_derived,
                 &mut template_cache,
+                &mut census,
             );
+            census.spans_emitted += 1;
+            census.payload_strings += t.routines_in_span.len()
+                + t.writes_tables.len()
+                + t.publishes_events.len()
+                + t.span_roots.len();
             // commitOperationId uses the callsite id (same opaque-string type at
             // runtime); seed_callsite_id provides the typed accessor.
             spans.push(TransactionSpan {
@@ -323,6 +396,9 @@ pub fn compute_transaction_spans(
         }
     }
 
+    if TxSpanCensus::enabled() {
+        census.report();
+    }
     spans
 }
 
