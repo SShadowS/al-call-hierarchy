@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the cone singleton walk stops cloning its keys (−14.8 %)
+
+`ALSEM_CONES_CENSUS=1` gained a split of `inherited_facts_for_singleton`, which the
+previous round left as ONE number (4.8 s over 100,419 calls) — and against which
+precomputing `edge_sort_key` had bought only 7 %, proving the cost was elsewhere
+without saying where. It is 61 % candidate SCAN / 33 % derived FOLD / **0 % raw
+materialization** (`ConeOutput::DerivedOnly` skips `retag`+`sort_inherited` entirely
+on the analyze path, so any work aimed there would have measured nothing).
+
+**The walk is not edge-bound.** 100,419 calls walk only **136,952 out-edges** — 1.36
+each, so there is no deep walk to shorten — but scan **12,170,325** `(key, entry)`
+cone pairs, of which **86.5 % WIN** and insert into `best`, each insertion cloning a
+`String` key that already lives in `cones` for the whole walk. `best` is now
+`BTreeMap<&'g str, Best<'g>>`: **10,522,793 allocations per 8020 run, gone.**
+
+**MEASURED — paired A/B, alternating runs, 3 each, medians:** `singleton` 4,214.4 →
+**3,592.6 ms (−14.8 %)**, `compose` 8,089.0 → 7,702.9, `phases_total` 10,081.4 →
+9,803.9. **Both controls (`bfs`, `fact_cone` — untouched) moved ~+10 % the OPPOSITE
+way**, which is session drift rather than effect; neighbour-paired, the singleton
+deltas are −10.7 / −21.4 / −9.4 %. Read the headline as "roughly −10 to −20 %"; the
+allocation count is the noise-free part of the claim.
+
+Populations counted for the next round rather than guessed at: calls split 46,373
+zero-cone / 30,160 one-cone / 23,886 multi-cone, so a single-cone fast path (where
+`best` is just a copy of the one callee cone, already a `BTreeMap` in the same key
+order) would cover 4,158,131 of the 12.17 M scanned entries; and the fold's
+10,030,145 `fold_fact` calls are mostly `interner.intern(rid)`, the same re-intern
+shape the uncertainty substrate fixed one layer up. Ledger:
+`docs/2026-07-31-cone-singleton-census.md`.
+
+Byte-identical on both corpora (DO `f022f677…`, 8020 `36151bf6…`, the latter across
+all 6 A/B runs), goldens green with zero `tests/` movement, clippy clean.
+
 ### Changed — `solve_side_facts` stops allocating: `context.compute_summaries` −32 %
 
 Built against the census below, which named the cost precisely: `solve_side_facts`

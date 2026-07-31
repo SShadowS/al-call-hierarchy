@@ -365,6 +365,38 @@ pub(crate) mod cones_census {
     pub(crate) static BFS_CALLS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static SINGLETON_NANOS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static SINGLETON_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// Inside `inherited_facts_for_singleton`, which the first census round left
+    /// at ONE number (4.8 s over 100,419 calls) with nothing saying what inside
+    /// it costs — and where precomputing `edge_sort_key` then bought only 7 %,
+    /// proving the cost is elsewhere. Split three ways: the candidate SCAN over
+    /// every out-edge's callee cone, the derived FOLD over the surviving bests,
+    /// and the raw materialization (`retag` + `sort_inherited`, skipped under
+    /// `ConeOutput::DerivedOnly`).
+    pub(crate) static SGL_SCAN_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SGL_FOLD_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SGL_RAW_NANOS: AtomicU64 = AtomicU64::new(0);
+    /// Populations the scan time is per. Accumulated in plain locals inside the
+    /// walk and folded in with ONE `fetch_add` per call — the inner loop runs
+    /// millions of times and must not touch an atomic (the distortion this
+    /// module's `add_gated` doc records).
+    pub(crate) static SGL_EDGES: AtomicU64 = AtomicU64::new(0);
+    /// Every `(key, entry)` pair scanned — the REAL population of the walk, as
+    /// opposed to its call count.
+    pub(crate) static SGL_CONE_ENTRIES: AtomicU64 = AtomicU64::new(0);
+    /// `best` insertions — each one a `String` key clone today.
+    pub(crate) static SGL_WINS: AtomicU64 = AtomicU64::new(0);
+    /// Surviving `best` entries summed over all calls (= `fold_fact` calls).
+    pub(crate) static SGL_BESTS: AtomicU64 = AtomicU64::new(0);
+    /// How the walk's calls distribute over the number of CONE-BEARING out-edges
+    /// they actually merge. A call with one cone-bearing edge needs no merge at
+    /// all — `best` would be a key-for-key copy of that single callee cone, which
+    /// is already a `BTreeMap` in the same key order.
+    pub(crate) static SGL_CALLS_0_CONES: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SGL_CALLS_1_CONE: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static SGL_CALLS_N_CONES: AtomicU64 = AtomicU64::new(0);
+    /// Cone entries scanned by calls that merge two or more cones — the entries a
+    /// single-cone fast path would NOT remove.
+    pub(crate) static SGL_ENTRIES_N_CONES: AtomicU64 = AtomicU64::new(0);
     pub(crate) static MAX_SCC_MEMBERS: AtomicU64 = AtomicU64::new(0);
     /// The rest of compose: the per-SCC coverage cone, and the per-member
     /// `CoverageRecord` build + `out.insert` that follows the inherited walk.
@@ -465,6 +497,26 @@ pub(crate) mod cones_census {
             ms(SINGLETON_NANOS.load(Ordering::Relaxed)),
             SINGLETON_CALLS.load(Ordering::Relaxed),
             MAX_SCC_MEMBERS.load(Ordering::Relaxed),
+        );
+        eprintln!(
+            "[cones-census]   singleton: scan={:.1}ms fold={:.1}ms raw={:.1}ms",
+            ms(SGL_SCAN_NANOS.load(Ordering::Relaxed)),
+            ms(SGL_FOLD_NANOS.load(Ordering::Relaxed)),
+            ms(SGL_RAW_NANOS.load(Ordering::Relaxed)),
+        );
+        eprintln!(
+            "[cones-census]   singleton calls: 0_cones={} 1_cone={} n_cones={} entries_under_n_cones={}",
+            SGL_CALLS_0_CONES.load(Ordering::Relaxed),
+            SGL_CALLS_1_CONE.load(Ordering::Relaxed),
+            SGL_CALLS_N_CONES.load(Ordering::Relaxed),
+            SGL_ENTRIES_N_CONES.load(Ordering::Relaxed),
+        );
+        eprintln!(
+            "[cones-census]   singleton pop: edges={} cone_entries={} wins={} bests={}",
+            SGL_EDGES.load(Ordering::Relaxed),
+            SGL_CONE_ENTRIES.load(Ordering::Relaxed),
+            SGL_WINS.load(Ordering::Relaxed),
+            SGL_BESTS.load(Ordering::Relaxed),
         );
         eprintln!(
             "[cones-census]   compose rest: coverage_cone={:.1}ms emit_record={:.1}ms",

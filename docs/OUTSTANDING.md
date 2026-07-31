@@ -164,6 +164,20 @@ sizings marked pre-arc).
     Needs its own census round before it is sized.
   - **B1 — interned ids + bitsets.** SEQUENCE with the `str::to_lowercase()`
     census below (same call sites, one churn).
+  - **The cone singleton walk** — PARTLY DONE 2026-07-31 (branch
+    `perf/cone-singleton`, ledger `docs/2026-07-31-cone-singleton-census.md`).
+    Census split it 61 % scan / 33 % fold / **0 % raw** (the raw path is dead
+    under `ConeOutput::DerivedOnly`). **Not edge-bound**: 100,419 calls, only
+    136,952 out-edges (1.36 each), but **12,170,325** cone entries scanned with
+    **86.5 % winning** — so 10,522,793 `String` key clones per run. Borrowing the
+    keys (`BTreeMap<&'g str, _>`) took `singleton` 4,214.4 → 3,592.6 ms (−14.8 %
+    median; both controls drifted +10 % the other way, so read it as ≈ −10 to
+    −20 %). **Still open, with populations already counted:** a single-cone fast
+    path (calls split 46,373 zero-cone / 30,160 one-cone / 23,886 multi-cone —
+    covers 4,158,131 of the 12.17 M entries, since a one-cone `best` is just a
+    copy of a `BTreeMap` already in the right key order), and the fold's
+    10,030,145 `fold_fact` calls, mostly `interner.intern(rid)` — the re-intern
+    shape the uncertainty substrate fixed one layer up.
   - **B2 — SCC-shared cones** — RE-SCOPED 2026-07-31 by `ALSEM_CONES_CENSUS=1`
     (`a822da9`). `context.capability_cones` is ~12.9 s of ~66 s on 8020 and
     attributes to exactly TWO costs inside `compose_inherited_cones`
