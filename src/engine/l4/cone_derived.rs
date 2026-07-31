@@ -194,6 +194,63 @@ impl ConeOutput {
 /// returns the exact original string.
 pub type ResId = u32;
 
+/// A dense set of [`ResId`]s over one store's resource-id universe.
+///
+/// Exists so a caller unioning many routines' id windows pays one word-OR per id
+/// and no allocation per element. The alternative — accumulating the windows into
+/// a `Vec<ResId>` and deduping at the end — would hold 261,772,789 `u32`s (1.05 GB)
+/// for a single BC Base App run of `transaction_spans`, trading CPU for RSS on a
+/// span that retains 73 MB today. This type is the reason that trade is not made.
+///
+/// [`Self::iter_ids`] yields ascending ID order, which is INTERN order, not
+/// lexicographic. A caller reproducing a `BTreeSet<String>`'s output resolves and
+/// then sorts by string.
+#[derive(Debug, Default)]
+pub struct ResBitset {
+    words: Vec<u64>,
+}
+
+impl ResBitset {
+    /// A bitset wide enough for `universe_len` ids (see
+    /// [`ConeDerivedStore::res_universe_len`]). `insert_all` grows it anyway, so
+    /// the width is an optimization, not a bound.
+    pub fn new(universe_len: usize) -> Self {
+        ResBitset {
+            words: vec![0u64; universe_len.div_ceil(64)],
+        }
+    }
+
+    pub fn insert_all(&mut self, ids: &[ResId]) {
+        for &id in ids {
+            let w = (id as usize) / 64;
+            if w >= self.words.len() {
+                self.words.resize(w + 1, 0);
+            }
+            self.words[w] |= 1u64 << ((id as usize) % 64);
+        }
+    }
+
+    /// Empty the set, KEEPING the allocation — the caller reuses one bitset across
+    /// every span template in a run.
+    pub fn clear(&mut self) {
+        self.words.iter_mut().for_each(|w| *w = 0);
+    }
+
+    pub fn iter_ids(&self) -> impl Iterator<Item = ResId> + '_ {
+        self.words.iter().enumerate().flat_map(|(wi, &w)| {
+            let mut bits = w;
+            std::iter::from_fn(move || {
+                if bits == 0 {
+                    return None;
+                }
+                let b = bits.trailing_zeros();
+                bits &= bits - 1;
+                Some((wi as u32) * 64 + b)
+            })
+        })
+    }
+}
+
 /// Workspace-global, lossless `String → u32` interner for cone resource ids.
 /// Serial (the cone walk is serial). Interning ORDER is irrelevant to any output:
 /// every query resolves to `String` and sorts by the resolved string.
@@ -408,6 +465,42 @@ impl ConeDerivedStore {
             &self.events_pool,
             &self.row(routine_id).event_publishes,
         ))
+    }
+
+    /// The routine's written-TableId window as interned ids, BORROWED — the
+    /// allocation-free half of [`Self::writes_tables_of`].
+    ///
+    /// The window is sorted and deduped BY ID (`freeze_ids`), which is NOT the
+    /// order of the resolved strings, so a caller that needs string order must
+    /// resolve and sort. A caller that unions MANY routines' windows should union
+    /// the ids (see [`ResBitset`]) and resolve once — that is what this accessor
+    /// exists for: `transaction_spans` was allocating 261,772,789 `String`s per BC
+    /// Base App run through the `String` variant, one fresh `Vec<String>` per
+    /// visited routine, every element of which went straight into a
+    /// `BTreeSet<String>` and was dropped.
+    pub fn writes_table_ids_of(&self, routine_id: &str) -> &[ResId] {
+        window(
+            &self.writes_all_pool,
+            &self.row(routine_id).table_writes_all,
+        )
+    }
+
+    /// The routine's published-EventId window as interned ids, BORROWED. Same
+    /// contract as [`Self::writes_table_ids_of`].
+    pub fn event_ids_of(&self, routine_id: &str) -> &[ResId] {
+        window(&self.events_pool, &self.row(routine_id).event_publishes)
+    }
+
+    /// Resolve one interned resource id — for callers that union borrowed id
+    /// windows and materialize the result themselves.
+    pub fn resolve_res(&self, id: ResId) -> &str {
+        self.interner.resolve(id)
+    }
+
+    /// Number of distinct interned resource ids — the width a [`ResBitset`] needs
+    /// in order to hold any set this store can produce.
+    pub fn res_universe_len(&self) -> usize {
+        self.interner.len()
     }
 
     /// PHYSICAL written TableId → its op set, in d44's `BTreeSet<&str>` order
@@ -1256,5 +1349,85 @@ mod tests {
         assert_eq!(i.resolve(a), "t/A");
         assert_eq!(i.resolve(b), "t/B");
         assert_eq!(i.len(), 2);
+    }
+
+    // -- borrowed id windows (the allocation-free half of the query surface) ---
+
+    /// The id accessors expose exactly the ids the `String` accessors resolve.
+    /// Stated over TWO routines with DIFFERENT windows so an accessor that
+    /// ignores the row and returns the whole pool cannot pass.
+    #[test]
+    fn id_accessors_agree_with_the_string_accessors() {
+        let mut b = ConeDerivedBuilder::default();
+        // `t/B` is declared BEFORE `t/A`, so intern order is not string order —
+        // an accessor that skipped the resolve-then-sort would show here too.
+        b.fold_routine(
+            "r/one",
+            [
+                fact("r/one", "insert", "table", Some("t/B")),
+                fact("r/one", "insert", "table", Some("t/A")),
+                fact("r/one", "publish", "event", Some("e/Z")),
+            ]
+            .iter(),
+        );
+        b.fold_routine(
+            "r/two",
+            [fact("r/two", "insert", "table", Some("t/A"))].iter(),
+        );
+        let store = b.finish();
+
+        for rid in ["r/one", "r/two"] {
+            let mut via_ids: Vec<String> = store
+                .writes_table_ids_of(rid)
+                .iter()
+                .map(|id| store.resolve_res(*id).to_string())
+                .collect();
+            via_ids.sort();
+            assert_eq!(
+                via_ids,
+                store.writes_tables_of(rid),
+                "writes mismatch for {rid}"
+            );
+
+            let mut ev: Vec<String> = store
+                .event_ids_of(rid)
+                .iter()
+                .map(|id| store.resolve_res(*id).to_string())
+                .collect();
+            ev.sort();
+            assert_eq!(
+                ev,
+                store.publishes_events_of(rid),
+                "events mismatch for {rid}"
+            );
+        }
+        // The two rows are genuinely different — otherwise the loop above proves
+        // nothing about windowing.
+        assert_ne!(
+            store.writes_table_ids_of("r/one").len(),
+            store.writes_table_ids_of("r/two").len()
+        );
+    }
+
+    #[test]
+    fn res_bitset_dedupes_and_iterates_ascending() {
+        let mut bs = ResBitset::new(8);
+        bs.insert_all(&[5, 1, 5, 3]);
+        bs.insert_all(&[3, 7]);
+        assert_eq!(bs.iter_ids().collect::<Vec<ResId>>(), vec![1, 3, 5, 7]);
+        bs.clear();
+        assert_eq!(bs.iter_ids().collect::<Vec<ResId>>(), Vec::<ResId>::new());
+    }
+
+    /// A set wider than one 64-bit word — the boundary an off-by-one word index
+    /// would silently cross.
+    #[test]
+    fn res_bitset_spans_word_boundaries() {
+        let mut bs = ResBitset::new(200);
+        bs.insert_all(&[0, 63, 64, 65, 127, 128, 199]);
+        assert_eq!(
+            bs.iter_ids().collect::<Vec<ResId>>(),
+            vec![0, 63, 64, 65, 127, 128, 199]
+        );
     }
 }

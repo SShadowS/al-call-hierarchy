@@ -96,6 +96,27 @@ sizings marked pre-arc).
   5,394.5 MB). Wall figures for this corpus/probe swing **±80 s** — see the d1
   capstone's qualifier in CHANGELOG; only the memory figures are robust singly.
 
+  **DONE 2026-07-31 — `context.transaction_spans`** (branch `perf/transaction-spans`,
+  plan `docs/superpowers/plans/2026-07-31-transaction-spans-interning.md`, ledger
+  `docs/2026-07-31-transaction-spans-measurements.md`). It was **58.90 s of a 206.43 s
+  run** — the largest single span, and on no list until this arc measured it. Now
+  **1.14 s**. `aggregate_span` was resolving each visited routine's whole folded-cone
+  window into a fresh `Vec<String>` and dropping it: **261,772,789 strings per 8020 run
+  → 1,762,840**. Byte-identical on both corpora (DO `f022f677…`, 8020 `36151bf6…`),
+  zero golden movement. **The census falsified two of the three cost centres the plan
+  was built on** — the `String`-keyed BFS runs 927 walks over 129,350 steps total, so
+  the planned interned-ix rewrite was never built, and the per-op payload clone
+  duplicates only 134 of 1,061 spans, so that task was skipped by its own gate. Measure
+  the population before building the taxonomy for it — again.
+
+  **Post-fix 8020 profile (warm, `analyze.total` 76.15 s) — the re-ranked lever list:**
+  `context.capability_cones` 14.53 s (19.1 %) · `detector.d1`'s `scoring` 10.56 s
+  (13.9 %, inside `search_loops_cohorts` 12.35 s / `detector.d1` 13.71 s) ·
+  `context.compute_summaries` 8.60 s (11.3 %) · `preflight.fresh_coverage` 4.89 s
+  (6.4 % — its 71.81 s in the cold baseline run was file-cache, not real cost) ·
+  `detector.d2` 3.46 s. Note this makes the d1 witness/uncertainty follow-up below a
+  REAL item again, at a re-measured envelope of ≤10.56 s.
+
   **Still open in this track:**
   - **B1 — interned ids + bitsets.** SEQUENCE with the `str::to_lowercase()`
     census below (same call sites, one churn).
