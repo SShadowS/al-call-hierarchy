@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `preflight.fresh_coverage` is censused; on a real customer workspace it is 83 % of the run
+
+`src/program/` — the fresh resolver, the moat — carried **zero** `pt::span` calls, so
+the largest never-examined span was one opaque number. Six spans added inside
+`build_context_res`/`fresh_coverage`; its own self time goes to **0.7 ms (DO) / 3.0 ms
+(8020)**. Attribution only, no fix.
+
+**On DO, the real customer workspace, the preflight is 2,642 ms of a 3,171 ms run —
+83.4 %.** `parse_snapshot` **1,139.2 ms (35.9 % of the whole run)**, `resolve_full`
+535.6, `snapshot_build` 458.8, `ctx_drop` 248.7, `dep_layer` 141.9, `assemble_graph`
+116.4. On 8020 it is 3,503 ms of 32.4 s (10.8 %) and the ORDER INVERTS: `resolve_full`
+1,838.4 leads, `parse_snapshot` is 786.4, `dep_layer` is **zero**.
+
+**The two corpora have opposite shapes, so this was never one lever.** DO has 551
+primary `.al` files and **11 dependency `.app` packages** (Base App, System App,
+Business Foundation, 5× Continia); 8020 has 8,020 files and **no** dependencies.
+`parse_snapshot` parses every source-bearing app including deps, and BC 24+ `.app`s
+ship embedded source. 8020 parses 8,020 files in 786.4 ms — 0.098 ms/file — so DO's
+1,139.2 ms is on the order of **11,600 files, 551 of them the primary app**: roughly
+**95 % of DO's preflight parse is dependency source, re-parsed from scratch every
+run.**
+
+**This falsifies the sizing on the parked "Preflight shared parse" item**, which put
+the primary app's duplicated parse at a "sub-second saving" on DO. At the measured
+rate those 551 files are **~54 ms**. Re-labelled, not built.
+
+The preflight returns FOUR SCALARS and then destroys the whole model
+(`preflight.ctx_drop`), so on DO the CLI spends 2.64 s of a 3.17 s run building,
+resolving and discarding a whole-program model of ~11,600 mostly-unchanged dependency
+files to produce four numbers. The ceiling is therefore in not redoing the work, not in
+making it faster: dependency-parse/ABI caching across runs (note `build_context_res`
+constructs `AbiCache::new()` fresh on every call, so the one cache that exists is
+always empty), or caching `FreshCoverage` itself on a workspace+dependency content
+hash — `compute_gate_model_instance_id` already computes such a hash in 51 ms. Both
+unbuilt and unmeasured; the ledger is what they would be built against.
+
+Ledger: `docs/2026-07-31-preflight-census.md`. Byte-identical on both corpora (DO
+`f022f677…`, 8020 `36151bf6…`), `scripts/check-goldens` green (9 targets, zero files
+under `tests/` moved), clippy clean.
+
 ### Changed — cone fact keys are shared, not copied 6.4 M times per run
 
 The post-allocator re-census of `context.capability_cones` (still the largest single

@@ -204,7 +204,7 @@ sizings marked pre-arc).
   |---|---:|---|
   | `context.capability_cones` | ~8,200 | ~23 % — the dominant lever, twice the next item |
   | `context.compute_summaries` | ~4,100 | `solve_side_facts` residual below |
-  | `preflight.fresh_coverage` | ~3,700 | never yet censused |
+  | `preflight.fresh_coverage` | ~3,500 | CENSUSED 2026-07-31 — see below |
   | `gate.workspace_diagnostics` | ~1,330 | never yet censused |
   | `l3.parse_project_parallel` | ~1,310 | |
   | `search_loops_cohorts` (self) | ~1,270 | d1 |
@@ -213,6 +213,33 @@ sizings marked pre-arc).
   | `gate.teardown` | ~1,100 | was 12,430 |
   | `gate.project_filter_scope_baseline_suppress` | ~1,000 | 143,926 findings projected |
   | `l4_l5.role_scope_and_sort` | ~990 | see below |
+
+  **MEASURED 2026-07-31 — `preflight.fresh_coverage`** (branch
+  `perf/preflight-census`, ledger `docs/2026-07-31-preflight-census.md`).
+  Attribution only, no fix. `src/program/` had **zero** spans, so the moat's own
+  pipeline was one opaque number. **On DO — the real customer workspace — it is
+  2,642 ms of a 3,171 ms run: 83.4 %.** `parse_snapshot` 1,139.2 ms (**35.9 % of
+  the whole run**) › `resolve_full` 535.6 › `snapshot_build` 458.8 › `ctx_drop`
+  248.7 › `dep_layer` 141.9 › `assemble_graph` 116.4. On 8020 it is 10.8 % and the
+  ORDER INVERTS: `resolve_full` 1,838.4 leads, `dep_layer` is zero.
+  **The two corpora have opposite shapes — this was never one lever.** DO has 551
+  primary `.al` files and **11 dependency `.app` packages**; 8020 has 8,020 files
+  and none. `parse_snapshot` parses every source-bearing app including deps, and
+  BC 24+ `.app`s ship embedded source, so ~**95 % of DO's preflight parse is
+  dependency source re-parsed from scratch on every run**.
+  **The ceiling is in not redoing the work, not in making it faster** — the
+  preflight returns FOUR SCALARS and then destroys the whole model:
+  - **Dep-parse / ABI caching across runs.** `build_context_res` constructs
+    `AbiCache::new()` FRESH on every call, so the one cache that exists is always
+    empty. Ceiling on DO: most of `parse_snapshot` + `dep_layer` + part of
+    `snapshot_build`.
+  - **Cache `FreshCoverage` itself** on a workspace+dependency content hash —
+    `compute_gate_model_instance_id` already computes such a hash in 51 ms, and
+    `src/engine/gate/cache_prune.rs` is an existing cache concept to hang it on.
+    Ceiling on DO: the whole **2.64 s / 83.4 %** on a warm repeat.
+    Correctness constraint: the preflight is the "no silent clean" gate, so a
+    cache must fail CLOSED — a stale or unverifiable key means recompute, never
+    a reused verdict.
 
   **Still open in this track:**
   - **`l4_l5.role_scope_and_sort` — a comparator that allocates per COMPARISON.**
@@ -688,7 +715,15 @@ sizings marked pre-arc).
   d55 finding silently suppressed a second publish in the same loop, or the next
   deliberate fingerprint-moving change (piggyback — the cost is the same class as
   T4's 3 %).
-- [ ] **Preflight shared parse** — measured 2026-07-17: duplicated work is the PRIMARY
+- [ ] **Preflight shared parse — RE-SIZED 2026-07-31 to ~54 ms; effectively dead.**
+  ⟨`docs/2026-07-31-preflight-census.md`⟩ The premise below is CONFIRMED (deps parse
+  once, so only the primary app's parse is duplicated) but the sizing was three
+  orders out. 8020 parses 8,020 files in 786.4 ms = **0.098 ms/file**, so DO's 551
+  primary files are **~54 ms**, not a "sub-second saving". The dep-source parse —
+  ~95 % of DO's 1,139 ms `preflight.parse_snapshot` — is NOT duplicated and is not
+  reachable by sharing a parse; it is reachable by CACHING one (see the Track B
+  preflight entry). Do not build this; build the cache. Original text: measured
+  2026-07-17: duplicated work is the PRIMARY
   app's parse only (deps parse once in the fresh pass); on DO that's 407 files of a
   dep-dominated 4.8 s resolve → sub-second saving. Live BOM divergence (DO has 4
   BOM-carrying `.al` files; snapshot keeps BOM, L3 strips) makes naive sharing

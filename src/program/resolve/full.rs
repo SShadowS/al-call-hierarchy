@@ -37,6 +37,7 @@ use al_syntax::IdentifierFoldExt;
 use al_syntax::ir::ObjectKind;
 use rayon::prelude::*;
 
+use crate::engine::perf_trace as pt;
 use crate::program::build::{DepLayer, assemble_program_graph, build_dep_layer};
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
@@ -1063,12 +1064,15 @@ impl ProgramContext {
 
 pub fn build_context_res(workspace_root: &Path) -> Result<ProgramContext, String> {
     // ── Step 1: Build snapshot ────────────────────────────────────────────────
-    let snap = (SnapshotBuilder {
-        workspace_root: workspace_root.to_path_buf(),
-        local_providers: vec![],
-    })
-    .build()
-    .map_err(|e| format!("snapshot build failed: {e:#}"))?;
+    let snap = {
+        let _s = pt::span("preflight", "preflight.snapshot_build");
+        (SnapshotBuilder {
+            workspace_root: workspace_root.to_path_buf(),
+            local_providers: vec![],
+        })
+        .build()
+        .map_err(|e| format!("snapshot build failed: {e:#}"))?
+    };
 
     // ws_file_set: the true workspace source virtual paths (first AppUnit).
     // Excludes embedded dep apps whose AppId matches the workspace AppId.
@@ -1094,8 +1098,14 @@ pub fn build_context_res(workspace_root: &Path) -> Result<ProgramContext, String
     // same order (see that function's own doc, and the
     // `assemble_program_graph_matches_build_program_graph_field_by_field`
     // characterization test in `program::build`).
-    let parsed = parse_snapshot(&snap);
-    let dep_layer = build_dep_layer(&snap, &crate::program::abi_ingest::AbiCache::new(), &parsed);
+    let parsed = {
+        let _s = pt::span("preflight", "preflight.parse_snapshot");
+        parse_snapshot(&snap)
+    };
+    let dep_layer = {
+        let _s = pt::span("preflight", "preflight.dep_layer");
+        build_dep_layer(&snap, &crate::program::abi_ingest::AbiCache::new(), &parsed)
+    };
 
     // `snap.apps` is GUID-deduped upstream (H-2), so at most one parsed unit
     // can match the workspace identity.
@@ -1110,7 +1120,10 @@ pub fn build_context_res(workspace_root: &Path) -> Result<ProgramContext, String
             &empty_ws_unit
         }
     };
-    let graph = assemble_program_graph(&dep_layer, ws_unit, &snap);
+    let graph = {
+        let _s = pt::span("preflight", "preflight.assemble_graph");
+        assemble_program_graph(&dep_layer, ws_unit, &snap)
+    };
 
     // ── Step 3: Locate primary (workspace) app ────────────────────────────────
     let primary_app_ref = graph.apps.find(&snap.workspace_app).ok_or_else(|| {
@@ -1249,16 +1262,34 @@ fn opaque_dependency_closure(snap: &AppSetSnapshot) -> Vec<String> {
 /// semantic models are never resident together).
 pub fn fresh_coverage(workspace_root: &Path) -> Result<FreshCoverage, String> {
     let ctx = build_context_res(workspace_root)?;
-    let report = resolve_full_program_with(&ctx);
-    let opaque_apps = opaque_dependency_closure(&ctx.snap);
-    Ok(FreshCoverage {
+    let report = {
+        let _s = pt::span("preflight", "preflight.resolve_full");
+        resolve_full_program_with(&ctx)
+    };
+    let opaque_apps = {
+        let _s = pt::span("preflight", "preflight.opaque_closure");
+        opaque_dependency_closure(&ctx.snap)
+    };
+    let out = FreshCoverage {
         unknown: report.primary_histogram.unknown,
         coverage_holds: coverage_holds(&report.coverage),
         recovered_files: report.recovered_files.len(),
         opaque_apps,
-    })
+    };
     // ctx (snapshot + graph + parsed) drops HERE — callers hold only the tiny
     // status struct, never the whole semantic model (spec §3 memory sequencing).
+    // Dropped EXPLICITLY, inside a span, for the same reason `gate.teardown`
+    // and `context.ctx_drop` are: this is the whole workspace semantic model
+    // being freed, it was already being freed at exactly this point, and
+    // leaving it unnamed is how 16.6 % of an 8020 run stayed invisible until
+    // `docs/2026-07-31-profile-attribution.md`. `ProgramReport` is owned (it
+    // borrows nothing from `ctx`), so the order below is free to choose.
+    {
+        let _s = pt::span("preflight", "preflight.ctx_drop");
+        drop(report);
+        drop(ctx);
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
