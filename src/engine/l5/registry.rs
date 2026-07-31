@@ -693,7 +693,6 @@ mod tests {
             fingerprint: None,
             event_kind: None,
             cross_extension_subscribers: None,
-            contexts: None,
             cohort_contexts: None,
         }
     }

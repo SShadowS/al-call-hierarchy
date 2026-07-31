@@ -607,7 +607,6 @@ fn build_finding(
         fingerprint: None,
         event_kind: None,
         cross_extension_subscribers: None,
-        contexts: None,
         cohort_contexts: None,
     };
 
@@ -1429,12 +1428,17 @@ fn build_context<'agg, 'data>(
 /// `ctxs` is already sorted so `ctxs[0]` is the WINNER; the finding lifts its
 /// severity / confidence / evidence_path / temp+setup notes / G-4 wording from
 /// that single context, and the non-winner witnesses become `additional_paths`.
+///
+/// Returns the per-loop [`LoopContext`]s ALONGSIDE the finding rather than inside
+/// it: `Finding::contexts` is gone (the production path emits `cohort_contexts`),
+/// so this oracle carries its own representation out-of-band. The tests that
+/// assert per-loop context order read the second element.
 #[cfg(test)]
 fn build_group_finding(
     ctxs: &[CtxUnderAssembly],
     ctx: &DetectorContext,
     role_by_routine: &HashMap<&str, &str>,
-) -> Finding {
+) -> (Finding, Vec<LoopContext>) {
     let winner = &ctxs[0];
     let agg = winner.agg;
     let terminal_op = agg.terminal.op;
@@ -1555,7 +1559,6 @@ fn build_group_finding(
         fingerprint: None,
         event_kind: None,
         cross_extension_subscribers: None,
-        contexts: Some(contexts),
         cohort_contexts: None,
     };
 
@@ -1563,7 +1566,7 @@ fn build_group_finding(
     if actionable.is_some() {
         finding.actionable_anchor = actionable;
     }
-    finding
+    (finding, contexts)
 }
 
 /// Group the reachability aggregates by `(terminal routine, terminal op)` and
@@ -1576,7 +1579,7 @@ fn assemble_findings(
     aggs: &[LoopTerminalAgg],
     ctx: &DetectorContext,
     role_by_routine: &HashMap<&str, &str>,
-) -> Vec<Finding> {
+) -> Vec<(Finding, Vec<LoopContext>)> {
     let mut groups: BTreeMap<(&str, &str), Vec<&LoopTerminalAgg>> = BTreeMap::new();
     for agg in aggs {
         groups
@@ -1585,7 +1588,7 @@ fn assemble_findings(
             .push(agg);
     }
 
-    let mut out: Vec<Finding> = Vec::new();
+    let mut out: Vec<(Finding, Vec<LoopContext>)> = Vec::new();
     for (_key, members) in groups {
         let mut ctxs: Vec<CtxUnderAssembly> =
             members.iter().map(|&agg| build_context(agg, ctx)).collect();
@@ -1959,7 +1962,6 @@ fn assemble_cohort_findings(
             fingerprint: None,
             event_kind: None,
             cross_extension_subscribers: None,
-            contexts: None,
             cohort_contexts: Some(cohort_contexts),
         };
 
@@ -3603,12 +3605,14 @@ mod assembly_tests {
         (routines, edges, summaries)
     }
 
-    /// Run the production pipeline over a fixture and return the assembled findings.
+    /// Run the SHADOW ORACLE (the retired per-loop path) over a fixture and return
+    /// each finding with its per-loop `LoopContext`s beside it — `Finding` no
+    /// longer carries them.
     fn assemble(
         routines: &[L3Routine],
         edges: HashMap<String, Vec<CombinedEdge>>,
         summaries: HashMap<String, FullRoutineSummary>,
-    ) -> Vec<Finding> {
+    ) -> Vec<(Finding, Vec<LoopContext>)> {
         let ctx = minimal_ctx(routines, edges, summaries);
         let workspace = ws(routines);
         let mut memo = HashMap::new();
@@ -3632,10 +3636,10 @@ mod assembly_tests {
         let findings = assemble(&routines, edges, summaries);
 
         assert_eq!(findings.len(), 1, "one Finding per (terminal routine, op)");
-        let f = &findings[0];
+        let f = &findings[0].0;
         assert_eq!(f.id, "d1/H/H/op0", "terminal-based id");
         assert_eq!(f.root_cause_key, f.id, "id == root_cause_key");
-        let ctxs = f.contexts.as_ref().expect("d1 findings carry contexts");
+        let ctxs = &findings[0].1;
         assert_eq!(ctxs.len(), 2, "one context per reaching loop");
         // Context order: same severity/verdict here, so loop routine id ascending.
         assert_eq!(ctxs[0].loop_routine_id, "L1");
@@ -3707,8 +3711,8 @@ mod assembly_tests {
         let findings = assemble(&routines, edges, summaries);
 
         assert_eq!(findings.len(), 1);
-        let f = &findings[0];
-        let ctxs = f.contexts.as_ref().unwrap();
+        let f = &findings[0].0;
+        let ctxs = &findings[0].1;
         assert_eq!(ctxs.len(), 2);
         // Winner is the depth-2 (critical) L2 route; the high L1 route is second.
         assert_eq!(ctxs[0].loop_routine_id, "L2");
@@ -4268,7 +4272,7 @@ mod assembly_tests {
         }
         assert!(!old_fp.is_empty(), "old premerge must produce a finding");
 
-        for f in &mut new_findings {
+        for (f, _ctxs) in &mut new_findings {
             assert_eq!(f.id, f.root_cause_key, "id == root_cause_key");
             assert_eq!(f.root_cause_key, "d1/H/H/op0", "terminal-based key");
             let new_fp = ctx.fingerprint_index.fingerprint_of(f);
@@ -4346,8 +4350,12 @@ codeunit 50790 "T5 D1 G7"
         // C6 cohort schema: the two reaching loops live in `cohort_contexts` (one
         // verdict class, loop_count 2) — decompress its `loop_set` via the run
         // catalog to recover the two DISTINCT dead loop roots (the population G-7
-        // spans). The old per-loop `contexts` is now `None`.
-        assert!(f.contexts.is_none(), "cutover: per-loop contexts retired");
+        // spans).
+        //
+        // The `assert!(f.contexts.is_none(), "cutover: per-loop contexts retired")`
+        // that stood here is DELETED, not moved: `Finding` no longer has a
+        // `contexts` field, so the state it guarded against is unrepresentable.
+        // A guard whose violation cannot be constructed is not coverage.
         let idx = out
             .d1_cohort_index
             .as_ref()
