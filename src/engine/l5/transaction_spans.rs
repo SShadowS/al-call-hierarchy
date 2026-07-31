@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use crate::engine::l2::features::PCallee;
 use crate::engine::l3::l3_workspace::L3Routine;
-use crate::engine::l4::cone_derived::ConeDerivedStore;
+use crate::engine::l4::cone_derived::{ConeDerivedStore, ResBitset};
 use crate::engine::l5::capability_query::reachable_coverage;
 use crate::engine::l5::full_summary::FullRoutineSummary;
 use crate::engine::l5::reverse_call_graph::ReverseCallGraph;
@@ -118,45 +118,71 @@ fn backward_cone(
 
 /// Aggregate the writes/events/coverage over a visited span. Mirrors al-sem
 /// lines 97-109 / 152-164: a routine with no summary → `coverage_complete` false
-/// and contributes nothing; otherwise union its `writes_tables_of` /
-/// `publishes_events_of` and AND-in its `reachable_coverage == "complete"`.
+/// and contributes nothing; otherwise union its written tables / published events
+/// and AND-in its `reachable_coverage == "complete"`.
 /// ⟨C1 Task 2⟩ The write / event id-sets come from the folded cone rows
 /// (`cone_derived`); the `summaries` lookup stays because BOTH remaining
 /// behaviours depend on it — the "no summary ⇒ not complete AND contributes
 /// nothing" arm, and `reachable_coverage`, which reads `coverage` (untouched by
 /// this arc).
+///
+/// **The union rides INTERNED IDS, and that is the whole point of this function's
+/// shape.** It used to call `ConeDerivedStore::writes_tables_of` /
+/// `publishes_events_of` per visited routine, each of which resolves that
+/// routine's whole folded-cone window into a fresh `Vec<String>` whose every
+/// element is then inserted into a `BTreeSet<String>` and dropped. Censused on BC
+/// Base App 8020: **261,772,789 `String`s allocated and discarded per run**, 2,023
+/// per visited routine — the measured cost of `context.transaction_spans`. Ids go
+/// into a caller-owned [`ResBitset`] instead (one word-OR each, no allocation, and
+/// dedupe for free because the interner is injective, so id-dedupe IS
+/// string-dedupe), and the set is resolved to `String` ONCE per span template.
+///
+/// The output is unchanged: `resolve_sorted_ids` sorts by the resolved STRING,
+/// which is the order the old `BTreeSet<String>` produced. Bitset order is intern
+/// order and is NOT lexicographic — dropping that sort would silently reorder
+/// every span's `writes_tables`.
 fn aggregate_span(
     visited: &BTreeSet<String>,
     summaries: &HashMap<String, FullRoutineSummary>,
     cone_derived: &ConeDerivedStore,
+    writes_bs: &mut ResBitset,
+    events_bs: &mut ResBitset,
     census: &mut TxSpanCensus,
 ) -> (Vec<String>, Vec<String>, bool) {
-    let mut writes: BTreeSet<String> = BTreeSet::new();
-    let mut events: BTreeSet<String> = BTreeSet::new();
+    writes_bs.clear();
+    events_bs.clear();
     let mut coverage_complete = true;
     for rid in visited {
         let Some(summary) = summaries.get(rid) else {
             coverage_complete = false;
             continue;
         };
-        let w = cone_derived.writes_tables_of(&summary.routine_id);
-        let e = cone_derived.publishes_events_of(&summary.routine_id);
-        census.materialized_strings += w.len() + e.len();
-        for t in w {
-            writes.insert(t);
-        }
-        for e in e {
-            events.insert(e);
-        }
+        writes_bs.insert_all(cone_derived.writes_table_ids_of(&summary.routine_id));
+        events_bs.insert_all(cone_derived.event_ids_of(&summary.routine_id));
         if reachable_coverage(summary, None) != "complete" {
             coverage_complete = false;
         }
     }
-    (
-        writes.into_iter().collect(),
-        events.into_iter().collect(),
-        coverage_complete,
-    )
+    let writes = resolve_sorted_ids(writes_bs, cone_derived, census);
+    let events = resolve_sorted_ids(events_bs, cone_derived, census);
+    (writes, events, coverage_complete)
+}
+
+/// Resolve a `ResId` set into the sorted-unique `Vec<String>` the old
+/// `BTreeSet<String>` produced. The set is already unique (a bitset cannot hold a
+/// duplicate); the sort is by string because intern order is not lexicographic.
+fn resolve_sorted_ids(
+    bs: &ResBitset,
+    cone_derived: &ConeDerivedStore,
+    census: &mut TxSpanCensus,
+) -> Vec<String> {
+    let mut out: Vec<String> = bs
+        .iter_ids()
+        .map(|id| cone_derived.resolve_res(id).to_string())
+        .collect();
+    census.materialized_strings += out.len();
+    out.sort();
+    out
 }
 
 /// span roots = visited routines with no reverse callers. Mirrors al-sem
@@ -245,6 +271,8 @@ fn span_template<'c>(
     summaries: &HashMap<String, FullRoutineSummary>,
     cone_derived: &ConeDerivedStore,
     cache: &'c mut HashMap<String, SpanTemplate>,
+    writes_bs: &mut ResBitset,
+    events_bs: &mut ResBitset,
     census: &mut TxSpanCensus,
 ) -> &'c SpanTemplate {
     census.template_calls += 1;
@@ -252,8 +280,14 @@ fn span_template<'c>(
         let visited = backward_cone(seed, commits_by_routine, reverse);
         census.templates += 1;
         census.visited_total += visited.len();
-        let (writes_tables, publishes_events, coverage_complete) =
-            aggregate_span(&visited, summaries, cone_derived, census);
+        let (writes_tables, publishes_events, coverage_complete) = aggregate_span(
+            &visited,
+            summaries,
+            cone_derived,
+            writes_bs,
+            events_bs,
+            census,
+        );
         let span_roots = span_roots_of(&visited, reverse);
         cache.insert(
             seed.to_string(),
@@ -315,6 +349,10 @@ pub fn compute_transaction_spans(
     // per distinct seed routine id (see `span_template` above `compute_transaction_spans`).
     let mut template_cache: HashMap<String, SpanTemplate> = HashMap::new();
     let mut census = TxSpanCensus::default();
+    // ONE bitset pair for the whole run: `aggregate_span` clears and refills them
+    // per template, so the union never allocates per routine or per element.
+    let mut writes_bs = ResBitset::new(cone_derived.res_universe_len());
+    let mut events_bs = ResBitset::new(cone_derived.res_universe_len());
 
     // --- explicit-commit seeds ---
     for (commit_routine_id, commit_ops) in &commits_by_routine {
@@ -325,6 +363,8 @@ pub fn compute_transaction_spans(
             summaries,
             cone_derived,
             &mut template_cache,
+            &mut writes_bs,
+            &mut events_bs,
             &mut census,
         );
         // clone the template fields once per OP (same values every op — was a
@@ -373,6 +413,8 @@ pub fn compute_transaction_spans(
                 summaries,
                 cone_derived,
                 &mut template_cache,
+                &mut writes_bs,
+                &mut events_bs,
                 &mut census,
             );
             census.spans_emitted += 1;
@@ -693,5 +735,77 @@ mod tests {
         assert_eq!(spans[0].routines_in_span, spans[1].routines_in_span);
         assert_eq!(spans[0].span_roots, spans[1].span_roots);
         assert_ne!(spans[0].commit_operation_id, spans[1].commit_operation_id);
+    }
+
+    /// The span's write/event unions are deduped ACROSS routines and sorted by the
+    /// resolved string, and one routine without a summary still poisons
+    /// `coverage_complete`. This is the regression pin for the interned-id union:
+    /// the fixture states both preconditions by hand — `t/A` is written by TWO
+    /// routines (so a lost dedupe shows), the tables are declared in an order whose
+    /// intern order is NOT their string order (so a lost sort shows), and `root`
+    /// has no summary entry at all.
+    #[test]
+    fn span_union_is_deduped_string_sorted_and_coverage_follows_a_missing_summary() {
+        let routines = vec![
+            routine("root", "trigger"),
+            routine("mid", "procedure"),
+            op_commit_routine("committer", "procedure", &["c/op"]),
+        ];
+        let graph = graph_from_edges(
+            &["root", "mid", "committer"],
+            &[edge("root", "mid", "cs1"), edge("mid", "committer", "cs2")],
+        );
+        let reverse = build_reverse_call_graph(&graph);
+
+        let mut summaries: HashMap<String, FullRoutineSummary> = HashMap::new();
+        // `committer` declares t/Z BEFORE t/A: interning follows declaration order,
+        // so id order is (t/Z, t/A) while string order is (t/A, t/Z).
+        summaries.insert(
+            "committer".to_string(),
+            summary(
+                "committer",
+                vec![
+                    fact("insert", "table", Some("t/Z")),
+                    fact("insert", "table", Some("t/A")),
+                    fact("publish", "event", Some("e/Z")),
+                ],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        );
+        // `mid` writes t/A too — the cross-routine duplicate.
+        summaries.insert(
+            "mid".to_string(),
+            summary(
+                "mid",
+                vec![
+                    fact("insert", "table", Some("t/A")),
+                    fact("publish", "event", Some("e/A")),
+                ],
+                vec![],
+                Some(coverage("complete")),
+            ),
+        );
+        // `root` deliberately has NO summary.
+
+        let no_deps = BTreeSet::new();
+        let spans = compute_transaction_spans(
+            &routines,
+            &no_deps,
+            &reverse,
+            &summaries,
+            &cone_store_of(&summaries),
+        );
+        assert_eq!(spans.len(), 1);
+        assert_eq!(
+            spans[0].writes_tables,
+            vec!["t/A", "t/Z"],
+            "union is deduped across routines and sorted by the resolved string"
+        );
+        assert_eq!(spans[0].publishes_events, vec!["e/A", "e/Z"]);
+        assert!(
+            !spans[0].coverage_complete,
+            "`root` has no summary, so the span is not coverage-complete"
+        );
     }
 }

@@ -114,7 +114,49 @@ attributes time to the SPAN, not to which line inside it.
 
 ## Per-task results
 
-<!-- one subsection per task: span total before/after, identity evidence, what is NOT claimed -->
+### Task R1 — union interned ids in a bitset, resolve once per template
+
+**The primary evidence is a COUNT, not a timing.** `materialized_strings` is a
+deterministic census of how many `String`s the union allocates; it carries no noise band
+at all:
+
+| 8020 | base `a642bec` | after R1 |
+|---|---:|---:|
+| `materialized_strings` | 261,772,789 | **1,762,840** (−99.33 %) |
+| `context.transaction_spans` | 58.90 s | **1.14 s** (−57.76 s, −98.1 %) |
+
+Every other census figure is byte-for-byte unchanged (`template_calls=955`,
+`templates=927`, `visited_total=129350`, `spans_emitted=1061`,
+`payload_strings=2390888`, `mean_cone=139.5`) — the walk, the cache behaviour and the
+emitted payloads are untouched; only the union's representation changed.
+
+**Identity evidence.**
+- DO `--deterministic` SHA-256 `f022f677d2650b2399fc3aa5a7625bc6c078d90dd51cdb80e1e3705808fee3ea`
+  — unchanged from the Task-0 baseline and from the hash the uncertainty arc recorded.
+- The two non-deterministic 8020 runs differ in exactly **6 bytes**, all inside the
+  `generatedAt` timestamp (first differing offset 14,944); the remaining 251,169,090 bytes
+  are identical.
+- Four discrimination proofs, each PASS → FAIL → PASS:
+  1. drop `out.sort()` in `resolve_sorted_ids` →
+     `span_union_is_deduped_string_sorted_and_coverage_follows_a_missing_summary` FAILS
+     (intern order is not lexicographic — the fixture declares `t/Z` before `t/A`).
+  2. missing-summary arm reduced to a bare `continue` → that test AND the pre-existing
+     `missing_summary_makes_coverage_incomplete_and_contributes_nothing` FAIL.
+  3. `ResBitset::insert_all` uses `=` instead of `|=` → both bitset tests FAIL.
+  4. `writes_table_ids_of` returns the whole pool instead of the row window →
+     `id_accessors_agree_with_the_string_accessors` FAILS.
+
+  Proof 4 initially reported a false PASS: the patch text did not match after rustfmt
+  reflowed the body, so the break was never applied. Recorded because "the break ran and
+  the test still passed" and "the break never ran" are indistinguishable from an exit
+  code alone — an assert on the patch text is what caught it.
+
+**What is NOT claimed.** `analyze.total` moved 206.43 s → 76.15 s, and **that is not this
+change's doing.** `preflight.fresh_coverage` — a span this commit does not touch — moved
+71.81 s → 4.89 s in the same pair of runs, which is the cold-file-cache artefact the
+baseline section already flagged. The supported claim is the
+`context.transaction_spans` delta (−57.76 s) plus the allocation census (−260.0 M
+strings); the rest of the wall movement is cache state, not this arc.
 
 ## Build hazard recorded
 
