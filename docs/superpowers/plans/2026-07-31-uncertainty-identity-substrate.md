@@ -86,13 +86,16 @@ three of its four consumers.
 
 ```bash
 cd "$WT"
-grep -rlP '"evidence":\s*\[\s*\{' tests/ | sort
+# -U/--multiline is REQUIRED: the pattern spans a newline, and `grep -P` without
+# it silently returns NOTHING — a false negative that reads exactly like "no
+# coverage gap here". This bit once already in this arc.
+rg -U --files-with-matches '"evidence":\s*\[\s*\{' tests/ | sort
 ```
 
-Expected: `tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json` plus only
-`tests/cli-b-goldens/prove/*` (a different surface). If any r4 golden for d2/d46/d48
-already carries a non-empty `evidence`, this task shrinks accordingly — record what you
-found either way.
+**VERIFIED 2026-07-31 with the multiline search**: exactly one r4 golden matches —
+`tests/r4-goldens/ws-d1-uncertain-path.r4.golden.json`, a d1 finding — plus seven
+`tests/cli-b-goldens/prove/*` files, which are the `prove` command's surface, not the r4
+finding-confidence family. The hole is real and this task stands as written.
 
 - [ ] **Step 2: Find what makes d2 emit uncertainty-bearing confidence**
 
@@ -233,6 +236,11 @@ consumer instead of one.
 Change the field to `pub uncertainties_by_node: HashMap<String, UncertaintySetId>` and add
 `pub uncertainties: UncertaintyIndex`. Migrate the three read sites:
 
+- **`d2.rs`'s `sub_summary_uncertainties`** (`src/engine/l5/detectors/d2.rs:565`) reads
+  `ctx.uncertainties_by_node` DIRECTLY and returns a `&[Uncertainty]` borrow. It is a
+  first-class consumer of this substrate, not an indirect one — migrate it to
+  `&[UncertaintyId]` alongside d1, and note its return type is what Task 0's new golden
+  covers.
 - `d1_reach.rs:185` and the `unc` flags — "does this node have uncertainty" becomes
   `!ctx.uncertainties.is_empty_set(sid)`, an O(1) window check.
 - `d1_dataflow.rs:408` (the `#[cfg(test)]` oracle) and `:2530`/`:2535` (the union).
