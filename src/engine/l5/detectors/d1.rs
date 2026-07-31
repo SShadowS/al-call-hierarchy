@@ -1664,6 +1664,25 @@ fn assemble_cohort_findings(
     // The same idea for the object/table ids: 563,126 entries over 2,042
     // distinct values on 8020 (276x duplication). See `affected_objects` below.
     let mut object_ids: HashMap<&str, Arc<str>> = HashMap::new();
+    // Catalog group -> its loop routine's OWNING OBJECT id, resolved ONCE per
+    // distinct loop instead of once per (cohort, set bit). The `affected_objects`
+    // loop below runs over every reaching loop of every cohort of every terminal
+    // — the ~3.2M `(loop, terminal)` population the cohort redesign compressed
+    // everywhere EXCEPT here — and each visit used to pay a `HashMap<&str, _>`
+    // lookup keyed by the loop routine's id string. The catalog is `run`-lifetime
+    // and immutable, so one pass over it answers every visit by index. `None`
+    // reproduces the old miss arm (a catalog loop whose routine is absent from
+    // `routine_by_id` contributes no object), so the `BTreeSet` this feeds — and
+    // therefore `affectedObjects`' content and order — is unchanged.
+    let loop_object_of: Vec<Option<&str>> = run
+        .catalog
+        .iter()
+        .map(|l| {
+            ctx.routine_by_id
+                .get(l.loop_routine_id.as_str())
+                .map(|r| r.object_id.as_str())
+        })
+        .collect();
     // Every d1 finding carries the SAME title and one of TWO fix options
     // (census: `title` 1 distinct over 22,383 findings, `fix_options`
     // description/safety 2 each). Hoisted out of the emit loop so the run holds
@@ -1878,9 +1897,11 @@ fn assemble_cohort_findings(
         let mut affected_set: BTreeSet<&str> = BTreeSet::new();
         for (_ck, bm, _rep) in &tc.cohorts {
             for g in bm.iter() {
-                let lr_id = run.catalog[g as usize].loop_routine_id.as_str();
-                if let Some(r) = ctx.routine_by_id.get(lr_id) {
-                    affected_set.insert(r.object_id.as_str());
+                // `loop_object_of` replaces what used to be a `routine_by_id`
+                // HASH LOOKUP on a `String` key here — once per set bit, summed
+                // over every cohort of every terminal.
+                if let Some(obj) = loop_object_of[g as usize] {
+                    affected_set.insert(obj);
                 }
             }
         }
