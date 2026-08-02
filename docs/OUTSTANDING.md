@@ -246,8 +246,35 @@ sizings marked pre-arc).
     `--format`, a no-op re-run): any primary edit is a guaranteed miss by
     construction, so this does NOT help the edit loop.
   - **Dep-parse artifact caching** — the edit-loop lever, and the bigger design.
-    Blocked on two questions (below) plus the fact that `al_syntax::ir` has ZERO
-    serde derives today.
+    SIZED 2026-08-02, `docs/2026-08-02-dep-parse-sizing.md`. Q1/Q2 are settled;
+    what remains is a go/no-go measurement. Verified at source that the resolve
+    NEVER walks dep bodies (Phase 1 filters to the primary app + `ws_file_set`;
+    Phase 2 is event flow over declarations; `DeclSurface::build` reads only
+    `RoutineMeta::from_decl`) — so ~11,856 dep files are parsed in full and only
+    their declarations are consumed. Saving on a hit ≈ **1,280 ms** on DO
+    (`parse_snapshot` 1,139 + `dep_layer` 142), on EVERY run with unchanged deps
+    — including the edit loop, which the verdict cache does not help.
+    **Population: 11,165 dep objects / 126,640 dep routines** ⇒ a 40–60 MB
+    artifact whose `serde_json` load plausibly costs 150–400 ms, a material
+    fraction of the saving. **GO/NO-GO: measure a `DepLayer` round-trip first**
+    (<~200 ms build it; ~600 ms don't, or switch to a compact binary encoding and
+    re-measure). `AppRef` is per-run, so the artifact must store app identity
+    symbolically and re-intern regardless.
+  - **FALSIFIED 2026-08-02 — "lower declarations only, skip dep bodies".** The
+    attractive no-cache version of the above. `al_syntax::parse` splits
+    **74.6 % tree-sitter / 25.4 % lowering** on DO (21,293 / 6,867 CPU ms over
+    11,856 files), so the ceiling is well under a quarter of `parse_snapshot`,
+    against a change to the LOWERER — the only file in the repo that reads raw
+    tree-sitter. A cache skips both halves and dominates it. Do not build this.
+  - **NEW, cheaper, and exposed by that measurement: a LIGHT snapshot for the
+    cache key.** `preflight.snapshot_build` is now the largest preflight item on a
+    warm verdict-cache hit (~470 ms of DO's ~1,020 ms run), and most of it is
+    `cached_source` loading ~11,856 dep source texts that a warm hit never parses.
+    The key needs app identities + `.app` content hashes, not source text. This is
+    NOT the "cheaper pre-snapshot key" the spec rejects — that rejection was about
+    a SECOND discovery implementation that can drift; this is the same
+    `load_all_apps`/`app_content_hash` path with source materialization skipped for
+    dep units. Compounds with the shipped verdict cache.
   - Correctness constraint on both: the preflight is the "no silent clean" gate,
     so a cache must fail CLOSED — stale, missing, corrupt or unverifiable means
     recompute, never a reused verdict. Cache `Ok` only: `fresh` is a `Result` and
