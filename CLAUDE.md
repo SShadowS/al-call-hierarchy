@@ -66,6 +66,12 @@ See `src/main.rs`'s `Args` (clap derive) for the authoritative flag list.
     versioned — they encode project doctrine, e.g. `/triage-wave`). Skills still exist
     only in the MAIN checkout — from a worktree, reference skill scripts by absolute
     main-checkout path (e.g. `U:/Git/al-call-hierarchy/.claude/skills/...`).
+  - `git config core.hooksPath scripts/git-hooks` (see "Testing Philosophy & Goldens"
+    below) resolves to an ABSOLUTE path into the MAIN checkout, shared by every
+    worktree — a commit made FROM a worktree therefore runs the MAIN checkout's
+    copy of the hook, not the worktree's own. A hook edit only takes effect once it
+    lands there, so testing an edit from the worktree that authored it does not
+    exercise the copy that will actually run.
 
 ## Architecture
 

@@ -15,7 +15,7 @@ failed with an unexplained `cannot read ...: The system cannot find the path
 specified. (os error 3)` — no hint the failure was worktree-specific or how
 to fix it.
 
-It also silently ignored `TREE_SITTER_AL_PATH`, unlike every other tool that
+It also silently ignored `TREE_SITTER_AL_PATH`, unlike every other site that
 touches the grammar (`al-syntax`'s `build.rs`, `src/engine/gate/cache_prune.rs`).
 CLAUDE.md's own worktree guidance already tells operators to set that
 variable — for `gen-syntax` specifically, that advice had zero effect.
@@ -100,6 +100,66 @@ third time. The constant already carried a documented case-study role
 elsewhere in this codebase: `preflight_cache.rs::binary_identity`'s doc cites
 this exact rot as the reason that cache uses a whole-binary hash instead of a
 hand-bumped version tuple.
+
+### Changed - `scripts/ci-steps`: the single source of truth for CI's command strings, and the CLAUDE.md Lint line it made honest
+
+CLAUDE.md documented `cargo clippy --all-targets --all-features` as the Lint
+command while CI actually ran `--release --all-targets --all-features -- -D
+warnings` — every local session and every reviewer following CLAUDE.md ran a
+*weaker* bar than CI enforced, and the gap was found only after CI had been
+red for two days across five merges (2026-07-31..08-02). `.github/workflows/ci.yml`
+now calls `scripts/ci-steps <step>` for every step instead of inlining a
+command string, so a local run and a CI run cannot drift — CLAUDE.md's Build
+Commands line changed from the stale command to `scripts/ci-steps clippy`.
+`all` deliberately does not stop at the first failure (reports every failing
+step in one pass), the same doctrine this branch's pre-commit fmt gate
+applies below.
+
+**Fix-wave refinements (final-review.md I-4, I-5).** The script's own header
+claimed "the EXACT commands CI runs" while silently depending on
+`TREE_SITTER_AL_PATH`, which CI supplies via a per-step `env:` block on every
+step but `fmt` and which the script neither set, defaulted, nor checked —
+a worktree session (no submodule checkout) failed at the `cc` build step with
+no indication why. Steps that compile now call `require_grammar` first, which
+resolves the same effective path `build.rs` would and fails with a pointer to
+CLAUDE.md's Prerequisites instead of a bare compiler error. Separately, `all`
+could never pass from a git worktree — `gen-syntax` is structurally
+worktree-hostile — even though the plan repurposes `ci-steps all` as the
+`ci-parity` agent's replacement, backgrounded from `arc-capstone`, which
+always runs in a worktree; `all` now skips `gen-syntax` with a stated reason
+when no grammar checkout is found and says so in its summary line, rather
+than being permanently red exactly where it is meant to run.
+
+### Added - pre-commit gate on `cargo fmt --check`, mirroring CI's first step
+
+CI's first step is `cargo fmt --check`; when it fails, CI stops there and
+NOTHING else runs — clippy, gen-syntax, tests, build and perf_bounds are all
+skipped, so an unformatted commit hides every other gate for the round-trip
+it takes to notice and fix. That state held for two days across five merges.
+The existing `.claude/` PostToolUse rustfmt hook only covers Edit/Write; a
+scripted (Bash) edit — this repo's own documented workflow for machine-applied
+changes — is invisible to it, and is how the offending edit landed. The commit
+is the chokepoint every path shares, so `scripts/git-hooks/pre-commit`
+(enabled via `git config core.hooksPath scripts/git-hooks`) now blocks a
+commit touching any staged `.rs` file whose `cargo fmt --check` fails.
+
+**Discrimination proof, recorded.** An unformatted staged commit was
+REJECTED; the same commit reformatted was ACCEPTED.
+
+**Fix-wave correction (final-review.md I-2, I-3).** The gate originally
+inlined `cargo fmt --check` directly and `exit 1`'d on failure before the
+golden-verification gate below ever ran — the exact structural defect this
+branch exists to fix, one layer down: step 1 failing hides steps 2-N. It now
+delegates to `scripts/ci-steps fmt` (the single source of truth `ci-steps`
+above exists to be, rather than a third copy of the command string) and
+records the result without stopping, so a formatting failure still reaches
+and runs `scripts/check-goldens`; the hook exits non-zero at the end if
+either gate failed. Verified live: a staged `.rs` file with both a formatting
+violation and a golden-path-triggering location ran `cargo fmt --check`
+(failed, message printed), then ran `check-goldens` to completion regardless
+(printed `pre-commit: goldens OK`), then exited 1 — both problems visible in
+one pass, at the cost of the failing case's fmt check (~1.7s) against
+`check-goldens`'s own ~22s warm cost.
 
 ### Changed - detectors run in parallel (detector loop -49 %, peak RSS flat)
 
