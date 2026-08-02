@@ -19,7 +19,6 @@
 //! `entry_points::find_reachable_roots` takes `access_modifiers` as an explicit
 //! input. Nodes absent from the map contribute no uncertainties.
 
-
 use crate::engine::l4::combined_graph::CombinedEdge;
 use crate::engine::l4::summary::{Uncertainty, dedupe_uncertainties};
 #[cfg(test)]

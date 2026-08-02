@@ -39,7 +39,6 @@ use rayon::prelude::*;
 
 use crate::engine::perf_trace as pt;
 use crate::program::build::{DepLayer, assemble_program_graph, build_dep_layer};
-use crate::program::resolve::preflight_cache;
 use crate::program::graph::ProgramGraph;
 use crate::program::node::{AppRef, ObjKey, ObjectNodeId, RoutineNodeId};
 use crate::program::node_extract::ObjectNode;
@@ -58,6 +57,7 @@ use crate::program::resolve::extract::{
 };
 use crate::program::resolve::index::ResolveIndex;
 use crate::program::resolve::member_catalog::is_entry_dispatch_builtin;
+use crate::program::resolve::preflight_cache;
 use crate::program::resolve::receiver::{
     FrameworkKind, ReceiverType, infer_receiver_type, is_atomic_receiver_token,
 };
