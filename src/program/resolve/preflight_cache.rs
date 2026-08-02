@@ -115,9 +115,14 @@ fn cache_dir() -> Option<PathBuf> {
 /// semantics of every cached field.
 ///
 /// **Why not a hand-bumped constant:** this repo has live proof they rot.
-/// `engine/gate/cache_prune.rs`'s `CACHE_VERSION_GRAMMAR` still reads
-/// `"tree-sitter-al-v2.5.2-native"` while the pinned grammar is **v3.2.0** — it
-/// was never bumped across two grammar upgrades, and nothing failed.
+/// `engine/gate/cache_prune.rs`'s `CACHE_VERSION_GRAMMAR` read
+/// `"tree-sitter-al-v2.5.2-native"` while the pinned grammar had already moved
+/// to v3.2.0 — never bumped across two grammar upgrades, and nothing failed,
+/// until a dedicated test (`cache_prune::tests::
+/// cache_version_grammar_tracks_the_linked_grammar`) was added to assert it
+/// against `tree-sitter-al/package.json`, at which point it was corrected. A
+/// hand-bumped constant needs its OWN test to catch this kind of rot; a
+/// binary hash cannot rot in the first place — there is nothing to bump.
 ///
 /// Accepted cost: rebuilding identical source produces a different binary
 /// (embedded timestamps/paths), so a rebuild invalidates the cache. That fails
