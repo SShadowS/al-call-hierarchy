@@ -46,6 +46,3 @@ pub mod snapshot;
 pub mod telemetry;
 /// Core AL object-type enum shared between lib and binary targets.
 pub mod types;
-pub fn _fmt_probe() -> u8 {
-    1
-}
