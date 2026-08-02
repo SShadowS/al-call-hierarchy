@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - detectors run in parallel (detector loop -49 %, peak RSS flat)
+
+`run_each` ran its ~54 detectors in a sequential `for` loop over an IMMUTABLE
+`&L3Resolved` + `&DetectorContext`, so the wall-clock floor was the SUM of every
+detector rather than the slowest one. Measured at 7,715 ms of a 37.1 s 8020 run
+(20.8 %) with the slowest single detector, d1, at 3,538 ms.
+
+They now run on an indexed `par_iter` over `crate::big_stack`'s pool (d1's cohort
+walk and the CFG walker recurse over real Base App source - the hazard
+`snapshot::parse` and the resolver already route around), and the results are
+folded back SEQUENTIALLY in detector order.
+
+**MEASURED - paired, alternating, 3 pairs, cache disabled on both sides so the
+comparison isolates the detector loop:**
+
+| corpus | `detectors.total` A | B | per-pair B/A | median |
+|---|---|---|---|---:|
+| 8020 | 7,464 / 6,615 / 7,983 ms | 4,204 / 3,377 / 4,001 | 0.563 / 0.510 / 0.501 | **-49.0 %** |
+| DO | 89 / 86 / 68 ms | 29 / 31 / 27 | 0.328 / 0.359 / 0.400 | -64.1 % |
+
+Close to the theoretical floor: d1 alone is 3,538 ms, so ~3.4-4.2 s is about as
+far as this goes without making d1 itself faster. Whole-run 8020 is **~-10 %**
+(per-pair 0.920 / 0.891 on the two clean pairs; a third pair is discarded as a
+machine artifact - its A run measured 92.2 s against its own 35 s median).
+**Peak RSS moved +1 MB on 8020 and +0 MB on DO** - the obvious risk of running 54
+detectors at once did not materialize. DO's whole run is unchanged (+0.2 %):
+detectors are ~2 % of it.
+
+**Order is preserved by construction, and that is load-bearing.** `collect()` on
+an INDEXED parallel iterator yields iteration order regardless of completion
+order (the same guarantee `resolve_full_program_from_parts` already relies on),
+and the fold then walks that Vec in the old loop's order. This matters three
+times: `detector_stats` and `diagnostics` are serialized into the JSON envelope in
+detector order, and `findings` order survives into the output through
+`role_scope_and_sort`, a STABLE sort - findings tying on
+(detector, primaryLocationKey, rootCauseKey) keep insertion order, and
+`d55-event-publish-in-loop` is a live example of such ties.
+
+Pinned by `detector_results_fold_in_detector_order_not_completion_order`, which
+hand-states its precondition: the FIRST detector sleeps 200 ms and the second
+returns immediately, so completion order is necessarily the reverse of iteration
+order. **DISCRIMINATION PROOF (recorded):** replacing the indexed collect with an
+unordered `for_each` accumulation makes it FAIL; restoring passes. A second proof
+CORRECTED this test's own doc comment - with the fold broken AND the sleep
+deleted it still failed, so the sleep is not what makes the defect detectable
+here (rayon happened to distribute two items differently anyway). The comment
+claiming otherwise was wrong and now says what was measured: the sleep stays
+because that is scheduling luck rather than a guarantee.
+
+One honest trace consequence: per-detector spans now OVERLAP on worker tids
+instead of tiling `detectors.total`, so a self-time reading of that span is no
+longer meaningful and its wall floor is the slowest detector, not the sum. The
+`detector.result` instant moved into the sequential fold so its trace position
+stays deterministic.
+
+Byte-identical on both corpora (8020 `36151bf6...`, DO `f022f677...`).
+`scripts/check-goldens` green (9 targets, zero files under `tests/` moved), 1,733
+lib tests green, clippy clean.
+
 ### Added - preflight verdict cache (DO -68 %, and the first lever worth more on a real workspace than on 8020)
 
 `preflight.fresh_coverage` builds, resolves and destroys a whole-program model of
