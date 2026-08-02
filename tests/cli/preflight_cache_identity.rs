@@ -8,9 +8,21 @@
 
 use std::process::Command;
 
+const VERSION_OVERRIDE: &str = "preflight-cache-identity-v1";
+
 fn run(ws: &str, cache_dir: Option<&std::path::Path>, disabled: bool) -> String {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_alsem"));
     cmd.args(["analyze", ws, "--format", "json", "--deterministic"]);
+    // Pin the driver version on the CHILD: it inherits the parent process's
+    // environment at spawn, and `ALCH_DRIVER_VERSION_OVERRIDE` is mutated
+    // process-globally by sibling `cli_a_*` differentials in this same
+    // umbrella (serialized by `crate::env_guard()`) but not by this test — an
+    // unlucky interleaving would flip `alsemVersion` inside the exact bytes
+    // `assert_eq!(cold, warm)` compares below, failing on a claim that has
+    // nothing to do with the cache. Matches `cli_query_differential.rs:91`'s
+    // `run_alsem`, the only other umbrella member that spawns a binary and
+    // compares its stdout.
+    cmd.env("ALCH_DRIVER_VERSION_OVERRIDE", VERSION_OVERRIDE);
     match cache_dir {
         Some(d) => {
             cmd.env("ALSEM_PREFLIGHT_CACHE_DIR", d);
