@@ -229,7 +229,16 @@ sizings marked pre-arc).
   dependency source re-parsed from scratch on every run**.
   **The ceiling is in not redoing the work, not in making it faster** — the
   preflight returns FOUR SCALARS and then destroys the whole model:
-  - **Cache `FreshCoverage` itself** on a workspace+dependency CONTENT hash.
+  - [x] **DONE 2026-08-02 - `FreshCoverage` verdict cache** (ledger
+    `docs/2026-08-02-preflight-cache-measurements.md`, spec
+    `docs/superpowers/specs/2026-08-01-preflight-verdict-cache.md`). Paired,
+    alternating, 3 pairs: **DO -68.2 %** (3,155/3,133/3,386 -> 1,003/1,031/1,052 ms),
+    8020 -7.1 %; `preflight.*` -82 %/-87 %. Byte-identical cold, warm AND
+    cache-disabled on both corpora. The two whole-run numbers differ because the
+    preflight is 83.4 % of a DO run and 10.8 % of 8020 - the first lever in this
+    track worth ~10x more on a real customer workspace than on the synthetic
+    corpus every prior arc was tuned against. Original scoping below.
+  - ~~**Cache `FreshCoverage` itself** on a workspace+dependency CONTENT hash.~~
     Ceiling on DO: the whole **2.64 s / 83.4 %** per warm hit, minus a deliberate
     `snapshot_build` (~459 ms) floor — the sound key derives FROM the snapshot, and
     a cheaper pre-snapshot key would mean a second discovery implementation that

@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - preflight verdict cache (DO -68 %, and the first lever worth more on a real workspace than on 8020)
+
+`preflight.fresh_coverage` builds, resolves and destroys a whole-program model of
+~11,600 files - ~95 % of them dependency source unchanged since the last run - to
+produce four scalars. It is **83.4 % of a DO run** and 10.8 % of 8020. `alsem` now
+caches that verdict on disk under a content-complete key.
+
+**MEASURED - paired, alternating, 3 pairs per corpus** (A = master cache-disabled,
+B = warm cache):
+
+| corpus | A | B | per-pair B/A | median |
+|---|---|---|---|---:|
+| **DO** (real customer workspace) | 3,155 / 3,133 / 3,386 ms | 1,003 / 1,031 / 1,052 | 0.318 / 0.329 / 0.311 | **-68.2 %** |
+| 8020 (BC Base App) | 39,708 / 39,739 / 40,825 ms | 37,057 / 36,474 / 37,937 | 0.933 / 0.918 / 0.929 | **-7.1 %** |
+
+`preflight.*` itself: DO 2,663 -> 476 ms (**-82 %**), 8020 3,683 -> 483 (**-87 %**);
+`parse_snapshot`/`dep_layer`/`assemble_graph`/`resolve_full`/`ctx_drop` all reach
+**0 ms** on a hit. The residual is `snapshot_build`, an accepted floor: the sound
+key is derived FROM the snapshot, and a cheaper pre-snapshot key would mean a
+second discovery implementation that can drift from the real one - exactly what
+`compute_gate_model_instance_id` already demonstrates (it hashes file PATHS, never
+content, so a cache keyed on it would serve a stale verdict after any edit).
+
+**The gap between the two corpora is the finding, not a caveat.** Every prior arc
+in this track was tuned against 8020; this is the first lever worth ~10x more on
+the shape the product actually ships against.
+
+**It does NOT help the edit loop** - the key covers primary source content, so any
+edit is a guaranteed miss (pinned executably). This is an identical-input rerun
+win: CI, a second `--format`, a re-run after a no-op.
+
+**Soundness.** `fresh_coverage` is a pure function of (workspace bytes + `.app`
+bytes + engine binary), so replaying it under a content-complete key replays a
+verification that DID happen. Three rules make that hold: the key is
+content-complete; every abnormal state (missing / unreadable / schema / key /
+binary / self-hash mismatch) recomputes silently; and **`Ok` is cached while `Err`
+never is** - the could-not-verify state captures TRANSIENT environment, so
+persisting it would laminate an I/O flake into a lasting verdict. Engine identity
+in the key is a **hash of the running binary**, not a hand-bumped constant,
+because this repo has live proof those rot: `CACHE_VERSION_GRAMMAR` still reads
+`"tree-sitter-al-v2.5.2-native"` against a v3.2.0 grammar. `scripts/cdo-gate`
+exports `ALSEM_NO_PREFLIGHT_CACHE=1` so the north-star ratchets can never measure
+a warm replay of themselves.
+
+**Byte identity, cold AND warm AND disabled** - a new required gate form, since
+`opaque_apps` is formatter-visible output: all six runs exact (8020 `36151bf6...`,
+DO `f022f677...`).
+
+**The discrimination proofs killed three of their own tests before passing.** The
+first run came back GREEN-WHEN-BROKEN on 3 of 5, and a passing proof is evidence
+about the TEST, not the code. All three were test defects: the re-split row was
+carried by the PATH and never pinned the length prefix (a new row now hand-states
+the `a.alb.al` vs `a.al`+`b.al` collision that does); the self-hash row's own
+corruption destroyed its oracle by rewriting the tracer value itself; and the
+binary row was subsumed by the self-hash check, so it now constructs a
+well-formed entry from a foreign binary instead. Final: 5/5 FAIL-when-broken,
+PASS-when-restored, source byte-restored.
+
+Ledger: `docs/2026-08-02-preflight-cache-measurements.md`. Spec:
+`docs/superpowers/specs/2026-08-01-preflight-verdict-cache.md`.
+`scripts/check-goldens` green (9 targets, zero files under `tests/` moved), 1,732
+lib tests green (16 new), clippy clean.
+
 ### Changed — `preflight.fresh_coverage` is censused; on a real customer workspace it is 83 % of the run
 
 `src/program/` — the fresh resolver, the moat — carried **zero** `pt::span` calls, so
