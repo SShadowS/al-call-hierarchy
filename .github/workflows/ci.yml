@@ -37,7 +37,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: scripts/ci-steps fmt
 
       - name: Lint
         env:
@@ -50,24 +50,22 @@ jobs:
         # gap applied to every test/bench target regardless of cfg) went
         # completely unlinted by CI before this fix, `--release` alone was
         # never the missing piece. Matches CLAUDE.md's documented lint bar.
-        run: cargo clippy --release --all-targets --all-features -- -D warnings
+        run: scripts/ci-steps clippy
 
       - name: Generated vocab is fresh
         env:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
-        run: |
-          cargo run -p xtask -- gen-syntax
-          git diff --exit-code crates/al-syntax/src/raw/generated
+        run: scripts/ci-steps gen-syntax
 
       - name: Test
         env:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
-        run: cargo test --workspace
+        run: scripts/ci-steps test
 
       - name: Build
         env:
           TREE_SITTER_AL_PATH: ${{ github.workspace }}/tree-sitter-al
-        run: cargo build --release
+        run: scripts/ci-steps build
 
       - name: Perf bounds (release-only; 3x CLAUDE.md targets, T0.5)
         env:
@@ -77,4 +75,4 @@ jobs:
         # `#[cfg(not(debug_assertions))]`-gated in tests/perf_bounds.rs, so
         # `--release` is what makes them compile in at all; see that file's
         # module doc for why a debug-build timing assert would be meaningless.
-        run: cargo test --release --test perf_bounds
+        run: scripts/ci-steps perf-bounds

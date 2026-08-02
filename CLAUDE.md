@@ -16,7 +16,7 @@ cargo build --profile release-fast  # Thin LTO — USE THIS for measurement/tria
 cargo test                     # Run tests
 cargo test -p al-call-hierarchy --lib <filter>   # Package is al-call-hierarchy (HYPHEN); al_call_hierarchy fails
 rustfmt path/to/file.rs        # Format a file (NEVER `cargo fmt` — whole-crate churn)
-cargo clippy --all-targets --all-features  # Lint
+scripts/ci-steps clippy        # Lint — CI's EXACT bar (release + -D warnings)
 scripts/check-goldens          # Run ALL byte-compared golden families at once (see Testing Philosophy & Goldens)
 ```
 
