@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - cold/warm/cache-disabled output-identity gate for the preflight verdict cache
+
+The preflight verdict cache's payload is formatter-visible (`opaque_apps` reaches
+the JSON coverage block), and no existing golden family exercises the WARM path —
+every family runs `alsem` with the cache in whatever state the test runner
+happened to leave it. `tests/cli/preflight_cache_identity.rs` closes that gap: a
+COLD run (empty cache dir), a WARM run (same dir, entry present) and a
+CACHE-DISABLED run (`ALSEM_NO_PREFLIGHT_CACHE=1`) of `alsem analyze
+tests/r0-corpus/ws-d2-uncertain` must all be byte-identical.
+
+Hand-states its own precondition: it asserts the cold run persisted exactly one
+cache entry before comparing to the warm run, so the test cannot pass vacuously
+if caching silently stopped writing entries.
+
+It also doubles as the empirical determinism check for the now-parallel detector
+loop (see above) at no extra cost — the three runs are three separate executions
+of a binary running ~54 detectors on a rayon pool, so order-nondeterminism there
+would fail `cold == warm` too.
+
+**Discrimination proof, recorded.** `lookup` temporarily forced to
+`Some(FreshCoverage { unknown: 999, .. })` unconditionally: the run FAILED — not
+on the `cold == warm` assertion as expected, but earlier, on the hand-stated
+precondition (`the cold run must persist exactly one cache entry`, `left: 0,
+right: 1`). Because the broken `lookup` returns a hit unconditionally, even the
+"cold" run is treated as served and never calls `store`, so the cache dir stays
+empty — a different but equally valid catch of the same injected fault. Reverted
+byte-for-byte (`git diff` empty); re-run PASSED.
+
 ### Fixed - `CACHE_VERSION_GRAMMAR` tracks the linked grammar, pinned by a test (inert today, not a live bug)
 
 `cache_prune.rs`'s `CACHE_VERSION_GRAMMAR` read `"tree-sitter-al-v2.5.2-native"`
