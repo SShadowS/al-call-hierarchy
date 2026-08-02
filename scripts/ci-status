@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# scripts/ci-status — is master's last COMPLETED CI run green?
+#
+# Exits non-zero when it is not, so a scheduler can raise an alert. CI was red
+# for two days across five merges (2026-07-31..08-02) because nothing looked at
+# it between pushes; `gh run list` at push time only reports the PREVIOUS run,
+# which is why this scheduled check exists alongside the push-time hook.
+set -uo pipefail
+branch="${1:-master}"
+line=$(gh run list --workflow CI --branch "$branch" --status completed -L1 \
+        --json conclusion,headSha,updatedAt \
+        --jq '.[0] | "\(.conclusion)\t\(.headSha[0:8])\t\(.updatedAt)"' 2>/dev/null)
+if [ -z "$line" ]; then
+    echo "ci-status: could not read CI status for $branch" >&2
+    exit 2
+fi
+conclusion=${line%%$'\t'*}
+echo "ci-status[$branch]: $line"
+[ "$conclusion" = "success" ]
