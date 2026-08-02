@@ -58,6 +58,23 @@
 # you own the consequence.
 set -uo pipefail
 
+# ── Formatting, first and cheapest ───────────────────────────────────────────
+# CI's FIRST step is `cargo fmt --check`; when it fails, CI stops there and
+# NOTHING else runs — clippy, gen-syntax, tests, build and perf_bounds are all
+# skipped. That state persisted for two days across five merges on 2026-07-31..
+# 08-02. The `.claude/` PostToolUse rustfmt hook covers Edit/Write, but a
+# scripted (Bash) edit — this repo's documented `scripted-edit` workflow — is
+# invisible to it. The commit is the chokepoint every path shares.
+#
+# Read-only (`--check`), so this does not violate the "never `cargo fmt`" law.
+if git diff --cached --name-only | grep -qE '\.rs$'; then
+    if ! cargo fmt --check; then
+        echo "pre-commit: cargo fmt --check FAILED (CI's first step) — fix with:" >&2
+        echo "  rustfmt <each touched file>     # never bare 'cargo fmt' (CLAUDE.md)" >&2
+        exit 1
+    fi
+fi
+
 # Paths whose change can move a golden family.
 golden_paths='^(src/|crates/al-syntax/src/|tests/r0-corpus/|tests/fixtures/|tests/[a-z0-9._-]*goldens/|tests/l4-summary-baseline/|tests/[a-z0-9._-]*-vectors/)'
 
