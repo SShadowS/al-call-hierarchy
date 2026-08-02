@@ -9,7 +9,7 @@ set -uo pipefail
 branch="${1:-master}"
 line=$(gh run list --workflow CI --branch "$branch" --status completed -L1 \
         --json conclusion,headSha,updatedAt \
-        --jq '.[0] | "\(.conclusion)\t\(.headSha[0:8])\t\(.updatedAt)"' 2>/dev/null)
+        --jq 'if length==0 then empty else .[0] | "\(.conclusion)\t\(.headSha[0:8])\t\(.updatedAt)" end' 2>/dev/null)
 if [ -z "$line" ]; then
     echo "ci-status: could not read CI status for $branch" >&2
     exit 2
