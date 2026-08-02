@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - `CACHE_VERSION_GRAMMAR` tracks the linked grammar, pinned by a test (inert today, not a live bug)
+
+`cache_prune.rs`'s `CACHE_VERSION_GRAMMAR` read `"tree-sitter-al-v2.5.2-native"`
+while the pinned grammar has been v3.2.0 since the T4 repin — never bumped
+across two grammar upgrades, and nothing failed. It is not a comment: it is
+one entry in the `expected` version tuple `classify_artifact_for_prune`
+compares against every `~/.al-sem/cache/*.json` artifact header to decide
+`Kept` vs. `RemovedVersionMismatch`.
+
+**Investigated before fixing, as required: nothing in this engine WRITES that
+artifact shape.** `~/.al-sem/cache` is the retired al-sem TypeScript tool's
+cache directory (`preflight_cache.rs`'s own doc calls it out: "that
+directory's artifact shape ... [is] al-sem-golden-pinned", i.e. pinned for
+compatibility, not produced by us). This engine's own dependency-artifact
+builder, `build_dep_artifact_l4`, constructs an in-memory
+`DependencyArtifactL4` and explicitly does NOT reproduce the
+`dep:<artifactKey>` id/header/versions shape the pruner reads (see its own
+doc comment). A repo-wide grep for `artifactKey`, `isDependencyArtifact`, and
+`.al-sem` construction found only reads (the pruner) and test fixtures — no
+writer. **Verdict: the stale constant was inert, not a live cache-invalidation
+defect** — al-sem is retired ([[al-sem-retired-rust-owned]]), so nothing
+mints artifacts under this tuple today, and the drift caused no misbehaviour.
+Pinned anyway, because "inert today" is not "inert forever": any future
+writer of that artifact shape would silently misclassify current artifacts
+the moment it existed.
+
+Now asserted against `tree-sitter-al/package.json`
+(`cache_version_grammar_tracks_the_linked_grammar`) instead of being hunted
+as prose, so a future grammar bump fails a test instead of rotting silently a
+third time. The constant already carried a documented case-study role
+elsewhere in this codebase: `preflight_cache.rs::binary_identity`'s doc cites
+this exact rot as the reason that cache uses a whole-binary hash instead of a
+hand-bumped version tuple.
+
 ### Changed - detectors run in parallel (detector loop -49 %, peak RSS flat)
 
 `run_each` ran its ~54 detectors in a sequential `for` loop over an IMMUTABLE
