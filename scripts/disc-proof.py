@@ -23,7 +23,7 @@ def run_test(filt):
         ["cargo", "test", "-p", "al-call-hierarchy", "--lib", filt],
         capture_output=True, text=True,
     )
-    return r.returncode == 0
+    return r.returncode == 0, r.stdout + r.stderr
 
 
 def main():
@@ -45,15 +45,31 @@ def main():
             ok = False
             continue
         io.open(path, "w", encoding="utf-8", newline="\n").write(orig.replace(old, new, 1))
-        broken_passes = run_test(s["test"])
-        io.open(path, "w", encoding="utf-8", newline="\n").write(orig)
-        restored_passes = run_test(s["test"])
+        # The file is BROKEN on disk starting here. If run_test itself raises
+        # (cargo missing, Ctrl+C, disk error) the source file must still come
+        # back -- restore in `finally` and let the exception keep propagating
+        # (never swallow it; the user needs to see the real error).
+        try:
+            broken_passes, broken_output = run_test(s["test"])
+        finally:
+            io.open(path, "w", encoding="utf-8", newline="\n").write(orig)
+        restored_passes, restored_output = run_test(s["test"])
         assert io.open(path, encoding="utf-8").read() == orig, f"{path} not restored!"
         good = (not broken_passes) and restored_passes
         ok = ok and good
         print(f"{'GOOD' if good else 'BAD':5} {s['label']:48} "
               f"broken={'PASS(!)' if broken_passes else 'FAIL':8} "
               f"restored={'PASS' if restored_passes else 'FAIL(!)'}")
+        if not good:
+            # A BAD verdict means the TEST is suspect, not (necessarily) the
+            # code -- keep the cargo output so diagnosing it doesn't require
+            # a manual re-run.
+            if broken_passes:
+                print(f"----- cargo test output while BROKEN ({s['label']}, unexpectedly PASSED) -----")
+                print(broken_output)
+            if not restored_passes:
+                print(f"----- cargo test output while RESTORED ({s['label']}, unexpectedly FAILED) -----")
+                print(restored_output)
     print("ALL PROOFS GOOD" if ok else "SOME PROOFS BAD -- diagnose the TEST, not just the code")
     return 0 if ok else 1
 
