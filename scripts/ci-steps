@@ -8,28 +8,65 @@
 # `--release --all-targets --all-features -- -D warnings`, and the gap was
 # found only after CI had been red for two days.
 #
+# ⟨final-review.md I-4⟩ "The exact commands" is true of argv, not of the
+# environment: every step except `fmt` needs `TREE_SITTER_AL_PATH` — CI
+# supplies it via a per-step `env:` block (`ci.yml:44,57,62,67,72`); locally
+# it defaults to the submodule at the repo root, same as `al-syntax`'s
+# `build.rs` and `xtask gen-syntax`. A git worktree has no submodule checkout
+# (CLAUDE.md Prerequisites), so that default resolves to nothing there.
+# `require_grammar` below checks the effective path before compiling anything,
+# so the failure is this script's own message, not a `cc` build error over a
+# missing `parser.c`.
+#
 # Usage: scripts/ci-steps <step>
 #   fmt | clippy | gen-syntax | test | build | perf-bounds | all
 set -uo pipefail
 
 step="${1:-}"
 
+# Effective grammar dir: TREE_SITTER_AL_PATH if set (CI always sets it; a
+# worktree session usually points it at the main checkout's copy), else the
+# repo-root submodule default — mirrors `build.rs`'s own fallback exactly.
+grammar_dir() {
+    if [ -n "${TREE_SITTER_AL_PATH:-}" ]; then
+        printf '%s' "$TREE_SITTER_AL_PATH"
+    else
+        printf '%s' "$(git rev-parse --show-toplevel)/tree-sitter-al"
+    fi
+}
+
+# Steps that compile against the grammar call this first so a missing
+# checkout fails with a pointer to the fix instead of a cryptic `cc` error.
+require_grammar() {
+    local dir
+    dir="$(grammar_dir)"
+    if [ ! -f "$dir/src/node-types.json" ]; then
+        echo "ci-steps: no tree-sitter-al grammar checkout at $dir/src/node-types.json" >&2
+        echo "  Set TREE_SITTER_AL_PATH to an already-checked-out tree-sitter-al/ (e.g. the" >&2
+        echo "  main checkout's), or run from a checkout with the submodule initialized" >&2
+        echo "  (git submodule update --init). See CLAUDE.md Prerequisites." >&2
+        return 1
+    fi
+}
+
 run_fmt() { cargo fmt --check; }
 
-run_clippy() { cargo clippy --release --all-targets --all-features -- -D warnings; }
+run_clippy() { require_grammar || return 1; cargo clippy --release --all-targets --all-features -- -D warnings; }
 
 # NOTE: cannot run from a git worktree — worktrees have no submodule checkout,
-# so `tree-sitter-al/src/node-types.json` is absent. Run it in the main checkout.
+# so `tree-sitter-al/src/node-types.json` is absent. Run it in the main checkout,
+# or point TREE_SITTER_AL_PATH at one. `all` (below) skips this step rather than
+# failing when no checkout is available.
 run_gen_syntax() {
     cargo run -p xtask -- gen-syntax || return 1
     git diff --exit-code crates/al-syntax/src/raw/generated
 }
 
-run_test() { cargo test --workspace; }
+run_test() { require_grammar || return 1; cargo test --workspace; }
 
-run_build() { cargo build --release; }
+run_build() { require_grammar || return 1; cargo build --release; }
 
-run_perf_bounds() { cargo test --release --test perf_bounds; }
+run_perf_bounds() { require_grammar || return 1; cargo test --release --test perf_bounds; }
 
 case "$step" in
     fmt)         run_fmt ;;
@@ -39,14 +76,33 @@ case "$step" in
     build)       run_build ;;
     perf-bounds) run_perf_bounds ;;
     all)
+        # ⟨final-review.md I-5⟩ `gen-syntax` structurally cannot pass from a
+        # git worktree (no submodule checkout), and every SDD arc in this repo
+        # runs in a worktree — an unconditional `all` would therefore be
+        # permanently red exactly where it is meant to run (the plan's
+        # `arc-capstone`-backgrounded `ci-parity` replacement). Skip it with a
+        # stated reason instead of failing on an absence nothing local can fix.
         rc=0
+        skipped=""
         for s in fmt clippy gen-syntax test build perf-bounds; do
+            if [ "$s" = "gen-syntax" ] && [ ! -f "$(grammar_dir)/src/node-types.json" ]; then
+                echo "=== ci-steps: gen-syntax — SKIPPED (no grammar checkout at $(grammar_dir); expected in a git worktree — see CLAUDE.md Prerequisites) ==="
+                skipped="gen-syntax"
+                continue
+            fi
             echo "=== ci-steps: $s ==="
             if ! "$0" "$s"; then
                 echo "ci-steps: FAILED at '$s'" >&2
                 rc=1
             fi
         done
+        if [ "$rc" -eq 0 ]; then
+            if [ -n "$skipped" ]; then
+                echo "ci-steps: all steps passed ($skipped skipped — see above)"
+            else
+                echo "ci-steps: all steps passed"
+            fi
+        fi
         exit "$rc"
         ;;
     *)

@@ -58,6 +58,8 @@
 # you own the consequence.
 set -uo pipefail
 
+repo_root="$(git rev-parse --show-toplevel)"
+
 # ── Formatting, first and cheapest ───────────────────────────────────────────
 # CI's FIRST step is `cargo fmt --check`; when it fails, CI stops there and
 # NOTHING else runs — clippy, gen-syntax, tests, build and perf_bounds are all
@@ -66,12 +68,28 @@ set -uo pipefail
 # scripted (Bash) edit — this repo's documented `scripted-edit` workflow — is
 # invisible to it. The commit is the chokepoint every path shares.
 #
+# ⟨final-review.md I-2, I-3⟩ This step is deliberately NOT fail-fast: a fmt
+# failure records `fmt_rc` and the hook keeps going into the golden gate
+# below, exiting non-zero at the end if either failed. An early `exit 1` here
+# would reproduce, one layer down, the exact defect this hook exists to catch
+# — step 1 failing and hiding steps 2-N (see `scripts/ci-steps`'s `all` and
+# `scripts/check-goldens`'s `--no-fail-fast`, both of which report every
+# failure in one pass for the same reason). Measured cost of running both
+# instead of stopping at the first: ~1.7s (`cargo fmt --check`) against
+# `check-goldens`'s ~22s warm — negligible next to reporting only one of two
+# real problems per commit attempt.
+#
+# Delegates to `scripts/ci-steps fmt` rather than inlining `cargo fmt --check`
+# directly — that script is the one place CI's command strings are allowed to
+# live; inlining the string here would make this hook a second, driftable copy.
+#
 # Read-only (`--check`), so this does not violate the "never `cargo fmt`" law.
+fmt_rc=0
 if git diff --cached --name-only | grep -qE '\.rs$'; then
-    if ! cargo fmt --check; then
+    if ! "$repo_root/scripts/ci-steps" fmt; then
         echo "pre-commit: cargo fmt --check FAILED (CI's first step) — fix with:" >&2
         echo "  rustfmt <each touched file>     # never bare 'cargo fmt' (CLAUDE.md)" >&2
-        exit 1
+        fmt_rc=1
     fi
 fi
 
@@ -79,10 +97,8 @@ fi
 golden_paths='^(src/|crates/al-syntax/src/|tests/r0-corpus/|tests/fixtures/|tests/[a-z0-9._-]*goldens/|tests/l4-summary-baseline/|tests/[a-z0-9._-]*-vectors/)'
 
 if ! git diff --cached --name-only | grep -qE "$golden_paths"; then
-    exit 0
+    exit "$fmt_rc"
 fi
-
-repo_root="$(git rev-parse --show-toplevel)"
 
 # Coverage first, and it is cheap (a directory listing). A golden family that no
 # target runs is invisible to the verification below — the gate passes while never
@@ -99,3 +115,5 @@ if ! "$repo_root/scripts/check-goldens"; then
     exit 1
 fi
 echo "pre-commit: goldens OK"
+
+exit "$fmt_rc"
