@@ -26,14 +26,23 @@ loop (see above) at no extra cost — the three runs are three separate executio
 of a binary running ~54 detectors on a rayon pool, so order-nondeterminism there
 would fail `cold == warm` too.
 
-**Discrimination proof, recorded.** `lookup` temporarily forced to
-`Some(FreshCoverage { unknown: 999, .. })` unconditionally: the run FAILED — not
-on the `cold == warm` assertion as expected, but earlier, on the hand-stated
-precondition (`the cold run must persist exactly one cache entry`, `left: 0,
-right: 1`). Because the broken `lookup` returns a hit unconditionally, even the
-"cold" run is treated as served and never calls `store`, so the cache dir stays
-empty — a different but equally valid catch of the same injected fault. Reverted
+**Discrimination proof, recorded.** `lookup` temporarily made to corrupt only a
+genuine cache HIT — after the self-hash check passes, appending a bogus entry to
+`opaque_apps` before returning — leaving every miss path and `store` untouched,
+so the cold run computes and persists normally and only the warm run's `lookup`
+returns a wrong verdict. The run FAILED exactly as intended: on the `cold ==
+warm` assertion (`a warm cache run must be byte-identical to a cold one`), with
+the warm output's `opaqueApps` carrying `["BOGUS-TEMPORARY-BREAK"]` against the
+cold output's `[]` — the precondition (`the cold run must persist exactly one
+cache entry`) passed first, so the failure is unambiguously the byte-equality
+claim and not a side effect of the injected fault suppressing `store`. Reverted
 byte-for-byte (`git diff` empty); re-run PASSED.
+
+An earlier version of this proof forced `lookup` to return a hit
+unconditionally, which intercepted the "cold" run too (it never reached
+`store`) and failed on the precondition instead of `cold == warm` — a real but
+different catch of the same fault class. Replaced with the corrupt-only-a-hit
+shape above so the proof pins the test's actual headline claim.
 
 ### Fixed - `CACHE_VERSION_GRAMMAR` tracks the linked grammar, pinned by a test (inert today, not a live bug)
 
