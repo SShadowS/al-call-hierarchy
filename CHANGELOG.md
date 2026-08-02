@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - `xtask gen-syntax` explains a missing grammar checkout instead of a bare `os error 3`, and now honours `TREE_SITTER_AL_PATH`
+
+`gen-syntax` needs `tree-sitter-al/src/node-types.json`, but a git worktree
+gets no submodule checkout (see Prerequisites above), so running it from one
+failed with an unexplained `cannot read ...: The system cannot find the path
+specified. (os error 3)` — no hint the failure was worktree-specific or how
+to fix it.
+
+It also silently ignored `TREE_SITTER_AL_PATH`, unlike every other tool that
+touches the grammar (`al-syntax`'s `build.rs`, `src/engine/gate/cache_prune.rs`).
+CLAUDE.md's own worktree guidance already tells operators to set that
+variable — for `gen-syntax` specifically, that advice had zero effect.
+
+`gen-syntax` now resolves the grammar's `node-types.json` via
+`TREE_SITTER_AL_PATH` when set (mirroring `build.rs`'s semantics exactly),
+falling back to the existing workspace-relative default otherwise, and fails
+with an explanation — the worktree cause, the fix, and a distinct message
+when the variable IS set but still points nowhere useful — instead of the
+bare OS error. The OUTPUT path is unchanged: generated files always land in
+the current checkout's `crates/al-syntax/src/raw/generated`, never wherever
+`TREE_SITTER_AL_PATH` points — a tool that can dirty a sibling checkout
+should not do so implicitly.
+
 ### Added - cold/warm/cache-disabled output-identity gate for the preflight verdict cache
 
 The preflight verdict cache's payload is formatter-visible (`opaque_apps` reaches
