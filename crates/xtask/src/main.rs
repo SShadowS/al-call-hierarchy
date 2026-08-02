@@ -39,8 +39,36 @@ fn main() -> ExitCode {
     }
 
     let ws = workspace_root();
-    let node_types = ws.join("tree-sitter-al/src/node-types.json");
+    // Mirrors al-syntax/build.rs: TREE_SITTER_AL_PATH overrides the default
+    // workspace-relative submodule path. xtask used to ignore this var even
+    // though every other tool that touches the grammar honours it — a git
+    // worktree gets no submodule checkout, so that was the ONLY way to point
+    // gen-syntax at an already-checked-out grammar (e.g. the main checkout's).
+    let grammar_dir = match std::env::var_os("TREE_SITTER_AL_PATH") {
+        Some(p) => PathBuf::from(p),
+        None => ws.join("tree-sitter-al"),
+    };
+    let node_types = grammar_dir.join("src/node-types.json");
     let out_dir = ws.join("crates/al-syntax/src/raw/generated");
+
+    if !node_types.exists() {
+        let via_env = std::env::var_os("TREE_SITTER_AL_PATH").is_some();
+        eprintln!("xtask gen-syntax: {} not found.", node_types.display());
+        eprintln!();
+        if via_env {
+            eprintln!("TREE_SITTER_AL_PATH is set but does not point at a checked-out");
+            eprintln!("tree-sitter-al/ (expected `<TREE_SITTER_AL_PATH>/src/node-types.json`).");
+            eprintln!("Fix the path and try again.");
+        } else {
+            eprintln!("This usually means gen-syntax is running from a git WORKTREE:");
+            eprintln!("worktrees get no submodule checkout, so tree-sitter-al/ is absent.");
+            eprintln!("Run it in the MAIN checkout instead, or set TREE_SITTER_AL_PATH to an");
+            eprintln!("already-checked-out grammar (e.g. the main checkout's tree-sitter-al/).");
+            eprintln!("Note gen-syntax always WRITES generated files into THIS checkout's");
+            eprintln!("crates/al-syntax/, regardless of where TREE_SITTER_AL_PATH points.");
+        }
+        return ExitCode::FAILURE;
+    }
 
     let bytes = match std::fs::read(&node_types) {
         Ok(b) => b,
