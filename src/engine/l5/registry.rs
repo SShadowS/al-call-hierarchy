@@ -19,6 +19,7 @@ use crate::engine::l5::detector_context::{
 };
 use crate::engine::l5::finding::{D1CohortIndex, Finding};
 use crate::engine::perf_trace as pt;
+use rayon::prelude::*;
 
 /// Substrate demand bits (W1.0 demand-driven detector substrate).
 ///
@@ -493,38 +494,78 @@ fn run_each(
     Option<D1CohortIndex>,
 ) {
     let _total_span = pt::span("detector", "detectors.total");
+
+    // ── Run every detector IN PARALLEL, then fold sequentially ───────────────
+    //
+    // `detector.run` is a plain `fn(&L3Resolved, &DetectorContext)` — both
+    // arguments are immutable shared borrows and no detector writes through
+    // them, so the run phase has no shared mutable state at all. What DOES have
+    // to stay ordered is the accumulation below: `findings` order survives into
+    // the output through `role_scope_and_sort`, which is a STABLE sort, so two
+    // findings tying on (detector, primaryLocationKey, rootCauseKey) keep their
+    // insertion order; `diagnostics` and `detector_stats` are emitted in
+    // detector order into the JSON envelope.
+    //
+    // Both properties are preserved exactly: `par_iter().collect()` on an
+    // INDEXED parallel iterator yields results in ITERATION order regardless of
+    // completion order, and the fold below then walks that Vec sequentially in
+    // the same order the old `for` loop used. This is the same guarantee (and
+    // the same reasoning) `resolve_full_program_from_parts` already relies on
+    // for its per-file resolution.
+    //
+    // Runs on a dedicated big-stack pool rather than the rayon global pool: d1's
+    // cohort walk and the CFG walker recurse over real Base Application source,
+    // the same hazard `snapshot::parse` and the resolver already route around
+    // (`crate::big_stack`).
+    let pool = crate::big_stack::big_stack_pool();
+    type RunOutcome = std::thread::Result<Result<DetectorOutput, DetectorError>>;
+    let outcomes: Vec<RunOutcome> = pool.install(|| {
+        detectors
+            .par_iter()
+            .map(|detector| {
+                // Dynamic per-detector span name (`detector.<name>`) — the
+                // `TraceName::Owned` `String` variant. Built ONLY when Stages
+                // tracing is enabled: `pt::span`'s `name: impl Into<TraceName>`
+                // argument is evaluated by the CALLER before the function's own
+                // internal `tracer()` gate runs, so an unconditional `format!`
+                // would allocate on every detector even with tracing off.
+                //
+                // These spans now OVERLAP in the trace (one per worker thread,
+                // each on its own tid) instead of tiling `detectors.total`. That
+                // is the honest picture of what the process does; a self-time
+                // reading of `detectors.total` is no longer meaningful and the
+                // wall-clock floor is the SLOWEST detector, not the sum.
+                let _detector_span = if pt::enabled(pt::Detail::Stages) {
+                    Some(pt::span("detector", format!("detector.{}", detector.name)))
+                } else {
+                    None
+                };
+                // `catch_unwind` here is debug-build-only defense-in-depth (see
+                // the `run_detectors` doc comment) — it is INERT under
+                // `panic = "abort"`. The real, abort-safe isolation is the
+                // `Result` returned by `detector.run` itself, handled in the
+                // `Ok(Err(e))` arm below with the identical diagnostic shape a
+                // caught panic produces.
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    (detector.run)(resolved, ctx)
+                }))
+            })
+            .collect()
+    });
+
     let mut findings: Vec<Finding> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     let mut detector_stats: Vec<DetectorStats> = Vec::new();
     // At most ONE detector (d1) produces a cohort index; keep the (single) `Some`.
     let mut d1_cohort_index: Option<D1CohortIndex> = None;
 
-    for detector in detectors {
-        // Dynamic per-detector span name (`detector.<name>`) — the `TraceName::Owned`
-        // `String` variant. Built ONLY when Stages tracing is enabled: `pt::span`'s
-        // `name: impl Into<TraceName>` argument is evaluated by the CALLER before the
-        // function's own internal `tracer()` gate runs, so an unconditional
-        // `format!(...)` call site would allocate on every detector even with tracing
-        // off. Guarding the allocation behind `enabled()` here (T1 review advisory)
-        // keeps the disabled path at a single bool read.
-        let _detector_span = if pt::enabled(pt::Detail::Stages) {
-            Some(pt::span("detector", format!("detector.{}", detector.name)))
-        } else {
-            None
-        };
-        // `catch_unwind` here is debug-build-only defense-in-depth (see the
-        // `run_detectors` doc comment) — it is INERT under `panic = "abort"`. The
-        // real, abort-safe isolation is the `Result` returned by `detector.run`
-        // itself, handled in the `Ok(Err(e))` arm below with the identical
-        // diagnostic shape a caught panic produces.
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            (detector.run)(resolved, ctx)
-        }));
+    for (detector, outcome) in detectors.iter().zip(outcomes) {
         match outcome {
             Ok(Ok(output)) => {
-                // STRUCTS: findings count alongside the span's own RSS delta (emitted
-                // by `_detector_span`'s `Drop` at loop-iteration end) — the module has
-                // no per-span custom-args hook, so this rides an instant event instead.
+                // STRUCTS: findings count alongside the span's own RSS delta.
+                // Emitted HERE rather than inside the parallel closure so its
+                // position in the trace stays deterministic (detector order)
+                // even though the runs themselves interleave.
                 pt::instant_lazy("detector", "detector.result", || {
                     serde_json::json!({
                         "detector": detector.name.as_str(),
@@ -664,6 +705,103 @@ fn tokenize(s: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // Parallel detector execution must not change ORDER
+    // -----------------------------------------------------------------------
+
+    fn ordering_output(name: &str) -> DetectorOutput {
+        DetectorOutput {
+            findings: vec![],
+            stats: DetectorStats::new(name, 0, 0),
+            diagnostics: vec![Diagnostic {
+                severity: "warning".to_string(),
+                stage: "detect".to_string(),
+                message: name.to_string(),
+            }],
+            d1_cohort_index: None,
+        }
+    }
+
+    /// Sleeps, so it CANNOT complete before `ordering_fast` — this is the
+    /// hand-stated precondition that makes the test discriminate.
+    fn ordering_slow(
+        _r: &L3Resolved,
+        _c: &DetectorContext,
+    ) -> Result<DetectorOutput, DetectorError> {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        Ok(ordering_output("slow"))
+    }
+
+    fn ordering_fast(
+        _r: &L3Resolved,
+        _c: &DetectorContext,
+    ) -> Result<DetectorOutput, DetectorError> {
+        Ok(ordering_output("fast"))
+    }
+
+    /// `run_each` runs detectors in PARALLEL, so completion order and iteration
+    /// order are different things. Everything it accumulates is order-bearing:
+    /// `detector_stats` and `diagnostics` are serialized into the JSON envelope
+    /// in this order, and `findings` order survives into the output through
+    /// `role_scope_and_sort`, which is a STABLE sort (findings tying on
+    /// detector + primaryLocationKey + rootCauseKey keep insertion order —
+    /// `d55-event-publish-in-loop` is a live example of such ties).
+    ///
+    /// PRECONDITION, hand-stated rather than hoped for: the FIRST detector
+    /// sleeps 200 ms and the second returns immediately, so completion order is
+    /// necessarily the REVERSE of iteration order. A fold that used completion
+    /// order would therefore produce `["fast", "slow"]`.
+    ///
+    /// DISCRIMINATION PROOF (recorded): replacing the indexed
+    /// `par_iter().collect()` with an unordered accumulation, or swapping the
+    /// zip for completion order, makes this FAIL with `["fast", "slow"]`;
+    /// restoring it passes.
+    ///
+    /// The sleep's role, measured rather than assumed: with the fold broken AND
+    /// the sleep deleted the test still FAILED on this machine, so the sleep is
+    /// not what makes the defect detectable here — rayon happened to distribute
+    /// two items in a different order anyway. It stays because that is
+    /// SCHEDULING LUCK, not a guarantee: with two equally-fast detectors a
+    /// completion-ordered fold could coincidentally match iteration order and the
+    /// row would pass while broken. The sleep makes the reversal deterministic.
+    #[test]
+    fn detector_results_fold_in_detector_order_not_completion_order() {
+        let resolved = empty_resolved();
+        let ctx = build_detector_context(&resolved, 0);
+        let detectors = vec![
+            Detector {
+                name: "slow".to_string(),
+                run: ordering_slow,
+                requires: 0,
+            },
+            Detector {
+                name: "fast".to_string(),
+                run: ordering_fast,
+                requires: 0,
+            },
+        ];
+
+        let (_findings, diagnostics, stats, _idx) = run_each(&resolved, &ctx, &detectors);
+
+        assert_eq!(
+            stats
+                .iter()
+                .map(|s| s.detector.as_str())
+                .collect::<Vec<_>>(),
+            ["slow", "fast"],
+            "detector_stats must follow detector order, not completion order"
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|d| d.message.as_str())
+                .collect::<Vec<_>>(),
+            ["slow", "fast"],
+            "diagnostics must follow detector order, not completion order"
+        );
+    }
+
     use crate::engine::l3::l3_workspace::L3Workspace;
     use crate::engine::l5::finding::{Finding, FindingConfidence, SourceAnchor};
     use std::cmp::Ordering;
