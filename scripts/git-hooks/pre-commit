@@ -84,9 +84,24 @@ repo_root="$(git rev-parse --show-toplevel)"
 # live; inlining the string here would make this hook a second, driftable copy.
 #
 # Read-only (`--check`), so this does not violate the "never `cargo fmt`" law.
+#
+# ⟨final-rereview.md N-2⟩ `repo_root` resolves inside the COMMITTING worktree,
+# while the hook body itself is the MAIN checkout's copy (`core.hooksPath` is
+# absolute — see CLAUDE.md Prerequisites). A worktree on a branch that predates
+# `scripts/ci-steps` has no such file there, and calling it unconditionally
+# would fail with a generic "not found" shell error blamed on `cargo fmt`
+# instead of on the real cause. Check for it explicitly first so the diagnosis
+# is honest; still fails CLOSED either way (a commit this hook cannot verify is
+# not a commit it lets through).
 fmt_rc=0
 if git diff --cached --name-only | grep -qE '\.rs$'; then
-    if ! "$repo_root/scripts/ci-steps" fmt; then
+    if [ ! -x "$repo_root/scripts/ci-steps" ]; then
+        echo "pre-commit: $repo_root/scripts/ci-steps not found (or not executable) —" >&2
+        echo "  this worktree's branch may predate it. Rebase onto a branch that has it," >&2
+        echo "  or verify formatting manually: rustfmt <each touched file> (never bare" >&2
+        echo "  'cargo fmt' — CLAUDE.md). Blocking the commit either way." >&2
+        fmt_rc=1
+    elif ! "$repo_root/scripts/ci-steps" fmt; then
         echo "pre-commit: cargo fmt --check FAILED (CI's first step) — fix with:" >&2
         echo "  rustfmt <each touched file>     # never bare 'cargo fmt' (CLAUDE.md)" >&2
         fmt_rc=1

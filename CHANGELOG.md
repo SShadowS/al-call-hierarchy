@@ -115,20 +115,21 @@ Commands line changed from the stale command to `scripts/ci-steps clippy`.
 step in one pass), the same doctrine this branch's pre-commit fmt gate
 applies below.
 
-**Fix-wave refinements (final-review.md I-4, I-5).** The script's own header
-claimed "the EXACT commands CI runs" while silently depending on
-`TREE_SITTER_AL_PATH`, which CI supplies via a per-step `env:` block on every
-step but `fmt` and which the script neither set, defaulted, nor checked —
-a worktree session (no submodule checkout) failed at the `cc` build step with
-no indication why. Steps that compile now call `require_grammar` first, which
-resolves the same effective path `build.rs` would and fails with a pointer to
-CLAUDE.md's Prerequisites instead of a bare compiler error. Separately, `all`
-could never pass from a git worktree — `gen-syntax` is structurally
-worktree-hostile — even though the plan repurposes `ci-steps all` as the
-`ci-parity` agent's replacement, backgrounded from `arc-capstone`, which
-always runs in a worktree; `all` now skips `gen-syntax` with a stated reason
-when no grammar checkout is found and says so in its summary line, rather
-than being permanently red exactly where it is meant to run.
+**Fix-wave refinement (final-review.md I-4).** The script's own header claimed
+"the EXACT commands CI runs" while silently depending on `TREE_SITTER_AL_PATH`,
+which CI supplies via a per-step `env:` block on every step but `fmt` and which
+the script neither set, defaulted, nor checked — a worktree session (no
+submodule checkout) failed at the `cc` build step with no indication why.
+Steps that compile now call `require_grammar` first, which resolves the same
+effective path `build.rs` would and fails with a pointer to CLAUDE.md's
+Prerequisites instead of a bare compiler error.
+
+(A companion review finding, I-5, claimed `all` could never pass from a git
+worktree and proposed skipping `gen-syntax` there. Measured false on both
+counts: with `TREE_SITTER_AL_PATH` set — what CLAUDE.md's own worktree
+guidance already prescribes — `gen-syntax` exits 0 from a worktree same as
+every other step, so `all` already passes; no skip logic was needed, and none
+shipped.)
 
 ### Added - pre-commit gate on `cargo fmt --check`, mirroring CI's first step
 
