@@ -37,7 +37,7 @@ use crate::engine::ids::sha256_hex;
 // ---------------------------------------------------------------------------
 
 /// Grammar version tag (mirrors `GRAMMAR_VERSION` in al-sem `discover.ts`).
-pub const CACHE_VERSION_GRAMMAR: &str = "tree-sitter-al-v2.5.2-native";
+pub const CACHE_VERSION_GRAMMAR: &str = "tree-sitter-al-v3.2.0-native";
 
 /// Symbol-reader schema version (al-sem `cache-versions.ts` `symbolReader`).
 /// Bumped 17→18 for the temp-state-tracking epoch (Task 16): the symbol-reader
@@ -562,5 +562,42 @@ mod tests {
     #[test]
     fn extract_hex_key_rejects_nothex() {
         assert!(extract_hex_key("nothex.json").is_none());
+    }
+
+    /// `CACHE_VERSION_GRAMMAR` participates in the dependency-cache version tuple
+    /// (`expected` in `classify_artifact_for_prune`), so it must track the grammar
+    /// this engine actually links. It did not: it read
+    /// `"tree-sitter-al-v2.5.2-native"` while the pinned grammar was v3.2.0 —
+    /// never bumped across two grammar upgrades, and nothing failed.
+    ///
+    /// This is the executable form of that doc claim. A version literal that can be
+    /// compared against its source should die as an assert, not be hunted as prose.
+    ///
+    /// Path resolution: `TREE_SITTER_AL_PATH` first (worktrees get no submodule
+    /// checkout — see CLAUDE.md's Prerequisites section), falling back to
+    /// `CARGO_MANIFEST_DIR`/tree-sitter-al for a normal checkout. `ci.yml` exports
+    /// `TREE_SITTER_AL_PATH` for the test step, so both paths are covered.
+    ///
+    /// DISCRIMINATION PROOF (recorded 2026-08-02): set the constant back to
+    /// `"tree-sitter-al-v2.5.2-native"` — this test FAILS with `CACHE_VERSION_GRAMMAR
+    /// is "tree-sitter-al-v2.5.2-native" but the linked grammar is v3.2.0 — bump the
+    /// constant (it keys dependency-cache invalidation, it is not a comment)`.
+    /// Restore to `"tree-sitter-al-v3.2.0-native"` — this test PASSES.
+    #[test]
+    fn cache_version_grammar_tracks_the_linked_grammar() {
+        let root = std::env::var("TREE_SITTER_AL_PATH")
+            .unwrap_or_else(|_| format!("{}/tree-sitter-al", env!("CARGO_MANIFEST_DIR")));
+        let pkg = std::fs::read_to_string(format!("{root}/package.json")).expect(
+            "tree-sitter-al/package.json must be readable (set TREE_SITTER_AL_PATH or check out the submodule)",
+        );
+        let v: serde_json::Value = serde_json::from_str(&pkg).expect("package.json parses");
+        let grammar_version = v["version"].as_str().expect("package.json has a version");
+
+        assert!(
+            CACHE_VERSION_GRAMMAR.contains(grammar_version),
+            "CACHE_VERSION_GRAMMAR is {CACHE_VERSION_GRAMMAR:?} but the linked grammar \
+             is v{grammar_version} — bump the constant (it keys dependency-cache \
+             invalidation, it is not a comment)"
+        );
     }
 }

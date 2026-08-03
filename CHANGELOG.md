@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - `xtask gen-syntax` explains a missing grammar checkout instead of a bare `os error 3`, and now honours `TREE_SITTER_AL_PATH`
+
+`gen-syntax` needs `tree-sitter-al/src/node-types.json`, but a git worktree
+gets no submodule checkout (see Prerequisites above), so running it from one
+failed with an unexplained `cannot read ...: The system cannot find the path
+specified. (os error 3)` — no hint the failure was worktree-specific or how
+to fix it.
+
+It also silently ignored `TREE_SITTER_AL_PATH`, unlike every other site that
+touches the grammar (`al-syntax`'s `build.rs`, `src/engine/gate/cache_prune.rs`).
+CLAUDE.md's own worktree guidance already tells operators to set that
+variable — for `gen-syntax` specifically, that advice had zero effect.
+
+`gen-syntax` now resolves the grammar's `node-types.json` via
+`TREE_SITTER_AL_PATH` when set (mirroring `build.rs`'s semantics exactly),
+falling back to the existing workspace-relative default otherwise, and fails
+with an explanation — the worktree cause, the fix, and a distinct message
+when the variable IS set but still points nowhere useful — instead of the
+bare OS error. The OUTPUT path is unchanged: generated files always land in
+the current checkout's `crates/al-syntax/src/raw/generated`, never wherever
+`TREE_SITTER_AL_PATH` points — a tool that can dirty a sibling checkout
+should not do so implicitly.
+
+### Added - cold/warm/cache-disabled output-identity gate for the preflight verdict cache
+
+The preflight verdict cache's payload is formatter-visible (`opaque_apps` reaches
+the JSON coverage block), and no existing golden family exercises the WARM path —
+every family runs `alsem` with the cache in whatever state the test runner
+happened to leave it. `tests/cli/preflight_cache_identity.rs` closes that gap: a
+COLD run (empty cache dir), a WARM run (same dir, entry present) and a
+CACHE-DISABLED run (`ALSEM_NO_PREFLIGHT_CACHE=1`) of `alsem analyze
+tests/r0-corpus/ws-d2-uncertain` must all be byte-identical.
+
+Hand-states its own precondition: it asserts the cold run persisted exactly one
+cache entry before comparing to the warm run, so the test cannot pass vacuously
+if caching silently stopped writing entries.
+
+It also doubles as the empirical determinism check for the now-parallel detector
+loop (see above) at no extra cost — the three runs are three separate executions
+of a binary running ~54 detectors on a rayon pool, so order-nondeterminism there
+would fail `cold == warm` too.
+
+**Discrimination proof, recorded.** `lookup` temporarily made to corrupt only a
+genuine cache HIT — after the self-hash check passes, appending a bogus entry to
+`opaque_apps` before returning — leaving every miss path and `store` untouched,
+so the cold run computes and persists normally and only the warm run's `lookup`
+returns a wrong verdict. The run FAILED exactly as intended: on the `cold ==
+warm` assertion (`a warm cache run must be byte-identical to a cold one`), with
+the warm output's `opaqueApps` carrying `["BOGUS-TEMPORARY-BREAK"]` against the
+cold output's `[]` — the precondition (`the cold run must persist exactly one
+cache entry`) passed first, so the failure is unambiguously the byte-equality
+claim and not a side effect of the injected fault suppressing `store`. Reverted
+byte-for-byte (`git diff` empty); re-run PASSED.
+
+An earlier version of this proof forced `lookup` to return a hit
+unconditionally, which intercepted the "cold" run too (it never reached
+`store`) and failed on the precondition instead of `cold == warm` — a real but
+different catch of the same fault class. Replaced with the corrupt-only-a-hit
+shape above so the proof pins the test's actual headline claim.
+
+### Fixed - `CACHE_VERSION_GRAMMAR` tracks the linked grammar, pinned by a test (inert today, not a live bug)
+
+`cache_prune.rs`'s `CACHE_VERSION_GRAMMAR` read `"tree-sitter-al-v2.5.2-native"`
+while the pinned grammar has been v3.2.0 since the T4 repin — never bumped
+across two grammar upgrades, and nothing failed. It is not a comment: it is
+one entry in the `expected` version tuple `classify_artifact_for_prune`
+compares against every `~/.al-sem/cache/*.json` artifact header to decide
+`Kept` vs. `RemovedVersionMismatch`.
+
+**Investigated before fixing, as required: nothing in this engine WRITES that
+artifact shape.** `~/.al-sem/cache` is the retired al-sem TypeScript tool's
+cache directory (`preflight_cache.rs`'s own doc calls it out: "that
+directory's artifact shape ... [is] al-sem-golden-pinned", i.e. pinned for
+compatibility, not produced by us). This engine's own dependency-artifact
+builder, `build_dep_artifact_l4`, constructs an in-memory
+`DependencyArtifactL4` and explicitly does NOT reproduce the
+`dep:<artifactKey>` id/header/versions shape the pruner reads (see its own
+doc comment). A repo-wide grep for `artifactKey`, `isDependencyArtifact`, and
+`.al-sem` construction found only reads (the pruner) and test fixtures — no
+writer. **Verdict: the stale constant was inert, not a live cache-invalidation
+defect** — al-sem is retired ([[al-sem-retired-rust-owned]]), so nothing
+mints artifacts under this tuple today, and the drift caused no misbehaviour.
+Pinned anyway, because "inert today" is not "inert forever": any future
+writer of that artifact shape would silently misclassify current artifacts
+the moment it existed.
+
+Now asserted against `tree-sitter-al/package.json`
+(`cache_version_grammar_tracks_the_linked_grammar`) instead of being hunted
+as prose, so a future grammar bump fails a test instead of rotting silently a
+third time. The constant already carried a documented case-study role
+elsewhere in this codebase: `preflight_cache.rs::binary_identity`'s doc cites
+this exact rot as the reason that cache uses a whole-binary hash instead of a
+hand-bumped version tuple.
+
+### Changed - `scripts/ci-steps`: the single source of truth for CI's command strings, and the CLAUDE.md Lint line it made honest
+
+CLAUDE.md documented `cargo clippy --all-targets --all-features` as the Lint
+command while CI actually ran `--release --all-targets --all-features -- -D
+warnings` — every local session and every reviewer following CLAUDE.md ran a
+*weaker* bar than CI enforced, and the gap was found only after CI had been
+red for two days across five merges (2026-07-31..08-02). `.github/workflows/ci.yml`
+now calls `scripts/ci-steps <step>` for every step instead of inlining a
+command string, so a local run and a CI run cannot drift — CLAUDE.md's Build
+Commands line changed from the stale command to `scripts/ci-steps clippy`.
+`all` deliberately does not stop at the first failure (reports every failing
+step in one pass), the same doctrine this branch's pre-commit fmt gate
+applies below.
+
+**Fix-wave refinement (final-review.md I-4).** The script's own header claimed
+"the EXACT commands CI runs" while silently depending on `TREE_SITTER_AL_PATH`,
+which CI supplies via a per-step `env:` block on every step but `fmt` and which
+the script neither set, defaulted, nor checked — a worktree session (no
+submodule checkout) failed at the `cc` build step with no indication why.
+Steps that compile now call `require_grammar` first, which resolves the same
+effective path `build.rs` would and fails with a pointer to CLAUDE.md's
+Prerequisites instead of a bare compiler error.
+
+(A companion review finding, I-5, claimed `all` could never pass from a git
+worktree and proposed skipping `gen-syntax` there. Measured false on both
+counts: with `TREE_SITTER_AL_PATH` set — what CLAUDE.md's own worktree
+guidance already prescribes — `gen-syntax` exits 0 from a worktree same as
+every other step, so `all` already passes; no skip logic was needed, and none
+shipped.)
+
+### Added - pre-commit gate on `cargo fmt --check`, mirroring CI's first step
+
+CI's first step is `cargo fmt --check`; when it fails, CI stops there and
+NOTHING else runs — clippy, gen-syntax, tests, build and perf_bounds are all
+skipped, so an unformatted commit hides every other gate for the round-trip
+it takes to notice and fix. That state held for two days across five merges.
+The existing `.claude/` PostToolUse rustfmt hook only covers Edit/Write; a
+scripted (Bash) edit — this repo's own documented workflow for machine-applied
+changes — is invisible to it, and is how the offending edit landed. The commit
+is the chokepoint every path shares, so `scripts/git-hooks/pre-commit`
+(enabled via `git config core.hooksPath scripts/git-hooks`) now blocks a
+commit touching any staged `.rs` file whose `cargo fmt --check` fails.
+
+**Discrimination proof, recorded.** An unformatted staged commit was
+REJECTED; the same commit reformatted was ACCEPTED.
+
+**Fix-wave correction (final-review.md I-2, I-3).** The gate originally
+inlined `cargo fmt --check` directly and `exit 1`'d on failure before the
+golden-verification gate below ever ran — the exact structural defect this
+branch exists to fix, one layer down: step 1 failing hides steps 2-N. It now
+delegates to `scripts/ci-steps fmt` (the single source of truth `ci-steps`
+above exists to be, rather than a third copy of the command string) and
+records the result without stopping, so a formatting failure still reaches
+and runs `scripts/check-goldens`; the hook exits non-zero at the end if
+either gate failed. Verified live: a staged `.rs` file with both a formatting
+violation and a golden-path-triggering location ran `cargo fmt --check`
+(failed, message printed), then ran `check-goldens` to completion regardless
+(printed `pre-commit: goldens OK`), then exited 1 — both problems visible in
+one pass, at the cost of the failing case's fmt check (~1.7s) against
+`check-goldens`'s own ~22s warm cost.
+
 ### Changed - detectors run in parallel (detector loop -49 %, peak RSS flat)
 
 `run_each` ran its ~54 detectors in a sequential `for` loop over an IMMUTABLE
