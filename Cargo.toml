@@ -212,6 +212,14 @@ harness = false
 [[bench]]
 name = "dep_pack_roundtrip"
 harness = false
+# `test = false` is LOAD-BEARING, not tidiness. `cargo test` builds and RUNS every
+# `harness = false` bench target, and this one exits 2 when `PACK_BENCH_WS` is unset —
+# deliberately, so a missing workspace can never read as a passing gate. Without this
+# line every CI run fails, because CI never has that variable. The sibling criterion
+# benches survive `cargo test` only because criterion detects it and self-limits to one
+# iteration; this bench is a plain `fn main`, so it cannot.
+# `clippy --all-targets` still lints it, so the `-D warnings` bar is unaffected.
+test = false
 
 [profile.release]
 lto = true
