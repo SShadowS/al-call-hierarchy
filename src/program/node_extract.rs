@@ -109,7 +109,7 @@ pub struct FieldNode {
     pub type_text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectNode {
     pub id: ObjectNodeId,
     pub name: String,
@@ -221,7 +221,7 @@ pub enum AbiParams {
     CollapsedUntrusted,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoutineNode {
     pub id: RoutineNodeId,
     pub name: String,
@@ -347,7 +347,14 @@ pub struct RoutineNode {
     /// `false` for an ABI/`SymbolOnly` routine (that tier's alias signal is
     /// [`abi_overload_collapsed`] instead — the two fields are mutually
     /// exclusive by construction, see `build::dedup_routines_preserving_
-    /// genuine_overloads`). Not serialized (like `abi_overload_collapsed`).
+    /// genuine_overloads`). Excluded from the LSP def-surface fingerprint
+    /// (`src/lsp/def_surface.rs`'s "Explicitly EXCLUDED" list — derived,
+    /// redundant with `params`; [`Self::abi_overload_collapsed`] carries the
+    /// same exclusion), but — since Task 4 (serde surface) — IS part of
+    /// `RoutineNode`'s serialized (pack) representation like every other
+    /// field. The two exclusions are unrelated: one is about what the
+    /// definition-surface CHANGE-DETECTION fingerprint reads, the other is
+    /// about what goes over the wire.
     pub source_overload_aliased: bool,
     /// Retained ABI parameter metadata (Task 2, roadmap-closure plan) — see
     /// [`AbiParams`]'s doc for the full structural-guard rationale. Always
@@ -701,12 +708,25 @@ mod tests {
             is_trigger: false,
             access: Access::Internal,
             tier: TrustTier::EmbeddedSource,
-            event_subscribers: vec![],
+            // Fix round 1 (#I-1): a hand-built fixture with an empty Vec / None
+            // here never exercises ParsedSubscriberArgs's, PublisherKind's,
+            // AbiRoutineKind's or edge::AbiEventKind's own (de)serialize impls —
+            // 4 of the 16 types this task exists to make serializable would have
+            // had ZERO round-trip coverage anywhere in the repo despite being
+            // exactly what Task 5 persists. Populated with real values below.
+            event_subscribers: vec![ParsedSubscriberArgs {
+                publisher_object_type: "codeunit".to_string(),
+                publisher_name: "sales-post".to_string(),
+                event_name: "onbeforepostsalesdoc".to_string(),
+                element: Some("no.".to_string()),
+                skip_on_missing_license: true,
+                skip_on_missing_permission: false,
+            }],
             subscriber_instance_manual: true,
-            publisher_kind: None,
+            publisher_kind: Some(PublisherKind::Business),
             include_sender: Some(false),
-            abi_routine_kind: None,
-            abi_event_kind: None,
+            abi_routine_kind: Some(AbiRoutineKind::EventPublisher),
+            abi_event_kind: Some(AbiEventKind::Business),
             param_sig_key: "integer|code[20]".to_string(),
             return_type: Some("Codeunit \"Sales-Post\"".to_string()),
             return_type_id: Some(("Sales-Post".to_string(), 80)),
@@ -739,20 +759,81 @@ mod tests {
         // JS-based LSP client's `JSON.parse`) decoding a bare JSON number as an
         // IEEE-754 double — so the only assertion that can discriminate on THAT
         // hazard is one that inspects the WIRE SHAPE directly: sig_fp must appear
-        // as a quoted JSON string, never a bare number.
+        // as a quoted JSON string, never a bare number. `assert_eq!(back, node)`
+        // below does NOT subsume this — value equality alone cannot see how a
+        // number reached that value on the wire.
         assert!(
             json.contains("\"sig_fp\":\"16045690984503111693\""),
             "sig_fp must serialize as a quoted JSON string (decimal, lossless for \
              non-Rust consumers), not a bare JSON number; got: {json}"
         );
-        assert_eq!(back.id.sig_fp, 0xDEAD_BEEF_CAFE_F00D);
-        assert_eq!(back.id, node.id);
-        assert_eq!(back.name, node.name);
-        assert_eq!(back.param_sig_key, node.param_sig_key);
-        assert_eq!(back.return_type_id, node.return_type_id);
-        assert_eq!(back.abi_params, node.abi_params);
-        assert_eq!(back.tier, node.tier);
-        assert_eq!(back.access, node.access);
+        // Fix round 1 (#M-3): one whole-struct comparison instead of a hand-listed
+        // subset — every field participates (RoutineNode now derives PartialEq),
+        // so a future field addition is covered automatically rather than needing
+        // a matching assert_eq! line added by hand and possibly forgotten.
+        assert_eq!(back, node);
+    }
+
+    /// Fix round 1 (#M-2): `ObjectNode` is half of Task 4's stated Produces
+    /// (`ObjectNode` and `RoutineNode` both implement `Serialize`/
+    /// `Deserialize<'de>`) but had no round-trip test at all. Mirrors the
+    /// `RoutineNode` test above: a hand-built node with every field
+    /// populated (never an empty `Vec`/`None` standing in for a type this
+    /// task exists to make serializable), one whole-struct `assert_eq!`
+    /// rather than a hand-listed subset. Closes round-trip coverage for
+    /// `ObjectRef`, `PageControlKind`, `PageControlNode`, `DataitemNode`,
+    /// `FieldNode` and `ObjectNode` itself.
+    ///
+    /// `source_table` (Page/PageExtension/Report/ReportExtension-only) and
+    /// `table_no` (Codeunit-only) are both populated on this ONE fixture
+    /// even though no real object ever carries both at once — same
+    /// precondition-over-realism choice the `RoutineNode` fixture already
+    /// makes (it mixes SOURCE-only and ABI-only field values on one node):
+    /// this is a serde round-trip probe, not a `extract_nodes` output
+    /// sample, so every optional field gets a real value regardless of
+    /// which real object shape would produce that exact combination.
+    #[test]
+    fn object_node_survives_a_json_round_trip_with_every_field_populated() {
+        let node = ObjectNode {
+            id: ObjectNodeId {
+                app: crate::program::node::AppRef(3),
+                kind: al_syntax::ir::ObjectKind::Page,
+                key: crate::program::node::ObjKey::Id(50100),
+            },
+            name: "Sales Card".to_string(),
+            declared_id: Some(50100),
+            extends_target: Some("Base Card".to_string()),
+            implements: vec!["ICustomInterface".to_string()],
+            tier: TrustTier::EmbeddedSource,
+            source_table: Some(ObjectRef::Name {
+                raw: "Customer".to_string(),
+                normalized_lc: "customer".to_string(),
+            }),
+            table_no: Some(ObjectRef::Id(18)),
+            source_table_temporary: true,
+            page_controls: vec![PageControlNode {
+                name_lc: "lines".to_string(),
+                kind: PageControlKind::Part,
+                target: ObjectRef::Name {
+                    raw: "Sales Line Subform".to_string(),
+                    normalized_lc: "sales line subform".to_string(),
+                },
+            }],
+            fields: vec![FieldNode {
+                name_lc: "no.".to_string(),
+                type_text: "Code[20]".to_string(),
+            }],
+            dataitems: vec![DataitemNode {
+                name_lc: "customer".to_string(),
+                name: "Customer".to_string(),
+                source_table: ObjectRef::Id(18),
+            }],
+            parse_incomplete: true,
+        };
+
+        let json = serde_json::to_string(&node).expect("serialize");
+        let back: ObjectNode = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, node);
     }
 
     #[test]
