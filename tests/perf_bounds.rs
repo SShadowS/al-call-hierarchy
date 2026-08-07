@@ -167,18 +167,43 @@ mod release_checks {
     // CDO-anchored budget, since it runs ON TOP of that cost after every
     // swap.
     //
-    // `COMPUTE_ALL_SYNTHETIC_BOUND` was ORIGINALLY 30ms (5x the ~5.4ms
-    // measured baseline) — the t3 final review PROVED this margin marginal:
-    // reverting the fix and re-measuring the buggy 1000-file cost gave a
-    // median of ~31.04ms, but samples ranged 29.13-32.46ms — 2 of 5 buggy
-    // samples were BELOW the 30ms bound. Run-to-run noise (~±5%) exceeds a
-    // 3% margin (31.9ms buggy vs. 30ms bound), so a 7%-faster machine would
-    // let the exact quadratic this fix-wave closed sail through silently.
-    // Tightened to 15ms: ~2.8x headroom over the fixed ~5.4ms baseline, and
-    // a full ~2x BELOW the buggy ~31ms median — outside the observed noise
-    // band on both sides.
+    // There USED TO BE a third, tighter magnitude bound here —
+    // `COMPUTE_ALL_SYNTHETIC_BOUND`, 15ms. **It was removed on 2026-08-07
+    // because an absolute time bound cannot be both tight and portable, and
+    // trying to make it both is what a magnitude bound is worst at.** The full
+    // history, since the reasoning matters more than the constant did:
+    //
+    //  - v1 was 30ms (5x the then-measured ~5.4ms dev-machine baseline). The t3
+    //    final review proved that margin marginal: the BUGGY 1000-file cost
+    //    measured ~31.04ms median with samples 29.13-32.46ms, so 2 of 5 buggy
+    //    samples came in UNDER the bound. A 3% margin against a ~5% noise band
+    //    is not a gate.
+    //  - v2 tightened it to 15ms — ~2.8x over the fixed baseline and ~2x below
+    //    the buggy median, outside the noise band on both sides. On the dev
+    //    machine that was sound.
+    //  - It then failed on a GitHub `ubuntu-latest` runner (CI run 31217213246)
+    //    with `min 16.399742ms`, on a commit that renamed the crate and touched
+    //    nothing on this code path. Same commit, measured locally in release:
+    //    `min=4.6785ms` — 3.2x headroom. The runner is simply ~3.5x slower for
+    //    this workload, which leaves a 15ms bound with NO headroom there, and
+    //    a bound that fails on healthy code is worse than no bound: it trains
+    //    everyone to re-run red CI.
+    //
+    // Widening it to fit the slowest runner would have put it above the buggy
+    // dev-machine cost, i.e. it would have stopped catching the very regression
+    // it exists for. The two requirements are genuinely incompatible.
+    //
+    // What guards the regression now, and why that is not a loss of coverage:
+    // [`COMPUTE_ALL_SCALING_FACTOR`] below — a RATIO of two measurements taken
+    // on the same machine in the same run, with a measured separation of
+    // 3.013-4.715 (fixed) versus 10.409-12.224 (buggy). That is a 2.29x margin
+    // below the bound and 3.41x above it, against a bound of 7, and it is
+    // machine-speed-independent BY CONSTRUCTION. This file's own comments
+    // already called it "the gate that actually matters"; removing the
+    // unportable magnitude bound just stops a weaker duplicate from producing
+    // false failures. `COMPUTE_ALL_BOUND` (150ms architectural) still bounds
+    // magnitude on every machine.
     const COMPUTE_ALL_BOUND: Duration = Duration::from_millis(150); // target: 50ms (architectural)
-    const COMPUTE_ALL_SYNTHETIC_BOUND: Duration = Duration::from_millis(15); // ~2.8x ~5.4ms measured baseline
 
     // `COMPUTE_ALL_SCALING_FACTOR`: a machine-INDEPENDENT complexity-class
     // check, added because ANY magnitude bound (both above) is inherently
@@ -849,24 +874,19 @@ mod release_checks {
 
         let (m1000, samples1000) = measure_compute_all(1000);
         println!(
-            "[perf_bounds] compute_all(1000): min={m1000:?} absolute_bound={COMPUTE_ALL_BOUND:?} \
-             synthetic_bound={COMPUTE_ALL_SYNTHETIC_BOUND:?} samples={samples1000:?}"
+            "[perf_bounds] compute_all(1000): min={m1000:?} architectural_bound={COMPUTE_ALL_BOUND:?} \
+             samples={samples1000:?}"
         );
-        // Both MAGNITUDE bounds asserted, same dual-bound convention as rung
-        // 1/2 (see COMPUTE_ALL_SYNTHETIC_BOUND's own doc for why it was
-        // tightened, and why a magnitude bound alone is not enough — see the
-        // SCALING assertion below, which is the one that actually matters).
+        // ONE magnitude bound, the architectural one, asserted on every machine.
+        // The tighter machine-tuned bound that used to sit beside it was removed
+        // — see [`COMPUTE_ALL_BOUND`]'s doc for the measurements that killed it
+        // and for why the SCALING assertion below is the real guard against the
+        // O(decls * event_edges) regression class.
         // `min_of`, not `median` — see that function's doc for why.
         assert!(
             m1000 <= COMPUTE_ALL_BOUND,
             "compute_all min {m1000:?} exceeds the architectural bound {COMPUTE_ALL_BOUND:?} \
              (samples: {samples1000:?})"
-        );
-        assert!(
-            m1000 <= COMPUTE_ALL_SYNTHETIC_BOUND,
-            "compute_all min {m1000:?} exceeds the corpus-relative bound \
-             {COMPUTE_ALL_SYNTHETIC_BOUND:?} (samples: {samples1000:?}) — this is the exact \
-             O(decls * event_edges) regression class the t3 whole-branch review fix-wave closed"
         );
 
         // SCALING assertion (t3 final review, v1 -> v2 -> v3 -> v4) — the

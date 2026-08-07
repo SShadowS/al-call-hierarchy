@@ -37,7 +37,17 @@ jobs:
         # Debug build: validates the same logic against the grammar far faster
         # than --release. The shipped binaries are still built in release by the
         # build jobs below; this gate only needs the tests to pass.
-        run: cargo test --all-targets
+        #
+        # `scripts/ci-steps test` (= `cargo test --workspace`), NOT
+        # `cargo test --all-targets`. `--all-targets` selects BENCH targets
+        # explicitly, which overrides the `test = false` on
+        # `benches/dep_pack_roundtrip` — that bench is a plain `fn main` and exits
+        # 2 when `PACK_BENCH_WS` is unset, deliberately, so a missing workspace can
+        # never read as a passing gate. CI never has that variable, so
+        # `--all-targets` failed this job on every push. Routing through ci-steps
+        # also keeps one source of truth for the command and gets the
+        # grammar-checkout guard for free.
+        run: scripts/ci-steps test
 
   build-windows:
     needs: test
@@ -136,7 +146,8 @@ jobs:
           name: al-call-hierarchy-macos
           path: al-call-hierarchy
 
-  # The deploy target is a SEPARATE repo (SShadowS/claude-code-lsps) and needs a
+  # The deploy target is a SEPARATE repo (SShadowS/al-lsp-for-agents, whose local
+  # checkout is still named claude-code-lsps) and needs a
   # PAT with write access there, stored as the CLAUDE_CODE_LSPS_TOKEN secret.
   # When the secret is absent, deploy SKIPS (builds above still gate every push)
   # instead of failing the workflow at the checkout step — add the secret and
@@ -176,15 +187,17 @@ jobs:
           name: al-call-hierarchy-macos
           path: binaries/macos
 
-      - name: Checkout claude-code-lsps
+      - name: Checkout al-lsp-for-agents
         uses: actions/checkout@v4
         with:
-          repository: SShadowS/claude-code-lsps
+          # SShadowS/claude-code-lsps redirects here, but a redirect only lasts until
+          # something claims the old name — resolve it explicitly.
+          repository: SShadowS/al-lsp-for-agents
           token: ${{ secrets.CLAUDE_CODE_LSPS_TOKEN }}
           path: claude-code-lsps
 
       - name: Copy binaries to plugin directories
-        # The copy map mirrors claude-code-lsps' ACTUAL layout (verified 2026-07-18):
+        # The copy map mirrors the target repo's ACTUAL layout (verified 2026-07-18):
         # al-call-hierarchy ships in exactly three places — the Windows and Linux Go
         # wrappers plus the generic al-language-server-go plugin (Windows flavor).
         # The repo has NO python wrapper and NO darwin plugin; the macOS universal

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - `cargo test --all-targets` in two workflows ran the pack gate bench, failing every push and every release
+
+`benches/dep_pack_roundtrip` is a plain `fn main` that exits 2 when `PACK_BENCH_WS` is
+unset — deliberately, so a missing workspace can never read as a passing gate. The
+previous commit gave it `test = false` to keep `cargo test` off it, and that IS enough for
+plain `cargo test`. It is NOT enough for **`cargo test --all-targets`**, which selects
+bench targets explicitly and overrides the flag.
+
+Both `build-and-deploy.yml` and `release.yml` used `--all-targets`, so both had been
+failing on every push with `exit code 2` — a genuinely red pipeline that predates the
+rename, and one that would have failed the next tagged release too. Only `ci.yml` was
+green, because it goes through `scripts/ci-steps test` (`cargo test --workspace`).
+
+Both now route through `scripts/ci-steps test` as well. That is the point of having a
+single source of truth for CI command strings, and it picks up the grammar-checkout guard
+for free.
+
+### Fixed - the `compute_all` perf gate no longer fails on healthy code on a slow runner
+
+`COMPUTE_ALL_SYNTHETIC_BOUND` (15ms) failed CI at `min 16.399742ms` on a commit that
+renamed the crate and touched nothing on that code path. `DiagnosticConfig::load` is
+called from exactly one place, `server.rs`, which `compute_all` does not go through —
+and the same commit measured **`min=4.6785ms`** locally in release, 3.2x under the bound.
+The GitHub `ubuntu-latest` runner is simply ~3.5x slower for this workload, which left
+that bound with no headroom there.
+
+**The bound was removed rather than widened, because widening it would have destroyed what
+it was for.** The buggy quadratic cost it exists to catch was ~31ms against a ~5.4ms
+healthy baseline on the dev machine; any value loose enough for a 16ms runner is also
+loose enough to let the quadratic through on a fast one. The two requirements are
+incompatible, which is what an absolute time bound is worst at.
+
+Coverage does not drop, because the guard that catches this regression class was never the
+magnitude bound: `COMPUTE_ALL_SCALING_FACTOR` compares two corpus sizes measured on the
+same machine in the same run, with a **measured separation of 3.013–4.715 (fixed) vs
+10.409–12.224 (buggy)** against a bound of 7 — 2.29x below and 3.41x above, and
+machine-speed-independent by construction. This file's own comments already called it "the
+gate that actually matters". Those separation figures come from the earlier t3 review's
+measurements, not from a fresh re-measurement here; what this change re-measured is the
+healthy side (ratio 4.289 locally, inside the fixed range). `COMPUTE_ALL_BOUND` (150ms,
+architectural) still bounds magnitude everywhere.
+
+### Fixed - `build-and-deploy.yml` deployed through a stale repo redirect
+
+The deploy job checked out `SShadowS/claude-code-lsps`, which is itself a redirect to
+`SShadowS/al-lsp-for-agents` from an earlier rename. It resolves today and would keep
+resolving until something claims the old name. Now named explicitly. The checkout `path:`
+stays `claude-code-lsps`, so every `cp` target and the `working-directory` below it are
+unchanged.
+
+Audited alongside it, and correct as-is: every self-checkout omits `repository:` and so
+follows `github.repository` dynamically; the `SShadowS/tree-sitter-al` checkouts are
+unaffected; and the bot commit message interpolates `${{ github.repository }}`, so it
+starts saying `SShadowS/al-sem` on its own.
+
 ### Changed - the crate is now `al-sem`, and four things deliberately keep the old name
 
 `al-call-hierarchy` named a CONSUMER, not the product. `src/lsp/` reads what

@@ -35,7 +35,17 @@ jobs:
         # Debug build: validates the same logic against the grammar far faster
         # than --release. The shipped binaries are still built in release by the
         # build jobs below; this gate only needs the tests to pass.
-        run: cargo test --all-targets
+        #
+        # `scripts/ci-steps test` (= `cargo test --workspace`), NOT
+        # `cargo test --all-targets`. `--all-targets` selects BENCH targets
+        # explicitly, which overrides the `test = false` on
+        # `benches/dep_pack_roundtrip` — that bench is a plain `fn main` and exits
+        # 2 when `PACK_BENCH_WS` is unset, deliberately, so a missing workspace can
+        # never read as a passing gate. CI never has that variable, so
+        # `--all-targets` failed this job on every push. Routing through ci-steps
+        # also keeps one source of truth for the command and gets the
+        # grammar-checkout guard for free.
+        run: scripts/ci-steps test
 
   build-windows:
     needs: test
